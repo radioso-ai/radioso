@@ -261,6 +261,15 @@ imports from `services/`.
   owns the budget, the boundary, and the projection. The agent config it replays is
   resolved by its caller through `ReplyDraftAgentConfigPort`, because chat replays an
   agent rather than assembling one.
+- Visitor resolution (spec 1277): `chatSessionPreparer.ts`'s
+  `resolveVisitorForNewConversation` resolves a `visitors` row (via
+  `modules/visitors/public.ts`'s `VisitorResolverPort`) before creating a new
+  conversation — skipped for `operator_test` turns and channels with neither
+  an anonymous nor a verified key — and passes `visitorId`, `requestContext`,
+  `entryReferrer` into `ConversationRepositoryPort.create`.
+  `attachVerifiedIdentity` runs at the existing first-verified-turn site next
+  to `setVerifiedCustomerId`. Identity-resolution rules live in
+  `modules/visitors/`, not here.
 - Bootstrap and public chat: `chatBootstrapService.ts`,
   public chat routes and presenters.
 - Fork a conversation into a test session: `services/conversationForkService.ts`
@@ -349,6 +358,7 @@ Focused starting points:
 - `cd backend && pnpm exec vitest run tests/unit/chat-turn-lifecycle.test.ts tests/unit/assistant-history-service.test.ts`
 - `cd backend && pnpm test -- tests/unit/chat-presenter.test.ts`
 - `cd backend && pnpm exec vitest run tests/unit/conversation-turn-registry.test.ts tests/integration/chat-interruption.integration.test.ts tests/contract/chat-interruption.contract.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/chat-session-preparer-visitor-resolution.test.ts`
 - `cd backend && pnpm run test:integration` for chat route behavior.
 
 Pair backend changes with frontend chat tests when visible chat behavior changes.

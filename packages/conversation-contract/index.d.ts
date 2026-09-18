@@ -105,6 +105,31 @@ export type ConversationChannelContext =
       origin?: string;
     };
 
+/**
+ * Edge-observed facts about the request that opened a conversation (spec 1277,
+ * FR-010). Every field is nullable: a request-facts value is either fully
+ * proven by a signed edge envelope, partially derived from the backend's own
+ * socket/headers, or entirely absent when a proxy marker carried no valid
+ * proof. `userAgent` is capped at 512 chars and `acceptLanguage` at 256 by the
+ * derivation site; the type itself does not enforce the cap.
+ */
+export interface ConversationRequestContext {
+  clientIp: string | null;
+  country: string | null;
+  region: string | null;
+  city: string | null;
+  userAgent: string | null;
+  acceptLanguage: string | null;
+  /**
+   * `"edge_proof"`: a first-party edge (the frontend proxy) signed the facts.
+   * `"backend"`: no edge marker was present; the backend derived facts from its
+   * own socket/headers directly. `"unproven"`: an edge marker was present but
+   * failed to verify, so every fact is `null` rather than the proxy's own
+   * address.
+   */
+  observedVia: "edge_proof" | "backend" | "unproven";
+}
+
 export type SteeringSource = "directive" | "skill" | "routine";
 
 export type SteeringLifespan = "response" | "session";

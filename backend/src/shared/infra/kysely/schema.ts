@@ -587,13 +587,16 @@ export interface Conversations {
   channel_context: Json | null;
   created_at: Generated<Timestamp>;
   entry_page_url: string | null;
+  entry_referrer: string | null;
   id: string;
   purpose: Generated<string>;
+  request_context: Json | null;
   source_channel: string | null;
   source_origin: string | null;
   title: string | null;
   updated_at: Generated<Timestamp>;
   verified_customer_id: string | null;
+  visitor_id: string | null;
   workspace_id: string;
 }
 
@@ -1559,6 +1562,21 @@ export interface VectorIndexWork {
   workspace_id: string;
 }
 
+export interface Visitors {
+  anonymous_session_id: string | null;
+  conversation_count: Generated<number>;
+  created_at: Generated<Timestamp>;
+  first_seen_at: Generated<Timestamp>;
+  id: Generated<string>;
+  last_country: string | null;
+  last_language: string | null;
+  last_seen_at: Generated<Timestamp>;
+  last_user_agent: string | null;
+  updated_at: Generated<Timestamp>;
+  verified_customer_id: string | null;
+  workspace_id: string;
+}
+
 export interface WebsiteCrawlJobs {
   account_id: string | null;
   attempt_count: Generated<number>;
@@ -1783,6 +1801,7 @@ export interface DB {
   users: Users;
   vector_index_checkpoints: VectorIndexCheckpoints;
   vector_index_work: VectorIndexWork;
+  visitors: Visitors;
   website_crawl_jobs: WebsiteCrawlJobs;
   workspace_embedding_profiles: WorkspaceEmbeddingProfiles;
   workspace_embedding_transitions: WorkspaceEmbeddingTransitions;

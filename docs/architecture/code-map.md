@@ -589,6 +589,36 @@ Related specs and issues:
 - `specs/097-visitor-context-variables/`
 - Issues `#1036`, `#1046`, and `#1115`
 
+## Visitors
+
+Owns the `visitors` entity: a workspace-scoped person keyed by a durable
+anonymous session id and/or a host-verified customer id, with first/last seen,
+a conversation count, and the latest observed country/language/user agent.
+`VisitorResolver` holds the identity-resolution rules (verified beats
+anonymous, upgrade-in-place vs. move, never re-attach an anonymous id to a
+second verified id); `VisitorRepository` holds only named persistence
+primitives. `ChatSessionPreparer` resolves a visitor before creating a new
+conversation and calls `attachVerifiedIdentity` at a conversation's first
+verified turn. Should not know HTTP, headers, geo, `process.env`, or the LLM.
+
+Public surfaces and key files:
+
+- `backend/src/modules/visitors/README.md`
+- `backend/src/modules/visitors/public.ts`
+- `backend/src/modules/visitors/composition.ts`
+- `backend/src/modules/visitors/services/visitorResolver.ts`
+- `backend/src/db/repositories/visitorRepository.ts`
+- `backend/src/modules/chat/services/chatSessionPreparer.ts` (`resolveVisitorForNewConversation`)
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/visitor-resolver.test.ts tests/unit/chat-session-preparer-visitor-resolution.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/visitor-resolver.integration.test.ts tests/integration/visitor-backfill-migration.integration.test.ts`
+
+Related specs:
+
+- `specs/1277-visitor-profile/`
+
 ## Agent Revisions
 
 Owns the mutable agent draft and immutable candidate/publication aggregate. A

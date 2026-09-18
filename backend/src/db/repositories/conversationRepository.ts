@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { ConversationChannelContext } from "@radioso/conversation-contract";
+import type { ConversationChannelContext, ConversationRequestContext } from "@radioso/conversation-contract";
 import type { MessageRecord } from "./messageRepository.js";
 
 import { decodeCursorWithKeys, encodeCursor } from "../../shared/domain/cursorPagination.js";
@@ -33,6 +33,12 @@ export interface ConversationRecord {
   anonymousSessionId: string | null;
   verifiedCustomerId: string | null;
   entryPageUrl: string | null;
+  /** Client-claimed referrer of the host page (FR-013); distinct trust from `requestContext`. */
+  entryReferrer?: string | null;
+  /** Workspace-scoped visitor this conversation resolves to (spec 1277); null for channels with no visitor key. */
+  visitorId?: string | null;
+  /** Edge-observed request facts captured once at creation (spec 1277, FR-010/011). */
+  requestContext?: ConversationRequestContext | null;
   /**
    * Short LLM-generated topic label (issue #1114), refreshed alongside the rolling
    * summary. Null until the summary service's first successful regeneration; callers
@@ -59,6 +65,9 @@ export interface CreateConversationInput {
   entryPageUrl?: string | null;
   agentRevisionId?: string | null;
   purpose?: ConversationRecord["purpose"];
+  visitorId?: string | null;
+  requestContext?: ConversationRequestContext | null;
+  entryReferrer?: string | null;
 }
 
 export interface ConversationRepositoryPort {
@@ -146,6 +155,9 @@ interface ConversationRow {
   anonymous_session_id: string | null;
   verified_customer_id: string | null;
   entry_page_url: string | null;
+  entry_referrer?: string | null;
+  visitor_id?: string | null;
+  request_context?: ConversationRequestContext | null;
   title: string | null;
   created_at: Date;
   updated_at: Date;
@@ -172,6 +184,9 @@ const conversationColumns = [
   "anonymous_session_id",
   "verified_customer_id",
   "entry_page_url",
+  "entry_referrer",
+  "visitor_id",
+  "request_context",
   "title",
   "created_at",
   "updated_at",
@@ -191,6 +206,9 @@ const conversationSelectColumns = [
   "c.anonymous_session_id as anonymous_session_id",
   "c.verified_customer_id as verified_customer_id",
   "c.entry_page_url as entry_page_url",
+  "c.entry_referrer as entry_referrer",
+  "c.visitor_id as visitor_id",
+  "c.request_context as request_context",
   "c.title as title",
   "c.created_at as created_at",
   "c.updated_at as updated_at",
@@ -225,6 +243,9 @@ const mapConversation = (row: ConversationRow): ConversationRecord => ({
   anonymousSessionId: row.anonymous_session_id ?? null,
   verifiedCustomerId: row.verified_customer_id ?? null,
   entryPageUrl: row.entry_page_url ?? null,
+  entryReferrer: row.entry_referrer ?? null,
+  visitorId: row.visitor_id ?? null,
+  requestContext: row.request_context ?? null,
   title: row.title ?? null,
   createdAt: new Date(row.created_at),
   updatedAt: new Date(row.updated_at),
@@ -296,6 +317,9 @@ export class ConversationRepository implements ConversationRepositoryPort {
         anonymous_session_id: input.anonymousSessionId ?? null,
         verified_customer_id: input.verifiedCustomerId ?? null,
         entry_page_url: input.entryPageUrl ?? null,
+        entry_referrer: input.entryReferrer ?? null,
+        visitor_id: input.visitorId ?? null,
+        request_context: input.requestContext ? toJsonb(input.requestContext) : null,
       })
       .returning(conversationColumns)
       .executeTakeFirstOrThrow();

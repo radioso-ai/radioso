@@ -588,7 +588,7 @@ CREATE TABLE public.agent_context_variables (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT agent_context_variables_check CHECK ((((source = 'resolver'::text) AND (resolver_skill_id IS NOT NULL)) OR ((source <> 'resolver'::text) AND (resolver_skill_id IS NULL)))),
     CONSTRAINT agent_context_variables_check1 CHECK (((source = 'resolver'::text) OR ((max_age_seconds IS NULL) AND (resolver_timeout_ms IS NULL)))),
-    CONSTRAINT agent_context_variables_source_check CHECK ((source = ANY (ARRAY['pushed'::text, 'browser'::text, 'resolver'::text]))),
+    CONSTRAINT agent_context_variables_source_check CHECK ((source = ANY (ARRAY['pushed'::text, 'browser'::text, 'resolver'::text, 'request'::text]))),
     CONSTRAINT agent_context_variables_surfacing_check CHECK ((surfacing = ANY (ARRAY['always'::text, 'on_reference'::text, 'operator_only'::text])))
 );
 
@@ -2064,6 +2064,9 @@ CREATE TABLE public.conversations (
     title text,
     agent_revision_id uuid,
     purpose text DEFAULT 'production'::text NOT NULL,
+    visitor_id uuid,
+    request_context jsonb,
+    entry_referrer text,
     CONSTRAINT conversations_purpose_check CHECK ((purpose = ANY (ARRAY['production'::text, 'operator_test'::text])))
 );
 
@@ -3491,6 +3494,26 @@ CREATE SEQUENCE public.vector_index_work_sequence_seq
 --
 
 ALTER SEQUENCE public.vector_index_work_sequence_seq OWNED BY public.vector_index_work.sequence;
+
+
+--
+-- Name: visitors; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.visitors (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    workspace_id uuid NOT NULL,
+    anonymous_session_id text,
+    verified_customer_id text,
+    first_seen_at timestamp with time zone DEFAULT now() NOT NULL,
+    last_seen_at timestamp with time zone DEFAULT now() NOT NULL,
+    conversation_count integer DEFAULT 0 NOT NULL,
+    last_country text,
+    last_language text,
+    last_user_agent text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
 
 
 --
@@ -5585,6 +5608,14 @@ ALTER TABLE ONLY public.vector_index_work
 
 
 --
+-- Name: visitors visitors_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.visitors
+    ADD CONSTRAINT visitors_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: website_crawl_jobs website_crawl_jobs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7031,6 +7062,13 @@ CREATE INDEX idx_conversations_operator_test_purpose ON public.conversations USI
 
 
 --
+-- Name: idx_conversations_visitor_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_conversations_visitor_id ON public.conversations USING btree (visitor_id);
+
+
+--
 -- Name: idx_conversations_workspace_agent_updated_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7574,6 +7612,20 @@ CREATE INDEX idx_vector_index_work_chunk_version ON public.vector_index_work USI
 --
 
 CREATE INDEX idx_vector_index_work_claim ON public.vector_index_work USING btree (status, available_at, sequence);
+
+
+--
+-- Name: idx_visitors_workspace_anonymous_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_visitors_workspace_anonymous_session ON public.visitors USING btree (workspace_id, anonymous_session_id) WHERE (anonymous_session_id IS NOT NULL);
+
+
+--
+-- Name: idx_visitors_workspace_verified_customer; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_visitors_workspace_verified_customer ON public.visitors USING btree (workspace_id, verified_customer_id) WHERE (verified_customer_id IS NOT NULL);
 
 
 --
@@ -9767,6 +9819,14 @@ ALTER TABLE ONLY public.conversations
 
 
 --
+-- Name: conversations conversations_visitor_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conversations
+    ADD CONSTRAINT conversations_visitor_id_fkey FOREIGN KEY (visitor_id) REFERENCES public.visitors(id) ON DELETE SET NULL;
+
+
+--
 -- Name: conversations conversations_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -10908,6 +10968,14 @@ ALTER TABLE ONLY public.vector_index_work
 
 ALTER TABLE ONLY public.vector_index_work
     ADD CONSTRAINT vector_index_work_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: visitors visitors_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.visitors
+    ADD CONSTRAINT visitors_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --

@@ -1,6 +1,7 @@
 import type {
   ClarificationCandidate,
   ConversationChannelContext,
+  ConversationRequestContext,
   ConversationTrace,
   MessageSource,
   StagedContext,
@@ -57,6 +58,7 @@ import type { RetrievalTurnPort } from "./retrievalTurnDispatch.js";
 import type { DirectiveSteeringResult } from "../../directives/public.js";
 import type { DeferredDirectiveStateStore } from "./directives/deferredDirectiveStateStore.js";
 import { loadConversationSummaryText, type ConversationSummaryStore } from "../contracts/conversationSummary.js";
+import type { VisitorResolverPort } from "../../visitors/public.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import { DEFAULT_SUGGESTED_QUESTIONS_COUNT } from "../../settings/contracts/retrieval.js";
 import type { TurnRouting } from "./turnRouter.js";
@@ -241,6 +243,14 @@ export interface PrepareChatSessionInput {
   sourceOrigin?: string | null;
   verifiedCustomerId?: string | null;
   verifiedIdentity?: Record<string, unknown> | null;
+  /**
+   * Edge-observed request facts for this turn's first message (spec 1277). Slice 3
+   * populates this from the HTTP edge; today every caller leaves it unset and it is
+   * simply persisted verbatim on conversation creation, never overwritten.
+   */
+  requestContext?: ConversationRequestContext | null;
+  /** Client-claimed referrer of the host page (FR-013); persisted once alongside `pageContext.pageUrl`. */
+  entryReferrer?: string | null;
   precomputedRewriteProposal?: StructuredRewriteResult;
   agenticToolFactories?: ReadonlyArray<AgenticRetrievalToolFactory>;
   /** Ephemeral eval-only override; never persisted to workspace settings. */
@@ -324,6 +334,8 @@ export class ChatSessionPreparer {
     private readonly workspaceInvalidationPublisher?: WorkspaceInvalidationPublisher,
     /** Required by production composition; absent only for explicitly pre-resolved fixture/replay sessions. */
     private readonly agentRevisionRuntimeResolver?: AgentRevisionRuntimeResolver,
+    /** Optional: when wired, resolves the `visitors` row a new conversation belongs to (spec 1277). */
+    private readonly visitorResolver?: VisitorResolverPort,
   ) {}
 
   async prepare(input: PrepareChatSessionInput, options: PrepareChatSessionOptions = {}): Promise<PreparedSession> {
@@ -391,6 +403,15 @@ export class ChatSessionPreparer {
           ? loadConversationSummaryText(this.conversationSummaryStore, conversation.id, this.logger)
           : Promise.resolve(undefined),
     ]);
+    const newConversationVisitorId = conversation
+      ? null
+      : await this.resolveVisitorForNewConversation({
+          workspaceId: input.workspaceId,
+          anonymousSessionId: chatSessionId,
+          verifiedCustomerId: input.verifiedCustomerId ?? null,
+          requestContext: input.requestContext ?? null,
+          trustedTestRunner,
+        });
     let persistedConversation =
       conversation ?? await this.conversationRepository.create({
         workspaceId: input.workspaceId,
@@ -401,6 +422,9 @@ export class ChatSessionPreparer {
         channelContext: input.channelContext ?? null,
         verifiedCustomerId: input.verifiedCustomerId ?? null,
         entryPageUrl: input.pageContext?.pageUrl ?? null,
+        entryReferrer: input.entryReferrer ?? null,
+        requestContext: input.requestContext ?? null,
+        visitorId: newConversationVisitorId,
         ...(revisionResolved.revisionId ? { agentRevisionId: revisionResolved.revisionId } : {}),
         ...(trustedTestRunner ? { purpose: "operator_test" as const } : {}),
       });
@@ -424,6 +448,14 @@ export class ChatSessionPreparer {
         input.workspaceId,
         input.verifiedCustomerId,
       );
+      if (conversation.purpose !== "operator_test") {
+        await this.visitorResolver?.attachVerifiedIdentity({
+          conversationId: conversation.id,
+          workspaceId: input.workspaceId,
+          anonymousSessionId: chatSessionId,
+          verifiedCustomerId: input.verifiedCustomerId,
+        });
+      }
     }
     const conversationForTurn = persistedConversation.verifiedCustomerId === effectiveVerifiedCustomerId
       ? persistedConversation
@@ -1153,6 +1185,39 @@ export class ChatSessionPreparer {
     }
 
     return conversation;
+  }
+
+  /**
+   * Resolves the `visitors` row a brand-new conversation belongs to (spec 1277,
+   * FR-003/FR-005). Never called for a resumed conversation — that identity was
+   * already fixed at creation and only moves via {@link VisitorResolverPort.attachVerifiedIdentity}.
+   * Returns `null` for an operator-test turn, a channel with neither an anonymous
+   * nor a verified key (Slack, MCP without a session), or when no resolver is wired.
+   */
+  private async resolveVisitorForNewConversation(input: {
+    workspaceId: string;
+    anonymousSessionId: string | null;
+    verifiedCustomerId: string | null;
+    requestContext: ConversationRequestContext | null;
+    trustedTestRunner: boolean;
+  }): Promise<string | null> {
+    if (input.trustedTestRunner || !this.visitorResolver) {
+      return null;
+    }
+    if (!input.anonymousSessionId && !input.verifiedCustomerId) {
+      return null;
+    }
+    const { visitorId } = await this.visitorResolver.resolveForConversation({
+      workspaceId: input.workspaceId,
+      anonymousSessionId: input.anonymousSessionId,
+      verifiedCustomerId: input.verifiedCustomerId,
+      observed: {
+        country: input.requestContext?.country ?? null,
+        language: input.requestContext?.acceptLanguage ?? null,
+        userAgent: input.requestContext?.userAgent ?? null,
+      },
+    });
+    return visitorId;
   }
 
   private async loadRewriteContinuityState(

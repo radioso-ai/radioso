@@ -28,10 +28,10 @@ export interface ForkRoutineStateRepositoryPort {
   save(state: RoutineState): Promise<void>;
 }
 
-export type ForkConversationSummaryPort = Pick<ConversationSummaryStore, "load" | "save">;
+type ForkConversationSummaryPort = Pick<ConversationSummaryStore, "load" | "save">;
 
 /** Raised when the source conversation is not owned by the caller's workspace. */
-export class ConversationForkSourceNotFoundError extends Error {
+class ConversationForkSourceNotFoundError extends Error {
   constructor(conversationId: string) {
     super(`Source conversation ${conversationId} not found in workspace`);
     this.name = "ConversationForkSourceNotFoundError";

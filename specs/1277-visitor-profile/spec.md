@@ -44,9 +44,9 @@ fixing that, "previous conversations" would only link within one tab.
 | Frontend proxy routes (`frontend/app/api/public/chat/[token]`, `frontend/app/api/embed/session/[token]`) | The client-facing request: socket/LB-forwarded address, geo headers the load balancer stamped, `User-Agent`, `Accept-Language`; the edge signing secret | What Radioso does with the facts; visitors; conversations |
 | `@radioso/edge-proof` (new, generic) | How to sign and verify a canonical JSON envelope bound to a context string, method, path and time; the request-facts payload schema both edges agree on | Conversations, visitors, MCP |
 | `@radioso/mcp-source-proof` | Its existing address-digest proof, now built on `@radioso/edge-proof` (extraction-only; behaviour and headers unchanged) | Visitor facts |
-| Embed launcher (host page) | Where the durable anonymous id lives (`localStorage`) and that it goes in the bootstrap body | What the id links to server-side |
+| Embed launcher (host page) | Where the durable visitor key lives (`localStorage`) and that it goes in the bootstrap body | What the key links to server-side; sessions |
 | `VisitorGeoResolver` port + header adapter (composition) | Which forwarded header carries country/region/city and in what precedence | Conversations, visitors, the drawer |
-| `visitors` module (`backend/src/modules/visitors/`) | Identity resolution rules (verified beats anonymous id, anonymous upgrades to verified, never re-attach an anonymous id to a second verified id), the `visitors` table | HTTP, headers, geo, the LLM |
+| `visitors` module (`backend/src/modules/visitors/`) | Identity resolution rules (verified beats visitor key, key upgrades to verified, never re-attach a key to a second verified id), the `visitors` table | HTTP, headers, geo, the LLM |
 | Chat session preparer | That a conversation is created with a `visitorId` and a `requestContext` | How either was derived |
 | Context-variables registry | A built-in `visitor_request` variable with `source: "request"` | IP or user agent — they never enter this module |
 | History service + drawer | How to present a visitor and their previous conversations to an operator | Proof verification, geo header names |
@@ -89,15 +89,19 @@ Composition wires the geo adapter and the proof secret; no domain module reads
    columns, because this is the moment it earns its keep: one join for previous
    conversations, one place the drawer reads, a merge point when an anonymous
    visitor verifies, and a single deletion target.
-6. **The anonymous id becomes a durable per-browser key.** The launcher stores
-   `anonymousSessionId` in host-page `localStorage` (scoped by embed token and
-   host origin) and supplies it in the bootstrap body, which already accepts it
-   (`embed/session/[token]/route.ts:42-45`). Teaser/opened flags stay in
-   `sessionStorage`, so the per-tab greeting UX is unchanged. The server TTL is
-   already 30 days rolling. This widens the window in which someone with access
-   to the browser can read that visitor's past conversations via the anonymous
-   history route — the same exposure class the 30-day resume token already has;
-   the privacy doc states it.
+6. **A separate durable visitor key, not a reused session id.** The launcher
+   generates a uuid on first visit, keeps it in host-page `localStorage` (scoped
+   by embed token) and sends it as `visitorKey` in the bootstrap body. The
+   backend binds it into the signed public chat session at issuance; on resume
+   the session's own key wins, so a client cannot change it mid-session. The
+   key's only power is grouping conversations under one `visitors` row for
+   operators. It never resumes a session, never reads history and never
+   replaces the per-session `anonymous_session_id` — PR #456 removed
+   client-supplied session ids for exactly that reason and that hardening
+   stays. A spoofer holding someone else's key can only make their own new
+   conversation appear under that visitor in the drawer; verified identity
+   remains the strong link. Teaser/opened flags and resume tokens stay in
+   `sessionStorage`, so per-tab greeting UX is unchanged.
 
 ## User Scenarios & Testing
 
@@ -142,22 +146,22 @@ A shopper chats anonymously twice, then logs in to the store; the host now mints
 a signed identity (`verified_customer_id`). From that turn on, the operator sees
 one visitor with three conversations, not two strangers and a customer.
 
-**Independent test**: create two conversations with anonymous id A; on the third,
+**Independent test**: create two conversations with visitor key A; on the third,
 send a verified identity token for customer C; the `visitors` row for A now has
 `verified_customer_id = C`, and all three conversations resolve to it.
 
 **Acceptance scenarios**:
 
-1. **Given** a visitor row keyed only by anonymous id A, **when** a turn on any of its
+1. **Given** a visitor row keyed only by visitor key A, **when** a turn on any of its
    conversations verifies customer C and no row for C exists, **then** the row
    gains `verified_customer_id = C`.
-2. **Given** a row for anonymous id A and a separate row for customer C, **when** a
+2. **Given** a row for visitor key A and a separate row for customer C, **when** a
    turn on A's conversation verifies C, **then** the conversation moves to C's
    row and A's row is unchanged (a shared browser, second account).
-3. **Given** a row for anonymous id A already bound to customer C, **when** a turn on
+3. **Given** a row for visitor key A already bound to customer C, **when** a turn on
    A's conversation verifies customer D, **then** the conversation moves to a
-   row for D; A's row keeps C and the anonymous id is not re-attached.
-4. **Given** two first messages from a brand-new anonymous id arriving concurrently,
+   row for D; A's row keeps C and the visitor key is not re-attached.
+4. **Given** two first messages from a brand-new visitor key arriving concurrently,
    **when** both create conversations, **then** exactly one `visitors` row
    exists and both conversations point at it.
 
@@ -203,25 +207,30 @@ sees it on the next conversation.
 ### Visitors entity
 
 - **FR-001** Migration adds `visitors` (`id uuid pk`, `workspace_id` fk
-  cascade, `anonymous_session_id text null`, `verified_customer_id text null`,
+  cascade, `visitor_key text null`, `verified_customer_id text null`,
   `first_seen_at`, `last_seen_at`, `conversation_count int`, `last_country
   text null`, `last_language text null`, `last_user_agent text null`) with
-  unique partial indexes on `(workspace_id, anonymous_session_id)` and
+  unique partial indexes on `(workspace_id, visitor_key)` and
   `(workspace_id, verified_customer_id)`, and `conversations.visitor_id uuid
   null` fk (`ON DELETE SET NULL`) with an index. Both `db:types` and
   `db:schema` snapshots regenerate.
 - **FR-002** The same migration backfills: one row per distinct
   `(workspace_id, verified_customer_id)`, then one per distinct
   `(workspace_id, anonymous_session_id)` not already covered by a conversation
-  that has a verified id; `visitor_id` set on every `production` conversation
-  with either key; counts and first/last seen derived from `created_at`.
+  that has a verified id, seeding `visitor_key` from the historical session id
+  (each pre-existing session becomes a visitor no browser will present again);
+  `visitor_id` set on every `production` conversation with either key; counts
+  and first/last seen derived from `created_at`.
 - **FR-003** `VisitorResolver.resolveForConversation({ workspaceId,
-  anonymousSessionId, verifiedCustomerId, observed: { country, language,
+  visitorKey, verifiedCustomerId, observed: { country, language,
   userAgent } })` returns a `visitorId`, applying: verified id first; else
-  anonymous id; else insert. Insert uses `ON CONFLICT DO NOTHING` and re-selects.
+  visitor key; else insert. `visitorKey` comes from the verified session
+  payload; when the session carries none (API channel, sessions issued before
+  this change) the per-session `anonymous_session_id` is used as the key, which
+  is exactly what the backfill did. Insert uses `ON CONFLICT DO NOTHING` and re-selects.
   Updates `last_seen_at`, `conversation_count`, and the `last_*` observations.
 - **FR-004** `VisitorResolver.attachVerifiedIdentity({ conversationId,
-  verifiedCustomerId })` runs wherever `setVerifiedCustomerId` runs today
+  workspaceId, visitorKey, verifiedCustomerId })` runs wherever `setVerifiedCustomerId` runs today
   (`chatSessionPreparer.ts` first verified turn), applying the rules of User
   Story 2 and re-pointing `conversations.visitor_id` when the conversation moves.
 - **FR-005** Conversations with `purpose = operator_test` never touch
@@ -237,10 +246,15 @@ sees it on the next conversation.
 
 ### Durable anonymous visitor key
 
-- **FR-008** The launcher persists `anonymousSessionId` from the bootstrap
-  response in host-page `localStorage` under a key scoped by embed token and
-  sends it in the next bootstrap body (`anonymousSessionId`, already accepted).
-  Resume tokens and teaser/opened flags keep their `sessionStorage` behaviour.
+- **FR-008** The launcher generates a `visitorKey` (uuid) on first visit,
+  persists it in host-page `localStorage` under a key scoped by embed token and
+  sends it in every bootstrap body. The backend `/sessions` route binds it into
+  the signed session payload (`publicChatSessionBasePayloadSchema.visitorKey`,
+  nullable); with a resume token the payload's existing key wins. The dead
+  `anonymousSessionId` bootstrap body field is removed. New sessions still get
+  a random `publicSessionId`; the #456 test "does not resume website embed
+  history from a raw anonymous session id" stays green. Resume tokens and
+  teaser/opened flags keep their `sessionStorage` behaviour.
 - **FR-009** When `localStorage` is unavailable (privacy mode, storage
   disabled, `SecurityError`), the launcher falls back to today's per-tab
   behaviour silently; no console noise at warn level.
@@ -397,7 +411,7 @@ sees it on the next conversation.
 ## Key entities
 
 - **Visitor** — a person as far as Radioso can tell: a workspace-scoped row
-  keyed by a durable anonymous id and/or a host-verified customer id, with
+  keyed by a durable visitor key and/or a host-verified customer id, with
   first/last seen, a conversation count, and the latest observed
   country/language/user agent. Owned by `backend/src/modules/visitors/`.
 - **ConversationRequestContext** — edge-observed facts about the request that
@@ -418,9 +432,9 @@ sees it on the next conversation.
   `RADIOSO_TRUSTED_PROXY_HOPS` entries are read, and that value is set correctly
   per service (the frontend sits one hop behind the LB; the backend sits one hop
   behind the LB for API clients).
-- `anonymous_session_id` is a 30-day rolling server session keyed by a
-  launcher-persisted `localStorage` value; a visitor who clears site data or
-  uses another browser is a new visitor until they verify.
+- `visitor_key` is a launcher-persisted `localStorage` value; a visitor who
+  clears site data or uses another browser is a new visitor until they verify.
+  `anonymous_session_id` keeps its current per-session meaning.
 - Storing IP is acceptable under the operator's own terms with their users;
   Radioso documents what is stored and deletes it with the conversation.
 

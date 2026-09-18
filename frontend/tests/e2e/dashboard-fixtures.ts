@@ -884,6 +884,68 @@ export const baseQualityStats = () => ({
   resolutionBreakdown: [],
 });
 
+/** Account usage summary for a conversation-metered enterprise account, under 80% used. */
+export const baseAccountUsageSummary = () => ({
+  accountId,
+  profile: {
+    key: "satellite",
+    displayName: "Satellite",
+    monthlyAnswerLimit: null,
+    storedDocumentLimit: 10000,
+    storedIndexedByteLimit: 20971520,
+    monthlyIndexedByteLimit: 41943040,
+    monthlyConversationLimit: 1000,
+    repliesPerConversation: 10,
+    createdAt: nowIso,
+    updatedAt: nowIso,
+  },
+  monthlyAnswers: {
+    periodStart: "2026-04-01",
+    resetAt: "2026-05-01T00:00:00.000Z",
+    used: 0,
+    limit: null,
+  },
+  storedDocuments: { used: 12, limit: 10000 },
+  storedIndexedBytes: { used: 1048576, limit: 20971520 },
+  monthlyIndexedBytes: {
+    periodStart: "2026-04-01",
+    resetAt: "2026-05-01T00:00:00.000Z",
+    used: 65536,
+    limit: 41943040,
+  },
+  monthlyConversations: {
+    periodStart: "2026-04-01",
+    resetAt: "2026-05-01T00:00:00.000Z",
+    used: 400,
+    limit: 1000,
+    credits: 0,
+    byKind: { conversation: 380, copilot: 15, test_run: 5, pulse_report: 0 },
+  },
+});
+
+export const baseBillingSummary = () => ({
+  configured: true,
+  planId: "satellite",
+  planName: "Satellite",
+  status: "active" as const,
+  hasCustomer: true,
+  interval: "month" as const,
+  currentPeriodEnd: "2026-05-01T00:00:00.000Z",
+  upgradePlanId: "planet",
+});
+
+export const basePlanCatalog = () => ({
+  currency: "EUR",
+  plans: [
+    { id: "comet", name: "Comet", priceCents: 0, annualPriceCents: null, interval: "month" as const, monthlyConversations: 50, storedBytes: 10485760, monthlyIndexedBytes: 20971520, documents: 2000, models: "managed" as const, support: "community" as const, stripe: null },
+    { id: "satellite", name: "Satellite", priceCents: 14900, annualPriceCents: 149000, interval: "month" as const, monthlyConversations: 1000, storedBytes: 20971520, monthlyIndexedBytes: 41943040, documents: 10000, models: "managed" as const, support: "email" as const, stripe: { monthLookupKey: "satellite_month", yearLookupKey: "satellite_year" } },
+    { id: "planet", name: "Planet", priceCents: 49900, annualPriceCents: 499000, interval: "month" as const, monthlyConversations: 5000, storedBytes: 104857600, monthlyIndexedBytes: 209715200, documents: 50000, models: "byok" as const, support: "priority" as const, stripe: { monthLookupKey: "planet_month", yearLookupKey: "planet_year" } },
+  ],
+  defaultPlanId: "comet",
+  selfServeCeilingPlanId: "planet",
+  topUp: { conversations: 300, priceCents: 5000, stripeLookupKey: "topup_300" },
+});
+
 export const installDashboardApiMocks = async (
   page: Page,
   options: {
@@ -939,6 +1001,12 @@ export const installDashboardApiMocks = async (
     messageUsageLoadMoreDelayMs?: number;
     internalUsage?: unknown;
     qualityStats?: unknown;
+    accountUsageSummary?: unknown;
+    billingSummary?: unknown;
+    planCatalog?: unknown;
+    billingCheckoutUrl?: string;
+    billingPortalUrl?: string;
+    billingRequests?: Array<{ method: "GET" | "POST"; path: string; body?: unknown }>;
     mcpConnections?: McpConnectionFixture[];
     mcpDiscoveredTools?: DiscoveredMcpToolFixture[];
     mcpConnectionRequests?: string[];
@@ -1077,6 +1145,12 @@ export const installDashboardApiMocks = async (
   const agentChannelCredentialRequests = options.agentChannelCredentialRequests;
   let nextAgentChannelCredentialIndex = agentChannelCredentials.length + 1;
   const webhookDestinationUpdates = options.webhookDestinationUpdates;
+  const accountUsageSummary = options.accountUsageSummary ?? baseAccountUsageSummary();
+  const billingSummary = options.billingSummary ?? baseBillingSummary();
+  const planCatalog = options.planCatalog ?? basePlanCatalog();
+  const billingCheckoutUrl = options.billingCheckoutUrl ?? `/w/${workspaceKey}/usage?billing=success`;
+  const billingPortalUrl = options.billingPortalUrl ?? `/w/${workspaceKey}/usage?billing=success`;
+  const billingRequests = options.billingRequests;
   const coherenceFor = (directive: AuthoredDirectiveFixture): ApiSchemas["DirectiveCoherenceVerdict"] => {
     // Mirrors the backend: a disabled directive is not checked at all, so disabling one
     // always comes back coherent regardless of what would otherwise conflict.
@@ -1281,6 +1355,35 @@ export const installDashboardApiMocks = async (
 
     if (request.method() === "GET" && path === "/workspace/summary") {
       await json(route, workspaceSummary);
+      return;
+    }
+
+    if (request.method() === "GET" && path === "/ee/usage-limits/me") {
+      await json(route, accountUsageSummary);
+      return;
+    }
+
+    if (request.method() === "GET" && path === "/ee/billing/me") {
+      await json(route, billingSummary);
+      return;
+    }
+
+    if (request.method() === "GET" && path === "/plans") {
+      await json(route, planCatalog);
+      return;
+    }
+
+    if (request.method() === "POST" && path === "/ee/billing/checkout") {
+      const body = request.postDataJSON();
+      billingRequests?.push({ method: "POST", path, body });
+      await json(route, { url: billingCheckoutUrl });
+      return;
+    }
+
+    if (request.method() === "POST" && path === "/ee/billing/portal") {
+      const body = request.postDataJSON();
+      billingRequests?.push({ method: "POST", path, body });
+      await json(route, { url: billingPortalUrl });
       return;
     }
 

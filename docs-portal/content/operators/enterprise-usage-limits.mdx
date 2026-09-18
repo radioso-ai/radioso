@@ -1,7 +1,7 @@
 ---
 title: "Enterprise usage limits"
 description: "How Enterprise Edition meters and caps indexed storage, monthly indexed content, and monthly answers or conversations per account, and enforces the caps before work begins."
-last_updated: 2026-09-15
+last_updated: 2026-09-17
 ---
 
 # Enterprise usage limits
@@ -149,6 +149,18 @@ curl -X POST https://radioso.example.com/api/v1/ee/usage-limits/accounts/0000000
 ```
 
 An `accountId` that does not exist returns `404`.
+
+## Plan card
+
+On a conversation-metered account, the dashboard's Usage page shows a plan card above the meters. It reads `GET /api/v1/ee/billing/me` and `GET /api/v1/plans` alongside the account usage response above, and renders the plan name and price, a bar for `used / (limit + credits)`, and the `byKind` breakdown split into customer conversations, Ray, test runs, and Pulse.
+
+At 80% of capacity the card adds a banner naming whichever kind is driving that month's usage. At 100% the banner also carries the **Upgrade** and **Buy** buttons described below.
+
+- **Upgrade** starts a subscription checkout for the next self-serve plan above the account's current one. It is absent once the account already holds the catalog's `selfServeCeilingPlanId`.
+- **Buy 300 more** starts a one-time checkout for the catalog's top-up pack.
+- **Manage billing** opens the Stripe customer portal. It appears once the account has a Stripe customer, which the first checkout creates.
+
+A deployment without Stripe credentials configured skips the card; see [Billing setup](/operators/billing-setup) for the Stripe environment variables and webhook registration.
 
 ## Enforcement
 

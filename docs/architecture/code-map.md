@@ -1467,12 +1467,40 @@ Primary paths:
   (`PLAN_CATALOG`, `findPlan`, `formatPrice`); data in `src/plans.json`; focused
   test `tests/planCatalog.test.ts`.
 - `ee/packages/backend-module/src/billing/` — publishes the plan catalog over
-  HTTP. Entry point `applicationModule.ts`
-  (`createBillingApplicationModule`), which mounts `plansRoutes.ts`
-  (`createPlansRoutes`, public `GET /api/v1/plans`); focused test
-  `plansRoutes.test.ts`. `ee/packages/backend-module/src/usageLimits/planCatalogSeed.ts`
+  HTTP and runs self-serve Stripe checkout, the customer portal, and the
+  Stripe webhook. Entry point `applicationModule.ts`
+  (`createBillingApplicationModule`, `resolveBillingConfig`), which mounts
+  `plansRoutes.ts` (`createPlansRoutes`, public `GET /api/v1/plans`) and
+  `billingRoutes.ts` (`createBillingRoutes`, `GET/POST /api/v1/ee/billing/*`
+  — `me`, `checkout`, `portal`, `webhook`; account-session gated except the
+  webhook). `stripeGateway.ts` is the narrow Stripe port every other file and
+  every test sees; `stripeSdkGateway.ts` is the only file that imports the
+  `stripe` SDK. `planPricing.ts` maps catalog plan ↔ Stripe lookup key /
+  product metadata (pure, no Stripe or DB import). `billingCustomerRepository.ts`
+  owns `ee_billing_customers` and the `ee_billing_processed_events` webhook
+  idempotency table via `db/eeSchema.ts`'s Kysely surface; migrator
+  `billingMigrator.ts` (id `ee-billing`). `billingWebhookHandler.ts` maps a
+  Stripe event to a plan assignment, a credit grant, a status change, or a
+  no-op outcome, one Postgres transaction per event, claiming the event id
+  before any side effect so a Stripe retry is a no-op. Missing
+  `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` degrades billing to
+  `configured: false` rather than failing at boot — self-hosted installs run
+  this way by default. Checkout and portal are user-initiated payment flows,
+  not Ray actions, and are permanently excluded from the copilot coverage
+  map. Focused tests: `planPricing.test.ts`, `billingWebhookHandler.test.ts`,
+  `billingRoutes.test.ts`, `plansRoutes.test.ts`, `applicationModule.test.ts`,
+  `billingCustomerRepository.integration.test.ts` (also exercises the
+  migrator). Operator setup doc:
+  `docs-portal/content/operators/billing-setup.mdx`.
+  `ee/packages/backend-module/src/usageLimits/planCatalogSeed.ts`
   maps a catalog plan onto `ee_usage_limit_profiles` columns for the migrator
   in `usageLimitMigrator.ts`; focused test `planCatalogSeed.test.ts`.
+- `ee/packages/backend-module/src/shared/requireAccountSession.ts` — the
+  account-session (cookie) auth middleware shared by `usageLimits/usageLimitRoutes.ts`
+  and `billing/billingRoutes.ts`. Sets `res.locals.accountId` / `.userId` /
+  `.sessionId`; anything mounted under a `RouteDependencies`-shaped context
+  that needs "logged-in account, not a specific workspace" reuses this rather
+  than a third copy.
 - `ee/packages/backend-module/src/managedModels/` — the Enterprise
   `ManagedModelPolicy`: workspace → account → assigned plan → the catalog's
   `managedModels`. Entry point `managedModelPolicy.ts`
@@ -1486,6 +1514,7 @@ Useful searches:
 - `rg "Enterprise|edition|license|capability" ee backend/src frontend`
 - `rg "extension|capability policy|composition" ee backend/src/app/composition backend/src/modules`
 - `rg "PLAN_CATALOG|plan-catalog" ee`
+- `rg "StripeGateway|stripe\." ee/packages/backend-module/src/billing`
 
 Focused checks:
 

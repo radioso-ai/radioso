@@ -283,6 +283,8 @@ interface ChatAnswerInput {
   requestContext?: ConversationRequestContext | null;
   /** FR-013 (spec 1277): client-claimed referrer of the host page; ignored for a resumed conversation. */
   entryReferrer?: string | null;
+  /** Unauthenticated visitor-grouping id from the verified session payload (spec 1277 decision 6); never a credential. */
+  visitorKey?: string | null;
   clientContextCapabilities?: AssistantClientContextCapabilities;
   sourceChannel?: string | null;
   channelContext?: ConversationChannelContext | null;
@@ -1229,6 +1231,8 @@ export class ChatService {
   requestContext?: ConversationRequestContext | null;
   /** FR-013 (spec 1277): client-claimed referrer of the host page; ignored for a resumed conversation. */
   entryReferrer?: string | null;
+  /** Unauthenticated visitor-grouping id from the verified session payload (spec 1277 decision 6); never a credential. */
+  visitorKey?: string | null;
     clientContextCapabilities?: AssistantClientContextCapabilities;
     sourceChannel?: string | null;
     channelContext?: ConversationChannelContext | null;
@@ -1281,6 +1285,8 @@ export class ChatService {
   requestContext?: ConversationRequestContext | null;
   /** FR-013 (spec 1277): client-claimed referrer of the host page; ignored for a resumed conversation. */
   entryReferrer?: string | null;
+  /** Unauthenticated visitor-grouping id from the verified session payload (spec 1277 decision 6); never a credential. */
+  visitorKey?: string | null;
     clientContextCapabilities?: AssistantClientContextCapabilities;
     sourceChannel?: string | null;
     channelContext?: ConversationChannelContext | null;

@@ -43,7 +43,9 @@ const resolveOrigin = (value: string | null) => {
 
 const embedBootstrapRequestSchema = z.object({
   resumeToken: z.string().min(1).optional(),
-  anonymousSessionId: z.string().uuid().optional(),
+  // Spec 1277 decision 6: an unauthenticated, client-generated visitor-grouping id
+  // (never a session credential) — see radioso-embed-launcher.js's readOrCreateVisitorKey.
+  visitorKey: z.string().uuid().optional(),
 })
 
 export async function OPTIONS(request: Request) {
@@ -104,7 +106,7 @@ export async function POST(
       body: JSON.stringify({
         channel: 'website_embed',
         resumeToken: parsedBody.data.resumeToken,
-        anonymousSessionId: parsedBody.data.anonymousSessionId,
+        visitorKey: parsedBody.data.visitorKey,
       }),
     })
 

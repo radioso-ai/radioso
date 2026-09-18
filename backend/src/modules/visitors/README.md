@@ -1,17 +1,28 @@
 # Visitors Module
 
 Visitors owns the `visitors` entity: a workspace-scoped person as far as
-Radioso can tell, keyed by a durable anonymous session id and/or a
+Radioso can tell, keyed by a durable, client-persisted visitor key and/or a
 host-verified customer id, with first/last seen, a conversation count, and the
 latest observed country/language/user agent. It replaces a derived query over
-the two identity columns `conversations` already carried
-(`anonymous_session_id`, `verified_customer_id`).
+`conversations.anonymous_session_id` / `verified_customer_id`.
+
+**`visitor_key` is not a credential.** It is a client-generated uuid
+(`crypto.randomUUID()` in the embed launcher, spec 1277 FR-008) persisted in
+host-page `localStorage` purely so an operator sees one visitor across tabs
+instead of several strangers. It grants no session, no resume, and no
+history-read access — it is never bound into the signed public chat session
+payload's trust boundary (`backend/src/modules/settings/domain/publicChatSession.ts`
+keeps `publicSessionId` and `visitorKey` as separate claims for exactly this
+reason). Anyone who learns another visitor's key can only make their own new
+conversation show up grouped under that visitor's row for an operator — never
+read or continue an existing one. See `services/visitorResolver.ts`'s class
+doc for the full statement.
 
 Start at `services/visitorResolver.ts`. `VisitorResolver` holds the only rules
-that matter — a verified id beats an anonymous id; an anonymous-only visitor
+that matter — a verified id beats a visitor key; an anonymous-only visitor
 upgrades in place the first time it verifies; a later, *different* verified id
 moves the conversation to that identity's own row without touching, or
-re-attaching, the anonymous id. The repository (`db/repositories/visitorRepository.ts`,
+re-attaching, the visitor key. The repository (`db/repositories/visitorRepository.ts`,
 `VisitorRepository`) holds no rule — only named, transactional primitives
 (find by key, insert-or-get, record an observation, move a conversation
 between rows).
@@ -39,6 +50,6 @@ Focused checks:
 
 - `cd backend && pnpm exec vitest run tests/unit/visitor-resolver.test.ts`
 - `cd backend && pnpm exec vitest run tests/unit/chat-session-preparer-visitor-resolution.test.ts`
-- `cd backend && pnpm exec vitest run tests/integration/visitor-repository.integration.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/visitor-resolver.integration.test.ts`
 
 Spec: `specs/1277-visitor-profile/spec.md`.

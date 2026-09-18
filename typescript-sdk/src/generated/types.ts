@@ -5581,8 +5581,6 @@ export interface components {
             publicChatToken: string;
             /** Format: uuid */
             publicSessionId: string;
-            /** Format: uuid */
-            anonymousSessionId: string;
             publicSessionToken: string;
             resumeToken: string;
             assistantBootstrapActive: boolean;
@@ -5624,13 +5622,14 @@ export interface components {
             /** Format: uuid */
             chatSessionId?: string;
             /** Format: uuid */
-            anonymousSessionId?: string;
+            visitorKey?: string;
             pageContext?: {
                 pageUrl?: string | null;
                 pageTitle?: string | null;
                 pageLocale?: string | null;
                 browserLocale?: string | null;
                 content?: string | null;
+                referrer?: string | null;
             };
             clientContextCapabilities?: {
                 "page.read"?: {
@@ -7150,6 +7149,7 @@ export interface components {
                 pageLocale?: string | null;
                 browserLocale?: string | null;
                 content?: string | null;
+                referrer?: string | null;
             };
             clientContextCapabilities?: {
                 "page.read"?: {

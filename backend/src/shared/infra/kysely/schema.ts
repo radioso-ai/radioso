@@ -1563,7 +1563,6 @@ export interface VectorIndexWork {
 }
 
 export interface Visitors {
-  anonymous_session_id: string | null;
   conversation_count: Generated<number>;
   created_at: Generated<Timestamp>;
   first_seen_at: Generated<Timestamp>;
@@ -1574,6 +1573,7 @@ export interface Visitors {
   last_user_agent: string | null;
   updated_at: Generated<Timestamp>;
   verified_customer_id: string | null;
+  visitor_key: string | null;
   workspace_id: string;
 }
 

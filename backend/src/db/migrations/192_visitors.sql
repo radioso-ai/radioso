@@ -1,16 +1,21 @@
 -- Visitors entity, request-facts columns, and the identity-resolution CHECK
 -- widening (spec 1277, FR-001/002/010/030). A visitor is a workspace-scoped
--- person as far as Radioso can tell: keyed by a durable anonymous session id
--- and/or a host-verified customer id, with first/last seen, a conversation
--- count, and the latest observed country/language/user agent. Chat services
--- resolve one per new conversation (backend/src/modules/visitors/); the
--- entity replaces a derived query over the two string columns conversations
--- already carried.
+-- person as far as Radioso can tell: keyed by a durable, client-persisted
+-- visitor key and/or a host-verified customer id, with first/last seen, a
+-- conversation count, and the latest observed country/language/user agent.
+-- Chat services resolve one per new conversation
+-- (backend/src/modules/visitors/); the entity replaces a derived query over
+-- the two string columns conversations already carried.
+--
+-- `visitor_key` has no authentication power: it only groups conversations
+-- under one operator-visible row (backend/src/modules/visitors/services/visitorResolver.ts).
+-- It is unrelated to `conversations.anonymous_session_id`, the per-session
+-- identifier bound into the signed public chat session token.
 
 CREATE TABLE IF NOT EXISTS visitors (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-  anonymous_session_id TEXT NULL,
+  visitor_key TEXT NULL,
   verified_customer_id TEXT NULL,
   first_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -22,13 +27,13 @@ CREATE TABLE IF NOT EXISTS visitors (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- One row per anonymous id / verified id within a workspace. Partial so a
+-- One row per visitor key / verified id within a workspace. Partial so a
 -- visitor known by only one of the two keys never collides on the other's
 -- (workspace, NULL) pair, and so `INSERT ... ON CONFLICT (...) WHERE ...`
 -- in the repository has a matching conflict target for each key.
-CREATE UNIQUE INDEX IF NOT EXISTS idx_visitors_workspace_anonymous_session
-  ON visitors (workspace_id, anonymous_session_id)
-  WHERE anonymous_session_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_visitors_workspace_visitor_key
+  ON visitors (workspace_id, visitor_key)
+  WHERE visitor_key IS NOT NULL;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_visitors_workspace_verified_customer
   ON visitors (workspace_id, verified_customer_id)
@@ -44,6 +49,9 @@ CREATE INDEX IF NOT EXISTS idx_conversations_visitor_id ON conversations (visito
 -- Backfill (FR-002): only `purpose = 'production'` conversations participate
 -- (operator-test transcripts never get a visitor, matching FR-005 for new
 -- conversations). first/last seen and conversation_count derive from created_at.
+-- Historical conversations predate the client-generated visitor key, so the
+-- backfill seeds `visitor_key` from `conversations.anonymous_session_id` — the
+-- per-session identifier is the only visitor-grouping signal history has.
 --
 -- "Not already covered by a conversation that has a verified id" is a
 -- workspace+anonymous-id-level fact, not a per-row one: a shopper who chatted
@@ -76,7 +84,7 @@ FROM (
 ) verified_conversations
 GROUP BY workspace_id, verified_customer_id;
 
-INSERT INTO visitors (workspace_id, anonymous_session_id, first_seen_at, last_seen_at, conversation_count)
+INSERT INTO visitors (workspace_id, visitor_key, first_seen_at, last_seen_at, conversation_count)
 SELECT c.workspace_id, c.anonymous_session_id, MIN(c.created_at), MAX(c.created_at), COUNT(*)
 FROM conversations c
 LEFT JOIN _visitor_backfill_anon_verified_map m
@@ -108,7 +116,7 @@ WHERE c.purpose = 'production'
   AND m.workspace_id = c.workspace_id
   AND m.anonymous_session_id = c.anonymous_session_id;
 
--- Remaining anonymous-only conversations: link to their own anonymous-keyed visitor.
+-- Remaining anonymous-only conversations: link to their own visitor-key-keyed visitor.
 UPDATE conversations c
 SET visitor_id = v.id
 FROM visitors v
@@ -116,7 +124,7 @@ WHERE c.purpose = 'production'
   AND c.visitor_id IS NULL
   AND c.anonymous_session_id IS NOT NULL
   AND v.workspace_id = c.workspace_id
-  AND v.anonymous_session_id = c.anonymous_session_id
+  AND v.visitor_key = c.anonymous_session_id
   AND v.verified_customer_id IS NULL;
 
 -- FR-030: the built-in `visitor_request` context variable resolves through

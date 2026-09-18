@@ -3503,7 +3503,7 @@ ALTER SEQUENCE public.vector_index_work_sequence_seq OWNED BY public.vector_inde
 CREATE TABLE public.visitors (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     workspace_id uuid NOT NULL,
-    anonymous_session_id text,
+    visitor_key text,
     verified_customer_id text,
     first_seen_at timestamp with time zone DEFAULT now() NOT NULL,
     last_seen_at timestamp with time zone DEFAULT now() NOT NULL,
@@ -7615,17 +7615,17 @@ CREATE INDEX idx_vector_index_work_claim ON public.vector_index_work USING btree
 
 
 --
--- Name: idx_visitors_workspace_anonymous_session; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX idx_visitors_workspace_anonymous_session ON public.visitors USING btree (workspace_id, anonymous_session_id) WHERE (anonymous_session_id IS NOT NULL);
-
-
---
 -- Name: idx_visitors_workspace_verified_customer; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX idx_visitors_workspace_verified_customer ON public.visitors USING btree (workspace_id, verified_customer_id) WHERE (verified_customer_id IS NOT NULL);
+
+
+--
+-- Name: idx_visitors_workspace_visitor_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_visitors_workspace_visitor_key ON public.visitors USING btree (workspace_id, visitor_key) WHERE (visitor_key IS NOT NULL);
 
 
 --

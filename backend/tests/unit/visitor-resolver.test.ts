@@ -10,7 +10,7 @@ const noObservation: VisitorObservedFacts = { country: null, language: null, use
 const buildVisitor = (overrides: Partial<VisitorRecord> = {}): VisitorRecord => ({
   id: randomUUID(),
   workspaceId: "workspace-1",
-  anonymousSessionId: null,
+  visitorKey: null,
   verifiedCustomerId: null,
   firstSeenAt: new Date("2026-06-01T00:00:00.000Z"),
   lastSeenAt: new Date("2026-06-01T00:00:00.000Z"),
@@ -25,7 +25,7 @@ const buildVisitor = (overrides: Partial<VisitorRecord> = {}): VisitorRecord => 
 
 interface RepositoryMock extends VisitorRepositoryPort {
   findByVerifiedCustomerId: ReturnType<typeof vi.fn<VisitorRepositoryPort["findByVerifiedCustomerId"]>>;
-  findByAnonymousSessionId: ReturnType<typeof vi.fn<VisitorRepositoryPort["findByAnonymousSessionId"]>>;
+  findByVisitorKey: ReturnType<typeof vi.fn<VisitorRepositoryPort["findByVisitorKey"]>>;
   insertOrGet: ReturnType<typeof vi.fn<VisitorRepositoryPort["insertOrGet"]>>;
   recordObservation: ReturnType<typeof vi.fn<VisitorRepositoryPort["recordObservation"]>>;
   upgradeToVerified: ReturnType<typeof vi.fn<VisitorRepositoryPort["upgradeToVerified"]>>;
@@ -34,7 +34,7 @@ interface RepositoryMock extends VisitorRepositoryPort {
 
 const buildRepository = (): RepositoryMock => ({
   findByVerifiedCustomerId: vi.fn<VisitorRepositoryPort["findByVerifiedCustomerId"]>().mockResolvedValue(null),
-  findByAnonymousSessionId: vi.fn<VisitorRepositoryPort["findByAnonymousSessionId"]>().mockResolvedValue(null),
+  findByVisitorKey: vi.fn<VisitorRepositoryPort["findByVisitorKey"]>().mockResolvedValue(null),
   insertOrGet: vi.fn<VisitorRepositoryPort["insertOrGet"]>(),
   recordObservation: vi.fn<VisitorRepositoryPort["recordObservation"]>().mockResolvedValue(undefined),
   upgradeToVerified: vi.fn<VisitorRepositoryPort["upgradeToVerified"]>().mockResolvedValue(undefined),
@@ -50,7 +50,7 @@ describe("VisitorResolver.resolveForConversation", () => {
 
     const result = await resolver.resolveForConversation({
       workspaceId: "workspace-1",
-      anonymousSessionId: null,
+      visitorKey: null,
       verifiedCustomerId: "customer-1",
       observed: { country: "DE", language: "de", userAgent: "UA" },
     });
@@ -61,19 +61,19 @@ describe("VisitorResolver.resolveForConversation", () => {
       language: "de",
       userAgent: "UA",
     });
-    expect(repository.findByAnonymousSessionId).not.toHaveBeenCalled();
+    expect(repository.findByVisitorKey).not.toHaveBeenCalled();
     expect(repository.insertOrGet).not.toHaveBeenCalled();
   });
 
   it("falls back to the anonymous visitor when no verified row exists", async () => {
     const repository = buildRepository();
-    const anon = buildVisitor({ anonymousSessionId: "anon-1" });
-    repository.findByAnonymousSessionId.mockResolvedValue(anon);
+    const anon = buildVisitor({ visitorKey: "anon-1" });
+    repository.findByVisitorKey.mockResolvedValue(anon);
     const resolver = new VisitorResolver(repository);
 
     const result = await resolver.resolveForConversation({
       workspaceId: "workspace-1",
-      anonymousSessionId: "anon-1",
+      visitorKey: "anon-1",
       verifiedCustomerId: null,
       observed: noObservation,
     });
@@ -85,13 +85,13 @@ describe("VisitorResolver.resolveForConversation", () => {
 
   it("upgrades an anonymous-only row in place when a verified id newly resolves alongside it", async () => {
     const repository = buildRepository();
-    const anon = buildVisitor({ anonymousSessionId: "anon-1", verifiedCustomerId: null });
-    repository.findByAnonymousSessionId.mockResolvedValue(anon);
+    const anon = buildVisitor({ visitorKey: "anon-1", verifiedCustomerId: null });
+    repository.findByVisitorKey.mockResolvedValue(anon);
     const resolver = new VisitorResolver(repository);
 
     const result = await resolver.resolveForConversation({
       workspaceId: "workspace-1",
-      anonymousSessionId: "anon-1",
+      visitorKey: "anon-1",
       verifiedCustomerId: "customer-1",
       observed: noObservation,
     });
@@ -103,13 +103,13 @@ describe("VisitorResolver.resolveForConversation", () => {
 
   it("never re-attaches an anonymous row already bound to a different verified id", async () => {
     const repository = buildRepository();
-    const anon = buildVisitor({ anonymousSessionId: "anon-1", verifiedCustomerId: "customer-old" });
-    repository.findByAnonymousSessionId.mockResolvedValue(anon);
+    const anon = buildVisitor({ visitorKey: "anon-1", verifiedCustomerId: "customer-old" });
+    repository.findByVisitorKey.mockResolvedValue(anon);
     const resolver = new VisitorResolver(repository);
 
     await resolver.resolveForConversation({
       workspaceId: "workspace-1",
-      anonymousSessionId: "anon-1",
+      visitorKey: "anon-1",
       verifiedCustomerId: "customer-new",
       observed: noObservation,
     });
@@ -119,13 +119,13 @@ describe("VisitorResolver.resolveForConversation", () => {
 
   it("inserts a new row when neither key resolves", async () => {
     const repository = buildRepository();
-    const created = buildVisitor({ anonymousSessionId: "anon-1" });
+    const created = buildVisitor({ visitorKey: "anon-1" });
     repository.insertOrGet.mockResolvedValue({ record: created, inserted: true });
     const resolver = new VisitorResolver(repository);
 
     const result = await resolver.resolveForConversation({
       workspaceId: "workspace-1",
-      anonymousSessionId: "anon-1",
+      visitorKey: "anon-1",
       verifiedCustomerId: null,
       observed: noObservation,
     });
@@ -136,13 +136,13 @@ describe("VisitorResolver.resolveForConversation", () => {
 
   it("records a second observation when a concurrent insert lost the race (User Story 2 scenario 4)", async () => {
     const repository = buildRepository();
-    const winner = buildVisitor({ anonymousSessionId: "anon-1", conversationCount: 1 });
+    const winner = buildVisitor({ visitorKey: "anon-1", conversationCount: 1 });
     repository.insertOrGet.mockResolvedValue({ record: winner, inserted: false });
     const resolver = new VisitorResolver(repository);
 
     const result = await resolver.resolveForConversation({
       workspaceId: "workspace-1",
-      anonymousSessionId: "anon-1",
+      visitorKey: "anon-1",
       verifiedCustomerId: null,
       observed: noObservation,
     });
@@ -155,8 +155,8 @@ describe("VisitorResolver.resolveForConversation", () => {
 describe("VisitorResolver.attachVerifiedIdentity", () => {
   it("scenario 1: upgrades an anonymous-only row when no row exists for the verified id", async () => {
     const repository = buildRepository();
-    const anon = buildVisitor({ anonymousSessionId: "anon-A", verifiedCustomerId: null });
-    repository.findByAnonymousSessionId.mockResolvedValue(anon);
+    const anon = buildVisitor({ visitorKey: "anon-A", verifiedCustomerId: null });
+    repository.findByVisitorKey.mockResolvedValue(anon);
     repository.findByVerifiedCustomerId.mockResolvedValue(null);
     const metrics = { incrementCounter: vi.fn() };
     const resolver = new VisitorResolver(repository, metrics);
@@ -164,7 +164,7 @@ describe("VisitorResolver.attachVerifiedIdentity", () => {
     const result = await resolver.attachVerifiedIdentity({
       conversationId: "conversation-1",
       workspaceId: "workspace-1",
-      anonymousSessionId: "anon-A",
+      visitorKey: "anon-A",
       verifiedCustomerId: "customer-C",
     });
 
@@ -179,16 +179,16 @@ describe("VisitorResolver.attachVerifiedIdentity", () => {
 
   it("scenario 2: moves the conversation to an existing verified row and leaves the anonymous row unchanged", async () => {
     const repository = buildRepository();
-    const anon = buildVisitor({ anonymousSessionId: "anon-A", verifiedCustomerId: null });
+    const anon = buildVisitor({ visitorKey: "anon-A", verifiedCustomerId: null });
     const verified = buildVisitor({ verifiedCustomerId: "customer-C" });
-    repository.findByAnonymousSessionId.mockResolvedValue(anon);
+    repository.findByVisitorKey.mockResolvedValue(anon);
     repository.findByVerifiedCustomerId.mockResolvedValue(verified);
     const resolver = new VisitorResolver(repository);
 
     const result = await resolver.attachVerifiedIdentity({
       conversationId: "conversation-1",
       workspaceId: "workspace-1",
-      anonymousSessionId: "anon-A",
+      visitorKey: "anon-A",
       verifiedCustomerId: "customer-C",
     });
 
@@ -204,9 +204,9 @@ describe("VisitorResolver.attachVerifiedIdentity", () => {
 
   it("scenario 3: moves the conversation to a freshly inserted row for a different verified id and never re-attaches", async () => {
     const repository = buildRepository();
-    const anon = buildVisitor({ anonymousSessionId: "anon-A", verifiedCustomerId: "customer-C" });
+    const anon = buildVisitor({ visitorKey: "anon-A", verifiedCustomerId: "customer-C" });
     const insertedForD = buildVisitor({ verifiedCustomerId: "customer-D" });
-    repository.findByAnonymousSessionId.mockResolvedValue(anon);
+    repository.findByVisitorKey.mockResolvedValue(anon);
     repository.findByVerifiedCustomerId.mockResolvedValue(null);
     repository.insertOrGet.mockResolvedValue({ record: insertedForD, inserted: true });
     const resolver = new VisitorResolver(repository);
@@ -214,7 +214,7 @@ describe("VisitorResolver.attachVerifiedIdentity", () => {
     const result = await resolver.attachVerifiedIdentity({
       conversationId: "conversation-1",
       workspaceId: "workspace-1",
-      anonymousSessionId: "anon-A",
+      visitorKey: "anon-A",
       verifiedCustomerId: "customer-D",
     });
 
@@ -233,8 +233,8 @@ describe("VisitorResolver.attachVerifiedIdentity", () => {
 
   it("scenario 4 (idempotent re-verify): reports unchanged when the anonymous and verified lookups already share a row", async () => {
     const repository = buildRepository();
-    const merged = buildVisitor({ anonymousSessionId: "anon-A", verifiedCustomerId: "customer-C" });
-    repository.findByAnonymousSessionId.mockResolvedValue(merged);
+    const merged = buildVisitor({ visitorKey: "anon-A", verifiedCustomerId: "customer-C" });
+    repository.findByVisitorKey.mockResolvedValue(merged);
     repository.findByVerifiedCustomerId.mockResolvedValue(merged);
     const metrics = { incrementCounter: vi.fn() };
     const resolver = new VisitorResolver(repository, metrics);
@@ -242,7 +242,7 @@ describe("VisitorResolver.attachVerifiedIdentity", () => {
     const result = await resolver.attachVerifiedIdentity({
       conversationId: "conversation-1",
       workspaceId: "workspace-1",
-      anonymousSessionId: "anon-A",
+      visitorKey: "anon-A",
       verifiedCustomerId: "customer-C",
     });
 
@@ -261,7 +261,7 @@ describe("VisitorResolver.attachVerifiedIdentity", () => {
     const result = await resolver.attachVerifiedIdentity({
       conversationId: "conversation-1",
       workspaceId: "workspace-1",
-      anonymousSessionId: null,
+      visitorKey: null,
       verifiedCustomerId: "customer-C",
     });
 

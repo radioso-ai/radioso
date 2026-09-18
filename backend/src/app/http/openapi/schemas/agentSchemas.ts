@@ -630,7 +630,6 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       workspaceName: z.string(),
       publicChatToken: z.string(),
       publicSessionId: z.string().uuid(),
-      anonymousSessionId: z.string().uuid(),
       publicSessionToken: z.string(),
       resumeToken: z.string(),
       assistantBootstrapActive: z.boolean(),

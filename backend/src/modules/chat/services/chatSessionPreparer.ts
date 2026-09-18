@@ -252,6 +252,13 @@ export interface PrepareChatSessionInput {
   requestContext?: ConversationRequestContext | null;
   /** Client-claimed referrer of the host page (FR-013); persisted once alongside `pageContext.pageUrl`. */
   entryReferrer?: string | null;
+  /**
+   * Unauthenticated, client-persisted visitor-grouping id from the verified public
+   * chat session payload (spec 1277 decision 6) — never a credential; falls back to
+   * `chatSessionId`/`anonymousSessionId` when a session carries none (API-channel and
+   * legacy sessions). Never present for a resumed conversation's later turns.
+   */
+  visitorKey?: string | null;
   precomputedRewriteProposal?: StructuredRewriteResult;
   agenticToolFactories?: ReadonlyArray<AgenticRetrievalToolFactory>;
   /** Ephemeral eval-only override; never persisted to workspace settings. */
@@ -409,7 +416,10 @@ export class ChatSessionPreparer {
       ? null
       : await this.resolveVisitorForNewConversation({
           workspaceId: input.workspaceId,
-          anonymousSessionId: chatSessionId,
+          // FR-008/decision 6: an unauthenticated, client-persisted grouping id —
+          // falls back to the per-session anonymous id (never a credential itself
+          // either) only when the client sent no separate visitor key at all.
+          visitorKey: input.visitorKey ?? chatSessionId,
           verifiedCustomerId: input.verifiedCustomerId ?? null,
           requestContext: input.requestContext ?? null,
           trustedTestRunner,
@@ -457,7 +467,7 @@ export class ChatSessionPreparer {
         await this.visitorResolver?.attachVerifiedIdentity({
           conversationId: conversation.id,
           workspaceId: input.workspaceId,
-          anonymousSessionId: chatSessionId,
+          visitorKey: input.visitorKey ?? chatSessionId,
           verifiedCustomerId: input.verifiedCustomerId,
         });
       }
@@ -1201,7 +1211,7 @@ export class ChatSessionPreparer {
    */
   private async resolveVisitorForNewConversation(input: {
     workspaceId: string;
-    anonymousSessionId: string | null;
+    visitorKey: string | null;
     verifiedCustomerId: string | null;
     requestContext: ConversationRequestContext | null;
     trustedTestRunner: boolean;
@@ -1209,12 +1219,12 @@ export class ChatSessionPreparer {
     if (input.trustedTestRunner || !this.visitorResolver) {
       return null;
     }
-    if (!input.anonymousSessionId && !input.verifiedCustomerId) {
+    if (!input.visitorKey && !input.verifiedCustomerId) {
       return null;
     }
     const { visitorId } = await this.visitorResolver.resolveForConversation({
       workspaceId: input.workspaceId,
-      anonymousSessionId: input.anonymousSessionId,
+      visitorKey: input.visitorKey,
       verifiedCustomerId: input.verifiedCustomerId,
       observed: {
         country: input.requestContext?.country ?? null,

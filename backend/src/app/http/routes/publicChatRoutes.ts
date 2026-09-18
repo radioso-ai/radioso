@@ -189,11 +189,9 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
     agentId: string;
     sourceChannel: "anonymous" | "website_embed";
     sourceOrigin: string | null;
-    /** FR-008: the launcher's localStorage-persisted anonymous id, used only when there is no resume token. */
-    clientProvidedSessionId?: string;
   }) => {
     if (!input.resume) {
-      return input.clientProvidedSessionId ?? randomUUID();
+      return randomUUID();
     }
 
     if (
@@ -206,6 +204,23 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
     }
 
     return input.resume.publicSessionId;
+  };
+  /**
+   * Spec 1277 decision 6: `visitorKey` is an unauthenticated, client-persisted
+   * grouping id — deliberately never usable to key or continue a *session* (that
+   * would let anyone holding a leaked/logged key, which is not secret, resume or
+   * read another visitor's conversations). A resume always keeps the resumed
+   * session's own visitor key; the client's bootstrap-body value is only honoured
+   * for a brand-new session that isn't resuming one.
+   */
+  const resolveVisitorKey = (input: {
+    resume: PublicChatResumePayload | null;
+    clientProvidedVisitorKey?: string;
+  }): string | null => {
+    if (input.resume) {
+      return input.resume.visitorKey ?? null;
+    }
+    return input.clientProvidedVisitorKey ?? null;
   };
 
   router.get(
@@ -370,8 +385,8 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
           agentId: agent.id,
           sourceChannel: "anonymous",
           sourceOrigin: null,
-          clientProvidedSessionId: req.body.anonymousSessionId,
         });
+        const visitorKey = resolveVisitorKey({ resume, clientProvidedVisitorKey: req.body.visitorKey });
         const session = issuePublicChatSession(sessionSecret, {
           workspaceId: workspace.id,
           agentId: agent.id,
@@ -379,6 +394,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
           publicSessionId,
           sourceChannel: "anonymous",
           sourceOrigin: null,
+          visitorKey,
         });
         if (grant) {
           await dependencies.accessGrantService.touchGrant(grant.id);
@@ -390,6 +406,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
           publicSessionId,
           sourceChannel: "anonymous",
           sourceOrigin: null,
+          visitorKey,
         });
 
         res.status(200).json(presentPublicChatSession({
@@ -546,8 +563,8 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
         agentId: agent.id,
         sourceChannel: "website_embed",
         sourceOrigin: origin,
-        clientProvidedSessionId: req.body.anonymousSessionId,
       });
+      const visitorKey = resolveVisitorKey({ resume, clientProvidedVisitorKey: req.body.visitorKey });
       const session = issuePublicChatSession(sessionSecret, {
         workspaceId: workspace.id,
         agentId: agent.id,
@@ -555,6 +572,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
         publicSessionId,
         sourceChannel: "website_embed",
         sourceOrigin: origin,
+        visitorKey,
       });
       const resumeSession = issuePublicChatResumeToken(sessionSecret, {
         workspaceId: workspace.id,
@@ -563,6 +581,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
         publicSessionId,
         sourceChannel: "website_embed",
         sourceOrigin: origin,
+        visitorKey,
       });
       if (grant) {
         await dependencies.accessGrantService.touchGrant(grant.id);
@@ -595,13 +614,14 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
     validateBody(anonymousChatSchema),
     async (req, res, next) => {
       try {
-        const { workspaceId, agentId, chatSessionId, sourceChannel, sourceOrigin, citationDisplayEnabled } = res.locals as {
+        const { workspaceId, agentId, chatSessionId, sourceChannel, sourceOrigin, citationDisplayEnabled, visitorKey } = res.locals as {
           workspaceId: string;
           agentId: string;
           chatSessionId: string;
           sourceChannel: string | null;
           sourceOrigin: string | null;
           citationDisplayEnabled: boolean;
+          visitorKey: string | null;
         };
         // `startConversation` requests the proactive greeting, which carries no
         // user message. If a message is also present, the caller is starting a
@@ -666,6 +686,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
             : undefined,
           requestContext,
           entryReferrer: req.body.pageContext?.referrer ?? null,
+          visitorKey,
         };
 
         if (input.stream) {

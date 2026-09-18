@@ -13,6 +13,17 @@ const publicChatSessionBasePayloadSchema = z.object({
   sourceChannel: z.enum(["anonymous", "website_embed"]),
   sourceOrigin: z.string().min(1).nullable(),
   expiresAt: z.string().datetime(),
+  /**
+   * Spec 1277 decision 6: an unauthenticated, client-persisted visitor-grouping
+   * id — separate from `publicSessionId` on purpose. It grants no session, no
+   * resume, and no history-read power; it only lets `VisitorResolver` group
+   * conversations under one operator-visible `visitors` row. Fixed for the life
+   * of a session: set from the client's bootstrap request only when there is no
+   * resume token, and carried unchanged (never client-overridable) across a
+   * resume. Not present on the MCP converse payload — that surface has no
+   * client-facing bootstrap for this to originate from.
+   */
+  visitorKey: z.string().uuid().nullable().optional(),
 });
 
 const converseChatSessionPayloadSchema = z.object({
@@ -35,7 +46,7 @@ const publicChatSessionPayloadSchema = z.union([
   }),
 ]);
 
-export type PublicChatSessionPayload = z.infer<typeof publicChatSessionPayloadSchema>;
+type PublicChatSessionPayload = z.infer<typeof publicChatSessionPayloadSchema>;
 export type ConverseChatSessionPayload = z.infer<typeof converseChatSessionPayloadSchema>;
 type PublicChatSessionClaims = z.infer<typeof publicChatSessionBasePayloadSchema>;
 type IssuePublicChatSessionInput = Omit<PublicChatSessionClaims, "expiresAt"> & {

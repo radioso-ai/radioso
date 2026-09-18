@@ -112,8 +112,9 @@ export const publicChatSessionSchema = z.object({
   agentId: z.string().uuid().optional(),
   resumeToken: z.string().min(1).optional(),
   chatSessionId: z.string().uuid().optional(),
-  // Accepted for older clients but no longer trusted as a resume credential.
-  anonymousSessionId: z.string().uuid().optional(),
+  // Spec 1277 decision 6: an unauthenticated, client-persisted visitor-grouping id
+  // (never a session credential) — see publicChatRoutes.ts's resolveVisitorKey.
+  visitorKey: z.string().uuid().optional(),
   pageContext: pageContextSchema,
   clientContextCapabilities: clientContextCapabilitiesSchema,
 });

@@ -7792,10 +7792,6 @@
             "type": "string",
             "format": "uuid"
           },
-          "anonymousSessionId": {
-            "type": "string",
-            "format": "uuid"
-          },
           "publicSessionToken": {
             "type": "string"
           },
@@ -7906,7 +7902,6 @@
           "workspaceName",
           "publicChatToken",
           "publicSessionId",
-          "anonymousSessionId",
           "publicSessionToken",
           "resumeToken",
           "assistantBootstrapActive",
@@ -7936,7 +7931,7 @@
             "type": "string",
             "format": "uuid"
           },
-          "anonymousSessionId": {
+          "visitorKey": {
             "type": "string",
             "format": "uuid"
           },
@@ -7977,6 +7972,12 @@
                   "null"
                 ],
                 "maxLength": 6000
+              },
+              "referrer": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               }
             }
           },
@@ -13945,6 +13946,12 @@
                   "null"
                 ],
                 "maxLength": 6000
+              },
+              "referrer": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               }
             }
           },

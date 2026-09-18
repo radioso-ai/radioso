@@ -107,11 +107,32 @@ describe("ChatSessionPreparer visitor resolution (spec 1277)", () => {
 
     expect(visitorResolver.resolveForConversation).toHaveBeenCalledWith({
       workspaceId: "ws-1",
-      anonymousSessionId: "anon-session-1",
+      visitorKey: "anon-session-1",
       verifiedCustomerId: null,
       observed: { country: null, language: null, userAgent: null },
     });
     expect(session.conversation.visitorId).toBe("visitor-123");
+  });
+
+  it("prefers an explicit visitorKey over the session's chatSessionId (spec 1277 decision 6)", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const agentRepository = new InMemoryAgentRepository();
+    const agent = await agentRepository.create("ws-1", { name: "Bot" });
+    const visitorResolver = buildVisitorResolverFake("visitor-789");
+    const preparer = buildPreparer(conversationRepository, messageRepository, agent, visitorResolver);
+
+    await preparer.prepare({
+      workspaceId: "ws-1",
+      agentId: agent.id,
+      query: "Hi",
+      chatSessionId: "anon-session-6",
+      visitorKey: "client-visitor-key-6",
+    });
+
+    expect(visitorResolver.resolveForConversation).toHaveBeenCalledWith(
+      expect.objectContaining({ visitorKey: "client-visitor-key-6" }),
+    );
   });
 
   it("derives observed facts from requestContext and persists requestContext + entryReferrer verbatim", async () => {
@@ -217,7 +238,7 @@ describe("ChatSessionPreparer visitor resolution (spec 1277)", () => {
     expect(visitorResolver.attachVerifiedIdentity).toHaveBeenCalledWith({
       conversationId: existing.id,
       workspaceId: "ws-1",
-      anonymousSessionId: "anon-session-4",
+      visitorKey: "anon-session-4",
       verifiedCustomerId: "customer-1",
     });
     expect(visitorResolver.resolveForConversation).not.toHaveBeenCalled();

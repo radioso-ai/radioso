@@ -40,43 +40,43 @@ describeIntegration("VisitorResolver (Postgres)", () => {
   });
 
   it("resolves two concurrent brand-new-anonymous-id conversations to exactly one visitor row (User Story 2 scenario 4)", async () => {
-    const anonymousSessionId = `anon-concurrent-${randomUUID()}`;
+    const visitorKey = `anon-concurrent-${randomUUID()}`;
     const observed = { country: null, language: null, userAgent: null };
 
     const [first, second] = await Promise.all([
-      resolver.resolveForConversation({ workspaceId, anonymousSessionId, verifiedCustomerId: null, observed }),
-      resolver.resolveForConversation({ workspaceId, anonymousSessionId, verifiedCustomerId: null, observed }),
+      resolver.resolveForConversation({ workspaceId, visitorKey, verifiedCustomerId: null, observed }),
+      resolver.resolveForConversation({ workspaceId, visitorKey, verifiedCustomerId: null, observed }),
     ]);
 
     expect(first.visitorId).toBe(second.visitorId);
 
     const rows = await database.query<{ id: string; conversation_count: number }>(
-      "SELECT id, conversation_count FROM visitors WHERE workspace_id = $1 AND anonymous_session_id = $2",
-      [workspaceId, anonymousSessionId],
+      "SELECT id, conversation_count FROM visitors WHERE workspace_id = $1 AND visitor_key = $2",
+      [workspaceId, visitorKey],
     );
     expect(rows).toHaveLength(1);
     expect(Number(rows[0].conversation_count)).toBe(2);
   });
 
   it("upgrades an anonymous-only visitor in place, then a later different verified id moves the conversation without re-attaching", async () => {
-    const anonymousSessionId = `anon-story2-${randomUUID()}`;
+    const visitorKey = `anon-story2-${randomUUID()}`;
     await resolver.resolveForConversation({
       workspaceId,
-      anonymousSessionId,
+      visitorKey,
       verifiedCustomerId: null,
       observed: { country: null, language: null, userAgent: null },
     });
 
     const conversationId = randomUUID();
     const [anonRow] = await database.query<{ id: string }>(
-      "SELECT id FROM visitors WHERE workspace_id = $1 AND anonymous_session_id = $2",
-      [workspaceId, anonymousSessionId],
+      "SELECT id FROM visitors WHERE workspace_id = $1 AND visitor_key = $2",
+      [workspaceId, visitorKey],
     );
 
     const upgraded = await resolver.attachVerifiedIdentity({
       conversationId,
       workspaceId,
-      anonymousSessionId,
+      visitorKey,
       verifiedCustomerId: "customer-story2-c",
     });
     expect(upgraded.outcome).toBe("upgraded");
@@ -89,7 +89,7 @@ describeIntegration("VisitorResolver (Postgres)", () => {
     const moved = await resolver.attachVerifiedIdentity({
       conversationId,
       workspaceId,
-      anonymousSessionId,
+      visitorKey,
       verifiedCustomerId: "customer-story2-d",
     });
     expect(moved.outcome).toBe("moved_new");

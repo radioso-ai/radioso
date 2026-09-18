@@ -6,7 +6,7 @@ import type { Db } from "../../shared/infra/kysely/types.js";
 export interface VisitorRecord {
   id: string;
   workspaceId: string;
-  anonymousSessionId: string | null;
+  visitorKey: string | null;
   verifiedCustomerId: string | null;
   firstSeenAt: Date;
   lastSeenAt: Date;
@@ -27,7 +27,7 @@ export interface VisitorObservedFacts {
 
 export interface InsertOrGetVisitorInput {
   workspaceId: string;
-  anonymousSessionId?: string | null;
+  visitorKey?: string | null;
   verifiedCustomerId?: string | null;
   observed: VisitorObservedFacts;
 }
@@ -47,9 +47,9 @@ export interface MoveConversationBetweenVisitorsInput {
  */
 export interface VisitorRepositoryPort {
   findByVerifiedCustomerId(workspaceId: string, verifiedCustomerId: string): Promise<VisitorRecord | null>;
-  findByAnonymousSessionId(workspaceId: string, anonymousSessionId: string): Promise<VisitorRecord | null>;
+  findByVisitorKey(workspaceId: string, visitorKey: string): Promise<VisitorRecord | null>;
   /**
-   * Inserts a new visitor row keyed by whichever of `anonymousSessionId` /
+   * Inserts a new visitor row keyed by whichever of `visitorKey` /
    * `verifiedCustomerId` is present (both, when both are fresh), or returns the
    * row an ON CONFLICT DO NOTHING lost to, re-selected. `inserted: false` tells
    * the caller the returned row's counters were not seeded by this call, so a
@@ -71,7 +71,7 @@ export interface VisitorRepositoryPort {
 interface VisitorRow {
   id: string;
   workspace_id: string;
-  anonymous_session_id: string | null;
+  visitor_key: string | null;
   verified_customer_id: string | null;
   first_seen_at: Date;
   last_seen_at: Date;
@@ -86,7 +86,7 @@ interface VisitorRow {
 const visitorColumns = [
   "id",
   "workspace_id",
-  "anonymous_session_id",
+  "visitor_key",
   "verified_customer_id",
   "first_seen_at",
   "last_seen_at",
@@ -101,7 +101,7 @@ const visitorColumns = [
 const mapVisitor = (row: VisitorRow): VisitorRecord => ({
   id: row.id,
   workspaceId: row.workspace_id,
-  anonymousSessionId: row.anonymous_session_id,
+  visitorKey: row.visitor_key,
   verifiedCustomerId: row.verified_customer_id,
   firstSeenAt: new Date(row.first_seen_at),
   lastSeenAt: new Date(row.last_seen_at),
@@ -126,25 +126,25 @@ export class VisitorRepository implements VisitorRepositoryPort {
     return row ? mapVisitor(row) : null;
   }
 
-  async findByAnonymousSessionId(workspaceId: string, anonymousSessionId: string): Promise<VisitorRecord | null> {
+  async findByVisitorKey(workspaceId: string, visitorKey: string): Promise<VisitorRecord | null> {
     const row = await this.db
       .selectFrom("visitors")
       .select(visitorColumns)
       .where("workspace_id", "=", workspaceId)
-      .where("anonymous_session_id", "=", anonymousSessionId)
+      .where("visitor_key", "=", visitorKey)
       .executeTakeFirst();
     return row ? mapVisitor(row) : null;
   }
 
   async insertOrGet(input: InsertOrGetVisitorInput): Promise<{ record: VisitorRecord; inserted: boolean }> {
     // The conflict target must name one partial unique index (Postgres allows only
-    // one per ON CONFLICT clause). An anonymous id is the primary key when present —
+    // one per ON CONFLICT clause). A visitor key is the primary key when present —
     // it is the concurrency case a brand-new conversation actually races on
     // (User Story 2 scenario 4); a verified-only insert conflicts on the other index.
-    const conflictColumn = input.anonymousSessionId ? "anonymous_session_id" as const : "verified_customer_id" as const;
-    const conflictValue = input.anonymousSessionId ?? input.verifiedCustomerId;
+    const conflictColumn = input.visitorKey ? "visitor_key" as const : "verified_customer_id" as const;
+    const conflictValue = input.visitorKey ?? input.verifiedCustomerId;
     if (!conflictValue) {
-      throw new Error("visitor_insert_requires_anonymous_or_verified_key");
+      throw new Error("visitor_insert_requires_visitor_key_or_verified_key");
     }
 
     const now = currentTimestamp();
@@ -153,7 +153,7 @@ export class VisitorRepository implements VisitorRepositoryPort {
       .values({
         id: randomUUID(),
         workspace_id: input.workspaceId,
-        anonymous_session_id: input.anonymousSessionId ?? null,
+        visitor_key: input.visitorKey ?? null,
         verified_customer_id: input.verifiedCustomerId ?? null,
         first_seen_at: now,
         last_seen_at: now,

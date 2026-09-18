@@ -6,7 +6,7 @@ import type { MetricsRegistry } from "../../../shared/observability/metrics/metr
 
 interface ResolveVisitorForConversationInput {
   workspaceId: string;
-  anonymousSessionId: string | null;
+  visitorKey: string | null;
   verifiedCustomerId: string | null;
   observed: VisitorObservedFacts;
 }
@@ -18,7 +18,7 @@ interface ResolveVisitorForConversationResult {
 interface AttachVerifiedIdentityInput {
   conversationId: string;
   workspaceId: string;
-  anonymousSessionId: string | null;
+  visitorKey: string | null;
   verifiedCustomerId: string;
 }
 
@@ -39,11 +39,20 @@ export interface VisitorResolverPort {
 
 /**
  * Identity-resolution rules for the `visitors` entity (spec 1277, FR-003/FR-004):
- * a verified id beats an anonymous id, an anonymous visitor upgrades in place the
+ * a verified id beats a visitor key, an anonymous visitor upgrades in place the
  * first time it verifies, and a later, different verified id moves the
  * conversation to that identity's own row without touching — or re-attaching —
- * the anonymous id. The repository holds no rule; every branch below is the
+ * the visitor key. The repository holds no rule; every branch below is the
  * exhaustive description of what "resolve" and "attach" mean.
+ *
+ * `visitorKey` is a client-persisted, unauthenticated grouping id (spec 1277
+ * decision 6, FR-008) — never a credential. It carries no session, no resume,
+ * and no history-read power: it is not bound into the signed public chat
+ * session payload's trust boundary at all, only recorded on `visitors` for
+ * operators. Anyone who learns another visitor's key can, at most, make their
+ * own brand-new conversation appear grouped under that visitor's row in the
+ * operator drawer — they gain no access to read, resume, or continue any
+ * conversation that already exists there.
  */
 export class VisitorResolver implements VisitorResolverPort {
   constructor(
@@ -62,8 +71,8 @@ export class VisitorResolver implements VisitorResolverPort {
       }
     }
 
-    if (input.anonymousSessionId) {
-      const anon = await this.repository.findByAnonymousSessionId(input.workspaceId, input.anonymousSessionId);
+    if (input.visitorKey) {
+      const anon = await this.repository.findByVisitorKey(input.workspaceId, input.visitorKey);
       if (anon) {
         if (input.verifiedCustomerId && !anon.verifiedCustomerId) {
           await this.repository.upgradeToVerified(anon.id, input.verifiedCustomerId);
@@ -75,11 +84,11 @@ export class VisitorResolver implements VisitorResolverPort {
 
     // Neither key resolved to an existing row: insert. Both known keys ride on
     // the new row when both are fresh; see insertOrGet's conflict-target note
-    // for the (rare, undetected) race this leaves between a fresh anonymous id
+    // for the (rare, undetected) race this leaves between a fresh visitor key
     // and a verified id that lands concurrently on its own row.
     const { record, inserted } = await this.repository.insertOrGet({
       workspaceId: input.workspaceId,
-      anonymousSessionId: input.anonymousSessionId,
+      visitorKey: input.visitorKey,
       verifiedCustomerId: input.verifiedCustomerId,
       observed: input.observed,
     });
@@ -93,8 +102,8 @@ export class VisitorResolver implements VisitorResolverPort {
   }
 
   async attachVerifiedIdentity(input: AttachVerifiedIdentityInput): Promise<AttachVerifiedIdentityResult> {
-    const anonRow = input.anonymousSessionId
-      ? await this.repository.findByAnonymousSessionId(input.workspaceId, input.anonymousSessionId)
+    const anonRow = input.visitorKey
+      ? await this.repository.findByVisitorKey(input.workspaceId, input.visitorKey)
       : null;
     const verifiedRow = await this.repository.findByVerifiedCustomerId(input.workspaceId, input.verifiedCustomerId);
 

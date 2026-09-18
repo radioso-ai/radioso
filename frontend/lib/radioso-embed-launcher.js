@@ -1074,11 +1074,13 @@
     if (options && typeof options.resumeToken === 'string') {
       bodyPayload.resumeToken = options.resumeToken
     }
-    // FR-008: a durable per-browser id (localStorage), sent alongside — never
-    // instead of — the per-tab resume token above, so a brand-new tab that has
-    // no resume token yet still links to the same visitor.
-    if (options && typeof options.anonymousSessionId === 'string') {
-      bodyPayload.anonymousSessionId = options.anonymousSessionId
+    // FR-008/spec 1277 decision 6: a durable per-browser, client-generated
+    // grouping id (localStorage), sent alongside — never instead of — the
+    // per-tab resume token above, so a brand-new tab that has no resume token
+    // yet still groups under the same visitor for an operator. It carries no
+    // session power: the backend never uses it to key or continue a session.
+    if (options && typeof options.visitorKey === 'string') {
+      bodyPayload.visitorKey = options.visitorKey
     }
     const body = Object.keys(bodyPayload).length > 0 ? JSON.stringify(bodyPayload) : undefined
     const response = await fetch(new URL(`/api/embed/session/${encodeURIComponent(token)}`, scriptUrl).toString(), {
@@ -1106,31 +1108,40 @@
     error.code === 'bad_request' &&
     error.message === 'Invalid public chat session request'
 
-  // FR-008: scoped by embed token (and implicitly by host origin, since
-  // localStorage is already origin-scoped) so distinct embeds on the same page
-  // never share one visitor id.
-  const anonymousSessionStorageKey = (token) => `radioso:embed:anon:${token}`
+  // FR-008/spec 1277 decision 6: scoped by embed token (and implicitly by host
+  // origin, since localStorage is already origin-scoped) so distinct embeds on
+  // the same page never share one visitor key. The launcher — never the
+  // backend — mints this id: it is a pure grouping label, not a credential,
+  // so there is nothing for the server to hand back or verify.
+  const visitorKeyStorageKey = (token) => `radioso:embed:visitor:${token}`
 
   const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-  const readStoredAnonymousSessionId = (token) => {
-    const value = safeLocalStorage.get(anonymousSessionStorageKey(token))
-    return typeof value === 'string' && UUID_PATTERN.test(value) ? value : null
-  }
-
-  const storeAnonymousSessionId = (token, anonymousSessionId) => {
-    if (typeof anonymousSessionId !== 'string' || !UUID_PATTERN.test(anonymousSessionId)) {
-      return
+  // Reads the stored key; if none is stored yet and localStorage genuinely works
+  // (re-read after write to confirm — a blocked/quota-exceeded store fails
+  // silently and must not be reported as durable), mints one with
+  // crypto.randomUUID() and persists it. Returns null — never sends a key —
+  // when storage isn't available or randomUUID doesn't exist (FR-009): a key
+  // that cannot persist across tabs would just be regenerated every bootstrap.
+  const readOrCreateVisitorKey = (token) => {
+    const storageKey = visitorKeyStorageKey(token)
+    const existing = safeLocalStorage.get(storageKey)
+    if (typeof existing === 'string' && UUID_PATTERN.test(existing)) {
+      return existing
     }
-    safeLocalStorage.set(anonymousSessionStorageKey(token), anonymousSessionId)
+    if (!window.crypto || typeof window.crypto.randomUUID !== 'function') {
+      return null
+    }
+    const generated = window.crypto.randomUUID()
+    safeLocalStorage.set(storageKey, generated)
+    return safeLocalStorage.get(storageKey) === generated ? generated : null
   }
 
   const bootstrapEmbeddedSessionWithResumeFallback = async (scriptUrl, token, storageKey) => {
     const resumeToken = readStoredResumeToken(storageKey)
-    const anonymousSessionId = readStoredAnonymousSessionId(token)
+    const visitorKey = readOrCreateVisitorKey(token)
     try {
-      const session = await bootstrapEmbeddedSession(scriptUrl, token, { resumeToken, anonymousSessionId })
-      storeAnonymousSessionId(token, session.anonymousSessionId)
+      const session = await bootstrapEmbeddedSession(scriptUrl, token, { resumeToken, visitorKey })
       return { session, resumed: Boolean(resumeToken) }
     } catch (error) {
       if (!resumeToken || !isInvalidResumeSessionError(error)) {
@@ -1138,8 +1149,7 @@
       }
 
       safeStorage.remove(storageKey)
-      const session = await bootstrapEmbeddedSession(scriptUrl, token, { anonymousSessionId })
-      storeAnonymousSessionId(token, session.anonymousSessionId)
+      const session = await bootstrapEmbeddedSession(scriptUrl, token, { visitorKey })
       return { session, resumed: false }
     }
   }

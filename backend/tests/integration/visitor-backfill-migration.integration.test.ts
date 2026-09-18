@@ -166,7 +166,7 @@ describeIfDatabase("visitors backfill migration (192)", () => {
       last_seen_at: Date;
       verified_customer_id: string | null;
     }>(
-      "SELECT id, conversation_count, first_seen_at, last_seen_at, verified_customer_id FROM visitors WHERE workspace_id = $1 AND anonymous_session_id = $2",
+      "SELECT id, conversation_count, first_seen_at, last_seen_at, verified_customer_id FROM visitors WHERE workspace_id = $1 AND visitor_key = $2",
       [workspaceId, "anon-only"],
     );
     expect(anonOnlyVisitor).toHaveLength(1);
@@ -180,9 +180,9 @@ describeIfDatabase("visitors backfill migration (192)", () => {
       conversation_count: number;
       first_seen_at: Date;
       last_seen_at: Date;
-      anonymous_session_id: string | null;
+      visitor_key: string | null;
     }>(
-      "SELECT id, conversation_count, first_seen_at, last_seen_at, anonymous_session_id FROM visitors WHERE workspace_id = $1 AND verified_customer_id = $2",
+      "SELECT id, conversation_count, first_seen_at, last_seen_at, visitor_key FROM visitors WHERE workspace_id = $1 AND verified_customer_id = $2",
       [workspaceId, "customer-upgraded"],
     );
     expect(upgradedVisitor).toHaveLength(1);
@@ -193,7 +193,7 @@ describeIfDatabase("visitors backfill migration (192)", () => {
     expect(new Date(upgradedVisitor[0].last_seen_at).toISOString()).toBe("2026-01-04T00:00:00.000Z");
     // No separate anonymous-keyed visitor was created for the anon id that was later verified.
     const strandedAnonVisitor = await database.query(
-      "SELECT id FROM visitors WHERE workspace_id = $1 AND anonymous_session_id = $2",
+      "SELECT id FROM visitors WHERE workspace_id = $1 AND visitor_key = $2",
       [workspaceId, "anon-upgraded"],
     );
     expect(strandedAnonVisitor).toHaveLength(0);
@@ -235,7 +235,7 @@ describeIfDatabase("visitors backfill migration (192)", () => {
     );
     const visitorId = randomUUID();
     await database.execute(
-      "INSERT INTO visitors(id, workspace_id, anonymous_session_id) VALUES ($1, $2, 'anon-delete-me')",
+      "INSERT INTO visitors(id, workspace_id, visitor_key) VALUES ($1, $2, 'anon-delete-me')",
       [visitorId, workspaceId],
     );
     const conversationId = randomUUID();

@@ -591,11 +591,14 @@ Related specs and issues:
 
 ## Visitors
 
-Owns the `visitors` entity: a workspace-scoped person keyed by a durable
-anonymous session id and/or a host-verified customer id, with first/last seen,
-a conversation count, and the latest observed country/language/user agent.
-`VisitorResolver` holds the identity-resolution rules (verified beats
-anonymous, upgrade-in-place vs. move, never re-attach an anonymous id to a
+Owns the `visitors` entity: a workspace-scoped person keyed by a durable,
+client-persisted `visitor_key` and/or a host-verified customer id, with
+first/last seen, a conversation count, and the latest observed
+country/language/user agent. `visitor_key` is an unauthenticated grouping id
+only — it carries no session, resume, or history-read power, and is a
+separate claim from `publicSessionId` in the signed public chat session
+payload. `VisitorResolver` holds the identity-resolution rules (verified beats
+a visitor key, upgrade-in-place vs. move, never re-attach a visitor key to a
 second verified id); `VisitorRepository` holds only named persistence
 primitives. `ChatSessionPreparer` resolves a visitor before creating a new
 conversation and calls `attachVerifiedIdentity` at a conversation's first

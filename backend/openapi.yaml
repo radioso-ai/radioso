@@ -5213,9 +5213,6 @@ components:
         publicSessionId:
           type: string
           format: uuid
-        anonymousSessionId:
-          type: string
-          format: uuid
         publicSessionToken:
           type: string
         resumeToken:
@@ -5292,7 +5289,6 @@ components:
         - workspaceName
         - publicChatToken
         - publicSessionId
-        - anonymousSessionId
         - publicSessionToken
         - resumeToken
         - assistantBootstrapActive
@@ -5315,7 +5311,7 @@ components:
         chatSessionId:
           type: string
           format: uuid
-        anonymousSessionId:
+        visitorKey:
           type: string
           format: uuid
         pageContext:
@@ -5346,6 +5342,10 @@ components:
                 - string
                 - "null"
               maxLength: 6000
+            referrer:
+              type:
+                - string
+                - "null"
         clientContextCapabilities:
           type: object
           properties:
@@ -9393,6 +9393,10 @@ components:
                 - string
                 - "null"
               maxLength: 6000
+            referrer:
+              type:
+                - string
+                - "null"
         clientContextCapabilities:
           type: object
           properties:

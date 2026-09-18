@@ -23,6 +23,7 @@ import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalida
 import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
 import type { BootstrapGreetingCacheRepositoryPort } from "../../../db/repositories/bootstrapGreetingCacheRepository.js";
 import type { AuditService } from "../../audit/contracts/index.js";
+import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import type { ResponseIdentity } from "../../../shared/domain/responseIdentity.js";
 import type {
   AgenticRetrievalToolFactory,
@@ -336,6 +337,7 @@ export class ChatSessionPreparer {
     private readonly agentRevisionRuntimeResolver?: AgentRevisionRuntimeResolver,
     /** Optional: when wired, resolves the `visitors` row a new conversation belongs to (spec 1277). */
     private readonly visitorResolver?: VisitorResolverPort,
+    private readonly metrics?: Pick<MetricsRegistry, "incrementCounter"> | null,
   ) {}
 
   async prepare(input: PrepareChatSessionInput, options: PrepareChatSessionOptions = {}): Promise<PreparedSession> {
@@ -428,6 +430,9 @@ export class ChatSessionPreparer {
         ...(revisionResolved.revisionId ? { agentRevisionId: revisionResolved.revisionId } : {}),
         ...(trustedTestRunner ? { purpose: "operator_test" as const } : {}),
       });
+    if (!conversation && !trustedTestRunner && input.requestContext) {
+      this.recordRequestContextObserved(input.requestContext.observedVia);
+    }
     if (conversation && !conversation.agentRevisionId && revisionResolved.revisionId) {
       if (!this.conversationRepository.bindAgentRevision) {
         throw conversationRevisionBindingUnavailable();
@@ -1218,6 +1223,14 @@ export class ChatSessionPreparer {
       },
     });
     return visitorId;
+  }
+
+  /** Spec 1277 Observability: provenance of a new conversation's request facts. */
+  private recordRequestContextObserved(observedVia: ConversationRequestContext["observedVia"]): void {
+    this.metrics?.incrementCounter("visitor_request_context_observed_total", {
+      help: "Conversation request-context provenance recorded at creation.",
+      labels: { observedVia },
+    });
   }
 
   private async loadRewriteContinuityState(

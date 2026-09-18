@@ -14,6 +14,7 @@ import type {
   ConversationTrace,
   ClarificationCandidate,
   ConversationChannelContext,
+  ConversationRequestContext,
   ClarificationPolicy,
   RecentClarificationReader,
   RoutineActionRequest,
@@ -278,6 +279,8 @@ interface ChatAnswerInput {
   inputMetadata?: UserMessageInputMetadata;
   metadataFilter?: Record<string, unknown>;
   pageContext?: AssistantPageContext | null;
+  /** Edge-observed facts for this turn's first message (spec 1277); ignored for a resumed conversation. */
+  requestContext?: ConversationRequestContext | null;
   clientContextCapabilities?: AssistantClientContextCapabilities;
   sourceChannel?: string | null;
   channelContext?: ConversationChannelContext | null;
@@ -452,6 +455,7 @@ export class ChatService {
       workspaceInvalidationPublisher,
       agentRevisionRuntimeResolver,
       visitorResolver,
+      turnRuntime.metrics,
     );
     this.chatTurnAssembly = turnAssemblyFactory?.create({
       chatSessionPreparer: this.chatSessionPreparer,
@@ -1219,6 +1223,8 @@ export class ChatService {
     inputMetadata?: UserMessageInputMetadata;
     metadataFilter?: Record<string, unknown>;
     pageContext?: AssistantPageContext | null;
+  /** Edge-observed facts for this turn's first message (spec 1277); ignored for a resumed conversation. */
+  requestContext?: ConversationRequestContext | null;
     clientContextCapabilities?: AssistantClientContextCapabilities;
     sourceChannel?: string | null;
     channelContext?: ConversationChannelContext | null;
@@ -1267,6 +1273,8 @@ export class ChatService {
     inputMetadata?: UserMessageInputMetadata;
     metadataFilter?: Record<string, unknown>;
     pageContext?: AssistantPageContext | null;
+  /** Edge-observed facts for this turn's first message (spec 1277); ignored for a resumed conversation. */
+  requestContext?: ConversationRequestContext | null;
     clientContextCapabilities?: AssistantClientContextCapabilities;
     sourceChannel?: string | null;
     channelContext?: ConversationChannelContext | null;

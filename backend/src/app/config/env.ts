@@ -190,6 +190,15 @@ const envSchema = z.object({
   EXTERNAL_MCP_TOOL_CALL_TIMEOUT_MS: z.coerce.number().int().positive().max(90_000).default(30_000),
   RADIOSO_MCP_SIGNING_SECRET: emptyStringToUndefined(z.string().min(32)),
   RADIOSO_TRUSTED_PROXY_HOPS: z.coerce.number().int().min(0).max(10).default(0),
+  // Spec 1277 (FR-020/FR-050): shared with the frontend proxy so both ends of the
+  // `@radioso/edge-proof` envelope agree on a secret. Optional — unconfigured means
+  // an edge marker can never verify (`observedVia: "unproven"`), never a forged fact.
+  RADIOSO_EDGE_PROOF_SECRET: emptyStringToUndefined(z.string().min(32)),
+  // FR-024: operator overrides for VisitorGeoResolver precedence; header names are
+  // protocol identifiers, so they are normalised the same way the values they name are read.
+  VISITOR_GEO_COUNTRY_HEADER: emptyStringToUndefined(z.string().min(1).transform((value) => value.toLowerCase())),
+  VISITOR_GEO_REGION_HEADER: emptyStringToUndefined(z.string().min(1).transform((value) => value.toLowerCase())),
+  VISITOR_GEO_CITY_HEADER: emptyStringToUndefined(z.string().min(1).transform((value) => value.toLowerCase())),
   OPERATOR_MCP_RESOURCE_URL: emptyStringToUndefined(z.string().url()),
   OPERATOR_MCP_ISSUER_URL: emptyStringToUndefined(z.string().url()),
   OPERATOR_MCP_INTERNAL_SECRET: emptyStringToUndefined(z.string().min(32)),

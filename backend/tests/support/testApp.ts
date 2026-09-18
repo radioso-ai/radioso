@@ -1,4 +1,5 @@
 import { createAgentBundleServices } from "../../src/app/composition/agentBundleComposition.js";
+import { createDefaultVisitorGeoResolver } from "../../src/app/composition/visitorGeoResolver.js";
 import { InMemoryAgentBundleImportRepository } from "./inMemoryAgentBundleImports.js";
 import { setTimeout as delay } from "node:timers/promises";
 
@@ -2479,6 +2480,7 @@ export const createTestDependencies = (overrides: {
     assertPublicWebsiteUrl: async () => {},
     websiteCrawlerLimits,
     agentWizardService,
+    visitorGeoResolver: createDefaultVisitorGeoResolver(env),
   };
 
   void connectorRegistry.initializeAll({

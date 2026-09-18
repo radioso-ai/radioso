@@ -42,6 +42,7 @@ import {
   websiteEmbedLaunchAllowedAuditEvent,
   websiteEmbedLaunchDeniedAuditEvent,
 } from "../presenters/publicChatPresenter.js";
+import { recordEdgeFactsProofRejected, resolveConversationRequestContext } from "../shared/conversationRequestContext.js";
 
 type PublicChatRouteDependencies = AnonymousRateLimiterDependencies & Pick<
   AppDependencies,
@@ -58,6 +59,8 @@ type PublicChatRouteDependencies = AnonymousRateLimiterDependencies & Pick<
   | "documentStorage"
   | "identityNonceRepository"
   | "logger"
+  | "metricsRegistry"
+  | "visitorGeoResolver"
   | "workspaceRepository"
   | "accountAccessService"
   | "accessGrantService"
@@ -634,6 +637,10 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
           chatSessionId,
           sourceOrigin,
         });
+        const { context: requestContext, rejection } = resolveConversationRequestContext(dependencies, req);
+        if (rejection) {
+          recordEdgeFactsProofRejected(dependencies, rejection, req);
+        }
 
         const input = {
           workspaceId,
@@ -653,6 +660,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
           verifiedIdentity: verifiedIdentity
             ? { customerId: verifiedIdentity.customerId, ...verifiedIdentity.attributes }
             : undefined,
+          requestContext,
         };
 
         if (input.stream) {

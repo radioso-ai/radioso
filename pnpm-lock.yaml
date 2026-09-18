@@ -130,6 +130,9 @@ importers:
       '@radioso/document-parser':
         specifier: workspace:*
         version: link:../packages/document-parser
+      '@radioso/edge-proof':
+        specifier: workspace:*
+        version: link:../packages/edge-proof
       '@radioso/mcp-server':
         specifier: workspace:*
         version: link:../packages/radioso-mcp-server

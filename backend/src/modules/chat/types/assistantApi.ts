@@ -1,6 +1,6 @@
 import type { ChatStreamEvent } from "../contracts/streamEvents.js";
 import type { ChatBootstrapResponse, ChatResponse } from "./chatResponses.js";
-import type { ConversationChannelContext } from "@radioso/conversation-contract";
+import type { ConversationChannelContext, ConversationRequestContext } from "@radioso/conversation-contract";
 import type { PageReadCapability } from "../services/pageRead/pageReadDecision.js";
 
 export type AssistantRouteType = "direct" | "retrieval";
@@ -63,6 +63,8 @@ export interface AssistantChatRequest {
   clientContextCapabilities?: AssistantClientContextCapabilities;
   verifiedCustomerId?: string | null;
   verifiedIdentity?: Record<string, unknown> | null;
+  /** Edge-observed facts for this turn's first message (spec 1277); ignored for a resumed conversation. */
+  requestContext?: ConversationRequestContext | null;
   /**
    * Operator-only workbench test override: routine definition ids (drafts included)
    * to make eligible for this turn. Set only by the authenticated workbench chat so an

@@ -84,7 +84,8 @@ Composition wires the geo adapter and the proof secret; no domain module reads
    `google_compute_backend_service.frontend_app` (`infra/terraform/cdn.tf`) —
    a separate infra PR, because live/live-eu applies are drift-sensitive. Self-
    hosted: Cloudflare (`CF-IPCountry`) and similar well-known headers work with
-   no configuration; anything else is one env var. No GeoIP database ships.
+   no configuration; any other proxy renames its header to `x-client-region`
+   at the proxy. No GeoIP database ships and nothing is configurable.
 5. **A `visitors` entity exists** rather than a derived query over two string
    columns, because this is the moment it earns its keep: one join for previous
    conversations, one place the drawer reads, a merge point when an anonymous
@@ -186,18 +187,19 @@ directive matched and the redacted snapshot shows `visitor_request.country =
 3. **Given** any surface that renders the snapshot (trace, drawer, evals),
    **then** neither `clientIp` nor `userAgent` appears.
 
-### User Story 4 — Self-hosted operator gets country with one setting (Priority: P3)
+### User Story 4 — Self-hosted operator gets country with no setting (Priority: P3)
 
-A self-hosted operator behind Cloudflare sees country populated without
-configuration; one behind a custom proxy sets `VISITOR_GEO_COUNTRY_HEADER` and
-sees it on the next conversation.
+A self-hosted operator behind Cloudflare, Vercel, App Engine or a GCP load
+balancer sees country populated without configuration; one behind a custom
+proxy has that proxy emit `x-client-region` and sees it on the next
+conversation.
 
 **Acceptance scenarios**:
 
-1. **Given** `CF-IPCountry: NL` on the proxied request and no env override,
-   **then** `country = "NL"`.
-2. **Given** `VISITOR_GEO_COUNTRY_HEADER=X-Geo` and `X-Geo: FR`, **then**
-   `country = "FR"` and the override wins over well-known headers.
+1. **Given** `CF-IPCountry: NL` on the proxied request, **then**
+   `country = "NL"`.
+2. **Given** both `x-client-region: FR` and `cf-ipcountry: NL`, **then**
+   `country = "FR"` (GCP precedence wins).
 3. **Given** no geo header at all, **then** `country = null` and the drawer
    shows the field as unknown rather than omitting the panel.
 
@@ -301,13 +303,12 @@ sees it on the next conversation.
   its own commit before the behaviour change.
 - **FR-021** The two frontend proxy routes always send `x-radioso-edge:
   frontend`; when the secret is configured they also send the proof headers.
-  The client address at the edge is resolved from the LB-appended
-  `X-Forwarded-For` suffix using the frontend's own `RADIOSO_TRUSTED_PROXY_HOPS`
-  (same suffix rule as `resolveSourceDigest`, returning the address; the rule
-  moves into `@radioso/edge-proof` so both ends share it), falling back to the
-  socket address. The frontend has no validated env module today; these routes
-  read the variables through one small `frontend/lib/server/edge-env.ts`
-  helper rather than inline `process.env`.
+  The frontend does not resolve the client address; the envelope carries the
+  raw `X-Forwarded-For` value (capped 1024 chars) and the backend applies the
+  suffix rule (`resolveTrustedForwardedAddress` in `@radioso/edge-proof`) with
+  its own pre-existing `RADIOSO_TRUSTED_PROXY_HOPS`. The frontend reads its one
+  variable through `frontend/lib/server/edge-env.ts` rather than inline
+  `process.env`.
 - **FR-022** `geoHeaders` at the edge = the well-known set (`x-client-region`,
   `x-client-city`, `cf-ipcountry`, `x-appengine-country`, `x-vercel-ip-country`,
   `x-vercel-ip-country-region`, `x-vercel-ip-city`). Header names are protocol
@@ -434,9 +435,9 @@ sees it on the next conversation.
   the same primitive.
 - Load balancers append to `X-Forwarded-For` rather than replace it, so
   caller-supplied prefixes are untrusted; only the last
-  `RADIOSO_TRUSTED_PROXY_HOPS` entries are read, and that value is set correctly
-  per service (the frontend sits one hop behind the LB; the backend sits one hop
-  behind the LB for API clients).
+  `RADIOSO_TRUSTED_PROXY_HOPS` entries are read. Frontend and backend sit
+  behind the same load balancer, so the backend's value (2 on GCP: client, LB)
+  also fits the chain the frontend forwards.
 - `visitor_key` is a launcher-persisted `localStorage` value; a visitor who
   clears site data or uses another browser is a new visitor until they verify.
   `anonymous_session_id` keeps its current per-session meaning.

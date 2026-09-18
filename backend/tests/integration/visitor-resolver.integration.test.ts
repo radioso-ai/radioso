@@ -79,6 +79,7 @@ describeIntegration("VisitorResolver (Postgres)", () => {
       workspaceId,
       visitorKey,
       verifiedCustomerId: "customer-story2-c",
+      observed: { country: null, language: null, userAgent: null },
     });
     expect(upgraded.outcome).toBe("upgraded");
     const [afterUpgrade] = await database.query<{ id: string; verified_customer_id: string | null }>(
@@ -87,11 +88,14 @@ describeIntegration("VisitorResolver (Postgres)", () => {
     );
     expect(afterUpgrade.verified_customer_id).toBe("customer-story2-c");
 
+    // FR-007: the freshly created destination row has never seen this browsing session
+    // before, so the move carries the triggering turn's own observed facts onto it.
     const moved = await resolver.attachVerifiedIdentity({
       conversationId,
       workspaceId,
       visitorKey,
       verifiedCustomerId: "customer-story2-d",
+      observed: { country: "DE", language: "de", userAgent: "TestAgent/1.0" },
     });
     expect(moved.outcome).toBe("moved_new");
 
@@ -101,12 +105,20 @@ describeIntegration("VisitorResolver (Postgres)", () => {
     );
     expect(stillC.verified_customer_id).toBe("customer-story2-c");
 
-    const [dRow] = await database.query<{ id: string }>(
-      "SELECT id FROM visitors WHERE workspace_id = $1 AND verified_customer_id = $2",
+    const [dRow] = await database.query<{
+      id: string;
+      last_country: string | null;
+      last_language: string | null;
+      last_user_agent: string | null;
+    }>(
+      "SELECT id, last_country, last_language, last_user_agent FROM visitors WHERE workspace_id = $1 AND verified_customer_id = $2",
       [workspaceId, "customer-story2-d"],
     );
     expect(dRow).toBeDefined();
     expect(dRow.id).not.toBe(anonRow.id);
+    expect(dRow.last_country).toBe("DE");
+    expect(dRow.last_language).toBe("de");
+    expect(dRow.last_user_agent).toBe("TestAgent/1.0");
   });
 
   it("findById scopes a visitor lookup to its own workspace (spec 1277, FR-040/041)", async () => {

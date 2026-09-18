@@ -471,6 +471,13 @@ export class ChatSessionPreparer {
           workspaceId: input.workspaceId,
           visitorKey: input.visitorKey ?? chatSessionId,
           verifiedCustomerId: input.verifiedCustomerId,
+          // FR-007: this conversation's own captured request facts, so a row it
+          // moves to (never seen this browsing session before) reflects them too.
+          observed: {
+            country: conversation.requestContext?.country ?? null,
+            language: primaryLanguageTag(conversation.requestContext?.acceptLanguage),
+            userAgent: conversation.requestContext?.userAgent ?? null,
+          },
         });
       }
     }

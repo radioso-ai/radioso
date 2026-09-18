@@ -240,8 +240,49 @@ describe("ChatSessionPreparer visitor resolution (spec 1277)", () => {
       workspaceId: "ws-1",
       visitorKey: "anon-session-4",
       verifiedCustomerId: "customer-1",
+      observed: { country: null, language: null, userAgent: null },
     });
     expect(visitorResolver.resolveForConversation).not.toHaveBeenCalled();
+  });
+
+  it("passes the moving conversation's own captured request facts (language parsed) to attachVerifiedIdentity (FR-007)", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const agentRepository = new InMemoryAgentRepository();
+    const agent = await agentRepository.create("ws-1", { name: "Bot" });
+    const requestContext: ConversationRequestContext = {
+      clientIp: "203.0.113.9",
+      country: "DE",
+      region: "BE",
+      city: "Berlin",
+      userAgent: "TestAgent/1.0",
+      acceptLanguage: "de-DE,de;q=0.9",
+      observedVia: "edge_proof",
+    };
+    const existing = await conversationRepository.create({
+      workspaceId: "ws-1",
+      agentId: agent.id,
+      anonymousSessionId: "anon-session-7",
+      agentRevisionId: publishedRevisionIdFor(agent.id),
+      requestContext,
+    });
+    const visitorResolver = buildVisitorResolverFake("visitor-unused");
+    const preparer = buildPreparer(conversationRepository, messageRepository, agent, visitorResolver);
+
+    await preparer.prepare({
+      workspaceId: "ws-1",
+      agentId: agent.id,
+      conversationId: existing.id,
+      chatSessionId: "anon-session-7",
+      query: "I'm logged in now",
+      verifiedCustomerId: "customer-1",
+    });
+
+    expect(visitorResolver.attachVerifiedIdentity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        observed: { country: "DE", language: "de", userAgent: "TestAgent/1.0" },
+      }),
+    );
   });
 
   it("never calls attachVerifiedIdentity for an operator-test conversation's first verified turn", async () => {

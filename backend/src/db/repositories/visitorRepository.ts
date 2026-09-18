@@ -38,6 +38,14 @@ export interface MoveConversationBetweenVisitorsInput {
   /** The visitor row the conversation is leaving; null when it had none yet. */
   fromVisitorId: string | null;
   toVisitorId: string;
+  /**
+   * The moving conversation's own request-derived facts (spec 1277, FR-007). The
+   * destination row may never have seen this browsing session before — a brand-new
+   * insert has none, and an existing verified row's `last_*` reflect a previous,
+   * different session — so the move carries them across rather than leaving stale
+   * or empty values on a row an operator is about to look at.
+   */
+  observed: VisitorObservedFacts;
 }
 
 /**
@@ -65,7 +73,8 @@ export interface VisitorRepositoryPort {
   /**
    * Atomically re-points one conversation at another visitor row: decrements
    * `fromVisitorId`'s count (when present), increments `toVisitorId`'s count,
-   * and refreshes `toVisitorId.last_seen_at` (FR-007).
+   * and refreshes `toVisitorId.last_seen_at` and `last_*` with the moving
+   * conversation's own observed facts (FR-007).
    */
   moveConversation(input: MoveConversationBetweenVisitorsInput): Promise<void>;
 }
@@ -242,6 +251,9 @@ export class VisitorRepository implements VisitorRepositoryPort {
         .set((eb) => ({
           conversation_count: eb("conversation_count", "+", 1),
           last_seen_at: currentTimestamp(),
+          last_country: input.observed.country ?? null,
+          last_language: input.observed.language ?? null,
+          last_user_agent: input.observed.userAgent ?? null,
           updated_at: currentTimestamp(),
         }))
         .where("id", "=", input.toVisitorId)

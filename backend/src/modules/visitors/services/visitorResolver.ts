@@ -20,6 +20,12 @@ interface AttachVerifiedIdentityInput {
   workspaceId: string;
   visitorKey: string | null;
   verifiedCustomerId: string;
+  /**
+   * The moving conversation's own request-derived facts (FR-007). Used only when
+   * this conversation moves to another row (`moved_existing`/`moved_new`) — an
+   * in-place upgrade keeps the anonymous row's own, already-current observations.
+   */
+  observed: VisitorObservedFacts;
 }
 
 type AttachVerifiedIdentityOutcome = "upgraded" | "moved_existing" | "moved_new" | "unchanged";
@@ -126,7 +132,7 @@ export class VisitorResolver implements VisitorResolverPort {
       : (await this.repository.insertOrGet({
           workspaceId: input.workspaceId,
           verifiedCustomerId: input.verifiedCustomerId,
-          observed: { country: null, language: null, userAgent: null },
+          observed: input.observed,
         })).record.id;
 
     await this.repository.moveConversation({
@@ -134,6 +140,7 @@ export class VisitorResolver implements VisitorResolverPort {
       workspaceId: input.workspaceId,
       fromVisitorId: anonRow?.id ?? null,
       toVisitorId: targetVisitorId,
+      observed: input.observed,
     });
     this.recordOutcome(outcome);
     return { outcome };

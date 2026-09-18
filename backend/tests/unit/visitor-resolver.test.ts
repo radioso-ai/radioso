@@ -168,6 +168,7 @@ describe("VisitorResolver.attachVerifiedIdentity", () => {
       workspaceId: "workspace-1",
       visitorKey: "anon-A",
       verifiedCustomerId: "customer-C",
+      observed: noObservation,
     });
 
     expect(result.outcome).toBe("upgraded");
@@ -179,19 +180,21 @@ describe("VisitorResolver.attachVerifiedIdentity", () => {
     );
   });
 
-  it("scenario 2: moves the conversation to an existing verified row and leaves the anonymous row unchanged", async () => {
+  it("scenario 2: moves the conversation to an existing verified row, carrying this turn's observed facts (FR-007), and leaves the anonymous row unchanged", async () => {
     const repository = buildRepository();
     const anon = buildVisitor({ visitorKey: "anon-A", verifiedCustomerId: null });
     const verified = buildVisitor({ verifiedCustomerId: "customer-C" });
     repository.findByVisitorKey.mockResolvedValue(anon);
     repository.findByVerifiedCustomerId.mockResolvedValue(verified);
     const resolver = new VisitorResolver(repository);
+    const observed: VisitorObservedFacts = { country: "DE", language: "de", userAgent: "TestAgent/1.0" };
 
     const result = await resolver.attachVerifiedIdentity({
       conversationId: "conversation-1",
       workspaceId: "workspace-1",
       visitorKey: "anon-A",
       verifiedCustomerId: "customer-C",
+      observed,
     });
 
     expect(result.outcome).toBe("moved_existing");
@@ -201,10 +204,11 @@ describe("VisitorResolver.attachVerifiedIdentity", () => {
       workspaceId: "workspace-1",
       fromVisitorId: anon.id,
       toVisitorId: verified.id,
+      observed,
     });
   });
 
-  it("scenario 3: moves the conversation to a freshly inserted row for a different verified id and never re-attaches", async () => {
+  it("scenario 3: moves the conversation to a freshly inserted row for a different verified id, seeding it and never re-attaches", async () => {
     const repository = buildRepository();
     const anon = buildVisitor({ visitorKey: "anon-A", verifiedCustomerId: "customer-C" });
     const insertedForD = buildVisitor({ verifiedCustomerId: "customer-D" });
@@ -212,24 +216,27 @@ describe("VisitorResolver.attachVerifiedIdentity", () => {
     repository.findByVerifiedCustomerId.mockResolvedValue(null);
     repository.insertOrGet.mockResolvedValue({ record: insertedForD, inserted: true });
     const resolver = new VisitorResolver(repository);
+    const observed: VisitorObservedFacts = { country: "FR", language: "fr", userAgent: "TestAgent/2.0" };
 
     const result = await resolver.attachVerifiedIdentity({
       conversationId: "conversation-1",
       workspaceId: "workspace-1",
       visitorKey: "anon-A",
       verifiedCustomerId: "customer-D",
+      observed,
     });
 
     expect(result.outcome).toBe("moved_new");
     expect(repository.upgradeToVerified).not.toHaveBeenCalled();
     expect(repository.insertOrGet).toHaveBeenCalledWith(
-      expect.objectContaining({ workspaceId: "workspace-1", verifiedCustomerId: "customer-D" }),
+      expect.objectContaining({ workspaceId: "workspace-1", verifiedCustomerId: "customer-D", observed }),
     );
     expect(repository.moveConversation).toHaveBeenCalledWith({
       conversationId: "conversation-1",
       workspaceId: "workspace-1",
       fromVisitorId: anon.id,
       toVisitorId: insertedForD.id,
+      observed,
     });
   });
 
@@ -246,6 +253,7 @@ describe("VisitorResolver.attachVerifiedIdentity", () => {
       workspaceId: "workspace-1",
       visitorKey: "anon-A",
       verifiedCustomerId: "customer-C",
+      observed: noObservation,
     });
 
     expect(result.outcome).toBe("unchanged");
@@ -265,6 +273,7 @@ describe("VisitorResolver.attachVerifiedIdentity", () => {
       workspaceId: "workspace-1",
       visitorKey: null,
       verifiedCustomerId: "customer-C",
+      observed: noObservation,
     });
 
     expect(result.outcome).toBe("moved_existing");
@@ -273,6 +282,7 @@ describe("VisitorResolver.attachVerifiedIdentity", () => {
       workspaceId: "workspace-1",
       fromVisitorId: null,
       toVisitorId: verified.id,
+      observed: noObservation,
     });
   });
 });

@@ -78,6 +78,35 @@ describe("deriveConversationRequestContext (FR-023)", () => {
     expect(result.context.observedVia).toBe("edge_proof");
   });
 
+  it("resolves clientIp from a one-entry forwarded-for chain at hops=1 (local compose topology: Next.js is the single hop)", () => {
+    const { headers: proofHeaders } = createEdgeFactsProof({
+      facts: {
+        forwardedFor: "172.19.0.1",
+        geoHeaders: {},
+        userAgent: null,
+        acceptLanguage: null,
+      },
+      method: METHOD,
+      path: PATH,
+      secret: SECRET,
+      now: NOW,
+    });
+
+    const result = deriveConversationRequestContext({
+      headers: { [EDGE_FACTS_HEADERS.marker]: "frontend", ...proofHeaders },
+      socketAddress: "10.0.0.1",
+      trustedProxyHops: 1,
+      secret: SECRET,
+      method: METHOD,
+      path: PATH,
+      geoResolver,
+      now: NOW,
+    });
+
+    expect(result.context.clientIp).toBe("172.19.0.1");
+    expect(result.context.observedVia).toBe("edge_proof");
+  });
+
   it("nulls every fact and reports 'signature' when the proof is tampered", () => {
     const { headers: proofHeaders } = createEdgeFactsProof({
       facts: { forwardedFor: "203.0.113.9", geoHeaders: {}, userAgent: null, acceptLanguage: null },

@@ -87,7 +87,9 @@ services:
       # Spec 1277: shared with the frontend service below so the local stack
       # exercises the edge-facts proof path end to end. Dev-only value.
       RADIOSO_EDGE_PROOF_SECRET: radioso-local-dev-edge-proof-secret
-      RADIOSO_TRUSTED_PROXY_HOPS: "0"
+      # Next.js is the only proxy between the browser and this backend locally (no LB
+      # in front); it injects one X-Forwarded-For entry per request, so one trusted hop.
+      RADIOSO_TRUSTED_PROXY_HOPS: "1"
     depends_on:
       workspace-deps:
         condition: service_completed_successfully

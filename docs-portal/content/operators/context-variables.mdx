@@ -223,14 +223,22 @@ that opened the conversation:
   CDN stamps on the request, such as Cloudflare's `CF-IPCountry`.
 - `language` — the primary tag of the browser's `Accept-Language` header, so
   `de-DE,de;q=0.9` resolves to `de`.
-- `referrer`, `entryPageUrl` — the page that sent the visitor and the page the
-  chat opened on, both reported by the embed launcher.
+- `referrer` — the page that sent the visitor, reported by the embed launcher.
+- `entryPageUrl` — the page the chat opened on, reported by the embed
+  launcher.
 
 The IP address and user agent that accompanied the request are not part of
 it — `visitor_request` carries only the six fields above, so a directive that
 reads it never sees an address or a browser fingerprint. Values are
 unverified: they describe what the request looked like, not a proven
 identity.
+
+`entryPageUrl` shares its sensitivity with `page_context`, so it follows the
+same page-read gate: it reaches `visitor_request` only on a turn where that
+turn's own page-content check is open, and drops out otherwise, even though
+the conversation opened on that page throughout. The other five fields carry
+no page-content sensitivity and reach every turn that has them, regardless of
+that turn's page-read decision.
 
 `visitor_request` is available on every agent, the same as `page_context` and
 `visitor_identity` — there is no per-agent setting to turn it on. It reaches a
@@ -317,3 +325,4 @@ before they reach the dashboard.
 ## Read next
 
 - [Deployment](/operators/deployment) — where `WORKSPACE_TOKEN_SECRET`, which derives the signing key above, is set as a required secret.
+- [Visitor data](/operators/visitor-data) — every field behind `visitor_request`, plus the fields that never reach a prompt.

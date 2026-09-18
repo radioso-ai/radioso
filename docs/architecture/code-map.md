@@ -619,6 +619,7 @@ Focused checks:
 
 - `cd backend && pnpm exec vitest run tests/unit/visitor-resolver.test.ts tests/unit/chat-session-preparer-visitor-resolution.test.ts`
 - `cd backend && pnpm exec vitest run tests/integration/visitor-resolver.integration.test.ts tests/integration/visitor-backfill-migration.integration.test.ts`
+- `cd backend && pnpm exec vitest run tests/contract/history-visitor-conversations.contract.test.ts` (`GET /api/v1/history/visitors/{visitorId}/conversations`, the drawer's "Previous conversations" panel)
 
 Related specs:
 

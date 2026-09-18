@@ -38,6 +38,7 @@ export type ChatResponse = components["schemas"]["ChatResponse"];
 export type HistoryItemsResponse = components["schemas"]["HistoryItemsResponse"];
 export type ChatHistoryListResponse = components["schemas"]["ChatHistoryListResponse"];
 export type ChatConversationDetail = components["schemas"]["ChatConversationDetail"];
+export type VisitorConversationsResponse = components["schemas"]["VisitorConversationsResponse"];
 export type AssistantChatTurnRequest = AssistantChatRequest & { message: string; startConversation?: false };
 export type ChatCreateRequest = Omit<AssistantChatTurnRequest, "stream" | "startConversation"> & {
   stream?: false;
@@ -58,6 +59,10 @@ export type DocumentListQuery = PaginationQuery;
 export interface ChatHistoryListQuery extends PaginationQuery {
   sourceScope?: "end_user" | "operator_test" | "all";
   ownership?: "human_owned";
+}
+
+export interface VisitorConversationsQuery extends PaginationQuery {
+  exclude?: string;
 }
 
 export interface WebsiteCrawlJobListQuery {
@@ -330,6 +335,17 @@ export class GeneratedRadiosoClient {
     return requestJson(this.config, {
       method: "GET",
       path: `/api/v1/history/${conversationId}`,
+      query: query as Record<string, string | number | boolean | null | undefined> | undefined,
+    });
+  }
+
+  listVisitorConversations(
+    visitorId: string,
+    query?: VisitorConversationsQuery,
+  ): Promise<VisitorConversationsResponse> {
+    return requestJson(this.config, {
+      method: "GET",
+      path: `/api/v1/history/visitors/${visitorId}/conversations`,
       query: query as Record<string, string | number | boolean | null | undefined> | undefined,
     });
   }

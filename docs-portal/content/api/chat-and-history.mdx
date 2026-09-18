@@ -1,7 +1,7 @@
 ---
 title: "Chat and history"
 description: "Ask one agent questions with a channel credential, then inspect saved history with workspace access."
-last_updated: 2026-09-01
+last_updated: 2026-09-18
 ---
 
 # Chat and history
@@ -97,6 +97,10 @@ A turn without a reply still shows up here. If the visitor sent another message 
 
 Use `GET /api/v1/history/chat/{conversationId}/tail` to read messages created after a cursor. The cursor is the newest message the client has already seen. Conversation detail responses include `tailCursor`; use it for follow-up tail calls after loading the transcript. If `cursor` is omitted, Radioso returns the newest bounded page and a cursor for the newest returned message. Dashboard tail responses can include `ownership` when the conversation is currently human-owned.
 
+A conversation detail response can also include `visitor` (`id`, `firstSeenAt`, `conversationCount`, `verified`), `requestContext` (the request facts Radioso observed when the conversation opened, including `clientIp`), and `entryReferrer` — the same fields the dashboard's Visitor panel shows, gated behind the same operator session or credential as the rest of detail. A conversation summary carries `visitorCountry` alongside them, so a list view can show a country without fetching each conversation's detail.
+
+Use `GET /api/v1/history/visitors/{visitorId}/conversations` to page through a visitor's other conversations — the same summaries `GET /api/v1/history/chat` returns, scoped to one visitor. Pass `exclude` to drop one conversation id from the results, typically the one already open. This route needs `workspace.history.read`, same as the rest of history.
+
 ## Answer feedback
 
 Persisted assistant answers accept thumbs-up or thumbs-down feedback in the dashboard, public chat, and website embed. A thumbs-down request may include an optional `comment` of up to 2000 characters. Authenticated callers set and clear feedback on a message:
@@ -134,6 +138,7 @@ GET  /api/v1/history
 GET  /api/v1/history/chat
 GET  /api/v1/history/chat/{conversationId}
 GET  /api/v1/history/chat/{conversationId}/tail
+GET  /api/v1/history/visitors/{visitorId}/conversations
 GET  /api/v1/history/search
 GET  /api/v1/history/search/{searchId}
 ```

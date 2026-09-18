@@ -9,6 +9,33 @@ Cut a release with the **Cut Release** workflow. It reads the commits since the 
 tag, writes the entry above this line, tags the commit, and publishes a GitHub Release. A
 deploy then ships a release that already exists; it never mints one.
 
+## [1.2.0] - 2026-09-18
+
+### Added
+
+- **billing:** add Stripe self-serve checkout, portal and webhooks with the dashboard plan card ([#1275](https://github.com/radioso-ai/radioso/pull/1275))
+- **workbench:** make Test Chat the only operator test surface and seed it from conversations ([#1278](https://github.com/radioso-ai/radioso/pull/1278))
+- **workbench:** let private tests run skills for real and make skill failures legible ([#1276](https://github.com/radioso-ai/radioso/pull/1276))
+- **operator-mcp:** expose document proposals and gate REST-to-tool field parity ([#1274](https://github.com/radioso-ai/radioso/pull/1274))
+- **chat:** reorder planner rewrite schema derivation-first and drop hidden reasoning ([#1271](https://github.com/radioso-ai/radioso/pull/1271))
+
+### Fixed
+
+- **documents:** honour enrichment override on PUT and stop reconcile dispatch fan-out ([#1273](https://github.com/radioso-ai/radioso/pull/1273))
+- **security:** close CodeQL findings across ReDoS, rate limiting, and sanitization gaps ([#1272](https://github.com/radioso-ai/radioso/pull/1272))
+
+### Internal
+
+- stop tracking .context scratch directory ([#1270](https://github.com/radioso-ai/radioso/pull/1270))
+
+### Database migrations
+
+This release adds 1 migration. They run at service startup, so deploy one stack at a time; overlapping deploys contend on the same DDL lock and stall until one gives up.
+
+- `191_agent_test_execution_skill_effects.sql`
+
+[1.2.0]: https://github.com/radioso-ai/radioso/compare/v1.1.1...v1.2.0
+
 ## [1.1.1] - 2026-09-16
 
 ### Fixed

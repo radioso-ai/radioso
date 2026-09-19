@@ -92,6 +92,19 @@ function BranchTarget({ branch, index }: { branch: RoutineBlockBranch; index?: R
   return <span className="inline-flex items-center gap-1 text-muted-foreground"><CircleDashed className="h-3.5 w-3.5" />the same ending as above</span>
 }
 
+// The plain onward path reads as one muted sentence — "then finish: All set." — with none of
+// the IF row's icon tile or rail; a default guard is not a decision to draw attention to.
+function PlainBranchTarget({ branch, index }: { branch: RoutineBlockBranch; index?: RoutineDocumentIndex }) {
+  if (branch.target.kind === 'step') {
+    const number = index?.stepNumbers.get(branch.target.stableStepId)
+    return <span>go to {number ? `step ${number}` : branch.target.stableStepId}</span>
+  }
+  if (branch.target.kind === 'unresolved') return <BranchTarget branch={branch} index={index} />
+  const ending = branch.target.ending ?? index?.endings.get(branch.target.terminalId)
+  if (ending) return <span>{ending.kind === 'complete' ? 'finish' : 'hand off'}{ending.instruction ? <>: <InlineSlotText text={ending.instruction} /></> : null}</span>
+  return <span>the same ending as above</span>
+}
+
 function RoutineBranchRow({ branch, slotNames, index, editable = false, editing = false, onEdit, editor }: {
   branch: RoutineBlockBranch
   slotNames: Map<string, string>
@@ -107,7 +120,7 @@ function RoutineBranchRow({ branch, slotNames, index, editable = false, editing 
   const isDefault = branch.guard.kind === 'default'
   if (editing) return <li className="rounded-md border border-border bg-muted/30 p-3 text-sm">{editor}</li>
   if (isDefault) {
-    return <li className="py-1.5 text-sm"><button type="button" aria-label={branchDecisionLabel(branch.guard.kind)} onClick={onEdit} disabled={!editable} className="group flex w-full flex-wrap items-center gap-2 text-left disabled:cursor-default"><ArrowRight className="h-3.5 w-3.5 text-muted-foreground" /><BranchTarget branch={branch} index={index} /><EditHint editable={editable} /></button></li>
+    return <li className="py-0.5 text-xs text-muted-foreground"><button type="button" aria-label={branchDecisionLabel(branch.guard.kind)} onClick={onEdit} disabled={!editable} className="group text-left disabled:cursor-default">then <PlainBranchTarget branch={branch} index={index} /><EditHint editable={editable} /></button></li>
   }
   return <li className="py-1"><button type="button" aria-label={branchDecisionLabel(branch.guard.kind)} onClick={onEdit} disabled={!editable} className="group flex w-full flex-wrap items-center gap-2 text-left disabled:cursor-default">
     <span aria-hidden="true" className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-violet-500/15 text-violet-600 dark:text-violet-400"><GitBranch className="h-3.5 w-3.5" /></span>
@@ -167,62 +180,78 @@ export function RoutineStepRow({ step, stepIndex, slotNames, index, nextStepId =
   const number = isChat
     ? <button type="button" aria-label={label} onClick={onEditStep} disabled={!editable} className={`${numeralClassName} transition-colors hover:text-foreground disabled:cursor-default disabled:hover:text-muted-foreground`}>{stepIndex + 1}.</button>
     : <span aria-hidden="true" className={numeralClassName}>{stepIndex + 1}.</span>
-  // Reorder lives on the collapsed row itself, next to the number, so it never requires
-  // opening a step's editor panel first — the gap this closes for every step kind.
-  const moveControls = editable && (onMoveStepUp || onMoveStepDown) ? <div className="flex shrink-0 flex-col">
+  // Reorder is a hover/focus affordance, not a permanent fixture in the gutter — it never
+  // requires opening a step's editor panel first, but it also never competes with the numeral
+  // for attention at rest.
+  const moveControls = editable && (onMoveStepUp || onMoveStepDown) ? <div className="flex shrink-0 flex-col opacity-0 transition-opacity group-hover/insertafter:opacity-100 group-focus-within/insertafter:opacity-100">
     <button type="button" aria-label={`Move step ${stepIndex + 1} up`} onClick={onMoveStepUp} disabled={!canMoveStepUp} className="flex h-4 w-4 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-30"><ArrowUp className="h-3 w-3" /></button>
     <button type="button" aria-label={`Move step ${stepIndex + 1} down`} onClick={onMoveStepDown} disabled={!canMoveStepDown} className="flex h-4 w-4 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-30"><ArrowDown className="h-3 w-3" /></button>
   </div> : null
-  // Pinned to the row's bottom edge and revealed on hover/focus (or always, on touch), so an
-  // author can insert a step between this row and the next without appending then reordering.
+  // Pinned under the numeral gutter and revealed on hover/focus (or always, on touch) — a
+  // quiet "+" between two lines rather than a control spanning the row's full width.
   const insertAfterOverlay = insertStepAfter ? <div className="pointer-events-none absolute inset-x-0 -bottom-2.5 z-10 flex justify-center opacity-0 transition-opacity group-hover/insertafter:opacity-100 group-focus-within/insertafter:opacity-100 [@media(hover:none)]:opacity-100"><div className="pointer-events-auto">{insertStepAfter}</div></div> : null
   // No card chrome while editing — the editor's own faint focus ring is the only thing that
   // marks it as active, matching the bare-sentence read state either side of it.
   const instruction = editing === 'instruction'
     ? <div className="min-w-0 flex-1">{instructionEditor}</div>
     : <button type="button" aria-label="Instruction" onClick={onEditInstruction} disabled={!editable} className="group block min-w-0 flex-1 text-left disabled:cursor-default"><InstructionSentence segments={step.instruction} editable={editable} /><EditHint editable={editable} /></button>
-  // The kind badge is small and muted, sitting after the sentence rather than on a heading
-  // line of its own; it is still the same "open the step editor" control non-chat kinds have
-  // always had, just relocated.
-  const kindBadge = !isChat ? <button type="button" aria-label={label} onClick={onEditStep} disabled={!editable} className="group ml-2 inline-flex shrink-0 items-center gap-1 rounded-full bg-muted px-2 py-0.5 align-middle text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/70 disabled:cursor-default">{step.kind === 'approval' ? <ListChecks className="h-3 w-3" /> : <Wrench className="h-3 w-3" />}<span>{label}</span><EditHint editable={editable} /></button> : null
-  const branchRows = step.branches.map((branch, branchIndex) => {
+  // The skill or approval identity reads as a chip inline with the sentence — the same visual
+  // language as a variable chip — rather than a right-aligned pill announcing the row's kind.
+  // It is still the same "open the step editor" control non-chat kinds have always had.
+  const kindBadge = !isChat ? <button type="button" aria-label={label} onClick={onEditStep} disabled={!editable} className="group mr-1.5 inline-flex shrink-0 items-center gap-1 rounded-md border border-sky-300 bg-sky-100 px-1.5 py-0 align-baseline text-xs font-medium text-sky-900 disabled:cursor-default">{step.kind === 'approval' ? <ListChecks className="h-3 w-3" /> : <Wrench className="h-3 w-3" />}{label}</button> : null
+  const plainBranchRows: ReactNode[] = []
+  const railBranchRows: ReactNode[] = []
+  let anyBranchEditing = false
+  step.branches.forEach((branch, branchIndex) => {
     const editingBranch = editing === `branch:${branchIndex}`
+    if (editingBranch) anyBranchEditing = true
     if (!editingBranch && branchIsImplicitFallThrough(branch, nextStepId)) {
-      if (!editable || editing !== 'step') return null
-      return <li key={`${step.stableStepId}-${branchIndex}`} className="py-1.5 text-xs text-muted-foreground"><button type="button" aria-label="Continue to the next step" onClick={() => onEditBranch?.(branchIndex)} className="group text-left">then continue to the next step<EditHint editable={editable} /></button></li>
+      if (!editable || editing !== 'step') return
+      plainBranchRows.push(<li key={`${step.stableStepId}-${branchIndex}`} className="py-0.5 text-xs text-muted-foreground"><button type="button" aria-label="Continue to the next step" onClick={() => onEditBranch?.(branchIndex)} className="group text-left">then continue to the next step<EditHint editable={editable} /></button></li>)
+      return
     }
-    return <RoutineBranchRow key={`${step.stableStepId}-${branchIndex}`} branch={branch} slotNames={slotNames} index={index} editable={editable} editing={editingBranch} onEdit={() => onEditBranch?.(branchIndex)} editor={branchEditor?.(branchIndex, branch)} />
-  }).filter(Boolean)
-  // A thin rail connects a step's branches, with a round "+" at its foot to add another —
-  // shown once a branch already reads here; a step with none yet still adds its first through
-  // the step editor's own "+ Condition" control.
-  const branchRail = branchRows.length > 0 ? <div className="relative mt-2 border-l border-border pl-4">
-    <ul className="space-y-0.5">{branchRows}</ul>
+    const row = <RoutineBranchRow key={`${step.stableStepId}-${branchIndex}`} branch={branch} slotNames={slotNames} index={index} editable={editable} editing={editingBranch} onEdit={() => onEditBranch?.(branchIndex)} editor={branchEditor?.(branchIndex, branch)} />
+    if (!editingBranch && branch.guard.kind === 'default') plainBranchRows.push(row)
+    else railBranchRows.push(row)
+  })
+  // A thin rail connects a step's non-default branches, with a round "+" at its foot to add
+  // another — both revealed on hover/focus of the step, like the reorder controls, and kept
+  // visible unprompted only while a branch inside is actually being edited.
+  const railHiddenUntilActive = !anyBranchEditing
+  const branchRail = railBranchRows.length > 0 ? <div className={railHiddenUntilActive ? 'relative mt-1 border-l border-border pl-4 opacity-0 transition-opacity group-hover/insertafter:opacity-100 group-focus-within/insertafter:opacity-100' : 'relative mt-1 border-l border-border pl-4'}>
+    <ul className="space-y-0.5">{railBranchRows}</ul>
     {editable && onAddBranch ? <button type="button" aria-label={`Add a branch to step ${stepIndex + 1}`} onClick={onAddBranch} className="relative -left-[calc(1rem+0.5rem)] mt-1.5 flex h-5 w-5 items-center justify-center rounded-full border border-border bg-background text-muted-foreground hover:border-primary hover:text-primary"><Plus className="h-3 w-3" /></button> : null}
   </div> : null
   const details = <>
-    {step.kind === 'tool' || step.kind === 'action' ? <div className="mt-2">{editing === 'binding' ? <div className="rounded-md border border-border bg-muted/30 p-3">{bindingEditor}</div> : <button type="button" aria-label="Bindings" onClick={onEditBinding} disabled={!editable} className="group flex items-center gap-1 text-left text-xs text-muted-foreground disabled:cursor-default"><ArrowRight className="h-3.5 w-3.5" />{formatBindingLine(step.inputBindings, step.outputAssignments) ?? 'uses nothing → sets nothing'}<EditHint editable={editable} /></button>}</div> : null}
+    {step.kind === 'tool' || step.kind === 'action' ? (
+      editing === 'binding'
+        ? <div className="mt-2"><div className="rounded-md border border-border bg-muted/30 p-3">{bindingEditor}</div></div>
+        : <div className="mt-1 opacity-0 transition-opacity group-hover/insertafter:opacity-100 group-focus-within/insertafter:opacity-100"><button type="button" aria-label="Bindings" onClick={onEditBinding} disabled={!editable} className="group flex items-center gap-1 text-left text-xs text-muted-foreground disabled:cursor-default"><ArrowRight className="h-3.5 w-3.5" />{formatBindingLine(step.inputBindings, step.outputAssignments) ?? 'uses nothing → sets nothing'}<EditHint editable={editable} /></button></div>
+    ) : null}
     {step.kind === 'approval' ? <div className="mt-2">{editing === 'approval' ? <div className="rounded-md border border-border bg-muted/30 p-3">{approvalEditor}</div> : <button type="button" aria-label="Approval choices" onClick={onEditApproval} disabled={!editable} className="group block w-full text-left text-sm disabled:cursor-default"><p className="font-medium">A person chooses:<EditHint editable={editable} /></p><ul className="mt-2 space-y-1">{(step.options ?? []).map((option) => <li key={option.id}>{option.label}{option.description ? ` — ${option.description}` : ''}</li>)}</ul></button>}</div> : null}
+    {plainBranchRows.length > 0 ? <ul className="mt-1">{plainBranchRows}</ul> : null}
     {branchRail}
     {editing ? null : <DiagnosticNotes notes={notes} />}
   </>
-  return <li className="group/insertafter relative rounded-md px-2 py-2 transition-colors first:mt-0 hover:bg-muted/40">
+  return <li className="group/insertafter relative rounded-md px-2 py-1.5 transition-colors first:mt-0 hover:bg-muted/40">
     <div className="flex items-start gap-3">
-      {moveControls}
-      {number}
+      <div className="relative flex shrink-0 items-start gap-1">
+        {moveControls}
+        {number}
+        {insertAfterOverlay}
+      </div>
       <div className="min-w-0 flex-1">
         {/* The kind badge is also this row's "open the step editor" control (its aria-label
             is the step's name), so it stays mounted in both states — only the sentence beside
             it gives way to the editor panel. */}
         <div className="flex flex-wrap items-baseline">
-          {editing === 'step' ? null : instruction}
           {kindBadge}
+          {editing === 'step' ? null : instruction}
         </div>
         {editing === 'step' ? <div className="mt-2 rounded-md border border-border bg-muted/30 p-3">{stepEditor}</div> : null}
         {details}
       </div>
     </div>
-    {insertAfterOverlay}
   </li>
 }
 

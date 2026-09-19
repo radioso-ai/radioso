@@ -13,13 +13,14 @@ import {
   Route,
   Trash2,
   WandSparkles,
+  Waypoints,
   X,
 } from 'lucide-react'
 
 import { RoutineDiagnosticList } from '@/components/dashboard/settings/routine-editor-controls'
 import { RoutineDraftAssistDialog } from '@/components/dashboard/settings/routine-draft-assist-dialog'
 import { RoutineCompletionExportPanel } from '@/components/dashboard/settings/routine-completion-export-panel'
-import { RoutineMapButton } from '@/components/dashboard/settings/routine-canvas'
+import { RoutineMapDialog } from '@/components/dashboard/settings/routine-canvas'
 import { RoutineDocumentTab } from '@/components/dashboard/settings/routine-document-tab'
 import { RoutineSkillCatalogProvider } from '@/components/dashboard/settings/routine-skill-catalog-popover'
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
@@ -531,6 +532,7 @@ function RoutineEditorScreen({
   const [webhookDestinationsError, setWebhookDestinationsError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [deleteRoutineDialogOpen, setDeleteRoutineDialogOpen] = useState(false)
+  const [mapDialogOpen, setMapDialogOpen] = useState(false)
   const currentRoutineIdRef = useRef<string | null>(null)
   const isTogglingEnabledRef = useRef(false)
   const pendingRoutineToggleRef = useRef<{ routineId: string; previousEnabled: boolean } | null>(null)
@@ -939,6 +941,15 @@ function RoutineEditorScreen({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">
+              {activeRoutineDraft ? (
+                <>
+                  <DropdownMenuItem onSelect={() => setMapDialogOpen(true)}>
+                    <Waypoints className="mr-2 h-4 w-4" />
+                    Map
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                </>
+              ) : null}
               <DropdownMenuItem disabled={isSaving || isDraftingRoutine} onSelect={() => setDraftAssistDialogOpen(true)}>
                 <WandSparkles className="mr-2 h-4 w-4" />
                 Draft with AI
@@ -1000,7 +1011,7 @@ function RoutineEditorScreen({
         </Button>
       </div>
     )
-  }, [draftHeader.enabled, editingRoutine, form, handleTestDraft, isDraftingRoutine, isSaving, isTogglingEnabled, listHref, router, toggleRoutineEnabled, validationStatus])
+  }, [activeRoutineDraft, draftHeader.enabled, editingRoutine, form, handleTestDraft, isDraftingRoutine, isSaving, isTogglingEnabled, listHref, router, toggleRoutineEnabled, validationStatus])
 
   const routineHeader = useMemo(() => ({
     actions: headerActions,
@@ -1030,8 +1041,7 @@ function RoutineEditorScreen({
         onProseChange={setDraftAssistProse}
         onLoadProposal={() => void actionHandlersRef.current.loadAssistedDraft()}
       />
-      <div className="overflow-visible rounded-lg border border-border bg-card/95 shadow-sm">
-        <div className="space-y-5 p-5">
+      <div className="space-y-5">
           {error ? <p className="text-sm text-destructive" role="alert">{error}</p> : null}
           {isLoading || !form ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -1042,14 +1052,8 @@ function RoutineEditorScreen({
             <RoutineSkillCatalogProvider agentId={agentId}>
             {nameLocalValidationError ? <p className="text-xs text-destructive" role="status">{nameLocalValidationError}</p> : null}
             <RoutineDiagnosticList diagnostics={routineDiagnostics} />
-
-
-
-
             {activeRoutineDraft ? (
-              <div className="flex justify-end">
-                <RoutineMapButton draft={activeRoutineDraft} />
-              </div>
+              <RoutineMapDialog draft={activeRoutineDraft} open={mapDialogOpen} onOpenChange={setMapDialogOpen} />
             ) : null}
 
             {activeRoutineDraft ? (
@@ -1068,28 +1072,28 @@ function RoutineEditorScreen({
                   setForm(routineToForm(draftAsRoutine(mergedDraft, editingRoutine)))
                   setDraftHeader(headerFromDraft(mergedDraft))
                 }}
-              />
-            ) : null}
-
-            {activeRoutineDraft ? (
-              <RoutineCompletionExportPanel
-                idPrefix="document-completion-export"
-                payloadPreview={form ? buildCompletionExportPayloadPreview(form) : undefined}
-                value={activeRoutineDraft.completionExport ?? { enabled: false, triggerKinds: [], destinationRef: '' }}
-                onChange={(next) => {
-                  const merged = { ...(documentDraft ?? activeRoutineDraft), completionExport: next }
-                  setDocumentDraft(merged)
-                  setForm(routineToForm(draftAsRoutine(merged, editingRoutine)))
-                }}
-                webhookDestinations={webhookDestinations}
-                isLoading={isWebhookDestinationsLoading}
-                error={webhookDestinationsError}
+                // Rendered inside the document's own "Details" disclosure, alongside Endings
+                // and Collected information, rather than as a card of its own below it.
+                detailsExtra={(
+                  <RoutineCompletionExportPanel
+                    idPrefix="document-completion-export"
+                    payloadPreview={form ? buildCompletionExportPayloadPreview(form) : undefined}
+                    value={activeRoutineDraft.completionExport ?? { enabled: false, triggerKinds: [], destinationRef: '' }}
+                    onChange={(next) => {
+                      const merged = { ...(documentDraft ?? activeRoutineDraft), completionExport: next }
+                      setDocumentDraft(merged)
+                      setForm(routineToForm(draftAsRoutine(merged, editingRoutine)))
+                    }}
+                    webhookDestinations={webhookDestinations}
+                    isLoading={isWebhookDestinationsLoading}
+                    error={webhookDestinationsError}
+                  />
+                )}
               />
             ) : null}
 
             </RoutineSkillCatalogProvider>
           )}
-        </div>
       </div>
       <DeleteRoutineDialog
         open={deleteRoutineDialogOpen}

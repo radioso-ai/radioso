@@ -95,6 +95,9 @@ test("routine editor configures completion export with destination dropdown and 
   await page.getByRole("option", { name: /Create variable “email”/ }).click();
   await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
 
+  // Collected information, Endings, and Completion export live inside the collapsed
+  // "Details" disclosure.
+  await documentEditor.getByRole("button", { name: "Toggle details", exact: true }).click();
   await documentEditor.getByRole("button", { name: "email", exact: true }).click();
   await documentEditor.getByLabel("Slot email type").selectOption("email");
   await documentEditor.getByLabel("Slot email description").fill("Visitor email address");

@@ -68,9 +68,12 @@ later matching message does:
 
 **Document** lays a routine out from top to bottom: a collapsible **When to
 trigger** section holding **Starts when**, then **Instructions** — the numbered
-steps and their branch rows — then **Information** and **Endings**. A skill
-step includes a **uses → sets** line so its input bindings and assigned
-outputs remain visible in the flow.
+steps and their branch rows. **Collected information**, **Endings**, and
+**Completion export** sit inside a **Details** disclosure at the bottom, closed
+by default since a branch row already names the ending it reaches inline. A
+skill step includes a **uses → sets** line, shown when you hover or open the
+step, so its input bindings and assigned outputs stay out of the way until
+you need them.
 
 Edit the **Starts when** line directly. Add information, steps, branches, and
 endings where they belong in the flow. That proximity makes the decision behind
@@ -186,7 +189,7 @@ missing webhook destination for completion export.
 
 ## Map
 
-Choose **Map** to read the routine as a graph — the trigger, every step, every
+Choose **Map** from the header's overflow menu to read the routine as a graph — the trigger, every step, every
 ending, and the branches between them — over the full width of the window. Close it
 to return to the document.
 
@@ -245,7 +248,8 @@ an eval case captures only from a test that kept skills off.
 
 ## Completion export
 
-The **Completion export** panel lets a routine send its collected values to a
+Open the document's **Details** disclosure for the **Completion export** panel. It
+lets a routine send its collected values to a
 workspace webhook destination when it reaches selected terminal kinds. Enable
 the export, choose the destination, then select `complete`, `handoff`, or both.
 

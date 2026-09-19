@@ -61,6 +61,7 @@ export function RoutineInstructionEditor({
   variables,
   onCreateVariable,
   onChange,
+  onBlur,
   ariaLabel,
 }: {
   initialContent: ProseParagraph[]
@@ -69,6 +70,9 @@ export function RoutineInstructionEditor({
   // Every line the author wrote, in order. A step instruction is one string, so the host
   // decides how the lines join — the editor never drops the ones after the first.
   onChange: (paragraphs: ProseParagraph[]) => void
+  // Leaving the field is what closes editing — every keystroke already saved live through
+  // `onChange`, so blur has nothing left to commit but the host's own edit-mode flag.
+  onBlur?: () => void
   ariaLabel?: string
 }): JSX.Element {
   const reservedRefKinds = useMemo(
@@ -112,17 +116,18 @@ export function RoutineInstructionEditor({
         {/* The Document rows own every structural control — steps, branches, endings, skill
             bindings — so this surface carries no chrome of its own beyond a focus ring; typing
             "@" is the only affordance, exactly as the placeholder says. */}
-        <div className="routine-prose-surface rounded-md bg-transparent focus-within:ring-1 focus-within:ring-ring/50">
+        <div className="routine-prose-surface rounded-sm bg-transparent focus-within:ring-1 focus-within:ring-ring/50">
           <div className="relative">
             <RichTextPlugin
               contentEditable={
                 <ContentEditable
                   aria-label={ariaLabel ?? 'Routine'}
-                  className="min-h-40 w-full px-3 py-2 text-sm outline-none [&_p]:my-1 [&_h1]:mb-1 [&_h1]:mt-3 [&_h1]:text-xl [&_h1]:font-bold [&_h1]:leading-tight [&_h1]:text-foreground first:[&_h1]:mt-0"
+                  onBlur={onBlur}
+                  className="w-full text-sm leading-7 outline-none [&_p]:my-0 [&_h1]:mb-1 [&_h1]:mt-3 [&_h1]:text-xl [&_h1]:font-bold [&_h1]:leading-tight [&_h1]:text-foreground first:[&_h1]:mt-0"
                 />
               }
               placeholder={() => (
-                <div className="pointer-events-none absolute left-3 top-2 text-sm text-muted-foreground">
+                <div className="pointer-events-none absolute left-0 top-0 text-sm leading-7 text-muted-foreground">
                   Write the routine in plain language. Type @ to insert a variable.
                 </div>
               )}

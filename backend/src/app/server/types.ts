@@ -61,6 +61,7 @@ import type { ConnectorRegistry } from "../../modules/connectors/services/connec
 import type { ConnectorManagementPort } from "../../modules/connectors/services/connectorManagementService.js";
 import type { Database } from "../../shared/infra/database.js";
 import type { Env } from "../config/env.js";
+import type { VisitorGeoResolver } from "../../shared/domain/visitorGeoResolver.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type { AbuseControlService } from "../../modules/security/services/abuseControlService.js";
 import type { WorkspaceProviderCredentialsService } from "../../modules/security/credentials/services/workspaceProviderCredentialsService.js";
@@ -150,6 +151,8 @@ export interface AppDependencies {
   errorReportingService: ErrorReportingService;
   productAnalyticsService: ProductAnalyticsPort;
   capabilityPolicy: CapabilityPolicy;
+  /** FR-023/FR-024 (spec 1277): resolves country/region/city for a conversation's request context. */
+  visitorGeoResolver: VisitorGeoResolver;
   usageLimitPolicy: UsageLimitPolicy;
   usageEventRecorder: UsageEventRecorder;
   organizationCreationGuard: OrganizationCreationGuard;

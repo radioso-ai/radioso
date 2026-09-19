@@ -19,6 +19,7 @@ import { ActivityTraceGraph } from './activity-trace-graph'
 import { TurnFlowOverlay } from './turn-flow-overlay'
 import { ChatMessageThread } from './chat-message-thread'
 import { ContinueInTestChatAction } from './workbench/continue-in-test-chat-action'
+import { VisitorPanel } from './visitor-panel'
 import { HistoryDocumentDialog } from '@/components/dashboard/history/history-document-dialog'
 import { MetadataBadges } from '@/components/dashboard/shared/metadata-badges'
 import {
@@ -142,13 +143,6 @@ function buildHistoryTurnDiagnostics({
   }
 
   const debug = diagnosticsMessage?.role === 'assistant' ? diagnosticsMessage.debug : undefined
-  const metadata = diagnosticsMessage && typeof diagnosticsMessage === 'object'
-    ? (diagnosticsMessage as ChatConversationTurn & {
-        metadataJson?: Record<string, unknown>
-        metadata_json?: Record<string, unknown>
-      })
-    : null
-  const visitorContext = metadata?.metadataJson?.contextVariables ?? metadata?.metadata_json?.contextVariables
 
   return {
     messageId: selectedThreadMessage.id,
@@ -157,7 +151,6 @@ function buildHistoryTurnDiagnostics({
     errorMessage: debug?.errorMessage ?? undefined,
     activityTrace: activityTrace ?? debug?.activityTrace,
     turnTrace: activeEnvelope,
-    visitorContext,
     answerCoverage: debug?.answerCoverage,
     interactionTrace: debug?.interactionTrace,
   }
@@ -491,6 +484,11 @@ export function ConversationDrawer({
                   {selectedItem.kind === 'contact' && contactDetail ? (
                     <ContactRequestPanel contact={contactDetail.contact} className="mb-4" />
                   ) : null}
+                  <VisitorPanel
+                    conversation={conversationDetail}
+                    onSelectConversation={(conversationId) => onSelectedItemChange({ kind: 'chat', id: conversationId })}
+                    className="mb-4"
+                  />
                   {conversationDetail.hasOlderMessages ? (
                     <div className="mb-3 flex justify-center">
                       <Button

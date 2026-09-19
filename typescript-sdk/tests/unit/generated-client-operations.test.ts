@@ -53,6 +53,23 @@ describe("generated client operation coverage", () => {
     }
   });
 
+  it("types visitor conversations query filters", () => {
+    const query: Parameters<GeneratedRadiosoClient["listVisitorConversations"]>[1] = {
+      limit: 5,
+      exclude: "11111111-1111-1111-1111-111111111111",
+    };
+
+    expect(query).toMatchObject({ limit: 5 });
+  });
+
+  it("wires the visitor conversations operation used by the drawer's previous-conversations panel", () => {
+    const clientSource = readFileSync(new URL("../../src/generated/client.ts", import.meta.url), "utf8");
+    const [operationId] = operationIdsForPaths(["/api/v1/history/visitors/{visitorId}/conversations"]);
+
+    expect(operationId).toBe("listVisitorConversations");
+    expect(clientSource).toContain("listVisitorConversations(");
+  });
+
   it("exposes website crawler operations through the generated client", () => {
     const clientSource = readFileSync(new URL("../../src/generated/client.ts", import.meta.url), "utf8");
     const operationIds = operationIdsForPaths([

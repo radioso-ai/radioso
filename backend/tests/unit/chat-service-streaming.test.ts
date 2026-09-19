@@ -818,12 +818,11 @@ describe("chat service streaming", () => {
     const messageRepository = new InMemoryMessageRepository();
     const chatSessionId = surface === "public" ? "public-session-1" : null;
     const sourceChannel = surface === "public" ? "public_chat" : "authenticated_chat";
-    const conversation = await conversationRepository.create(
-      "workspace-1",
-      null,
+    const conversation = await conversationRepository.create({
+      workspaceId: "workspace-1",
       sourceChannel,
-      chatSessionId,
-    );
+      anonymousSessionId: chatSessionId,
+    });
     const readError = Object.assign(new Error(`${reader} unavailable`), {
       statusCode: 503,
       code: "preflight_read_failed",
@@ -1271,7 +1270,7 @@ describe("chat service streaming", () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const auditService = createAuditService();
-    const existingConversation = await conversationRepository.create("workspace-1", null);
+    const existingConversation = await conversationRepository.create({ workspaceId: "workspace-1" });
     const { usageLimitPolicy, reservation } = createUsageLimitPolicy();
     const retrievalPipeline = {
       interpret: vi.fn(async () => {
@@ -1372,7 +1371,7 @@ describe("chat service streaming", () => {
   it("returns the localized waiting message on a human-owned turn when a generator is wired", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
-    const existingConversation = await conversationRepository.create("workspace-1", null);
+    const existingConversation = await conversationRepository.create({ workspaceId: "workspace-1" });
     const { usageLimitPolicy, reservation } = createUsageLimitPolicy();
     const retrievalPipeline = {
       interpret: vi.fn(),
@@ -1436,7 +1435,7 @@ describe("chat service streaming", () => {
   it("does not repeat the waiting message once a human teammate has already replied", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
-    const existingConversation = await conversationRepository.create("workspace-1", null);
+    const existingConversation = await conversationRepository.create({ workspaceId: "workspace-1" });
     // The operator has already taken over and replied — the teammate has joined.
     await messageRepository.create({
       conversationId: existingConversation.id,
@@ -1505,7 +1504,7 @@ describe("chat service streaming", () => {
   it("emits only a terminal ownership ack for streamed visitor turns while the conversation is human-owned", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
-    const existingConversation = await conversationRepository.create("workspace-1", null);
+    const existingConversation = await conversationRepository.create({ workspaceId: "workspace-1" });
     const { usageLimitPolicy, reservation } = createUsageLimitPolicy();
     const retrievalPipeline = {
       interpret: vi.fn(async () => {
@@ -1612,7 +1611,7 @@ describe("chat service streaming", () => {
   it("streams the localized waiting message on a human-owned turn when a generator is wired", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
-    const existingConversation = await conversationRepository.create("workspace-1", null);
+    const existingConversation = await conversationRepository.create({ workspaceId: "workspace-1" });
     const { usageLimitPolicy, reservation } = createUsageLimitPolicy();
     const retrievalPipeline = {
       interpret: vi.fn(),
@@ -1684,7 +1683,7 @@ describe("chat service streaming", () => {
   it("holds a successor until every committed human-owned replay chunk is delivered", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
-    const existingConversation = await conversationRepository.create("workspace-1", null);
+    const existingConversation = await conversationRepository.create({ workspaceId: "workspace-1" });
     const waitingMessage = "x".repeat(600);
     let markSuccessorEnteredPipeline!: () => void;
     const successorEnteredPipeline = new Promise<void>((resolve) => { markSuccessorEnteredPipeline = resolve; });
@@ -1765,7 +1764,7 @@ describe("chat service streaming", () => {
   it("does not stream a waiting message once a human teammate has already replied", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
-    const existingConversation = await conversationRepository.create("workspace-1", null);
+    const existingConversation = await conversationRepository.create({ workspaceId: "workspace-1" });
     await messageRepository.create({
       conversationId: existingConversation.id,
       workspaceId: "workspace-1",
@@ -1838,7 +1837,7 @@ describe("chat service streaming", () => {
   it("falls back to an empty suppressed answer when waiting-message generation fails", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
-    const existingConversation = await conversationRepository.create("workspace-1", null);
+    const existingConversation = await conversationRepository.create({ workspaceId: "workspace-1" });
     const { usageLimitPolicy, reservation } = createUsageLimitPolicy();
     const retrievalPipeline = {
       interpret: vi.fn(),
@@ -1900,7 +1899,7 @@ describe("chat service streaming", () => {
   it("preserves the normal answer path when no ownership row exists", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
-    const existingConversation = await conversationRepository.create("workspace-1", null);
+    const existingConversation = await conversationRepository.create({ workspaceId: "workspace-1" });
     const { usageLimitPolicy, reservation } = createUsageLimitPolicy();
     const chatGateway: ChatGateway = {
       answer: vi.fn(async () => "Normal answer."),
@@ -2048,7 +2047,7 @@ describe("chat service streaming", () => {
   it("cancels during routine activation before the selected executor is invoked", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
-    const conversation = await conversationRepository.create("workspace-1", null);
+    const conversation = await conversationRepository.create({ workspaceId: "workspace-1" });
     let releaseActivation!: () => void;
     let markActivationStarted!: () => void;
     const activationStarted = new Promise<void>((resolve) => {
@@ -2149,7 +2148,7 @@ describe("chat service streaming", () => {
     const messageRepository = new InMemoryMessageRepository();
     const agentRepository = new InMemoryAgentRepository();
     const agent = await agentRepository.create("workspace-1", { name: "Support" });
-    const conversation = await conversationRepository.create("workspace-1", agent.id);
+    const conversation = await conversationRepository.create({ workspaceId: "workspace-1", agentId: agent.id });
     await messageRepository.create({
       conversationId: conversation.id,
       workspaceId: "workspace-1",
@@ -2248,7 +2247,7 @@ describe("chat service streaming", () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const auditService = createAuditService();
-    const existingConversation = await conversationRepository.create("workspace-1", null);
+    const existingConversation = await conversationRepository.create({ workspaceId: "workspace-1" });
     const routineStore: NonNullable<ChatServiceOptions["routineStore"]> = {
       loadActive: vi.fn(async () => null),
       save: vi.fn(async () => {}),
@@ -2361,7 +2360,7 @@ describe("chat service streaming", () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const auditService = createAuditService();
-    const existingConversation = await conversationRepository.create("workspace-1", null);
+    const existingConversation = await conversationRepository.create({ workspaceId: "workspace-1" });
     const routineStore: NonNullable<ChatServiceOptions["routineStore"]> = {
       loadActive: vi.fn(async () => null),
       save: vi.fn(async () => {}),
@@ -2687,7 +2686,7 @@ describe("chat service streaming", () => {
 
   it("does not commit a buffered directive-only reaction when a competing turn supersedes it", async () => {
     const conversationRepository = new InMemoryConversationRepository();
-    const conversation = await conversationRepository.create("workspace-1", null);
+    const conversation = await conversationRepository.create({ workspaceId: "workspace-1" });
     let release!: () => void;
     let started!: () => void;
     const barrier = new Promise<void>((resolve) => { release = resolve; });

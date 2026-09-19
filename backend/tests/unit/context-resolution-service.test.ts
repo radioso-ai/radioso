@@ -68,4 +68,39 @@ describe("resolveContextForTurn", () => {
       ssn: "[redacted]",
     });
   });
+
+  it("stages visitor_request from the narrowed facts object when present (FR-031)", () => {
+    const facts = {
+      country: "DE",
+      region: "BE",
+      city: "Berlin",
+      language: "de",
+      referrer: "https://partner.example",
+      entryPageUrl: "https://shop.example/checkout",
+    };
+
+    const result = resolveContextForTurn(null, [], facts);
+
+    expect(Object.keys(result.snapshot.visitor_request as object)).toEqual([
+      "country", "region", "city", "language", "referrer", "entryPageUrl",
+    ]);
+    expect(result.snapshot.visitor_request).toEqual(facts);
+    // always-surfaced, not sensitive → rendered untouched
+    expect(result.renderFragments).toContainEqual({
+      kind: "variable",
+      name: "visitor_request",
+      description: null,
+      value: facts,
+      trust: "unverified",
+    });
+    expect(result.staged.map((entry) => entry.id)).toContain("visitor_request");
+  });
+
+  it("omits visitor_request from the snapshot when requestFacts is absent (FR-031 AS2)", () => {
+    const withoutFacts = resolveContextForTurn(null, [], null);
+    expect(withoutFacts.snapshot).not.toHaveProperty("visitor_request");
+
+    const withoutArg = resolveContextForTurn(null, []);
+    expect(withoutArg.snapshot).not.toHaveProperty("visitor_request");
+  });
 });

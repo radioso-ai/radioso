@@ -1,7 +1,7 @@
 ---
 title: Embed on your website
 description: Launch the Radioso embed flow against a local test site, then adapt it for production.
-last_updated: 2026-08-07
+last_updated: 2026-09-18
 ---
 
 import { Callout, Steps } from 'nextra/components'
@@ -133,6 +133,12 @@ For chat events, `properties.embedSessionId` groups activity from the same embed
 
 For `chat.citation_clicked` and `chat.link_clicked`, Radioso sends link metadata such as `linkType`, `citationIndex`, `documentId`, `chunkId`, `destinationOrigin`, and `destinationPath` when available. Query strings and URL fragments are not included in analytics events.
 
+## What the widget records
+
+Every conversation the widget starts records what the visit looked like at that moment: the request's IP address, country, region, and city when a load balancer or CDN supplied them, the browser's `User-Agent` and `Accept-Language` header, the page the widget opened on, and the page that referred the visitor there. None of this reaches the model directly. The page, referrer, language, and region make up the `visitor_request` context variable a directive can read — see [Context variables](/operators/context-variables#visitor-request) for the six fields and how the entry page is gated. The IP address and raw browser string stay operator-only, visible in the Inbox conversation drawer's Visitor panel.
+
+The launcher also keeps a durable visitor key in the host page's `localStorage`, scoped to the embed token so two different embeds on the same site don't collide. The key's only job is grouping every conversation that browser starts under one visitor row for operators. It does not resume a session and it does not let the widget read a previous conversation's history — each tab still opens its own chat session, and a returning visitor still starts a fresh conversation. Where `localStorage` is unavailable, such as private browsing or a storage-blocking extension, the widget falls back to per-tab behavior silently and groups nothing across visits.
+
 ## Recommended launch sequence
 
 <Steps>
@@ -222,3 +228,4 @@ The production sign-off question is: can our approved site launch the assistant,
 
 - If the embed launches but answers are weak, go to [Document upload](/guides/document-upload) and [Agents and skills](/api/agents-and-skills).
 - If the widget should be live soon, review [Deployment](/operators/deployment).
+- To see exactly what a visit records and where operators can read it, see [Visitor data](/operators/visitor-data).

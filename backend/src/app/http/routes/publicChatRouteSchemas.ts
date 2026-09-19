@@ -4,15 +4,34 @@ import { chatMessageSchema } from "../schemas/textInputLimits.js";
 
 const localeHintSchema = z.string().trim().max(35);
 
+/** FR-013: entry_referrer is client-claimed, so anything that isn't an http(s) URL is dropped rather than rejected. */
+const isHttpUrl = (value: string): boolean => {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+};
+
 export const pageContextSchema = z.object({
   pageUrl: z.string().trim().max(2048).nullable().optional(),
   pageTitle: z.string().trim().max(180).nullable().optional(),
   pageLocale: z.string().trim().max(35).nullable().optional(),
   browserLocale: z.string().trim().max(35).nullable().optional(),
   content: z.string().trim().max(6000).nullable().optional(),
+  // Capped by truncation (not `.max()`, which would reject the whole message over an
+  // inconsequential metadata field) before the http(s) check, since a truncated string
+  // may no longer parse as a URL at all.
+  referrer: z.string().trim().nullable().optional()
+    .transform((value) => {
+      if (!value) return null;
+      const capped = value.slice(0, 2048);
+      return isHttpUrl(capped) ? capped : null;
+    }),
 }).optional();
 
-export const clientContextCapabilitiesSchema = z.object({
+const clientContextCapabilitiesSchema = z.object({
   "page.read": z.object({
     available: z.boolean(),
     mode: z.enum(["metadata", "content"]).nullable(),
@@ -93,8 +112,9 @@ export const publicChatSessionSchema = z.object({
   agentId: z.string().uuid().optional(),
   resumeToken: z.string().min(1).optional(),
   chatSessionId: z.string().uuid().optional(),
-  // Accepted for older clients but no longer trusted as a resume credential.
-  anonymousSessionId: z.string().uuid().optional(),
+  // Spec 1277 decision 6: an unauthenticated, client-persisted visitor-grouping id
+  // (never a session credential) — see publicChatRoutes.ts's resolveVisitorKey.
+  visitorKey: z.string().uuid().optional(),
   pageContext: pageContextSchema,
   clientContextCapabilities: clientContextCapabilitiesSchema,
 });

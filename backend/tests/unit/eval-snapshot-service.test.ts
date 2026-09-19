@@ -118,6 +118,10 @@ class StubConversationRepository implements ConversationRepositoryPort {
     throw new Error("not implemented");
   }
 
+  async listPageByVisitorId(): Promise<{ conversations: ConversationRecord[]; total: number; nextCursor: string | null; hasMore: boolean }> {
+    throw new Error("not implemented");
+  }
+
   async findByIdAndWorkspaceId(conversationId: string, workspaceId: string): Promise<ConversationRecord | null> {
     return this.conversation?.id === conversationId && this.conversation.workspaceId === workspaceId
       ? this.conversation

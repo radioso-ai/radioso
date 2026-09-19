@@ -131,8 +131,8 @@ describe("history contract", () => {
   it("narrows the merged history items by agentId end to end through the route", async () => {
     const { app, repositories } = createTestApp();
     const session = await issueTestSession(app, "history-items-agent-filter@example.com");
-    const matching = await repositories.conversationRepository.create(session.workspaceId, "99999999-9999-4999-8999-999999999999");
-    await repositories.conversationRepository.create(session.workspaceId, "88888888-8888-4888-8888-888888888888");
+    const matching = await repositories.conversationRepository.create({ workspaceId: session.workspaceId, agentId: "99999999-9999-4999-8999-999999999999" });
+    await repositories.conversationRepository.create({ workspaceId: session.workspaceId, agentId: "88888888-8888-4888-8888-888888888888" });
 
     const response = await request(app)
       .get("/api/v1/history?agentId=99999999-9999-4999-8999-999999999999")
@@ -181,16 +181,13 @@ describe("history contract", () => {
     const session = await issueTestSession(app, "history-contact-detail@example.com");
     contact.workspaceId = session.workspaceId;
 
-    const conversation = await repositories.conversationRepository.create(
-      session.workspaceId,
-      "88888888-8888-4888-8888-888888888888",
-      "website_embed",
-      null,
-      "https://example.com/help",
-      null,
-      null,
-      { entryPageUrl: "https://example.com/pricing" },
-    );
+    const conversation = await repositories.conversationRepository.create({
+      workspaceId: session.workspaceId,
+      agentId: "88888888-8888-4888-8888-888888888888",
+      sourceChannel: "website_embed",
+      sourceOrigin: "https://example.com/help",
+      entryPageUrl: "https://example.com/pricing",
+    });
     conversation.agentName = "Public support";
     conversation.agentInternalName = "Billing support";
     contact.conversationId = conversation.id;
@@ -219,8 +216,8 @@ describe("history contract", () => {
   it("filters chat history to human-owned conversations and returns the filtered total", async () => {
     const { app, repositories } = createTestApp();
     const session = await issueTestSession(app, "history-human-owned@example.com");
-    const humanOwned = await repositories.conversationRepository.create(session.workspaceId);
-    await repositories.conversationRepository.create(session.workspaceId);
+    const humanOwned = await repositories.conversationRepository.create({ workspaceId: session.workspaceId });
+    await repositories.conversationRepository.create({ workspaceId: session.workspaceId });
     await repositories.conversationOwnershipRepository.requestHandoff({
       conversationId: humanOwned.id,
       workspaceId: session.workspaceId,

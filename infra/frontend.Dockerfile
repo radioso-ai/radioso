@@ -25,6 +25,7 @@ ARG RADIOSO_EDITION=oss
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY frontend/package.json ./frontend/package.json
+COPY packages/edge-proof/package.json ./packages/edge-proof/package.json
 COPY packages/routine-definition/package.json ./packages/routine-definition/package.json
 COPY packages/routine-document/package.json ./packages/routine-document/package.json
 COPY packages/ui/package.json ./packages/ui/package.json
@@ -53,6 +54,7 @@ ENV NEXT_PUBLIC_RADIOSO_EDITION=$RADIOSO_EDITION
 ENV NEXT_TELEMETRY_DISABLED=1
 
 COPY frontend ./frontend
+COPY packages/edge-proof ./packages/edge-proof
 COPY packages/routine-definition ./packages/routine-definition
 COPY packages/routine-document ./packages/routine-document
 COPY packages/ui ./packages/ui
@@ -88,6 +90,7 @@ ENV NEXT_PUBLIC_RADIOSO_EDITION=$RADIOSO_EDITION
 COPY --chown=node:node --from=builder /app/node_modules ./node_modules
 COPY --chown=node:node --from=builder /app/ee ./ee
 COPY --chown=node:node --from=builder /app/frontend ./frontend
+COPY --chown=node:node --from=builder /app/packages/edge-proof ./packages/edge-proof
 COPY --chown=node:node --from=builder /app/packages/routine-definition ./packages/routine-definition
 COPY --chown=node:node --from=builder /app/packages/routine-document ./packages/routine-document
 COPY --chown=node:node --from=builder /app/packages/ui ./packages/ui

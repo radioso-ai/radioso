@@ -105,10 +105,13 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
         source_channel TEXT,
         source_origin TEXT,
         entry_page_url TEXT,
+        entry_referrer TEXT,
         title TEXT,
         channel_context JSONB,
+        request_context JSONB,
         anonymous_session_id TEXT,
         verified_customer_id UUID,
+        visitor_id UUID,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )

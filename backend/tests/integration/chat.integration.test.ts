@@ -2240,16 +2240,11 @@ describe("chat integration", () => {
 
     const baselineAgent = await dependencies.agentService.resolve(workspaceId);
     const baselineRevision = await publishTestAgentBaseline(app, { workspaceId, agentId: baselineAgent.id });
-    const conversation = await dependencies.conversationRepository.create(
+    const conversation = await dependencies.conversationRepository.create({
       workspaceId,
-      baselineAgent.id,
-      null,
-      null,
-      null,
-      null,
-      null,
-      { agentRevisionId: baselineRevision.id },
-    );
+      agentId: baselineAgent.id,
+      agentRevisionId: baselineRevision.id,
+    });
     await dependencies.messageRepository.create({
       conversationId: conversation.id,
       workspaceId,
@@ -2367,16 +2362,11 @@ describe("chat integration", () => {
 
     const baselineAgent = await dependencies.agentService.resolve(workspaceId);
     const baselineRevision = await publishTestAgentBaseline(app, { workspaceId, agentId: baselineAgent.id });
-    const conversation = await dependencies.conversationRepository.create(
+    const conversation = await dependencies.conversationRepository.create({
       workspaceId,
-      baselineAgent.id,
-      null,
-      null,
-      null,
-      null,
-      null,
-      { agentRevisionId: baselineRevision.id },
-    );
+      agentId: baselineAgent.id,
+      agentRevisionId: baselineRevision.id,
+    });
     await dependencies.messageRepository.create({
       conversationId: conversation.id,
       workspaceId,

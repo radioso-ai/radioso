@@ -15,9 +15,12 @@
     "node": ">=24"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "pnpm --dir ../edge-proof run build && tsc -p tsconfig.build.json",
     "check": "pnpm run build && pnpm test",
-    "test": "vitest run"
+    "test": "pnpm --dir ../edge-proof run build && vitest run"
+  },
+  "dependencies": {
+    "@radioso/edge-proof": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",

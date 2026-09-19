@@ -269,7 +269,11 @@ const restoreSeededQualitySignal = async (
 };
 
 const seedBootstrappedWorkspace = async (deps: Deps, target: EvalTarget): Promise<{ assistantMessageId: string }> => {
-  const conversation = await deps.conversationRepository.create(target.workspaceId, target.agentId, "web");
+  const conversation = await deps.conversationRepository.create({
+    workspaceId: target.workspaceId,
+    agentId: target.agentId,
+    sourceChannel: "web",
+  });
   await deps.messageRepository.create({
     conversationId: conversation.id,
     workspaceId: target.workspaceId,

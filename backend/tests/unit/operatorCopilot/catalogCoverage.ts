@@ -189,10 +189,19 @@ const ambientOperatorRuntime = permanent("Permanent exclusion: this is ambient o
 // catalog on the same ground conversation content does.
 const visitorScopedRuntimeData = permanent("Permanent exclusion: this reads or writes a context variable's per-scope runtime value, not agent configuration Ray authors.");
 const liveEvalEffects = permanent("Permanent exclusion: Ray may replay and evaluate a case, but never enables the live external effects that a replay can invoke.");
+// conversation_transcript never sets includeAgentInternalName, so no Ray tool's output ever
+// carries a visitorId — there is nothing Ray could pass to this operation. Visitor identity
+// (IP, geo, cross-conversation linkage) is also an operator-only triage surface by spec 1277's
+// own boundaries, distinct from the conversation content conversation_transcript already reads.
+const visitorProfileIsOperatorOnly = permanent(
+  "Permanent exclusion: operator triage read for a visitor's own history panel. Ray reads conversations through conversation_transcript and conversation_history_search, and no Ray tool surfaces a visitor id for this operation to take as input.",
+);
 
 /** Every OpenAPI operation is deliberately reachable through a family reader or explicitly planned/excluded. */
 export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
   ...catalogToolCoverage,
+
+  listVisitorConversations: visitorProfileIsOperatorOnly,
 
   ...coverage([
     "decideOperatorMcpConsentTransaction",

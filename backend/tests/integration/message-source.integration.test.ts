@@ -68,7 +68,7 @@ describeIfDatabase("message source integration", () => {
     });
     accountIds.push(account.id);
     const workspace = await workspaceRepository.create(account.id, "Message Source Workspace");
-    const conversation = await conversationRepository.create(workspace.id, null, "dashboard");
+    const conversation = await conversationRepository.create({ workspaceId: workspace.id, sourceChannel: "dashboard" });
 
     const written = await messageRepository.create({
       workspaceId: workspace.id,

@@ -39,7 +39,7 @@ export const agentBundleBodySchema = z.object({
   }).passthrough()).default([]),
   contextVariables: z.array(z.object({
     variableName: z.string(),
-    source: z.enum(["pushed", "browser", "resolver"]),
+    source: z.enum(["pushed", "browser", "resolver", "request"]),
     resolverSkillName: z.string().nullable(),
     maxAgeSeconds: z.number().int().nullable(),
     resolverTimeoutMs: z.number().int().nullable(),

@@ -116,6 +116,34 @@ describe("sdk client integration", () => {
     expect(chat.answer).toBe("hello");
   });
 
+  it("lists a visitor's other conversations through the history facade", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      new Response(JSON.stringify({
+        conversations: [],
+        total: 0,
+        nextCursor: null,
+        hasMore: false,
+      }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    const client = createRadiosoClient({
+      baseUrl: "https://api.example.com",
+      apiToken: "token-123",
+      fetch: fetchMock as typeof fetch,
+    });
+
+    const result = await client.history.listVisitorConversations("visitor-1", { exclude: "conversation-1", limit: 5 });
+
+    expect(result.conversations).toEqual([]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(
+      "https://api.example.com/api/v1/history/visitors/visitor-1/conversations?exclude=conversation-1&limit=5",
+    );
+  });
+
   it("imports a source file through the SDK document facade", async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(
       new Response(JSON.stringify({

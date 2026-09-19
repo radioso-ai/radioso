@@ -15,6 +15,8 @@ import {
   historySearchParamsSchema,
   historyItemsPageQuerySchema,
   historyItemsListQuerySchema,
+  visitorConversationsParamsSchema,
+  visitorConversationsQuerySchema,
 } from "./conversationRouteSchemas.js";
 
 type HistoryRouteDependencies = WorkspaceSessionDependencies & Pick<
@@ -174,6 +176,30 @@ export const createHistoryRoutes = (dependencies: HistoryRouteDependencies): Rou
         parsedQuery.data,
       );
       res.status(200).json(tail);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get("/visitors/:visitorId/conversations", workspaceSession, historyRead, async (req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const parsedParams = visitorConversationsParamsSchema.safeParse(req.params);
+      if (!parsedParams.success) {
+        next(badRequest("Invalid request params", parsedParams.error.flatten()));
+        return;
+      }
+      const parsedQuery = visitorConversationsQuerySchema.safeParse(req.query);
+      if (!parsedQuery.success) {
+        next(badRequest("Invalid request query", parsedQuery.error.flatten()));
+        return;
+      }
+      const page = await dependencies.assistantHistoryService.listVisitorConversations(
+        workspaceId,
+        parsedParams.data.visitorId,
+        parsedQuery.data,
+      );
+      res.status(200).json(page);
     } catch (error) {
       next(error);
     }

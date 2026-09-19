@@ -961,6 +961,8 @@ export const installDashboardApiMocks = async (
     documentSources?: unknown;
     conversationDetail?: unknown;
     conversationDetails?: Record<string, unknown>;
+    /** GET /history/visitors/{visitorId}/conversations response, keyed by visitorId (spec 1277). */
+    visitorConversations?: Record<string, unknown>;
     /** Every `POST /agents/:id/test-executions` body, in order. */
     testExecutionRequests?: unknown[];
     pendingDecisions?: ApiSchemas["PendingApprovalDecision"][];
@@ -1197,6 +1199,7 @@ export const installDashboardApiMocks = async (
   const searchHistory = options.searchHistory ?? emptySearchHistory;
   let conversationDetail = options.conversationDetail;
   const conversationDetails = new Map<string, unknown>(Object.entries(options.conversationDetails ?? {}));
+  const visitorConversations = new Map<string, unknown>(Object.entries(options.visitorConversations ?? {}));
   if (
     conversationDetail &&
     typeof conversationDetail === "object" &&
@@ -1534,6 +1537,17 @@ export const installDashboardApiMocks = async (
 
     if (request.method() === "GET" && path.startsWith("/history/chat/") && conversationDetail) {
       await json(route, conversationDetail);
+      return;
+    }
+
+    if (request.method() === "GET" && /^\/history\/visitors\/[^/]+\/conversations$/.test(path)) {
+      const visitorId = path.replace("/history/visitors/", "").replace("/conversations", "");
+      await json(route, visitorConversations.get(visitorId) ?? {
+        conversations: [],
+        total: 0,
+        nextCursor: null,
+        hasMore: false,
+      });
       return;
     }
 

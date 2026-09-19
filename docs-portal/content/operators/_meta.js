@@ -2,6 +2,7 @@ const meta = {
   deployment: 'Deployment',
   'clarification-behavior': 'Clarification behavior',
   'context-variables': 'Context variables',
+  'visitor-data': 'Visitor data',
   'human-takeover': 'Human takeover',
   copilot: 'Ray',
   'slack-channel': 'Slack channel',

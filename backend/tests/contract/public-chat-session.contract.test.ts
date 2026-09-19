@@ -109,6 +109,85 @@ describe("public chat session contract", () => {
     expect(response.body.resumeExpiresAt).toEqual(expect.any(String));
   });
 
+  it("binds a client-provided visitorKey into the signed session and resume payloads (spec 1277 decision 6, FR-008)", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "public-embed-visitor-key@example.com");
+
+    const token = await enableWebsiteEmbed(app, session);
+    const origin = "https://example.com";
+    const visitorKey = randomUUID();
+
+    const response = await createWebsiteEmbedPublicSession(app, token, origin, { visitorKey });
+
+    expect(response.status).toBe(200);
+    // visitorKey never appears in the JSON response — the client already has it, it
+    // generated the value — only in the signed claims a later resume must agree with.
+    expect(response.body).not.toHaveProperty("visitorKey");
+    expect(response.body).not.toHaveProperty("anonymousSessionId");
+    expect(decodePublicSessionPayload(response.body.publicSessionToken as string)).toMatchObject({ visitorKey });
+    expect(decodePublicSessionPayload(response.body.resumeToken as string)).toMatchObject({ visitorKey });
+    // publicSessionId is independent of visitorKey — binding a visitor key must never
+    // let a client choose or predict the session identity itself.
+    expect(response.body.publicSessionId).not.toBe(visitorKey);
+  });
+
+  it("a resume keeps the resumed session's own visitorKey and ignores a different client-supplied one", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "public-embed-visitor-key-resume@example.com");
+
+    const token = await enableWebsiteEmbed(app, session);
+    const origin = "https://example.com";
+    const originalVisitorKey = randomUUID();
+
+    const first = await createWebsiteEmbedPublicSession(app, token, origin, { visitorKey: originalVisitorKey });
+    const resumeToken = first.body.resumeToken as string;
+
+    const second = await createWebsiteEmbedPublicSession(app, token, origin, {
+      resumeToken,
+      visitorKey: randomUUID(),
+    });
+
+    expect(second.status).toBe(200);
+    expect(second.body.publicSessionId).toBe(first.body.publicSessionId);
+    expect(decodePublicSessionPayload(second.body.publicSessionToken as string)).toMatchObject({
+      visitorKey: originalVisitorKey,
+    });
+  });
+
+  it("a second /sessions call with the same visitorKey and no resume token gets a different, non-resuming session (never a credential)", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "public-embed-visitor-key-not-a-session@example.com");
+
+    const token = await enableWebsiteEmbed(app, session);
+    const origin = "https://example.com";
+    const sharedVisitorKey = randomUUID();
+
+    const first = await createWebsiteEmbedPublicSession(app, token, origin, { visitorKey: sharedVisitorKey });
+    const firstChat = await request(app)
+      .post(`/api/v1/public/chat/${first.body.publicChatToken}`)
+      .set("Origin", origin)
+      .set("x-radioso-public-session", first.body.publicSessionToken)
+      .send({ message: "What can you do?", stream: false });
+    expect(firstChat.status).toBe(200);
+
+    const second = await createWebsiteEmbedPublicSession(app, token, origin, { visitorKey: sharedVisitorKey });
+
+    expect(second.status).toBe(200);
+    expect(second.body.publicSessionId).not.toBe(first.body.publicSessionId);
+
+    const historyResponse = await request(app)
+      .get(`/api/v1/public/chat/${second.body.publicChatToken}`)
+      .set("Origin", origin)
+      .set("x-radioso-public-session", second.body.publicSessionToken);
+
+    expect(historyResponse.status).toBe(200);
+    expect(historyResponse.body.conversations).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: firstChat.body.conversationId }),
+      ]),
+    );
+  });
+
   it("streams website embed chat from the bound approved origin", async () => {
     const { app } = createTestApp({
       chatGateway: {

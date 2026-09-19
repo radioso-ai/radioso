@@ -12,6 +12,19 @@ export const historyContactParamsSchema = z.object({
   requestId: z.string().uuid(),
 });
 
+export const visitorConversationsParamsSchema = z.object({
+  visitorId: z.string().uuid(),
+});
+
+export const visitorConversationsQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  offset: z.coerce.number().int().min(0).optional(),
+  cursor: z.string().min(1).optional(),
+  // Excludes the conversation already open in the drawer from its own "Previous
+  // conversations" list.
+  exclude: z.string().uuid().optional(),
+}).strict();
+
 export const collectionPageQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50),
   offset: z.coerce.number().int().min(0).optional(),

@@ -200,6 +200,63 @@ describe("public chat contract", () => {
     expect(allPrompts).not.toContain("Visible page excerpt");
   });
 
+  it("persists pageContext.referrer as the conversation's entryReferrer once at creation (FR-013)", async () => {
+    const { app, repositories } = createTestApp();
+    const session = await issueTestSession(app, "public-chat-entry-referrer@example.com");
+    const chatToken = await enableAnonymousChat(app, session);
+    const publicSession = await createPublicSession(app, chatToken);
+
+    const first = await request(app)
+      .post(`/api/v1/public/chat/${chatToken}`)
+      .set("x-radioso-public-session", publicSession.publicSessionToken)
+      .send({
+        message: "Hello",
+        stream: false,
+        pageContext: { pageUrl: "https://example.com/pricing", referrer: "https://google.com/search?q=radioso" },
+      });
+    expect(first.status).toBe(200);
+
+    const created = repositories.conversationRepository.items.get(first.body.conversationId);
+    expect(created?.entryReferrer).toBe("https://google.com/search?q=radioso");
+
+    const anonCookie = findAnonymousCookie(first.headers["set-cookie"]);
+    const second = await request(app)
+      .post(`/api/v1/public/chat/${chatToken}`)
+      .set("x-radioso-public-session", publicSession.publicSessionToken)
+      .set("Cookie", anonCookie!)
+      .send({
+        message: "Follow-up",
+        stream: false,
+        conversationId: first.body.conversationId,
+        pageContext: { pageUrl: "https://example.com/pricing", referrer: "https://bing.com/search?q=radioso" },
+      });
+    expect(second.status).toBe(200);
+    expect(second.body.conversationId).toBe(first.body.conversationId);
+
+    const stillFirstReferrer = repositories.conversationRepository.items.get(first.body.conversationId);
+    expect(stillFirstReferrer?.entryReferrer).toBe("https://google.com/search?q=radioso");
+  });
+
+  it("drops a non-http(s) pageContext.referrer instead of persisting it (FR-013)", async () => {
+    const { app, repositories } = createTestApp();
+    const session = await issueTestSession(app, "public-chat-entry-referrer-invalid@example.com");
+    const chatToken = await enableAnonymousChat(app, session);
+    const publicSession = await createPublicSession(app, chatToken);
+
+    const response = await request(app)
+      .post(`/api/v1/public/chat/${chatToken}`)
+      .set("x-radioso-public-session", publicSession.publicSessionToken)
+      .send({
+        message: "Hello",
+        stream: false,
+        pageContext: { pageUrl: "https://example.com/pricing", referrer: "javascript:alert(1)" },
+      });
+    expect(response.status).toBe(200);
+
+    const created = repositories.conversationRepository.items.get(response.body.conversationId);
+    expect(created?.entryReferrer ?? null).toBeNull();
+  });
+
   it("persists the first website embed page URL in operator history", async () => {
     const { app } = createTestApp();
     const session = await issueTestSession(app, "public-chat-entry-page@example.com");
@@ -656,16 +713,13 @@ describe("public chat contract", () => {
       .expect(200);
     const chatToken = tokenResponse.body.surfaceSettings.anonymousChat.token as string;
     const publicSession = await createPublicSession(app, chatToken);
-    const conversation = await repositories.conversationRepository.create(
-      session.workspaceId,
-      agent.body.id,
-      "anonymous",
-      publicSession.publicSessionId,
-      null,
-      null,
-      null,
-      { entryPageUrl: "https://example.com/support" },
-    );
+    const conversation = await repositories.conversationRepository.create({
+      workspaceId: session.workspaceId,
+      agentId: agent.body.id,
+      sourceChannel: "anonymous",
+      anonymousSessionId: publicSession.publicSessionId,
+      entryPageUrl: "https://example.com/support",
+    });
     expect(conversation.agentId).toBe(agent.body.id);
     const storedConversation = repositories.conversationRepository.items.get(conversation.id);
     if (!storedConversation) {

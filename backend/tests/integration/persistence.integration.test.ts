@@ -143,7 +143,7 @@ describeIfDatabase("persistence integration", () => {
       passwordHash: "hash-intake",
     });
     const workspace = await workspaceRepository.create(account.id, "Concurrent Intake Workspace");
-    const conversation = await conversationRepository.create(workspace.id);
+    const conversation = await conversationRepository.create({ workspaceId: workspace.id });
     const skillName = `test.concurrent.${randomUUID()}`;
     const insertOpenState = () => database.query(
       `INSERT INTO skill_intake_states (

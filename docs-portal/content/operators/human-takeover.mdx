@@ -1,7 +1,7 @@
 ---
 title: "Human takeover"
 description: "Let an operator own a conversation while the AI stays silent, reply as a human, and hand back — from the dashboard or the API."
-last_updated: 2026-09-05
+last_updated: 2026-09-18
 ---
 
 # Human takeover
@@ -42,6 +42,10 @@ Both lenses share the same reading pane. Select an actionable conversation — o
 The browser tab title shows how many items are open, and a soft sound plays when a new handoff or approval arrives while you have the dashboard open.
 
 Either lens has an **Open in debug view** link, which opens the conversation drawer: transcript, Debug, Flow, a button to continue it in test chat, and a button to send it to Eval. The drawer is for inspecting and testing — replying, taking over, handing back, and approving or rejecting a pending decision all happen from the reading pane instead.
+
+The drawer opens with a **Visitor** panel above the transcript whenever the conversation carries a visitor or a request context: country, region, and city; browser and OS, with the raw user agent in a tooltip; language; entry page; referrer; IP address; and when the visitor first showed up. An "unverified" hint means an edge marker arrived with the request but did not check out, so no facts are shown for it. Below those fields, **Previous conversations** lists the visitor's five most recent other conversations with a link to each and a "see all N" count when there are more — this is what groups conversations under the same durable visitor key from the embed, or the same verified customer id, across sessions. A field with nothing to show renders as unknown rather than being hidden, so a thin profile still confirms the panel worked.
+
+Conversation rows across the Inbox and Quality lists show the country code next to the visitor label when a geo header resolved one, ahead of the page or channel it names.
 
 **Quality** is its own top-level section with two pages. **Review** is the paginated answer-quality backlog and per-turn triage: negative feedback and skill failures, alongside the grounding gaps summarized in the Inbox. Retrieval answers with a complete diagnostic show the sourced claim total and separate warnings for unsourced claims or invalid citations under the Outcome badge. A no-support answer with zero claims says **No supported claims**; turns without complete evidence show no diagnostic line. Open **Filter → Evidence** to select grounding verdicts or focus on unsourced claims and invalid sources. Closed work can be filtered by structured resolution reason and closure time, and the compact resolution breakdown opens the exact matching queue. Filter state stays in the URL, so a review queue can be shared. **Add to Eval** preserves a weak turn as a repeatable case on the **Evals** page; once linked, the row shows timestamped verification evidence and the action becomes **Open Eval**.
 
@@ -149,3 +153,4 @@ Each tail call returns messages created after the cursor plus an advanced cursor
 - [Author a routine](/guides/authoring-routines) — author the handoff terminals and approval gates that trigger takeover.
 - [Slack channel](/operators/slack-channel) — approve, take over, and reply from Slack.
 - [Clarification behavior](/operators/clarification-behavior) — how the agent asks before it escalates.
+- [Visitor data](/operators/visitor-data) — every field the Visitor panel shows and how long it lives.

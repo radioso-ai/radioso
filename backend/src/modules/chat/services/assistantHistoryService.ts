@@ -48,6 +48,14 @@ export class AssistantHistoryService {
     return this.chatHistoryService.listContacts(workspaceId, input);
   }
 
+  listVisitorConversations(
+    workspaceId: string,
+    visitorId: string,
+    input: { limit: number; offset?: number; cursor?: string; exclude?: string },
+  ) {
+    return this.chatHistoryService.listVisitorConversations(workspaceId, visitorId, input);
+  }
+
   getConversation(
     workspaceId: string,
     conversationId: string,

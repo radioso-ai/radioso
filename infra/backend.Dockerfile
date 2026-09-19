@@ -44,6 +44,7 @@ COPY packages/document-parser/package.json ./packages/document-parser/package.js
 COPY packages/document-parser/*.d.ts ./packages/document-parser/
 COPY packages/document-parser/*.js ./packages/document-parser/
 COPY packages/document-parser/parsers ./packages/document-parser/parsers
+COPY packages/edge-proof/package.json ./packages/edge-proof/package.json
 COPY packages/mcp-source-proof/package.json ./packages/mcp-source-proof/package.json
 COPY packages/operator-mcp-contract/package.json ./packages/operator-mcp-contract/package.json
 COPY packages/product-docs/package.json ./packages/product-docs/package.json
@@ -80,6 +81,7 @@ COPY packages/skill-contract ./packages/skill-contract
 COPY packages/usage-contract ./packages/usage-contract
 COPY packages/crawler ./packages/crawler
 COPY packages/document-parser ./packages/document-parser
+COPY packages/edge-proof ./packages/edge-proof
 COPY packages/mcp-source-proof ./packages/mcp-source-proof
 COPY packages/operator-mcp-contract ./packages/operator-mcp-contract
 COPY packages/product-docs ./packages/product-docs
@@ -120,6 +122,7 @@ COPY packages/document-parser/package.json ./packages/document-parser/package.js
 COPY packages/document-parser/*.d.ts ./packages/document-parser/
 COPY packages/document-parser/*.js ./packages/document-parser/
 COPY packages/document-parser/parsers ./packages/document-parser/parsers
+COPY packages/edge-proof/package.json ./packages/edge-proof/package.json
 COPY packages/mcp-source-proof/package.json ./packages/mcp-source-proof/package.json
 COPY packages/operator-mcp-contract/package.json ./packages/operator-mcp-contract/package.json
 COPY packages/product-docs/package.json ./packages/product-docs/package.json
@@ -144,6 +147,7 @@ RUN if [ "$RADIOSO_EDITION" = "enterprise" ]; then \
 
 COPY --chown=node:node --from=build /app/backend/dist ./backend/dist
 COPY --chown=node:node --from=build /app/packages/crawler/dist ./packages/crawler/dist
+COPY --chown=node:node --from=build /app/packages/edge-proof/dist ./packages/edge-proof/dist
 COPY --chown=node:node --from=build /app/packages/mcp-source-proof/dist ./packages/mcp-source-proof/dist
 COPY --chown=node:node --from=build /app/packages/operator-mcp-contract/dist ./packages/operator-mcp-contract/dist
 COPY --chown=node:node --from=build /app/packages/product-docs/dist ./packages/product-docs/dist

@@ -145,14 +145,12 @@ export class PostgresSlackPersistence implements SlackPersistencePort {
           return { link: mapLink(existing), created: false };
         }
 
-        const conversation = await new ConversationRepository(trx).create(
-          input.workspaceId,
-          input.agentId,
-          input.sourceChannel,
-          null,
-          null,
-          input.channelContext,
-        );
+        const conversation = await new ConversationRepository(trx).create({
+          workspaceId: input.workspaceId,
+          agentId: input.agentId,
+          sourceChannel: input.sourceChannel,
+          channelContext: input.channelContext,
+        });
         const inserted = await trx
           .insertInto("slack_conversation_links")
           .values({

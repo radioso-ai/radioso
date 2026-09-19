@@ -34,7 +34,7 @@ const routineSnapshotSchema = routineDefinitionSchema
   .strip();
 const contextVariableEnablementSnapshotSchema = z.object({
   id: z.string().uuid(), agentId: z.string().uuid(), variableId: z.string().uuid(),
-  source: z.enum(["pushed", "browser", "resolver"]), resolverSkillId: z.string().uuid().nullable(),
+  source: z.enum(["pushed", "browser", "resolver", "request"]), resolverSkillId: z.string().uuid().nullable(),
   maxAgeSeconds: z.number().int().nonnegative().nullable(), resolverTimeoutMs: z.number().int().positive().nullable(),
   surfacing: z.enum(["always", "on_reference", "operator_only"]), enabled: z.boolean(),
   createdAt: persistedDate, updatedAt: persistedDate,

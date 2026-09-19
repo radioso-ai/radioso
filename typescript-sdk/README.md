@@ -63,6 +63,7 @@ pnpm run build
 - `client.chat.stream(...)`
 - `client.chat.listHistory(...)`
 - `client.chat.getHistoryConversation(...)`
+- `client.history.listVisitorConversations(visitorId, ...)` — a visitor's other conversations
 
 ### Agent authoring
 

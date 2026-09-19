@@ -81,4 +81,37 @@ describe("agent revision snapshot schema", () => {
     const live = parseAgentRevisionSnapshot(snapshotWith([routineSnapshot(), { ...broken, enabled: true }]));
     expect(() => assertCandidateSnapshotIsRunnable(live)).toThrow(/cannot be released/u);
   });
+
+  // FR-030 widened the persisted enum to accept a fourth source, "request" (the
+  // visitor_request built-in's descriptor). visitor_request itself resolves
+  // unconditionally, like the other built-ins, and is never gated by an
+  // agent_context_variables row — this test only guards that a historical or
+  // hand-written snapshot carrying the widened value still parses and publishes.
+  it("parses and publishes a snapshot containing a request-sourced enablement value (FR-030 schema compatibility)", () => {
+    const snapshot = {
+      ...snapshotWith([]),
+      contextVariableEnablements: [
+        {
+          id: "77777777-7777-4777-8777-777777777777",
+          agentId: "22222222-2222-4222-8222-222222222222",
+          variableId: "88888888-8888-4888-8888-888888888888",
+          source: "request",
+          resolverSkillId: null,
+          maxAgeSeconds: null,
+          resolverTimeoutMs: null,
+          surfacing: "always",
+          enabled: true,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-02T00:00:00.000Z",
+        },
+      ],
+    };
+
+    const parsed = parseAgentRevisionSnapshot(snapshot);
+
+    expect(parsed.contextVariableEnablements).toEqual([
+      expect.objectContaining({ source: "request", enabled: true }),
+    ]);
+    expect(() => assertCandidateSnapshotIsRunnable(parsed)).not.toThrow();
+  });
 });

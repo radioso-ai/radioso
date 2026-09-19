@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { ConversationChannelContext } from "@radioso/conversation-contract";
+import type { ConversationChannelContext, ConversationRequestContext } from "@radioso/conversation-contract";
 import type { MessageRecord } from "./messageRepository.js";
 
 import { decodeCursorWithKeys, encodeCursor } from "../../shared/domain/cursorPagination.js";
@@ -33,6 +33,12 @@ export interface ConversationRecord {
   anonymousSessionId: string | null;
   verifiedCustomerId: string | null;
   entryPageUrl: string | null;
+  /** Client-claimed referrer of the host page (FR-013); distinct trust from `requestContext`. */
+  entryReferrer?: string | null;
+  /** Workspace-scoped visitor this conversation resolves to (spec 1277); null for channels with no visitor key. */
+  visitorId?: string | null;
+  /** Edge-observed request facts captured once at creation (spec 1277, FR-010/011). */
+  requestContext?: ConversationRequestContext | null;
   /**
    * Short LLM-generated topic label (issue #1114), refreshed alongside the rolling
    * summary. Null until the summary service's first successful regeneration; callers
@@ -48,6 +54,22 @@ export interface GetOrCreateConversationResult {
   created: boolean;
 }
 
+export interface CreateConversationInput {
+  workspaceId: string;
+  agentId?: string | null;
+  sourceChannel?: string | null;
+  anonymousSessionId?: string | null;
+  sourceOrigin?: string | null;
+  channelContext?: ConversationChannelContext | null;
+  verifiedCustomerId?: string | null;
+  entryPageUrl?: string | null;
+  agentRevisionId?: string | null;
+  purpose?: ConversationRecord["purpose"];
+  visitorId?: string | null;
+  requestContext?: ConversationRequestContext | null;
+  entryReferrer?: string | null;
+}
+
 export interface ConversationRepositoryPort {
   // MCP converse requires this capability, while replay/eval repository doubles do not.
   // AgentConverseService fails closed when an application adapter omits it.
@@ -58,16 +80,7 @@ export interface ConversationRepositoryPort {
     anonymousSessionId: string;
     sourceOrigin?: string | null;
   }): Promise<GetOrCreateConversationResult>;
-  create(
-    workspaceId: string,
-    agentId?: string | null,
-    sourceChannel?: string | null,
-    anonymousSessionId?: string | null,
-    sourceOrigin?: string | null,
-    channelContext?: ConversationChannelContext | null,
-    verifiedCustomerId?: string | null,
-    options?: { entryPageUrl?: string | null; agentRevisionId?: string | null; purpose?: ConversationRecord["purpose"] },
-  ): Promise<ConversationRecord>;
+  create(input: CreateConversationInput): Promise<ConversationRecord>;
   createWithInitialAssistantMessage(input: {
     workspaceId: string;
     agentId?: string | null;
@@ -94,6 +107,18 @@ export interface ConversationRepositoryPort {
     workspaceId: string,
     anonymousSessionId: string,
     input: { limit: number; offset?: number; cursor?: string; agentId?: string | null },
+  ): Promise<{ conversations: ConversationRecord[]; total: number; nextCursor: string | null; hasMore: boolean }>;
+  /**
+   * A visitor's other conversations for the operator drawer's "Previous conversations"
+   * (spec 1277, FR-041). Scoped to `purpose = 'production'` like
+   * {@link listPageByAnonymousSession} — a visitor is never attached to an
+   * operator-test conversation (FR-005) — and optionally excludes one conversation id
+   * (the one currently open in the drawer).
+   */
+  listPageByVisitorId(
+    workspaceId: string,
+    visitorId: string,
+    input: { limit: number; offset?: number; cursor?: string; excludeConversationId?: string | null },
   ): Promise<{ conversations: ConversationRecord[]; total: number; nextCursor: string | null; hasMore: boolean }>;
   findByIdAndWorkspaceId(conversationId: string, workspaceId: string): Promise<ConversationRecord | null>;
   /** First-write-wins legacy binding; returns the durable winner under concurrent turns. */
@@ -142,6 +167,9 @@ interface ConversationRow {
   anonymous_session_id: string | null;
   verified_customer_id: string | null;
   entry_page_url: string | null;
+  entry_referrer?: string | null;
+  visitor_id?: string | null;
+  request_context?: ConversationRequestContext | null;
   title: string | null;
   created_at: Date;
   updated_at: Date;
@@ -168,6 +196,9 @@ const conversationColumns = [
   "anonymous_session_id",
   "verified_customer_id",
   "entry_page_url",
+  "entry_referrer",
+  "visitor_id",
+  "request_context",
   "title",
   "created_at",
   "updated_at",
@@ -187,6 +218,9 @@ const conversationSelectColumns = [
   "c.anonymous_session_id as anonymous_session_id",
   "c.verified_customer_id as verified_customer_id",
   "c.entry_page_url as entry_page_url",
+  "c.entry_referrer as entry_referrer",
+  "c.visitor_id as visitor_id",
+  "c.request_context as request_context",
   "c.title as title",
   "c.created_at as created_at",
   "c.updated_at as updated_at",
@@ -221,6 +255,9 @@ const mapConversation = (row: ConversationRow): ConversationRecord => ({
   anonymousSessionId: row.anonymous_session_id ?? null,
   verifiedCustomerId: row.verified_customer_id ?? null,
   entryPageUrl: row.entry_page_url ?? null,
+  entryReferrer: row.entry_referrer ?? null,
+  visitorId: row.visitor_id ?? null,
+  requestContext: row.request_context ?? null,
   title: row.title ?? null,
   createdAt: new Date(row.created_at),
   updatedAt: new Date(row.updated_at),
@@ -277,30 +314,24 @@ export class ConversationRepository implements ConversationRepositoryPort {
     });
   }
 
-  async create(
-    workspaceId: string,
-    agentId: string | null = null,
-    sourceChannel: string | null = null,
-    anonymousSessionId: string | null = null,
-    sourceOrigin: string | null = null,
-    channelContext: ConversationChannelContext | null = null,
-    verifiedCustomerId: string | null = null,
-    options?: { entryPageUrl?: string | null; agentRevisionId?: string | null; purpose?: ConversationRecord["purpose"] },
-  ): Promise<ConversationRecord> {
+  async create(input: CreateConversationInput): Promise<ConversationRecord> {
     const row = await this.db
       .insertInto("conversations")
       .values({
         id: randomUUID(),
-        workspace_id: workspaceId,
-        agent_id: agentId,
-        agent_revision_id: options?.agentRevisionId ?? null,
-        purpose: options?.purpose ?? "production",
-        source_channel: sourceChannel,
-        source_origin: sourceOrigin,
-        channel_context: channelContext ? toJsonb(channelContext) : null,
-        anonymous_session_id: anonymousSessionId,
-        verified_customer_id: verifiedCustomerId,
-        entry_page_url: options?.entryPageUrl ?? null,
+        workspace_id: input.workspaceId,
+        agent_id: input.agentId ?? null,
+        agent_revision_id: input.agentRevisionId ?? null,
+        purpose: input.purpose ?? "production",
+        source_channel: input.sourceChannel ?? null,
+        source_origin: input.sourceOrigin ?? null,
+        channel_context: input.channelContext ? toJsonb(input.channelContext) : null,
+        anonymous_session_id: input.anonymousSessionId ?? null,
+        verified_customer_id: input.verifiedCustomerId ?? null,
+        entry_page_url: input.entryPageUrl ?? null,
+        entry_referrer: input.entryReferrer ?? null,
+        visitor_id: input.visitorId ?? null,
+        request_context: input.requestContext ? toJsonb(input.requestContext) : null,
       })
       .returning(conversationColumns)
       .executeTakeFirstOrThrow();
@@ -535,6 +566,75 @@ export class ConversationRepository implements ConversationRepositoryPort {
       .where("c.anonymous_session_id", "=", anonymousSessionId)
       .where("c.purpose", "=", "production")
       .$if(Boolean(input.agentId), (qb) => qb.where("c.agent_id", "=", input.agentId!))
+      .$if(Boolean(cursor), (qb) =>
+        qb.where((eb) =>
+          eb.or([
+            eb("c.updated_at", "<", new Date(cursor!.keys.updatedAt)),
+            eb.and([
+              eb("c.updated_at", "=", new Date(cursor!.keys.updatedAt)),
+              eb.or([
+                eb("c.created_at", "<", new Date(cursor!.keys.createdAt)),
+                eb.and([
+                  eb("c.created_at", "=", new Date(cursor!.keys.createdAt)),
+                  eb("c.id", "<", cursor!.keys.id),
+                ]),
+              ]),
+            ]),
+          ]),
+        ),
+      )
+      .orderBy("c.updated_at", "desc")
+      .orderBy("c.created_at", "desc")
+      .orderBy("c.id", "desc")
+      .limit(input.limit + 1)
+      .$if(!cursor, (qb) => qb.offset(input.offset ?? 0));
+
+    const rows = await query.execute() as ConversationRow[];
+
+    const conversations = rows.slice(0, input.limit).map(mapConversation);
+    const hasMore = rows.length > input.limit;
+    const lastConversation = conversations.at(-1);
+
+    return {
+      conversations,
+      total,
+      nextCursor: hasMore && lastConversation
+        ? encodeCursor({
+            updatedAt: lastConversation.updatedAt.toISOString(),
+            createdAt: lastConversation.createdAt.toISOString(),
+            id: lastConversation.id,
+          }, total)
+        : null,
+      hasMore,
+    };
+  }
+
+  async listPageByVisitorId(
+    workspaceId: string,
+    visitorId: string,
+    input: { limit: number; offset?: number; cursor?: string; excludeConversationId?: string | null },
+  ): Promise<{ conversations: ConversationRecord[]; total: number; nextCursor: string | null; hasMore: boolean }> {
+    const cursor = input.cursor ? decodeCursorWithKeys(input.cursor, ["updatedAt", "createdAt", "id"]) : null;
+    const total = cursor?.totalSnapshot !== undefined
+      ? Number(cursor.totalSnapshot)
+      : Number((await this.db
+          .selectFrom("conversations as c")
+          .select((eb) => eb.fn.countAll<string>().as("count"))
+          .where("c.workspace_id", "=", workspaceId)
+          .where("c.visitor_id", "=", visitorId)
+          .where("c.purpose", "=", "production")
+          .$if(Boolean(input.excludeConversationId), (qb) => qb.where("c.id", "<>", input.excludeConversationId!))
+          .executeTakeFirst())?.count ?? "0");
+    const query = this.db
+      .selectFrom("conversations as c")
+      .leftJoin("agents as a", (join) =>
+        join.onRef("a.id", "=", "c.agent_id").onRef("a.workspace_id", "=", "c.workspace_id"),
+      )
+      .select(conversationSelectColumns)
+      .where("c.workspace_id", "=", workspaceId)
+      .where("c.visitor_id", "=", visitorId)
+      .where("c.purpose", "=", "production")
+      .$if(Boolean(input.excludeConversationId), (qb) => qb.where("c.id", "<>", input.excludeConversationId!))
       .$if(Boolean(cursor), (qb) =>
         qb.where((eb) =>
           eb.or([

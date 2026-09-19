@@ -14,6 +14,7 @@ import type {
   ConversationTrace,
   ClarificationCandidate,
   ConversationChannelContext,
+  ConversationRequestContext,
   ClarificationPolicy,
   RecentClarificationReader,
   RoutineActionRequest,
@@ -32,6 +33,7 @@ import type { BootstrapGreetingCacheRepositoryPort } from "../../../db/repositor
 import type { ConversationOwnershipRepository } from "../../../db/repositories/conversationOwnershipRepository.js";
 import type { FacetExtractionJobStore } from "../../facets/public.js";
 import type { AgentRevisionRuntimeResolver, AgentService } from "../../agents/public.js";
+import type { VisitorResolverPort } from "../../visitors/public.js";
 import type { ContextVariableResolutionReaderPort } from "../../context-variables/public.js";
 import type { ApprovalResumeResult, ResumeRunner } from "../../approvals/public.js";
 import type { ChatGateway } from "../contracts/chatGateway.js";
@@ -202,6 +204,8 @@ export interface ChatServiceOptions {
   agentService?: Pick<AgentService, "resolve">;
   /** Immutable release resolver; default production composition always provides it. */
   agentRevisionRuntimeResolver?: AgentRevisionRuntimeResolver;
+  /** Optional: when wired, resolves the `visitors` row a new conversation belongs to (spec 1277). */
+  visitorResolver?: VisitorResolverPort;
   /** Optional: resolves the agent's enabled host context variables per turn. */
   contextVariableRepository?: ContextVariableResolutionReaderPort;
   directiveSteering?: RouteScopedDirectiveRuntime;
@@ -275,6 +279,12 @@ interface ChatAnswerInput {
   inputMetadata?: UserMessageInputMetadata;
   metadataFilter?: Record<string, unknown>;
   pageContext?: AssistantPageContext | null;
+  /** Edge-observed facts for this turn's first message (spec 1277); ignored for a resumed conversation. */
+  requestContext?: ConversationRequestContext | null;
+  /** FR-013 (spec 1277): client-claimed referrer of the host page; ignored for a resumed conversation. */
+  entryReferrer?: string | null;
+  /** Unauthenticated visitor-grouping id from the verified session payload (spec 1277 decision 6); never a credential. */
+  visitorKey?: string | null;
   clientContextCapabilities?: AssistantClientContextCapabilities;
   sourceChannel?: string | null;
   channelContext?: ConversationChannelContext | null;
@@ -351,6 +361,7 @@ export class ChatService {
       usageLimitPolicy = new NoopUsageLimitPolicy(),
       agentService,
       agentRevisionRuntimeResolver,
+      visitorResolver,
       contextVariableRepository,
       directiveSteering = noopRouteScopedDirectiveRuntime,
       directiveStateStore = noopDirectiveStateStore,
@@ -447,6 +458,8 @@ export class ChatService {
       facetExtractionJobs,
       workspaceInvalidationPublisher,
       agentRevisionRuntimeResolver,
+      visitorResolver,
+      turnRuntime.metrics,
     );
     this.chatTurnAssembly = turnAssemblyFactory?.create({
       chatSessionPreparer: this.chatSessionPreparer,
@@ -1214,6 +1227,12 @@ export class ChatService {
     inputMetadata?: UserMessageInputMetadata;
     metadataFilter?: Record<string, unknown>;
     pageContext?: AssistantPageContext | null;
+  /** Edge-observed facts for this turn's first message (spec 1277); ignored for a resumed conversation. */
+  requestContext?: ConversationRequestContext | null;
+  /** FR-013 (spec 1277): client-claimed referrer of the host page; ignored for a resumed conversation. */
+  entryReferrer?: string | null;
+  /** Unauthenticated visitor-grouping id from the verified session payload (spec 1277 decision 6); never a credential. */
+  visitorKey?: string | null;
     clientContextCapabilities?: AssistantClientContextCapabilities;
     sourceChannel?: string | null;
     channelContext?: ConversationChannelContext | null;
@@ -1262,6 +1281,12 @@ export class ChatService {
     inputMetadata?: UserMessageInputMetadata;
     metadataFilter?: Record<string, unknown>;
     pageContext?: AssistantPageContext | null;
+  /** Edge-observed facts for this turn's first message (spec 1277); ignored for a resumed conversation. */
+  requestContext?: ConversationRequestContext | null;
+  /** FR-013 (spec 1277): client-claimed referrer of the host page; ignored for a resumed conversation. */
+  entryReferrer?: string | null;
+  /** Unauthenticated visitor-grouping id from the verified session payload (spec 1277 decision 6); never a credential. */
+  visitorKey?: string | null;
     clientContextCapabilities?: AssistantClientContextCapabilities;
     sourceChannel?: string | null;
     channelContext?: ConversationChannelContext | null;

@@ -1,0 +1,159 @@
+import type {
+  VisitorObservedFacts,
+  VisitorRepositoryPort,
+} from "../../../db/repositories/visitorRepository.js";
+import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
+
+interface ResolveVisitorForConversationInput {
+  workspaceId: string;
+  visitorKey: string | null;
+  verifiedCustomerId: string | null;
+  observed: VisitorObservedFacts;
+}
+
+interface ResolveVisitorForConversationResult {
+  visitorId: string;
+}
+
+interface AttachVerifiedIdentityInput {
+  conversationId: string;
+  workspaceId: string;
+  visitorKey: string | null;
+  verifiedCustomerId: string;
+  /**
+   * The moving conversation's own request-derived facts (FR-007). Used only when
+   * this conversation moves to another row (`moved_existing`/`moved_new`) — an
+   * in-place upgrade keeps the anonymous row's own, already-current observations.
+   */
+  observed: VisitorObservedFacts;
+}
+
+type AttachVerifiedIdentityOutcome = "upgraded" | "moved_existing" | "moved_new" | "unchanged";
+
+interface AttachVerifiedIdentityResult {
+  outcome: AttachVerifiedIdentityOutcome;
+}
+
+/**
+ * Narrow port the chat module depends on. Only the two operations a turn ever
+ * needs — never the full {@link VisitorRepositoryPort}.
+ */
+export interface VisitorResolverPort {
+  resolveForConversation(input: ResolveVisitorForConversationInput): Promise<ResolveVisitorForConversationResult>;
+  attachVerifiedIdentity(input: AttachVerifiedIdentityInput): Promise<AttachVerifiedIdentityResult>;
+}
+
+/**
+ * Identity-resolution rules for the `visitors` entity (spec 1277, FR-003/FR-004):
+ * a verified id beats a visitor key, an anonymous visitor upgrades in place the
+ * first time it verifies, and a later, different verified id moves the
+ * conversation to that identity's own row without touching — or re-attaching —
+ * the visitor key. The repository holds no rule; every branch below is the
+ * exhaustive description of what "resolve" and "attach" mean.
+ *
+ * `visitorKey` is a client-persisted, unauthenticated grouping id (spec 1277
+ * decision 6, FR-008) — never a credential. It carries no session, no resume,
+ * and no history-read power: it is not bound into the signed public chat
+ * session payload's trust boundary at all, only recorded on `visitors` for
+ * operators. Anyone who learns another visitor's key can, at most, make their
+ * own brand-new conversation appear grouped under that visitor's row in the
+ * operator drawer — they gain no access to read, resume, or continue any
+ * conversation that already exists there.
+ */
+export class VisitorResolver implements VisitorResolverPort {
+  constructor(
+    private readonly repository: VisitorRepositoryPort,
+    private readonly metrics?: Pick<MetricsRegistry, "incrementCounter"> | null,
+  ) {}
+
+  async resolveForConversation(
+    input: ResolveVisitorForConversationInput,
+  ): Promise<ResolveVisitorForConversationResult> {
+    if (input.verifiedCustomerId) {
+      const verified = await this.repository.findByVerifiedCustomerId(input.workspaceId, input.verifiedCustomerId);
+      if (verified) {
+        await this.repository.recordObservation(verified.id, input.observed);
+        return { visitorId: verified.id };
+      }
+    }
+
+    if (input.visitorKey) {
+      const anon = await this.repository.findByVisitorKey(input.workspaceId, input.visitorKey);
+      if (anon) {
+        if (input.verifiedCustomerId && !anon.verifiedCustomerId) {
+          await this.repository.upgradeToVerified(anon.id, input.verifiedCustomerId);
+        }
+        await this.repository.recordObservation(anon.id, input.observed);
+        return { visitorId: anon.id };
+      }
+    }
+
+    // Neither key resolved to an existing row: insert. Both known keys ride on
+    // the new row when both are fresh; see insertOrGet's conflict-target note
+    // for the (rare, undetected) race this leaves between a fresh visitor key
+    // and a verified id that lands concurrently on its own row.
+    const { record, inserted } = await this.repository.insertOrGet({
+      workspaceId: input.workspaceId,
+      visitorKey: input.visitorKey,
+      verifiedCustomerId: input.verifiedCustomerId,
+      observed: input.observed,
+    });
+    if (!inserted) {
+      // Lost an insert race (User Story 2 scenario 4): the row that won already
+      // carries this conversation's first-ever observation, so this is a second,
+      // legitimate conversation against it.
+      await this.repository.recordObservation(record.id, input.observed);
+    }
+    return { visitorId: record.id };
+  }
+
+  async attachVerifiedIdentity(input: AttachVerifiedIdentityInput): Promise<AttachVerifiedIdentityResult> {
+    const anonRow = input.visitorKey
+      ? await this.repository.findByVisitorKey(input.workspaceId, input.visitorKey)
+      : null;
+    const verifiedRow = await this.repository.findByVerifiedCustomerId(input.workspaceId, input.verifiedCustomerId);
+
+    if (verifiedRow && anonRow && verifiedRow.id === anonRow.id) {
+      return { outcome: "unchanged" };
+    }
+
+    if (!verifiedRow && anonRow && !anonRow.verifiedCustomerId) {
+      await this.repository.upgradeToVerified(anonRow.id, input.verifiedCustomerId);
+      this.recordOutcome("upgraded");
+      return { outcome: "upgraded" };
+    }
+
+    // Every remaining branch moves this conversation to a row for
+    // `verifiedCustomerId` — existing or freshly inserted — and never touches
+    // `anonRow`'s own verified id (never re-attach, User Story 2 scenario 3).
+    const outcome: "moved_existing" | "moved_new" = verifiedRow ? "moved_existing" : "moved_new";
+    const targetVisitorId = verifiedRow
+      ? verifiedRow.id
+      : (await this.repository.insertOrGet({
+          workspaceId: input.workspaceId,
+          verifiedCustomerId: input.verifiedCustomerId,
+          observed: input.observed,
+          // This insert never attaches a conversation by itself — the moveConversation
+          // call right below it does, and it always adds exactly one. Seeding the usual
+          // 1 here too would double-count the single conversation actually being moved.
+          conversationCount: 0,
+        })).record.id;
+
+    await this.repository.moveConversation({
+      conversationId: input.conversationId,
+      workspaceId: input.workspaceId,
+      fromVisitorId: anonRow?.id ?? null,
+      toVisitorId: targetVisitorId,
+      observed: input.observed,
+    });
+    this.recordOutcome(outcome);
+    return { outcome };
+  }
+
+  private recordOutcome(outcome: "upgraded" | "moved_existing" | "moved_new"): void {
+    this.metrics?.incrementCounter("visitor_identity_attached_total", {
+      help: "Visitor identity attachments by outcome when a conversation's turn verifies a customer id.",
+      labels: { outcome },
+    });
+  }
+}

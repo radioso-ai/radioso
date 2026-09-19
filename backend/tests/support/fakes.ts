@@ -24,6 +24,7 @@ import type {
   WorkspaceGrantRole,
 } from "../../src/db/repositories/workspaceGrantRepository.js";
 import type { AccessGrantRepositoryPort } from "../../src/modules/accessGrants/ports.js";
+import type { VisitorRecord } from "../../src/db/repositories/visitorRepository.js";
 import type { AgentConverseSessionMappingPort } from "../../src/modules/settings/contracts/agentConverseSession.js";
 import type {
   AccessGrantLifecycleUnitOfWorkPort,
@@ -133,6 +134,7 @@ import type { DocumentProcessingJobOptions } from "../../src/modules/documents/c
 import type {
   ConversationRecord,
   ConversationRepositoryPort,
+  CreateConversationInput,
   GetOrCreateConversationResult,
 } from "../../src/db/repositories/conversationRepository.js";
 import type { ConversationSourceScope } from "../../src/shared/domain/conversationSource.js";
@@ -3737,7 +3739,7 @@ export const publishedRevisionResolverFor = (agent: AgentRecord): AgentRevisionR
 /**
  * Explicit release fixture for chat service suites which create several agents.
  * The revision id is deterministic so a test can pin an existing conversation to
- * the same immutable release through `conversationRepository.create(..., { agentRevisionId })`.
+ * the same immutable release through `conversationRepository.create({ ..., agentRevisionId })`.
  */
 export const publishedRevisionIdFor = (agentId: string): string => `test-published-revision:${agentId}`;
 
@@ -3776,6 +3778,22 @@ export const pinExistingConversationsToPublishedRevisions = (
   }
 };
 
+/**
+ * Fake for the narrow `VisitorProfileReaderPort` `ChatHistoryService` depends on (spec 1277,
+ * FR-040) — not the visitors module's fuller `VisitorRepositoryPort`. The test harness does not
+ * wire a `VisitorResolver` (visitor resolution is exercised end-to-end in
+ * `tests/integration/visitor-resolver.integration.test.ts` against real Postgres), so tests
+ * that need a populated `visitor` on a conversation detail seed this map directly.
+ */
+export class InMemoryVisitorProfileRepository {
+  readonly visitors = new Map<string, VisitorRecord>();
+
+  async findById(workspaceId: string, visitorId: string): Promise<VisitorRecord | null> {
+    const record = this.visitors.get(visitorId);
+    return record && record.workspaceId === workspaceId ? record : null;
+  }
+}
+
 export class InMemoryConversationRepository implements ConversationRepositoryPort {
   readonly items = new Map<string, ConversationRecord>();
   private messageRepository: InMemoryMessageRepository | null = null;
@@ -3812,39 +3830,33 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
     if (existing) {
       return { record: existing, created: false };
     }
-    return { record: await this.create(
-      input.workspaceId,
-      input.agentId,
-      input.sourceChannel,
-      input.anonymousSessionId,
-      input.sourceOrigin ?? null,
-    ), created: true };
+    return { record: await this.create({
+      workspaceId: input.workspaceId,
+      agentId: input.agentId,
+      sourceChannel: input.sourceChannel,
+      anonymousSessionId: input.anonymousSessionId,
+      sourceOrigin: input.sourceOrigin ?? null,
+    }), created: true };
   }
 
-  async create(
-    workspaceId: string,
-    agentId: string | null = null,
-    sourceChannel: string | null = null,
-    anonymousSessionId: string | null = null,
-    sourceOrigin: string | null = null,
-    channelContext: ConversationRecord["channelContext"] = null,
-    verifiedCustomerId: string | null = null,
-    options?: { entryPageUrl?: string | null; agentRevisionId?: string | null; purpose?: ConversationRecord["purpose"] },
-  ): Promise<ConversationRecord> {
+  async create(input: CreateConversationInput): Promise<ConversationRecord> {
     const record: ConversationRecord = {
       id: randomUUID(),
-      workspaceId,
-      agentId,
-      agentRevisionId: options?.agentRevisionId ?? null,
-      purpose: options?.purpose ?? "production",
+      workspaceId: input.workspaceId,
+      agentId: input.agentId ?? null,
+      agentRevisionId: input.agentRevisionId ?? null,
+      purpose: input.purpose ?? "production",
       agentName: null,
       agentInternalName: null,
-      sourceChannel,
-      sourceOrigin,
-      channelContext,
-      anonymousSessionId,
-      verifiedCustomerId,
-      entryPageUrl: options?.entryPageUrl ?? null,
+      sourceChannel: input.sourceChannel ?? null,
+      sourceOrigin: input.sourceOrigin ?? null,
+      channelContext: input.channelContext ?? null,
+      anonymousSessionId: input.anonymousSessionId ?? null,
+      verifiedCustomerId: input.verifiedCustomerId ?? null,
+      entryPageUrl: input.entryPageUrl ?? null,
+      entryReferrer: input.entryReferrer ?? null,
+      visitorId: input.visitorId ?? null,
+      requestContext: input.requestContext ?? null,
       title: null,
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -3877,16 +3889,16 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
     entryPageUrl?: string | null;
     content: string;
   }): Promise<{ conversation: ConversationRecord; assistantMessage: MessageRecord }> {
-    const conversation = await this.create(
-      input.workspaceId,
-      input.agentId ?? null,
-      input.sourceChannel ?? null,
-      input.anonymousSessionId ?? null,
-      input.sourceOrigin ?? null,
-      input.channelContext ?? null,
-      input.verifiedCustomerId ?? null,
-      { entryPageUrl: input.entryPageUrl ?? null },
-    );
+    const conversation = await this.create({
+      workspaceId: input.workspaceId,
+      agentId: input.agentId ?? null,
+      sourceChannel: input.sourceChannel ?? null,
+      anonymousSessionId: input.anonymousSessionId ?? null,
+      sourceOrigin: input.sourceOrigin ?? null,
+      channelContext: input.channelContext ?? null,
+      verifiedCustomerId: input.verifiedCustomerId ?? null,
+      entryPageUrl: input.entryPageUrl ?? null,
+    });
     const assistantMessage: MessageRecord = {
       id: randomUUID(),
       conversationId: conversation.id,
@@ -3983,6 +3995,47 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
         item.workspaceId === workspaceId &&
         item.anonymousSessionId === anonymousSessionId &&
         (!input.agentId || item.agentId === input.agentId)
+      )
+      .sort((left, right) => {
+        const timeDiff = right.updatedAt.getTime() - left.updatedAt.getTime();
+        return timeDiff !== 0 ? timeDiff : right.id.localeCompare(left.id);
+      });
+
+    const cursor = input.cursor ? decodeCursorWithKeys(input.cursor, ["updatedAt", "createdAt", "id"]) : null;
+    const startIndex = cursor
+      ? conversations.findIndex(
+          (item) => item.updatedAt.toISOString() === cursor.keys.updatedAt && item.id === cursor.keys.id,
+        ) + 1
+      : (input.offset ?? 0);
+    const slice = conversations.slice(Math.max(0, startIndex), Math.max(0, startIndex) + input.limit);
+    const hasMore = Math.max(0, startIndex) + input.limit < conversations.length;
+    const lastConversation = slice.at(-1);
+
+    return {
+      conversations: slice,
+      total: conversations.length,
+      nextCursor: hasMore && lastConversation
+        ? encodeCursor({
+            updatedAt: lastConversation.updatedAt.toISOString(),
+            createdAt: lastConversation.createdAt.toISOString(),
+            id: lastConversation.id,
+          })
+        : null,
+      hasMore,
+    };
+  }
+
+  async listPageByVisitorId(
+    workspaceId: string,
+    visitorId: string,
+    input: { limit: number; offset?: number; cursor?: string; excludeConversationId?: string | null } = { limit: 50 },
+  ): Promise<{ conversations: ConversationRecord[]; total: number; nextCursor: string | null; hasMore: boolean }> {
+    const conversations = [...this.items.values()]
+      .filter((item) =>
+        item.workspaceId === workspaceId &&
+        item.visitorId === visitorId &&
+        item.purpose === "production" &&
+        (!input.excludeConversationId || item.id !== input.excludeConversationId)
       )
       .sort((left, right) => {
         const timeDiff = right.updatedAt.getTime() - left.updatedAt.getTime();

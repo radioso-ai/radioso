@@ -1,7 +1,7 @@
 ---
 title: Context variables
 description: How operators configure page, identity, and host-defined context for agent turns.
-last_updated: 2026-09-16
+last_updated: 2026-09-18
 ---
 
 # Context variables
@@ -20,9 +20,12 @@ Radioso provides built-in context for the website experience.
 - `page_context` is one bundle for the current page. It can include the URL,
   title, locale, browser locale, and page content when the host supplies it.
 - `visitor_identity` represents identity context when the host provides it.
+- `visitor_request` bundles the country, region, city, browser language,
+  referrer, and entry page Radioso observed when the conversation opened. See
+  [Visitor request](#visitor-request) below.
 
-Built-ins are not listed in the host-defined catalog and cannot be edited there.
-They are code-owned platform context.
+Built-ins are not listed in the host-defined catalog and cannot be edited
+there. They are code-owned platform context, available on every agent.
 
 ### Page context is relevance-gated
 
@@ -211,6 +214,39 @@ customer fact such as a name, an email address, or order history, push a
 `customer`-scoped context variable from the host backend instead: it persists
 for that customer across sessions, where `attributes` do not.
 
+## Visitor request
+
+`visitor_request` gives a directive or a prompt six facts about the request
+that opened the conversation:
+
+- `country`, `region`, `city` — read from the geo header a load balancer or
+  CDN stamps on the request, such as Cloudflare's `CF-IPCountry`.
+- `language` — the primary tag of the browser's `Accept-Language` header, so
+  `de-DE,de;q=0.9` resolves to `de`.
+- `referrer` — the page that sent the visitor, reported by the embed launcher.
+- `entryPageUrl` — the page the chat opened on, reported by the embed
+  launcher.
+
+The IP address and user agent that accompanied the request are not part of
+it — `visitor_request` carries only the six fields above, so a directive that
+reads it never sees an address or a browser fingerprint. Values are
+unverified: they describe what the request looked like, not a proven
+identity.
+
+`entryPageUrl` shares its sensitivity with `page_context`, so it follows the
+same page-read gate: it reaches `visitor_request` only on a turn where that
+turn's own page-content check is open, and drops out otherwise, even though
+the conversation opened on that page throughout. The other five fields carry
+no page-content sensitivity and reach every turn that has them, regardless of
+that turn's page-read decision.
+
+`visitor_request` is available on every agent, the same as `page_context` and
+`visitor_identity` — there is no per-agent setting to turn it on. It reaches a
+turn whenever the conversation carried at least one of the six facts; a
+directive condition such as "when the visitor is in Germany, mention that
+shipping to the EU takes 3-5 days" reads `visitor_request.country` the same
+way it would read any other context variable.
+
 ## Surfacing
 
 Surfacing controls whether a resolved value is shown to the model as part of
@@ -289,3 +325,4 @@ before they reach the dashboard.
 ## Read next
 
 - [Deployment](/operators/deployment) — where `WORKSPACE_TOKEN_SECRET`, which derives the signing key above, is set as a required secret.
+- [Visitor data](/operators/visitor-data) — every field behind `visitor_request`, plus the fields that never reach a prompt.

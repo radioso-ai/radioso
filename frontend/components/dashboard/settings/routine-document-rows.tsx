@@ -176,8 +176,10 @@ export function RoutineStepRow({ step, stepIndex, slotNames, index, nextStepId =
   // Pinned to the row's bottom edge and revealed on hover/focus (or always, on touch), so an
   // author can insert a step between this row and the next without appending then reordering.
   const insertAfterOverlay = insertStepAfter ? <div className="pointer-events-none absolute inset-x-0 -bottom-2.5 z-10 flex justify-center opacity-0 transition-opacity group-hover/insertafter:opacity-100 group-focus-within/insertafter:opacity-100 [@media(hover:none)]:opacity-100"><div className="pointer-events-auto">{insertStepAfter}</div></div> : null
+  // No card chrome while editing — the editor's own faint focus ring is the only thing that
+  // marks it as active, matching the bare-sentence read state either side of it.
   const instruction = editing === 'instruction'
-    ? <div className="rounded-md border border-border bg-muted/30 p-3">{instructionEditor}</div>
+    ? <div className="min-w-0 flex-1">{instructionEditor}</div>
     : <button type="button" aria-label="Instruction" onClick={onEditInstruction} disabled={!editable} className="group block min-w-0 flex-1 text-left disabled:cursor-default"><InstructionSentence segments={step.instruction} editable={editable} /><EditHint editable={editable} /></button>
   // The kind badge is small and muted, sitting after the sentence rather than on a heading
   // line of its own; it is still the same "open the step editor" control non-chat kinds have

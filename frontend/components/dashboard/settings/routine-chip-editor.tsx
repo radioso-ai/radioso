@@ -2,15 +2,13 @@
 
 import { useEffect, useMemo, useRef, type JSX } from 'react'
 
-import { AtSign } from 'lucide-react'
-
 import { LexicalComposer } from '@lexical/react/LexicalComposer'
 import { ContentEditable } from '@lexical/react/LexicalContentEditable'
 import { LexicalErrorBoundary } from '@lexical/react/LexicalErrorBoundary'
 import { HistoryPlugin } from '@lexical/react/LexicalHistoryPlugin'
 import { RichTextPlugin } from '@lexical/react/LexicalRichTextPlugin'
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext'
-import { $getSelection, $isRangeSelection, type EditorState } from 'lexical'
+import type { EditorState } from 'lexical'
 
 import { HeadingNode } from '@lexical/rich-text'
 
@@ -18,38 +16,10 @@ import { ChipNode, type RoutineChipKind } from '@/components/dashboard/settings/
 import { ChipTypeaheadPlugin, type RoutineEditorVariable } from '@/components/dashboard/settings/routine-chip-typeahead-plugin'
 import { $initializeFromParagraphs, $readProseParagraphs } from '@/components/dashboard/settings/routine-prose-nodes'
 import { RoutineVariablesProvider } from '@/components/dashboard/settings/routine-variables-context'
-import { Button } from '@/components/ui/button'
 import type { RoutineSlotType } from '@/lib/api-types'
 import type { ChipDocVariable, ProseParagraph } from '@/lib/routine-prose'
 
 export type { RoutineEditorVariable }
-
-// The Document rows own every structural control — steps, branches, endings, skill
-// bindings — so the inline editor's only affordance is inserting a variable, the one piece
-// of structure that belongs inside a sentence.
-function EditorToolbar() {
-  const [editor] = useLexicalComposerContext()
-
-  const insertVariableTrigger = () => {
-    editor.focus(() => {
-      editor.update(() => {
-        const selection = $getSelection()
-        if ($isRangeSelection(selection)) {
-          selection.insertText('@')
-        }
-      })
-    })
-  }
-
-  return (
-    <div className="flex flex-wrap items-center gap-x-0.5 gap-y-1 border-b border-input px-1.5 py-1">
-      <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2" onClick={insertVariableTrigger}>
-        <AtSign className="h-4 w-4" />
-        Variable
-      </Button>
-    </div>
-  )
-}
 
 function OnParagraphChangePlugin({ onParagraphChange }: { onParagraphChange: (paragraphs: ProseParagraph[]) => void }) {
   const [editor] = useLexicalComposerContext()
@@ -139,8 +109,10 @@ export function RoutineInstructionEditor({
       }}
     >
       <RoutineVariablesProvider value={variablesContext}>
-        <div className="routine-prose-surface rounded-md border border-input bg-transparent focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50">
-          <EditorToolbar />
+        {/* The Document rows own every structural control — steps, branches, endings, skill
+            bindings — so this surface carries no chrome of its own beyond a focus ring; typing
+            "@" is the only affordance, exactly as the placeholder says. */}
+        <div className="routine-prose-surface rounded-md bg-transparent focus-within:ring-1 focus-within:ring-ring/50">
           <div className="relative">
             <RichTextPlugin
               contentEditable={

@@ -169,8 +169,10 @@ test("agent routines settings create, validate, and persist", async ({ page }) =
     page.getByRole("button", { name: "New routine" }).click(),
   ]);
   await expect(page.getByRole("button", { name: "Back to routines" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Routine", level: 1 })).toBeVisible();
-  await expect(page.getByText("New routine", { exact: true }).first()).toBeVisible();
+  // The routine's own name is the page title now, editable in place, with a Draft/Live pill
+  // beside it — a brand-new routine has no name yet and starts enabled, so it reads as live.
+  await expect(page.getByLabel("Name", { exact: true })).toHaveValue("");
+  await expect(page.getByText("Live", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Save draft" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Validate" })).toHaveCount(0);
   await expect(page.getByRole("status", { name: "Routine has validation issues" })).toBeVisible();
@@ -444,7 +446,7 @@ test("the routine list toggles a routine off and on through the update endpoint"
   await expect(page.getByRole("switch", { name: "Enable Collect pricing intake" })).toBeChecked();
 });
 
-test("the editor disables its enablement switch until a delayed update settles, then rolls back a failure", async ({ page }) => {
+test("the editor disables its publish button until a delayed update settles, then rolls back a failure", async ({ page }) => {
   const routine = {
     ...baseRoutine,
     id: "55555555-5555-4555-9555-000000000211",
@@ -463,11 +465,11 @@ test("the editor disables its enablement switch until a delayed update settles, 
   });
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}/routines/${routine.id}`);
 
-  const disable = page.getByRole("switch", { name: "Disable routine" });
+  const disable = page.getByRole("button", { name: "Disable routine" });
   await disable.click();
-  await expect(page.getByRole("switch", { name: "Enable routine" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Enable routine" })).toBeDisabled();
   releaseSuccess();
-  await expect(page.getByRole("switch", { name: "Enable routine" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Enable routine" })).toBeEnabled();
 
   let releaseFailure!: () => void;
   const delayedFailure = new Promise<void>((resolve) => { releaseFailure = resolve; });
@@ -482,10 +484,10 @@ test("the editor disables its enablement switch until a delayed update settles, 
     });
   });
 
-  await page.getByRole("switch", { name: "Enable routine" }).click();
-  await expect(page.getByRole("switch", { name: "Disable routine" })).toBeDisabled();
+  await page.getByRole("button", { name: "Enable routine" }).click();
+  await expect(page.getByRole("button", { name: "Disable routine" })).toBeDisabled();
   releaseFailure();
-  await expect(page.getByRole("switch", { name: "Enable routine" })).not.toBeChecked();
+  await expect(page.getByRole("button", { name: "Enable routine" })).toHaveAttribute("aria-pressed", "false");
   await expect(page.getByText("toggle failed", { exact: true })).toBeVisible();
 });
 
@@ -518,22 +520,22 @@ test("an older routine toggle cannot clear a newer toggle after navigating away 
     return route.fallback();
   });
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}/routines/${first.id}`);
-  await page.getByRole("switch", { name: "Disable routine" }).click();
-  await expect(page.getByRole("switch", { name: "Enable routine" })).toBeDisabled();
+  await page.getByRole("button", { name: "Disable routine" }).click();
+  await expect(page.getByRole("button", { name: "Enable routine" })).toBeDisabled();
 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}/routines/${second.id}`);
-  await expect(page.getByRole("switch", { name: "Enable routine" })).not.toBeChecked();
-  await expect(page.getByRole("switch", { name: "Enable routine" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Enable routine" })).toHaveAttribute("aria-pressed", "false");
+  await expect(page.getByRole("button", { name: "Enable routine" })).toBeEnabled();
 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}/routines/${first.id}`);
-  await page.getByRole("switch", { name: "Disable routine" }).click();
-  await expect(page.getByRole("switch", { name: "Enable routine" })).toBeDisabled();
+  await page.getByRole("button", { name: "Disable routine" }).click();
+  await expect(page.getByRole("button", { name: "Enable routine" })).toBeDisabled();
 
   releaseOriginal();
   // The old A request has settled, but the newer A request still owns this editor.
-  await expect(page.getByRole("switch", { name: "Enable routine" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Enable routine" })).toBeDisabled();
   releaseCurrent();
-  await expect(page.getByRole("switch", { name: "Enable routine" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Enable routine" })).toBeEnabled();
 });
 
 test("agent routine delete requires confirmation", async ({ page }) => {
@@ -564,4 +566,65 @@ test("agent routine delete requires confirmation", async ({ page }) => {
   ]);
   await expect.poll(() => routineUpdates.some((update) => update.method === "DELETE")).toBe(true);
   await expect(page.getByText("Collect pricing intake")).toHaveCount(0);
+});
+
+test("the routine header edits the name in place, flips the Draft/Live pill, and the trigger section collapses", async ({ page }) => {
+  const routineUpdates: RoutineMutationFixture[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    routineUpdates,
+    routines: [{
+      ...baseRoutine,
+      id: "55555555-5555-4555-9555-000000000701",
+      enabled: false,
+      version: 1,
+    }],
+  });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}/routines/55555555-5555-4555-9555-000000000701`);
+  const documentEditor = page.getByRole("article", { name: "Routine document editor" });
+  await expect(documentEditor).toBeVisible();
+
+  // The routine's own name is the page title, edited in place, with a status pill beside it.
+  const nameField = page.getByLabel("Name", { exact: true });
+  await expect(nameField).toHaveValue("Collect pricing intake");
+  await expect(page.getByText("Draft", { exact: true })).toBeVisible();
+  await nameField.fill("Collect pricing intake v2");
+  await expect.poll(
+    () => routineUpdates.filter((update) => update.method === "PATCH").at(-1)?.body,
+    { timeout: 15_000 },
+  ).toMatchObject({ name: "Collect pricing intake v2" });
+
+  // The round button beside the pill is the enablement toggle, styled as a button rather than
+  // a switch; pressing it flips both the pill and the stored `enabled` field.
+  await page.getByRole("button", { name: "Enable routine" }).click();
+  await expect(page.getByText("Live", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Disable routine" })).toBeVisible();
+  await expect.poll(
+    () => routineUpdates.filter((update) => update.method === "PATCH").at(-1)?.body,
+    { timeout: 15_000 },
+  ).toMatchObject({ enabled: true });
+
+  // "When to trigger" opens by default; its chevron collapses and reopens the section without
+  // touching the "Starts when" row's own edit affordance.
+  await expect(documentEditor.getByRole("button", { name: "Starts when", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Toggle when to trigger" }).click();
+  await expect(documentEditor.getByRole("button", { name: "Starts when", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Toggle when to trigger" }).click();
+  await expect(documentEditor.getByRole("button", { name: "Starts when", exact: true })).toBeVisible();
+
+  // Typing "@" in a step's instruction opens the grouped, icon-tile palette — grouped even
+  // though this instance only ever offers one group, "Information".
+  await documentEditor.getByRole("button", { name: "Instruction" }).first().click();
+  const instruction = documentEditor.getByLabel("Step 1 instruction");
+  await instruction.click();
+  await instruction.press("End");
+  await instruction.pressSequentially(" @");
+  const palette = page.getByRole("listbox", { name: "Insert a variable" });
+  await expect(palette).toBeVisible();
+  await expect(palette.getByText("Information", { exact: true })).toBeVisible();
+  await expect(palette.getByRole("option", { name: "@email" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
 });

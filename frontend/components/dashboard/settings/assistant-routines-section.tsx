@@ -4,14 +4,16 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { useRouter } from 'next/navigation'
 import {
   AlertTriangle,
-  ArrowLeft,
   CheckCircle2,
   FlaskConical,
   MoreHorizontal,
+  Pause,
+  Play,
   Plus,
   Route,
   Trash2,
   WandSparkles,
+  X,
 } from 'lucide-react'
 
 import { RoutineDiagnosticList } from '@/components/dashboard/settings/routine-editor-controls'
@@ -34,6 +36,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -42,8 +45,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -69,6 +70,14 @@ import {
   type RoutineFormState,
 } from '@/lib/routine-form'
 import { useCopilotEntity } from '@/lib/copilot-context'
+
+// A stable no-op: the editor's own toggle supplies request-scoped callbacks per call instead
+// (see `toggleRoutineEnabled` below), so `useRoutineEnabledToggle`'s defaults never fire here.
+// A fresh arrow function on every render would do just as well functionally, but it would
+// also change identity every render, which — now that the header action memo below depends on
+// the toggle — would recompute the routine header every render and loop the header-registration
+// effect that mirrors it into the page shell.
+const noop = () => {}
 
 function CopilotRoutineEntity({ routine }: { routine: RoutineDefinition }) {
   useCopilotEntity('routine', routine.id, routine.name || 'Untitled routine')
@@ -807,10 +816,10 @@ function RoutineEditorScreen({
     agentId,
     // The editor supplies request-scoped callbacks below. List rows use the default callbacks
     // directly because their state lives in one collection rather than a routed editor.
-    onSuccess: () => {},
-    onError: () => {},
+    onSuccess: noop,
+    onError: noop,
   })
-  const toggleRoutineEnabled = async (enabled: boolean) => {
+  const toggleRoutineEnabled = useCallback(async (enabled: boolean) => {
     // The ref closes the small gap before React has rendered the disabled switch. Without it,
     // two discrete events could still start overlapping PATCHes and let the older response win.
     if (isTogglingEnabledRef.current) return
@@ -840,7 +849,7 @@ function RoutineEditorScreen({
         setIsTogglingEnabled(false)
       }
     }
-  }
+  }, [applyRoutineEnabledToggle, draftHeader.enabled, editingRoutineId])
 
   const deleteRoutine = async () => {
     if (!editingRoutine) return
@@ -885,10 +894,35 @@ function RoutineEditorScreen({
     actionHandlersRef.current = { loadAssistedDraft, openDeleteRoutineDialog }
   })
 
+  // The routine's own name is the page title, edited in place; nothing else in this row
+  // owns "Name" as a label, so the accessible name stays on the field itself.
+  const routineTitle = useMemo(() => (
+    <input
+      id="routineName"
+      aria-label="Name"
+      value={draftHeader.name}
+      onChange={(event) => setDraftHeader((current) => ({ ...current, name: event.target.value }))}
+      placeholder="Untitled routine"
+      className="w-full min-w-0 max-w-md truncate border-b border-dashed border-muted-foreground/30 bg-transparent text-lg font-medium leading-none text-foreground outline-none placeholder:text-muted-foreground/60 hover:border-muted-foreground/60 focus:border-foreground focus:outline-none"
+    />
+  ), [draftHeader.name])
+
+  const routineStatusPill = useMemo(() => (
+    <Badge
+      variant={draftHeader.enabled ? 'default' : 'secondary'}
+      className={draftHeader.enabled
+        ? 'shrink-0 border-transparent bg-emerald-500/15 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400'
+        : 'shrink-0 border-transparent bg-muted text-muted-foreground'}
+    >
+      {draftHeader.enabled ? 'Live' : 'Draft'}
+    </Badge>
+  ), [draftHeader.enabled])
+
   const headerActions = useMemo(() => {
-    // Editing is autosaved, so the header carries no save action. "Test draft" is the one
-    // affordance the routine itself offers; AI drafting and delete live in an overflow menu
-    // so the header stays a status line rather than a row of competing buttons.
+    // Editing is autosaved, so the header carries no save action. "Test" is the one
+    // affordance the routine itself offers beyond the publish toggle; AI drafting and delete
+    // live in an overflow menu so the header stays a status line rather than a row of
+    // competing buttons.
     const isPersisted = Boolean(editingRoutine)
     // A disabled routine is left out of the draft snapshot's activation set, so a
     // draft test could never reach it.
@@ -897,19 +931,6 @@ function RoutineEditorScreen({
     return (
       <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
         {form ? <RoutineValidationStatusIcon state={validationStatus} /> : null}
-        {isPersisted ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={handleTestDraft}
-            disabled={isSaving || !canTestDraft}
-            title={canTestDraft ? 'Test this routine in Test Chat as part of the draft.' : 'Enable this routine to test it.'}
-          >
-            <FlaskConical className="mr-2 h-4 w-4" />
-            Test draft
-          </Button>
-        ) : null}
         {form ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -938,23 +959,60 @@ function RoutineEditorScreen({
             </DropdownMenuContent>
           </DropdownMenu>
         ) : null}
+        {isPersisted ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={handleTestDraft}
+            disabled={isSaving || !canTestDraft}
+            title={canTestDraft ? 'Test this routine in Test Chat as part of the draft.' : 'Enable this routine to test it.'}
+          >
+            <FlaskConical className="mr-2 h-4 w-4" />
+            Test
+          </Button>
+        ) : null}
+        {form ? (
+          <Button
+            type="button"
+            size="icon"
+            onClick={() => void toggleRoutineEnabled(!draftHeader.enabled)}
+            disabled={isTogglingEnabled}
+            aria-pressed={draftHeader.enabled}
+            aria-label={draftHeader.enabled ? 'Disable routine' : 'Enable routine'}
+            title={draftHeader.enabled ? 'Take this routine out of service' : 'Publish this routine'}
+            className={draftHeader.enabled
+              ? 'h-8 w-8 rounded-full bg-amber-500 text-white hover:bg-amber-500/90 focus-visible:ring-amber-500/50'
+              : 'h-8 w-8 rounded-full bg-emerald-500 text-white hover:bg-emerald-500/90 focus-visible:ring-emerald-500/50'}
+          >
+            {draftHeader.enabled ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+          </Button>
+        ) : null}
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 text-muted-foreground"
+          onClick={() => router.push(listHref)}
+          aria-label="Back to routines"
+        >
+          <X className="h-4 w-4" />
+        </Button>
       </div>
     )
-  }, [draftHeader.enabled, editingRoutine, form, handleTestDraft, isDraftingRoutine, isSaving, validationStatus])
-
-  const headerBackAction = useMemo(() => (
-    <Button type="button" variant="ghost" className="-ml-3 h-8 px-3 text-muted-foreground" onClick={() => router.push(listHref)}>
-      <ArrowLeft className="mr-2 h-4 w-4" />
-      Back to routines
-    </Button>
-  ), [listHref, router])
+  }, [draftHeader.enabled, editingRoutine, form, handleTestDraft, isDraftingRoutine, isSaving, isTogglingEnabled, listHref, router, toggleRoutineEnabled, validationStatus])
 
   const routineHeader = useMemo(() => ({
     actions: headerActions,
-    backAction: headerBackAction,
-    description: editingRoutine?.name ?? (isNewRoutine ? 'New routine' : 'Loading…'),
-    title: 'Routine',
-  }), [editingRoutine?.name, headerActions, headerBackAction, isNewRoutine])
+    backAction: null,
+    description: null,
+    title: (
+      <span className="flex min-w-0 items-center gap-2">
+        {routineTitle}
+        {routineStatusPill}
+      </span>
+    ),
+  }), [headerActions, routineStatusPill, routineTitle])
 
   useRegisterRoutineHeader(routineHeader)
 
@@ -978,28 +1036,7 @@ function RoutineEditorScreen({
             </div>
           ) : (
             <RoutineSkillCatalogProvider agentId={agentId}>
-            <div className="flex items-start justify-between gap-4">
-              <div className="min-w-0 flex-1 space-y-1">
-                <Label htmlFor="routineName">Name</Label>
-                <Input
-                  id="routineName"
-                  value={draftHeader.name}
-                  onChange={(event) => {
-                    setDraftHeader((current) => ({ ...current, name: event.target.value }))
-                  }}
-                />
-                {nameLocalValidationError ? <p className="text-xs text-destructive" role="status">{nameLocalValidationError}</p> : null}
-              </div>
-              <div className="flex shrink-0 items-center gap-2 pt-6">
-                <Switch
-                  checked={draftHeader.enabled}
-                  onCheckedChange={(enabled) => void toggleRoutineEnabled(enabled)}
-                  disabled={isTogglingEnabled}
-                  aria-label={draftHeader.enabled ? 'Disable routine' : 'Enable routine'}
-                />
-                <span className="text-sm text-muted-foreground">{draftHeader.enabled ? 'Enabled' : 'Disabled'}</span>
-              </div>
-            </div>
+            {nameLocalValidationError ? <p className="text-xs text-destructive" role="status">{nameLocalValidationError}</p> : null}
             <RoutineDiagnosticList diagnostics={routineDiagnostics} />
 
 

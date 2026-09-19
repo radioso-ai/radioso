@@ -1,10 +1,9 @@
 'use client'
 
 import { useContext, type ReactNode } from 'react'
-import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, CheckCircle2, CircleDashed, CornerUpRight, GitBranch, ListChecks, Wrench } from 'lucide-react'
+import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, CheckCircle2, CircleDashed, CornerUpRight, GitBranch, ListChecks, Plus, Wrench } from 'lucide-react'
 
 import { findRoutineSkillDescriptor, RoutineSkillCatalogContext } from '@/components/dashboard/settings/routine-skill-catalog-popover'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { branchDecisionLabel, branchIsImplicitFallThrough, documentTextToSegments, formatBindingLine, guardToSentence } from '@/lib/routine-document'
 import type { RoutineBlockBranch, RoutineBlockDoc, RoutineBlockEnding, RoutineBlockInstructionSegment, RoutineBlockSlot, RoutineBlockStep } from '@/lib/routine-prose'
@@ -50,6 +49,9 @@ function EditHint({ editable }: { editable: boolean }) {
   return editable ? <span aria-hidden="true" className="ml-2 text-xs text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">Edit</span> : null
 }
 
+// The routine's own name now lives in the page's title bar, so this row carries only the
+// activation summary — what starts the routine, read as a sentence until it is opened for
+// editing.
 export function RoutineDocumentHeader({ doc, editable = false, onEdit, editor }: {
   doc: RoutineBlockDoc
   editable?: boolean
@@ -57,7 +59,7 @@ export function RoutineDocumentHeader({ doc, editable = false, onEdit, editor }:
   editor?: ReactNode
 }) {
   const trigger = doc.activation.triggerDescription || 'an activation trigger is met'
-  return <header className="border-b border-border pb-4"><h2 className="text-xl font-semibold tracking-tight text-foreground">{doc.name || 'Untitled routine'}</h2>{editor ? <div className="rounded-md border border-border bg-muted/30 p-3">{editor}</div> : <button type="button" aria-label="Starts when" onClick={onEdit} disabled={!editable} className="group mt-3 block text-left disabled:cursor-default"><span className="block text-xs font-semibold text-foreground">Starts when</span><span className="mt-1 block text-sm text-muted-foreground">{trigger}</span><EditHint editable={editable} /></button>}</header>
+  return editor ? <div className="rounded-md border border-border bg-muted/30 p-3">{editor}</div> : <button type="button" aria-label="Starts when" onClick={onEdit} disabled={!editable} className="group block text-left disabled:cursor-default"><span className="block text-xs font-semibold text-foreground">Starts when</span><span className="mt-1 block text-sm text-muted-foreground">{trigger}</span><EditHint editable={editable} /></button>
 }
 
 export function RoutineInformationSection({ slots, editable = false, editingSlotId, onEditSlot, renderEditor, notesFor }: {
@@ -68,7 +70,7 @@ export function RoutineInformationSection({ slots, editable = false, editingSlot
   renderEditor?: (slot: RoutineBlockSlot) => ReactNode
   notesFor?: (slot: RoutineBlockSlot) => string[] | undefined
 }) {
-  return <section aria-labelledby="routine-document-information"><h3 id="routine-document-information" className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Collected information</h3>{slots.length === 0 ? <p className="mt-2 text-sm text-muted-foreground">No information is collected.</p> : <ul className="mt-2 space-y-0.5">{slots.map((slot) => <li key={slot.stableSlotId} className={editingSlotId === slot.stableSlotId ? 'rounded-md border border-border bg-muted/30 p-3 text-sm' : 'text-sm'}>{editingSlotId === slot.stableSlotId ? renderEditor?.(slot) : <button type="button" aria-label={slot.key} onClick={() => onEditSlot?.(slot)} disabled={!editable} className="group flex w-full items-baseline gap-2 text-left disabled:cursor-default"><span className="shrink-0 font-medium text-foreground">{slot.key}</span><span className="shrink-0 text-xs text-muted-foreground">{slot.type}{slot.required ? ', required' : ', optional'}</span>{slot.description ? <span className="min-w-0 truncate text-xs text-muted-foreground">{slot.description}</span> : null}<EditHint editable={editable} /></button>}{editingSlotId === slot.stableSlotId ? null : <DiagnosticNotes notes={notesFor?.(slot)} />}</li>)}</ul>}</section>
+  return <section aria-labelledby="routine-document-information" className="space-y-3"><h2 id="routine-document-information" className="text-xl font-semibold tracking-tight text-foreground">Collected information</h2>{slots.length === 0 ? <p className="mt-2 text-sm text-muted-foreground">No information is collected.</p> : <ul className="mt-2 space-y-0.5">{slots.map((slot) => <li key={slot.stableSlotId} className={editingSlotId === slot.stableSlotId ? 'rounded-md border border-border bg-muted/30 p-3 text-sm' : 'text-sm'}>{editingSlotId === slot.stableSlotId ? renderEditor?.(slot) : <button type="button" aria-label={slot.key} onClick={() => onEditSlot?.(slot)} disabled={!editable} className="group flex w-full items-baseline gap-2 text-left disabled:cursor-default"><span className="shrink-0 font-medium text-foreground">{slot.key}</span><span className="shrink-0 text-xs text-muted-foreground">{slot.type}{slot.required ? ', required' : ', optional'}</span>{slot.description ? <span className="min-w-0 truncate text-xs text-muted-foreground">{slot.description}</span> : null}<EditHint editable={editable} /></button>}{editingSlotId === slot.stableSlotId ? null : <DiagnosticNotes notes={notesFor?.(slot)} />}</li>)}</ul>}</section>
 }
 
 function EndingPhrase({ ending, muted = false }: { ending: RoutineBlockEnding; muted?: boolean }) {
@@ -100,13 +102,25 @@ function RoutineBranchRow({ branch, slotNames, index, editable = false, editing 
   editor?: ReactNode
 }) {
   // A default guard states no condition, so it reads as the plain onward path rather than a
-  // decision: no badge, no "otherwise", just where the routine goes.
+  // decision — its current semantics carry over unchanged: no icon tile, no "IF", just where
+  // the routine goes next.
   const isDefault = branch.guard.kind === 'default'
   if (editing) return <li className="rounded-md border border-border bg-muted/30 p-3 text-sm">{editor}</li>
-  return <li className="py-1.5 text-sm"><button type="button" aria-label={branchDecisionLabel(branch.guard.kind)} onClick={onEdit} disabled={!editable} className="group flex w-full flex-wrap items-center gap-2 text-left disabled:cursor-default">{isDefault ? <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" /> : <><Badge variant="outline" className="border-border bg-transparent font-normal text-muted-foreground">{branchDecisionLabel(branch.guard.kind)}</Badge><span><InlineSlotText text={guardToSentence(branch.guard, slotNames)} /></span><GitBranch className="h-3.5 w-3.5 text-muted-foreground" /></>}<BranchTarget branch={branch} index={index} /><EditHint editable={editable} /></button></li>
+  if (isDefault) {
+    return <li className="py-1.5 text-sm"><button type="button" aria-label={branchDecisionLabel(branch.guard.kind)} onClick={onEdit} disabled={!editable} className="group flex w-full flex-wrap items-center gap-2 text-left disabled:cursor-default"><ArrowRight className="h-3.5 w-3.5 text-muted-foreground" /><BranchTarget branch={branch} index={index} /><EditHint editable={editable} /></button></li>
+  }
+  return <li className="py-1"><button type="button" aria-label={branchDecisionLabel(branch.guard.kind)} onClick={onEdit} disabled={!editable} className="group flex w-full flex-wrap items-center gap-2 text-left disabled:cursor-default">
+    <span aria-hidden="true" className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-violet-500/15 text-violet-600 dark:text-violet-400"><GitBranch className="h-3.5 w-3.5" /></span>
+    <span aria-hidden="true" className="shrink-0 font-mono text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">If</span>
+    <span className="min-w-0 flex-1 truncate rounded-md border border-border bg-muted/20 px-2.5 py-1 text-foreground">
+      <InlineSlotText text={guardToSentence(branch.guard, slotNames)} />
+    </span>
+    <BranchTarget branch={branch} index={index} />
+    <EditHint editable={editable} />
+  </button></li>
 }
 
-export function RoutineStepRow({ step, stepIndex, slotNames, index, nextStepId = null, notes, editable = false, editing, onEditInstruction, onEditBinding, onEditApproval, onEditBranch, onEditStep, onMoveStepUp, onMoveStepDown, canMoveStepUp = false, canMoveStepDown = false, instructionEditor, bindingEditor, approvalEditor, branchEditor, stepEditor, insertStepAfter }: {
+export function RoutineStepRow({ step, stepIndex, slotNames, index, nextStepId = null, notes, editable = false, editing, onEditInstruction, onEditBinding, onEditApproval, onEditBranch, onAddBranch, onEditStep, onMoveStepUp, onMoveStepDown, canMoveStepUp = false, canMoveStepDown = false, instructionEditor, bindingEditor, approvalEditor, branchEditor, stepEditor, insertStepAfter }: {
   step: RoutineBlockStep
   stepIndex: number
   slotNames: Map<string, string>
@@ -119,6 +133,10 @@ export function RoutineStepRow({ step, stepIndex, slotNames, index, nextStepId =
   onEditBinding?: () => void
   onEditApproval?: () => void
   onEditBranch?: (index: number) => void
+  // Appends a new branch under this step and opens it for editing — the round "+" at the
+  // foot of the branch rail. Omitted for a step kind (approval) that owns its branches
+  // structurally instead.
+  onAddBranch?: () => void
   onEditStep?: () => void
   onMoveStepUp?: () => void
   onMoveStepDown?: () => void
@@ -140,9 +158,15 @@ export function RoutineStepRow({ step, stepIndex, slotNames, index, nextStepId =
   const descriptor = ref ? findRoutineSkillDescriptor(catalog.skills, ref, ref) : undefined
   const label = step.kind === 'approval' ? 'Approval' : descriptor?.displayName ?? ref ?? 'Chat'
   // Chat is what a step is unless it is something else, so only the other kinds announce
-  // themselves; a chat step is just its number and its sentence.
+  // themselves, as a small muted badge after the sentence rather than a heading of their own.
   const isChat = step.kind === 'chat'
-  const number = <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium">{stepIndex + 1}</span>
+  // A bare numeral gutter, not a badge — the row itself carries no card chrome until it is
+  // opened for editing. A chat step's numeral doubles as its "open the step editor" control,
+  // the same affordance the kind badge gives every other step kind.
+  const numeralClassName = 'w-6 shrink-0 pt-0.5 text-right font-mono text-xs text-muted-foreground'
+  const number = isChat
+    ? <button type="button" aria-label={label} onClick={onEditStep} disabled={!editable} className={`${numeralClassName} transition-colors hover:text-foreground disabled:cursor-default disabled:hover:text-muted-foreground`}>{stepIndex + 1}.</button>
+    : <span aria-hidden="true" className={numeralClassName}>{stepIndex + 1}.</span>
   // Reorder lives on the collapsed row itself, next to the number, so it never requires
   // opening a step's editor panel first — the gap this closes for every step kind.
   const moveControls = editable && (onMoveStepUp || onMoveStepDown) ? <div className="flex shrink-0 flex-col">
@@ -154,7 +178,11 @@ export function RoutineStepRow({ step, stepIndex, slotNames, index, nextStepId =
   const insertAfterOverlay = insertStepAfter ? <div className="pointer-events-none absolute inset-x-0 -bottom-2.5 z-10 flex justify-center opacity-0 transition-opacity group-hover/insertafter:opacity-100 group-focus-within/insertafter:opacity-100 [@media(hover:none)]:opacity-100"><div className="pointer-events-auto">{insertStepAfter}</div></div> : null
   const instruction = editing === 'instruction'
     ? <div className="rounded-md border border-border bg-muted/30 p-3">{instructionEditor}</div>
-    : <button type="button" aria-label="Instruction" onClick={onEditInstruction} disabled={!editable} className="group block w-full text-left disabled:cursor-default"><InstructionSentence segments={step.instruction} editable={editable} /><EditHint editable={editable} /></button>
+    : <button type="button" aria-label="Instruction" onClick={onEditInstruction} disabled={!editable} className="group block min-w-0 flex-1 text-left disabled:cursor-default"><InstructionSentence segments={step.instruction} editable={editable} /><EditHint editable={editable} /></button>
+  // The kind badge is small and muted, sitting after the sentence rather than on a heading
+  // line of its own; it is still the same "open the step editor" control non-chat kinds have
+  // always had, just relocated.
+  const kindBadge = !isChat ? <button type="button" aria-label={label} onClick={onEditStep} disabled={!editable} className="group ml-2 inline-flex shrink-0 items-center gap-1 rounded-full bg-muted px-2 py-0.5 align-middle text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/70 disabled:cursor-default">{step.kind === 'approval' ? <ListChecks className="h-3 w-3" /> : <Wrench className="h-3 w-3" />}<span>{label}</span><EditHint editable={editable} /></button> : null
   const branchRows = step.branches.map((branch, branchIndex) => {
     const editingBranch = editing === `branch:${branchIndex}`
     if (!editingBranch && branchIsImplicitFallThrough(branch, nextStepId)) {
@@ -163,16 +191,37 @@ export function RoutineStepRow({ step, stepIndex, slotNames, index, nextStepId =
     }
     return <RoutineBranchRow key={`${step.stableStepId}-${branchIndex}`} branch={branch} slotNames={slotNames} index={index} editable={editable} editing={editingBranch} onEdit={() => onEditBranch?.(branchIndex)} editor={branchEditor?.(branchIndex, branch)} />
   }).filter(Boolean)
+  // A thin rail connects a step's branches, with a round "+" at its foot to add another —
+  // shown once a branch already reads here; a step with none yet still adds its first through
+  // the step editor's own "+ Condition" control.
+  const branchRail = branchRows.length > 0 ? <div className="relative mt-2 border-l border-border pl-4">
+    <ul className="space-y-0.5">{branchRows}</ul>
+    {editable && onAddBranch ? <button type="button" aria-label={`Add a branch to step ${stepIndex + 1}`} onClick={onAddBranch} className="relative -left-[calc(1rem+0.5rem)] mt-1.5 flex h-5 w-5 items-center justify-center rounded-full border border-border bg-background text-muted-foreground hover:border-primary hover:text-primary"><Plus className="h-3 w-3" /></button> : null}
+  </div> : null
   const details = <>
     {step.kind === 'tool' || step.kind === 'action' ? <div className="mt-2">{editing === 'binding' ? <div className="rounded-md border border-border bg-muted/30 p-3">{bindingEditor}</div> : <button type="button" aria-label="Bindings" onClick={onEditBinding} disabled={!editable} className="group flex items-center gap-1 text-left text-xs text-muted-foreground disabled:cursor-default"><ArrowRight className="h-3.5 w-3.5" />{formatBindingLine(step.inputBindings, step.outputAssignments) ?? 'uses nothing → sets nothing'}<EditHint editable={editable} /></button>}</div> : null}
     {step.kind === 'approval' ? <div className="mt-2">{editing === 'approval' ? <div className="rounded-md border border-border bg-muted/30 p-3">{approvalEditor}</div> : <button type="button" aria-label="Approval choices" onClick={onEditApproval} disabled={!editable} className="group block w-full text-left text-sm disabled:cursor-default"><p className="font-medium">A person chooses:<EditHint editable={editable} /></p><ul className="mt-2 space-y-1">{(step.options ?? []).map((option) => <li key={option.id}>{option.label}{option.description ? ` — ${option.description}` : ''}</li>)}</ul></button>}</div> : null}
-    {branchRows.length > 0 ? <ul className="mt-2">{branchRows}</ul> : null}
+    {branchRail}
     {editing ? null : <DiagnosticNotes notes={notes} />}
   </>
-  if (isChat) {
-    return <li className="group/insertafter relative py-3 first:pt-0 last:pb-0"><div className="flex items-start gap-3">{moveControls}<button type="button" aria-label={label} onClick={onEditStep} disabled={!editable} className="group mt-0.5 disabled:cursor-default">{number}</button><div className="min-w-0 flex-1">{editing === 'step' ? <div className="rounded-md border border-border bg-muted/30 p-3">{stepEditor}</div> : instruction}{details}</div></div>{insertAfterOverlay}</li>
-  }
-  return <li className="group/insertafter relative py-3 first:pt-0 last:pb-0"><div className="flex items-start gap-3">{moveControls}{number}<div className="min-w-0 flex-1"><div className="flex items-center gap-2 text-sm font-medium text-foreground">{step.kind === 'approval' ? <ListChecks className="h-4 w-4" /> : <Wrench className="h-4 w-4" />}<button type="button" aria-label={label} onClick={onEditStep} disabled={!editable} className="group text-left disabled:cursor-default"><span>{label}</span><EditHint editable={editable} /></button></div>{editing === 'step' ? <div className="mt-2 rounded-md border border-border bg-muted/30 p-3">{stepEditor}</div> : <div className="mt-1">{instruction}</div>}{details}</div></div>{insertAfterOverlay}</li>
+  return <li className="group/insertafter relative rounded-md px-2 py-2 transition-colors first:mt-0 hover:bg-muted/40">
+    <div className="flex items-start gap-3">
+      {moveControls}
+      {number}
+      <div className="min-w-0 flex-1">
+        {/* The kind badge is also this row's "open the step editor" control (its aria-label
+            is the step's name), so it stays mounted in both states — only the sentence beside
+            it gives way to the editor panel. */}
+        <div className="flex flex-wrap items-baseline">
+          {editing === 'step' ? null : instruction}
+          {kindBadge}
+        </div>
+        {editing === 'step' ? <div className="mt-2 rounded-md border border-border bg-muted/30 p-3">{stepEditor}</div> : null}
+        {details}
+      </div>
+    </div>
+    {insertAfterOverlay}
+  </li>
 }
 
 export function RoutineEndingsSection({ endings, editable = false, editingEndingId, onEdit, onAdd, renderEditor, notesFor }: {
@@ -187,5 +236,5 @@ export function RoutineEndingsSection({ endings, editable = false, editingEnding
   // An author with no spare endings still needs somewhere to add one, so the section shows
   // its heading and controls even when the list is empty.
   if (endings.length === 0 && !editable) return null
-  return <section aria-labelledby="routine-document-endings"><div className="flex items-center justify-between"><h3 id="routine-document-endings" className="text-sm font-semibold text-foreground">Endings</h3>{editable && onAdd ? <div className="flex gap-1"><Button type="button" size="sm" variant="ghost" onClick={() => onAdd('complete')}>Add finish</Button><Button type="button" size="sm" variant="ghost" onClick={() => onAdd('handoff')}>Add hand-off</Button></div> : null}</div><ul className="mt-2 divide-y divide-border">{endings.map((ending) => <li key={ending.stableStepId} className={editingEndingId === ending.stableStepId ? 'rounded-md border border-border bg-muted/30 p-3 text-sm' : 'py-3 text-sm'}>{editingEndingId === ending.stableStepId ? renderEditor?.(ending) : <button type="button" aria-label={`${ending.kind === 'complete' ? 'Finish' : 'Hand-off'} ending`} onClick={() => onEdit?.(ending)} disabled={!editable} className="group flex w-full items-center gap-2 text-left disabled:cursor-default"><EndingPhrase ending={ending} /><EditHint editable={editable} /></button>}{editingEndingId === ending.stableStepId ? null : <DiagnosticNotes notes={notesFor?.(ending)} />}</li>)}</ul></section>
+  return <section aria-labelledby="routine-document-endings" className="space-y-3"><div className="flex items-center justify-between"><h2 id="routine-document-endings" className="text-xl font-semibold tracking-tight text-foreground">Endings</h2>{editable && onAdd ? <div className="flex gap-1"><Button type="button" size="sm" variant="ghost" onClick={() => onAdd('complete')}>Add finish</Button><Button type="button" size="sm" variant="ghost" onClick={() => onAdd('handoff')}>Add hand-off</Button></div> : null}</div><ul className="mt-2 divide-y divide-border">{endings.map((ending) => <li key={ending.stableStepId} className={editingEndingId === ending.stableStepId ? 'rounded-md border border-border bg-muted/30 p-3 text-sm' : 'py-3 text-sm'}>{editingEndingId === ending.stableStepId ? renderEditor?.(ending) : <button type="button" aria-label={`${ending.kind === 'complete' ? 'Finish' : 'Hand-off'} ending`} onClick={() => onEdit?.(ending)} disabled={!editable} className="group flex w-full items-center gap-2 text-left disabled:cursor-default"><EndingPhrase ending={ending} /><EditHint editable={editable} /></button>}{editingEndingId === ending.stableStepId ? null : <DiagnosticNotes notes={notesFor?.(ending)} />}</li>)}</ul></section>
 }

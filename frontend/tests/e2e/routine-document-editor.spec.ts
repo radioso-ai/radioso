@@ -89,6 +89,9 @@ test("author, validate, and read a routine through the Document tab", async ({ p
   await expect(documentEditor).toContainText("Check eligibility");
   await expect(documentEditor).toContainText("Hand this order to the billing team.");
   await expect(documentEditor).toContainText("The customer needs a nuanced eligibility explanation.");
+  // Both non-default branches read as an "IF" box on the rail, the rule and the AI judgment
+  // alike; only the plain onward path skips it.
+  await expect(documentEditor.getByText("If", { exact: true }).first()).toBeVisible();
 
   await expect.poll(
     () => routineUpdates.some((update) => update.method === "POST"),

@@ -21,13 +21,15 @@ runs, so you work with the routine instead of drawing the graph.
 Every change saves into the agent's private draft as you make it, so the document
 is always the form a colleague reads to learn what the agent does.
 
-![The Damaged delivery intake routine open in the routine editor, showing the Name, Reentry, and Activation trigger fields, two required text slots named order_number and issue_description, and the first chat step.](/screenshots/dashboard-routine-editor.png)
+![The Damaged delivery intake routine open in the routine editor, with the routine's name as the page title, a Draft pill beside it, the collapsible When to trigger section holding the Activation trigger, two required text slots named order_number and issue_description, and the first numbered step.](/screenshots/dashboard-routine-editor.png)
 
 ### Work in the document
 
-Document starts with a **Starts when** line, followed by **Information**,
-numbered steps, branch rows, and endings. A skill step shows its **uses → sets**
-bindings, so the flow also shows where information comes from and goes.
+Document opens with a collapsible **When to trigger** section holding
+**Starts when**, followed by **Instructions** — the numbered steps and their
+branch rows — then **Information** and **Endings**. A skill step shows its
+**uses → sets** bindings, so the flow also shows where information comes from
+and goes.
 
 Edit the starts-when line directly. In a step instruction, type `@` to capture a
 value, then choose its type in **Information**. Use **+ Step** to add chat,
@@ -41,9 +43,13 @@ whose value type needs adjustment.
 
 ## Set the routine header
 
-At the top of the editor, set four things:
+The routine's name is the page title — click it and type a new one. A pill
+beside it reads **Draft** or **Live**, and the round button next to the pill
+switches between them. **Test** opens the draft in Test Chat, and the overflow
+menu holds **Draft with AI** and **Delete routine**.
 
-- **Name** — what the routine is called in settings.
+Open **When to trigger**, then **Starts when**, to set:
+
 - **Priority** — the tie-breaker when several routines could start at once.
 - **Reentry** — what happens after the routine finishes in a conversation.
 - **Activation trigger** — a plain-language description of when the routine
@@ -81,17 +87,20 @@ Choose a type — `text`, `number`, `boolean`, `email`, or `date` — in
 while the value remains empty, or **Editable after completion** when a visitor
 may correct it later.
 
-The **+ Step** menu adds chat, skill, approval, and action steps. A skill step
-can use a fixed input or a value the routine holds, then assign its outputs to
-values that later steps can read. For example, a refund lookup can use
-`@order_number` and set `@refund_status` for a later branch.
+A blank numbered line always sits after the last step — click it to write a
+chat step directly. The **+ Step** menu adds chat, skill, approval, and action
+steps. A skill step can use a fixed input or a value the routine holds, then
+assign its outputs to values that later steps can read. For example, a refund
+lookup can use `@order_number` and set `@refund_status` for a later branch.
 
 ## Set branches, approvals, and endings
 
-Add a condition row beneath a step to choose its next target: another step,
-**Finish**, or **Hand off**. Rows run in order. Use **Rule** for an exact typed
-check, skill outcome, filled-value check, or bounded retry. Use **AI decides**
-when the agent needs to judge the condition in the conversation.
+Add a condition row beneath a step — the round **+** under its branches, or
+**+ Condition** in the step's own editor — to choose its next target: another
+step, **Finish**, or **Hand off**. Rows run in order. Use **Rule** for an
+exact typed check, skill outcome, filled-value check, or bounded retry. Use
+**AI decides** when the agent needs to judge the condition in the
+conversation; type `@` in the condition box to reference a collected value.
 
 An approval step pauses the routine for a workspace member. Add it with
 **+ Step**, name the decision, then give each choice a label and target. The
@@ -115,18 +124,19 @@ before it.
 A conversation keeps the revision it started on. A visitor part-way through a
 routine finishes on the version they began with, while you work on the next one.
 
-Each routine also carries an enabled flag. Turn a routine off to take it out of
-play while keeping everything you built — useful for comparing agent behavior
-with and without it, or parking a flow you are still working out.
+Each routine also carries an enabled flag — the **Draft**/**Live** pill in its
+header. Switch a routine to **Draft** to take it out of play while keeping
+everything you built — useful for comparing agent behavior with and without
+it, or parking a flow you are still working out.
 
 ## Try a routine before it ships
 
-Choose **Test draft** to open the agent's **Test Chat** with the draft selected.
+Choose **Test** to open the agent's **Test Chat** with the draft selected.
 The draft holds the routine you are editing alongside the rest of the agent's
 unpublished work, so the routine runs turn by turn in that conversation exactly
 as a publish would ship it, then returns to normal answering when it finishes.
-The routine has to be enabled: a disabled routine sits outside the draft's
-activation set, so **Test draft** is disabled until you turn the routine on.
+The routine has to be **Live**: one still marked **Draft** sits outside the
+draft's activation set, so **Test** is disabled until you switch it over.
 
 In **Test Chat**, you can also compare the draft with the published revision and
 run selected eval cases. Switching which version you test starts a fresh test
@@ -156,7 +166,7 @@ from a test that kept skills off.
 
 - A routine fails to start: the trigger describes the wrong situation, or a
   higher-priority routine claims the turn first. Test the trigger with
-  **Test draft**.
+  **Test**.
 - A coverage condition does not activate: inspect the originating turn. A
   failed or unavailable assessment is recorded as not assessed and never
   activates a coverage condition.
@@ -164,7 +174,8 @@ from a test that kept skills off.
   step refers to the stored information.
 - A backward jump fails validation: set **Max N** so the loop has a bounded
   number of passes.
-- A routine never starts at all: check that it is enabled.
+- A routine never starts at all: check that its pill reads **Live**, not
+  **Draft**.
 
 ## Read next
 

@@ -18,6 +18,7 @@ locals {
       "connector-encryption-key"     = var.connector_encryption_key
       "radioso-mcp-signing-secret"   = random_password.radioso_mcp_signing_secret.result
       "operator-mcp-internal-secret" = random_password.operator_mcp_internal_secret.result
+      "edge-proof-secret"            = random_password.edge_proof_secret.result
     },
     var.resend_mail_api_key != null ? {
       "resend-mail-api-key" = var.resend_mail_api_key
@@ -57,6 +58,7 @@ locals {
       "connector-encryption-key"     = true
       "radioso-mcp-signing-secret"   = true
       "operator-mcp-internal-secret" = true
+      "edge-proof-secret"            = true
     },
     var.resend_mail_api_key != null ? {
       "resend-mail-api-key" = true
@@ -130,4 +132,12 @@ resource "google_secret_manager_secret_iam_member" "worker_access" {
   secret_id = google_secret_manager_secret.secrets[each.key].secret_id
   role      = "roles/secretmanager.secretAccessor"
   member    = "serviceAccount:${data.google_service_account.worker.email}"
+}
+
+# Frontend mounts no other secrets today; grant only the one it needs to sign
+# visitor request facts for the backend.
+resource "google_secret_manager_secret_iam_member" "frontend_edge_proof_secret_access" {
+  secret_id = google_secret_manager_secret.secrets["edge-proof-secret"].secret_id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${data.google_service_account.frontend.email}"
 }

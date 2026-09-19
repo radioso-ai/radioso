@@ -50,6 +50,13 @@ resource "google_compute_backend_service" "frontend_app" {
   load_balancing_scheme = "EXTERNAL_MANAGED"
   enable_cdn            = false
 
+  # Stamp geo from the load balancer so the frontend can attach visitor
+  # region/city to signed request facts without an external geo-IP lookup.
+  custom_request_headers = [
+    "X-Client-Region:{client_region}",
+    "X-Client-City:{client_city}",
+  ]
+
   backend {
     group = google_compute_region_network_endpoint_group.frontend[0].id
   }

@@ -481,6 +481,15 @@ resource "google_cloud_run_v2_service" "backend" {
         }
       }
       env {
+        name = "RADIOSO_EDGE_PROOF_SECRET"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.secrets["edge-proof-secret"].secret_id
+            version = "latest"
+          }
+        }
+      }
+      env {
         name  = "RADIOSO_TRUSTED_PROXY_HOPS"
         value = "2"
       }
@@ -746,6 +755,15 @@ resource "google_cloud_run_v2_service" "frontend" {
         name  = "NEXT_PUBLIC_RADIOSO_EDITION"
         value = var.radioso_edition
       }
+      env {
+        name = "RADIOSO_EDGE_PROOF_SECRET"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.secrets["edge-proof-secret"].secret_id
+            version = "latest"
+          }
+        }
+      }
       dynamic "env" {
         for_each = var.deploy_services && var.radioso_mcp_enabled ? ["${coalesce(var.mcp_public_origin, google_cloud_run_v2_service.mcp[0].uri)}/mcp"] : []
         content {
@@ -765,6 +783,7 @@ resource "google_cloud_run_v2_service" "frontend" {
 
   depends_on = [
     google_secret_manager_secret_version.secrets,
+    google_secret_manager_secret_iam_member.frontend_edge_proof_secret_access,
   ]
 
   lifecycle {

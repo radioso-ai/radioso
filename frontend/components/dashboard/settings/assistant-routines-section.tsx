@@ -1005,14 +1005,18 @@ function RoutineEditorScreen({
   const routineHeader = useMemo(() => ({
     actions: headerActions,
     backAction: null,
-    description: null,
+    // Loading has its own inline spinner in the body; the header itself carries no subtitle
+    // once the routine is ready to show — `undefined` (not `null`) is reserved for "nothing
+    // registered a header yet" (see `emptyRoutineHeader`), so this section always registers
+    // one or the other explicitly rather than leaving the page shell to guess.
+    description: isLoading || !form ? undefined : null,
     title: (
       <span className="flex min-w-0 items-center gap-2">
         {routineTitle}
         {routineStatusPill}
       </span>
     ),
-  }), [headerActions, routineStatusPill, routineTitle])
+  }), [form, headerActions, isLoading, routineStatusPill, routineTitle])
 
   useRegisterRoutineHeader(routineHeader)
 

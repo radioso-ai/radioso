@@ -479,7 +479,7 @@ export function ChipTypeaheadPlugin({
               role="option"
               aria-selected={highlighted}
               aria-disabled={option.notice ? true : undefined}
-              className={`flex items-start gap-2 rounded-sm px-2 py-1.5 ${option.notice ? 'text-muted-foreground' : 'cursor-pointer'} ${highlighted && !option.notice ? 'bg-accent text-accent-foreground' : ''}`}
+              className={`flex items-start gap-2 rounded-sm px-2 py-1.5 ${option.notice ? 'text-muted-foreground' : 'cursor-pointer'} ${highlighted && !option.notice ? 'bg-accent text-secondary-foreground' : ''}`}
               onMouseEnter={() => setHighlightedIndex(index)}
               onMouseDown={(event) => {
                 event.preventDefault()
@@ -493,7 +493,7 @@ export function ChipTypeaheadPlugin({
               ) : null}
               <span className="min-w-0 flex-1">
                 <span className="block truncate">{option.display}</span>
-                {description ? <span className="mt-0.5 block text-xs font-normal text-muted-foreground">{description}</span> : null}
+                {description ? <span className="mt-0.5 block whitespace-normal text-xs font-normal text-secondary-foreground/70">{description}</span> : null}
               </span>
             </li>
           )
@@ -503,7 +503,7 @@ export function ChipTypeaheadPlugin({
             // The menu is portalled into a host at the document body, so inside a modal dialog it has to
             // opt back into pointer events and out-stack the dialog's layer. `relative` is
             // load-bearing: z-index only applies to a positioned element.
-            className="pointer-events-auto relative z-[60] max-h-72 min-w-64 overflow-auto rounded-md border border-border bg-popover p-1 text-sm text-popover-foreground shadow-md"
+            className="pointer-events-auto relative z-[60] max-h-72 min-w-72 overflow-auto rounded-md border border-border bg-popover p-1 text-sm text-popover-foreground shadow-md"
             role="listbox"
             aria-label={skillsOnly ? 'Insert a skill' : variablesOnly ? 'Insert a variable' : 'Insert a chip'}
           >

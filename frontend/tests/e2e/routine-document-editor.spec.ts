@@ -47,6 +47,8 @@ test("author, validate, and read a routine through the Document tab", async ({ p
   await chatInstruction.pressSequentially("Ask for @order_total");
   await page.getByRole("option", { name: /Create variable “order_total”/ }).click();
   await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+  // Collected information and Endings live inside the collapsed "Details" disclosure.
+  await documentEditor.getByRole("button", { name: "Toggle details", exact: true }).click();
   await documentEditor.getByRole("button", { name: "order_total", exact: true }).click();
   await documentEditor.getByLabel("Slot order_total type").selectOption("number");
   await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
@@ -107,7 +109,7 @@ test("author, validate, and read a routine through the Document tab", async ({ p
     "order_total is less than 50",
     "The customer needs a nuanced eligibility explanation.",
     "Hand off: Hand this order to the billing team.",
-    "Finish: Eligibility check finished.",
+    "then finish: Eligibility check finished.",
   ];
   for (const line of documentLines) expect(editableRestText).toContain(line);
 

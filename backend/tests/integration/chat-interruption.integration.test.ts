@@ -104,11 +104,11 @@ describe("chat interruption", () => {
     };
     const ctx = await createChatContext({ chatGateway, turnRouter });
     const { agent, workspaceId } = ctx;
-    const conversation = await ctx.repositories.conversationRepository.create(
+    const conversation = await ctx.repositories.conversationRepository.create({
       workspaceId,
-      agent.id,
-      "authenticated_chat",
-    );
+      agentId: agent.id,
+      sourceChannel: "authenticated_chat",
+    });
 
     const first = ctx.dependencies.assistantChatService.answer({
       workspaceId,
@@ -163,11 +163,11 @@ describe("chat interruption", () => {
     };
     const ctx = await createChatContext({ chatGateway, turnRouter });
     const { agent, workspaceId } = ctx;
-    const conversation = await ctx.repositories.conversationRepository.create(
+    const conversation = await ctx.repositories.conversationRepository.create({
       workspaceId,
-      agent.id,
-      "authenticated_chat",
-    );
+      agentId: agent.id,
+      sourceChannel: "authenticated_chat",
+    });
 
     const first = ctx.dependencies.assistantChatService.answer({
       workspaceId,
@@ -249,11 +249,11 @@ describe("chat interruption", () => {
     };
     const ctx = await createChatContext({ chatGateway, turnRouter });
     const { agent, workspaceId } = ctx;
-    const conversation = await ctx.repositories.conversationRepository.create(
+    const conversation = await ctx.repositories.conversationRepository.create({
       workspaceId,
-      agent.id,
-      "authenticated_chat",
-    );
+      agentId: agent.id,
+      sourceChannel: "authenticated_chat",
+    });
 
     const firstEventsPromise = collect(ctx.dependencies.assistantChatService.streamAnswer({
       workspaceId,
@@ -315,11 +315,11 @@ describe("chat interruption", () => {
       turnRouter: { classify: async () => directRouting() },
     });
     const { agent, workspaceId } = ctx;
-    const conversation = await ctx.repositories.conversationRepository.create(
+    const conversation = await ctx.repositories.conversationRepository.create({
       workspaceId,
-      agent.id,
-      "authenticated_chat",
-    );
+      agentId: agent.id,
+      sourceChannel: "authenticated_chat",
+    });
 
     // The emission latch engages on the first PUBLIC chunk, not on the provider yield:
     // a produced-but-not-yet-emitted chunk is still discardable by a successor (#859
@@ -403,11 +403,11 @@ describe("chat interruption", () => {
         },
       },
     });
-    const conversation = await ctx.repositories.conversationRepository.create(
-      ctx.workspaceId,
-      ctx.agent.id,
-      "authenticated_chat",
-    );
+    const conversation = await ctx.repositories.conversationRepository.create({
+      workspaceId: ctx.workspaceId,
+      agentId: ctx.agent.id,
+      sourceChannel: "authenticated_chat",
+    });
 
     const first = ctx.dependencies.assistantChatService.answer({
       workspaceId: ctx.workspaceId,
@@ -450,11 +450,11 @@ describe("chat interruption", () => {
       (ctx.dependencies.chatService as unknown as { chatTurnLifecycle: { recordFailure: (...args: unknown[]) => Promise<void> } }).chatTurnLifecycle,
       "recordFailure",
     );
-    const conversation = await ctx.repositories.conversationRepository.create(
-      ctx.workspaceId,
-      ctx.agent.id,
-      "authenticated_chat",
-    );
+    const conversation = await ctx.repositories.conversationRepository.create({
+      workspaceId: ctx.workspaceId,
+      agentId: ctx.agent.id,
+      sourceChannel: "authenticated_chat",
+    });
 
     const first = ctx.dependencies.assistantChatService.answer({
       workspaceId: ctx.workspaceId,
@@ -496,11 +496,11 @@ describe("chat interruption", () => {
       (ctx.dependencies.chatService as unknown as { chatTurnLifecycle: { recordFailure: (...args: unknown[]) => Promise<void> } }).chatTurnLifecycle,
       "recordFailure",
     );
-    const conversation = await ctx.repositories.conversationRepository.create(
-      ctx.workspaceId,
-      ctx.agent.id,
-      "authenticated_chat",
-    );
+    const conversation = await ctx.repositories.conversationRepository.create({
+      workspaceId: ctx.workspaceId,
+      agentId: ctx.agent.id,
+      sourceChannel: "authenticated_chat",
+    });
 
     const firstEvents = collect(ctx.dependencies.assistantChatService.streamAnswer({
       workspaceId: ctx.workspaceId,
@@ -548,11 +548,11 @@ describe("chat interruption", () => {
         return noopReservation();
       }),
     });
-    const conversation = await ctx.repositories.conversationRepository.create(
-      ctx.workspaceId,
-      ctx.agent.id,
-      "authenticated_chat",
-    );
+    const conversation = await ctx.repositories.conversationRepository.create({
+      workspaceId: ctx.workspaceId,
+      agentId: ctx.agent.id,
+      sourceChannel: "authenticated_chat",
+    });
 
     const first = ctx.dependencies.assistantChatService.answer({
       workspaceId: ctx.workspaceId,
@@ -590,11 +590,11 @@ describe("chat interruption", () => {
         return noopReservation();
       }),
     });
-    const conversation = await ctx.repositories.conversationRepository.create(
-      ctx.workspaceId,
-      ctx.agent.id,
-      "authenticated_chat",
-    );
+    const conversation = await ctx.repositories.conversationRepository.create({
+      workspaceId: ctx.workspaceId,
+      agentId: ctx.agent.id,
+      sourceChannel: "authenticated_chat",
+    });
 
     const firstEvents = collect(ctx.dependencies.assistantChatService.streamAnswer({
       workspaceId: ctx.workspaceId,
@@ -653,11 +653,11 @@ describe("chat interruption", () => {
         },
       },
     });
-    const conversation = await ctx.repositories.conversationRepository.create(
-      ctx.workspaceId,
-      ctx.agent.id,
-      "authenticated_chat",
-    );
+    const conversation = await ctx.repositories.conversationRepository.create({
+      workspaceId: ctx.workspaceId,
+      agentId: ctx.agent.id,
+      sourceChannel: "authenticated_chat",
+    });
 
     const first = ctx.dependencies.assistantChatService.answer({
       workspaceId: ctx.workspaceId,
@@ -716,11 +716,11 @@ describe("chat interruption", () => {
         },
       },
     });
-    const conversation = await ctx.repositories.conversationRepository.create(
-      ctx.workspaceId,
-      ctx.agent.id,
-      "authenticated_chat",
-    );
+    const conversation = await ctx.repositories.conversationRepository.create({
+      workspaceId: ctx.workspaceId,
+      agentId: ctx.agent.id,
+      sourceChannel: "authenticated_chat",
+    });
 
     const firstEvents = collect(ctx.dependencies.assistantChatService.streamAnswer({
       workspaceId: ctx.workspaceId,
@@ -778,11 +778,11 @@ describe("chat interruption", () => {
       },
       "composeLazySuggestions",
     ).mockReturnValue(suggestions.promise);
-    const conversation = await ctx.repositories.conversationRepository.create(
-      ctx.workspaceId,
-      ctx.agent.id,
-      "authenticated_chat",
-    );
+    const conversation = await ctx.repositories.conversationRepository.create({
+      workspaceId: ctx.workspaceId,
+      agentId: ctx.agent.id,
+      sourceChannel: "authenticated_chat",
+    });
     const iterator = ctx.dependencies.assistantChatService.streamAnswer({
       workspaceId: ctx.workspaceId,
       agentId: ctx.agent.id,

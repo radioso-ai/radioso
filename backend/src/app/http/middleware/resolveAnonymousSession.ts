@@ -21,7 +21,7 @@ import {
 const COOKIE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60; // 30 days
 export const ANONYMOUS_SESSION_HEADER = "x-radioso-anonymous-session";
 export const PUBLIC_CHAT_SESSION_HEADER = "x-radioso-public-session";
-export const PUBLIC_CHAT_SESSION_ID_HEADER = "x-radioso-public-session-id";
+const PUBLIC_CHAT_SESSION_ID_HEADER = "x-radioso-public-session-id";
 const ANONYMOUS_RATE_LIMIT_COOKIE_PREFIX = "anon_rate_limit_";
 const anonymousTokenParamsSchema = z.object({
   token: z.string().min(1),
@@ -62,7 +62,7 @@ const firstHeaderValue = (value: string | undefined) => value?.split(",")[0]?.tr
 // the API, so the browser stamps this value into the Origin header of its
 // non-GET requests — see publicSessionMatchesCurrentOrigin for why that must be
 // treated as a same-origin request rather than a cross-origin replay.
-export const resolveRequestAppOrigin = (req: Pick<Request, "get">): string | null => {
+const resolveRequestAppOrigin = (req: Pick<Request, "get">): string | null => {
   const host = firstHeaderValue(req.get("x-forwarded-host")) ?? firstHeaderValue(req.get("host"));
   if (!host) {
     return null;
@@ -366,6 +366,10 @@ export const resolveAnonymousSession = (
       res.locals.chatSessionId = sessionId;
       // Compatibility for existing middleware, API presenters, and feedback records.
       res.locals.anonymousSessionId = sessionId;
+      // Spec 1277 decision 6: an unauthenticated, client-persisted visitor-grouping
+      // claim on the session payload, distinct from `sessionId` — never treat it as
+      // a credential.
+      res.locals.visitorKey = publicSession.visitorKey ?? null;
       res.locals.anonymousRateLimitId = rateLimitId;
       res.locals.anonymousRateLimitIdFromCookie = Boolean(rateLimitIdFromCookie);
       res.locals.sourceChannel = publicSession?.sourceChannel ?? "anonymous";

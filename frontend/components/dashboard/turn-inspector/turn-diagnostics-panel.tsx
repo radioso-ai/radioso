@@ -42,7 +42,6 @@ export interface TurnDiagnosticsInput {
   activityTrace?: ChatConversationTurnDebug['activityTrace']
   /** Turn spine envelope; drives routine/clarification signals and the flow graph. */
   turnTrace?: TurnTraceEnvelope
-  visitorContext?: unknown
   answerCoverage?: unknown
   interactionTrace?: unknown
 }
@@ -252,7 +251,6 @@ export function TurnDiagnosticsPanel({
             <ActivityTraceDetail
               activityTrace={resolvedActivityTrace}
               selectedStageId={selectedStageId}
-              visitorContext={diagnostics.visitorContext}
             />
           </div>
         </div>

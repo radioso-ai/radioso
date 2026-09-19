@@ -26,6 +26,7 @@ import { PostgresAssistantTurnPersistence } from "../../../modules/chat/infra/po
 import { AccountAccessService } from "../../../modules/account/public.js";
 import { AgentService } from "../../../modules/agents/public.js";
 import { AgentRevisionRuntimeResolver } from "../../../modules/agents/public.js";
+import { VisitorRepository, VisitorResolver } from "../../../modules/visitors/composition.js";
 import { AuditService } from "../../../modules/audit/composition.js";
 import { ApprovalDecisionService } from "../../../modules/approvals/public.js";
 import {
@@ -712,6 +713,11 @@ export const buildChatServices = (input: {
   const agentRevisionRuntimeResolver = new AgentRevisionRuntimeResolver(
     new AgentRevisionRuntimeRepository(input.database.kysely),
   );
+  const visitorRepository = new VisitorRepository(input.database.kysely);
+  const visitorResolver = new VisitorResolver(
+    visitorRepository,
+    input.metricsRegistry,
+  );
   const chatService = new ChatService({
     conversationRepository: input.conversationRepository,
     messageRepository: input.messageRepository,
@@ -729,6 +735,7 @@ export const buildChatServices = (input: {
     usageLimitPolicy: input.usageLimitPolicy,
     agentService: input.agentService,
     agentRevisionRuntimeResolver,
+    visitorResolver,
     contextVariableRepository: contextVariableResolver,
     // 067: behavioral steering. The standing set is supplied by application
     // composition; default answer behavior is registered by a built-in module.
@@ -831,6 +838,7 @@ export const buildChatServices = (input: {
     answerFeedbackHistoryProvider,
     input.conversationOwnershipRepository,
     new AnswerCoverageRepository(input.database.kysely),
+    visitorRepository,
   );
   // "Continue in test chat": a private test execution seeded from a live conversation's
   // thread and its current routine/clarification/directive position. Read-only on the source.

@@ -1,6 +1,6 @@
 import type { ChatStreamEvent } from "../contracts/streamEvents.js";
 import type { ChatBootstrapResponse, ChatResponse } from "./chatResponses.js";
-import type { ConversationChannelContext } from "@radioso/conversation-contract";
+import type { ConversationChannelContext, ConversationRequestContext } from "@radioso/conversation-contract";
 import type { PageReadCapability } from "../services/pageRead/pageReadDecision.js";
 
 export type AssistantRouteType = "direct" | "retrieval";
@@ -34,6 +34,8 @@ export interface AssistantPageContext {
   pageLocale?: string | null;
   browserLocale?: string | null;
   content?: string | null;
+  /** FR-013 (spec 1277): document.referrer of the host page; client-claimed, capped and http(s)-only. */
+  referrer?: string | null;
 }
 
 export interface AssistantClientContextCapabilities {
@@ -63,6 +65,12 @@ export interface AssistantChatRequest {
   clientContextCapabilities?: AssistantClientContextCapabilities;
   verifiedCustomerId?: string | null;
   verifiedIdentity?: Record<string, unknown> | null;
+  /** Edge-observed facts for this turn's first message (spec 1277); ignored for a resumed conversation. */
+  requestContext?: ConversationRequestContext | null;
+  /** FR-013 (spec 1277): client-claimed referrer of the host page, from pageContext.referrer; persisted once alongside entry_page_url. */
+  entryReferrer?: string | null;
+  /** Unauthenticated visitor-grouping id from the verified public chat session payload (spec 1277 decision 6); never a credential. */
+  visitorKey?: string | null;
   /**
    * Operator-only workbench test override: routine definition ids (drafts included)
    * to make eligible for this turn. Set only by the authenticated workbench chat so an

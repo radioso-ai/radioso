@@ -58,6 +58,7 @@ const createDependencies = (overrides: Partial<AppDependencies> = {}): AppDepend
   },
   abuseControlService: { enforce: vi.fn().mockResolvedValue(undefined), enforceBatch: vi.fn().mockResolvedValue(undefined) },
   auditService: { record: vi.fn().mockResolvedValue(undefined) },
+  visitorGeoResolver: { resolve: vi.fn().mockReturnValue({ country: null, region: null, city: null }) },
   agentRepository: {
     findByIdAndWorkspaceId: vi.fn().mockResolvedValue({ id: agentId, workspaceId }),
   },

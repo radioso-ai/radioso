@@ -420,6 +420,8 @@ export type ChatConversationSummary = ApiSchemas['ChatConversationSummary'] & {
   channelContext?: ConversationChannelContext | null
 }
 export type ConversationOwnership = ApiSchemas['ConversationOwnership']
+export type ConversationRequestContext = ApiSchemas['ConversationRequestContext']
+export type ConversationVisitorProfile = ApiSchemas['ConversationVisitorProfile']
 export type ChatConversationMessage = ApiSchemas['ChatConversationMessage']
 export type ChatConversationTail = ApiSchemas['ChatConversationTail']
 export type PublicChatConversationTail = ApiSchemas['PublicChatConversationTail']
@@ -500,6 +502,11 @@ export type ChatHistoryListResponse = ApiSchemas['ChatHistoryListResponse'] & {
   assistantLinkUtmEnabled?: boolean
   citationDisplayEnabled?: boolean
   intakeActions?: PublicChatIntakeAction[]
+}
+
+/** A visitor's other conversations for the drawer's "Previous conversations" panel (spec 1277, FR-041). */
+export type VisitorConversationsResponse = Omit<ApiSchemas['VisitorConversationsResponse'], 'conversations'> & {
+  conversations: ChatConversationSummary[]
 }
 
 export type HistoryItem =

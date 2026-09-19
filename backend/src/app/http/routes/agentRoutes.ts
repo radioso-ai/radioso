@@ -16,6 +16,7 @@ import { requireApiAccessCsrf } from "../middleware/requireApiAccessCsrf.js";
 import { requireRestAgentChannelCredential, type AgentChannelCredentialLocals } from "../middleware/requireAgentChannelCredential.js";
 import { agentChannelChatRateLimiters, createAgentChannelSourceRateLimiter } from "../middleware/agentChannelRateLimiter.js";
 import { onSuccessfulHttpResponse } from "../middleware/httpResponseCompletion.js";
+import { recordEdgeFactsProofRejected, resolveConversationRequestContext } from "../shared/conversationRequestContext.js";
 import { sendChatJson, sendChatSse } from "../presenters/chatPresenter.js";
 import {
   agentChannelChatSchema,
@@ -107,7 +108,7 @@ export const agentBodySchema = z.object({
   surfaceSettings: agentInputFieldSchemas.surfaceSettings.omit({ extensions: true }).optional(),
 });
 
-type AgentRouteDependencies = AgentRevisionRouteDependencies & Pick<AppDependencies, "accessGrantService" | "agentRepository" | "agentService" | "assistantChatService" | "authoredDirectiveService" | "directiveAuthorService" | "skillAuthoringCatalog" | "routineDefinitionService" | "routineDraftAssistService" | "agentSurfaceExtensions" | "documentStorage" | "logger" | "metricsRegistry" | "abuseControlService" | "auditService">;
+type AgentRouteDependencies = AgentRevisionRouteDependencies & Pick<AppDependencies, "accessGrantService" | "agentRepository" | "agentService" | "assistantChatService" | "authoredDirectiveService" | "directiveAuthorService" | "skillAuthoringCatalog" | "routineDefinitionService" | "routineDraftAssistService" | "agentSurfaceExtensions" | "documentStorage" | "logger" | "metricsRegistry" | "visitorGeoResolver" | "abuseControlService" | "auditService">;
 
 const channelForAudience = (audience: "mcp" | "rest") =>
   audience === "mcp" ? "mcp-converse" as const : "agent-api" as const;
@@ -283,6 +284,10 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
     async (req, res, next) => {
       try {
         const { agentChannelGrant } = res.locals as typeof res.locals & AgentChannelCredentialLocals;
+        const { context: requestContext, rejection } = resolveConversationRequestContext(dependencies, req);
+        if (rejection) {
+          recordEdgeFactsProofRejected(dependencies, rejection, req);
+        }
         const chatInput = {
           workspaceId: agentChannelGrant.workspaceId,
           agentId: agentChannelGrant.agentId,
@@ -294,6 +299,7 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
           userExpectedLocale: req.body.userExpectedLocale,
           sourceChannel: "agent_api",
           sourceOrigin: null,
+          requestContext,
         };
         if (req.body.stream) {
           onSuccessfulHttpResponse(res, () => dependencies.accessGrantService.recordAgentChannelChatSucceeded({

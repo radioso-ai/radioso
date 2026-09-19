@@ -84,6 +84,14 @@ services:
       NODE_ENV: development
       AUTH_AUTO_VERIFY_EMAIL: "true"
       CHOKIDAR_USEPOLLING: "true"
+      # Spec 1277: shared with the frontend service below so the local stack
+      # exercises the edge-facts proof path end to end. Dev-only value.
+      RADIOSO_EDGE_PROOF_SECRET: radioso-local-dev-edge-proof-secret
+      # Next.js is the only proxy between the browser and this backend locally (no LB
+      # in front); it injects one X-Forwarded-For entry per request, so one trusted hop.
+      # The same value also keys pre-auth rate-limit source digests, so a caller bypassing
+      # Next and hitting this port directly is keyed by its own header, same as prod's hops=2.
+      RADIOSO_TRUSTED_PROXY_HOPS: "1"
     depends_on:
       workspace-deps:
         condition: service_completed_successfully
@@ -127,6 +135,9 @@ services:
       BACKEND_INTERNAL_URL: http://backend:8080
       CHOKIDAR_USEPOLLING: "true"
       WATCHPACK_POLLING: "true"
+      # Spec 1277: same secret as the backend service above, so the local stack
+      # exercises the edge-facts proof path end to end.
+      RADIOSO_EDGE_PROOF_SECRET: radioso-local-dev-edge-proof-secret
     volumes: *frontend-dev-volumes
 
 volumes:

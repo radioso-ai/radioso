@@ -29,6 +29,7 @@ COPY packages/document-parser/package.json ./packages/document-parser/package.js
 COPY packages/document-parser/*.d.ts ./packages/document-parser/
 COPY packages/document-parser/*.js ./packages/document-parser/
 COPY packages/document-parser/parsers ./packages/document-parser/parsers
+COPY packages/edge-proof/package.json ./packages/edge-proof/package.json
 COPY packages/integration-test-support/package.json ./packages/integration-test-support/package.json
 COPY packages/mcp-source-proof/package.json ./packages/mcp-source-proof/package.json
 COPY packages/operator-mcp-contract/package.json ./packages/operator-mcp-contract/package.json
@@ -68,6 +69,7 @@ COPY packages/conversation-tools ./packages/conversation-tools
 COPY packages/connector-api ./packages/connector-api
 COPY packages/crawler ./packages/crawler
 COPY packages/document-parser ./packages/document-parser
+COPY packages/edge-proof ./packages/edge-proof
 COPY packages/integration-test-support ./packages/integration-test-support
 COPY packages/mcp-source-proof ./packages/mcp-source-proof
 COPY packages/operator-mcp-contract ./packages/operator-mcp-contract

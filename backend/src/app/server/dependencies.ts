@@ -101,6 +101,7 @@ import { ConversationSummaryRepository } from "../../db/repositories/conversatio
 import { RoutineStateRepository } from "../../db/repositories/routineStateRepository.js";
 import { QUALITY_RESOLUTION_REASONS } from "../../modules/quality/domain/resolution.js";
 import { buildOperatorMcpServices } from "./builders/operatorMcp.js";
+import { createDefaultVisitorGeoResolver } from "../composition/visitorGeoResolver.js";
 import { resolveWorkspaceManagedLlmModels } from "../../shared/infra/llm/workspaceManagedModels.js";
 import type { OperatorMcpClientMetadataSnapshot } from "../../modules/operatorMcpAuthorization/public.js";
 
@@ -121,6 +122,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       : undefined,
   });
   const publicConversationEventBus = new InMemoryPublicConversationEventBus();
+  const visitorGeoResolver = createDefaultVisitorGeoResolver();
   const composition = createDefaultApplicationComposition({
     logger,
     env,
@@ -920,6 +922,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     errorReportingService: infrastructure.errorReportingService,
     productAnalyticsService: infrastructure.productAnalyticsService,
     capabilityPolicy: composition.capabilityPolicy,
+    visitorGeoResolver,
     usageLimitPolicy: infrastructure.usageLimitPolicy,
     usageEventRecorder: infrastructure.usageEventRecorder,
     organizationCreationGuard,

@@ -22,6 +22,9 @@ export const buildChatConversationSummary = (
   channelContext: conversation.channelContext,
   anonymousSessionId: conversation.anonymousSessionId ?? null,
   entryPageUrl: conversation.entryPageUrl ?? null,
+  // Read straight off the conversation's own request_context — no `visitors` join for
+  // a list (spec 1277, FR-040).
+  visitorCountry: conversation.requestContext?.country ?? null,
   title: conversation.title ?? null,
   createdAt: toIsoString(conversation.createdAt),
   updatedAt: toIsoString(conversation.updatedAt),
@@ -31,7 +34,8 @@ export const buildChatConversationSummary = (
   preview: messageSummary?.preview ?? null,
 });
 
-export const buildChatHistoryItem = (
+// Not exported: only buildHistoryItem below calls these, and nothing outside this file does.
+const buildChatHistoryItem = (
   item: Extract<HistoryItemsSourceRecord, { kind: "chat" }>,
   messageSummary?: ConversationMessageSummary,
 ): HistoryItem => ({
@@ -41,7 +45,7 @@ export const buildChatHistoryItem = (
   conversation: buildChatConversationSummary(item.conversation, messageSummary),
 });
 
-export const buildSearchHistoryItem = (
+const buildSearchHistoryItem = (
   item: Extract<HistoryItemsSourceRecord, { kind: "search" }>,
 ): HistoryItem & { kind: "search"; search: DocumentSearchHistoryEntry } => ({
   kind: "search",

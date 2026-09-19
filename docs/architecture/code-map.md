@@ -575,6 +575,7 @@ Public surfaces and key files:
 - `backend/src/modules/context-variables/services/contextVariableService.ts`
 - `backend/src/modules/context-variables/contextVariableResolverService.ts`
 - `backend/src/modules/context-variables/copilotPrimitiveRegistry.ts`
+- `backend/src/modules/context-variables/visitorRequestFacts.ts` (the `visitor_request` built-in: narrowing and language parsing)
 - `backend/src/db/repositories/contextVariableRepository.ts`
 - `backend/src/app/http/routes/contextVariableRoutes.ts`
 - `backend/src/modules/operatorCopilot/proposalAdapters.ts`
@@ -583,11 +584,46 @@ Focused checks:
 
 - `cd backend && pnpm exec vitest run tests/contract/context-variables.contract.test.ts tests/unit/context-variable-resolver-service.test.ts tests/unit/operatorCopilot/copilotProposalAdapters.test.ts`
 - `cd backend && pnpm exec vitest run tests/integration/context-variable-repository.integration.test.ts tests/integration/context-variable-repository-resolver-skill.integration.test.ts tests/integration/context-variable-repository-apply-proposal-conflicts.integration.test.ts tests/integration/context-variable-enablement-references-migration.integration.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/visitor-request-facts.test.ts tests/unit/context-resolution-service.test.ts tests/unit/chat-session-preparer-visitor-request.test.ts tests/integration/chat/postgres-assistant-turn-persistence.integration.test.ts` (the `visitor_request` built-in: narrowing, snapshot wiring, and the metadata_json persistence guarantee)
 
 Related specs and issues:
 
 - `specs/097-visitor-context-variables/`
 - Issues `#1036`, `#1046`, and `#1115`
+
+## Visitors
+
+Owns the `visitors` entity: a workspace-scoped person keyed by a durable,
+client-persisted `visitor_key` and/or a host-verified customer id, with
+first/last seen, a conversation count, and the latest observed
+country/language/user agent. `visitor_key` is an unauthenticated grouping id
+only — it carries no session, resume, or history-read power, and is a
+separate claim from `publicSessionId` in the signed public chat session
+payload. `VisitorResolver` holds the identity-resolution rules (verified beats
+a visitor key, upgrade-in-place vs. move, never re-attach a visitor key to a
+second verified id); `VisitorRepository` holds only named persistence
+primitives. `ChatSessionPreparer` resolves a visitor before creating a new
+conversation and calls `attachVerifiedIdentity` at a conversation's first
+verified turn. Should not know HTTP, headers, geo, `process.env`, or the LLM.
+
+Public surfaces and key files:
+
+- `backend/src/modules/visitors/README.md`
+- `backend/src/modules/visitors/public.ts`
+- `backend/src/modules/visitors/composition.ts`
+- `backend/src/modules/visitors/services/visitorResolver.ts`
+- `backend/src/db/repositories/visitorRepository.ts`
+- `backend/src/modules/chat/services/chatSessionPreparer.ts` (`resolveVisitorForNewConversation`)
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/visitor-resolver.test.ts tests/unit/chat-session-preparer-visitor-resolution.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/visitor-resolver.integration.test.ts tests/integration/visitor-backfill-migration.integration.test.ts`
+- `cd backend && pnpm exec vitest run tests/contract/history-visitor-conversations.contract.test.ts` (`GET /api/v1/history/visitors/{visitorId}/conversations`, the drawer's "Previous conversations" panel)
+
+Related specs:
+
+- `specs/1277-visitor-profile/`
 
 ## Agent Revisions
 
@@ -1353,6 +1389,11 @@ contracts, auth exchange helpers, policy, audit behavior, and package smoke
 tests. The narrow source-proof package owns the signed wire contract used to
 carry an already-digested client source from the edge to the backend; admission
 policy and transport-peer resolution remain with their respective services.
+`@radioso/edge-proof` is the generic HMAC-envelope primitive underneath it
+(canonical payload signing, per-context derived keys, trusted-proxy-suffix
+address resolution) plus the request-facts envelope schema (`radioso:edge-facts:v1`)
+shared by the frontend proxy and backend for visitor request facts; it knows
+nothing about MCP, conversations, or visitors.
 
 Should not own backend product behavior. It should call backend APIs through
 its adapter and generated or shared contracts.
@@ -1368,6 +1409,8 @@ Primary paths:
 - `packages/product-docs/` (the documentation corpus both surfaces read; `scripts/buildCorpus.ts` compiles `docs-portal/content` into the committed `src/generated/corpus.json` through `@radioso/docs-importer`'s MDX converter, and `pnpm --filter @radioso/product-docs run sync` refreshes it — the CI docs job and `backend`'s contract suite both fail on drift)
 - `packages/mcp-source-proof/src/index.ts`
 - `packages/mcp-source-proof/tests/`
+- `packages/edge-proof/src/` (`envelope.ts` generic sign/verify, `edgeFacts.ts` request-facts proof, `geoHeaders.ts` well-known header names)
+- `packages/edge-proof/tests/`
 
 Useful searches:
 
@@ -1380,6 +1423,7 @@ Focused checks:
 - `cd packages/radioso-mcp-server && pnpm test`
 - `cd packages/radioso-mcp-server && pnpm run smoke:all`
 - `cd packages/mcp-source-proof && pnpm run check`
+- `cd packages/edge-proof && pnpm run check`
 
 Related docs and specs:
 

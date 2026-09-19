@@ -176,6 +176,12 @@ function ConversationMetaLine({ conversation }: { conversation: ChatConversation
   return (
     <span className="mt-0.5 flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
       <span className="shrink-0">{visitorLabel}</span>
+      {conversation.visitorCountry ? (
+        <>
+          <span aria-hidden>·</span>
+          <span className="shrink-0">{conversation.visitorCountry}</span>
+        </>
+      ) : null}
       <span aria-hidden>·</span>
       {locationHref ? (
         <a

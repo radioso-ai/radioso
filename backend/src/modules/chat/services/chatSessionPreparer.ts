@@ -1,12 +1,14 @@
 import type {
   ClarificationCandidate,
   ConversationChannelContext,
+  ConversationRequestContext,
   ConversationTrace,
   MessageSource,
   StagedContext,
 } from "@radioso/conversation-contract";
 
 import { AppError, notFound } from "../../../shared/domain/errors.js";
+import { primaryLanguageTag } from "../../../shared/domain/acceptLanguage.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { toConversationTrace, toPreparedStagedContext } from "./conversationContractMappers.js";
 import type { ConversationRecord, ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
@@ -22,6 +24,7 @@ import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalida
 import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
 import type { BootstrapGreetingCacheRepositoryPort } from "../../../db/repositories/bootstrapGreetingCacheRepository.js";
 import type { AuditService } from "../../audit/contracts/index.js";
+import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import type { ResponseIdentity } from "../../../shared/domain/responseIdentity.js";
 import type {
   AgenticRetrievalToolFactory,
@@ -30,13 +33,14 @@ import type {
   RewriteContinuityState,
   StructuredRewriteResult,
 } from "../../retrieval/public.js";
-import { resolveContextForTurn } from "../../context-variables/public.js";
+import { projectVisitorRequestFacts, resolveContextForTurn } from "../../context-variables/public.js";
 import type {
   ResolvedTurnContext,
   ResolvedVariableInput,
   ContextVariableScope,
   ContextVariableResolutionReaderPort,
   AgentContextVariableEnablement,
+  VisitorRequestFacts,
 } from "../../context-variables/public.js";
 import type {
   AgentRecord,
@@ -57,6 +61,7 @@ import type { RetrievalTurnPort } from "./retrievalTurnDispatch.js";
 import type { DirectiveSteeringResult } from "../../directives/public.js";
 import type { DeferredDirectiveStateStore } from "./directives/deferredDirectiveStateStore.js";
 import { loadConversationSummaryText, type ConversationSummaryStore } from "../contracts/conversationSummary.js";
+import type { VisitorResolverPort } from "../../visitors/public.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import { DEFAULT_SUGGESTED_QUESTIONS_COUNT } from "../../settings/contracts/retrieval.js";
 import type { TurnRouting } from "./turnRouter.js";
@@ -241,6 +246,21 @@ export interface PrepareChatSessionInput {
   sourceOrigin?: string | null;
   verifiedCustomerId?: string | null;
   verifiedIdentity?: Record<string, unknown> | null;
+  /**
+   * Edge-observed request facts for this turn's first message (spec 1277). Slice 3
+   * populates this from the HTTP edge; today every caller leaves it unset and it is
+   * simply persisted verbatim on conversation creation, never overwritten.
+   */
+  requestContext?: ConversationRequestContext | null;
+  /** Client-claimed referrer of the host page (FR-013); persisted once alongside `pageContext.pageUrl`. */
+  entryReferrer?: string | null;
+  /**
+   * Unauthenticated, client-persisted visitor-grouping id from the verified public
+   * chat session payload (spec 1277 decision 6) — never a credential; falls back to
+   * `chatSessionId`/`anonymousSessionId` when a session carries none (API-channel and
+   * legacy sessions). Never present for a resumed conversation's later turns.
+   */
+  visitorKey?: string | null;
   precomputedRewriteProposal?: StructuredRewriteResult;
   agenticToolFactories?: ReadonlyArray<AgenticRetrievalToolFactory>;
   /** Ephemeral eval-only override; never persisted to workspace settings. */
@@ -324,6 +344,9 @@ export class ChatSessionPreparer {
     private readonly workspaceInvalidationPublisher?: WorkspaceInvalidationPublisher,
     /** Required by production composition; absent only for explicitly pre-resolved fixture/replay sessions. */
     private readonly agentRevisionRuntimeResolver?: AgentRevisionRuntimeResolver,
+    /** Optional: when wired, resolves the `visitors` row a new conversation belongs to (spec 1277). */
+    private readonly visitorResolver?: VisitorResolverPort,
+    private readonly metrics?: Pick<MetricsRegistry, "incrementCounter"> | null,
   ) {}
 
   async prepare(input: PrepareChatSessionInput, options: PrepareChatSessionOptions = {}): Promise<PreparedSession> {
@@ -391,21 +414,37 @@ export class ChatSessionPreparer {
           ? loadConversationSummaryText(this.conversationSummaryStore, conversation.id, this.logger)
           : Promise.resolve(undefined),
     ]);
+    const newConversationVisitorId = conversation
+      ? null
+      : await this.resolveVisitorForNewConversation({
+          workspaceId: input.workspaceId,
+          // FR-008/decision 6: an unauthenticated, client-persisted grouping id —
+          // falls back to the per-session anonymous id (never a credential itself
+          // either) only when the client sent no separate visitor key at all.
+          visitorKey: input.visitorKey ?? chatSessionId,
+          verifiedCustomerId: input.verifiedCustomerId ?? null,
+          requestContext: input.requestContext ?? null,
+          trustedTestRunner,
+        });
     let persistedConversation =
-      conversation ?? await this.conversationRepository.create(
-        input.workspaceId,
-        agent.id,
-        input.sourceChannel ?? null,
-        chatSessionId,
-        input.sourceOrigin ?? null,
-        input.channelContext ?? null,
-        input.verifiedCustomerId ?? null,
-        {
-          entryPageUrl: input.pageContext?.pageUrl ?? null,
-          ...(revisionResolved.revisionId ? { agentRevisionId: revisionResolved.revisionId } : {}),
-          ...(trustedTestRunner ? { purpose: "operator_test" as const } : {}),
-        },
-      );
+      conversation ?? await this.conversationRepository.create({
+        workspaceId: input.workspaceId,
+        agentId: agent.id,
+        sourceChannel: input.sourceChannel ?? null,
+        anonymousSessionId: chatSessionId,
+        sourceOrigin: input.sourceOrigin ?? null,
+        channelContext: input.channelContext ?? null,
+        verifiedCustomerId: input.verifiedCustomerId ?? null,
+        entryPageUrl: input.pageContext?.pageUrl ?? null,
+        entryReferrer: input.entryReferrer ?? null,
+        requestContext: input.requestContext ?? null,
+        visitorId: newConversationVisitorId,
+        ...(revisionResolved.revisionId ? { agentRevisionId: revisionResolved.revisionId } : {}),
+        ...(trustedTestRunner ? { purpose: "operator_test" as const } : {}),
+      });
+    if (!conversation && !trustedTestRunner && input.requestContext) {
+      this.recordRequestContextObserved(input.requestContext.observedVia);
+    }
     if (conversation && !conversation.agentRevisionId && revisionResolved.revisionId) {
       if (!this.conversationRepository.bindAgentRevision) {
         throw conversationRevisionBindingUnavailable();
@@ -426,6 +465,21 @@ export class ChatSessionPreparer {
         input.workspaceId,
         input.verifiedCustomerId,
       );
+      if (conversation.purpose !== "operator_test") {
+        await this.visitorResolver?.attachVerifiedIdentity({
+          conversationId: conversation.id,
+          workspaceId: input.workspaceId,
+          visitorKey: input.visitorKey ?? chatSessionId,
+          verifiedCustomerId: input.verifiedCustomerId,
+          // FR-007: this conversation's own captured request facts, so a row it
+          // moves to (never seen this browsing session before) reflects them too.
+          observed: {
+            country: conversation.requestContext?.country ?? null,
+            language: primaryLanguageTag(conversation.requestContext?.acceptLanguage),
+            userAgent: conversation.requestContext?.userAgent ?? null,
+          },
+        });
+      }
     }
     const conversationForTurn = persistedConversation.verifiedCustomerId === effectiveVerifiedCustomerId
       ? persistedConversation
@@ -455,6 +509,10 @@ export class ChatSessionPreparer {
         chatSessionId,
         revisionResolved.contextVariableEnablements,
       ));
+    // Page context is not yet resolved on this initial pass (mirrors the `null`
+    // pageContext passed to stagedSpineFor below); prepareRetrieval/prepareDirect
+    // recompute with the real gate decision.
+    const requestFacts = this.resolveVisitorRequestFacts(conversationForTurn, false);
     const directOnlyTurn = this.prepareDirectOnlyTurn(
       this.buildPipelineInput(input, agent, turnHistory, conversationForTurn, userMessage),
       agent,
@@ -477,7 +535,7 @@ export class ChatSessionPreparer {
           usageAttribution: input.usageAttribution,
           // Only present to satisfy the PreparedSession shape; prepareRetrieval
           // recomputes the spine from the real retrieval result.
-          ...this.stagedSpineFor(directOnlyTurn.retrieval, null, hostVariables),
+          ...this.stagedSpineFor(directOnlyTurn.retrieval, null, hostVariables, requestFacts),
         }, defaultTurnFraming(), hostVariables);
 
     return {
@@ -503,7 +561,7 @@ export class ChatSessionPreparer {
         : {}),
       ...(options.preResolvedHostVariables ? { preResolvedHostVariables: options.preResolvedHostVariables } : {}),
       previewRoutineIds: input.previewRoutineIds,
-      ...this.stagedSpineFor(retrieval, null, hostVariables),
+      ...this.stagedSpineFor(retrieval, null, hostVariables, requestFacts),
     };
   }
 
@@ -640,13 +698,41 @@ export class ChatSessionPreparer {
     retrieval: PreparedSession["retrieval"],
     pageContext?: AssistantPageContext | null,
     variables: readonly ResolvedVariableInput[] = [],
+    requestFacts?: VisitorRequestFacts | null,
   ): Pick<PreparedSession, "stagedContext" | "resolvedContext" | "turnTrace"> {
-    const resolvedContext = resolveContextForTurn(pageContext, variables);
+    const resolvedContext = resolveContextForTurn(pageContext, variables, requestFacts);
     return {
       stagedContext: [toPreparedStagedContext(retrieval), ...resolvedContext.staged],
       resolvedContext,
       turnTrace: toConversationTrace(retrieval.trace),
     };
+  }
+
+  /**
+   * FR-030a: the request-facts projection lives here, in the chat module — the
+   * context-variables module never reads a conversation. `visitor_request` surfaces
+   * unconditionally, like the other built-ins (`page_context`, `visitor_identity`):
+   * there is no per-agent enablement row to gate on, only whether this conversation
+   * actually carries any request-derived fact. Absent only when every one of the six
+   * projected fields is null.
+   *
+   * `entryPageUrl` is the one field shaped like `page_context.pageUrl` — the page-read
+   * three-sink gate exists precisely to keep a page URL/bytes out of the prompt on a turn
+   * that does not warrant reading the page, and `entryPageUrl` stays populated on the
+   * conversation across every later turn regardless of that turn's gate decision. So it
+   * only rides along when this turn's own page-context gate is open; the geo/language/
+   * referrer fields carry no page-content sensitivity and are never gated by it.
+   */
+  private resolveVisitorRequestFacts(
+    conversation: ConversationRecord,
+    pageContextGateOpen: boolean,
+  ): VisitorRequestFacts | null {
+    const facts = projectVisitorRequestFacts({
+      requestContext: conversation.requestContext ?? null,
+      entryPageUrl: pageContextGateOpen ? conversation.entryPageUrl ?? null : null,
+      entryReferrer: conversation.entryReferrer ?? null,
+    });
+    return Object.values(facts).some((value) => value !== null) ? facts : null;
   }
 
   private gatedPageContext(session: PreparedSession): AssistantPageContext | null {
@@ -804,6 +890,10 @@ export class ChatSessionPreparer {
       input.chatSessionId ?? input.anonymousSessionId ?? session.conversation.anonymousSessionId ?? null,
       session.revisionContextVariableEnablements,
     ));
+    const requestFacts = this.resolveVisitorRequestFacts(
+      session.conversation,
+      this.gatedPageContext(session) != null,
+    );
     const pipelineInput = this.buildPipelineInput(
       input,
       session.agent,
@@ -822,7 +912,7 @@ export class ChatSessionPreparer {
       turnRoute,
       turnFraming: framing,
       effectiveQuery: input.query,
-      ...this.stagedSpineFor(retrieval, this.gatedPageContext(session), variables),
+      ...this.stagedSpineFor(retrieval, this.gatedPageContext(session), variables, requestFacts),
     };
   }
 
@@ -846,6 +936,10 @@ export class ChatSessionPreparer {
       input.chatSessionId ?? input.anonymousSessionId ?? session.conversation.anonymousSessionId ?? null,
       session.revisionContextVariableEnablements,
     ));
+    const requestFacts = this.resolveVisitorRequestFacts(
+      session.conversation,
+      this.gatedPageContext(session) != null,
+    );
     const pipelineInput = {
       ...this.buildPipelineInput(
         input,
@@ -865,7 +959,7 @@ export class ChatSessionPreparer {
         turnRoute,
         turnFraming: framing,
         effectiveQuery: input.query,
-        ...this.stagedSpineFor(retrieval, this.gatedPageContext(session), variables),
+        ...this.stagedSpineFor(retrieval, this.gatedPageContext(session), variables, requestFacts),
       };
     }
     const interpretation = await this.retrievalTurn.interpret(pipelineInput);
@@ -887,7 +981,7 @@ export class ChatSessionPreparer {
       turnRoute: CHAT_TURN_ROUTE.DIRECT,
       turnFraming: framing,
       effectiveQuery: input.query,
-      ...this.stagedSpineFor(retrieval, this.gatedPageContext(session), variables),
+      ...this.stagedSpineFor(retrieval, this.gatedPageContext(session), variables, requestFacts),
     };
   }
 
@@ -1155,6 +1249,47 @@ export class ChatSessionPreparer {
     }
 
     return conversation;
+  }
+
+  /**
+   * Resolves the `visitors` row a brand-new conversation belongs to (spec 1277,
+   * FR-003/FR-005). Never called for a resumed conversation — that identity was
+   * already fixed at creation and only moves via {@link VisitorResolverPort.attachVerifiedIdentity}.
+   * Returns `null` for an operator-test turn, a channel with neither an anonymous
+   * nor a verified key (Slack, MCP without a session), or when no resolver is wired.
+   */
+  private async resolveVisitorForNewConversation(input: {
+    workspaceId: string;
+    visitorKey: string | null;
+    verifiedCustomerId: string | null;
+    requestContext: ConversationRequestContext | null;
+    trustedTestRunner: boolean;
+  }): Promise<string | null> {
+    if (input.trustedTestRunner || !this.visitorResolver) {
+      return null;
+    }
+    if (!input.visitorKey && !input.verifiedCustomerId) {
+      return null;
+    }
+    const { visitorId } = await this.visitorResolver.resolveForConversation({
+      workspaceId: input.workspaceId,
+      visitorKey: input.visitorKey,
+      verifiedCustomerId: input.verifiedCustomerId,
+      observed: {
+        country: input.requestContext?.country ?? null,
+        language: primaryLanguageTag(input.requestContext?.acceptLanguage),
+        userAgent: input.requestContext?.userAgent ?? null,
+      },
+    });
+    return visitorId;
+  }
+
+  /** Spec 1277 Observability: provenance of a new conversation's request facts. */
+  private recordRequestContextObserved(observedVia: ConversationRequestContext["observedVia"]): void {
+    this.metrics?.incrementCounter("visitor_request_context_observed_total", {
+      help: "Conversation request-context provenance recorded at creation.",
+      labels: { observedVia },
+    });
   }
 
   private async loadRewriteContinuityState(

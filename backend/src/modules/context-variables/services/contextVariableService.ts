@@ -18,16 +18,16 @@ import type {
 const MAX_CONTEXT_VARIABLE_VALUE_BYTES = 32 * 1024;
 
 /** The only agent capability context-variable definitions require. */
-export interface ContextVariableAgentReaderPort {
+interface ContextVariableAgentReaderPort {
   get(workspaceId: string, agentId: string): Promise<{ readonly id: string } | null>;
 }
 
 /** The only skill capability resolver-backed variables require. */
-export interface ContextVariableAgentSkillsReaderPort {
+interface ContextVariableAgentSkillsReaderPort {
   list(workspaceId: string, agentId: string): Promise<ReadonlyArray<{ readonly id: string; readonly enabled: boolean }>>;
 }
 
-export interface ContextVariableServiceOptions {
+interface ContextVariableServiceOptions {
   readonly repository: ContextVariableRepositoryPort;
   readonly agentReader: ContextVariableAgentReaderPort;
   readonly agentSkillsReader: ContextVariableAgentSkillsReaderPort;
@@ -175,11 +175,18 @@ export class ContextVariableService {
   }
 }
 
-export const assertEnablementIsWellFormed = (
+const assertEnablementIsWellFormed = (
   enablement: Pick<AgentContextVariableEnablementRecord, "source" | "resolverSkillId" | "maxAgeSeconds" | "resolverTimeoutMs">,
 ): void => {
   if (enablement.source === "browser") {
     throw badRequest("browser-sourced context variables are not yet supported");
+  }
+  // visitor_request (the only request-sourced built-in) resolves unconditionally from
+  // the conversation, like page_context and visitor_identity — there is no per-agent
+  // enablement row to create, whether through the HTTP route, a Ray proposal apply, or
+  // an agent bundle import.
+  if (enablement.source === "request") {
+    throw badRequest("request-sourced context variables are not yet supported");
   }
   if (enablement.source === "resolver") {
     if (!enablement.resolverSkillId) throw badRequest("resolverSkillId is required when source is resolver");

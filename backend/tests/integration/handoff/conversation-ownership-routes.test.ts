@@ -42,7 +42,7 @@ describe("conversation ownership routes", () => {
     const owner = await issueTestSession(app, "ownership-owner@example.com");
     const member = await acceptInvite(app, owner.cookie, "ownership-member@example.com");
     const transferTarget = await issueTestSession(app, "ownership-transfer-target@example.com");
-    const conversation = await repositories.conversationRepository.create(member.workspaceId, null, "dashboard");
+    const conversation = await repositories.conversationRepository.create({ workspaceId: member.workspaceId, sourceChannel: "dashboard" });
 
     const takeover = await request(app)
       .post(`/api/v1/conversations/${conversation.id}/takeover`)
@@ -190,7 +190,7 @@ describe("conversation ownership routes", () => {
     const { app, dependencies, repositories } = createTestApp();
     const owner = await issueTestSession(app, "ownership-denied-owner@example.com");
     const member = await acceptInvite(app, owner.cookie, "ownership-denied-member@example.com");
-    const conversation = await repositories.conversationRepository.create(member.workspaceId, null, "dashboard");
+    const conversation = await repositories.conversationRepository.create({ workspaceId: member.workspaceId, sourceChannel: "dashboard" });
     const permissionSpy = vi.spyOn(dependencies.accountAccessService, "requirePermission")
       .mockRejectedValueOnce(forbidden("No takeover"));
 
@@ -208,7 +208,7 @@ describe("conversation ownership routes", () => {
     const { app, repositories } = createTestApp();
     const session = await issueTestSession(app, "ownership-local@example.com");
     const foreign = await issueTestSession(app, "ownership-foreign@example.com");
-    const conversation = await repositories.conversationRepository.create(foreign.workspaceId, null, "dashboard");
+    const conversation = await repositories.conversationRepository.create({ workspaceId: foreign.workspaceId, sourceChannel: "dashboard" });
 
     const response = await request(app)
       .post(`/api/v1/conversations/${conversation.id}/takeover`)

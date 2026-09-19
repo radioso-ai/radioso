@@ -38,6 +38,7 @@ const rowSummary = (overrides: Partial<ChatConversationSummary> = {}): ChatConve
   channelContext: null,
   anonymousSessionId: 'session-1',
   entryPageUrl: null,
+  visitorCountry: null,
   title: null,
   createdAt: '2026-06-19T10:00:00.000Z',
   updatedAt: '2026-06-19T10:00:00.000Z',

@@ -3,7 +3,7 @@ import type { ContextVariableSurfacing } from "./contextResolutionService.js";
 export type ContextVariableValueType = "string" | "json";
 export type ContextVariableTrustTier = "unverified" | "signed";
 export type ContextVariableSensitivity = "normal" | "sensitive";
-export type ContextVariableSource = "pushed" | "browser" | "resolver";
+export type ContextVariableSource = "pushed" | "browser" | "resolver" | "request";
 export type ContextVariableScopeType = "session" | "customer" | "agent" | "workspace";
 
 export interface ContextVariable {

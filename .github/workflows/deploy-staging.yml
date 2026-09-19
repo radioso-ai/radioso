@@ -24,6 +24,7 @@ on:
       - packages/conversation-engine/**
       - packages/conversation-tools/**
       - packages/document-parser/**
+      - packages/edge-proof/**
       - packages/mcp-source-proof/**
       - packages/operator-mcp-contract/**
       - packages/product-docs/**

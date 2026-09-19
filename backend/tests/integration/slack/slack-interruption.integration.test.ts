@@ -70,14 +70,12 @@ describe("Slack interruption", () => {
       channelContext: never;
     }) => {
       const created = linkPromise === undefined;
-      linkPromise ??= ctx.repositories.conversationRepository.create(
-        input.workspaceId,
-        input.agentId,
-        input.sourceChannel,
-        null,
-        null,
-        input.channelContext,
-      ).then((conversation) => ({
+      linkPromise ??= ctx.repositories.conversationRepository.create({
+        workspaceId: input.workspaceId,
+        agentId: input.agentId,
+        sourceChannel: input.sourceChannel,
+        channelContext: input.channelContext,
+      }).then((conversation) => ({
         id: "link-1",
         workspaceId: input.workspaceId,
         installationId: input.installationId,

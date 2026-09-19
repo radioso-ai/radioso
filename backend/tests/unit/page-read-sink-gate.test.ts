@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { renderContextBlock } from "../../src/modules/context-variables/contextBlockRenderer.js";
-import { resolveContextForTurn, type ContextVariableScope, type ResolvedVariableInput } from "../../src/modules/context-variables/public.js";
+import { projectVisitorRequestFacts, resolveContextForTurn, type ContextVariableScope, type ResolvedVariableInput } from "../../src/modules/context-variables/public.js";
 import { ChatAnswerSupport } from "../../src/modules/chat/services/chatAnswerSupport.js";
 import { buildAssistantReplyPrompt } from "../../src/modules/chat/services/assistantReplyPromptBuilder.js";
 import { ChatSessionPreparer } from "../../src/modules/chat/services/chatSessionPreparer.js";
@@ -184,7 +184,15 @@ describe("page-read three-sink gate", () => {
     });
 
     const prepared = await preparer.prepareDirect(input, session);
-    const expectedContext = resolveContextForTurn(pageContext, hostVariables);
+    // The page-read gate is open (capture) this turn, so visitor_request.entryPageUrl —
+    // the one field shaped like page_context.pageUrl — legitimately rides along, same as
+    // the conversation's own entryPageUrl (set from this harness's initial pageContext).
+    const requestFacts = projectVisitorRequestFacts({
+      requestContext: session.conversation.requestContext,
+      entryPageUrl: session.conversation.entryPageUrl,
+      entryReferrer: session.conversation.entryReferrer,
+    });
+    const expectedContext = resolveContextForTurn(pageContext, hostVariables, requestFacts);
     const support = new ChatAnswerSupport();
 
     expect(support.buildContextBlock(prepared)).toBe(renderContextBlock(expectedContext.renderFragments));

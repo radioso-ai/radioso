@@ -491,6 +491,27 @@
     },
   }
 
+  // Host-page-scoped (FR-008/FR-009, spec 1277) so the durable anonymous visitor
+  // id survives across tabs, unlike the per-tab sessionStorage above. Any
+  // failure (privacy mode, storage disabled, a sandboxed iframe's SecurityError)
+  // falls back silently to today's per-tab-only behaviour — no console noise.
+  const safeLocalStorage = {
+    get(key) {
+      try {
+        return window.localStorage.getItem(key)
+      } catch {
+        return null
+      }
+    },
+    set(key, value) {
+      try {
+        window.localStorage.setItem(key, value)
+      } catch {
+        /* storage may be blocked (privacy mode, sandboxed iframe) — fail silently */
+      }
+    },
+  }
+
   const prefersReducedMotion = () => {
     try {
       return Boolean(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches)
@@ -795,11 +816,15 @@
     const pageTitle = normalizeWhitespace(document.title).slice(0, 180) || null
     const pageLocale = normalizeWhitespace(document.documentElement?.lang).slice(0, 35) || null
     const browserLocale = normalizeWhitespace(window.navigator?.languages?.[0] || window.navigator?.language).slice(0, 35) || null
+    // FR-013 (spec 1277): the backend caps this at 2048 chars and drops anything
+    // that isn't an http(s) URL, so no more than a length guard is needed here.
+    const referrer = normalizeWhitespace(document.referrer).slice(0, 2048) || null
     const pageContext = {
       pageUrl,
       pageTitle,
       pageLocale,
       browserLocale,
+      referrer,
     }
 
     if (mode === 'content') {
@@ -1045,10 +1070,19 @@
   }
 
   const bootstrapEmbeddedSession = async (scriptUrl, token, options) => {
-    const body =
-      options && typeof options.resumeToken === 'string'
-        ? JSON.stringify({ resumeToken: options.resumeToken })
-        : undefined
+    const bodyPayload = {}
+    if (options && typeof options.resumeToken === 'string') {
+      bodyPayload.resumeToken = options.resumeToken
+    }
+    // FR-008/spec 1277 decision 6: a durable per-browser, client-generated
+    // grouping id (localStorage), sent alongside — never instead of — the
+    // per-tab resume token above, so a brand-new tab that has no resume token
+    // yet still groups under the same visitor for an operator. It carries no
+    // session power: the backend never uses it to key or continue a session.
+    if (options && typeof options.visitorKey === 'string') {
+      bodyPayload.visitorKey = options.visitorKey
+    }
+    const body = Object.keys(bodyPayload).length > 0 ? JSON.stringify(bodyPayload) : undefined
     const response = await fetch(new URL(`/api/embed/session/${encodeURIComponent(token)}`, scriptUrl).toString(), {
       method: 'POST',
       mode: 'cors',
@@ -1074,10 +1108,40 @@
     error.code === 'bad_request' &&
     error.message === 'Invalid public chat session request'
 
+  // FR-008/spec 1277 decision 6: scoped by embed token (and implicitly by host
+  // origin, since localStorage is already origin-scoped) so distinct embeds on
+  // the same page never share one visitor key. The launcher — never the
+  // backend — mints this id: it is a pure grouping label, not a credential,
+  // so there is nothing for the server to hand back or verify.
+  const visitorKeyStorageKey = (token) => `radioso:embed:visitor:${token}`
+
+  const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+  // Reads the stored key; if none is stored yet and localStorage genuinely works
+  // (re-read after write to confirm — a blocked/quota-exceeded store fails
+  // silently and must not be reported as durable), mints one with
+  // crypto.randomUUID() and persists it. Returns null — never sends a key —
+  // when storage isn't available or randomUUID doesn't exist (FR-009): a key
+  // that cannot persist across tabs would just be regenerated every bootstrap.
+  const readOrCreateVisitorKey = (token) => {
+    const storageKey = visitorKeyStorageKey(token)
+    const existing = safeLocalStorage.get(storageKey)
+    if (typeof existing === 'string' && UUID_PATTERN.test(existing)) {
+      return existing
+    }
+    if (!window.crypto || typeof window.crypto.randomUUID !== 'function') {
+      return null
+    }
+    const generated = window.crypto.randomUUID()
+    safeLocalStorage.set(storageKey, generated)
+    return safeLocalStorage.get(storageKey) === generated ? generated : null
+  }
+
   const bootstrapEmbeddedSessionWithResumeFallback = async (scriptUrl, token, storageKey) => {
     const resumeToken = readStoredResumeToken(storageKey)
+    const visitorKey = readOrCreateVisitorKey(token)
     try {
-      const session = await bootstrapEmbeddedSession(scriptUrl, token, { resumeToken })
+      const session = await bootstrapEmbeddedSession(scriptUrl, token, { resumeToken, visitorKey })
       return { session, resumed: Boolean(resumeToken) }
     } catch (error) {
       if (!resumeToken || !isInvalidResumeSessionError(error)) {
@@ -1085,7 +1149,7 @@
       }
 
       safeStorage.remove(storageKey)
-      const session = await bootstrapEmbeddedSession(scriptUrl, token, {})
+      const session = await bootstrapEmbeddedSession(scriptUrl, token, { visitorKey })
       return { session, resumed: false }
     }
   }

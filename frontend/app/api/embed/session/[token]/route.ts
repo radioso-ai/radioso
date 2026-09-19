@@ -1,5 +1,7 @@
 import { z } from 'zod'
 
+import { buildEdgeFactsHeaders } from '../../../../../lib/server/edge-facts'
+
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
@@ -41,7 +43,9 @@ const resolveOrigin = (value: string | null) => {
 
 const embedBootstrapRequestSchema = z.object({
   resumeToken: z.string().min(1).optional(),
-  anonymousSessionId: z.string().uuid().optional(),
+  // Spec 1277 decision 6: an unauthenticated, client-generated visitor-grouping id
+  // (never a session credential) — see radioso-embed-launcher.js's readOrCreateVisitorKey.
+  visitorKey: z.string().uuid().optional(),
 })
 
 export async function OPTIONS(request: Request) {
@@ -86,19 +90,23 @@ export async function POST(
     )
   }
 
+  const upstreamMethod = 'POST'
+  const upstreamPath = `/api/v1/public/chat/${encodeURIComponent(token)}/sessions`
+
   try {
-    const upstream = await fetch(`${BACKEND_BASE}/api/v1/public/chat/${encodeURIComponent(token)}/sessions`, {
-      method: 'POST',
+    const upstream = await fetch(`${BACKEND_BASE}${upstreamPath}`, {
+      method: upstreamMethod,
       cache: 'no-store',
       headers: {
         'Content-Type': 'application/json',
         'X-Forwarded-Prefix': '/backend',
         Origin: requestOrigin,
+        ...buildEdgeFactsHeaders(request, { method: upstreamMethod, path: upstreamPath }),
       },
       body: JSON.stringify({
         channel: 'website_embed',
         resumeToken: parsedBody.data.resumeToken,
-        anonymousSessionId: parsedBody.data.anonymousSessionId,
+        visitorKey: parsedBody.data.visitorKey,
       }),
     })
 

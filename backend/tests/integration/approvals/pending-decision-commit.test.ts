@@ -87,7 +87,7 @@ describeIfDatabase("pending decision assistant-turn commit fence", () => {
       passwordHash: "hash",
     });
     const workspace = await workspaces.create(account.id, "Pending Decision Workspace");
-    const conversation = await conversations.create(workspace.id);
+    const conversation = await conversations.create({ workspaceId: workspace.id });
 
     return { accountId: account.id, workspace, conversation };
   };

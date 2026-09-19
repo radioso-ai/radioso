@@ -151,6 +151,18 @@ describe("context variable HTTP API", () => {
       })
       .expect(400);
 
+    // visitor_request (source "request") resolves unconditionally from the conversation,
+    // like the other built-ins — there is no agent_context_variables row to create for it.
+    await request(app)
+      .put(`/api/v1/agents/${agent.body.id}/context-variables/${variable.body.contextVariable.id}`)
+      .set("Authorization", authorization)
+      .send({
+        source: "request",
+        surfacing: "always",
+        enabled: true,
+      })
+      .expect(400);
+
     await request(app)
       .put(`/api/v1/agents/${agent.body.id}/context-variables/${variable.body.contextVariable.id}`)
       .set("Authorization", authorization)

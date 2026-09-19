@@ -6,12 +6,13 @@ import type {
   VariableContextFragment,
 } from "./contextBlockRenderer.js";
 import { redactSnapshot, type ContextVariableSnapshot, type SnapshotEntry } from "./redaction.js";
+import { VISITOR_REQUEST_VARIABLE_NAME, type VisitorRequestFacts } from "./visitorRequestFacts.js";
 
 /**
  * Structural page-context input owned by this module so context-variables does not depend on
  * the (broader) chat module. `AssistantPageContext` is structurally assignable to this.
  */
-export type PageContextInput = Omit<PageContextFragment, "kind">;
+type PageContextInput = Omit<PageContextFragment, "kind">;
 
 export type ContextVariableSurfacing = "always" | "on_reference" | "operator_only";
 
@@ -98,15 +99,36 @@ const stagedFor = (
 ): StagedContext => ({ kind: "context_variable", id, data: fragment, metadata });
 
 /**
+ * FR-030a/FR-031: the sole place that turns a caller-projected `VisitorRequestFacts` into
+ * the same shape every other host-defined variable takes. The facts are already narrowed
+ * (see `projectVisitorRequestFacts`) — this just frames them for the shared pipeline below,
+ * so `visitor_request` is staged, snapshotted, and rendered exactly like any other
+ * `always`-surfaced, non-sensitive, unverified variable.
+ */
+const buildVisitorRequestVariable = (facts: VisitorRequestFacts): ResolvedVariableInput => ({
+  name: VISITOR_REQUEST_VARIABLE_NAME,
+  value: facts,
+  surfacing: "always",
+  sensitive: false,
+  trust: "unverified",
+});
+
+/**
  * Resolve all context variables for a turn into render fragments, staged entries, and a
  * redacted snapshot. Resolution is independent of surfacing (per spec FR-004): every variable
  * is staged (so the directive matcher / routines see it) and snapshotted (redacted), while
  * only `always`-surfaced variables are added to `renderFragments` for the prompt.
  * `operator_only` variables are staged and snapshotted but never rendered.
+ *
+ * `requestFacts` (FR-030a) is the caller-projected, already-narrowed visitor_request value —
+ * present only when the caller determined the agent has it enabled. This function never reads
+ * a conversation or checks enablement itself; it only decides, from the presence of the
+ * object, whether to add the `visitor_request` entry.
  */
 export const resolveContextForTurn = (
   pageContext: PageContextInput | null | undefined,
   variables: readonly ResolvedVariableInput[] = [],
+  requestFacts?: VisitorRequestFacts | null,
 ): ResolvedTurnContext => {
   const fragments: ContextFragment[] = [];
   const renderFragments: ContextFragment[] = [];
@@ -126,7 +148,11 @@ export const resolveContextForTurn = (
     snapshotEntries.push({ name: PAGE_CONTEXT_VARIABLE_NAME, value: pageFragment });
   }
 
-  for (const variable of variables) {
+  const effectiveVariables = requestFacts
+    ? [...variables, buildVisitorRequestVariable(requestFacts)]
+    : variables;
+
+  for (const variable of effectiveVariables) {
     const name = usableString(variable.name);
     if (!name) {
       continue;
@@ -164,12 +190,3 @@ export const resolveContextForTurn = (
     snapshot: redactSnapshot(snapshotEntries),
   };
 };
-
-export class ContextResolutionService {
-  resolve(
-    pageContext: PageContextInput | null | undefined,
-    variables: readonly ResolvedVariableInput[] = [],
-  ): ResolvedTurnContext {
-    return resolveContextForTurn(pageContext, variables);
-  }
-}

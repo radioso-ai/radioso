@@ -180,12 +180,13 @@ export function RoutineStepRow({ step, stepIndex, slotNames, index, nextStepId =
   const number = isChat
     ? <button type="button" aria-label={label} onClick={onEditStep} disabled={!editable} className={`${numeralClassName} transition-colors hover:text-foreground disabled:cursor-default disabled:hover:text-muted-foreground`}>{stepIndex + 1}.</button>
     : <span aria-hidden="true" className={numeralClassName}>{stepIndex + 1}.</span>
-  // Reorder is a hover/focus affordance, not a permanent fixture in the gutter — it never
-  // requires opening a step's editor panel first, but it also never competes with the numeral
-  // for attention at rest.
-  const moveControls = editable && (onMoveStepUp || onMoveStepDown) ? <div className="flex shrink-0 flex-col opacity-0 transition-opacity group-hover/insertafter:opacity-100 group-focus-within/insertafter:opacity-100">
-    <button type="button" aria-label={`Move step ${stepIndex + 1} up`} onClick={onMoveStepUp} disabled={!canMoveStepUp} className="flex h-4 w-4 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-30"><ArrowUp className="h-3 w-3" /></button>
-    <button type="button" aria-label={`Move step ${stepIndex + 1} down`} onClick={onMoveStepDown} disabled={!canMoveStepDown} className="flex h-4 w-4 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-30"><ArrowDown className="h-3 w-3" /></button>
+  // Reorder is a hover/focus affordance, not a permanent fixture in the gutter — pinned to the
+  // left of the numeral by absolute position so its own height never widens the row at rest.
+  const moveControls = editable && (onMoveStepUp || onMoveStepDown) ? <div className="pointer-events-none absolute right-full top-0 mr-0.5 opacity-0 transition-opacity group-hover/insertafter:opacity-100 group-focus-within/insertafter:opacity-100">
+    <div className="pointer-events-auto flex flex-col">
+      <button type="button" aria-label={`Move step ${stepIndex + 1} up`} onClick={onMoveStepUp} disabled={!canMoveStepUp} className="flex h-4 w-4 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-30"><ArrowUp className="h-3 w-3" /></button>
+      <button type="button" aria-label={`Move step ${stepIndex + 1} down`} onClick={onMoveStepDown} disabled={!canMoveStepDown} className="flex h-4 w-4 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-30"><ArrowDown className="h-3 w-3" /></button>
+    </div>
   </div> : null
   // Pinned under the numeral gutter and revealed on hover/focus (or always, on touch) — a
   // quiet "+" between two lines rather than a control spanning the row's full width.
@@ -214,19 +215,25 @@ export function RoutineStepRow({ step, stepIndex, slotNames, index, nextStepId =
     if (!editingBranch && branch.guard.kind === 'default') plainBranchRows.push(row)
     else railBranchRows.push(row)
   })
-  // A thin rail connects a step's non-default branches, with a round "+" at its foot to add
-  // another — both revealed on hover/focus of the step, like the reorder controls, and kept
-  // visible unprompted only while a branch inside is actually being edited.
+  // A branch is content — the IF tile, condition, and target always read, at rest — but the
+  // thin rail connecting them and the round "+" that adds another are chrome, revealed on
+  // hover/focus of the step (or kept up unprompted while a branch inside is being edited) and
+  // absolutely positioned so neither reserves height the always-visible branches don't need.
   const railHiddenUntilActive = !anyBranchEditing
-  const branchRail = railBranchRows.length > 0 ? <div className={railHiddenUntilActive ? 'relative mt-1 border-l border-border pl-4 opacity-0 transition-opacity group-hover/insertafter:opacity-100 group-focus-within/insertafter:opacity-100' : 'relative mt-1 border-l border-border pl-4'}>
+  const railHoverClass = railHiddenUntilActive ? ' opacity-0 transition-opacity group-hover/insertafter:opacity-100 group-focus-within/insertafter:opacity-100' : ''
+  const branchRail = railBranchRows.length > 0 ? <div className="relative mt-1 pl-4">
+    <div aria-hidden="true" className={`pointer-events-none absolute inset-y-0 left-0 border-l border-border${railHoverClass}`} />
     <ul className="space-y-0.5">{railBranchRows}</ul>
-    {editable && onAddBranch ? <button type="button" aria-label={`Add a branch to step ${stepIndex + 1}`} onClick={onAddBranch} className="relative -left-[calc(1rem+0.5rem)] mt-1.5 flex h-5 w-5 items-center justify-center rounded-full border border-border bg-background text-muted-foreground hover:border-primary hover:text-primary"><Plus className="h-3 w-3" /></button> : null}
+    {editable && onAddBranch ? <div className={`pointer-events-none absolute -bottom-2.5 left-0 -translate-x-1/2${railHoverClass}`}><button type="button" aria-label={`Add a branch to step ${stepIndex + 1}`} onClick={onAddBranch} className="pointer-events-auto flex h-5 w-5 items-center justify-center rounded-full border border-border bg-background text-muted-foreground hover:border-primary hover:text-primary"><Plus className="h-3 w-3" /></button></div> : null}
   </div> : null
   const details = <>
     {step.kind === 'tool' || step.kind === 'action' ? (
       editing === 'binding'
         ? <div className="mt-2"><div className="rounded-md border border-border bg-muted/30 p-3">{bindingEditor}</div></div>
-        : <div className="mt-1 opacity-0 transition-opacity group-hover/insertafter:opacity-100 group-focus-within/insertafter:opacity-100"><button type="button" aria-label="Bindings" onClick={onEditBinding} disabled={!editable} className="group flex items-center gap-1 text-left text-xs text-muted-foreground disabled:cursor-default"><ArrowRight className="h-3.5 w-3.5" />{formatBindingLine(step.inputBindings, step.outputAssignments) ?? 'uses nothing → sets nothing'}<EditHint editable={editable} /></button></div>
+        // A CSS grid row collapsed to `0fr` takes no space at rest and expands to its natural
+        // height on hover/focus, so this line reserves nothing when it isn't shown — unlike an
+        // opacity fade, which keeps the element's layout box (and the gap it leaves) at rest.
+        : <div className="grid grid-rows-[0fr] transition-[grid-template-rows] group-hover/insertafter:grid-rows-[1fr] group-focus-within/insertafter:grid-rows-[1fr]"><div className="overflow-hidden"><button type="button" aria-label="Bindings" onClick={onEditBinding} disabled={!editable} className="group mt-1 flex items-center gap-1 text-left text-xs text-muted-foreground disabled:cursor-default"><ArrowRight className="h-3.5 w-3.5" />{formatBindingLine(step.inputBindings, step.outputAssignments) ?? 'uses nothing → sets nothing'}<EditHint editable={editable} /></button></div></div>
     ) : null}
     {step.kind === 'approval' ? <div className="mt-2">{editing === 'approval' ? <div className="rounded-md border border-border bg-muted/30 p-3">{approvalEditor}</div> : <button type="button" aria-label="Approval choices" onClick={onEditApproval} disabled={!editable} className="group block w-full text-left text-sm disabled:cursor-default"><p className="font-medium">A person chooses:<EditHint editable={editable} /></p><ul className="mt-2 space-y-1">{(step.options ?? []).map((option) => <li key={option.id}>{option.label}{option.description ? ` — ${option.description}` : ''}</li>)}</ul></button>}</div> : null}
     {plainBranchRows.length > 0 ? <ul className="mt-1">{plainBranchRows}</ul> : null}
@@ -238,7 +245,6 @@ export function RoutineStepRow({ step, stepIndex, slotNames, index, nextStepId =
       <div className="relative flex shrink-0 items-start gap-1">
         {moveControls}
         {number}
-        {insertAfterOverlay}
       </div>
       <div className="min-w-0 flex-1">
         {/* The kind badge is also this row's "open the step editor" control (its aria-label
@@ -252,6 +258,7 @@ export function RoutineStepRow({ step, stepIndex, slotNames, index, nextStepId =
         {details}
       </div>
     </div>
+    {insertAfterOverlay}
   </li>
 }
 

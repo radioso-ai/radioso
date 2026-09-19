@@ -61,7 +61,11 @@ export function VisitorPanel({
   className?: string
 }) {
   const viewModel = buildVisitorPanelViewModel(conversation)
-  const { conversations: previousConversations, isLoading: previousConversationsLoading } = useVisitorConversations({
+  const {
+    conversations: previousConversations,
+    isLoading: previousConversationsLoading,
+    error: previousConversationsError,
+  } = useVisitorConversations({
     visitorId: viewModel?.visitorId ?? null,
     excludeConversationId: conversation.conversationId,
   })
@@ -93,7 +97,7 @@ export function VisitorPanel({
           ) : null}
         </div>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          <Field label="Country">{dash(location)}</Field>
+          <Field label="Location">{dash(location)}</Field>
           <Field label="Browser">
             <span title={viewModel.rawUserAgent ?? undefined}>{dash(browserOs || null)}</span>
           </Field>
@@ -128,6 +132,8 @@ export function VisitorPanel({
               <div className="mt-2 flex items-center justify-center py-2">
                 <LogoSpinner imageClassName="h-4 w-4" />
               </div>
+            ) : previousConversationsError ? (
+              <p className="mt-1 text-sm text-destructive">Couldn&apos;t load previous conversations</p>
             ) : previousConversations.length > 0 ? (
               <div className="mt-1">
                 {previousConversations.map((previous) => (

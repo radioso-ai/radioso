@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import type { ApplicationRouteMount, UsageLimitDatabasePort } from "../radiosoModuleTypes.js";
 import { HttpError } from "../shared/httpError.js";
+import { requireAccountSession } from "../shared/requireAccountSession.js";
 import { EnterpriseOrganizationCreationGuard } from "../orgCreation/organizationCreationGuard.js";
 import { EnterpriseUsageLimitService, normalizePeriodStart } from "./usageLimitService.js";
 
@@ -91,27 +92,6 @@ const isRouteDependencies = (
   input: RouteDependencies | UsageLimitDatabasePort,
 ): input is RouteDependencies =>
   "connectorDb" in input && "authService" in input && "accountAccessService" in input;
-
-const requireAccountSession = (dependencies: RouteDependencies): RequestHandler => {
-  const handler: RequestHandler = async (req, res, next) => {
-    try {
-      const sessionToken = req.cookies?.[dependencies.env.SESSION_COOKIE_NAME];
-      if (typeof sessionToken !== "string" || !sessionToken) {
-        throw new HttpError(401, "unauthorized", "Unauthorized");
-      }
-
-      const session = await dependencies.authService.authenticateSession(sessionToken);
-      await dependencies.accountAccessService.requireActiveMembership(session.accountId, session.userId);
-      res.locals.accountId = session.accountId;
-      res.locals.userId = session.userId;
-      res.locals.sessionId = session.sessionId;
-      next();
-    } catch (error) {
-      next(error);
-    }
-  };
-  return dependencies.apiPrincipalRouteInventory.markAuthenticator(handler, "session_only");
-};
 
 export const createUsageLimitRoutes = (input: RouteDependencies | UsageLimitDatabasePort): Router => {
   const router = Router();

@@ -2942,26 +2942,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/conversations/{conversationId}/fork": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Fork a conversation into a dashboard test session
-         * @description Copies the conversation's user and assistant message thread into a new conversation tagged as an authenticated_chat test session (same agent and workspace), leaving the original untouched.
-         */
-        post: operations["forkConversation"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/decisions": {
         parameters: {
             query?: never;
@@ -3585,7 +3565,10 @@ export interface paths {
         /** List private immutable revision tests */
         get: operations["listAgentTestExecutions"];
         put?: never;
-        /** Start an operator-private immutable revision test */
+        /**
+         * Start an operator-private immutable revision test
+         * @description A `single` execution may set `seedConversationId` to continue an existing conversation of the same workspace and agent: the side starts with that thread as its history and resumes its active routine, pending clarification, and directive state, skipping the greeting. The source conversation is unchanged.
+         */
         post: operations["startAgentTestExecution"];
         delete?: never;
         options?: never;
@@ -8899,6 +8882,8 @@ export interface components {
             idempotencyKey: string;
             /** @enum {string} */
             skillEffects?: "suppressed" | "allowed";
+            /** Format: uuid */
+            seedConversationId?: string;
         };
         TestExecution: {
             /** Format: uuid */
@@ -22266,49 +22251,6 @@ export interface operations {
             };
             /** @description Conversation ownership changed */
             409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    forkConversation: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                conversationId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Forked test-session conversation created */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        /** Format: uuid */
-                        conversationId: string;
-                    };
-                };
-            };
-            /** @description Authentication required */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Conversation not found */
-            404: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -9,7 +9,7 @@ export const workspaceKey = "workspace-key";
 export const accountId = "account-1";
 export const defaultAgentId = "67acb0c8-caad-4a1b-9fef-70cbca3f7d12";
 const defaultCandidateRevisionId = "11111111-1111-4111-8111-111111111111";
-const defaultPublishedRevisionId = "22222222-2222-4222-8222-222222222222";
+export const defaultPublishedRevisionId = "22222222-2222-4222-8222-222222222222";
 
 export const nowIso = "2026-04-26T12:00:00.000Z";
 
@@ -193,6 +193,12 @@ export type WebhookDestinationMutationFixture = {
   method: "POST" | "PUT" | "DELETE" | "ROTATE_SECRET";
   destinationId?: string;
   body?: unknown;
+};
+
+/** The slice of a conversation-detail fixture a seeded test execution copies. */
+type SeedableConversationDetail = {
+  conversationId: string;
+  messages: Array<{ id: string; role: "user" | "assistant"; content: string; createdAt: string }>;
 };
 
 const defaultPublishedRevision: AgentRevisionSummaryFixture = {
@@ -878,6 +884,68 @@ export const baseQualityStats = () => ({
   resolutionBreakdown: [],
 });
 
+/** Account usage summary for a conversation-metered enterprise account, under 80% used. */
+export const baseAccountUsageSummary = () => ({
+  accountId,
+  profile: {
+    key: "satellite",
+    displayName: "Satellite",
+    monthlyAnswerLimit: null,
+    storedDocumentLimit: 10000,
+    storedIndexedByteLimit: 20971520,
+    monthlyIndexedByteLimit: 41943040,
+    monthlyConversationLimit: 1000,
+    repliesPerConversation: 10,
+    createdAt: nowIso,
+    updatedAt: nowIso,
+  },
+  monthlyAnswers: {
+    periodStart: "2026-04-01",
+    resetAt: "2026-05-01T00:00:00.000Z",
+    used: 0,
+    limit: null,
+  },
+  storedDocuments: { used: 12, limit: 10000 },
+  storedIndexedBytes: { used: 1048576, limit: 20971520 },
+  monthlyIndexedBytes: {
+    periodStart: "2026-04-01",
+    resetAt: "2026-05-01T00:00:00.000Z",
+    used: 65536,
+    limit: 41943040,
+  },
+  monthlyConversations: {
+    periodStart: "2026-04-01",
+    resetAt: "2026-05-01T00:00:00.000Z",
+    used: 400,
+    limit: 1000,
+    credits: 0,
+    byKind: { conversation: 380, copilot: 15, test_run: 5, pulse_report: 0 },
+  },
+});
+
+export const baseBillingSummary = () => ({
+  configured: true,
+  planId: "satellite",
+  planName: "Satellite",
+  status: "active" as const,
+  hasCustomer: true,
+  interval: "month" as const,
+  currentPeriodEnd: "2026-05-01T00:00:00.000Z",
+  upgradePlanId: "planet",
+});
+
+export const basePlanCatalog = () => ({
+  currency: "EUR",
+  plans: [
+    { id: "comet", name: "Comet", priceCents: 0, annualPriceCents: null, interval: "month" as const, monthlyConversations: 50, storedBytes: 10485760, monthlyIndexedBytes: 20971520, documents: 2000, models: "managed" as const, support: "community" as const, stripe: null },
+    { id: "satellite", name: "Satellite", priceCents: 14900, annualPriceCents: 149000, interval: "month" as const, monthlyConversations: 1000, storedBytes: 20971520, monthlyIndexedBytes: 41943040, documents: 10000, models: "managed" as const, support: "email" as const, stripe: { monthLookupKey: "satellite_month", yearLookupKey: "satellite_year" } },
+    { id: "planet", name: "Planet", priceCents: 49900, annualPriceCents: 499000, interval: "month" as const, monthlyConversations: 5000, storedBytes: 104857600, monthlyIndexedBytes: 209715200, documents: 50000, models: "byok" as const, support: "priority" as const, stripe: { monthLookupKey: "planet_month", yearLookupKey: "planet_year" } },
+  ],
+  defaultPlanId: "comet",
+  selfServeCeilingPlanId: "planet",
+  topUp: { conversations: 300, priceCents: 5000, stripeLookupKey: "topup_300" },
+});
+
 export const installDashboardApiMocks = async (
   page: Page,
   options: {
@@ -895,7 +963,8 @@ export const installDashboardApiMocks = async (
     conversationDetails?: Record<string, unknown>;
     /** GET /history/visitors/{visitorId}/conversations response, keyed by visitorId (spec 1277). */
     visitorConversations?: Record<string, unknown>;
-    forkConversationResponse?: { conversationId: string };
+    /** Every `POST /agents/:id/test-executions` body, in order. */
+    testExecutionRequests?: unknown[];
     pendingDecisions?: ApiSchemas["PendingApprovalDecision"][];
     conversationTailResponses?: ApiSchemas["ChatConversationTail"][];
     takeOverConversationResponse?: ApiSchemas["ConversationOwnershipResponse"];
@@ -934,6 +1003,12 @@ export const installDashboardApiMocks = async (
     messageUsageLoadMoreDelayMs?: number;
     internalUsage?: unknown;
     qualityStats?: unknown;
+    accountUsageSummary?: unknown;
+    billingSummary?: unknown;
+    planCatalog?: unknown;
+    billingCheckoutUrl?: string;
+    billingPortalUrl?: string;
+    billingRequests?: Array<{ method: "GET" | "POST"; path: string; body?: unknown }>;
     mcpConnections?: McpConnectionFixture[];
     mcpDiscoveredTools?: DiscoveredMcpToolFixture[];
     mcpConnectionRequests?: string[];
@@ -963,6 +1038,20 @@ export const installDashboardApiMocks = async (
   let agentSettings = buildDefaultAgentSettings(platformSettings);
   let agentRevisionState = baseAgentRevisionState();
   let nextTestExecutionIndex = 1;
+  const testExecutions = new Map<string, {
+    id: string;
+    generation: number;
+    mode: "single" | "compare";
+    skillEffects: "suppressed" | "allowed";
+    sides: Array<{
+      id: string;
+      revision: AgentRevisionSummaryFixture;
+      conversationId: string;
+      state: string;
+      retryable: boolean;
+      history: Array<{ turnId: string; role: "user" | "assistant"; content: string; messageId: string; attemptId: string; createdAt: string }>;
+    }>;
+  }>();
   let channelsLifecycle = buildDefaultChannelsLifecycle(platformSettings);
   const providerEncryptionConfigured = options.providerEncryptionConfigured ?? true;
   const providerCredentials: Record<string, { updatedAt: string } | null> = {
@@ -1058,6 +1147,12 @@ export const installDashboardApiMocks = async (
   const agentChannelCredentialRequests = options.agentChannelCredentialRequests;
   let nextAgentChannelCredentialIndex = agentChannelCredentials.length + 1;
   const webhookDestinationUpdates = options.webhookDestinationUpdates;
+  const accountUsageSummary = options.accountUsageSummary ?? baseAccountUsageSummary();
+  const billingSummary = options.billingSummary ?? baseBillingSummary();
+  const planCatalog = options.planCatalog ?? basePlanCatalog();
+  const billingCheckoutUrl = options.billingCheckoutUrl ?? `/w/${workspaceKey}/usage?billing=success`;
+  const billingPortalUrl = options.billingPortalUrl ?? `/w/${workspaceKey}/usage?billing=success`;
+  const billingRequests = options.billingRequests;
   const coherenceFor = (directive: AuthoredDirectiveFixture): ApiSchemas["DirectiveCoherenceVerdict"] => {
     // Mirrors the backend: a disabled directive is not checked at all, so disabling one
     // always comes back coherent regardless of what would otherwise conflict.
@@ -1266,6 +1361,35 @@ export const installDashboardApiMocks = async (
       return;
     }
 
+    if (request.method() === "GET" && path === "/ee/usage-limits/me") {
+      await json(route, accountUsageSummary);
+      return;
+    }
+
+    if (request.method() === "GET" && path === "/ee/billing/me") {
+      await json(route, billingSummary);
+      return;
+    }
+
+    if (request.method() === "GET" && path === "/plans") {
+      await json(route, planCatalog);
+      return;
+    }
+
+    if (request.method() === "POST" && path === "/ee/billing/checkout") {
+      const body = request.postDataJSON();
+      billingRequests?.push({ method: "POST", path, body });
+      await json(route, { url: billingCheckoutUrl });
+      return;
+    }
+
+    if (request.method() === "POST" && path === "/ee/billing/portal") {
+      const body = request.postDataJSON();
+      billingRequests?.push({ method: "POST", path, body });
+      await json(route, { url: billingPortalUrl });
+      return;
+    }
+
     if (request.method() === "GET" && path === "/account/accounts") {
       await json(route, {
         accounts: [
@@ -1424,13 +1548,6 @@ export const installDashboardApiMocks = async (
         nextCursor: null,
         hasMore: false,
       });
-      return;
-    }
-
-    if (request.method() === "POST" && path.startsWith("/conversations/") && path.endsWith("/fork")) {
-      await json(route, options.forkConversationResponse ?? {
-        conversationId: "11111111-1111-4111-8111-111111111111",
-      }, 201);
       return;
     }
 
@@ -1802,10 +1919,26 @@ export const installDashboardApiMocks = async (
     }
 
     if (request.method() === "POST" && path === `/agents/${defaultAgentId}/test-executions`) {
-      const body = request.postDataJSON() as { mode?: "single" | "compare"; revisionIds?: string[]; skillEffects?: "suppressed" | "allowed" };
+      const body = request.postDataJSON() as { mode?: "single" | "compare"; revisionIds?: string[]; skillEffects?: "suppressed" | "allowed"; seedConversationId?: string };
+      options.testExecutionRequests?.push(body);
       const generation = nextTestExecutionIndex;
       nextTestExecutionIndex += 1;
-      await json(route, {
+      // A seeded start copies the source conversation's thread into the side's
+      // history, the way the backend does for `seedConversationId`.
+      const seedCandidate = body.seedConversationId ? conversationDetails.get(body.seedConversationId) : undefined;
+      const seedSource =
+        typeof seedCandidate === "object" && seedCandidate !== null && "messages" in seedCandidate
+          ? (seedCandidate as SeedableConversationDetail)
+          : undefined;
+      const seededHistory = (seedSource?.messages ?? []).map((message, index) => ({
+        turnId: `seed-turn-${generation}-${index}`,
+        role: message.role,
+        content: message.content,
+        messageId: message.id,
+        attemptId: `seed-attempt-${generation}-${index}`,
+        createdAt: message.createdAt,
+      }));
+      const execution = {
         id: `execution-${generation}`,
         generation,
         mode: body.mode ?? "single",
@@ -1816,9 +1949,30 @@ export const installDashboardApiMocks = async (
           conversationId: `conversation-${generation}-${index}`,
           state: "running",
           retryable: false,
-          history: [],
+          history: seededHistory,
         })),
-      }, 201);
+      };
+      testExecutions.set(execution.id, execution);
+      await json(route, execution, 201);
+      return;
+    }
+
+    if (request.method() === "GET" && /^\/agents\/[^/]+\/test-executions\/[^/]+$/.test(path)) {
+      const execution = testExecutions.get(path.split("/").pop() ?? "");
+      if (!execution) {
+        await json(route, { error: { message: "Test execution not found" } }, 404);
+        return;
+      }
+      await json(route, {
+        execution: {
+          ...execution,
+          state: "completed",
+          createdAt: nowIso,
+          testValues: [],
+          sides: execution.sides.map((side) => ({ ...side, state: "ready" })),
+          attempts: [],
+        },
+      });
       return;
     }
 

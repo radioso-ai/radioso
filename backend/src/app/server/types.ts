@@ -4,7 +4,6 @@ import type {
   AssistantHistoryService,
   ChatBootstrapService,
   ChatHistoryService,
-  ConversationForkService,
   ChatService,
   PublicConversationEventBus,
   WorkbenchReplayRunner,
@@ -243,7 +242,6 @@ export interface AppDependencies {
   revisionEvalRunRetentionWorker: TtlRetentionWorker;
   chatBootstrapService: ChatBootstrapService;
   chatHistoryService: ChatHistoryService;
-  conversationForkService: ConversationForkService;
   assistantChatService: AssistantChatService;
   assistantHistoryService: AssistantHistoryService;
   retrievalSearchService: RetrievalSearchService;

@@ -8,7 +8,6 @@ import { AgentCockpitNav, type AgentCockpitTab } from '@/components/dashboard/ag
 import { AgentRevisionTestChat } from '@/components/dashboard/agent-revision-test-chat'
 import { AgentRevisionHistory } from '@/components/dashboard/agent-revision-history'
 import { AgentRevisionHeader } from '@/components/dashboard/agent-revision-header'
-import { ChatView } from '@/components/dashboard/chat-view'
 import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
 import { RoutineHeaderActionsProvider, useRoutineHeaderState } from '@/components/dashboard/shared/routine-header-actions'
 import { AddSkillHeaderButton, SkillsHeaderActionProvider } from '@/components/dashboard/shared/skills-header-action'
@@ -29,7 +28,6 @@ import {
   readAgentCreationHandoff as rawReadAgentCreationHandoff,
 } from '@/lib/agent-creation-contributions'
 import { useWorkspace } from '@/lib/workspace-context'
-import { type WorkspaceOnboardingState } from '@/lib/onboarding'
 import { useCopilotEntity } from '@/lib/copilot-context'
 
 type AgentPageSaveState = {
@@ -207,13 +205,9 @@ function AgentSettingsDashboardPage({
 export function AgentView({
   accountId,
   routeState,
-  onboarding,
-  onOpenDocument,
 }: {
   accountId: string
   routeState: DashboardRouteState
-  onboarding: WorkspaceOnboardingState
-  onOpenDocument: (documentId: string) => void
 }) {
   const router = useRouter()
   const { activeWorkspaceId } = useWorkspace()
@@ -223,6 +217,7 @@ export function AgentView({
   const [saveState, setSaveState] = useState<AgentPageSaveState>({ state: 'idle' })
   const [isDraftDirty, setIsDraftDirty] = useState(false)
   const [testActionsContainer, setTestActionsContainer] = useState<HTMLDivElement | null>(null)
+  const [testTitleContainer, setTestTitleContainer] = useState<HTMLDivElement | null>(null)
   const [agentCreationHandoff, setAgentCreationHandoff] = useState<AgentCreationHandoff | null>(null)
 
   const loadAgents = useCallback(async () => {
@@ -328,6 +323,16 @@ export function AgentView({
       anchor: undefined,
     }))
   }, [accountId, agentsError, isAgentsLoading, routeState, router, selectedAgentId])
+
+  // The execution id in the URL is a one-shot open command from "Continue in
+  // test chat"; dropping it once adopted keeps refresh and back from re-opening it.
+  const consumeOpenExecutionRoute = useCallback(() => {
+    router.replace(buildDashboardHref(accountId, {
+      ...routeState,
+      section: 'agents',
+      agentTestExecutionId: undefined,
+    }))
+  }, [accountId, routeState, router])
 
   const saveStateAccessory = <SaveStateIndicator saveState={saveState} />
   const handleSaveStateChange = useCallback((next: AgentPageSaveState) => {
@@ -465,23 +470,20 @@ export function AgentView({
         {settingsPage}
       </div>
       {section === 'chat' ? (
-        routeState.agentChatConversationId || routeState.agentChatPreviewRoutineId ? (
-          <ChatView
-            key={`${selectedAgentId}-${routeState.agentChatConversationId ?? routeState.agentChatPreviewRoutineId}`}
-            accountId={accountId}
+        <DashboardPage title={selectedAgent.name ? `${selectedAgent.name} Test Chat` : 'Test Chat'} titleAccessory={<div ref={setTestTitleContainer} className="min-w-0" />} titleAccessoryAlignment="center" actions={<>{cockpitActions}<div ref={setTestActionsContainer} /></>} actionsClassName="w-full max-w-full justify-start sm:w-auto sm:justify-end" headerContent={cockpitNavigation} contentClassName="min-h-0 overflow-hidden p-0" contentScroll={false}>
+          <AgentRevisionTestChat
+            key={selectedAgentId}
             agentId={selectedAgentId}
+            workspaceId={activeWorkspaceId ?? selectedAgent.workspaceId}
             assistantName={selectedAgent?.name}
-            assistantLinkUtmEnabled={selectedAgent?.assistantLinkUtmEnabled}
-            onOpenDocument={onOpenDocument}
-            onboarding={onboarding}
-            adoptConversationId={routeState.agentChatConversationId}
-            previewRoutineIds={routeState.agentChatPreviewRoutineId ? [routeState.agentChatPreviewRoutineId] : undefined}
+            evalsHref={evalsHref}
+            agentVersionsHref={agentVersionsHref}
+            actionsContainer={testActionsContainer}
+            titleContainer={testTitleContainer}
+            openExecutionId={routeState.agentTestExecutionId}
+            onOpenExecutionConsumed={consumeOpenExecutionRoute}
           />
-        ) : (
-          <DashboardPage title="Test Chat" actions={<>{cockpitActions}<div ref={setTestActionsContainer} /></>} actionsClassName="w-full max-w-full justify-start sm:w-auto sm:justify-end" headerContent={cockpitNavigation} contentClassName="min-h-0 overflow-hidden p-0" contentScroll={false}>
-            <AgentRevisionTestChat key={selectedAgentId} agentId={selectedAgentId} workspaceId={activeWorkspaceId ?? selectedAgent.workspaceId} assistantName={selectedAgent?.name} evalsHref={evalsHref} agentVersionsHref={agentVersionsHref} actionsContainer={testActionsContainer} />
-          </DashboardPage>
-        )
+        </DashboardPage>
       ) : null}
       {section === 'changes' ? (
         <DashboardPage title="Agent versions" actions={cockpitActions} actionsClassName="w-full max-w-full justify-start sm:w-auto sm:justify-end" headerContent={cockpitNavigation}>

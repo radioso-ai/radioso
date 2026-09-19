@@ -215,7 +215,7 @@ export function DashboardShell({
   ) : null
 
   const areaContent = area === 'agents' ? (
-    <AgentView accountId={accountId} routeState={routeState} onboarding={onboarding} onOpenDocument={openDocument} />
+    <AgentView accountId={accountId} routeState={routeState} />
   ) : area === 'knowledge' ? (
     <KnowledgeView
       routeState={routeState}

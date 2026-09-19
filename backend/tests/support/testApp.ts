@@ -53,6 +53,7 @@ import {
   type AgentRevisionRuntimeReaderPort,
 } from "../../src/modules/agents/public.js";
 import type { TestExecutionService } from "../../src/modules/test-execution/testExecution.js";
+import type { RevisionEvalRunService } from "../../src/modules/eval/services/revisionEvalRun.js";
 import { ProbeRoutineReader, RoutineDefinitionService, RoutineDraftAssistService, selectCanonicalRoutineDefinitions } from "../../src/modules/routines/public.js";
 import { InMemoryAgentRevisionRepository } from "./agentRevisionFakes.js";
 import { toDefaultRetrieveSkillConfig } from "../../src/db/repositories/agentRepository.js";
@@ -61,7 +62,6 @@ import {
   type FallbackReplyComposer,
 } from "../../src/modules/chat/services/fallbackReplyComposer.js";
 import { ChatHistoryService } from "../../src/modules/chat/services/chatHistoryService.js";
-import { ConversationForkService } from "../../src/modules/chat/services/conversationForkService.js";
 import { DocumentDeletionService } from "../../src/modules/documents/services/documentDeletionService.js";
 import { DocumentIngestionService } from "../../src/modules/documents/services/documentIngestionService.js";
 import { DocumentImportService } from "../../src/modules/documents/services/documentImportService.js";
@@ -1634,6 +1634,13 @@ export const createTestDependencies = (overrides: {
     async *streamMessage() { throw new Error("Test execution is not configured in this test app"); },
     async *streamRetry() { throw new Error("Test execution is not configured in this test app"); },
   } as unknown as TestExecutionService;
+  // Mounted so the route-policy inventory sees the candidate eval routes; route tests that
+  // exercise them build their own app around a real service.
+  const revisionEvalRunService = {
+    async start() { throw new Error("Revision eval runs are not configured in this test app"); },
+    async get() { throw new Error("Revision eval runs are not configured in this test app"); },
+    async retry() { throw new Error("Revision eval runs are not configured in this test app"); },
+  } as unknown as RevisionEvalRunService;
   const contextVariableService = new ContextVariableService({
     repository: contextVariableRepository,
     agentReader: { get: agentService.get.bind(agentService) },
@@ -1731,11 +1738,6 @@ export const createTestDependencies = (overrides: {
   );
   const routineStateStore = new InMemoryRoutineStateStore();
   const directiveStateStore = new InMemoryDirectiveStateStore();
-  const conversationForkService = new ConversationForkService(
-    conversationRepository,
-    messageRepository,
-    routineStateStore,
-  );
   const publicChatActionAdvertisers = [
     ...(overrides.publicChatActionAdvertiser ? [overrides.publicChatActionAdvertiser] : []),
   ];
@@ -2417,6 +2419,7 @@ export const createTestDependencies = (overrides: {
     operatorReplyService,
     workbenchReplayRunner: workbenchReplayRunner as any,
     testExecutionService,
+    revisionEvalRunService,
     actionDispatchWorker,
     copilotRetentionWorker: new CopilotRetentionWorker({
       retention: copilotRepository,
@@ -2440,7 +2443,6 @@ export const createTestDependencies = (overrides: {
     }),
     chatBootstrapService,
     chatHistoryService,
-    conversationForkService,
     assistantChatService,
     assistantHistoryService,
     retrievalSearchService,

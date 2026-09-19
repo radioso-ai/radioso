@@ -61,7 +61,7 @@ COPY packages/workspace-invalidation-contract/package.json ./packages/workspace-
 COPY --from=ee-backend-build /app/ee/packages/backend-module ./ee/packages/backend-module
 COPY --from=ee-backend-build /app/ee/packages/plan-catalog ./ee/packages/plan-catalog
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
-    pnpm install --frozen-lockfile --filter radioso-backend... --filter @radioso/crawler... --filter @radioso/mcp-server... --filter @radioso/routine-definition... --filter @radioso/routine-document... --filter @radioso/conversation-engine... --filter @radioso/conversation-defaults... --filter @radioso/conversation-tools... --filter @radioso/census...
+    pnpm install --frozen-lockfile --filter radioso-backend... --filter @radioso/crawler... --filter @radioso/mcp-server... --filter @radioso/routine-definition... --filter @radioso/routine-document... --filter @radioso/conversation-engine... --filter @radioso/conversation-defaults... --filter @radioso/conversation-tools... --filter @radioso/census... --filter @radioso/enterprise-backend-module...
 RUN if [ "$RADIOSO_EDITION" = "enterprise" ]; then \
       mkdir -p ./backend/node_modules/@radioso && \
       ln -s ../../../ee/packages/backend-module ./backend/node_modules/@radioso/enterprise-backend-module; \
@@ -139,7 +139,7 @@ COPY packages/workspace-invalidation-contract/package.json ./packages/workspace-
 COPY --from=ee-backend-build /app/ee/packages/backend-module ./ee/packages/backend-module
 COPY --from=ee-backend-build /app/ee/packages/plan-catalog ./ee/packages/plan-catalog
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
-    pnpm install --prod --frozen-lockfile --filter radioso-backend... --filter @radioso/crawler... --filter @radioso/mcp-server... --filter @radioso/routine-definition... --filter @radioso/routine-document... --filter @radioso/conversation-engine... --filter @radioso/conversation-defaults... --filter @radioso/conversation-tools... --filter @radioso/census...
+    pnpm install --prod --frozen-lockfile --filter radioso-backend... --filter @radioso/crawler... --filter @radioso/mcp-server... --filter @radioso/routine-definition... --filter @radioso/routine-document... --filter @radioso/conversation-engine... --filter @radioso/conversation-defaults... --filter @radioso/conversation-tools... --filter @radioso/census... --filter @radioso/enterprise-backend-module...
 RUN if [ "$RADIOSO_EDITION" = "enterprise" ]; then \
       mkdir -p ./backend/node_modules/@radioso && \
       ln -s ../../../ee/packages/backend-module ./backend/node_modules/@radioso/enterprise-backend-module; \

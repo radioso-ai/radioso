@@ -23,13 +23,9 @@ export {
   storeEffectivePublicChatToken,
   storePublicSessionResumeToken,
   storePublicSessionToken,
-  type StoredEmbedBootstrapSession,
-  type StoredPublicSessionToken,
-  type StoredPublicSessionResumeToken,
 } from './api-storage'
 
 export const API_BASE = `${process.env.NEXT_PUBLIC_API_BASE_PATH ?? "/backend/api/v1"}`;
-export const STREAMING_API_PATH = '/api/chat/stream'
 export const PUBLIC_CHAT_STREAMING_API_PATH = '/api/public/chat'
 
 export interface ErrorResponse {

@@ -272,22 +272,6 @@ export type WebsiteCrawlJobSummary = ApiSchemas['WebsiteCrawlJobSummary']
 export type WebsiteCrawlEnqueueResponse = ApiSchemas['WebsiteCrawlJobResponse']
 export type WebsiteCrawlJobListResponse = ApiSchemas['WebsiteCrawlJobListResponse']
 
-export interface ChatRequest {
-  agentId?: string
-  query?: string
-  stream: boolean
-  conversationId?: string
-  bootstrapGreetingId?: string
-  bootstrapGreeting?: boolean
-  userExpectedLocale?: string
-  inputMetadata?: ChatUserInputMetadata
-  includeDebug?: boolean
-  // Workbench-only: draft (or any-status) routine ids to make eligible for this turn so
-  // an author can test-run an unpublished routine. Sent only from the authenticated
-  // dashboard chat; ignored/absent everywhere else.
-  previewRoutineIds?: string[]
-}
-
 export type WebsiteEmbedPageContext = NonNullable<ApiSchemas['PublicChatSessionRequest']['pageContext']>
 export interface ClientContextCapabilities {
   'page.read'?: {
@@ -306,24 +290,6 @@ export type PublicChatSessionResponse = ApiSchemas['PublicChatSessionResponse'] 
   citationDisplayEnabled?: boolean
   intakeActions?: PublicChatIntakeAction[]
 }
-
-export const toAssistantChatPayload = (data: ChatRequest) => ({
-  agentId: data.agentId,
-  conversationId: data.conversationId,
-  bootstrapGreetingId: data.bootstrapGreetingId,
-  message: data.query,
-  startConversation: data.bootstrapGreeting,
-  stream: data.stream,
-  includeDebug: data.includeDebug,
-  userExpectedLocale: data.userExpectedLocale,
-  inputMetadata: data.inputMetadata,
-  ...(data.previewRoutineIds && data.previewRoutineIds.length > 0
-    ? { previewRoutineIds: data.previewRoutineIds }
-    : {}),
-  sourceContext: {
-    surface: 'authenticated_chat' as const,
-  },
-})
 
 export const toGeneralSettings = (settings: PlatformSettings): GeneralSettings => ({
   ...settings.channels,
@@ -786,4 +752,67 @@ export interface AccountUsageSummary {
     credits: number
     byKind: Record<'conversation' | 'copilot' | 'test_run' | 'pulse_report', number>
   } | null
+}
+
+export type BillingSubscriptionStatus = 'active' | 'past_due' | 'canceled' | 'none'
+export type BillingInterval = 'month' | 'year'
+
+export interface EnterpriseBillingSummary {
+  configured: boolean
+  planId: string
+  planName: string
+  status: BillingSubscriptionStatus
+  hasCustomer: boolean
+  interval: BillingInterval | null
+  currentPeriodEnd: string | null
+  /** Next self-serve plan above `planId`. Null at the catalog's self-serve ceiling. */
+  upgradePlanId: string | null
+}
+
+export type BillingCheckoutRequest =
+  | { plan: string; interval: BillingInterval; returnPath: string }
+  | { pack: true; returnPath: string }
+
+export interface BillingPortalRequest {
+  returnPath: string
+}
+
+export interface BillingCheckoutResponse {
+  url: string
+}
+
+/** `GET /api/v1/plans` — the `@radioso/plan-catalog` payload, read over HTTP rather than imported (EE-only package). */
+interface PlanCatalogStripePricing {
+  monthLookupKey: string
+  yearLookupKey: string
+}
+
+export interface PlanCatalogEntry {
+  id: string
+  name: string
+  priceCents: number
+  annualPriceCents: number | null
+  interval: 'month'
+  monthlyConversations: number
+  storedBytes: number
+  monthlyIndexedBytes: number
+  documents: number
+  models: 'managed' | 'byok'
+  support: 'community' | 'email' | 'priority'
+  /** Null on the free plan: nothing to buy. */
+  stripe: PlanCatalogStripePricing | null
+}
+
+export interface PlanCatalogTopUp {
+  conversations: number
+  priceCents: number
+  stripeLookupKey: string
+}
+
+export interface PlanCatalogResponse {
+  currency: string
+  plans: PlanCatalogEntry[]
+  defaultPlanId: string
+  selfServeCeilingPlanId: string
+  topUp: PlanCatalogTopUp
 }

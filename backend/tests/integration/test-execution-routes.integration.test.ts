@@ -34,6 +34,21 @@ describe("test execution HTTP streaming", () => {
     expect(started.status).toBe(201);
     expect(started.body).toMatchObject({ id: executionId, skillEffects: "allowed" });
     expect(start).toHaveBeenCalledWith(expect.objectContaining({ skillEffects: "allowed" }));
+
+    const seedConversationId = "70000000-0000-4000-8000-000000000001";
+    const seeded = await request(app)
+      .post(`/api/v1/agents/${agentId}/test-executions`)
+      .set(adminSessionHeaders(session))
+      .send({ mode: "single", revisionIds: ["60000000-0000-4000-8000-000000000001"], testValues: [], idempotencyKey: "idem-2", seedConversationId });
+    expect(seeded.status).toBe(201);
+    expect(start).toHaveBeenLastCalledWith(expect.objectContaining({ seedConversationId }));
+
+    const seededCompare = await request(app)
+      .post(`/api/v1/agents/${agentId}/test-executions`)
+      .set(adminSessionHeaders(session))
+      .send({ mode: "compare", revisionIds: ["60000000-0000-4000-8000-000000000001", "60000000-0000-4000-8000-000000000002"], testValues: [], idempotencyKey: "idem-3", seedConversationId });
+    expect(seededCompare.status).toBe(400);
+    expect(start).toHaveBeenCalledTimes(2);
   });
 
   it("sends the SSE and reverse-proxy buffering headers after its pre-header check", async () => {

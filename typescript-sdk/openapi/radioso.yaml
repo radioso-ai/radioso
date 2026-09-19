@@ -14233,6 +14233,9 @@ components:
           enum:
             - suppressed
             - allowed
+        seedConversationId:
+          type: string
+          format: uuid
       required:
         - mode
         - revisionIds
@@ -29341,47 +29344,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-  /api/v1/conversations/{conversationId}/fork:
-    post:
-      tags:
-        - Conversation Ownership
-      summary: Fork a conversation into a dashboard test session
-      description: Copies the conversation's user and assistant message thread into a new conversation tagged as an authenticated_chat test session (same agent and workspace), leaving the original untouched.
-      operationId: forkConversation
-      security: *a107
-      parameters:
-        - schema:
-            type: string
-            format: uuid
-          required: true
-          name: conversationId
-          in: path
-      responses:
-        "200":
-          description: Forked test-session conversation created
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  conversationId:
-                    type: string
-                    format: uuid
-                required:
-                  - conversationId
-                additionalProperties: false
-        "401":
-          description: Authentication required
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "404":
-          description: Conversation not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/decisions:
     get:
       tags:
@@ -32414,6 +32376,7 @@ paths:
       tags:
         - Agents
       summary: Start an operator-private immutable revision test
+      description: "A `single` execution may set `seedConversationId` to continue an existing conversation of the same workspace and agent: the side starts with that thread as its history and resumes its active routine, pending clarification, and directive state, skipping the greeting. The source conversation is unchanged."
       operationId: startAgentTestExecution
       security: *a114
       parameters:

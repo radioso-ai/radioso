@@ -1,18 +1,9 @@
-import {
-  STREAMING_API_PATH,
-  buildError,
-  getStoredActiveWorkspaceId,
-  request,
-} from './api-client'
-import { streamChatEvents } from './api-chat-stream'
+import { request } from './api-client'
 import { withQuery } from './api-query'
-import { normalizeHistoryItemsResponse, toAssistantChatPayload } from './api-types'
+import { normalizeHistoryItemsResponse } from './api-types'
 import type {
   ChatConversationDetail,
   ChatHistoryListResponse,
-  ChatRequest,
-  ChatResponse,
-  ChatStreamHandlers,
   ContactHistoryDetailResponse,
   ContactHistoryListResponse,
   DocumentSearchHistoryListResponse,
@@ -22,86 +13,12 @@ import type {
   VisitorConversationsResponse,
 } from './api-types'
 
-const normalizeChatResponse = (payload: ChatResponse): ChatResponse => ({
-  ...payload,
-  route: payload.route ?? payload.debug?.route,
-  activitySummary: payload.activitySummary ?? payload.debug?.activitySummary,
-  activityTrace: payload.activityTrace ?? payload.debug?.activityTrace,
-})
-
 const normalizeDocumentSearchResponse = (payload: DocumentSearchResponse): DocumentSearchResponse => ({
   ...payload,
   activityTrace: payload.activityTrace ?? payload.debug?.activityTrace,
 })
 
 export const chatApi = {
-  async createChatResponse(data: ChatRequest): Promise<ChatResponse> {
-    const payload = await request<ChatResponse>("/assistant/chat", {
-      method: "POST",
-      body: JSON.stringify(toAssistantChatPayload({ ...data, includeDebug: data.includeDebug ?? true })),
-    }, { withSession: true })
-    return normalizeChatResponse(payload)
-  },
-
-  async streamChatResponse(
-    data: ChatRequest,
-    handlers: ChatStreamHandlers = {},
-  ): Promise<ChatResponse> {
-    const headers = new Headers({
-      "Content-Type": "application/json",
-      "X-Forwarded-Prefix": "/backend",
-    })
-    const workspaceId = getStoredActiveWorkspaceId()
-    if (workspaceId) headers.set('X-Workspace-Id', workspaceId)
-    const executeFetch = () => fetch(STREAMING_API_PATH, {
-      method: "POST",
-      cache: "no-store",
-      credentials: "include",
-      headers,
-      body: JSON.stringify(toAssistantChatPayload({ ...data, includeDebug: data.includeDebug ?? true })),
-    })
-    const response = await executeFetch()
-    if (!response.ok) {
-      throw await buildError(response)
-    }
-
-    const contentType = response.headers.get("content-type") ?? ""
-
-    if (!contentType.includes("text/event-stream")) {
-      const payload = normalizeChatResponse((await response.json()) as ChatResponse)
-      if (payload.conversationId) {
-        handlers.onConversation?.({ conversationId: payload.conversationId })
-      }
-      if (payload.answer) {
-        handlers.onChunk?.({ text: payload.answer })
-      }
-      handlers.onDone?.({
-        conversationId: payload.conversationId,
-        assistantMessageId: payload.assistantMessageId,
-        agentId: payload.agentId,
-        agentName: payload.agentName,
-        answer: payload.answer,
-        citations: payload.citations,
-        answerSegments: payload.answerSegments,
-        suggestions: payload.suggestions,
-        debug: payload.debug,
-      })
-      return payload
-    }
-
-    return streamChatEvents(response, handlers)
-  },
-
-  async bootstrapConversation(
-    data: Pick<ChatRequest, 'agentId' | 'stream' | 'bootstrapGreeting' | 'userExpectedLocale'>,
-  ): Promise<ChatResponse | undefined> {
-    const payload = await request<ChatResponse>('/assistant/chat', {
-      method: 'POST',
-      body: JSON.stringify(toAssistantChatPayload({ ...data, includeDebug: true })),
-    }, { withSession: true })
-    return payload ? normalizeChatResponse(payload) : payload
-  },
-
   async listHistory(input?: {
     limit?: number
     offset?: number
@@ -148,17 +65,6 @@ export const chatApi = {
       method: 'GET',
       ...(signal ? { signal } : {}),
     }, { withSession: true })
-  },
-
-  // Copies a real conversation's thread into a new test-session conversation
-  // (source_channel = authenticated_chat) so an operator can continue it in the
-  // workbench without touching the original. Returns the new conversation id.
-  async forkConversation(sourceConversationId: string): Promise<{ conversationId: string }> {
-    return request<{ conversationId: string }>(
-      `/conversations/${encodeURIComponent(sourceConversationId)}/fork`,
-      { method: 'POST' },
-      { withSession: true },
-    )
   },
 
   async listSearchHistory(input?: { limit?: number; offset?: number; cursor?: string }, signal?: AbortSignal): Promise<DocumentSearchHistoryListResponse> {

@@ -1,5 +1,6 @@
 import {
   type LlmCapabilityConfig,
+  type ProviderCacheCapability,
   type ProviderUsage,
   type TextGenerationClient,
   type TextGenerationRequest,
@@ -10,9 +11,28 @@ import { readProviderErrorBody } from "./providerErrors.js";
 import { streamWithUsage } from "./providerStreaming.js";
 import { LLM_DEFAULTS } from "../../domain/behaviorConfig.js";
 import { parseSseEvents } from "./sse.js";
+import { normalizeCacheAccounting, reusableInputBoundaryMatchesSystemPrompt } from "./inputTokenCaching.js";
 
 const CLAUDE_API_URL = "https://api.anthropic.com/v1/messages";
 const CLAUDE_VERSION = "2023-06-01";
+
+const claudeCacheCapability = (model: string): ProviderCacheCapability =>
+  supportsExplicitPromptCaching(model) ? "explicit_checkpoint" : "unsupported";
+
+const supportsExplicitPromptCaching = (model: string): boolean =>
+  /^claude-(?:opus|sonnet|haiku)-(?:[4-9]|[1-9][0-9])/.test(model);
+
+const renderClaudeSystem = (config: LlmCapabilityConfig, input: Pick<TextGenerationRequest, "systemPrompt" | "reusableInputBoundary">) => {
+  if (!supportsExplicitPromptCaching(config.model)
+    || !reusableInputBoundaryMatchesSystemPrompt(input.reusableInputBoundary, input.systemPrompt)) {
+    return input.systemPrompt;
+  }
+  const boundary = input.reusableInputBoundary;
+  return [
+    { type: "text", text: boundary.stableSystemPrefix, cache_control: { type: "ephemeral" } },
+    ...(boundary.dynamicSystemSuffix ? [{ type: "text", text: boundary.dynamicSystemSuffix }] : []),
+  ];
+};
 
 const buildClaudeBody = (config: LlmCapabilityConfig, input: {
   prompt: string;
@@ -25,7 +45,7 @@ const buildClaudeBody = (config: LlmCapabilityConfig, input: {
   model: config.model,
   max_tokens: input.maxOutputTokens ?? LLM_DEFAULTS.textGenerationMaxOutputTokens,
   temperature: input.temperature,
-  system: input.systemPrompt,
+  system: renderClaudeSystem(config, input),
   stream: input.stream ?? false,
   messages: [
     {
@@ -63,6 +83,7 @@ interface ClaudeUsagePayload {
   input_tokens?: number;
   output_tokens?: number;
   cache_read_input_tokens?: number;
+  cache_creation_input_tokens?: number;
 }
 
 const buildClaudeUsage = (input: {
@@ -83,6 +104,10 @@ const buildClaudeUsage = (input: {
         ? undefined
         : (inputTokens ?? 0) + (outputTokens ?? 0),
     cachedInputTokens: usage.cache_read_input_tokens,
+    cacheAccounting: normalizeCacheAccounting({
+      readInputTokens: usage.cache_read_input_tokens,
+      writeInputTokens: usage.cache_creation_input_tokens,
+    }),
     providerRequestId: input.requestId,
     quality: "actual",
   };
@@ -96,6 +121,7 @@ export class ClaudeTextGenerationClient implements TextGenerationClient {
       capability: config.capability,
       provider: config.provider,
       model: config.model,
+      cacheCapability: claudeCacheCapability(config.model),
     };
   }
 
@@ -110,22 +136,15 @@ export class ClaudeTextGenerationClient implements TextGenerationClient {
       signal: input.signal,
       body: JSON.stringify(buildClaudeBody(this.config, input)),
     };
-    // Invoking fetch is the dispatch. Record only after the transport has been handed
-    // the request, and not at all when an aborted signal makes it reject unsent.
     const responsePromise = fetch(CLAUDE_API_URL, request);
     if (input.dispatchRecord && !input.dispatchRecord.dispatched && !input.signal?.aborted) {
       input.dispatchRecord.dispatched = true;
     }
     const response = await responsePromise;
-
     if (!response.ok) {
       throw await readProviderErrorBody("Claude", "messages", response);
     }
-
-    const payload = (await response.json()) as {
-      id?: string;
-      usage?: ClaudeUsagePayload;
-    };
+    const payload = (await response.json()) as { id?: string; usage?: ClaudeUsagePayload };
     return {
       text: extractClaudeText(payload),
       usage: buildClaudeUsage({ usage: payload.usage, requestId: payload.id }),
@@ -181,6 +200,8 @@ export class ClaudeTextGenerationClient implements TextGenerationClient {
             usage.input_tokens = startUsage.input_tokens ?? usage.input_tokens;
             usage.cache_read_input_tokens =
               startUsage.cache_read_input_tokens ?? usage.cache_read_input_tokens;
+            usage.cache_creation_input_tokens =
+              startUsage.cache_creation_input_tokens ?? usage.cache_creation_input_tokens;
             sawUsage = true;
           }
         } else if (payload.type === "message_delta" && payload.usage) {

@@ -26,6 +26,7 @@ import { TextGenerationClientCache } from "./textClientFactory.js";
 import { GeminiEmbeddingClient } from "./geminiProvider.js";
 import { createOpenAIClient, OpenAIEmbeddingClient } from "./openaiProvider.js";
 import type { AppLogger } from "../../observability/logger.js";
+import type { MetricsRegistry } from "../../observability/metrics/metricsRegistry.js";
 import type { UsageEventRecorder } from "../../domain/usageEventRecorder.js";
 import { EmbeddingInferencePipelineService } from "./embeddingInferencePipeline.js";
 import { ModelInferencePipelineService, type ModelInferencePipeline } from "./modelInferencePipeline.js";
@@ -175,6 +176,8 @@ class RoutedEmbeddingClient implements EmbeddingClient {
 interface LlmProviderRegistryOptions {
   /** When provided, gateways become workspace-aware and resolve per-call configs. */
   resolver?: LlmCapabilityConfigResolver;
+  /** Existing bounded metrics sink for provider-call telemetry. */
+  metrics?: Pick<MetricsRegistry, "incrementCounter" | "observeHistogram"> | null;
 }
 
 export class LlmProviderRegistry {
@@ -184,7 +187,7 @@ export class LlmProviderRegistry {
   constructor(
     private readonly config: ResolvedLlmConfig,
     private readonly logger?: AppLogger,
-    options: LlmProviderRegistryOptions = {},
+    private readonly options: LlmProviderRegistryOptions = {},
   ) {
     if (!supportsEmbeddings(config.embeddings)) {
       throw new ProviderConfigurationError(`Provider ${config.embeddings.provider} does not support embeddings`);
@@ -219,6 +222,7 @@ export class LlmProviderRegistry {
       { resolver: this.resolver, clientCache: this.clientCache },
       fallback,
       usageEventRecorder,
+      this.options.metrics,
     );
   }
 
@@ -430,6 +434,7 @@ export class LlmProviderRegistry {
       return new ModelInferencePipelineService(
         this.clientCache.getOrCreate(credentialed),
         usageEventRecorder,
+        this.options.metrics,
       );
     };
     return {

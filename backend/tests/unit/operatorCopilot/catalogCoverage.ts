@@ -197,6 +197,19 @@ const visitorProfileIsOperatorOnly = permanent(
   "Permanent exclusion: operator triage read for a visitor's own history panel. Ray reads conversations through conversation_transcript and conversation_history_search, and no Ray tool surfaces a visitor id for this operation to take as input.",
 );
 
+/**
+ * Runtime-only inference behavior has no OpenAPI operation for Ray to invoke.
+ * Input token caching is selected per provider request and emits bounded operational
+ * telemetry, so exposing it as an operator action would neither tune workspace
+ * behavior nor produce evidence Ray can safely interpret. Keep this explicit next
+ * to the route coverage map instead of inventing a tool for an internal mechanism.
+ */
+export const internalRuntimeCoverageExclusions = {
+  providerInputTokenCaching: permanent(
+    "Permanent exclusion: provider input-token caching is internal request rendering and bounded telemetry, not a workspace operation Ray can read, propose, or apply.",
+  ),
+} as const;
+
 /** Every OpenAPI operation is deliberately reachable through a family reader or explicitly planned/excluded. */
 export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
   ...catalogToolCoverage,

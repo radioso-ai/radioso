@@ -17,6 +17,9 @@ import type {
   ProviderDispatchRecord,
 } from "./providerTypes.js";
 import { recordModelCallTrace } from "../../observability/tracing/modelCallTraceContext.js";
+import type { MetricsRegistry } from "../../observability/metrics/metricsRegistry.js";
+import { reusableInputBoundaryMatchesSystemPrompt } from "./inputTokenCaching.js";
+import { recordCacheInferenceTelemetry } from "./cacheTelemetry.js";
 
 export interface ModelInferenceRequest extends TextGenerationRequest {
   operation: ModelCallUsageContext;
@@ -120,6 +123,9 @@ const stripOperation = (
     maxOutputTokens: input.maxOutputTokens,
     reasoningEffort: input.reasoningEffort,
     responseFormat: input.responseFormat,
+    ...(reusableInputBoundaryMatchesSystemPrompt(input.reusableInputBoundary, input.systemPrompt)
+      ? { reusableInputBoundary: input.reusableInputBoundary }
+      : {}),
     signal: input.signal,
     dispatchRecord,
   };
@@ -162,6 +168,7 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
   constructor(
     private readonly delegate: TextGenerationClient,
     private readonly usageEventRecorder: UsageEventRecorder = new NoopUsageEventRecorder(),
+    private readonly metrics?: Pick<MetricsRegistry, "incrementCounter" | "observeHistogram"> | null,
   ) {
     this.metadata = delegate.metadata;
   }
@@ -175,10 +182,10 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
   }
 
   private async completeWithinTrace(input: ModelInferenceRequest): Promise<TextGenerationResult> {
-    const startedAtMs = Date.now();
     const dispatchRecord: ProviderDispatchRecord = { dispatched: false };
     const request = stripOperation(input, input.dispatchRecord ? dispatchRecord : undefined);
     this.enforceInputBudget(input, request);
+    const startedAtMs = Date.now();
     let result: TextGenerationResult;
     try {
       result = await this.delegate.complete(request);
@@ -194,6 +201,7 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
         error,
       });
       this.recordTrace(input, startedAtMs, completedAtMs, "failed", usage);
+      this.recordTelemetry(input, usage.cacheAccounting, "failed", completedAtMs - startedAtMs, "provider_invocation");
       setTraceAttributes({ "llm.provider.outcome": "failed" });
       throw error;
     }
@@ -211,6 +219,7 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
         error,
       });
       this.recordTrace(input, startedAtMs, completedAtMs, "failed", usage);
+      this.recordTelemetry(input, usage.cacheAccounting, "failed", completedAtMs - startedAtMs, "provider_invocation");
       setTraceAttributes({ "llm.provider.outcome": "failed" });
       throw error;
     }
@@ -224,15 +233,16 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
       providerUsage: result.usage,
     });
     this.recordTrace(input, startedAtMs, completedAtMs, "succeeded", usage);
+    this.recordTelemetry(input, usage.cacheAccounting, "succeeded", completedAtMs - startedAtMs, "provider_invocation");
     setTraceAttributes({ "llm.provider.outcome": "succeeded" });
     return result;
   }
 
   stream(input: ModelInferenceRequest): TextGenerationStreamResult {
-    const startedAtMs = Date.now();
     const dispatchRecord: ProviderDispatchRecord = { dispatched: false };
     const request = stripOperation(input, input.dispatchRecord ? dispatchRecord : undefined);
     this.enforceInputBudget(input, request);
+    const startedAtMs = Date.now();
     const result = this.delegate.stream(request);
     let outputText = "";
     const readUsage = async (): Promise<ProviderUsage | undefined> => {
@@ -253,6 +263,7 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
       attributes: providerTraceAttributes(this.delegate.metadata, input.operation, { streaming: true }),
       createIterable: () => (async function* (pipeline: ModelInferencePipelineService) {
       let terminalRecorded = false;
+      let firstTextRecorded = false;
       const recordTerminal = async (
         outcome: StreamingTerminationOutcome,
         error?: unknown,
@@ -275,11 +286,16 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
           error: terminalError,
         });
         pipeline.recordTrace(input, startedAtMs, completedAtMs, status, usage);
+        pipeline.recordTelemetry(input, usage.cacheAccounting, outcome, completedAtMs - startedAtMs, "provider_invocation");
         setTraceAttributes({ "llm.provider.outcome": outcome });
       };
       try {
         for await (const chunk of result.textStream) {
           outputText += chunk;
+          if (!firstTextRecorded && chunk.length > 0) {
+            firstTextRecorded = true;
+            pipeline.recordTelemetry(input, undefined, "succeeded", Date.now() - startedAtMs, "adapter_first_text");
+          }
           yield chunk;
         }
         await recordTerminal("succeeded");
@@ -308,6 +324,7 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
       totalTokens: number;
       reasoningTokens?: number;
       cachedInputTokens?: number;
+      cacheAccounting?: ProviderUsage["cacheAccounting"];
     },
   ): void {
     recordModelCallTrace({
@@ -323,6 +340,7 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
       totalTokens: usage.totalTokens,
       reasoningTokens: usage.reasoningTokens,
       cachedInputTokens: usage.cachedInputTokens,
+      cacheAccounting: usage.cacheAccounting,
       status,
     });
   }
@@ -339,7 +357,8 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
     outputTokens: number;
     totalTokens: number;
     reasoningTokens?: number;
-    cachedInputTokens?: number;
+      cachedInputTokens?: number;
+      cacheAccounting?: ProviderUsage["cacheAccounting"];
   }> {
     const inputBytes = Buffer.byteLength(`${input.request.systemPrompt ?? ""}\n${input.request.prompt}`, "utf8");
     const outputBytes = Buffer.byteLength(input.outputText, "utf8");
@@ -381,7 +400,27 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
       totalTokens,
       reasoningTokens: input.providerUsage?.reasoningTokens,
       cachedInputTokens: input.providerUsage?.cachedInputTokens,
+      cacheAccounting: input.providerUsage?.cacheAccounting,
     };
+  }
+
+  private recordTelemetry(
+    input: ModelInferenceRequest,
+    accounting: ProviderUsage["cacheAccounting"],
+    outcome: StreamingTerminationOutcome,
+    durationMs: number,
+    timingBoundary: "provider_invocation" | "adapter_first_text",
+  ): void {
+    recordCacheInferenceTelemetry(this.metrics, {
+      metadata: this.delegate.metadata,
+      surface: input.operation.surface,
+      operation: input.operation.operation,
+      accounting,
+      outcome,
+      durationMs,
+      timingBoundary,
+      recordRequest: timingBoundary !== "adapter_first_text",
+    });
   }
 
   private enforceInputBudget(input: ModelInferenceRequest, request: TextGenerationRequest): void {

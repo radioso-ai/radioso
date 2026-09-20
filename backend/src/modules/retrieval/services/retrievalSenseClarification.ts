@@ -29,7 +29,7 @@ export interface RetrievalSenseDetectorPort {
   }): Promise<RetrievalSenseClarificationCandidate[]>;
 }
 
-export type RetrievalSenseClarificationEffect =
+type RetrievalSenseClarificationEffect =
   | {
       kind: "ask";
       candidates: ClarificationCandidate[];
@@ -279,7 +279,7 @@ const isDegeneratePhrasing = (answer: string, candidates: ClarificationCandidate
   );
 };
 
-export type PhrasedSenseClarification =
+type PhrasedSenseClarification =
   | { kind: "ask"; answer: string; presented: ClarificationCandidate[]; stage: ConversationTraceStage }
   | { kind: "fallback"; documentScope?: string[]; stage: ConversationTraceStage };
 

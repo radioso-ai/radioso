@@ -150,6 +150,32 @@ describe("ContextualChatGateway", () => {
     expect(answer).toBe("workspace-answer");
     expect(completeCalls).toEqual([{ apiKey: "ws-key-1", prompt: "p" }]);
   });
+
+  it("records cache telemetry for workspace-resolved complete and stream calls", async () => {
+    const config: LlmCapabilityConfig = { capability: "chat", provider: "openai", model: "gpt-test", apiKey: "ws-key-1" };
+    const metrics = { incrementCounter: vi.fn(), observeHistogram: vi.fn() };
+    const cache = new TextGenerationClientCache();
+    cache.getOrCreate = ((cfg) => ({
+      metadata: { capability: cfg.capability, provider: cfg.provider, model: cfg.model },
+      async complete() { return textResult("workspace-answer", { inputTokens: 4, outputTokens: 1, totalTokens: 5, quality: "actual" }); },
+      stream() { return streamResult(["workspace"], { inputTokens: 4, outputTokens: 1, totalTokens: 5, quality: "actual" }); },
+    }));
+    const gateway = new ContextualChatGateway(
+      { resolver: buildResolver({ chat: config }), clientCache: cache },
+      new StubChatFallback(),
+      undefined,
+      metrics,
+    );
+    const input = { query: "q", history: [], prompt: "p", workspaceContext: { workspaceId: "ws-1" }, usageContext };
+
+    await gateway.answer(input);
+    for await (const _chunk of gateway.streamAnswer(input)) {
+      // Drain so terminal usage/cache accounting is observed.
+    }
+
+    expect(metrics.incrementCounter).toHaveBeenCalledWith("llm_input_cache_requests_total", expect.any(Object));
+    expect(metrics.incrementCounter).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("ContextualQueryRewriteGateway", () => {

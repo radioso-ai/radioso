@@ -3,6 +3,7 @@ import { z, type ZodTypeAny } from "zod";
 
 import type { ModelCallUsageContext } from "../domain/modelCallUsageContext.js";
 import type { ModelInferencePipeline } from "../infra/llm/modelInferencePipeline.js";
+import { createReusableInputBoundary } from "../infra/llm/inputTokenCaching.js";
 import {
   AGENT_STEP_MAX_INPUT_TOKENS,
   type ModelToolCall,
@@ -20,11 +21,6 @@ When tool_calls is non-empty, "text" MUST be empty. When tool_calls is empty, "t
 
 const KEEP_RECENT_STEPS_FULL = 2;
 
-export interface TextRoutedToolCallingGatewayOptions {
-  readonly temperature?: number;
-  readonly maxOutputTokens?: number;
-}
-
 /**
  * Provider-agnostic `ModelToolCallingGateway` that routes through the shared
  * inference pipeline. The model is asked to respond with a single JSON
@@ -40,7 +36,7 @@ export interface TextRoutedToolCallingGatewayOptions {
 export class TextRoutedToolCallingGateway implements ModelToolCallingGateway {
   constructor(
     private readonly client: ModelInferencePipeline,
-    private readonly options: TextRoutedToolCallingGatewayOptions = {},
+    private readonly options: { readonly temperature?: number; readonly maxOutputTokens?: number } = {},
   ) {}
 
   async request(input: ModelToolCallRequest): Promise<ModelToolCallResponse> {
@@ -54,6 +50,7 @@ export class TextRoutedToolCallingGateway implements ModelToolCallingGateway {
       },
       prompt,
       systemPrompt,
+      reusableInputBoundary: createReusableInputBoundary({ stableSystemPrefix: systemPrompt }),
       temperature: this.options.temperature,
       maxOutputTokens: this.options.maxOutputTokens,
       // Agent steps accumulate uncompacted recent tool results (bounded by the

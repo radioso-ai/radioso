@@ -53,7 +53,7 @@ export const buildDocumentRetrievalGraph = (input: {
   personalCredentialLifecycle?: PersonalCredentialLifecyclePort;
 }) => {
   const { composition, env, infrastructure, logger, repositories } = input;
-  const llmRegistry = buildLlmRegistry(env, logger);
+  const llmRegistry = buildLlmRegistry(env, logger, { metricsRegistry: infrastructure.metricsRegistry });
   const documentJobDispatcher = composition.documentJobDispatcher ?? createDefaultDocumentJobDispatcher(env, logger);
   const workspaceIngestionReprocessService = buildWorkspaceIngestionReprocessService({
     auditService: infrastructure.auditService,

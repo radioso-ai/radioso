@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 
 import { describe, expect, it } from "vitest";
 
-import { catalogCoverage } from "./catalogCoverage.js";
+import { catalogCoverage, internalRuntimeCoverageExclusions } from "./catalogCoverage.js";
 import { copilotProposalOperationIds } from "../../../src/app/http/openapi/paths/copilotPaths.js";
 import { buildCopilotNeverListContext, copilotNeverList } from "../../../src/modules/operatorCopilot/neverList.js";
 import { copilotIngestionSettingsChangeSchema } from "../../../src/modules/operatorCopilot/contracts/ingestionSettingsAuthoring.js";
@@ -63,6 +63,12 @@ describe("operator copilot catalog coverage", () => {
   //   owned until Ray has a private-test evidence contract.
   const maxDeferredCatalogExclusions = 106;
 
+  it("keeps provider input-token caching outside Ray's operation catalog", () => {
+    expect(internalRuntimeCoverageExclusions.providerInputTokenCaching).toMatchObject({
+      disposition: "permanent",
+      reason: expect.stringContaining("internal request rendering"),
+    });
+  });
   it("states each permanent exclusion's own ground rather than one conflated reason", () => {
     // A permanent exclusion is the strongest claim this map makes, so a wrong one either blocks
     // legitimate work or forces a permanent -> covered flip. Both have happened. Pin the grounds

@@ -27,17 +27,24 @@ export function buildDocumentIndex(doc: RoutineBlockDoc): RoutineDocumentIndex {
   return { stepNumbers, endings }
 }
 
+// A slot reference reads as quiet text with a faint backing, the same "@name" treatment the
+// live chip in the instruction editor uses — not a coloured pill — so a row looks the same
+// whether or not it happens to be open for editing right now.
+function SlotBadge({ slotKey }: { slotKey: string }) {
+  return <span className="mx-0.5 rounded-sm bg-muted/50 px-1 py-0 align-baseline text-foreground"><span className="text-muted-foreground">@</span>{slotKey}</span>
+}
+
 function InstructionSentence({ segments, editable = false }: { segments: RoutineBlockInstructionSegment[]; editable?: boolean }) {
   if (instructionIsEmpty(segments)) {
     return editable ? <p className="rounded-md border border-dashed border-border px-3 py-2 text-sm text-muted-foreground">Write what this step should do…</p> : null
   }
   // The instruction keeps the line breaks its author wrote, so the row reads them back
   // instead of collapsing every line into one.
-  return <p className="whitespace-pre-wrap leading-7 text-foreground">{segments.map((segment, index) => segment.kind === 'text' ? segment.text : <span key={`${segment.key}-${index}`} className="mx-0.5 inline-flex select-none items-center rounded-md border border-emerald-300 bg-emerald-100 px-1.5 py-0 align-baseline text-xs font-medium text-emerald-900">{segment.key}</span>)}</p>
+  return <p className="whitespace-pre-wrap leading-7 text-foreground">{segments.map((segment, index) => segment.kind === 'text' ? segment.text : <SlotBadge key={`${segment.key}-${index}`} slotKey={segment.key} />)}</p>
 }
 
 function InlineSlotText({ text }: { text: string }) {
-  return <>{documentTextToSegments(text).map((segment, index) => segment.kind === 'text' ? segment.text : <span key={`${segment.key}-${index}`} className="mx-0.5 inline-flex select-none items-center rounded-md border border-emerald-300 bg-emerald-100 px-1.5 py-0 align-baseline text-xs font-medium text-emerald-900">{segment.key}</span>)}</>
+  return <>{documentTextToSegments(text).map((segment, index) => segment.kind === 'text' ? segment.text : <SlotBadge key={`${segment.key}-${index}`} slotKey={segment.key} />)}</>
 }
 
 function DiagnosticNotes({ notes }: { notes?: string[] }) {

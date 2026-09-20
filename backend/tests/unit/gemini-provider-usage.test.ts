@@ -149,6 +149,7 @@ describe("GeminiTextGenerationClient.complete", () => {
       outputTokens: 4,
       totalTokens: 16,
       cachedInputTokens: 1,
+      cacheAccounting: { state: "reported", readInputTokens: 1 },
       quality: "actual",
     });
   });
@@ -161,6 +162,52 @@ describe("GeminiTextGenerationClient.complete", () => {
     const result = await new GeminiTextGenerationClient(chatConfig).complete({ prompt: "Hi" });
 
     expect(result.usage).toBeUndefined();
+  });
+
+  it("renders a supported implicit-cache request ordinarily and preserves the exact system prompt", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse({ candidates: [{ content: { parts: [{ text: "Hi" }] } }] }),
+    );
+    const client = new GeminiTextGenerationClient({ ...chatConfig, model: "gemini-2.5-flash" });
+
+    await client.complete({
+      prompt: "current question",
+      systemPrompt: "stable instructions\ndynamic steering",
+      reusableInputBoundary: { stableSystemPrefix: "stable instructions", dynamicSystemSuffix: "\ndynamic steering" },
+    });
+
+    const body = JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string);
+    expect(body.systemInstruction.parts).toEqual([{ text: "stable instructions\ndynamic steering" }]);
+    expect(JSON.stringify(body)).not.toContain("cache_control");
+    expect(JSON.stringify(body)).not.toContain("cachedContent");
+  });
+
+  it("keeps an unsupported same-family model and invalid boundary ordinary", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse({ candidates: [{ content: { parts: [{ text: "Hi" }] } }] }),
+    );
+    const client = new GeminiTextGenerationClient({ ...chatConfig, model: "gemini-test" });
+
+    await client.complete({
+      prompt: "current question",
+      systemPrompt: "ordinary",
+      reusableInputBoundary: { stableSystemPrefix: "different", dynamicSystemSuffix: "ordinary" },
+    });
+
+    expect(JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string).systemInstruction.parts).toEqual([{ text: "ordinary" }]);
+  });
+
+  it("records reported zero cache reads and leaves cache writes unknown", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse({
+        candidates: [{ content: { parts: [{ text: "Hi" }] } }],
+        usageMetadata: { promptTokenCount: 12, candidatesTokenCount: 4, totalTokenCount: 16, cachedContentTokenCount: 0 },
+      }),
+    );
+
+    const result = await new GeminiTextGenerationClient(chatConfig).complete({ prompt: "Hi" });
+
+    expect(result.usage?.cacheAccounting).toEqual({ state: "reported", readInputTokens: 0 });
   });
 });
 

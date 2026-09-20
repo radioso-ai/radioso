@@ -3,6 +3,7 @@ import {
   type EmbeddingClientOptions,
   type EmbeddingResult,
   type LlmCapabilityConfig,
+  type ProviderCacheCapability,
   type ProviderUsage,
   type TextGenerationClient,
   type TextGenerationRequest,
@@ -13,10 +14,25 @@ import { readProviderErrorBody } from "./providerErrors.js";
 import { streamWithUsage } from "./providerStreaming.js";
 import { EMBEDDING_REQUEST_TIMEOUT_MS, runProviderRequestWithTimeout } from "./providerTimeouts.js";
 import { parseSseEvents } from "./sse.js";
+import { normalizeCacheAccounting, reusableInputBoundaryMatchesSystemPrompt } from "./inputTokenCaching.js";
 
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
 
-const buildGenerateBody = (input: {
+const supportsImplicitPromptCaching = (model: string): boolean => /^gemini-(?:2\.|3\.)/.test(model);
+
+const geminiCacheCapability = (model: string): ProviderCacheCapability =>
+  supportsImplicitPromptCaching(model) ? "implicit" : "unsupported";
+
+const renderGeminiSystem = (
+  config: LlmCapabilityConfig,
+  input: Pick<TextGenerationRequest, "systemPrompt" | "reusableInputBoundary">,
+): string | undefined =>
+  supportsImplicitPromptCaching(config.model)
+  && reusableInputBoundaryMatchesSystemPrompt(input.reusableInputBoundary, input.systemPrompt)
+    ? `${input.reusableInputBoundary.stableSystemPrefix}${input.reusableInputBoundary.dynamicSystemSuffix}`
+    : input.systemPrompt;
+
+const buildGenerateBody = (config: LlmCapabilityConfig, input: {
   prompt: string;
   systemPrompt?: string;
   temperature?: number;
@@ -29,10 +45,10 @@ const buildGenerateBody = (input: {
       parts: [{ text: input.prompt }],
     },
   ],
-  ...(input.systemPrompt
+  ...(renderGeminiSystem(config, input)
     ? {
         systemInstruction: {
-          parts: [{ text: input.systemPrompt }],
+          parts: [{ text: renderGeminiSystem(config, input) }],
         },
       }
     : {}),
@@ -70,6 +86,7 @@ const extractGeminiUsage = (payload: unknown): ProviderUsage | undefined => {
     outputTokens: usage.candidatesTokenCount,
     totalTokens: usage.totalTokenCount,
     cachedInputTokens: usage.cachedContentTokenCount,
+    cacheAccounting: normalizeCacheAccounting({ readInputTokens: usage.cachedContentTokenCount }),
     quality: "actual",
   };
 };
@@ -82,6 +99,7 @@ export class GeminiTextGenerationClient implements TextGenerationClient {
       capability: config.capability,
       provider: config.provider,
       model: config.model,
+      cacheCapability: geminiCacheCapability(config.model),
     };
   }
 
@@ -93,7 +111,7 @@ export class GeminiTextGenerationClient implements TextGenerationClient {
         "Content-Type": "application/json",
       },
       signal: input.signal,
-      body: JSON.stringify(buildGenerateBody(input)),
+      body: JSON.stringify(buildGenerateBody(this.config, input)),
     };
     // Invoking fetch is the dispatch. Record only after the transport has been handed
     // the request, and not at all when an aborted signal makes it reject unsent.
@@ -125,7 +143,7 @@ export class GeminiTextGenerationClient implements TextGenerationClient {
             "Content-Type": "application/json",
           },
           signal: input.signal,
-          body: JSON.stringify(buildGenerateBody(input)),
+          body: JSON.stringify(buildGenerateBody(config, input)),
         },
       );
       if (input.dispatchRecord && !input.dispatchRecord.dispatched && !input.signal?.aborted) {

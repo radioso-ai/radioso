@@ -27,6 +27,9 @@ const responseFormat = {
 const jsonResponse = (payload: unknown) =>
   ({ ok: true, async json() { return payload; } }) as unknown as Response;
 
+const errorResponse = (status: number, payload: unknown) =>
+  ({ ok: false, status, async text() { return JSON.stringify(payload); } }) as unknown as Response;
+
 const sseResponse = (events: string[]) => {
   const encoder = new TextEncoder();
   return {
@@ -137,6 +140,7 @@ describe("ClaudeTextGenerationClient.complete", () => {
       outputTokens: 6,
       totalTokens: 26,
       cachedInputTokens: 4,
+      cacheAccounting: { state: "reported", readInputTokens: 4 },
       providerRequestId: "msg-1",
       quality: "actual",
     });
@@ -151,9 +155,104 @@ describe("ClaudeTextGenerationClient.complete", () => {
 
     expect(result.usage).toBeUndefined();
   });
+
+  it("puts a supported model's exact stable prefix in a native checkpointed system block", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse({ content: [{ type: "text", text: "Hi" }] }),
+    );
+    const client = new ClaudeTextGenerationClient({ ...chatConfig, model: "claude-sonnet-4-20250514" });
+
+    await client.complete({
+      prompt: "current question",
+      systemPrompt: "stable instructions\ndynamic steering",
+      reusableInputBoundary: { stableSystemPrefix: "stable instructions", dynamicSystemSuffix: "\ndynamic steering" },
+    });
+
+    expect(JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string)).toMatchObject({
+      system: [
+        { type: "text", text: "stable instructions", cache_control: { type: "ephemeral" } },
+        { type: "text", text: "\ndynamic steering" },
+      ],
+    });
+  });
+
+  it("keeps an unsupported same-family model and invalid boundary as ordinary system text", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse({ content: [{ type: "text", text: "Hi" }] }),
+    );
+    const client = new ClaudeTextGenerationClient({ ...chatConfig, model: "claude-test" });
+
+    await client.complete({
+      prompt: "current question",
+      systemPrompt: "ordinary",
+      reusableInputBoundary: { stableSystemPrefix: "different", dynamicSystemSuffix: "ordinary" },
+    });
+
+    expect(JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string).system).toBe("ordinary");
+  });
+
+  it("normalizes cache reads and writes independently without inventing missing values", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse({
+        content: [{ type: "text", text: "Hi" }],
+        usage: { input_tokens: 20, output_tokens: 6, cache_read_input_tokens: 0, cache_creation_input_tokens: 3 },
+      }),
+    );
+
+    const result = await new ClaudeTextGenerationClient(chatConfig).complete({ prompt: "Hi" });
+
+    expect(result.usage?.cacheAccounting).toEqual({ state: "reported", readInputTokens: 0, writeInputTokens: 3 });
+  });
+
+  it("does not retry a fabricated cache-specific error code", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValue(errorResponse(400, { error: { type: "cache_control_invalid" } }));
+    const client = new ClaudeTextGenerationClient({ ...chatConfig, model: "claude-sonnet-4-20250514" });
+
+    await expect(client.complete({
+      prompt: "current question",
+      systemPrompt: "stable",
+      reusableInputBoundary: { stableSystemPrefix: "stable", dynamicSystemSuffix: "" },
+    })).rejects.toMatchObject({ status: 400 });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not retry an unclassified provider failure", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValue(errorResponse(400, { error: { type: "invalid_request_error" } }));
+    const client = new ClaudeTextGenerationClient({ ...chatConfig, model: "claude-sonnet-4-20250514" });
+
+    await expect(client.complete({
+      prompt: "current question",
+      systemPrompt: "stable",
+      reusableInputBoundary: { stableSystemPrefix: "stable", dynamicSystemSuffix: "" },
+    })).rejects.toMatchObject({ status: 400 });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("ClaudeTextGenerationClient.stream", () => {
+  it("does not retry a generic validation rejection before streamed text", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValue(errorResponse(400, { error: { type: "invalid_request_error" } }));
+    const client = new ClaudeTextGenerationClient({ ...chatConfig, model: "claude-sonnet-4-20250514" });
+
+    const { textStream } = client.stream({
+      prompt: "current question",
+      systemPrompt: "stable",
+      reusableInputBoundary: { stableSystemPrefix: "stable", dynamicSystemSuffix: "" },
+    });
+    await expect(async () => {
+      for await (const _chunk of textStream) {
+        // drain
+      }
+    }).rejects.toMatchObject({ status: 400 });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("records a streamed request only after the transport has been invoked", async () => {
     const { dispatchRecord, assignmentCount } = recordingDispatchRecord();
     vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
@@ -250,6 +349,7 @@ describe("ClaudeTextGenerationClient.stream", () => {
       outputTokens: 8,
       totalTokens: 23,
       cachedInputTokens: 2,
+      cacheAccounting: { state: "reported", readInputTokens: 2 },
       providerRequestId: "msg-3",
       quality: "actual",
     });

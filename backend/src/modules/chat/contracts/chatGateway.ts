@@ -1,6 +1,10 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import type { ModelCallUsageContext } from "../../../shared/domain/modelCallUsageContext.js";
-import type { JsonSchemaResponseFormat, ReasoningEffort } from "../../../shared/infra/llm/providerTypes.js";
+import type {
+  JsonSchemaResponseFormat,
+  ReasoningEffort,
+  ReusableInputBoundary,
+} from "../../../shared/infra/llm/providerTypes.js";
 import type { LlmCapabilityResolveInput } from "../../../shared/infra/llm/workspaceContext.js";
 
 export type ChatGatewayUsageContext = ModelCallUsageContext;
@@ -16,6 +20,7 @@ export interface ChatGatewayInput {
   history: MessageRecord[];
   prompt: string;
   systemPrompt?: string;
+  reusableInputBoundary?: ReusableInputBoundary;
   /**
    * When set, the gateway resolves the chat model for this workspace
    * (with optional agent-level override) before delegating. When omitted,

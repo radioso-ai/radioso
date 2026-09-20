@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 
 import type { LlmProviderName } from "../../infra/llm/providerTypes.js";
+import type { CacheAccounting } from "../../infra/llm/providerTypes.js";
 
 export const MAX_MODEL_CALL_TRACE_RECORDS = 64;
 
@@ -18,6 +19,7 @@ export interface ModelCallTraceRecord {
   // model that does not report reasoning is not read as one that reasoned for free.
   reasoningTokens?: number;
   cachedInputTokens?: number;
+  cacheAccounting?: CacheAccounting;
 }
 
 interface ModelCallTraceInput extends Omit<ModelCallTraceRecord, "id" | "operation" | "model"> {
@@ -93,6 +95,7 @@ export class ModelCallTraceCollector {
       ...(input.cachedInputTokens === undefined
         ? {}
         : { cachedInputTokens: finiteNonNegative(input.cachedInputTokens) }),
+      ...(input.cacheAccounting === undefined ? {} : { cacheAccounting: input.cacheAccounting }),
     });
   }
 }

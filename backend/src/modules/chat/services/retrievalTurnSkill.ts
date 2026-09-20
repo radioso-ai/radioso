@@ -321,6 +321,7 @@ export class RetrievalAnswerComposer {
     const groundedPrompt = this.composeGroundedAnswerPrompt(session, knownAssessment);
     return {
       systemPrompt: groundedPrompt.systemPrompt,
+      reusableInputBoundary: groundedPrompt.reusableInputBoundary,
       prompt: groundedPrompt.conversationContextPrompt
         ? `${prompt}\n\n${groundedPrompt.conversationContextPrompt}`
         : prompt,
@@ -365,6 +366,7 @@ export class RetrievalAnswerComposer {
       query,
       history: session.history,
       systemPrompt: groundedPrompt.systemPrompt,
+      reusableInputBoundary: groundedPrompt.reusableInputBoundary,
       prompt: groundedPrompt.prompt,
       workspaceContext: this.support.buildChatWorkspaceContext(session),
       usageContext: this.support.buildChatUsageContext(session, accountId, attemptKey),
@@ -659,6 +661,7 @@ export class RetrievalAnswerComposer {
         query,
         history: session.history,
         systemPrompt: prompt.systemPrompt,
+        reusableInputBoundary: prompt.reusableInputBoundary,
         prompt: prompt.prompt,
         workspaceContext: this.support.buildChatWorkspaceContext(session),
         usageContext: this.support.buildChatUsageContext(session, accountId, "stream_grounded"),

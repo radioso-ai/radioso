@@ -7,9 +7,10 @@ import { AGENT_STEP_MAX_INPUT_TOKENS } from "../../src/shared/agent-runtime/inde
 import { ModelInferencePipelineService } from "../../src/shared/infra/llm/modelInferencePipeline.js";
 import { captureModelCallTrace } from "../../src/shared/observability/tracing/modelCallTraceContext.js";
 import { streamWithUsage } from "../../src/shared/infra/llm/providerStreaming.js";
-import type { TextGenerationClient } from "../../src/shared/infra/llm/providerTypes.js";
+import type { TextGenerationClient, TextGenerationRequest } from "../../src/shared/infra/llm/providerTypes.js";
 import type { ModelUsageEvent, UsageEventRecorder } from "../../src/shared/domain/usageEventRecorder.js";
 import { initializeTracing, shutdownTracing } from "../../src/shared/observability/tracing/index.js";
+import { MetricsRegistry } from "../../src/shared/observability/metrics/metricsRegistry.js";
 import { streamResult, textResult } from "../support/llmStubs.js";
 
 const usageContext = {
@@ -423,6 +424,7 @@ describe("ModelInferencePipelineService", () => {
           outputTokens: 40,
           reasoningTokens: 12,
           cachedInputTokens: 64,
+          cacheAccounting: { state: "reported", readInputTokens: 64 },
           totalTokens: 140,
           quality: "actual",
         });
@@ -443,6 +445,7 @@ describe("ModelInferencePipelineService", () => {
       outputTokens: 40,
       reasoningTokens: 12,
       cachedInputTokens: 64,
+      cacheAccounting: { state: "reported", readInputTokens: 64 },
     });
   });
 
@@ -572,5 +575,37 @@ describe("ModelInferencePipelineService", () => {
       usageQuality: "actual",
     });
     expect(JSON.stringify(events)).not.toContain("PRIVATE");
+  });
+
+  it("preserves an exact reusable boundary and records first adapter text only after visible text", async () => {
+    const requests: TextGenerationRequest[] = [];
+    const metrics = new MetricsRegistry();
+    const pipeline = new ModelInferencePipelineService({
+      metadata: { capability: "chat", provider: "claude", model: "private-model", cacheCapability: "explicit_checkpoint" },
+      complete: vi.fn(),
+      stream(input) {
+        requests.push(input);
+        return streamResult(["", "visible"]);
+      },
+    }, undefined, metrics);
+
+    const result = pipeline.stream({
+      operation: usageContext,
+      systemPrompt: "stabledynamic",
+      reusableInputBoundary: { stableSystemPrefix: "stable", dynamicSystemSuffix: "dynamic" },
+      prompt: "private prompt",
+    });
+    for await (const _chunk of result.textStream) {
+      // drain
+    }
+
+    expect(requests[0]?.reusableInputBoundary).toEqual({ stableSystemPrefix: "stable", dynamicSystemSuffix: "dynamic" });
+    const rendered = metrics.renderPrometheus();
+    expect(rendered).toContain('timing_boundary="adapter_first_text"');
+    expect(rendered).toContain('timing_boundary="provider_invocation"');
+    expect(rendered).toContain("radioso_llm_input_cache_requests_total");
+    expect(rendered).toContain("} 1");
+    expect(rendered).not.toContain("private-model");
+    expect(rendered).not.toContain("private prompt");
   });
 });

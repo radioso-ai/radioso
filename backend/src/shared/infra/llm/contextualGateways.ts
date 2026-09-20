@@ -28,6 +28,7 @@ import {
 } from "../../../modules/retrieval/public.js";
 import { createOpenAIClient } from "./openaiProvider.js";
 import type { AppLogger } from "../../observability/logger.js";
+import type { MetricsRegistry } from "../../observability/metrics/metricsRegistry.js";
 import type { UsageEventRecorder } from "../../domain/usageEventRecorder.js";
 import type { ModelCallUsageContext } from "../../domain/modelCallUsageContext.js";
 import type { TurnPlanGatewayFactory, TurnPlanInferenceClient } from "./turnPlanGateway.js";
@@ -57,8 +58,9 @@ const resolveClient = async (
 const toInferencePipeline = (
   client: TextGenerationClient,
   recorder?: UsageEventRecorder,
+  metrics?: Pick<MetricsRegistry, "incrementCounter" | "observeHistogram"> | null,
 ): ModelInferencePipeline =>
-  new ModelInferencePipelineService(client, recorder);
+  new ModelInferencePipelineService(client, recorder, metrics);
 
 export interface DirectiveMatchGatewayFactory {
   create(input: {
@@ -196,6 +198,7 @@ export class ContextualChatGateway implements ChatGateway {
     private readonly deps: ContextualGatewayDependencies,
     private readonly fallback: ChatGateway,
     private readonly usageEventRecorder?: UsageEventRecorder,
+    private readonly metrics?: Pick<MetricsRegistry, "incrementCounter" | "observeHistogram"> | null,
   ) {
     this.cache = deps.clientCache ?? new TextGenerationClientCache();
   }
@@ -206,7 +209,7 @@ export class ContextualChatGateway implements ChatGateway {
       return this.fallback.answer(input);
     }
     const client = await resolveClient(this.cache, this.deps.resolver, "chat", ctx);
-    return new ModelChatGateway(toInferencePipeline(client, this.usageEventRecorder)).answer(input);
+    return new ModelChatGateway(toInferencePipeline(client, this.usageEventRecorder, this.metrics)).answer(input);
   }
 
   async *streamAnswer(input: ChatGatewayInput): AsyncIterable<string> {
@@ -216,7 +219,7 @@ export class ContextualChatGateway implements ChatGateway {
       return;
     }
     const client = await resolveClient(this.cache, this.deps.resolver, "chat", ctx);
-    yield* new ModelChatGateway(toInferencePipeline(client, this.usageEventRecorder)).streamAnswer(input);
+    yield* new ModelChatGateway(toInferencePipeline(client, this.usageEventRecorder, this.metrics)).streamAnswer(input);
   }
 }
 

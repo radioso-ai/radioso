@@ -7,6 +7,8 @@ import {
 import { renderSteeringBlock } from "../../../shared/infra/prompts/steeringPromptRenderer.js";
 import { GENERATION_SURFACE } from "../../../shared/domain/generationSurface.js";
 import { steeringForSurface } from "../../../shared/domain/steeringRule.js";
+import { createReusableInputBoundary } from "../../../shared/infra/llm/inputTokenCaching.js";
+import type { ReusableInputBoundary } from "../../../shared/infra/llm/providerTypes.js";
 
 interface GroundedAnswerSystemPromptInput {
   baseSystemPrompt: string;
@@ -29,6 +31,7 @@ interface GroundedAnswerSystemPromptInput {
  */
 interface GroundedAnswerPromptResult {
   systemPrompt: string;
+  reusableInputBoundary?: ReusableInputBoundary;
   /**
    * Conversation-derived material for the user/data role. It must never be
    * concatenated into systemPrompt because visitor turns and rolling summaries
@@ -90,13 +93,12 @@ export const composeGroundedAnswerSystemPrompt = (
     envelopeBlock,
   );
   if (!suggestionsExpected) {
-    return {
-      systemPrompt: withEnvelope,
+    return resultWithReusablePrefix(base, withEnvelope, {
       conversationContextPrompt: input.conversationSummary?.trim() || alternatives
         ? renderConversationContextPrompt(input)
         : "",
       suggestionsExpected: false,
-    };
+    });
   }
 
   // Rules addressed to the follow-up question generator render inside its own block,
@@ -109,12 +111,27 @@ export const composeGroundedAnswerSystemPrompt = (
     steering_block: suggestionSteering ? `${suggestionSteering}\n\n` : "",
   });
 
-  return {
-    systemPrompt: joinBlocks(withEnvelope, suggestionBlock),
+  return resultWithReusablePrefix(base, joinBlocks(withEnvelope, suggestionBlock), {
     conversationContextPrompt: renderConversationContextPrompt(input),
     suggestionsExpected: true,
-  };
+  });
 };
+
+const resultWithReusablePrefix = (
+  stableSystemPrefix: string,
+  systemPrompt: string,
+  dynamic: Omit<GroundedAnswerPromptResult, "systemPrompt" | "reusableInputBoundary">,
+): GroundedAnswerPromptResult => ({
+  systemPrompt,
+  ...dynamic,
+  ...(() => {
+    const reusableInputBoundary = createReusableInputBoundary({
+    stableSystemPrefix,
+    dynamicSystemSuffix: systemPrompt.slice(stableSystemPrefix.length),
+    });
+    return reusableInputBoundary ? { reusableInputBoundary } : {};
+  })(),
+});
 
 const renderConversationContextPrompt = (input: GroundedAnswerSystemPromptInput): string =>
   renderPromptTemplate("chat/grounded-answer-conversation-context.md", {

@@ -278,6 +278,98 @@ describe("LlmProviderRegistry", () => {
     });
   });
 
+  it("forwards the configured metrics sink to created inference pipelines", async () => {
+    const metrics = {
+      incrementCounter: vi.fn(),
+      observeHistogram: vi.fn(),
+    };
+    vi.stubGlobal("fetch", async () => Response.json({
+      choices: [{ message: { content: "hello" } }],
+      usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+    }));
+    const registry = new LlmProviderRegistry(resolveLlmConfig({ OPENAI_API_KEY: "test-key" }), undefined, { metrics });
+
+    await registry.createChatInferencePipeline().complete({
+      prompt: "hello",
+      operation: {
+        workspaceId: "ws-1",
+        requestId: "req-1",
+        surface: "assistant",
+        operation: "answer",
+        attemptKey: "answer:0",
+      },
+    });
+
+    expect(metrics.incrementCounter).toHaveBeenCalledWith(
+      "llm_input_cache_requests_total",
+      expect.any(Object),
+    );
+    expect(metrics.observeHistogram).toHaveBeenCalledWith(
+      "llm_inference_timing_duration_ms",
+      expect.any(Object),
+    );
+  });
+
+  it("forwards metrics through the workspace-resolved chat gateway for answers and streams", async () => {
+    const metrics = {
+      incrementCounter: vi.fn(),
+      observeHistogram: vi.fn(),
+    };
+    const resolver = {
+      resolve: vi.fn(async () => ({
+        capability: "chat" as const,
+        provider: "openai" as const,
+        model: "gpt-5.4-mini",
+        apiKey: "workspace-openai-key",
+      })),
+    };
+    vi.stubGlobal("fetch", async (_url: string | URL, init?: RequestInit) => {
+      if (typeof init?.body !== "string") throw new Error("expected string request body");
+      const request = JSON.parse(init.body) as { stream?: boolean };
+      if (request.stream) {
+        return new Response([
+          'data: {"id":"stream-1","choices":[{"delta":{"content":"hello"},"finish_reason":null}]}',
+          '',
+          'data: {"id":"stream-1","choices":[],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2,"prompt_tokens_details":{"cached_tokens":1}}}',
+          '',
+          "data: [DONE]",
+          '',
+        ].join("\n"), { headers: { "content-type": "text/event-stream" } });
+      }
+      return Response.json({
+        choices: [{ message: { content: "hello" } }],
+        usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, prompt_tokens_details: { cached_tokens: 1 } },
+      });
+    });
+    const registry = new LlmProviderRegistry(resolveLlmConfig({}), undefined, { resolver, metrics });
+    const gateway = registry.createChatGateway();
+    const input = {
+      query: "hello",
+      history: [],
+      prompt: "hello",
+      workspaceContext: { workspaceId: "ws-1" },
+      usageContext: {
+        workspaceId: "ws-1",
+        requestId: "req-1",
+        surface: "assistant" as const,
+        operation: "answer",
+        attemptKey: "answer:0",
+      },
+    };
+
+    await gateway.answer(input);
+    for await (const _chunk of gateway.streamAnswer(input)) {
+      // Consume the complete provider stream so terminal cache accounting runs.
+    }
+
+    expect(resolver.resolve).toHaveBeenCalledWith("chat", expect.objectContaining({ workspaceId: "ws-1" }));
+    expect(metrics.incrementCounter).toHaveBeenCalledWith(
+      "llm_input_cache_requests_total",
+      expect.any(Object),
+    );
+    expect(metrics.incrementCounter).toHaveBeenCalledTimes(2);
+  });
+
 
   it("uses a workspace credential for embedding inference when the environment has no key", async () => {
     const resolver = {

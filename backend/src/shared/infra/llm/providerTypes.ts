@@ -12,6 +12,8 @@ export interface LlmProviderMetadata {
   capability: LlmCapabilityName;
   provider: LlmProviderName;
   model: string;
+  /** Adapter-local cache support, exposed only as a bounded telemetry label. */
+  cacheCapability?: ProviderCacheCapability;
 }
 
 export type ReasoningEffort = "none" | "minimal" | "low" | "medium" | "high";
@@ -32,9 +34,29 @@ export interface ProviderDispatchRecord {
   dispatched: boolean;
 }
 
+/**
+ * A single, exact breakpoint in the system message. The prefix is eligible for
+ * provider reuse; the suffix remains request-specific. Product code owns where
+ * the breakpoint sits and providers only render it.
+ */
+export interface ReusableInputBoundary {
+  stableSystemPrefix: string;
+  dynamicSystemSuffix: string;
+}
+
+export type ProviderCacheCapability = "unsupported" | "implicit" | "explicit_checkpoint";
+
+/** Provider evidence only: omitted values are unknown, never inferred as zero. */
+export interface CacheAccounting {
+  state: "reported" | "unknown";
+  readInputTokens?: number;
+  writeInputTokens?: number;
+}
+
 export interface TextGenerationRequest {
   prompt: string;
   systemPrompt?: string;
+  reusableInputBoundary?: ReusableInputBoundary;
   temperature?: number;
   maxOutputTokens?: number;
   // Provider-neutral hint for reasoning models. Currently honored only by the
@@ -65,6 +87,7 @@ export interface ProviderUsage {
   outputTokens?: number;
   totalTokens?: number;
   cachedInputTokens?: number;
+  cacheAccounting?: CacheAccounting;
   reasoningTokens?: number;
   providerRequestId?: string;
   quality: UsageQuality;

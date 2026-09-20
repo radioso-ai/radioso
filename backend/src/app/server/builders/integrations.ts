@@ -24,6 +24,7 @@ import {
 } from "../../../modules/customerEmail/public.js";
 import { resolveLlmConfig } from "../../../shared/infra/llm/providerConfig.js";
 import { LlmProviderRegistry } from "../../../shared/infra/llm/providerRegistry.js";
+import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import { AgentSkillRepository } from "../../../modules/agentSkills/public.js";
 import { type AppLogger } from "../../../shared/observability/logger.js";
 import type { ManagedModelPolicy } from "../../../shared/domain/managedModelPolicy.js";
@@ -135,9 +136,15 @@ export const buildLlmCapabilityResolver = (input: {
 export const buildLlmRegistry = (
   env: Env,
   logger: AppLogger,
-  options: { resolver?: LlmCapabilityResolver } = {},
+  options: {
+    resolver?: LlmCapabilityResolver;
+    metricsRegistry?: Pick<MetricsRegistry, "incrementCounter" | "observeHistogram"> | null;
+  } = {},
 ): LlmProviderRegistry => {
-  const llmRegistry = new LlmProviderRegistry(resolveLlmConfig(env), logger, { resolver: options.resolver });
+  const llmRegistry = new LlmProviderRegistry(resolveLlmConfig(env), logger, {
+    resolver: options.resolver,
+    metrics: options.metricsRegistry,
+  });
   logger.info({ llmProviders: llmRegistry.describe() }, "Resolved LLM providers");
   return llmRegistry;
 };

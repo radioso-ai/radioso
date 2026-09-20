@@ -9,17 +9,17 @@ import {
   type ModelToolCallRequest,
   type ModelTranscriptEntry,
 } from "../../src/shared/agent-runtime/index.js";
-import type { TextGenerationClient } from "../../src/shared/infra/llm/providerTypes.js";
+import type { TextGenerationClient, TextGenerationRequest } from "../../src/shared/infra/llm/providerTypes.js";
 import { streamResult, textResult } from "../support/llmStubs.js";
 
 const stubTextClient = (
   responder: (input: { prompt: string; systemPrompt?: string }) => string | Promise<string>,
-): TextGenerationClient & { calls: Array<{ prompt: string; systemPrompt?: string }> } => {
-  const calls: Array<{ prompt: string; systemPrompt?: string }> = [];
+): TextGenerationClient & { calls: TextGenerationRequest[] } => {
+  const calls: TextGenerationRequest[] = [];
   return {
     metadata: { capability: "chat", provider: "openai", model: "test-model" },
     async complete(input) {
-      calls.push({ prompt: input.prompt, systemPrompt: input.systemPrompt });
+      calls.push(input);
       return textResult(await responder(input));
     },
     stream() {
@@ -125,6 +125,21 @@ describe("TextRoutedToolCallingGateway.request", () => {
     expect(sp).toContain("semantic_search");
     expect(sp).toContain("Find chunks similar to a query");
     expect(sp).toContain("(query: string)");
+  });
+
+  it("marks its exact stable system instructions and supplied-order tool catalog reusable", async () => {
+    const client = stubTextClient(() => '{"text":"ok","tool_calls":[]}');
+    const gateway = new TextRoutedToolCallingGateway(client);
+    await gateway.request(buildRequest({ transcript: [{ role: "user", content: "different current message" }] }));
+
+    const request = client.calls[0];
+    expect(request.reusableInputBoundary).toEqual({
+      stableSystemPrefix: request.systemPrompt,
+      dynamicSystemSuffix: "",
+    });
+    expect(request.reusableInputBoundary?.stableSystemPrefix).toContain("semantic_search");
+    expect(request.reusableInputBoundary?.stableSystemPrefix).toContain("you are an agent");
+    expect(request.prompt).toContain("different current message");
   });
 
   it("spells out a structured input instead of calling it an object", async () => {

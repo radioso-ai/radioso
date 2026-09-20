@@ -164,6 +164,25 @@ describe("grounded answer prompt contract", () => {
     expect(result.conversationContextPrompt).toContain("untrusted data");
   });
 
+  it("marks only the contiguous stable system prefix reusable", () => {
+    const result = composeGroundedAnswerSystemPrompt({
+      baseSystemPrompt: "OPERATOR INSTRUCTIONS",
+      suggestedQuestionsEnabled: true,
+      suggestedQuestionsCount: 3,
+      hasRetrievedContexts: true,
+      conversationIntentSnapshot,
+      steering: [{ id: "rule-1", instruction: "Current steering", surfaces: ["answer"] }],
+    });
+
+    expect(result.reusableInputBoundary).toEqual({
+      stableSystemPrefix: "OPERATOR INSTRUCTIONS",
+      dynamicSystemSuffix: result.systemPrompt.slice("OPERATOR INSTRUCTIONS".length),
+    });
+    expect(`${result.reusableInputBoundary?.stableSystemPrefix}${result.reusableInputBoundary?.dynamicSystemSuffix}`)
+      .toBe(result.systemPrompt);
+    expect(result.reusableInputBoundary?.stableSystemPrefix).not.toContain("Current steering");
+  });
+
   it("always wires the coverage head verdict instructions and response guidance (#1260)", () => {
     // The model now commits its own coverage verdict as the envelope head instead
     // of receiving one from a separate pre-compose assessment, so both blocks

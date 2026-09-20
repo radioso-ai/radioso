@@ -1,12 +1,19 @@
 'use client'
 
-import { useRef, useState, type ComponentType, type JSX } from 'react'
-import { AlertTriangle, BadgeCheck, ChevronDown, CornerUpRight, Flag, Gavel, Plus, Send, Sparkles, Trash2, Workflow, Zap, type LucideIcon } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState, type JSX } from 'react'
+import { AlertTriangle, ChevronDown, Plus, Trash2 } from 'lucide-react'
 import {
   $createTextNode,
   $getNodeByKey,
   $getRoot,
+  $getSelection,
+  $isNodeSelection,
+  COMMAND_PRIORITY_LOW,
   DecoratorNode,
+  KEY_BACKSPACE_COMMAND,
+  KEY_DELETE_COMMAND,
+  KEY_ENTER_COMMAND,
+  mergeRegister,
   type LexicalNode,
   type NodeKey,
   type SerializedLexicalNode,
@@ -14,6 +21,7 @@ import {
 } from 'lexical'
 import { $isHeadingNode } from '@lexical/rich-text'
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext'
+import { useLexicalNodeSelection } from '@lexical/react/useLexicalNodeSelection'
 
 import {
   DropdownMenu,
@@ -54,13 +62,13 @@ import { useRoutineVariables } from '@/components/dashboard/settings/routine-var
 // counterpart to a `handoff` chip, which escalates).
 export type RoutineChipKind = 'variable' | 'skill' | 'action' | 'handoff' | 'step' | 'condition' | 'end' | 'approval' | 'decision'
 
-export type RoutineFieldGuardValue = string | number | boolean
+type RoutineFieldGuardValue = string | number | boolean
 
 // A branch target an approval option can route to, surfaced in the approval dialog.
-export type ApprovalChipTarget = { id: string; label: string }
-export type ApprovalChipState = { captureKey: string; options: ApprovalDocOption[] }
+type ApprovalChipTarget = { id: string; label: string }
+type ApprovalChipState = { captureKey: string; options: ApprovalDocOption[] }
 
-export type SerializedChipNode = Spread<
+type SerializedChipNode = Spread<
   {
     chipKind: RoutineChipKind
     refId: string
@@ -79,48 +87,161 @@ export type SerializedChipNode = Spread<
   SerializedLexicalNode
 >
 
-const KIND_META: Record<RoutineChipKind, { className: string; icon: LucideIcon | null }> = {
-  variable: { className: 'border-amber-300 bg-amber-100 text-amber-900', icon: null },
-  skill: { className: 'border-emerald-300 bg-emerald-100 text-emerald-900', icon: Zap },
-  action: { className: 'border-cyan-300 bg-cyan-100 text-cyan-900', icon: Send },
-  handoff: { className: 'border-rose-300 bg-rose-100 text-rose-900', icon: CornerUpRight },
-  step: { className: 'border-sky-300 bg-sky-100 text-sky-900', icon: CornerUpRight },
-  condition: { className: 'border-indigo-300 bg-indigo-100 text-indigo-900', icon: BadgeCheck },
-  end: { className: 'border-slate-300 bg-slate-100 text-slate-700', icon: Flag },
-  approval: { className: 'border-violet-300 bg-violet-100 text-violet-900', icon: Gavel },
-  decision: { className: 'border-violet-300 bg-violet-100 text-violet-900', icon: Gavel },
+// A chip reads as text with a quiet backing, not a coloured badge — kind identity comes from
+// the "@" prefix and the name, the same way every kind is triggered from the same "@" menu.
+// The type suffix and the dropdown caret are extra detail, shown only once the chip is
+// selected or hovered so the sentence stays quiet at rest.
+// `group` lets the detail spans below reveal on CSS `:hover` alone, with no mouseenter/leave
+// state of our own; `alwaysShowDetails` (driven by Lexical's own selected state) overrides
+// that for a chip selected by click or keyboard, which the pointer may not be over at all.
+const CHIP_WRAPPER_CLASS = 'group mx-0.5 rounded-sm bg-muted/50 px-1 py-0 align-baseline text-foreground outline-none cursor-pointer hover:bg-muted'
+const CHIP_SELECTED_CLASS = 'ring-1 ring-ring bg-accent text-accent-foreground'
+
+// Strips a label's own leading "@" (only `variable` labels carry one, from how the typeahead
+// seeds them) so the chip never doubles it up against the one this component always renders.
+function stripAtPrefix(label: string): string {
+  return label.startsWith('@') ? label.slice(1) : label
 }
 
 function ChipBadge({
-  kind,
   label,
   type,
-  className,
-  icon,
   suffix,
+  alwaysShowDetails,
+  showCaret,
 }: {
-  kind: RoutineChipKind
   label: string
   type: RoutineSlotType | null
-  className?: string
-  icon?: LucideIcon | null
   suffix?: string
+  // Detail the reader doesn't need at rest: the type, any extra status text, and the caret
+  // that opens the kind's own menu. Shown on hover via CSS; `alwaysShowDetails` keeps it up
+  // once the chip is selected, independent of where the pointer is.
+  alwaysShowDetails: boolean
+  showCaret?: boolean
 }): JSX.Element {
-  const meta = KIND_META[kind]
-  const Icon: ComponentType<{ className?: string }> | null = icon === undefined ? meta.icon : icon
+  const detailClass = alwaysShowDetails ? 'text-muted-foreground' : 'hidden text-muted-foreground group-hover:inline'
   return (
-    <span
-      className={`inline-flex select-none items-center gap-1 rounded-md border px-1.5 py-0 text-xs font-medium ${className ?? meta.className}`}
-    >
-      {Icon ? <Icon className="h-3 w-3" /> : null}
-      {label}
-      {/* The type is part of the variable's identity, so show it on the chip face —
-          it also drives which exact checks the author can build on the variable. */}
-      {type ? <span className="font-normal opacity-60">· {type}</span> : null}
-      {suffix ? <span className="font-normal opacity-70">· {suffix}</span> : null}
-      {kind === 'variable' ? <ChevronDown className="h-3 w-3 opacity-50" /> : null}
+    <span className="inline-flex select-none items-baseline gap-0.5">
+      <span className="text-muted-foreground">@</span>
+      {stripAtPrefix(label)}
+      {type ? <span className={detailClass}> · {type}</span> : null}
+      {suffix ? <span className={detailClass}> · {suffix}</span> : null}
+      {showCaret ? <ChevronDown className={`h-3 w-3 self-center ${alwaysShowDetails ? 'text-muted-foreground' : 'hidden text-muted-foreground group-hover:inline-block'}`} /> : null}
     </span>
   )
+}
+
+// Wires a chip into Lexical's own selection model — the pattern behind @lexical/react's
+// decorator examples (`useLexicalNodeSelection` + registered commands) — instead of a click
+// target with no selection state of its own. A click marks the node selected, so it renders
+// with a visible selected state and Backspace/Delete/Enter act on it the way they would on
+// any other selected node. Enter (and a double-click, wired at the call site) replace the chip
+// with its raw `@<label>` text and reopen the typeahead at that position, so a mistyped or
+// abandoned edit resolves as ordinary text instead of a broken-looking bound reference.
+function useChipController(nodeKey: NodeKey) {
+  const [editor] = useLexicalComposerContext()
+  const [isSelected, setSelected, clearSelection] = useLexicalNodeSelection(nodeKey)
+
+  const select = useCallback(() => {
+    clearSelection()
+    setSelected(true)
+  }, [clearSelection, setSelected])
+
+  // Same focus hand-off `removeSelected` below needs, for the same reason: this also destroys
+  // the DOM element that a double-click or Enter left focused (the chip's own button), and
+  // doing that before anything is focused elsewhere sends focus to `document.body` — which
+  // reads as leaving the field entirely and closes the row's own editing session out from
+  // under this replacement.
+  const convertToText = useCallback(() => {
+    editor.getRootElement()?.focus()
+    editor.update(() => {
+      const node = $getNodeByKey(nodeKey)
+      if (!$isChipNode(node)) return
+      const raw = stripAtPrefix(node.getLabel())
+      const textNode = $createTextNode(`@${raw}`)
+      node.replace(textNode)
+      textNode.select()
+    })
+  }, [editor, nodeKey])
+
+  // Removing the selected node deletes the very DOM element that currently holds focus (the
+  // chip's own button), and a browser sends focus to `document.body` — not anywhere in
+  // particular — when its focused element disappears; `editor.focus()` does not reliably claim
+  // it back afterward, because it only re-applies the DOM Selection range, and a browser does
+  // not treat setting a Range inside an element as focusing that element. Moving focus to the
+  // content-editable root before the button is actually removed sidesteps the reset entirely —
+  // the button is still in the DOM at this point, so this is an ordinary focus handoff, not a
+  // recovery from one.
+  const removeSelected = useCallback(() => {
+    const node = $getNodeByKey(nodeKey)
+    if (!node) return
+    const parent = node.getParent()
+    const index = node.getIndexWithinParent()
+    editor.getRootElement()?.focus()
+    node.remove()
+    parent?.select(index, index)
+  }, [editor, nodeKey])
+
+  // Reading Lexical's own live selection here — instead of gating on the `isSelected` returned
+  // by the hook above — matters because that value is React state: it only reflects the
+  // editor's true selection once a render has committed and this effect has re-run with a
+  // fresh closure. A key can be dispatched in the gap between `select()` being called and that
+  // render landing (most visibly right after a menu closes and reselects), and Lexical
+  // guarantees `$getSelection()` is current at the moment a command fires regardless of where
+  // React's own render cycle is.
+  const isThisNodeSelected = useCallback(() => {
+    const selection = $getSelection()
+    return $isNodeSelection(selection) && selection.has(nodeKey)
+  }, [nodeKey])
+
+  useEffect(() => mergeRegister(
+    editor.registerCommand(KEY_BACKSPACE_COMMAND, () => {
+      if (!isThisNodeSelected()) return false
+      removeSelected()
+      return true
+    }, COMMAND_PRIORITY_LOW),
+    editor.registerCommand(KEY_DELETE_COMMAND, () => {
+      if (!isThisNodeSelected()) return false
+      removeSelected()
+      return true
+    }, COMMAND_PRIORITY_LOW),
+    editor.registerCommand(KEY_ENTER_COMMAND, () => {
+      if (!isThisNodeSelected()) return false
+      convertToText()
+      return true
+    }, COMMAND_PRIORITY_LOW),
+  ), [convertToText, editor, isThisNodeSelected, removeSelected])
+
+  // Radix returns DOM focus to the trigger button when its menu closes, by default — which
+  // fires a native focus/selectionchange event that Lexical's own listener reads as a fresh
+  // caret position, clobbering the NodeSelection this hook wants restored. `onCloseAutoFocus`
+  // is the right hook to cancel that default with, but it only fires once the content has
+  // actually left the DOM — after this menu's own close *animation* finishes, tens to a couple
+  // hundred milliseconds after the key or click that closed it. Doing the actual reselect there
+  // would leave a live gap, right after closing, where a fast next keystroke (Backspace, right
+  // after Escape) lands on no selection at all. `onOpenChange` fires immediately instead, so the
+  // reselect happens there; `onCloseAutoFocus` is kept only to cancel Radix's own later, now
+  // redundant, focus hand-off before it can re-clobber the selection this already set. A menu
+  // item that opens a further surface (a dialog, a builder) sets this flag first so its own
+  // focus management is not immediately overridden by this reselect.
+  const suppressCloseFocusRef = useRef(false)
+  const suppressNextCloseFocus = useCallback(() => {
+    suppressCloseFocusRef.current = true
+  }, [])
+  const onMenuOpenChange = useCallback((open: boolean) => {
+    if (open) return
+    if (suppressCloseFocusRef.current) {
+      suppressCloseFocusRef.current = false
+      return
+    }
+    editor.getRootElement()?.focus()
+    select()
+  }, [editor, select])
+  const onMenuCloseAutoFocus = useCallback((event: Event) => {
+    event.preventDefault()
+  }, [])
+
+  return { isSelected, select, convertToText, onMenuOpenChange, onMenuCloseAutoFocus, suppressNextCloseFocus }
 }
 
 // The approval gate form. Mounted fresh each time the dialog opens (see ApprovalChipDialog),
@@ -258,7 +379,7 @@ function ApprovalDialogBody({
 // chooses between, each routed to a step or terminal. Used both to insert a new approval
 // chip (from the toolbar) and to edit an existing one. The body mounts only while open so
 // it always seeds from the latest `initial`.
-export function ApprovalChipDialog({
+function ApprovalChipDialog({
   open,
   onOpenChange,
   targets,
@@ -389,7 +510,7 @@ function DecisionDialogBody({
   )
 }
 
-export function DecisionChipDialog({
+function DecisionChipDialog({
   open,
   onOpenChange,
   initial,
@@ -413,7 +534,7 @@ export function DecisionChipDialog({
 
 // The branch targets an approval option can route to, drawn from the document's titled
 // steps plus the two terminals the prose editor always exposes.
-export function approvalChipTargets(stepTargets: ApprovalChipTarget[]): ApprovalChipTarget[] {
+function approvalChipTargets(stepTargets: ApprovalChipTarget[]): ApprovalChipTarget[] {
   return [...stepTargets, { id: 'done', label: 'End (complete)' }, { id: 'handoff', label: 'Handoff' }]
 }
 
@@ -474,6 +595,7 @@ function EndDialog({
 
 function ChipMenu({ nodeKey, kind, refId, label }: { nodeKey: NodeKey; kind: RoutineChipKind; refId: string; label: string }): JSX.Element {
   const [editor] = useLexicalComposerContext()
+  const { isSelected, select, convertToText, onMenuOpenChange, onMenuCloseAutoFocus, suppressNextCloseFocus } = useChipController(nodeKey)
   const { getType, setType, getRequired, setRequired, getMutable, setMutable, variables, supportsStepBindings } = useRoutineVariables()
   const type = kind === 'variable' ? getType(refId) : null
   const skillCatalog = useSkillDescriptor(refId, label)
@@ -610,12 +732,13 @@ function ChipMenu({ nodeKey, kind, refId, label }: { nodeKey: NodeKey; kind: Rou
           type="button"
           contentEditable={false}
           data-routine-chip={kind}
-          className="mx-0.5 inline-flex items-center gap-1 rounded-md border border-violet-300 bg-violet-100 px-1.5 py-0 align-baseline text-xs font-medium text-violet-900 outline-none"
-          onClick={() => setIsDecisionOpen(true)}
+          className={`${CHIP_WRAPPER_CLASS} ${isSelected ? CHIP_SELECTED_CLASS : ''}`}
+          onClick={() => { select(); setIsDecisionOpen(true) }}
+          onDoubleClick={convertToText}
         >
-          <Gavel className="h-3 w-3" />
+          <span className="text-muted-foreground">@</span>
           {initial.captureKey && initial.captureKey !== 'decision' ? initial.captureKey : 'decision'}
-          {choices ? <span className="font-normal opacity-70">· {choices}</span> : null}
+          {choices ? <span className="text-muted-foreground"> · {choices}</span> : null}
         </button>
         <DecisionChipDialog
           open={isDecisionOpen}
@@ -662,21 +785,21 @@ function ChipMenu({ nodeKey, kind, refId, label }: { nodeKey: NodeKey; kind: Rou
           type="button"
           contentEditable={false}
           data-routine-chip={kind}
-          className="mx-0.5 inline-flex flex-col gap-0.5 rounded-md border border-violet-300 bg-violet-100 px-2 py-1 text-left align-baseline text-xs text-violet-900 outline-none"
-          onClick={() => setIsApprovalOpen(true)}
+          className={`${CHIP_WRAPPER_CLASS} inline-flex flex-col gap-0.5 py-1 text-left ${isSelected ? CHIP_SELECTED_CLASS : ''}`}
+          onClick={() => { select(); setIsApprovalOpen(true) }}
         >
-          <span className="inline-flex items-center gap-1 font-medium">
-            <Gavel className="h-3 w-3" />
+          <span className="inline-flex items-center gap-1">
+            <span className="text-muted-foreground">@</span>
             Approval — a person chooses:
             {initial.captureKey && initial.captureKey !== 'decision'
-              ? <span className="font-normal opacity-70">· records {initial.captureKey}</span>
+              ? <span className="text-muted-foreground"> · records {initial.captureKey}</span>
               : null}
           </span>
           {initial.options.length === 0 ? (
-            <span className="opacity-70">no choices yet — click to add</span>
+            <span className="text-muted-foreground">no choices yet — click to add</span>
           ) : (
             initial.options.map((option, index) => (
-              <span key={index} className="font-normal">
+              <span key={index}>
                 if <span className="font-medium">{option.label || 'this choice'}</span>
                 {' '}then <span className="font-medium">{targetLabel(option.target ?? '')}</span>
               </span>
@@ -712,14 +835,22 @@ function ChipMenu({ nodeKey, kind, refId, label }: { nodeKey: NodeKey; kind: Rou
         onBindingStateChange={updateDraftBindingState}
         onRemove={removeSelf}
       >
-        <button type="button" contentEditable={false} data-routine-chip={kind} className="mx-0.5 cursor-pointer align-baseline outline-none">
+        <button
+          type="button"
+          contentEditable={false}
+          data-routine-chip={kind}
+          className={`${CHIP_WRAPPER_CLASS} inline-flex items-center gap-1 ${isSelected ? CHIP_SELECTED_CLASS : ''}`}
+          onClick={select}
+          onDoubleClick={convertToText}
+        >
+          {/* An unknown skill is a data-integrity warning, not a kind's own colour — it keeps
+              its triangle so a broken reference stays visible even in the quiet treatment. */}
+          {isUnknownSkill ? <AlertTriangle className="h-3 w-3 text-amber-600 dark:text-amber-400" /> : null}
           <ChipBadge
-            kind={kind}
             label={isUnknownSkill ? label : resolvedLabel}
             type={type}
-            className={isUnknownSkill ? 'border-amber-400 bg-amber-100 text-amber-950 dark:border-amber-500/70 dark:bg-amber-500/15 dark:text-amber-100' : undefined}
-            icon={isUnknownSkill ? AlertTriangle : undefined}
             suffix={isUnknownSkill ? 'unknown skill' : undefined}
+            alwaysShowDetails={isSelected}
           />
         </button>
       </RoutineSkillCatalogPopover>
@@ -730,20 +861,21 @@ function ChipMenu({ nodeKey, kind, refId, label }: { nodeKey: NodeKey; kind: Rou
     // An outcome guard branches on the preceding tool step's result status. It is neither a
     // decided-in-code rule nor an AI phrase, so it shows its own badge and only offers Remove.
     return (
-      <DropdownMenu>
+      <DropdownMenu modal={false} onOpenChange={onMenuOpenChange}>
         <DropdownMenuTrigger asChild>
-          <button type="button" contentEditable={false} data-routine-chip={kind} data-guard-mode="outcome" className="mx-0.5 cursor-pointer align-baseline outline-none">
-            <ChipBadge
-              kind={kind}
-              label={label}
-              type={null}
-              icon={Workflow}
-              suffix="outcome"
-              className="border-amber-300 bg-amber-100 text-amber-900"
-            />
+          <button
+            type="button"
+            contentEditable={false}
+            data-routine-chip={kind}
+            data-guard-mode="outcome"
+            className={`${CHIP_WRAPPER_CLASS} ${isSelected ? CHIP_SELECTED_CLASS : ''}`}
+            onClick={select}
+            onDoubleClick={convertToText}
+          >
+            <ChipBadge label={label} type={null} suffix="outcome" alwaysShowDetails={isSelected} />
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-56">
+        <DropdownMenuContent align="start" className="w-56" onCloseAutoFocus={onMenuCloseAutoFocus}>
           <DropdownMenuLabel>Branch on the skill outcome</DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={removeSelf}>Remove</DropdownMenuItem>
@@ -757,20 +889,21 @@ function ChipMenu({ nodeKey, kind, refId, label }: { nodeKey: NodeKey; kind: Rou
     // is neither a decided-in-code rule nor an AI phrase, so it shows its own badge and only
     // offers Remove.
     return (
-      <DropdownMenu>
+      <DropdownMenu modal={false} onOpenChange={onMenuOpenChange}>
         <DropdownMenuTrigger asChild>
-          <button type="button" contentEditable={false} data-routine-chip={kind} data-guard-mode="slot-filled" className="mx-0.5 cursor-pointer align-baseline outline-none">
-            <ChipBadge
-              kind={kind}
-              label={label}
-              type={null}
-              icon={Workflow}
-              suffix="when filled"
-              className="border-emerald-300 bg-emerald-100 text-emerald-900"
-            />
+          <button
+            type="button"
+            contentEditable={false}
+            data-routine-chip={kind}
+            data-guard-mode="slot-filled"
+            className={`${CHIP_WRAPPER_CLASS} ${isSelected ? CHIP_SELECTED_CLASS : ''}`}
+            onClick={select}
+            onDoubleClick={convertToText}
+          >
+            <ChipBadge label={label} type={null} suffix="when filled" alwaysShowDetails={isSelected} />
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-56">
+        <DropdownMenuContent align="start" className="w-56" onCloseAutoFocus={onMenuCloseAutoFocus}>
           <DropdownMenuLabel>Continue once slots are provided</DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={removeSelf}>Remove</DropdownMenuItem>
@@ -790,24 +923,25 @@ function ChipMenu({ nodeKey, kind, refId, label }: { nodeKey: NodeKey; kind: Rou
     })
     return (
       <>
-        <DropdownMenu>
+        <DropdownMenu modal={false} onOpenChange={onMenuOpenChange}>
           <DropdownMenuTrigger asChild>
-            <button type="button" contentEditable={false} data-routine-chip={kind} data-guard-mode={isAi ? 'ai' : 'code'} className="mx-0.5 cursor-pointer align-baseline outline-none">
-              <ChipBadge
-                kind={kind}
-                label={isAi ? 'AI decides' : label}
-                type={null}
-                icon={isAi ? Sparkles : BadgeCheck}
-                suffix={isAi ? undefined : 'rule'}
-                className={isAi ? 'border-violet-300 bg-violet-100 text-violet-900' : undefined}
-              />
+            <button
+              type="button"
+              contentEditable={false}
+              data-routine-chip={kind}
+              data-guard-mode={isAi ? 'ai' : 'code'}
+              className={`${CHIP_WRAPPER_CLASS} ${isSelected ? CHIP_SELECTED_CLASS : ''}`}
+              onClick={select}
+              onDoubleClick={convertToText}
+            >
+              <ChipBadge label={isAi ? 'AI decides' : label} type={null} suffix={isAi ? undefined : 'rule'} alwaysShowDetails={isSelected} />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-56">
+          <DropdownMenuContent align="start" className="w-56" onCloseAutoFocus={onMenuCloseAutoFocus}>
             <DropdownMenuLabel>{isAi ? 'Decided by AI' : 'Decided in code'}</DropdownMenuLabel>
             <DropdownMenuSeparator />
             {isAi ? (
-              <DropdownMenuItem onClick={() => setIsConditionBuilderOpen(true)}>Switch to decided in code</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => { suppressNextCloseFocus(); setIsConditionBuilderOpen(true) }}>Switch to decided in code</DropdownMenuItem>
             ) : (
               <DropdownMenuItem onClick={demoteToAi}>Switch to decided by AI</DropdownMenuItem>
             )}
@@ -827,16 +961,30 @@ function ChipMenu({ nodeKey, kind, refId, label }: { nodeKey: NodeKey; kind: Rou
 
   return (
     <>
-    <DropdownMenu>
+    <DropdownMenu modal={false} onOpenChange={onMenuOpenChange}>
       <DropdownMenuTrigger asChild>
-        <button type="button" contentEditable={false} data-routine-chip={kind} data-end-named={kind === 'end' && refId !== 'done' ? 'true' : undefined} className="mx-0.5 cursor-pointer align-baseline outline-none">
-          <ChipBadge kind={kind} label={label} type={type} suffix={kind === 'end' && refId !== 'done' ? 'ending' : undefined} />
+        <button
+          type="button"
+          contentEditable={false}
+          data-routine-chip={kind}
+          data-end-named={kind === 'end' && refId !== 'done' ? 'true' : undefined}
+          className={`${CHIP_WRAPPER_CLASS} ${isSelected ? CHIP_SELECTED_CLASS : ''}`}
+          onClick={select}
+          onDoubleClick={convertToText}
+        >
+          <ChipBadge
+            label={label}
+            type={type}
+            suffix={kind === 'end' && refId !== 'done' ? 'ending' : undefined}
+            alwaysShowDetails={isSelected}
+            showCaret={kind === 'variable'}
+          />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-44">
+      <DropdownMenuContent align="start" className="w-44" onCloseAutoFocus={onMenuCloseAutoFocus}>
         {kind === 'end' ? (
           <>
-            <DropdownMenuItem onClick={() => setIsEndOpen(true)}>Name &amp; message…</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => { suppressNextCloseFocus(); setIsEndOpen(true) }}>Name &amp; message…</DropdownMenuItem>
             <DropdownMenuSeparator />
           </>
         ) : null}
@@ -1017,6 +1165,10 @@ export class ChipNode extends DecoratorNode<JSX.Element> {
 
   getRefId(): string {
     return this.__refId
+  }
+
+  getLabel(): string {
+    return this.__label
   }
 
   getChipOp(): RoutineFieldGuardOp | null {

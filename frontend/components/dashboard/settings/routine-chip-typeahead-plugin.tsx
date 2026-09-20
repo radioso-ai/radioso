@@ -13,6 +13,7 @@ import {
   $createTextNode,
   $getRoot,
   $isElementNode,
+  $isTextNode,
   type TextNode,
 } from 'lexical'
 
@@ -438,9 +439,19 @@ export function ChipTypeaheadPlugin({
         if (nodeToReplace) {
           nodeToReplace.replace(chip)
         }
-        const trailing = $createTextNode(' ')
-        chip.insertAfter(trailing)
-        trailing.select()
+        // Re-resolving a chip dropped back to raw text (double-click, then picking it again)
+        // matches only the "@name" run itself, leaving whatever already followed it — often
+        // the space this same insertion adds on every other path — as the chip's very next
+        // sibling. Adding a second one there would double it up instead of round-tripping the
+        // same text.
+        const nextSibling = chip.getNextSibling()
+        if ($isTextNode(nextSibling) && nextSibling.getTextContent().startsWith(' ')) {
+          nextSibling.select(0, 0)
+        } else {
+          const trailing = $createTextNode(' ')
+          chip.insertAfter(trailing)
+          trailing.select()
+        }
         closeMenu()
       })
     },

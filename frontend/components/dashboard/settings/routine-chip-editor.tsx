@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, type JSX } from 'react'
+import { useCallback, useEffect, useMemo, useRef, type JSX } from 'react'
 
 import { LexicalComposer } from '@lexical/react/LexicalComposer'
 import { ContentEditable } from '@lexical/react/LexicalContentEditable'
@@ -98,6 +98,25 @@ export function RoutineInstructionEditor({
     [variables],
   )
 
+  const wrapperRef = useRef<HTMLDivElement | null>(null)
+  // A chip is a real focusable button, so clicking one to open its own dropdown/popover/dialog
+  // moves DOM focus there — first to the button itself, then into whatever Radix portals to
+  // `document.body` for it — which is not the author leaving the field. React bubbles a blur
+  // from any descendant losing focus up to this wrapper (native `blur` does not bubble, but
+  // React's synthetic version does), so one handler here covers the content-editable itself
+  // and every chip button inside it; only treat it as leaving once focus lands somewhere that
+  // is neither inside this editor nor inside one of those portalled chip surfaces.
+  const onWrapperBlur = useCallback((event: React.FocusEvent<HTMLDivElement>) => {
+    const related = event.relatedTarget as HTMLElement | null
+    if (related && (
+      wrapperRef.current?.contains(related)
+      || related.closest('[role="menu"], [role="dialog"], [role="listbox"], [data-radix-popper-content-wrapper]')
+    )) {
+      return
+    }
+    onBlur?.()
+  }, [onBlur])
+
   return (
     <LexicalComposer
       initialConfig={{
@@ -116,13 +135,12 @@ export function RoutineInstructionEditor({
         {/* The Document rows own every structural control — steps, branches, endings, skill
             bindings — so this surface carries no chrome of its own beyond a focus ring; typing
             "@" is the only affordance, exactly as the placeholder says. */}
-        <div className="routine-prose-surface rounded-sm bg-transparent focus-within:ring-1 focus-within:ring-ring/50">
+        <div ref={wrapperRef} onBlur={onWrapperBlur} className="routine-prose-surface rounded-sm bg-transparent focus-within:ring-1 focus-within:ring-ring/50">
           <div className="relative">
             <RichTextPlugin
               contentEditable={
                 <ContentEditable
                   aria-label={ariaLabel ?? 'Routine'}
-                  onBlur={onBlur}
                   className="w-full text-sm leading-7 outline-none [&_p]:my-0 [&_h1]:mb-1 [&_h1]:mt-3 [&_h1]:text-xl [&_h1]:font-bold [&_h1]:leading-tight [&_h1]:text-foreground first:[&_h1]:mt-0"
                 />
               }

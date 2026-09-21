@@ -23,9 +23,23 @@ const summarize = ({ intro: _intro, sections: _sections, ...summary }: ProductDo
  * `https://docs.radioso.ai/guides/mcp-server` does not have to know the corpus keys it as
  * `guides/mcp-server`.
  */
+// A loop rather than `/^\/+|\/+$/g`: an anchored greedy run backtracks quadratically on long
+// slash runs, and the slug is caller-supplied.
+const trimSlashes = (value: string): string => {
+  let start = 0;
+  let end = value.length;
+  while (start < end && value[start] === "/") {
+    start += 1;
+  }
+  while (end > start && value[end - 1] === "/") {
+    end -= 1;
+  }
+  return value.slice(start, end);
+};
+
 export const normalizeSlug = (slug: string): string => {
   const withoutOrigin = slug.trim().replace(/^https?:\/\/[^/]+/i, "");
-  const trimmed = withoutOrigin.replace(/^\/+|\/+$/g, "");
+  const trimmed = trimSlashes(withoutOrigin);
   return trimmed === "" ? "index" : trimmed;
 };
 

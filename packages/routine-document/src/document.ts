@@ -96,8 +96,9 @@ export function slugifyVariableKey(name: string): string {
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9_]+/g, '_')
-    .replace(/_+/g, '_')
-    .replace(/^_+|_+$/g, '')
+    .split('_')
+    .filter(Boolean)
+    .join('_')
   const safe = base || 'value'
   return /^[a-z_]/.test(safe) ? safe : `_${safe}`
 }

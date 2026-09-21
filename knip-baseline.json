@@ -856,7 +856,6 @@
   "types|packages/routine-document/src/tokens.ts|ChipTokenInput",
   "types|packages/routine-document/src/tokens.ts|RoutineFieldGuardValue",
   "types|typescript-sdk/src/core/errors.ts|RadiosoErrorShape",
-  "types|typescript-sdk/src/core/http.ts|JsonRequestOptions",
   "types|typescript-sdk/src/resources/bundle.ts|AgentBundleResource",
   "types|typescript-sdk/src/resources/contextVariables.ts|AgentContextVariablesResource",
   "types|typescript-sdk/src/resources/contextVariables.ts|ContextVariablesResource",

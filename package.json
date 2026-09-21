@@ -19,12 +19,14 @@
   },
   "pnpm": {
     "overrides": {
+      "@faker-js/faker@<10.5.0": "^10.5.0",
       "@grpc/grpc-js@<1.14.4": "^1.14.4",
       "@sentry/browser": "7.119.1",
       "@types/react": "19.2.14",
       "@types/react-dom": "19.2.3",
       "@tootallnate/once": "3.0.1",
       "@xmldom/xmldom": "0.9.12",
+      "adm-zip@<0.6.1": "^0.6.1",
       "esbuild@<0.28.1": "^0.28.1",
       "file-type": "21.3.2",
       "fast-uri": "3.1.6",

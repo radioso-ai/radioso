@@ -20,6 +20,15 @@ import {
 
 const OPERATOR_BACKEND_TRANSPORT_OVERHEAD_MS = 5_000;
 
+// A loop rather than `/\/+$/u`: an anchored greedy run backtracks quadratically on long slash runs.
+const trimTrailingSlashes = (value: string): string => {
+  let end = value.length;
+  while (end > 0 && value[end - 1] === "/") {
+    end -= 1;
+  }
+  return value.slice(0, end);
+};
+
 export const operatorBackendRequestTimeoutMs = (configuredTimeoutMs: number): number =>
   Math.max(configuredTimeoutMs, OPERATOR_MCP_EXECUTION_TIMEOUT_MS + OPERATOR_BACKEND_TRANSPORT_OVERHEAD_MS);
 
@@ -109,7 +118,7 @@ export const createOperatorBackendAdapter = ({
   requestTimeoutMs,
   serviceId = "radioso-mcp-operator",
 }: CreateOperatorBackendAdapterOptions): OperatorBackendAdapter => {
-  const upstream = baseUrl.replace(/\/+$/u, "");
+  const upstream = trimTrailingSlashes(baseUrl);
 
   const post = async <T>(path: string, payload: unknown, parse: (value: unknown) => T): Promise<T> => {
     const body = JSON.stringify(payload);

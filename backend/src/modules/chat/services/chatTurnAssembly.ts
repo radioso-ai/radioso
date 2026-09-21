@@ -27,6 +27,7 @@ import { buildPendingDecisionTransition } from "../../approvals/public.js";
 import type { ChatGateway } from "../contracts/chatGateway.js";
 import type { ChatStatusStage } from "../contracts/streamEvents.js";
 import type { ChatRoutineProvider } from "../contracts/routineProvider.js";
+import type { ChatRoutineTurnReporter } from "../contracts/routineTurnState.js";
 import type { ChatAnswerPresenter, ChatPresentedAnswer } from "./chatAnswerPresenter.js";
 import { ChatAnswerSupport } from "./chatAnswerSupport.js";
 import type { RoutineHandoffEffect } from "./handoffOwnership.js";
@@ -292,6 +293,7 @@ export interface ChatTurnAssemblyRoutineResult {
   actions?: RoutineActionRequest[];
   handoff?: RoutineHandoffEffect;
   routineStateTransition?: CapturedRoutineTransition | null;
+  routineReporter?: ChatRoutineTurnReporter;
   pendingDecisionTransition?: ReturnType<typeof buildPendingDecisionTransition> | null;
   suspended?: boolean;
   clarificationTransition?: CapturedClarificationTransition | null;
@@ -304,6 +306,7 @@ interface CoverageRoutineEffects {
   actions?: RoutineActionRequest[];
   handoff?: RoutineHandoffEffect;
   routineStateTransition?: CapturedRoutineTransition | null;
+  routineReporter?: ChatRoutineTurnReporter;
   pendingDecisionTransition?: ReturnType<typeof buildPendingDecisionTransition> | null;
   suspended?: boolean;
   commitRoutineState?: () => Promise<void>;
@@ -539,6 +542,7 @@ export class ChatTurnAssembly {
       actions,
       handoff: outcome.result.handoff,
       routineStateTransition,
+      routineReporter: routineTurnPorts.reporter,
       pendingDecisionTransition,
       suspended: Boolean(outcome.result.awaitingDecision),
       clarificationTransition: deferredClarificationStore?.getTransition(),
@@ -696,6 +700,7 @@ export class ChatTurnAssembly {
             : result.actions,
           handoff: result.handoff,
           routineStateTransition,
+          routineReporter: routineTurnPorts.reporter,
           pendingDecisionTransition,
           suspended: Boolean(result.awaitingDecision),
           commitRoutineState: () => deferredStore.commit(),

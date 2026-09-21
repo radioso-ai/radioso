@@ -32,7 +32,14 @@ export type { ProbeConversationReadPort } from "../services/probeConversationRea
 export type { ChatActionSuggestionProvider } from "../services/actionSuggestions/chatActionSuggestionProvider.js";
 // The MCP converse HTTP surface holds these instances; composition builds them.
 export type { AgentConverseAudit } from "../services/agentConverseAudit.js";
-export type { AgentConverseService } from "../services/agentConverseService.js";
+export type {
+  AgentConverseAskResult,
+  AgentConverseService,
+} from "../services/agentConverseService.js";
+// The agent reply envelope is shared by the MCP converse route, the REST agent
+// chat route, and the SSE presenter; composition never builds it.
+export { buildAgentReplyEnvelope, isChatTurnResponse } from "../services/agentReplyEnvelope.js";
+export type { ChatRoutineTurnState } from "./routineTurnState.js";
 export type { ChatStreamEvent } from "./streamEvents.js";
 export type {
   ActionHandler,
@@ -43,6 +50,7 @@ export type {
   ContactHistoryProviderPort,
 } from "../services/contactHistoryProvider.js";
 export type {
+  ChatOwnershipAck,
   ChatResponse,
   ChatRoute,
   ChatSuggestion,

@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createConverseToolDefinitions } from "../src/tools/converseTools.js";
 import { createRadiosoMcpServer } from "../src/server.js";
-import type { ConverseApiAdapter } from "../src/converseApiAdapter.js";
+import type { ConverseApiAdapter, ConverseAskResponse } from "../src/converseApiAdapter.js";
+import { toCallToolResult } from "../src/toolResult.js";
 import type { ToolExecutionContext } from "../src/types.js";
 
 describe("converse MCP tools", () => {
@@ -34,12 +35,30 @@ describe("converse MCP tools", () => {
     ]));
   });
 
-  it("calls the converse backend adapter for ask_agent", async () => {
+  it("forwards the agent reply envelope unchanged as data and keeps answer.text as the summary", async () => {
+    const envelope: ConverseAskResponse = {
+      conversationId: "conversation-1",
+      answer: {
+        text: "Hello",
+        citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Refund policy", sourceUrl: "https://example.com/refunds" }],
+      },
+      answerCoverage: {
+        availability: "assessed",
+        coverage: "answered",
+        reason: "sufficient_evidence",
+        originatingTurnId: "request-1",
+        originatingRequestId: "request-1",
+      },
+      ownership: { state: "ai_owned", suppressed: false },
+      routine: {
+        name: "Book a demo",
+        status: "waiting_for_input",
+        pendingInput: [{ key: "email", type: "email", required: true }],
+      },
+      traceId: "trace-1",
+    };
     const converseAdapter: ConverseApiAdapter = {
-      ask: vi.fn().mockResolvedValue({
-        conversationId: "conversation-1",
-        answer: { text: "Hello", citations: [] },
-      }),
+      ask: vi.fn().mockResolvedValue(envelope),
       exchange: vi.fn(),
       validate: vi.fn(),
       recordUse: vi.fn(),
@@ -57,9 +76,8 @@ describe("converse MCP tools", () => {
     );
 
     expect(converseAdapter.ask).toHaveBeenCalledWith("session-token", { message: "Hello" }, { sourceDigest: undefined });
-    expect(result).toMatchObject({
-      data: { conversationId: "conversation-1" },
-      summary: "Hello",
-    });
+    expect(result.data).toEqual(envelope);
+    expect(result.summary).toBe("Hello");
+    expect(toCallToolResult(result).structuredContent).toEqual(envelope);
   });
 });

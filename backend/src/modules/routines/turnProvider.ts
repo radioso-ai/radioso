@@ -33,7 +33,9 @@ import type { ConversationDurability, SkillEffectPolicy } from "../../shared/dom
 import { createRoutineSkillResolverChain } from "./routineSkillResolverChain.js";
 import type { RoutineTriggerEmbeddingService } from "./routineTriggerEmbeddingService.js";
 import { createRoutineActivationPrefilter } from "./routineActivationPrefilter.js";
+import { createRoutineTurnReporter } from "./routineTurnReporter.js";
 import { loadPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
+import type { RoutineTurnReporter } from "./turnReport.js";
 
 interface RoutineRegistrationSource {
   load(input: { agentId: string; workspaceId?: string; agentRevisionId?: string }): Promise<RoutineRegistration[]>;
@@ -96,6 +98,8 @@ interface RoutineTurnProvider {
     runner: ConversationRoutineRunner;
     slotCorrection?: ConversationRoutineSlotCorrection;
     reentryGate?: ConversationRoutineReentryGate;
+    /** Describes this turn's routine state for the reply envelope over the same routines. */
+    reporter?: RoutineTurnReporter;
   } | null>;
 }
 
@@ -343,6 +347,7 @@ export const createRoutineTurnProvider = (
 
     return {
       routines,
+      reporter: createRoutineTurnReporter(routines),
       activator: routineRegistry.isEmpty
         ? { activate: async () => null }
         : dependencies.turnPlanAdapters.activator({

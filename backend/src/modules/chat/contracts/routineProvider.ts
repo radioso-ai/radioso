@@ -15,6 +15,7 @@ import type {
   TurnExecutionMode,
 } from "../../../shared/domain/turnExecutionMode.js";
 import type { ChatTurnPlanHandle } from "../services/turnPlanCoordinator.js";
+import type { ChatRoutineTurnReporter } from "./routineTurnState.js";
 
 /**
  * The port the chat turn consults for "which routines are eligible this turn and
@@ -50,5 +51,6 @@ export interface ChatRoutineProvider {
     runner: ConversationRoutineRunner;
     slotCorrection?: ConversationRoutineSlotCorrection;
     reentryGate?: ConversationRoutineReentryGate;
+    reporter?: ChatRoutineTurnReporter;
   } | null>;
 }

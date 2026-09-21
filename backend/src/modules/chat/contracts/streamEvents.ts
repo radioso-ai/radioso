@@ -8,6 +8,7 @@ import type {
   ChatAnswerCoverageAssessment,
   ChatAnswerCoverageInteractionTrace,
 } from "./answerCoverage.js";
+import type { ChatRoutineTurnState } from "./routineTurnState.js";
 
 type SkillStreamPhase = "active" | "completed" | "failed";
 export type ChatStatusStage = "interpreting" | "searching" | "composing";
@@ -62,6 +63,7 @@ export type ChatStreamEvent =
       activitySummary: ActivitySummary;
       activityTrace: ActivityTrace;
       ownership?: ChatOwnershipAck;
+      routine?: ChatRoutineTurnState;
       turnTrace?: TurnTraceEnvelope;
       answerCoverage?: ChatAnswerCoverageAssessment;
       interactionTrace?: ChatAnswerCoverageInteractionTrace;

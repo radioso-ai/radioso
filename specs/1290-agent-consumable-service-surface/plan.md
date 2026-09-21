@@ -350,3 +350,34 @@ routine (manual gate; the harness in `testing/remoteSmokeHarness.ts` gains a too
 - Merge gates: PR title in Conventional Commits; deterministic eval suite green with the three new cases; live
   `pnpm run evals:ci` against the committed baseline once before merge (routine fixtures changed); copilot
   deterministic suite green with the `propose_routine_exposure` case; SDK and MCP snapshot jobs green.
+
+## Implementation notes (slice 1, 2026-09-21)
+
+Where the code differed from the file-level plan above:
+
+- **OpenAPI components.** `AssistantChatResponseSchema` is shared with `/assistant/chat`, which never carries the
+  envelope, so it is untouched. The envelope is `AgentReplyEnvelopeCore` (registered once in
+  `openapi/schemas/agentReplyEnvelopeSchemas.ts`), referenced by `McpConverseAskResponse` (= core + `answer`) and
+  `AgentChannelChatTurnResponse` (= `ChatResponse` ∧ core ∧ required `citations[]`); `AgentChannelChatResponse` is
+  that turn shape | `ChatBootstrapResponse`, because a `startConversation` greeting has no turn and no envelope.
+  The plain `mcpConverseAskResponseSchema` in `http/schemas/mcpConverseSchemas.ts` is gone; the registered component
+  is the single definition.
+- **`traceId`** comes from `turnTrace.spine.traceId` (the envelope has no top-level `traceId`).
+- **Reporter port.** The routine turn report is routine data, so routines owns it: `RoutineTurnState`,
+  `RoutinePendingInput`, `RoutineTurnStatus`, and `RoutineTurnReporter` live in `routines/turnReport.ts` (exported
+  through `routines/public.ts`); `chat/contracts/routineTurnState.ts` re-exports them under chat-side names, so no
+  file under `routines/` imports from `chat/`. The reporter's input is `{ state, awaitingDecision? }`: a handoff terminal already saves `status: "completed"`, so `handedOff`
+  added nothing. An empty `state.path` (an activation turn that re-asks the root step) resolves to `rootStepId`.
+- **`answerCoverage` fallback** is produced by the two `ChatResponse` producers (`chatTurnLifecycle.ts` and
+  `suppressedHumanOwnedResponse`) with the request message id as both originating ids; the builder's own backstop
+  carries empty ids and is not reachable from those producers.
+- **`ownership` on a handoff turn** is `{ human_owned, suppressed: false }` (set by the lifecycle), so the caller learns
+  the conversation changed hands on the turn that handed it off, not only on its next call.
+- **`routine` is agent-facing only.** `presentChatPayload` strips it; the REST agent route and the SSE `done` frame
+  (`agentEnvelope: true`) re-add it through the envelope, so `/assistant/chat` and public chat never expose routine
+  names to visitors. The REST agent route always emits `citations` (empty when none) to match MCP.
+- **Not in slice 1:** `toolName` (needs the slice-2 exposure metadata) and Decision 9 (reporting a declined reentry —
+  the reporter only describes a state the turn saved; the direct-invocation activator in slice 3 owns that case). A
+  turn where an active routine yields to normal answering saves no state, so it carries no `routine` either.
+- **Test app** now wires `conversationOwnershipReader` into `ChatService` (as production does) so the human-owned
+  path runs in integration tests.

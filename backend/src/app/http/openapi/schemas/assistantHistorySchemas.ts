@@ -22,6 +22,7 @@ import {
 } from "../../routes/publicChatRouteSchemas.js";
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 import type { OpenApiSchemaCatalog } from "../openApiRegistry.js";
+import { registerAgentReplyEnvelopeSchemas } from "./agentReplyEnvelopeSchemas.js";
 
 export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schemas: OpenApiSchemaCatalog) => {
   const answerFeedbackParamsSchema = z.object({
@@ -791,6 +792,12 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       hasMore: z.boolean(),
     }),
   );
+
+  registerAgentReplyEnvelopeSchemas(registry, schemas, {
+    ChatResponseSchema,
+    ChatBootstrapResponseSchema,
+    AnswerCoverageAssessmentSchema,
+  });
 
   Object.assign(schemas, {
     answerFeedbackParamsSchema,

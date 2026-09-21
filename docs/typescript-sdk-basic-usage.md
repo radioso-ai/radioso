@@ -1,7 +1,7 @@
 ---
 title: "Radioso TypeScript SDK: Basic Usage"
 description: "SDK tutorial covering documents, settings, skills, agents, authoring, chat, streaming, history, and error handling patterns."
-last_updated: 2026-09-10
+last_updated: 2026-09-21
 ---
 
 # Radioso TypeScript SDK: Basic Usage
@@ -385,6 +385,8 @@ const response = await client.chat.create({
 
 console.log(response.answer);
 ```
+
+The agent channel route answers with the same `answer` string and `citations` array plus the **agent reply envelope**: `answerCoverage` (the turn's coverage verdict, `availability: "not_recorded"` when none ran), `ownership` (`{ state, suppressed }`, where `human_owned` with `suppressed: true` means a person has the conversation and nothing was generated), `routine` when the turn ran one (`name`, `status`, and the `pendingInput` slots it still needs), and `traceId`. The generated `AgentChannelChatTurnResponse` and `AgentReplyEnvelopeCore` types describe it; a streamed turn carries the same fields in its `done` frame. [MCP Client Setup](./mcp-client-setup.md#converse-calls) walks through each field with an example.
 
 ## Streaming Chat
 

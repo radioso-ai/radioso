@@ -47,6 +47,12 @@ export const suppressedHumanOwnedResponse = (
       state: "human_owned",
       suppressed: true,
     },
+    // Nothing was generated, so nothing was assessed; the ids still anchor the slot to the turn.
+    answerCoverage: {
+      availability: "not_recorded",
+      originatingTurnId: session.userMessage.id,
+      originatingRequestId: session.userMessage.id,
+    },
   };
 };
 

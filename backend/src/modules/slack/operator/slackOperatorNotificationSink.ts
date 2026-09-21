@@ -2,7 +2,12 @@ import type {
   PendingDecisionRecord,
   PendingDecisionRepository,
 } from "../../../db/repositories/pendingDecisionRepository.js";
-import type { OperatorNotification, OperatorNotificationContext, OperatorNotificationSink } from "../../operatorNotifications/public.js";
+import {
+  formatHandoffNotification,
+  type OperatorNotification,
+  type OperatorNotificationContext,
+  type OperatorNotificationSink,
+} from "../../operatorNotifications/public.js";
 import {
   resolveConversationLink,
   type ConversationLinkResolver,
@@ -51,11 +56,14 @@ export class SlackOperatorNotificationSink implements OperatorNotificationSink {
       return;
     }
     if (notification.kind === "handoff") {
+      // The formatter's headline is the email's opening sentence; the Slack post already
+      // says what the message is, so the section carries the detail lines only.
+      const [, ...detailLines] = formatHandoffNotification(notification).lines;
       const message = buildOwnershipMessage({
         conversationId: notification.conversationId,
         workspaceId: notification.workspaceId,
         state: "ai_owned",
-        contextText: notification.reason,
+        contextText: detailLines.join("\n").trim(),
         dashboardUrl: await this.resolveDashboardUrl(notification),
       });
 

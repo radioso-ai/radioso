@@ -2547,7 +2547,11 @@ describe("chat service streaming", () => {
               : { ...state, path: ["consultation"], status: "active" as const },
             ...(input.handoffAndAwaitingDecision
               ? {
-                  terminal: { kind: "handoff" as const, stepId: "operator_review" },
+                  terminal: {
+                    kind: "handoff" as const,
+                    stepId: "operator_review",
+                    collected: { program: "Yoga retreat", arrival_date: "2026-10-12" },
+                  },
                   awaitingDecision: {
                     stepId: "operator_review",
                     captureKey: "operator_approval",
@@ -2783,7 +2787,14 @@ describe("chat service streaming", () => {
     });
     expect(persisted.pendingDecisionTransition).toMatchObject({ routineId: "coverage.follow-up" });
     expect(persisted.actions).toEqual(expect.arrayContaining([
-      expect.objectContaining({ type: HANDOFF_NOTIFY_ACTION_TYPE }),
+      expect.objectContaining({
+        type: HANDOFF_NOTIFY_ACTION_TYPE,
+        payload: expect.objectContaining({
+          routineId: "coverage.follow-up",
+          stepId: "operator_review",
+          collected: { program: "Yoga retreat", arrival_date: "2026-10-12" },
+        }),
+      }),
       expect.objectContaining({ type: APPROVAL_REQUEST_ACTION_TYPE }),
     ]));
   });
@@ -3137,7 +3148,11 @@ describe("chat service streaming", () => {
           resume: async () => ({
             response: { answer: "A person will help you from here." },
             nextState: null,
-            terminal: { kind: "handoff" as const, stepId: "handoff_terminal" },
+            terminal: {
+              kind: "handoff" as const,
+              stepId: "handoff_terminal",
+              collected: { topic: "billing", callback_requested: true },
+            },
           }),
         },
       }),
@@ -3188,6 +3203,7 @@ describe("chat service streaming", () => {
         reason: "routine_handoff",
         routineId: "routine_support",
         stepId: "handoff_terminal",
+        collected: { topic: "billing", callback_requested: true },
       }),
     });
     expect(persisted.ownershipAuditEvent).toMatchObject({

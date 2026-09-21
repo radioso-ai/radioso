@@ -34,6 +34,7 @@ import type { ChatGateway } from "../contracts/chatGateway.js";
 import type { ChatStatusStage } from "../contracts/streamEvents.js";
 import type { ChatAnswerPresenter, ChatPresentedAnswer } from "./chatAnswerPresenter.js";
 import { ChatAnswerSupport } from "./chatAnswerSupport.js";
+import type { RoutineHandoffEffect } from "./handoffOwnership.js";
 import {
   ChatSessionPreparer,
   type PreparedSession,
@@ -328,7 +329,7 @@ export interface ChatTurnAssemblyRoutineResult {
   presentation: ChatPresentedAnswer;
   engineTrace?: ConversationTrace;
   actions?: RoutineActionRequest[];
-  handoff?: { routineId: string; stepId: string };
+  handoff?: RoutineHandoffEffect;
   routineStateTransition?: CapturedRoutineTransition | null;
   pendingDecisionTransition?: ReturnType<typeof buildPendingDecisionTransition> | null;
   suspended?: boolean;
@@ -340,7 +341,7 @@ export interface ChatTurnAssemblyRoutineResult {
 
 interface CoverageRoutineEffects {
   actions?: RoutineActionRequest[];
-  handoff?: { routineId: string; stepId: string };
+  handoff?: RoutineHandoffEffect;
   routineStateTransition?: CapturedRoutineTransition | null;
   pendingDecisionTransition?: ReturnType<typeof buildPendingDecisionTransition> | null;
   suspended?: boolean;

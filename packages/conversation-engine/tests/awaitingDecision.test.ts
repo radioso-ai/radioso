@@ -94,7 +94,7 @@ describe("resumeAwaitingDecision", () => {
     expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ skillName: "refund.issue" }));
     expect(result.trace?.startStepId).toBe("gate");
     expect(result.trace?.steps.map((step) => step.stepId)).not.toContain("ask_reason");
-    expect(result.terminal).toEqual({ kind: "complete", stepId: "confirmed" });
+    expect(result.terminal).toEqual({ kind: "complete", stepId: "confirmed", collected: {} });
     expect(result.nextState).toBeNull();
     expect(result.response.answer).toContain("confirmed");
   });
@@ -115,7 +115,7 @@ describe("resumeAwaitingDecision", () => {
     expect(result.resumed).toBe(true);
     expect(selector.select).not.toHaveBeenCalled();
     expect(dispatch).not.toHaveBeenCalled();
-    expect(result.terminal).toEqual({ kind: "complete", stepId: "declined" });
+    expect(result.terminal).toEqual({ kind: "complete", stepId: "declined", collected: {} });
     expect(result.nextState).toBeNull();
     expect(result.response.answer).toContain("declined");
   });

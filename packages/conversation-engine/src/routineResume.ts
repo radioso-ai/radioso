@@ -147,7 +147,11 @@ export const resumeRoutine = async (input: {
     response: result.response,
     actions: result.actions,
     handoff: result.terminal?.kind === "handoff"
-      ? { routineId: state.routineId, stepId: result.terminal.stepId }
+      ? {
+          routineId: state.routineId,
+          stepId: result.terminal.stepId,
+          ...(result.terminal.collected ? { collected: result.terminal.collected } : {}),
+        }
       : undefined,
     routineExecution: {
       routineId: state.routineId,

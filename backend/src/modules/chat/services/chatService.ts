@@ -139,9 +139,10 @@ import {
   type ConversationOwnershipReader,
 } from "../../handoff/public.js";
 import {
-  buildHandoffNotifyAction,
   isHumanAgentMessage,
   retrievalMissHandoffForTurn,
+  routineHandoffNotifyAction,
+  routineHandoffOwnership,
   suppressedHumanOwnedResponse,
 } from "./handoffOwnership.js";
 import {
@@ -929,21 +930,11 @@ export class ChatService {
       this.checkTurnCancellation(coordination, "routing");
       if (routineTurn) {
         session = this.withResponseLanguage(session, await responseLanguagePromise);
-        const ownershipHandoff = routineTurn.handoff
-          ? { reason: "routine_handoff" as const, ...routineTurn.handoff }
-          : null;
+        const ownershipHandoff = routineTurn.handoff ? routineHandoffOwnership(routineTurn.handoff) : null;
         const actions = routineTurn.handoff
           ? [
               ...(routineTurn.actions ?? []),
-              buildHandoffNotifyAction({
-                conversationId: session.conversation.id,
-                workspaceId: input.workspaceId,
-                agentId: session.agent.id,
-                userMessageId: session.userMessage.id,
-                reason: "routine_handoff",
-                routineId: routineTurn.handoff.routineId,
-                stepId: routineTurn.handoff.stepId,
-              }),
+              routineHandoffNotifyAction({ session, workspaceId: input.workspaceId, handoff: routineTurn.handoff }),
             ]
           : routineTurn.actions;
         this.beginTurnEmission(coordination);
@@ -1042,21 +1033,11 @@ export class ChatService {
         const engineTrace = clarificationTurn?.kind === "continue" && clarificationTurn.stage && renderedTurn.engineTrace
           ? this.chatTurnAssembly.conversationTraceWithStage(renderedTurn.engineTrace, clarificationTurn.stage)
           : renderedTurn.engineTrace;
-        const coverageOwnershipHandoff = renderedTurn.handoff
-          ? { reason: "routine_handoff" as const, ...renderedTurn.handoff }
-          : null;
+        const coverageOwnershipHandoff = renderedTurn.handoff ? routineHandoffOwnership(renderedTurn.handoff) : null;
         const coverageActions = renderedTurn.handoff
           ? [
               ...(actions ?? []),
-              buildHandoffNotifyAction({
-                conversationId: session.conversation.id,
-                workspaceId: input.workspaceId,
-                agentId: session.agent.id,
-                userMessageId: session.userMessage.id,
-                reason: "routine_handoff",
-                routineId: renderedTurn.handoff.routineId,
-                stepId: renderedTurn.handoff.stepId,
-              }),
+              routineHandoffNotifyAction({ session, workspaceId: input.workspaceId, handoff: renderedTurn.handoff }),
             ]
           : actions;
         const retrievalMissHandoff = retrievalMissHandoffForTurn({
@@ -1122,21 +1103,11 @@ export class ChatService {
       const renderedTurn = preparedTurn;
       const { presentation, actions } = renderedTurn;
       const engineTrace = renderedTurn.engineTrace;
-      const coverageOwnershipHandoff = renderedTurn.handoff
-        ? { reason: "routine_handoff" as const, ...renderedTurn.handoff }
-        : null;
+      const coverageOwnershipHandoff = renderedTurn.handoff ? routineHandoffOwnership(renderedTurn.handoff) : null;
       const coverageActions = renderedTurn.handoff
         ? [
             ...(actions ?? []),
-            buildHandoffNotifyAction({
-              conversationId: session.conversation.id,
-              workspaceId: input.workspaceId,
-              agentId: session.agent.id,
-              userMessageId: session.userMessage.id,
-              reason: "routine_handoff",
-              routineId: renderedTurn.handoff.routineId,
-              stepId: renderedTurn.handoff.stepId,
-            }),
+            routineHandoffNotifyAction({ session, workspaceId: input.workspaceId, handoff: renderedTurn.handoff }),
           ]
         : actions;
       const retrievalMissHandoff = retrievalMissHandoffForTurn({
@@ -1434,21 +1405,11 @@ export class ChatService {
           this.checkTurnCancellation(coordination, "rendering");
         }
         session = this.withResponseLanguage(session, await responseLanguagePromise);
-        const ownershipHandoff = routineTurn.handoff
-          ? { reason: "routine_handoff" as const, ...routineTurn.handoff }
-          : null;
+        const ownershipHandoff = routineTurn.handoff ? routineHandoffOwnership(routineTurn.handoff) : null;
         const actions = routineTurn.handoff
           ? [
               ...(routineTurn.actions ?? []),
-              buildHandoffNotifyAction({
-                conversationId: session.conversation.id,
-                workspaceId: input.workspaceId,
-                agentId: session.agent.id,
-                userMessageId: session.userMessage.id,
-                reason: "routine_handoff",
-                routineId: routineTurn.handoff.routineId,
-                stepId: routineTurn.handoff.stepId,
-              }),
+              routineHandoffNotifyAction({ session, workspaceId: input.workspaceId, handoff: routineTurn.handoff }),
             ]
           : routineTurn.actions;
         // Durably enqueue the action + advance routine state + persist the reply BEFORE
@@ -1694,19 +1655,15 @@ export class ChatService {
           : undefined,
       };
       const coverageOwnershipHandoff = coverageRoutineEffects.handoff
-        ? { reason: "routine_handoff" as const, ...coverageRoutineEffects.handoff }
+        ? routineHandoffOwnership(coverageRoutineEffects.handoff)
         : null;
       const coverageActions = coverageRoutineEffects.handoff
         ? [
             ...(actions ?? []),
-            buildHandoffNotifyAction({
-              conversationId: preparedSession.conversation.id,
+            routineHandoffNotifyAction({
+              session: preparedSession,
               workspaceId: input.workspaceId,
-              agentId: preparedSession.agent.id,
-              userMessageId: preparedSession.userMessage.id,
-              reason: "routine_handoff",
-              routineId: coverageRoutineEffects.handoff.routineId,
-              stepId: coverageRoutineEffects.handoff.stepId,
+              handoff: coverageRoutineEffects.handoff,
             }),
           ]
         : actions;

@@ -1,7 +1,7 @@
 ---
 title: "Human Takeover"
 description: "Operator API and contract for taking over conversations and suppressing AI while handling manual responses."
-last_updated: 2026-09-05
+last_updated: 2026-09-21
 ---
 
 # Human Takeover
@@ -53,7 +53,9 @@ miss** to enable this trigger.
 
 Both triggers request human ownership and notify an operator through the existing
 contact-delivery transport with a `handoff.notify` action. They also record
-`hitl.ownership` audit events. See [Authoring routines](./authoring-routines.md#handoff-notifications)
+`hitl.ownership` audit events. A routine handoff's notice names the routine and
+lists the values it collected; a retrieval-miss notice carries the ids and the
+reason. See [Authoring routines](./authoring-routines.md#handoff-notifications)
 for the `handoff.notify` payload and queue semantics.
 
 ## Operator API

@@ -1,4 +1,4 @@
-import type { RoutineActionRequest } from "@radioso/conversation-contract";
+import type { ProcessTurnResult, RoutineActionRequest } from "@radioso/conversation-contract";
 
 import { HANDOFF_NOTIFY_ACTION_TYPE } from "./routines/contactRoutine.js";
 import { SKILL_TURN_OUTCOME } from "./assistantTurnOutcomeTypes.js";
@@ -50,7 +50,10 @@ export const suppressedHumanOwnedResponse = (
   };
 };
 
-export const buildHandoffNotifyAction = (input: {
+/** What the engine reports when a routine ends on a handoff terminal. */
+export type RoutineHandoffEffect = NonNullable<ProcessTurnResult["handoff"]>;
+
+const buildHandoffNotifyAction = (input: {
   conversationId: string;
   workspaceId: string;
   agentId: string;
@@ -58,6 +61,8 @@ export const buildHandoffNotifyAction = (input: {
   reason: "routine_handoff" | "retrieval_miss";
   routineId?: string;
   stepId?: string;
+  /** The routine's declared slot values, forwarded to the operator notice as-is. */
+  collected?: Record<string, unknown>;
 }): RoutineActionRequest => ({
   type: HANDOFF_NOTIFY_ACTION_TYPE,
   payload: {
@@ -68,8 +73,37 @@ export const buildHandoffNotifyAction = (input: {
     reason: input.reason,
     routineId: input.routineId,
     stepId: input.stepId,
+    ...(input.collected ? { collected: input.collected } : {}),
   },
 });
+
+/**
+ * The ownership record and its audit event name the routine and step; the collected
+ * values travel only on the notify action, so they are picked off here on purpose.
+ */
+export const routineHandoffOwnership = (
+  handoff: RoutineHandoffEffect,
+): { reason: "routine_handoff"; routineId: string; stepId: string } => ({
+  reason: "routine_handoff",
+  routineId: handoff.routineId,
+  stepId: handoff.stepId,
+});
+
+export const routineHandoffNotifyAction = (input: {
+  session: PreparedSession;
+  workspaceId: string;
+  handoff: RoutineHandoffEffect;
+}): RoutineActionRequest =>
+  buildHandoffNotifyAction({
+    conversationId: input.session.conversation.id,
+    workspaceId: input.workspaceId,
+    agentId: input.session.agent.id,
+    userMessageId: input.session.userMessage.id,
+    reason: "routine_handoff",
+    routineId: input.handoff.routineId,
+    stepId: input.handoff.stepId,
+    collected: input.handoff.collected,
+  });
 
 const shouldRequestRetrievalMissHandoff = (input: {
   session: PreparedSession;

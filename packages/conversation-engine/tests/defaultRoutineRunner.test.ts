@@ -327,6 +327,62 @@ describe("DefaultRoutineRunner", () => {
     }));
   });
 
+  it("carries the declared slot values on a handoff terminal, without undeclared variables", async () => {
+    const bookingRoutine: Routine = {
+      id: "booking",
+      rootStepId: "ask_program",
+      slots: [
+        { id: "slot_program", key: "program", type: "text", required: true },
+        { id: "slot_arrival", key: "arrival_date", type: "text", required: true },
+        { id: "slot_guests", key: "guests", type: "number", required: false },
+      ],
+      steps: [
+        { id: "ask_program", kind: "chat", action: "Ask which program." },
+        { id: "handoff", kind: "terminal", action: "Hand off to the booking desk.", metadata: { terminalKind: "handoff" } },
+      ],
+      transitions: [{ from: "ask_program", to: "handoff", condition: "program known" }],
+    };
+    const runner = new DefaultRoutineRunner(
+      [bookingRoutine],
+      { select: vi.fn(async () => ({ nextStepId: "handoff", variables: { arrival_date: "2026-10-12" } })) },
+      { render: vi.fn(echoRenderer.render) },
+    );
+
+    const result = await runner.resume({
+      turn,
+      state: {
+        ...state(["ask_program"], { program: "Yoga retreat", scratch: "not a slot" }),
+        routineId: bookingRoutine.id,
+      },
+    });
+
+    expect(result.nextState).toBeNull();
+    expect(result.terminal).toEqual({
+      kind: "handoff",
+      stepId: "handoff",
+      collected: { program: "Yoga retreat", arrival_date: "2026-10-12" },
+    });
+  });
+
+  it("carries the declared slot values on a complete terminal too", async () => {
+    const slotRoutine: Routine = {
+      ...routine,
+      slots: [{ id: "slot_email", key: "email", type: "email", required: true }],
+    };
+    const runner = new DefaultRoutineRunner(
+      [slotRoutine],
+      { select: vi.fn(async () => ({ nextStepId: "done" })) },
+      { render: vi.fn(echoRenderer.render) },
+    );
+
+    const result = await runner.resume({
+      turn,
+      state: state(["ask_email", "ask_message"], { email: "a@b.c", message: "hi" }),
+    });
+
+    expect(result.terminal).toEqual({ kind: "complete", stepId: "done", collected: { email: "a@b.c" } });
+  });
+
   it("does not emit completion export when the terminal kind is not configured", async () => {
     const exportRoutine: Routine = {
       ...routine,
@@ -892,7 +948,7 @@ describe("DefaultRoutineRunner skill (tool) steps", () => {
     expect(dispatch).toHaveBeenCalledTimes(2);
     expect(second.response.answer).toContain("handoff");
     expect(second.nextState).toBeNull();
-    expect(second.terminal).toEqual({ kind: "handoff", stepId: "handoff" });
+    expect(second.terminal).toEqual({ kind: "handoff", stepId: "handoff", collected: {} });
     expect(second.actions).toBeUndefined();
   });
 
@@ -931,7 +987,7 @@ describe("DefaultRoutineRunner skill (tool) steps", () => {
     expect(dispatch).toHaveBeenCalledTimes(1);
     expect(result.response.answer).toContain("handoff");
     expect(result.nextState).toBeNull();
-    expect(result.terminal).toEqual({ kind: "handoff", stepId: "handoff" });
+    expect(result.terminal).toEqual({ kind: "handoff", stepId: "handoff", collected: {} });
   });
 
   it("uses a slot_filled guard purely before falling back to the selector", async () => {

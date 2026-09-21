@@ -3,6 +3,7 @@ import type { AuditPort } from "../../audit/contracts/index.js";
 import type { PendingDecisionRepository } from "../../../db/repositories/pendingDecisionRepository.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
+import { resolveConversationLink, type ConversationLinkResolver } from "../../operatorNotifications/public.js";
 import type { SlackInstallationRecord, SlackInstallationRepositoryPort } from "../public.js";
 import type {
   OperatorReplyService,
@@ -126,8 +127,6 @@ const readNumber = (value: unknown): number | null =>
 
 const ownershipContextText = (conversationId: string): string => `Conversation ${conversationId}`;
 
-const dashboardPath = (conversationId: string): string => `/conversations/${conversationId}`;
-
 const decisionErrorOutcome = (error: ApprovalDecisionServiceError): "stale" | "forbidden" | "invalid" => {
   switch (error.reason) {
     case "stale_proposal":
@@ -173,6 +172,7 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
     audit?: Pick<AuditPort, "record">;
     metrics?: Pick<MetricsRegistry, "incrementCounter">;
     workspaceInvalidationPublisher?: WorkspaceInvalidationPublisher;
+    conversationLinks?: ConversationLinkResolver;
     logger?: { warn(payload: Record<string, unknown>, message: string): void };
   }) {}
 
@@ -403,7 +403,7 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
       workspaceId: input.workspaceId,
       state: "human_owned",
       contextText: ownershipContextText(input.conversationId),
-      dashboardPath: dashboardPath(input.conversationId),
+      dashboardUrl: await resolveConversationLink(this.options.conversationLinks, input, this.options.logger),
       ownerName: result.record.ownerDisplayName ?? displayName,
       version: result.record.version,
     });
@@ -457,7 +457,11 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
       workspaceId: resultWorkspaceId,
       state: "ai_owned",
       contextText: ownershipContextText(input.conversationId),
-      dashboardPath: dashboardPath(input.conversationId),
+      dashboardUrl: await resolveConversationLink(
+        this.options.conversationLinks,
+        { workspaceId: resultWorkspaceId, conversationId: input.conversationId },
+        this.options.logger,
+      ),
     });
     await this.postResponseUrl(payload, {
       replace_original: true,

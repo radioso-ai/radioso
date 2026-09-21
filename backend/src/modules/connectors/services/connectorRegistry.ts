@@ -22,6 +22,7 @@ import type { OperatorReplyService } from "../../handoff/public.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import { stringifyUnknown } from "../../../shared/text/stringifyUnknown.js";
 import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
+import type { ConversationLinkResolver } from "../../operatorNotifications/public.js";
 import {
   decryptField,
   encryptField,
@@ -126,6 +127,7 @@ export class ConnectorRegistry {
     auditService?: Pick<AuditPort, "record">;
     metricsRegistry?: Pick<MetricsRegistry, "incrementCounter"> | null;
     workspaceInvalidationPublisher?: WorkspaceInvalidationPublisher;
+    conversationLinks?: ConversationLinkResolver;
     assertPublicUrl?: (url: string) => Promise<void>;
     fetchPublicUrl?: typeof fetch;
   }): Promise<void> {
@@ -141,6 +143,7 @@ export class ConnectorRegistry {
           auditService: context.auditService,
           metricsRegistry: context.metricsRegistry,
           workspaceInvalidationPublisher: context.workspaceInvalidationPublisher,
+          conversationLinks: context.conversationLinks,
           assertPublicUrl: context.assertPublicUrl,
           publicHttp: {
             assertPublicUrl: context.assertPublicUrl ?? (async () => {

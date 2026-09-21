@@ -1,7 +1,7 @@
 ---
 title: "Agents and skills"
 description: "Configure workspace agents, directives, named agent skills, revisions, and inspect the read-only skills catalog exposed by the API."
-last_updated: 2026-09-10
+last_updated: 2026-09-21
 ---
 
 # Agents and skills
@@ -317,6 +317,24 @@ There is no request signature. Treat the webhook URL itself as a secret: keep it
 Each request carries an `Idempotency-Key` header. Delivery is at-least-once, so the same request may arrive more than once on retries. Use the key to de-duplicate.
 
 Radioso sends the request with `POST`, follows redirects only to publicly routable hosts, and applies a short delivery timeout. Point the webhook at a stable public endpoint.
+
+### Handoff and approval notifications
+
+The same recipients and webhook also hear when a conversation needs a person: a routine reaches a handoff, the agent escalates on its own, or a routine step pauses for an approval decision. Each notification is emailed to the recipients and, when a webhook is configured, posted to it as JSON:
+
+```json
+{
+  "workspaceId": "...",
+  "agentId": "...",
+  "conversationId": "...",
+  "reason": "routine_handoff",
+  "dashboardUrl": "https://app.radioso.ai/w/support-abc/activity?tab=all&filter=chat&itemKind=chat&itemId=...",
+  "dashboardPath": "/w/support-abc/activity?tab=all&filter=chat&itemKind=chat&itemId=...",
+  "requestId": "..."
+}
+```
+
+A handoff carries `reason`; an approval carries `handle`, the id of the pending decision, instead — that is how a receiver tells the two apart. `dashboardUrl` opens the conversation in the dashboard, and `dashboardPath` is the same link without the origin, for receivers that build links against their own copy of the dashboard host. Both are `null` when the link cannot be resolved, for example because the workspace has since been deleted, so a receiver that only wants the link should fall back to `conversationId`. The same `Idempotency-Key` and delivery rules as contact requests apply.
 
 ## Move an agent between workspaces
 

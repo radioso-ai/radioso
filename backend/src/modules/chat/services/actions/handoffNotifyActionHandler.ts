@@ -12,14 +12,12 @@ export class HandoffNotifyActionHandler implements ActionHandler {
     const workspaceId = asString(input.payload.workspaceId) ?? input.context.workspaceId ?? "unknown";
     const agentId = asString(input.payload.agentId) ?? "unknown";
     const reason = asString(input.payload.reason) ?? "routine_handoff";
-    const dashboardPath = asString(input.payload.dashboardPath) ?? `/conversations/${conversationId}`;
     await this.dispatcher.dispatch({
       kind: "handoff",
       workspaceId,
       conversationId,
       agentId,
       reason,
-      dashboardPath,
     }, {
       requestId: input.context.requestId,
       workspaceId: input.context.workspaceId,

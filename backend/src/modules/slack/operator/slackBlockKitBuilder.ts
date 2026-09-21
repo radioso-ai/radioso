@@ -1,6 +1,6 @@
 import type { PendingDecisionOption } from "../../../db/repositories/pendingDecisionRepository.js";
 
-export interface SlackBlockKitMessage {
+interface SlackBlockKitMessage {
   text: string;
   blocks: Array<Record<string, unknown>>;
 }
@@ -57,6 +57,15 @@ const encodeDecisionValue = (input: {
   return value;
 };
 
+const mrkdwnContext = (text: string): Record<string, unknown> => ({
+  type: "context",
+  elements: [{ type: "mrkdwn", text }],
+});
+
+/** Null when there is no link: a post without one beats a post with a link that does not route. */
+const dashboardLinkMrkdwn = (dashboardUrl: string | null): string | null =>
+  dashboardUrl ? `<${dashboardUrl}|Open in dashboard>` : null;
+
 const encodeOwnershipValue = (input: Record<string, string | number>): string => {
   const value = JSON.stringify(input);
   if (value.length > 2_000) {
@@ -71,30 +80,21 @@ export const buildDecisionMessage = (input: {
   handle: string;
   contentHash: string;
   agentId: string;
-  dashboardPath: string;
+  dashboardUrl: string | null;
 }): SlackBlockKitMessage => {
   const prompt = input.reason?.trim() || input.handle;
   const visibleOptions = input.options.slice(0, ACTIONS_ELEMENTS_LIMIT);
   const hiddenOptionCount = input.options.length - visibleOptions.length;
+  const dashboardLink = dashboardLinkMrkdwn(input.dashboardUrl);
   return {
     text: clampSectionText(prompt),
     blocks: [
       mrkdwnSection(prompt),
-      {
-        type: "context",
-        elements: [{
-          type: "mrkdwn",
-          text: `<${input.dashboardPath}|${input.dashboardPath}>`,
-        }],
-      },
+      ...(dashboardLink ? [mrkdwnContext(dashboardLink)] : []),
+      // Options past Slack's button limit are only reachable from the dashboard, so the
+      // overflow marker carries the link when there is one.
       ...(hiddenOptionCount > 0
-        ? [{
-            type: "context",
-            elements: [{
-              type: "mrkdwn",
-              text: `<${input.dashboardPath}|${input.dashboardPath}> ${ELLIPSIS}`,
-            }],
-          }]
+        ? [mrkdwnContext(dashboardLink ? `${dashboardLink} ${ELLIPSIS}` : ELLIPSIS)]
         : []),
       {
         type: "actions",
@@ -137,12 +137,12 @@ export const buildOwnershipMessage = (input: {
   workspaceId: string;
   state: "ai_owned" | "human_owned";
   contextText: string;
-  dashboardPath: string;
+  dashboardUrl: string | null;
   ownerName?: string | null;
   version?: number;
 }): SlackBlockKitMessage => {
   const contextText = input.contextText.trim() || input.conversationId;
-  const dashboardLink = `<${input.dashboardPath}|${input.dashboardPath}>`;
+  const dashboardLink = dashboardLinkMrkdwn(input.dashboardUrl);
   if (input.state === "human_owned") {
     const ownerName = input.ownerName?.trim() || "Operator";
     const version = input.version ?? 0;
@@ -176,10 +176,7 @@ export const buildOwnershipMessage = (input: {
             },
           ],
         },
-        {
-          type: "context",
-          elements: [{ type: "mrkdwn", text: dashboardLink }],
-        },
+        ...(dashboardLink ? [mrkdwnContext(dashboardLink)] : []),
       ],
     };
   }
@@ -188,10 +185,7 @@ export const buildOwnershipMessage = (input: {
     text: clampSectionText(contextText),
     blocks: [
       mrkdwnSection(contextText),
-      {
-        type: "context",
-        elements: [{ type: "mrkdwn", text: dashboardLink }],
-      },
+      ...(dashboardLink ? [mrkdwnContext(dashboardLink)] : []),
       {
         type: "actions",
         elements: [{

@@ -6,3 +6,7 @@ export type {
   OperatorNotificationContext,
   OperatorNotificationSink,
 } from "./operatorNotification.js";
+export {
+  resolveConversationLink,
+  type ConversationLinkResolver,
+} from "./conversationLinkResolver.js";

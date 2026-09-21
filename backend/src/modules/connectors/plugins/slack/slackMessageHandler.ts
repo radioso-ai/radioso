@@ -357,9 +357,11 @@ export class SlackMessageHandler {
     binding?: SlackChannelBindingRecord,
   ): Promise<void> {
     await this.options.persistence.markInboundEventStatus(envelope.eventId, "skipped");
-    // With channels:history every top-level post in every joined channel arrives here; the
-    // mention-only skip is the expected fate of almost all of it and is not worth a line each.
-    if (reason === "mention_only") {
+    // With channels:history every post in every joined channel arrives here; a top-level post in a
+    // mention-only channel or a reply in a thread Radioso never joined is the expected fate of
+    // almost all of it and is not worth a line each. A mention seen on this path is the one skip
+    // worth a trace, since it proves the app_mention delivery owns the message.
+    if (reason === "mention_only" || reason === "thread_not_owned") {
       return;
     }
     this.options.logger.info(

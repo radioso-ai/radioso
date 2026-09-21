@@ -182,18 +182,17 @@ describe("SlackMessageHandler.handleChannelMessage", () => {
     expect(answered).toEqual([{ agentId: AGENT_DEFAULT, query: "how do refunds work?" }]);
   });
 
-  it("skips a thread reply in a thread Radioso does not own and logs only identifiers", async () => {
+  it("skips a thread reply in a thread Radioso does not own without logging a line for it", async () => {
     const { handler, answered, statuses, info } = makeHandler(await seededBindings("every_message"));
 
     await handler.handleChannelMessage(channelMessage({ thread_ts: "1700000000.000100" }));
 
     expect(answered).toEqual([]);
     expect(statuses).toEqual([{ eventId: "Ev-channel", status: "skipped" }]);
-    expect(info).toHaveBeenCalledWith(
-      expect.objectContaining({ eventId: "Ev-channel", reason: "thread_not_owned" }),
-      expect.stringContaining("Slack inbound skipped"),
+    expect(info).not.toHaveBeenCalledWith(
+      expect.objectContaining({ reason: "thread_not_owned" }),
+      expect.anything(),
     );
-    expect(JSON.stringify(info.mock.calls)).not.toContain("refunds");
   });
 
   it("answers every top-level message in a new thread when the channel binding says so", async () => {

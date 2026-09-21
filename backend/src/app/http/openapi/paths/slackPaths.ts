@@ -24,11 +24,17 @@ const SlackInstallStatusSchema = z.object({
   answeringAgentId: z.string().uuid().optional(),
 });
 
+// When the bound agent speaks without being addressed. `mention` answers @mentions and keeps
+// answering inside threads it already owns; `every_message` also answers every top-level message
+// in that channel. The default binding (channelId null) is always `mention`.
+const SlackBindingRespondModeSchema = z.enum(["mention", "every_message"]);
+
 const SlackBindingSchema = z.object({
   channelId: z.string().nullable(),
   answeringAgentId: z.string().uuid().nullable(),
   escalationChannelId: z.string().nullable(),
   gapEscalationEnabled: z.boolean(),
+  respondMode: SlackBindingRespondModeSchema,
 });
 
 const SlackBindingsListSchema = z.object({
@@ -40,6 +46,8 @@ const SlackBindingUpdateSchema = z.object({
   answeringAgentId: z.string().uuid(),
   escalationChannelId: z.string().nullable().optional(),
   gapEscalationEnabled: z.boolean().optional(),
+  // Omitted keeps the stored mode. `every_message` with a null/omitted channelId is rejected with 400.
+  respondMode: SlackBindingRespondModeSchema.optional(),
 });
 
 const SlackBindingDeleteQuerySchema = z.object({

@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, expect, it } from "vitest";
 
 import { PostgresSlackPersistence } from "../../src/modules/connectors/plugins/slack/slackPersistence.js";
+import { PostgresSlackInboundEventRetention } from "../../src/modules/slack/retention/slackInboundEventRetention.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 
@@ -16,6 +17,7 @@ const { describeIntegration, integrationDatabaseUrl } = await resolveIntegration
 describeIntegration("PostgresSlackPersistence (Postgres)", () => {
   const database = new Database(integrationDatabaseUrl);
   const persistence = new PostgresSlackPersistence(database.kysely);
+  const retention = new PostgresSlackInboundEventRetention(database.kysely);
 
   const accountId = randomUUID();
   const workspaceId = randomUUID();
@@ -117,6 +119,28 @@ describeIntegration("PostgresSlackPersistence (Postgres)", () => {
     );
     expect(stale?.status).toBe("failed");
     expect(fresh?.status).toBe("received");
+  });
+
+  it("deletes inbound event rows received before the cutoff, oldest first and bounded by the limit", async () => {
+    const oldIds = [`E-${randomUUID()}`, `E-${randomUUID()}`, `E-${randomUUID()}`];
+    const freshId = `E-${randomUUID()}`;
+    for (const eventId of [...oldIds, freshId]) {
+      await persistence.createInboundEvent({ eventId, teamId });
+    }
+    await database.query(
+      `UPDATE slack_inbound_events SET received_at = NOW() - interval '8 days' WHERE event_id = ANY($1::text[])`,
+      [oldIds],
+    );
+    const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+    expect(await retention.deleteBefore({ cutoff, limit: 2 })).toBe(2);
+    expect(await retention.deleteBefore({ cutoff, limit: 2 })).toBe(1);
+    expect(await retention.deleteBefore({ cutoff, limit: 2 })).toBe(0);
+    const remaining = await database.query<{ event_id: string }>(
+      `SELECT event_id FROM slack_inbound_events WHERE event_id = ANY($1::text[])`,
+      [[...oldIds, freshId]],
+    );
+    expect(remaining.map((row) => row.event_id)).toEqual([freshId]);
   });
 
   it("returns null for a missing conversation link", async () => {

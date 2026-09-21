@@ -39,6 +39,58 @@ describe("SlackWebApiClient", () => {
     );
   });
 
+  it("posts markdown answers through markdown_text and never alongside text or blocks", async () => {
+    const fetchImpl = vi.fn<SlackFetchLike>().mockResolvedValue(jsonResponse(200, {
+      ok: true,
+      channel: "C123",
+      ts: "1710000000.000002",
+    }));
+    const client = new SlackWebApiClient({ botToken: "xoxb-token", fetchImpl });
+
+    await expect(client.postMessage({
+      channel: "C123",
+      markdownText: "**bold** answer",
+      threadTs: "1710000000.000001",
+    })).resolves.toEqual({ channel: "C123", ts: "1710000000.000002" });
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "https://slack.com/api/chat.postMessage",
+      expect.objectContaining({
+        body: JSON.stringify({
+          channel: "C123",
+          thread_ts: "1710000000.000001",
+          markdown_text: "**bold** answer",
+        }),
+      }),
+    );
+  });
+
+  it("maps agent session status, rename, and suggested prompts onto Slack's snake_case bodies", async () => {
+    const fetchImpl = vi.fn<SlackFetchLike>().mockResolvedValue(jsonResponse(200, { ok: true }));
+    const client = new SlackWebApiClient({ botToken: "xoxb-token", fetchImpl });
+
+    await client.setAgentSessionStatus({ channelId: "D123", threadTs: "1710000000.000001", status: "processing" });
+    await client.renameAgentSession({ channelId: "D123", threadTs: "1710000000.000001", title: "Refund policy" });
+    await client.setSuggestedPrompts({
+      channelId: "D123",
+      prompts: [{ title: "Refunds", message: "How do refunds work?" }],
+    });
+
+    expect(fetchImpl.mock.calls.map(([url, init]) => [url, init.body])).toEqual([
+      [
+        "https://slack.com/api/agents.sessions.setStatus",
+        JSON.stringify({ channel_id: "D123", thread_ts: "1710000000.000001", status: "processing" }),
+      ],
+      [
+        "https://slack.com/api/agents.sessions.rename",
+        JSON.stringify({ channel_id: "D123", thread_ts: "1710000000.000001", title: "Refund policy" }),
+      ],
+      [
+        "https://slack.com/api/assistant.threads.setSuggestedPrompts",
+        JSON.stringify({ channel_id: "D123", prompts: [{ title: "Refunds", message: "How do refunds work?" }] }),
+      ],
+    ]);
+  });
+
   it("updates messages and includes blocks when provided", async () => {
     const blocks = [{ type: "section", text: { type: "mrkdwn", text: "Approved" } }];
     const fetchImpl = vi.fn<SlackFetchLike>().mockResolvedValue(jsonResponse(200, {

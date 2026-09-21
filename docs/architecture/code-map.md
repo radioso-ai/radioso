@@ -237,14 +237,14 @@ Public surfaces and key files:
 - `backend/src/app/http/openapi/paths/slackPaths.ts`
 - `backend/src/modules/slack/public.ts`
 - `backend/src/modules/slack/manifest/slackManifest.ts`
-- `backend/src/modules/connectors/plugins/slack/`
+- `backend/src/modules/connectors/plugins/slack/` (`slackChannelMessageDisposition.ts` is the pure speak/skip rule for un-mentioned channel messages)
 - `frontend/lib/api-slack.ts`
 - `frontend/components/dashboard/settings/slack-channel-card.tsx`
 
 Useful searches:
 
 - `rg "slack/manifest|slack/install|slack/binding" backend/src frontend`
-- `rg "app_mention|message.im|slack_conversation_links" backend/src backend/tests`
+- `rg "app_mention|message.im|message.channels|slack_conversation_links|respond_mode" backend/src backend/tests`
 
 Focused checks:
 

@@ -20,6 +20,7 @@ import { AuthService } from "../../src/modules/auth/services/authService.js";
 import { EmailVerificationService } from "../../src/modules/auth/services/emailVerificationService.js";
 import { PasswordResetService } from "../../src/modules/auth/services/passwordResetService.js";
 import { ChatBootstrapService } from "../../src/modules/chat/services/chatBootstrapService.js";
+import { RevisionGreetingStarterPromptReader } from "../../src/modules/chat/services/agentStarterPromptReader.js";
 import {
   createRouteScopedDirectiveSteering,
   InMemoryConversationTurnRegistry,
@@ -1882,6 +1883,10 @@ export const createTestDependencies = (overrides: {
     productAnalyticsService,
     agentService,
   );
+  const agentStarterPromptReader = new RevisionGreetingStarterPromptReader(
+    agentService,
+    new AgentRevisionRuntimeResolver(publishedAgentRevisions),
+  );
   const assistantChatService = new AssistantChatService(chatService, chatBootstrapService);
   const agentTurnProbeService = new AgentTurnProbeService({
     conversationReader: new ProbeConversationReader(conversationRepository),
@@ -2441,7 +2446,15 @@ export const createTestDependencies = (overrides: {
       logger,
       retentionDays: env.AGENT_REVISION_EVAL_RUN_RETENTION_DAYS,
     }),
+    slackInboundEventRetentionWorker: new TtlRetentionWorker({
+      subject: "slack_inbound_event",
+      sweep: { deleteBefore: async () => 0 },
+      audit: auditService,
+      logger,
+      retentionDays: env.SLACK_INBOUND_EVENT_RETENTION_DAYS,
+    }),
     chatBootstrapService,
+    agentStarterPromptReader,
     chatHistoryService,
     assistantChatService,
     assistantHistoryService,
@@ -2499,6 +2512,7 @@ export const createTestDependencies = (overrides: {
     logger: dependencies.logger,
     chat: createConnectorChatPort(dependencies.chatService),
     ingestion: dependencies.connectorIngestionPort,
+    agentStarterPrompts: dependencies.agentStarterPromptReader,
   });
 
   return {

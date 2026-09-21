@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { SegmentedControl, type SegmentedControlOption } from '@/components/ui/segmented-control'
 import {
   Select,
   SelectContent,
@@ -20,13 +21,24 @@ import { Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { getAgentOperatorLabel } from '@/lib/agent-label'
-import { slackApi, type SlackBinding, type SlackInstallStatusResponse, type SlackManifestResponse } from '@/lib/api-slack'
+import {
+  slackApi,
+  type SlackBinding,
+  type SlackInstallStatusResponse,
+  type SlackManifestResponse,
+  type SlackRespondMode,
+} from '@/lib/api-slack'
 
 type SlackChannelCardProps = {
   workspaceId: string | null | undefined
   agentId: string | null | undefined
   agentName: string
 }
+
+const RESPOND_MODE_OPTIONS: readonly SegmentedControlOption<SlackRespondMode>[] = [
+  { value: 'mention', label: '@mentions only' },
+  { value: 'every_message', label: 'Every message' },
+]
 
 const isConnected = (status: SlackInstallStatusResponse | null) => status?.status === 'connected'
 const needsReauth = (status: SlackInstallStatusResponse | null) => status?.status === 'needs_reauth'
@@ -269,6 +281,30 @@ export function SlackChannelCard({ workspaceId, agentId, agentName }: SlackChann
     }
   }
 
+  // Only channel-specific bindings carry a respond mode; the default binding is always `mention`
+  // and the backend rejects anything else for it, so this control never renders for it.
+  const updateChannelRespondMode = async (item: SlackBinding, respondMode: SlackRespondMode) => {
+    if (!workspaceId || !agentId || !item.channelId) return
+    if (busyAction === 'binding' || item.respondMode === respondMode) return
+    setBusyAction('binding')
+    setError(null)
+    try {
+      await slackApi.updateBinding(workspaceId, agentId, {
+        channelId: item.channelId,
+        answeringAgentId: item.answeringAgentId ?? agentId,
+        escalationChannelId: item.escalationChannelId,
+        gapEscalationEnabled: item.gapEscalationEnabled,
+        respondMode,
+      })
+      const refreshedBindings = await slackApi.listBindings(workspaceId, agentId)
+      setChannelBindings(refreshedBindings.bindings)
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Failed to update Slack respond mode.'))
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
   const removeChannelBinding = async (channelId: string) => {
     if (!workspaceId || !agentId) return
     setBusyAction('binding')
@@ -430,16 +466,27 @@ export function SlackChannelCard({ workspaceId, agentId, agentName }: SlackChann
                   {agentChannelBindings.map((item) => (
                     <div key={item.channelId} className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-background px-3 py-2">
                       <span className="text-sm text-foreground">{item.channelId}</span>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => item.channelId ? void removeChannelBinding(item.channelId) : undefined}
-                        disabled={busyAction === 'binding'}
-                      >
-                        {busyAction === 'binding' ? <Spinner className="mr-2 h-4 w-4" /> : <Trash2 className="mr-2 h-4 w-4" />}
-                        Remove
-                      </Button>
+                      <div className="flex flex-wrap items-center gap-3">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground">Responds to</span>
+                          <SegmentedControl
+                            aria-label={`Responds to (${item.channelId})`}
+                            value={item.respondMode}
+                            onValueChange={(next) => void updateChannelRespondMode(item, next)}
+                            options={RESPOND_MODE_OPTIONS}
+                          />
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => item.channelId ? void removeChannelBinding(item.channelId) : undefined}
+                          disabled={busyAction === 'binding'}
+                        >
+                          {busyAction === 'binding' ? <Spinner className="mr-2 h-4 w-4" /> : <Trash2 className="mr-2 h-4 w-4" />}
+                          Remove
+                        </Button>
+                      </div>
                     </div>
                   ))}
                 </div>

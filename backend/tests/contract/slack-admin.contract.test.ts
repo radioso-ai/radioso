@@ -66,6 +66,10 @@ describe("Slack admin REST contract", () => {
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({
       manifest: {
+        features: {
+          agent_view: { agent_description: expect.any(String) },
+          app_home: { messages_tab_enabled: true, messages_tab_read_only_enabled: false },
+        },
         oauth_config: {
           redirect_urls: ["https://self-host.example.com/api/v1/oauth/callback/slack"],
           scopes: {
@@ -78,13 +82,16 @@ describe("Slack admin REST contract", () => {
               "reactions:write",
               "users:read",
               "users:read.email",
+              "channels:history",
+              "groups:history",
+              "assistant:write",
             ]),
           },
         },
         settings: {
           event_subscriptions: {
             request_url: "https://self-host.example.com/api/connectors/slack/events",
-            bot_events: ["app_mention", "message.im"],
+            bot_events: ["app_mention", "message.im", "message.channels", "message.groups", "app_home_opened"],
           },
           interactivity: {
             is_enabled: true,
@@ -186,6 +193,7 @@ describe("Slack admin REST contract", () => {
       answeringAgentId: null,
       escalationChannelId: null,
       gapEscalationEnabled: false,
+      respondMode: "mention",
     });
 
     const updatedBinding = await request(app)
@@ -198,6 +206,7 @@ describe("Slack admin REST contract", () => {
       answeringAgentId,
       escalationChannelId: "CESCALATE",
       gapEscalationEnabled: true,
+      respondMode: "mention",
     });
     expectNoSecrets(updatedBinding.body);
 
@@ -211,19 +220,44 @@ describe("Slack admin REST contract", () => {
       answeringAgentId,
       escalationChannelId: "CESCALATE",
       gapEscalationEnabled: false,
+      respondMode: "mention",
     });
+
+    const defaultEveryMessage = await request(app)
+      .put(`${base}/binding`)
+      .set(headers)
+      .send({ answeringAgentId, respondMode: "every_message" });
+    expect(defaultEveryMessage.status).toBe(400);
+    const nullChannelEveryMessage = await request(app)
+      .put(`${base}/binding`)
+      .set(headers)
+      .send({ channelId: null, answeringAgentId, respondMode: "every_message" });
+    expect(nullChannelEveryMessage.status).toBe(400);
+    const invalidMode = await request(app)
+      .put(`${base}/binding`)
+      .set(headers)
+      .send({ channelId: "C_SUPPORT", answeringAgentId, respondMode: "sometimes" });
+    expect(invalidMode.status).toBe(400);
 
     const channelBinding = await request(app)
       .put(`${base}/binding`)
       .set(headers)
-      .send({ channelId: "C_SUPPORT", answeringAgentId });
+      .send({ channelId: "C_SUPPORT", answeringAgentId, respondMode: "every_message" });
     expect(channelBinding.status).toBe(200);
     expect(channelBinding.body).toEqual({
       channelId: "C_SUPPORT",
       answeringAgentId,
       escalationChannelId: null,
       gapEscalationEnabled: false,
+      respondMode: "every_message",
     });
+
+    const channelAgentOnlyUpdate = await request(app)
+      .put(`${base}/binding`)
+      .set(headers)
+      .send({ channelId: "C_SUPPORT", answeringAgentId });
+    expect(channelAgentOnlyUpdate.status).toBe(200);
+    expect(channelAgentOnlyUpdate.body.respondMode).toBe("every_message");
 
     const bindings = await request(app).get(`${base}/bindings`).set(headers);
     expect(bindings.status).toBe(200);
@@ -234,12 +268,14 @@ describe("Slack admin REST contract", () => {
           answeringAgentId,
           escalationChannelId: "CESCALATE",
           gapEscalationEnabled: false,
+          respondMode: "mention",
         },
         {
           channelId: "C_SUPPORT",
           answeringAgentId,
           escalationChannelId: null,
           gapEscalationEnabled: false,
+          respondMode: "every_message",
         },
       ],
     });
@@ -260,6 +296,7 @@ describe("Slack admin REST contract", () => {
           answeringAgentId,
           escalationChannelId: "CESCALATE",
           gapEscalationEnabled: false,
+          respondMode: "mention",
         },
       ],
     });

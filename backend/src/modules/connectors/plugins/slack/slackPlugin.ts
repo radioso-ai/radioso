@@ -27,6 +27,7 @@ import {
   SlackOperatorIdentityResolver,
   SlackWebApiClient,
 } from "../../../slack/public.js";
+import type { SlackStarterPromptsPort } from "./slackAgentSession.js";
 import { SlackMessageHandler, type SlackWebApiClientFactory } from "./slackMessageHandler.js";
 import { connectorKyselyDb } from "../../services/connectorKyselyDb.js";
 import { PostgresSlackPersistence } from "./slackPersistence.js";
@@ -45,6 +46,7 @@ type SlackConnectorContext = ConnectorContext & {
   metricsRegistry?: Pick<MetricsRegistry, "incrementCounter"> | null;
   assertPublicUrl?: (url: string) => Promise<void>;
   workspaceInvalidationPublisher?: WorkspaceInvalidationPublisher;
+  agentStarterPrompts?: SlackStarterPromptsPort;
 };
 
 export class SlackPlugin implements ConnectorPlugin {
@@ -119,6 +121,7 @@ export class SlackPlugin implements ConnectorPlugin {
       slackPostOutbox,
       clientFactory: this.options.clientFactory,
       workspaceInvalidationPublisher: extendedContext.workspaceInvalidationPublisher,
+      starterPrompts: extendedContext.agentStarterPrompts,
     });
 
     context.http.mount(

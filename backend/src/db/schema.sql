@@ -3225,7 +3225,9 @@ CREATE TABLE public.slack_channel_bindings (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     gap_escalation_enabled boolean DEFAULT false NOT NULL,
-    channel_id text
+    channel_id text,
+    respond_mode text DEFAULT 'mention'::text NOT NULL,
+    CONSTRAINT slack_channel_bindings_respond_mode_check CHECK ((respond_mode = ANY (ARRAY['mention'::text, 'every_message'::text])))
 );
 
 

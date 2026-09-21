@@ -11,6 +11,10 @@ export { AgentConverseService } from "./services/agentConverseService.js";
 export { AssistantHistoryService } from "./services/assistantHistoryService.js";
 export { ChatBootstrapService } from "./services/chatBootstrapService.js";
 export {
+  RevisionGreetingStarterPromptReader,
+  type AgentStarterPromptReader,
+} from "./services/agentStarterPromptReader.js";
+export {
   ChatService,
   type ChatRoutineProvider,
 } from "./services/chatService.js";

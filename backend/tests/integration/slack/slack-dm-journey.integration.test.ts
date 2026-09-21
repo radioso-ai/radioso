@@ -19,6 +19,7 @@ import { PostgresSlackPersistence } from "../../../src/modules/connectors/plugin
 import type { Database } from "../../../src/shared/infra/database.js";
 import { createKyselyDatabase } from "../../../src/shared/infra/kysely/kyselyDatabase.js";
 import { testMigrationsPath } from "../../support/databaseMigrations.js";
+import { idleSlackAgentSessionClient } from "../../support/inMemorySlack.js";
 
 const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
 
@@ -123,6 +124,7 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
     await client.query(await readFile(path.join(testMigrationsPath, "116_slack_channel_scoped_bindings.sql"), "utf8"));
     await client.query(await readFile(path.join(testMigrationsPath, "117_integration_connections_account_owner.sql"), "utf8"));
     await client.query(await readFile(path.join(testMigrationsPath, "118_slack_installation_account_authoritative.sql"), "utf8"));
+    await client.query(await readFile(path.join(testMigrationsPath, "193_slack_binding_respond_mode.sql"), "utf8"));
     await client.query(await readFile(path.join(testMigrationsPath, "072_routine_action_requests.sql"), "utf8"));
     await client.query(await readFile(path.join(testMigrationsPath, "139_routine_action_requests_skill_name.sql"), "utf8"));
     await client.query(`INSERT INTO accounts (id) VALUES ($1)`, [accountId]);
@@ -160,7 +162,7 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
     });
     expect(saved.binding?.answeringAgentId).toBe(agentId);
 
-    const posts: Array<{ channel: string; text: string; threadTs?: string }> = [];
+    const posts: Array<{ channel: string; markdownText: string; threadTs?: string }> = [];
     const chatInputs: Array<{ conversationId?: string; sourceChannel?: string | null; query: string }> = [];
     const handler = new SlackMessageHandler({
       logger: {
@@ -195,13 +197,14 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
         postMessage: async (input) => {
           posts.push({
             channel: input.channel,
-            text: input.text,
+            markdownText: "markdownText" in input ? input.markdownText : input.text,
             ...(input.threadTs ? { threadTs: input.threadTs } : {}),
           });
           return { channel: input.channel, ts: "1720000000.000100" };
         },
         addReaction: async () => undefined,
         removeReaction: async () => undefined,
+        ...idleSlackAgentSessionClient(),
       }),
     });
 
@@ -217,6 +220,7 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
         channel: "DUSER",
         user: "UUSER",
         text: "first question",
+        ts: "1700000000.000001",
       },
     });
 
@@ -229,7 +233,7 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
       [link.conversation_id],
     );
     expect(conversation.source_channel).toBe("slack");
-    expect(posts).toEqual([{ channel: "DUSER", text: "reply:first question" }]);
+    expect(posts).toEqual([{ channel: "DUSER", markdownText: "reply:first question" }]);
 
     await database.query(
       `INSERT INTO slack_inbound_events (event_id, team_id, status) VALUES ('EvTwo', 'TDM', 'received')`,
@@ -243,13 +247,14 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
         channel: "DUSER",
         user: "UUSER",
         text: "follow up",
+        ts: "1700000000.000002",
       },
     });
 
     expect(chatInputs[1]).toMatchObject({ conversationId: link.conversation_id, sourceChannel: "slack", query: "follow up" });
     const links = await database.query(`SELECT id FROM slack_conversation_links WHERE slack_key = 'dm:TDM:UUSER'`);
     expect(links).toHaveLength(1);
-    expect(posts.at(-1)).toEqual({ channel: "DUSER", text: "reply:follow up" });
+    expect(posts.at(-1)).toEqual({ channel: "DUSER", markdownText: "reply:follow up" });
   });
 
   it("maps a channel mention thread to one conversation and escalates no-context mention turns", async () => {
@@ -277,7 +282,7 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
       gapEscalationEnabled: true,
     });
 
-    const posts: Array<{ channel: string; text: string; threadTs?: string }> = [];
+    const posts: Array<{ channel: string; markdownText: string; threadTs?: string }> = [];
     const chatInputs: Array<{ conversationId?: string; sourceChannel?: string | null; query: string }> = [];
     let nextOutcome: "answered" | "no_context" = "answered";
     const handler = new SlackMessageHandler({
@@ -318,13 +323,14 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
         postMessage: async (input) => {
           posts.push({
             channel: input.channel,
-            text: input.text,
+            markdownText: "markdownText" in input ? input.markdownText : input.text,
             ...(input.threadTs ? { threadTs: input.threadTs } : {}),
           });
           return { channel: input.channel, ts: "1720000000.000300" };
         },
         addReaction: async () => undefined,
         removeReaction: async () => undefined,
+        ...idleSlackAgentSessionClient(),
       }),
     });
 
@@ -349,7 +355,7 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
     expect(link?.conversation_id).toBeTruthy();
     expect(posts.at(-1)).toEqual({
       channel: "CCHANNEL",
-      text: "mention:<@UBOT> first mention",
+      markdownText: "mention:<@UBOT> first mention",
       threadTs: "1700000000.000100",
     });
 
@@ -381,7 +387,7 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
     expect(links).toHaveLength(1);
     expect(posts.at(-1)).toEqual({
       channel: "CCHANNEL",
-      text: "mention:<@UBOT> missing follow up",
+      markdownText: "mention:<@UBOT> missing follow up",
       threadTs: "1700000000.000100",
     });
 
@@ -452,6 +458,7 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
         postMessage: async (input) => ({ channel: input.channel, ts: "1720000000.000200" }),
         addReaction: async () => undefined,
         removeReaction: async () => undefined,
+        ...idleSlackAgentSessionClient(),
       }),
     });
 
@@ -467,6 +474,7 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
         channel: "DGAP",
         user: "UGAP",
         text: "missing thing",
+        ts: "1700000000.000003",
       },
     });
 
@@ -496,6 +504,7 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
         channel: "DGAP",
         user: "UOTHER",
         text: "covered thing",
+        ts: "1700000000.000004",
       },
     });
 

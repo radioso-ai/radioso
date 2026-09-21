@@ -18,6 +18,7 @@ import { randomBytes } from "node:crypto";
 
 import type { ApprovalDecisionService } from "../../approvals/public.js";
 import type { AuditPort } from "../../audit/contracts/index.js";
+import type { AgentStarterPromptReader } from "../../chat/composition.js";
 import type { OperatorReplyService } from "../../handoff/public.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import { stringifyUnknown } from "../../../shared/text/stringifyUnknown.js";
@@ -126,6 +127,7 @@ export class ConnectorRegistry {
     auditService?: Pick<AuditPort, "record">;
     metricsRegistry?: Pick<MetricsRegistry, "incrementCounter"> | null;
     workspaceInvalidationPublisher?: WorkspaceInvalidationPublisher;
+    agentStarterPrompts?: AgentStarterPromptReader;
     assertPublicUrl?: (url: string) => Promise<void>;
     fetchPublicUrl?: typeof fetch;
   }): Promise<void> {
@@ -141,6 +143,7 @@ export class ConnectorRegistry {
           auditService: context.auditService,
           metricsRegistry: context.metricsRegistry,
           workspaceInvalidationPublisher: context.workspaceInvalidationPublisher,
+          agentStarterPrompts: context.agentStarterPrompts,
           assertPublicUrl: context.assertPublicUrl,
           publicHttp: {
             assertPublicUrl: context.assertPublicUrl ?? (async () => {

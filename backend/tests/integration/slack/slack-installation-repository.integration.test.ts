@@ -81,6 +81,7 @@ describeIfDatabase("slack installation + binding repositories (postgres, kysely)
     await client.query(await readFile(path.join(testMigrationsPath, "116_slack_channel_scoped_bindings.sql"), "utf8"));
     await client.query(await readFile(path.join(testMigrationsPath, "117_integration_connections_account_owner.sql"), "utf8"));
     await client.query(await readFile(path.join(testMigrationsPath, "118_slack_installation_account_authoritative.sql"), "utf8"));
+    await client.query(await readFile(path.join(testMigrationsPath, "193_slack_binding_respond_mode.sql"), "utf8"));
 
     await client.query(`INSERT INTO accounts (id) VALUES ($1)`, [accountId]);
     await client.query(`INSERT INTO workspaces (id, account_id) VALUES ($1, $2)`, [workspaceId, accountId]);
@@ -202,6 +203,43 @@ describeIfDatabase("slack installation + binding repositories (postgres, kysely)
     });
     expect(preserved.escalationChannelId).toBe("C456");
     expect(preserved.gapEscalationEnabled).toBe(false);
+  });
+
+  it("persists a channel binding's respond mode, defaults it to mention, and keeps it when omitted", async () => {
+    const installation = await installations.findByTeamId("TEAM1");
+    const created = await bindings.upsert({
+      installationId: installation!.id,
+      workspaceId,
+      channelId: "C_SALES",
+      answeringAgentId: agentId,
+    });
+    expect(created.respondMode).toBe("mention");
+
+    const everyMessage = await bindings.upsert({
+      installationId: installation!.id,
+      workspaceId,
+      channelId: "C_SALES",
+      answeringAgentId: agentId,
+      respondMode: "every_message",
+    });
+    expect(everyMessage.id).toBe(created.id);
+    expect(everyMessage.respondMode).toBe("every_message");
+
+    const preserved = await bindings.upsert({
+      installationId: installation!.id,
+      workspaceId,
+      channelId: "C_SALES",
+      answeringAgentId: agentId,
+      gapEscalationEnabled: true,
+    });
+    expect(preserved.respondMode).toBe("every_message");
+    expect((await bindings.findAnswerer(installation!.id, "C_SALES"))?.respondMode).toBe("every_message");
+    expect((await bindings.findByInstallationId(installation!.id))?.respondMode).toBe("mention");
+    expect((await bindings.listByInstallationId(installation!.id)).map((row) => row.respondMode)).toEqual([
+      "mention",
+      "every_message",
+    ]);
+    expect(await bindings.removeByInstallationChannel(installation!.id, "C_SALES")).toBe(true);
   });
 
   it("removes binding then installation and reports the deletions", async () => {

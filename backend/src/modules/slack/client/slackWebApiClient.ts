@@ -14,44 +14,55 @@ export interface SlackWebApiClientOptions {
   timeoutMs?: number;
 }
 
-export interface SlackPostMessageInput {
+interface SlackPostMessageTarget {
   channel: string;
-  text: string;
   threadTs?: string;
+}
+
+export interface SlackPostTextMessageInput extends SlackPostMessageTarget {
+  text: string;
   blocks?: unknown[];
 }
+
+// chat.postMessage renders `markdown_text` (standard markdown) itself; Slack rejects it when
+// `text` or `blocks` travel alongside, hence the disjoint input shape.
+export interface SlackPostMarkdownMessageInput extends SlackPostMessageTarget {
+  markdownText: string;
+}
+
+export type SlackPostMessageInput = SlackPostTextMessageInput | SlackPostMarkdownMessageInput;
 
 export interface SlackPostMessageResult {
   channel: string;
   ts: string;
 }
 
-export interface SlackUpdateMessageInput {
+interface SlackUpdateMessageInput {
   channel: string;
   ts: string;
   text: string;
   blocks?: unknown[];
 }
 
-export interface SlackReactionInput {
+interface SlackReactionInput {
   channel: string;
   timestamp: string;
   name: string;
 }
 
-export interface SlackViewOpenInput {
+interface SlackViewOpenInput {
   triggerId: string;
   view: Record<string, unknown>;
 }
 
-export interface SlackConversationSummary {
+interface SlackConversationSummary {
   id: string;
   name?: string;
   isChannel?: boolean;
   isIm?: boolean;
 }
 
-export interface SlackConversationsOpenInput {
+interface SlackConversationsOpenInput {
   users: string;
 }
 
@@ -63,7 +74,19 @@ export interface SlackUserInfo {
   isBot?: boolean;
 }
 
-export interface SlackAuthTestResult {
+type SlackAgentSessionStatus = "processing" | "active";
+
+interface SlackAgentSessionRef {
+  channelId: string;
+  threadTs: string;
+}
+
+export interface SlackSuggestedPrompt {
+  title: string;
+  message: string;
+}
+
+interface SlackAuthTestResult {
   teamId: string;
   userId: string;
   botId?: string;
@@ -106,9 +129,13 @@ export class SlackWebApiClient {
       method: "POST",
       body: {
         channel: input.channel,
-        text: input.text,
         ...(input.threadTs ? { thread_ts: input.threadTs } : {}),
-        ...(input.blocks ? { blocks: input.blocks } : {}),
+        ...("markdownText" in input
+          ? { markdown_text: input.markdownText }
+          : {
+              text: input.text,
+              ...(input.blocks ? { blocks: input.blocks } : {}),
+            }),
       },
     });
     const channel = readString(payload.channel);
@@ -148,6 +175,30 @@ export class SlackWebApiClient {
     await this.call("reactions.remove", {
       method: "POST",
       body: { channel: input.channel, timestamp: input.timestamp, name: input.name },
+    });
+  }
+
+  // Agents & AI Apps surface. A session is a thread in the app DM; status shows the
+  // "working" indicator in the pane and does not clear on its own.
+  async setAgentSessionStatus(input: SlackAgentSessionRef & { status: SlackAgentSessionStatus }): Promise<void> {
+    await this.call("agents.sessions.setStatus", {
+      method: "POST",
+      body: { channel_id: input.channelId, thread_ts: input.threadTs, status: input.status },
+    });
+  }
+
+  async renameAgentSession(input: SlackAgentSessionRef & { title: string }): Promise<void> {
+    await this.call("agents.sessions.rename", {
+      method: "POST",
+      body: { channel_id: input.channelId, thread_ts: input.threadTs, title: input.title },
+    });
+  }
+
+  // Prompts live at the top of the Messages tab, so this call is deliberately channel-only.
+  async setSuggestedPrompts(input: { channelId: string; prompts: SlackSuggestedPrompt[] }): Promise<void> {
+    await this.call("assistant.threads.setSuggestedPrompts", {
+      method: "POST",
+      body: { channel_id: input.channelId, prompts: input.prompts },
     });
   }
 

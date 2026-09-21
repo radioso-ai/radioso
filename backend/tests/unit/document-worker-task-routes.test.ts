@@ -13,6 +13,7 @@ const buildApp = (input: {
   facetExtractionWorker?: { runOnce: ReturnType<typeof vi.fn>; drainWorkspace: ReturnType<typeof vi.fn> };
   facetExtractionWorkspaceDrain?: { requestWorkspaceDrain: ReturnType<typeof vi.fn> };
   copilotRetentionWorker?: { sweep: ReturnType<typeof vi.fn> };
+  slackInboundEventRetentionWorker?: { sweep: ReturnType<typeof vi.fn> };
   agentBundleImportCleanupWorker?: { sweep: ReturnType<typeof vi.fn> };
 }) => {
   const app = express();
@@ -22,6 +23,7 @@ const buildApp = (input: {
     facetExtractionWorker: input.facetExtractionWorker as never,
     facetExtractionWorkspaceDrain: input.facetExtractionWorkspaceDrain as never,
     copilotRetentionWorker: input.copilotRetentionWorker as never,
+    slackInboundEventRetentionWorker: input.slackInboundEventRetentionWorker as never,
     agentBundleImportCleanupWorker: input.agentBundleImportCleanupWorker as never,
   }));
   app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
@@ -151,6 +153,29 @@ describe("POST /internal/tasks/agent-bundle-imports/sweep", () => {
     const app = buildApp({ agentBundleImportCleanupWorker: { sweep: vi.fn().mockResolvedValue({ status: "failed", compensated: 0, failed: 0 }) } });
 
     const response = await request(app).post("/internal/tasks/agent-bundle-imports/sweep").send({});
+
+    expect(response.status).toBeGreaterThanOrEqual(500);
+  });
+});
+
+describe("POST /internal/tasks/slack-inbound-event-retention/sweep", () => {
+  it("reports what the sweep removed", async () => {
+    const sweep = vi.fn().mockResolvedValue({ status: "swept", deleted: 7 });
+    const app = buildApp({ slackInboundEventRetentionWorker: { sweep } });
+
+    const response = await request(app).post("/internal/tasks/slack-inbound-event-retention/sweep").send({});
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ deleted: 7, status: "swept" });
+    expect(sweep).toHaveBeenCalledOnce();
+  });
+
+  it("asks the scheduler to retry when the sweep actually failed", async () => {
+    const app = buildApp({
+      slackInboundEventRetentionWorker: { sweep: vi.fn().mockResolvedValue({ status: "failed", error: "deadlock detected" }) },
+    });
+
+    const response = await request(app).post("/internal/tasks/slack-inbound-event-retention/sweep").send({});
 
     expect(response.status).toBeGreaterThanOrEqual(500);
   });

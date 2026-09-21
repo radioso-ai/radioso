@@ -5,6 +5,7 @@ import type { TurnRouter } from "../../../src/modules/chat/services/turnRouter.j
 import { SlackMessageHandler } from "../../../src/modules/connectors/plugins/slack/slackMessageHandler.js";
 import { createConnectorChatPort } from "../../../src/modules/connectors/services/connectorChatPort.js";
 import { createTestDependencies } from "../../support/testApp.js";
+import { idleSlackAgentSessionClient } from "../../support/inMemorySlack.js";
 
 const deferred = () => {
   let resolve!: () => void;
@@ -111,11 +112,12 @@ describe("Slack interruption", () => {
       } as never,
       clientFactory: () => ({
         postMessage: async (input) => {
-          posts.push(input.text);
+          posts.push("markdownText" in input ? input.markdownText : input.text);
           return { channel: input.channel, ts: "reply-ts" };
         },
         addReaction: async () => undefined,
         removeReaction: async () => undefined,
+        ...idleSlackAgentSessionClient(),
       }),
     });
 
@@ -128,6 +130,7 @@ describe("Slack interruption", () => {
         channel: "D1",
         user: "U1",
         text: "first message",
+        ts: "1700000000.000001",
       },
     });
     await firstRoutingStarted.promise;
@@ -140,6 +143,7 @@ describe("Slack interruption", () => {
         channel: "D1",
         user: "U1",
         text: "latest message",
+        ts: "1700000000.000002",
       },
     });
     releaseFirstRouting.resolve();

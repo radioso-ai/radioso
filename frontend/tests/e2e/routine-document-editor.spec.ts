@@ -47,7 +47,7 @@ test("author, validate, and read a routine through the Document tab", async ({ p
   await chatInstruction.pressSequentially("Ask for @order_total");
   await page.getByRole("option", { name: /Create variable “order_total”/ }).click();
   await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
-  // Collected information and Endings live inside the collapsed "Details" disclosure.
+  // Collected information and Endings live inside the collapsed "Endings & information" disclosure.
   await documentEditor.getByRole("button", { name: "Toggle details", exact: true }).click();
   await documentEditor.getByRole("button", { name: "order_total", exact: true }).click();
   await documentEditor.getByLabel("Slot order_total type").selectOption("number");
@@ -56,7 +56,6 @@ test("author, validate, and read a routine through the Document tab", async ({ p
   await documentEditor.getByRole("button", { name: "Step", exact: true }).click();
   await page.getByRole("menuitem", { name: "Check eligibility" }).first().click();
   const skillStep = documentEditor.getByRole("button", { name: "Check eligibility", exact: true }).locator("xpath=ancestor::li[1]");
-  await expect(skillStep.getByText("uses nothing → sets nothing")).toBeVisible();
   await skillStep.getByRole("button", { name: "Check eligibility", exact: true }).click();
   await skillStep.getByRole("button", { name: "Done", exact: true }).click();
   await skillStep.getByRole("button", { name: "Check eligibility", exact: true }).click();
@@ -68,6 +67,9 @@ test("author, validate, and read a routine through the Document tab", async ({ p
   // A field comparison goes to a hand-off ending, while a separate judgment branch is
   // retained as an AI-decides route in the reader view.
   await skillStep.getByRole("button", { name: "Check eligibility", exact: true }).click();
+  // The uses/sets summary lives in the step editor the step's own token opens, not as a
+  // line that hovers into view on the row itself.
+  await expect(skillStep.getByText("uses nothing → sets nothing")).toBeVisible();
   await skillStep.getByRole("button", { name: "Condition", exact: true }).click();
   await skillStep.getByLabel("Rule variable").selectOption("order_total");
   await skillStep.getByLabel("Rule operator").selectOption("lt");
@@ -105,11 +107,10 @@ test("author, validate, and read a routine through the Document tab", async ({ p
   const documentLines = [
     "Ask for @order_total",
     "Check eligibility for the order.",
-    "uses nothing → sets nothing",
     "order_total is less than 50",
     "The customer needs a nuanced eligibility explanation.",
     "Hand off: Hand this order to the billing team.",
-    "then finish: Eligibility check finished.",
+    "Finish: Eligibility check finished.",
   ];
   for (const line of documentLines) expect(editableRestText).toContain(line);
 

@@ -37,12 +37,18 @@ const isObject = (value: unknown): value is Record<string, unknown> =>
 const readString = (value: unknown): string | null =>
   typeof value === "string" && value.length > 0 ? value : null;
 
-// A direct message; `thread_ts` marks an agent-pane session message.
+// Only a fresh human post is a question. Slack marks everything else with a subtype
+// (message_changed, message_deleted, channel_join, bot_message, thread_broadcast, ...);
+// the one subtype that is still a person asking is a message posted with an attachment.
+const isHumanPost = (event: Record<string, unknown>): boolean =>
+  event.subtype === undefined || event.subtype === "file_share";
+
+// A direct message; `thread_ts` marks a follow-up inside an agent-pane session.
 const parseMessageImEvent = (event: unknown): SlackMessageImEvent | null => {
   if (!isObject(event)) {
     return null;
   }
-  if (event.type !== "message" || event.channel_type !== "im") {
+  if (event.type !== "message" || event.channel_type !== "im" || !isHumanPost(event)) {
     return null;
   }
   const channel = readString(event.channel);
@@ -79,9 +85,7 @@ const parseAppHomeOpenedEvent = (event: unknown): SlackAppHomeOpenedEvent | null
   return { type: "app_home_opened", user, channel, tab };
 };
 
-// Un-mentioned traffic in public (`channel`) and private (`group`) channels. Only a fresh
-// human post qualifies: any subtype (message_changed, message_deleted, channel_join,
-// bot_message, thread_broadcast, ...) is not a new question and is dropped here.
+// Un-mentioned traffic in public (`channel`) and private (`group`) channels.
 const parseChannelMessageEvent = (event: unknown): SlackChannelMessageEvent | null => {
   if (!isObject(event) || event.type !== "message") {
     return null;
@@ -89,7 +93,7 @@ const parseChannelMessageEvent = (event: unknown): SlackChannelMessageEvent | nu
   const channelType = event.channel_type === "channel" || event.channel_type === "group"
     ? event.channel_type
     : null;
-  if (!channelType || event.subtype !== undefined) {
+  if (!channelType || !isHumanPost(event)) {
     return null;
   }
   const channel = readString(event.channel);

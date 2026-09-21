@@ -106,7 +106,7 @@ PUT    /api/v1/workspaces/{workspaceId}/slack/binding
 DELETE /api/v1/workspaces/{workspaceId}/slack/binding?channelId={channelId}
 ```
 
-A binding carries `channelId`, `answeringAgentId`, `escalationChannelId`, `gapEscalationEnabled`, and `respondMode`. `channelId` is the Slack channel ID — the `C…` (public) or `G…` (private) value shown at the bottom of the channel's details in Slack — not the `#name`. Slack delivers events by ID, so a binding saved under `#support` matches nothing. Omit `respondMode` on `PUT` to keep the stored value.
+A binding carries `channelId`, `answeringAgentId`, `escalationChannelId`, `gapEscalationEnabled`, and `respondMode`. `channelId` is the channel ID shown in Slack's channel details (it starts with `C`), not the `#name`. Slack delivers events by ID, so a binding saved under `#support` matches nothing. Omit `respondMode` on `PUT` to keep the stored value.
 
 Slack sends Events API payloads to `/api/connectors/slack/events` and interaction callbacks to `/api/connectors/slack/interactivity`. Radioso verifies the Slack signature, checks replay age, deduplicates by `event_id` (kept without message text for 7 days), ignores bot-authored events and message edits, deletions, and joins, resolves the agent from the channel binding, decides from the binding's `respondMode` and thread ownership whether an un-mentioned channel message gets an answer, and runs the normal chat path with `sourceChannel: "slack"`.
 
@@ -117,7 +117,7 @@ Slack sends Events API payloads to `/api/connectors/slack/events` and interactio
 - Buttons or reactions do not work after an upgrade: the app was installed before those scopes existed. Reinstall or re-consent the app.
 - Thread follow-ups without a tag go unanswered, or `Every message` has no effect: the app is missing the `message.channels` and `message.groups` events or the history scopes, and install status shows `needs_reauth`. Update the event subscriptions from the manifest and re-consent.
 - The agent answers a top-level message nobody tagged it in: that channel's binding is set to `Every message`. Switch it back to `@mentions only`.
-- A channel binding has no effect — mentions there use the default agent and `Every message` never fires: the binding was saved with a `#name` instead of the channel ID. Copy the `C…`/`G…` ID from the channel's details in Slack and bind that.
+- A channel binding has no effect — mentions there use the default agent and `Every message` never fires: the binding was saved with a `#name` instead of the channel ID. Copy the channel ID (starts with `C`) from the channel's details in Slack and bind that.
 - The agent pane shows no suggested prompts: the app is missing `assistant:write` or `app_home_opened`, and the backend logs `missing_scope` on each Messages-tab open. Update the app from the manifest and re-consent. Prompts also stay empty when the default agent's greeting is automatic or has no chips.
 - OAuth or inbound events fail on a split-host deployment: `CONNECTOR_PUBLIC_BASE_URL` is unset or points at a host Slack cannot reach over public HTTPS.
 

@@ -501,6 +501,53 @@ describe("Slack inbound webhook contract", () => {
     }
   });
 
+  it("accepts a question posted with an attachment (file_share) in channels and direct messages", async () => {
+    const channel = createApp();
+    const channelBody = JSON.stringify(messagePayload("EvFileChannel", {
+      channel_type: "channel",
+      channel: "C123",
+      subtype: "file_share",
+    }));
+    await request(channel.app)
+      .post("/api/connectors/slack/events")
+      .set(createSignedHeaders(channelBody))
+      .type("application/json")
+      .send(channelBody);
+    await vi.waitFor(() => expect(channel.handleChannelMessage).toHaveBeenCalledWith(expect.objectContaining({
+      eventId: "EvFileChannel",
+      event: expect.objectContaining({ channel_type: "channel", text: "Question" }),
+    })));
+
+    const dm = createApp();
+    const dmBody = JSON.stringify(messagePayload("EvFileDm", { subtype: "file_share" }));
+    await request(dm.app)
+      .post("/api/connectors/slack/events")
+      .set(createSignedHeaders(dmBody))
+      .type("application/json")
+      .send(dmBody);
+    await vi.waitFor(() => expect(dm.handleMessageIm).toHaveBeenCalledWith(expect.objectContaining({
+      eventId: "EvFileDm",
+      event: expect.objectContaining({ channel_type: "im", text: "Question" }),
+    })));
+  });
+
+  it("skips direct message subtypes such as edits, joins, and bot posts", async () => {
+    for (const subtype of ["message_changed", "bot_message", "channel_join"]) {
+      const { app, handleMessageIm, handleChannelMessage, markInboundEventStatus } = createApp();
+      const eventId = `EvDmSubtype-${subtype}`;
+      const body = JSON.stringify(messagePayload(eventId, { subtype }));
+      const response = await request(app)
+        .post("/api/connectors/slack/events")
+        .set(createSignedHeaders(body))
+        .type("application/json")
+        .send(body);
+      expect(response.status).toBe(200);
+      await vi.waitFor(() => expect(markInboundEventStatus).toHaveBeenCalledWith(eventId, "skipped"));
+      expect(handleMessageIm).not.toHaveBeenCalled();
+      expect(handleChannelMessage).not.toHaveBeenCalled();
+    }
+  });
+
   it("keeps the session thread on direct messages and dispatches them to the DM handler", async () => {
     const { app, handleMessageIm, handleChannelMessage } = createApp();
     const body = JSON.stringify(messagePayload("EvSession", { thread_ts: "1718800000.000050" }));

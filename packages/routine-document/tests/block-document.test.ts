@@ -7,6 +7,8 @@ import { routineDefinitionDraftInputSchema, type RoutineDefinitionDraftAuthoring
 import {
   draftFromBlockDoc,
   routineToBlockDoc,
+  blockSegmentsToInstruction,
+  instructionToBlockSegments,
 } from '../src/index.js'
 
 type CompleteAuthoringDraft = RoutineDefinitionDraftAuthoringInput & {
@@ -339,5 +341,24 @@ describe('a routine with an edge that points nowhere', () => {
     // The branch genuinely cannot say which of the two it means, so it resolves to neither
     // and the reader shows it as pointing nowhere.
     expect(projected.doc.steps[0]?.branches[0]?.target).toEqual({ kind: 'unresolved', toRef: 'collect' })
+  })
+})
+
+describe('step instruction segments', () => {
+  it('splits slot and context references into their own segments, in text order', () => {
+    expect(instructionToBlockSegments(
+      '{{context.page_context}} If it is a program page, confirm it; else ask for {{slot.program}}. {{ context.cart }}',
+    )).toEqual([
+      { kind: 'contextReference', key: 'page_context', source: '{{context.page_context}}' },
+      { kind: 'text', text: ' If it is a program page, confirm it; else ask for ' },
+      { kind: 'slotReference', key: 'program', source: '{{slot.program}}' },
+      { kind: 'text', text: '. ' },
+      { kind: 'contextReference', key: 'cart', source: '{{ context.cart }}' },
+    ])
+  })
+
+  it('writes every segment back from its source text so the stored instruction round-trips', () => {
+    const instruction = 'Confirm {{context.page_context}} then thank {{slot.name}}.'
+    expect(blockSegmentsToInstruction(instructionToBlockSegments(instruction))).toBe(instruction)
   })
 })

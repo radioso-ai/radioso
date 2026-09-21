@@ -1,7 +1,7 @@
 ---
 title: "Authoring Routines"
 description: "Create and edit dashboard routines in the Document view, read the Map, connect skills, and try a change in a test chat before it ships."
-last_updated: 2026-09-21
+last_updated: 2026-09-22
 ---
 
 # Authoring Routines
@@ -110,6 +110,21 @@ on a later branch. In **Information**, you can also mark a value:
 
 An `@` reference uses the same stored value throughout the routine. A skill
 output can also supply a value that later steps and branches read.
+
+#### Read the visitor's context
+
+The same `@` menu lists what the agent already knows about the visitor under
+**Visitor context**. Choose **Current page** to place it in a step, and the
+step reads the page's URL, title, and language when it runs — enough to write
+"If the visitor is on a program page, confirm that is the program they want to
+book; otherwise ask which program @program". A host-defined context variable
+the agent has enabled, such as `cart`, appears in the same list.
+
+This is a value the step reads, not one it stores: nothing is added to
+**Information**, and later steps see nothing unless they place the same chip.
+To keep a value, ask for it with an `@` slot. The visible page text stays out
+of the step; the step sees the page's identity, and the page still counts as
+untrusted data the agent reasons about rather than instructions it follows.
 
 ### Add steps and connect skills
 

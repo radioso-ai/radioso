@@ -91,6 +91,15 @@ Choose a type — `text`, `number`, `boolean`, `email`, or `date` — in
 while the value remains empty, or **Editable after completion** when a visitor
 may correct it later.
 
+The `@` menu also lists what the agent already knows about the visitor under
+**Visitor context**. Choose **Current page** to place it in a step, and the
+step reads the page's URL, title, and language when it runs — enough to write
+"If the visitor is on a program page, confirm that is the program they want to
+book; otherwise ask which program @program". A host-defined context variable
+the agent has enabled appears in the same list. This is a value the step
+reads, not one it stores: nothing is added to **Information**, so ask for
+anything you want to keep with an `@` slot.
+
 A blank numbered line always sits after the last step — click it to write a
 chat step directly. The **+ Step** menu adds chat, skill, approval, and action
 steps. A skill step can use a fixed input or a value the routine holds, then

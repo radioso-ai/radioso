@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  collectContextVariableRefs,
   routineDefinitionDraftEditingInputSchema,
   routineIdentifierPattern,
   routineDefinitionDraftInputSchema,
@@ -263,5 +264,17 @@ describe("routine definition schemas", () => {
   it("classifies guard provenance", () => {
     expect(routineGuardProvenance("llm")).toBe("judgment");
     expect(routineGuardProvenance("field")).toBe("exact");
+  });
+});
+
+describe("collectContextVariableRefs", () => {
+  it("extracts distinct {{context.<name>}} references in first-seen order", () => {
+    expect(collectContextVariableRefs(
+      "If {{context.page_context}} names a program, confirm it; else ask. Also {{ context.cart }} and {{context.page_context}}.",
+    )).toEqual(["page_context", "cart"]);
+  });
+
+  it("returns an empty list when the instruction references no context variable", () => {
+    expect(collectContextVariableRefs("Ask for {{slot.name}}.")).toEqual([]);
   });
 });

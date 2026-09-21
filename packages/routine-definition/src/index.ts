@@ -517,6 +517,27 @@ export const collectSlotKeys = (instruction: string): string[] => {
   return [...keys];
 };
 
+/**
+ * A `{{context.<name>}}` reference inside a step instruction: the step reads a context
+ * variable (the visitor's current page, a host-pushed value) as data. One pattern, shared
+ * by the compiler (which stamps `contextRefs` step metadata), the validator (which checks
+ * the name against the agent's available set), and the authoring document (which shows it
+ * as a chip), so the three cannot disagree on what counts as a reference.
+ */
+export const CONTEXT_REFERENCE_PATTERN = /\{\{\s*context\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/gu;
+
+/** Extract the distinct `{{context.<name>}}` references from an instruction, in first-seen order. */
+export const collectContextVariableRefs = (instruction: string): string[] => {
+  const names = new Set<string>();
+  for (const match of instruction.matchAll(CONTEXT_REFERENCE_PATTERN)) {
+    const name = match[1];
+    if (name) {
+      names.add(name);
+    }
+  }
+  return [...names];
+};
+
 /** The minimum a step must expose for slot-collection ownership to be decided. */
 export interface SlotCollectionStep {
   stableStepId: string;

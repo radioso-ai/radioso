@@ -346,6 +346,27 @@ describe("validateRoutineDefinition authoring catalog context", () => {
     }));
   });
 
+  it("flags a step instruction that references a context variable the agent does not have", () => {
+    const definition = definitionWithTool(null);
+    const result = validateRoutineDefinition({
+      ...definition,
+      steps: [{
+        ...definition.steps[0],
+        kind: "chat",
+        toolRef: null,
+        instruction: "{{context.page_context}} Confirm the program, or use {{context.missing_cart}}.",
+      }],
+    }, {
+      availableContextVariables: new Map([["page_context", { valueType: "json" }]]),
+    });
+
+    expect(result.diagnostics).toEqual([expect.objectContaining({
+      code: "unknown_context_variable",
+      location: "step:lookup.instruction",
+      message: expect.stringContaining("missing_cart"),
+    })]);
+  });
+
   it("skips context-variable existence validation when no context catalog is supplied", () => {
     const result = validateRoutineDefinition({
       ...definitionWithTool("order.lookup"),

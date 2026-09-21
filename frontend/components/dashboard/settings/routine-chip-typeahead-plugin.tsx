@@ -2,6 +2,7 @@
 
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { AtSign, CircleCheck, CornerUpRight, GitBranch, ListChecks, Plus, Wrench } from 'lucide-react'
 
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext'
 import {
@@ -12,6 +13,7 @@ import {
   $createTextNode,
   $getRoot,
   $isElementNode,
+  $isTextNode,
   type TextNode,
 } from 'lexical'
 
@@ -74,6 +76,65 @@ class ChipMenuOption extends MenuOption {
 
 // Stable empties for a surface with no slots, so the option memo is not invalidated by a
 // fresh literal on every render.
+// The palette groups its options the way an author thinks about them, not the way the block
+// doc happens to model them. Only the groups a given menu instance can actually produce ever
+// render — a `variablesOnly` menu never has a "Logic & flow controls" or "Skills" option to
+// show, so those group headers simply never appear there.
+const CHIP_GROUP_LABEL: Partial<Record<RoutineChipKind, string>> = {
+  condition: 'Logic & flow controls',
+  decision: 'Logic & flow controls',
+  end: 'Logic & flow controls',
+  handoff: 'Logic & flow controls',
+  variable: 'Information',
+  skill: 'Skills',
+}
+const CHIP_GROUP_ORDER = ['Logic & flow controls', 'Information', 'Skills', 'More']
+const CHIP_GROUP_TILE_CLASS: Partial<Record<RoutineChipKind, string>> = {
+  condition: 'bg-violet-500/15 text-violet-600 dark:text-violet-400',
+  decision: 'bg-violet-500/15 text-violet-600 dark:text-violet-400',
+  end: 'bg-violet-500/15 text-violet-600 dark:text-violet-400',
+  handoff: 'bg-violet-500/15 text-violet-600 dark:text-violet-400',
+  variable: 'bg-sky-500/15 text-sky-600 dark:text-sky-400',
+  skill: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400',
+}
+
+function chipOptionIcon(option: ChipMenuOption) {
+  if (option.isNew) return <Plus className="h-3.5 w-3.5" />
+  switch (option.kind) {
+    case 'variable': return <AtSign className="h-3.5 w-3.5" />
+    case 'skill': return <Wrench className="h-3.5 w-3.5" />
+    case 'condition': return <GitBranch className="h-3.5 w-3.5" />
+    case 'decision': return <ListChecks className="h-3.5 w-3.5" />
+    case 'end': return <CircleCheck className="h-3.5 w-3.5" />
+    case 'handoff': return <CornerUpRight className="h-3.5 w-3.5" />
+    default: return <AtSign className="h-3.5 w-3.5" />
+  }
+}
+
+// Shown under the highlighted row only, in place of a side tooltip: Lexical positions this
+// menu in document coordinates next to the caret, where a fixed side panel would as often
+// land off-screen as beside it, so a description line under the label is the position-safe
+// version of the same idea.
+function chipOptionDescription(option: ChipMenuOption): string | null {
+  if (option.notice) return null
+  switch (option.kind) {
+    case 'variable':
+      return option.isNew ? 'Create a new variable to reuse across this routine.' : 'Insert this collected value into the sentence.'
+    case 'skill':
+      return option.isNew ? 'Reference a skill this routine will call.' : 'Reference this skill by name.'
+    case 'condition':
+      return 'Branch on a decision already declared in this routine.'
+    case 'decision':
+      return 'Add a point where a person chooses between options.'
+    case 'end':
+      return 'End the routine here.'
+    case 'handoff':
+      return 'Hand off to a person here.'
+    default:
+      return null
+  }
+}
+
 const NO_VARIABLES: RoutineEditorVariable[] = []
 const NO_RESERVED_REF_KINDS: Record<string, RoutineChipKind> = {}
 
@@ -378,9 +439,19 @@ export function ChipTypeaheadPlugin({
         if (nodeToReplace) {
           nodeToReplace.replace(chip)
         }
-        const trailing = $createTextNode(' ')
-        chip.insertAfter(trailing)
-        trailing.select()
+        // Re-resolving a chip dropped back to raw text (double-click, then picking it again)
+        // matches only the "@name" run itself, leaving whatever already followed it — often
+        // the space this same insertion adds on every other path — as the chip's very next
+        // sibling. Adding a second one there would double it up instead of round-tripping the
+        // same text.
+        const nextSibling = chip.getNextSibling()
+        if ($isTextNode(nextSibling) && nextSibling.getTextContent().startsWith(' ')) {
+          nextSibling.select(0, 0)
+        } else {
+          const trailing = $createTextNode(' ')
+          chip.insertAfter(trailing)
+          trailing.select()
+        }
         closeMenu()
       })
     },
@@ -398,38 +469,66 @@ export function ChipTypeaheadPlugin({
       parent={menuHost ?? undefined}
       onOpen={attachMenuHost}
       onClose={detachMenuHost}
-      menuRenderFn={(anchorElementRef, { selectedIndex, selectOptionAndCleanUp, setHighlightedIndex }) =>
-        anchorElementRef.current && options.length > 0
-          ? createPortal(
-              <ul
-                // The menu is portalled into a host at the document body, so inside a modal dialog it has to
-                // opt back into pointer events and out-stack the dialog's layer. `relative` is
-                // load-bearing: z-index only applies to a positioned element.
-                className="pointer-events-auto relative z-[60] max-h-60 min-w-52 overflow-auto rounded-md border border-border bg-popover p-1 text-sm text-popover-foreground shadow-md"
-                role="listbox"
-                aria-label={skillsOnly ? 'Insert a skill' : variablesOnly ? 'Insert a variable' : 'Insert a chip'}
-              >
-                {options.map((option, index) => (
-                  <li
-                    key={option.key}
-                    role="option"
-                    aria-selected={selectedIndex === index}
-                    aria-disabled={option.notice ? true : undefined}
-                    className={`rounded-sm px-2 py-1.5 ${option.notice ? 'text-muted-foreground' : 'cursor-pointer'} ${selectedIndex === index && !option.notice ? 'bg-accent text-accent-foreground' : ''}`}
-                    onMouseEnter={() => setHighlightedIndex(index)}
-                    onMouseDown={(event) => {
-                      event.preventDefault()
-                      selectOptionAndCleanUp(option)
-                    }}
-                  >
-                    {option.display}
-                  </li>
-                ))}
-              </ul>,
-              anchorElementRef.current,
-            )
-          : null
-      }
+      menuRenderFn={(anchorElementRef, { selectedIndex, selectOptionAndCleanUp, setHighlightedIndex }) => {
+        if (!anchorElementRef.current || options.length === 0) return null
+        // Keyboard navigation walks `options` in its original order, so every option keeps
+        // its index from that array even after it's sorted into a group for display.
+        const indexed = options.map((option, index) => ({ option, index }))
+        const notices = indexed.filter((item) => item.option.notice)
+        const grouped = new Map<string, typeof indexed>()
+        for (const item of indexed) {
+          if (item.option.notice) continue
+          const label = CHIP_GROUP_LABEL[item.option.kind] ?? 'More'
+          grouped.set(label, [...(grouped.get(label) ?? []), item])
+        }
+        const renderOption = ({ option, index }: { option: ChipMenuOption; index: number }) => {
+          const highlighted = selectedIndex === index
+          const description = highlighted ? chipOptionDescription(option) : null
+          return (
+            <li
+              key={option.key}
+              role="option"
+              aria-selected={highlighted}
+              aria-disabled={option.notice ? true : undefined}
+              className={`flex items-start gap-2 rounded-sm px-2 py-1.5 ${option.notice ? 'text-muted-foreground' : 'cursor-pointer'} ${highlighted && !option.notice ? 'bg-muted text-foreground' : ''}`}
+              onMouseEnter={() => setHighlightedIndex(index)}
+              onMouseDown={(event) => {
+                event.preventDefault()
+                selectOptionAndCleanUp(option)
+              }}
+            >
+              {!option.notice ? (
+                <span aria-hidden="true" className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md ${CHIP_GROUP_TILE_CLASS[option.kind] ?? 'bg-muted text-muted-foreground'}`}>
+                  {chipOptionIcon(option)}
+                </span>
+              ) : null}
+              <span className="min-w-0 flex-1">
+                <span className="block truncate">{option.display}</span>
+                {description ? <span className="mt-0.5 block whitespace-normal text-xs font-normal text-secondary-foreground/70">{description}</span> : null}
+              </span>
+            </li>
+          )
+        }
+        return createPortal(
+          <ul
+            // The menu is portalled into a host at the document body, so inside a modal dialog it has to
+            // opt back into pointer events and out-stack the dialog's layer. `relative` is
+            // load-bearing: z-index only applies to a positioned element.
+            className="pointer-events-auto relative z-[60] max-h-72 min-w-72 overflow-auto rounded-md border border-border bg-popover p-1 text-sm text-popover-foreground shadow-md"
+            role="listbox"
+            aria-label={skillsOnly ? 'Insert a skill' : variablesOnly ? 'Insert a variable' : 'Insert a chip'}
+          >
+            {CHIP_GROUP_ORDER.filter((label) => grouped.has(label)).flatMap((label) => [
+              <li key={`group-${label}`} role="presentation" aria-hidden="true" className="px-2 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/70 first:pt-1">
+                {label}
+              </li>,
+              ...grouped.get(label)!.map(renderOption),
+            ])}
+            {notices.map(renderOption)}
+          </ul>,
+          anchorElementRef.current,
+        )
+      }}
     />
   )
 }

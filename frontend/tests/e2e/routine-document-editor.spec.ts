@@ -47,6 +47,8 @@ test("author, validate, and read a routine through the Document tab", async ({ p
   await chatInstruction.pressSequentially("Ask for @order_total");
   await page.getByRole("option", { name: /Create variable “order_total”/ }).click();
   await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+  // Collected information and Endings live inside the collapsed "Endings & information" disclosure.
+  await documentEditor.getByRole("button", { name: "Toggle details", exact: true }).click();
   await documentEditor.getByRole("button", { name: "order_total", exact: true }).click();
   await documentEditor.getByLabel("Slot order_total type").selectOption("number");
   await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
@@ -54,7 +56,6 @@ test("author, validate, and read a routine through the Document tab", async ({ p
   await documentEditor.getByRole("button", { name: "Step", exact: true }).click();
   await page.getByRole("menuitem", { name: "Check eligibility" }).first().click();
   const skillStep = documentEditor.getByRole("button", { name: "Check eligibility", exact: true }).locator("xpath=ancestor::li[1]");
-  await expect(skillStep.getByText("uses nothing → sets nothing")).toBeVisible();
   await skillStep.getByRole("button", { name: "Check eligibility", exact: true }).click();
   await skillStep.getByRole("button", { name: "Done", exact: true }).click();
   await skillStep.getByRole("button", { name: "Check eligibility", exact: true }).click();
@@ -66,6 +67,9 @@ test("author, validate, and read a routine through the Document tab", async ({ p
   // A field comparison goes to a hand-off ending, while a separate judgment branch is
   // retained as an AI-decides route in the reader view.
   await skillStep.getByRole("button", { name: "Check eligibility", exact: true }).click();
+  // The uses/sets summary lives in the step editor the step's own token opens, not as a
+  // line that hovers into view on the row itself.
+  await expect(skillStep.getByText("uses nothing → sets nothing")).toBeVisible();
   await skillStep.getByRole("button", { name: "Condition", exact: true }).click();
   await skillStep.getByLabel("Rule variable").selectOption("order_total");
   await skillStep.getByLabel("Rule operator").selectOption("lt");
@@ -89,6 +93,9 @@ test("author, validate, and read a routine through the Document tab", async ({ p
   await expect(documentEditor).toContainText("Check eligibility");
   await expect(documentEditor).toContainText("Hand this order to the billing team.");
   await expect(documentEditor).toContainText("The customer needs a nuanced eligibility explanation.");
+  // Both non-default branches read as an "IF" box on the rail, the rule and the AI judgment
+  // alike; only the plain onward path skips it.
+  await expect(documentEditor.getByText("If", { exact: true }).first()).toBeVisible();
 
   await expect.poll(
     () => routineUpdates.some((update) => update.method === "POST"),
@@ -98,9 +105,8 @@ test("author, validate, and read a routine through the Document tab", async ({ p
 
   const editableRestText = await documentEditor.innerText();
   const documentLines = [
-    "Ask for order_total",
+    "Ask for @order_total",
     "Check eligibility for the order.",
-    "uses nothing → sets nothing",
     "order_total is less than 50",
     "The customer needs a nuanced eligibility explanation.",
     "Hand off: Hand this order to the billing team.",
@@ -311,5 +317,254 @@ test("a step instruction offers only the variable menu, never a skill or flow-ta
   await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
 
   // The `#` text was never converted to a chip: it reads back exactly as typed.
-  await expect(documentEditor).toContainText("Ask via #ananda_edizioni_mcp then order_total");
+  await expect(documentEditor).toContainText("Ask via #ananda_edizioni_mcp then @order_total");
+});
+
+test("a variable chip is clickable and selectable, and either selection path removes it as a whole", async ({ page }) => {
+  const routineUpdates: RoutineMutationFixture[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { routineUpdates });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await page.getByRole("button", { name: "New routine" }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Chip selection");
+
+  const documentEditor = page.getByRole("article", { name: "Routine document editor" });
+  await documentEditor.getByRole("button", { name: "Starts when", exact: true }).click();
+  await documentEditor.getByLabel("Activation trigger", { exact: true }).fill("a visitor opens a conversation.");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  await documentEditor.getByRole("button", { name: "Step", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Chat" }).click();
+  await documentEditor.getByRole("button", { name: "Chat", exact: true }).click();
+  const instruction = documentEditor.getByLabel("Step 1 instruction");
+  await instruction.click();
+  await instruction.pressSequentially("Ask for @order_total");
+  await page.getByRole("option", { name: /Create variable “order_total”/ }).click();
+
+  const chip = instruction.locator('[data-routine-chip="variable"]');
+  await expect(chip).toHaveCount(1);
+
+  // A click selects the chip and opens its existing editing affordance in the same action —
+  // the caret does not have to be placed on it first.
+  await chip.click();
+  await expect(page.getByRole("menu")).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  // The click's selection survives the menu closing: Backspace now acts on the whole selected
+  // chip, not a character of the surrounding text.
+  await page.keyboard.press("Backspace");
+  await expect(chip).toHaveCount(0);
+  await expect(instruction).toContainText("Ask for");
+  await expect(instruction).not.toContainText("order_total");
+
+  // A second chip, reached by caret instead of a click: Shift+ArrowLeft from just past it
+  // extends the selection across it as one unit (Lexical's own decorator-node caret
+  // behaviour, not the click path above), and Backspace removes it the same way.
+  await documentEditor.getByRole("button", { name: "Step", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Chat" }).click();
+  await documentEditor.getByRole("button", { name: "Chat", exact: true }).last().click();
+  const secondInstruction = documentEditor.getByLabel("Step 2 instruction");
+  await secondInstruction.click();
+  await secondInstruction.pressSequentially("@order_total");
+  await page.getByRole("option", { name: "@order_total" }).click();
+
+  const secondChip = secondInstruction.locator('[data-routine-chip="variable"]');
+  await expect(secondChip).toHaveCount(1);
+  await secondInstruction.press("End");
+  await page.keyboard.press("Shift+ArrowLeft");
+  await page.keyboard.press("Backspace");
+  await expect(secondChip).toHaveCount(0);
+  await expect(secondInstruction).not.toContainText("order_total");
+});
+
+test("double-clicking a variable chip drops it to editable text, and re-resolving round-trips the same persisted slot reference", async ({ page }) => {
+  const routineUpdates: RoutineMutationFixture[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { routineUpdates });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await page.getByRole("button", { name: "New routine" }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Chip re-resolve");
+
+  const documentEditor = page.getByRole("article", { name: "Routine document editor" });
+  await documentEditor.getByRole("button", { name: "Starts when", exact: true }).click();
+  await documentEditor.getByLabel("Activation trigger", { exact: true }).fill("a visitor opens a conversation.");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  await documentEditor.getByRole("button", { name: "Step", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Chat" }).click();
+  await documentEditor.getByRole("button", { name: "Chat", exact: true }).click();
+  const instruction = documentEditor.getByLabel("Step 1 instruction");
+  await instruction.click();
+  await instruction.pressSequentially("Ask for @order_total");
+  await page.getByRole("option", { name: /Create variable “order_total”/ }).click();
+
+  const chip = instruction.locator('[data-routine-chip="variable"]');
+  await expect(chip).toHaveCount(1);
+
+  // A double-click drops the chip back to its raw "@name" text and reopens the typeahead at
+  // that position, so a mistyped or abandoned edit resolves as ordinary text — never a
+  // broken-looking bound chip.
+  await chip.dblclick();
+  await expect(chip).toHaveCount(0);
+  await expect(page.getByRole("listbox", { name: "Insert a variable" })).toBeVisible();
+  await expect(instruction).toContainText("@order_total");
+
+  // Re-picking the same variable from the reopened menu re-resolves it to a bound chip, and
+  // the persisted instruction is exactly what it would have been without the round trip.
+  await page.getByRole("option", { name: "@order_total" }).click();
+  await expect(chip).toHaveCount(1);
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  await expect.poll(
+    () => routineUpdates.find((update) => update.method === "POST")?.body?.steps?.[0]?.instruction,
+    { timeout: 15_000 },
+  ).toBe("Ask for {{slot.order_total}} ");
+});
+
+test("leaving a chip's raw text unresolved persists as plain step text, not a broken chip", async ({ page }) => {
+  const routineUpdates: RoutineMutationFixture[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { routineUpdates });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await page.getByRole("button", { name: "New routine" }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Chip left unresolved");
+
+  const documentEditor = page.getByRole("article", { name: "Routine document editor" });
+  await documentEditor.getByRole("button", { name: "Starts when", exact: true }).click();
+  await documentEditor.getByLabel("Activation trigger", { exact: true }).fill("a visitor opens a conversation.");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  await documentEditor.getByRole("button", { name: "Step", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Chat" }).click();
+  await documentEditor.getByRole("button", { name: "Chat", exact: true }).click();
+  const instruction = documentEditor.getByLabel("Step 1 instruction");
+  await instruction.click();
+  await instruction.pressSequentially("Ask for @order_total");
+  await page.getByRole("option", { name: /Create variable “order_total”/ }).click();
+
+  const chip = instruction.locator('[data-routine-chip="variable"]');
+  await chip.dblclick();
+  await expect(chip).toHaveCount(0);
+  await expect(page.getByRole("listbox", { name: "Insert a variable" })).toBeVisible();
+
+  // Walk away from the reopened menu without picking anything — the raw text stays exactly
+  // that: text, not a slot reference, so the routine still saves cleanly. The variable it
+  // was going to bind stays declared with nothing referencing it, which is a real (and
+  // separately surfaced) validation diagnostic, not a save failure or a broken chip.
+  await page.keyboard.press("Escape");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  await expect.poll(
+    () => routineUpdates.find((update) => update.method === "POST")?.body?.steps?.[0]?.instruction,
+    { timeout: 15_000 },
+  ).toBe("Ask for @order_total ");
+  await expect(page.getByRole("status", { name: "Routine has validation issues" })).toBeVisible({ timeout: 15_000 });
+});
+
+test("Backspace on an empty step deletes it and focuses the previous step", async ({ page }) => {
+  const routineUpdates: RoutineMutationFixture[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { routineUpdates });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await page.getByRole("button", { name: "New routine" }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Backspace deletes an empty step");
+
+  const documentEditor = page.getByRole("article", { name: "Routine document editor" });
+  await documentEditor.getByRole("button", { name: "Starts when", exact: true }).click();
+  await documentEditor.getByLabel("Activation trigger", { exact: true }).fill("a visitor opens a conversation.");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  await addChatStep(page, documentEditor, "First step text");
+
+  // A second step, created but left empty — no text, no chips.
+  await documentEditor.getByRole("button", { name: "Step", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Chat" }).click();
+  await documentEditor.getByRole("button", { name: "Chat", exact: true }).last().click();
+  const secondInstruction = documentEditor.getByLabel("Step 2 instruction");
+  await expect(secondInstruction).toBeVisible();
+  await secondInstruction.click();
+
+  await page.keyboard.press("Backspace");
+
+  // The empty step is gone, and typing lands in the previous step's editor, at its end —
+  // continuing its sentence rather than overwriting the start of it.
+  await expect(documentEditor.getByLabel("Step 2 instruction")).toHaveCount(0);
+  const firstInstruction = documentEditor.getByLabel("Step 1 instruction");
+  await expect(firstInstruction).toBeVisible();
+  await page.keyboard.type(" continued");
+  await expect(firstInstruction).toContainText("First step text continued");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  await expect.poll(
+    () => routineUpdates.find((update) => update.method === "POST")?.body?.steps,
+    { timeout: 15_000 },
+  ).toMatchObject([{ instruction: "First step text continued" }]);
+});
+
+test("Backspace on an empty first step is a no-op — nothing before it to focus", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {});
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await page.getByRole("button", { name: "New routine" }).click();
+  await page.getByLabel("Name", { exact: true }).fill("First step Backspace is a no-op");
+
+  const documentEditor = page.getByRole("article", { name: "Routine document editor" });
+  await documentEditor.getByRole("button", { name: "Starts when", exact: true }).click();
+  await documentEditor.getByLabel("Activation trigger", { exact: true }).fill("a visitor opens a conversation.");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  await documentEditor.getByRole("button", { name: "Step", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Chat" }).click();
+  await documentEditor.getByRole("button", { name: "Chat", exact: true }).click();
+  const firstInstruction = documentEditor.getByLabel("Step 1 instruction");
+  await expect(firstInstruction).toBeVisible();
+  await firstInstruction.click();
+
+  await page.keyboard.press("Backspace");
+
+  // Still there — an empty first step has no previous step to remove it in favor of.
+  await expect(documentEditor.getByLabel("Step 1 instruction")).toBeVisible();
+  await expect(documentEditor.getByRole("button", { name: "Add step" })).toBeVisible();
+});
+
+test("the gutter's hover trash deletes a step and persists the removal through autosave", async ({ page }) => {
+  const routineUpdates: RoutineMutationFixture[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { routineUpdates });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await page.getByRole("button", { name: "New routine" }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Hover trash deletes a step");
+
+  const documentEditor = page.getByRole("article", { name: "Routine document editor" });
+  await documentEditor.getByRole("button", { name: "Starts when", exact: true }).click();
+  await documentEditor.getByLabel("Activation trigger", { exact: true }).fill("a visitor opens a conversation.");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  await addChatStep(page, documentEditor, "First step text");
+  await addChatStep(page, documentEditor, "Second step text");
+
+  const firstRow = documentEditor.getByRole("button", { name: "Instruction" }).filter({ hasText: "First step text" }).locator("xpath=ancestor::li[1]");
+  await firstRow.hover();
+  // Disambiguated from the step editor panel's own "Remove step" trash — both can be on
+  // screen at once, so the gutter one needs its own name.
+  await firstRow.getByRole("button", { name: "Delete step", exact: true }).click();
+
+  await expect(documentEditor).not.toContainText("First step text");
+  await expect(documentEditor).toContainText("Second step text");
+
+  await expect.poll(
+    () => routineUpdates.find((update) => update.method === "POST")?.body?.steps,
+    { timeout: 15_000 },
+  ).toMatchObject([{ instruction: "Second step text" }]);
 });

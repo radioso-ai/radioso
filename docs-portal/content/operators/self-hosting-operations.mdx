@@ -143,7 +143,7 @@ Look for `database migration lock held by another instance; waiting` — a norma
 
 If the worker starts but the backend does not, that is a useful signal. Workers use a read-only pending-migration check, while the backend is the runtime that applies SQL migrations.
 
-To inspect blocking sessions in PostgreSQL, use a privileged database console and check locks around the migration metadata table:
+To inspect blocking sessions in PostgreSQL, use a privileged database console and check locks around the migration metadata table and the session-level migration advisory lock:
 
 ```sql
 SELECT a.pid, a.state, a.wait_event_type, l.mode, l.granted, left(a.query, 140) AS query
@@ -151,6 +151,11 @@ FROM pg_locks l
 JOIN pg_class c ON c.oid = l.relation
 JOIN pg_stat_activity a ON a.pid = l.pid
 WHERE c.relname = 'schema_migrations';
+
+SELECT a.pid, a.state, l.granted, left(a.query, 140) AS query
+FROM pg_locks l
+JOIN pg_stat_activity a ON a.pid = l.pid
+WHERE l.locktype = 'advisory';
 
 SELECT pid, pg_blocking_pids(pid) AS blocked_by, state, left(query, 140) AS query
 FROM pg_stat_activity

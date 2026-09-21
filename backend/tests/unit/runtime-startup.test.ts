@@ -146,6 +146,7 @@ const createDependencies = () =>
     metricsRegistry: null,
     workspaceInvalidationPublisher: { enqueue: vi.fn(() => ({ accepted: false, reason: "disabled" })) },
     conversationLinks: { resolve: vi.fn(async () => null) },
+    agentStarterPromptReader: { listStarterPrompts: vi.fn(async () => []) },
     realtimePublisherLifecycle: { shutdown: vi.fn().mockResolvedValue(undefined) },
     credentialExpiryWarningLifecycle: {
       start: vi.fn().mockResolvedValue(undefined),
@@ -165,6 +166,10 @@ const createDependencies = () =>
       stop: vi.fn(async () => {}),
     },
     revisionEvalRunRetentionWorker: {
+      start: vi.fn(),
+      stop: vi.fn(async () => {}),
+    },
+    slackInboundEventRetentionWorker: {
       start: vi.fn(),
       stop: vi.fn(async () => {}),
     },
@@ -227,6 +232,7 @@ describe("runtime startup", () => {
       expect.objectContaining({
         workspaceInvalidationPublisher: dependencies.workspaceInvalidationPublisher,
         conversationLinks: dependencies.conversationLinks,
+        agentStarterPrompts: dependencies.agentStarterPromptReader,
       }),
     );
     expect(dependencies.applicationModules.initializeAll).toHaveBeenCalledOnce();
@@ -285,6 +291,7 @@ describe("runtime startup", () => {
     expect(dependencies.copilotRetentionWorker.start).toHaveBeenCalledOnce();
     expect(dependencies.testExecutionRetentionWorker.start).toHaveBeenCalledOnce();
     expect(dependencies.revisionEvalRunRetentionWorker.start).toHaveBeenCalledOnce();
+    expect(dependencies.slackInboundEventRetentionWorker.start).toHaveBeenCalledOnce();
     expect(dependencies.websiteCrawlWorker.start).not.toHaveBeenCalled();
     expect(dependencies.connectorRegistry.runMigrations).not.toHaveBeenCalled();
     expect(dependencies.connectorRegistry.initializeAll).not.toHaveBeenCalled();
@@ -296,6 +303,7 @@ describe("runtime startup", () => {
     expect(dependencies.copilotRetentionWorker.stop).toHaveBeenCalledOnce();
     expect(dependencies.testExecutionRetentionWorker.stop).toHaveBeenCalledOnce();
     expect(dependencies.revisionEvalRunRetentionWorker.stop).toHaveBeenCalledOnce();
+    expect(dependencies.slackInboundEventRetentionWorker.stop).toHaveBeenCalledOnce();
     expect(dependencies.websiteCrawlWorker.stop).not.toHaveBeenCalled();
     expect(dependencies.realtimePublisherLifecycle.shutdown).toHaveBeenCalledOnce();
     expect(dependencies.applicationModules.shutdownAll).toHaveBeenCalledOnce();
@@ -560,6 +568,9 @@ describe("runtime startup", () => {
       },
       revisionEvalRunRetentionWorker: {
         route: "POST /internal/tasks/agent-revision-eval-run-retention/sweep",
+      },
+      slackInboundEventRetentionWorker: {
+        route: "POST /internal/tasks/slack-inbound-event-retention/sweep",
       },
       agentBundleImportCleanupWorker: {
         route: "POST /internal/tasks/agent-bundle-imports/sweep",

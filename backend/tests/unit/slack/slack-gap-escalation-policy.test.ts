@@ -12,12 +12,11 @@ import type {
   SlackInstallationRepositoryPort,
   SlackInstallationService,
 } from "../../../src/modules/slack/public.js";
-import {
-  SLACK_MAX_MESSAGE_TEXT_LENGTH as SLACK_TEXT_LIMIT,
-  SlackWebApiError,
-} from "../../../src/modules/slack/public.js";
+import { SlackWebApiError } from "../../../src/modules/slack/public.js";
+import { SLACK_MAX_MARKDOWN_TEXT_LENGTH as SLACK_TEXT_LIMIT } from "../../../src/modules/slack/delivery/slackDelivery.js";
 import type { SlackPersistencePort } from "../../../src/modules/connectors/plugins/slack/slackPersistence.js";
 import type { SlackPostOutboxPort } from "../../../src/modules/slack/public.js";
+import { idleSlackAgentSessionClient } from "../../support/inMemorySlack.js";
 
 const installation: SlackInstallationRecord = {
   id: "11111111-1111-1111-1111-111111111111",
@@ -87,6 +86,7 @@ const makeHandler = (input: {
     answeringAgentId: "66666666-6666-6666-6666-666666666666",
     escalationChannelId: input.escalationChannelId === undefined ? "CSUPPORT" : input.escalationChannelId,
     gapEscalationEnabled: input.gapEscalationEnabled ?? false,
+    respondMode: "mention" as const,
     createdAt: new Date(),
     updatedAt: new Date(),
   };
@@ -117,7 +117,12 @@ const makeHandler = (input: {
       installationService,
       persistence: basePersistence(),
       slackPostOutbox: outbox,
-      clientFactory: () => ({ postMessage: posted, addReaction: vi.fn(), removeReaction: vi.fn() }),
+      clientFactory: () => ({
+        postMessage: posted,
+        addReaction: vi.fn(),
+        removeReaction: vi.fn(),
+        ...idleSlackAgentSessionClient(),
+      }),
       conversationLinks: input.conversationLinks,
     }),
     installationService,
@@ -133,6 +138,7 @@ const event = {
     channel: "D1",
     user: "U1",
     text: "Unsupported question",
+    ts: "1700000000.000010",
   },
 };
 
@@ -154,6 +160,7 @@ describe("Slack gap escalation policy", () => {
         provider: "slack",
         team: { id: "T1", name: "Acme" },
         channel: { id: "D1", type: "im" },
+        threadTs: "1700000000.000010",
         user: { id: "U1" },
       },
     }));
@@ -288,6 +295,7 @@ describe("Slack gap escalation policy", () => {
       answeringAgentId: "66666666-6666-6666-6666-666666666666",
       escalationChannelId: null,
       gapEscalationEnabled: false,
+      respondMode: "mention" as const,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -311,7 +319,12 @@ describe("Slack gap escalation policy", () => {
       bindings,
       installationService,
       persistence,
-      clientFactory: () => ({ postMessage: posted, addReaction: vi.fn(), removeReaction: vi.fn() }),
+      clientFactory: () => ({
+        postMessage: posted,
+        addReaction: vi.fn(),
+        removeReaction: vi.fn(),
+        ...idleSlackAgentSessionClient(),
+      }),
     });
     const mentionEvent = {
       eventId: "EvMentionOne",
@@ -355,7 +368,7 @@ describe("Slack gap escalation policy", () => {
     }));
     expect(posted).toHaveBeenCalledWith(expect.objectContaining({
       channel: "CCHANNEL",
-      text: "Mention reply",
+      markdownText: "Mention reply",
       threadTs: "1700000000.000100",
     }));
   });
@@ -371,11 +384,11 @@ describe("Slack gap escalation policy", () => {
     expect(posted).toHaveBeenCalledTimes(2);
     expect(posted.mock.calls[0]?.[0]).toMatchObject({
       channel: "D1",
-      text: "a".repeat(SLACK_TEXT_LIMIT),
+      markdownText: "a".repeat(SLACK_TEXT_LIMIT),
     });
     expect(posted.mock.calls[1]?.[0]).toMatchObject({
       channel: "D1",
-      text: "tail",
+      markdownText: "tail",
     });
   });
 

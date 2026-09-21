@@ -42,6 +42,7 @@ import {
   ChatBootstrapService,
   ChatHistoryService,
   ConversationTestExecutionSeedSource,
+  RevisionGreetingStarterPromptReader,
   ChatService,
   ChatTurnAssemblyFactory,
   InMemoryConversationTurnRegistry,
@@ -829,6 +830,12 @@ export const buildChatServices = (input: {
     input.agentService,
     agentRevisionRuntimeResolver,
   );
+  // Channels that show conversation starters outside a conversation (Slack's agent
+  // pane) read the same published greeting chips bootstrap delivers.
+  const agentStarterPromptReader = new RevisionGreetingStarterPromptReader(
+    input.agentService,
+    agentRevisionRuntimeResolver,
+  );
   const chatHistoryService = new ChatHistoryService(
     input.conversationRepository,
     input.messageRepository,
@@ -927,6 +934,7 @@ export const buildChatServices = (input: {
     assistantHistoryService: new AssistantHistoryService(chatHistoryService),
     publicChatActionAdvertiser,
     chatBootstrapService,
+    agentStarterPromptReader,
     chatGateway,
     chatHistoryService,
     testExecutionSeedSource,

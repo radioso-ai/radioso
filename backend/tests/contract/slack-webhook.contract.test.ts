@@ -8,6 +8,7 @@ import { createSlackWebhookRouter } from "../../src/modules/connectors/plugins/s
 import { SlackMessageHandler } from "../../src/modules/connectors/plugins/slack/slackMessageHandler.js";
 import { ChatTurnSupersededError } from "../../src/modules/chat/services/conversationTurnRegistry.js";
 import type { SlackInstallationRecord } from "../../src/modules/slack/install/slackInstallationService.js";
+import { idleSlackAgentSessionClient } from "../support/inMemorySlack.js";
 
 const signingSecret = "test-signing-secret";
 const nowMs = Date.parse("2026-06-19T12:00:00.000Z");
@@ -25,7 +26,7 @@ const createApp = (input: {
   botUserId?: string;
   botLoop?: boolean;
   handle?: () => Promise<void>;
-  messageHandler?: Pick<SlackMessageHandler, "handleAppMention" | "handleMessageIm" | "isBotLoop">;
+  messageHandler?: Pick<SlackMessageHandler, "handleAppMention" | "handleMessageIm" | "handleChannelMessage" | "handleAppHomeOpened" | "isBotLoop">;
   processingRetryDelaysMs?: readonly number[];
 } = {}) => {
   const app = express();
@@ -41,6 +42,8 @@ const createApp = (input: {
   });
   const handleMessageIm = vi.fn(input.handle ?? (async () => undefined));
   const handleAppMention = vi.fn(input.handle ?? (async () => undefined));
+  const handleChannelMessage = vi.fn(input.handle ?? (async () => undefined));
+  const handleAppHomeOpened = vi.fn(input.handle ?? (async () => undefined));
   const markInboundEventStatus = vi.fn(async () => undefined);
   const installation: SlackInstallationRecord = {
     id: "installation-1",
@@ -77,10 +80,12 @@ const createApp = (input: {
     messageHandler: input.messageHandler ?? {
       handleMessageIm,
       handleAppMention,
+      handleChannelMessage,
+      handleAppHomeOpened,
       isBotLoop: (_installation, event) => input.botLoop === true || Boolean(event.bot_id) || event.user === installation.botUserId,
     },
   }));
-  return { app, handleMessageIm, handleAppMention, markInboundEventStatus };
+  return { app, handleMessageIm, handleAppMention, handleChannelMessage, handleAppHomeOpened, markInboundEventStatus };
 };
 
 const messagePayload = (eventId = "Ev1", overrides: Record<string, unknown> = {}) => ({
@@ -239,6 +244,7 @@ describe("Slack inbound webhook contract", () => {
     const postMessage = vi.fn(async () => ({ channel: "DUSER", ts: "reply-ts" }));
     const addReaction = vi.fn(async () => undefined);
     const removeReaction = vi.fn(async () => undefined);
+    const setAgentSessionStatus = vi.fn(async () => undefined);
     const markHandledStatus = vi.fn(async () => undefined);
     const info = vi.fn();
     const handler = new SlackMessageHandler({
@@ -285,7 +291,7 @@ describe("Slack inbound webhook contract", () => {
         }),
         markInboundEventStatus: markHandledStatus,
       } as never,
-      clientFactory: () => ({ postMessage, addReaction, removeReaction }),
+      clientFactory: () => ({ postMessage, addReaction, removeReaction, ...idleSlackAgentSessionClient(), setAgentSessionStatus }),
     });
     const { app, markInboundEventStatus } = createApp({
       messageHandler: handler,
@@ -304,12 +310,16 @@ describe("Slack inbound webhook contract", () => {
     await new Promise((resolve) => setTimeout(resolve, 10));
     expect(answer).toHaveBeenCalledTimes(1);
     expect(postMessage).not.toHaveBeenCalled();
-    expect(removeReaction).toHaveBeenCalledWith({
-      channel: "DUSER",
-      timestamp: "1718800000.000100",
-      name: "eyes",
+    // A DM is an agent-pane session: it signals work through the session status, never
+    // reactions, and a superseded turn leaves the indicator to the turn that replaced it.
+    expect(setAgentSessionStatus).toHaveBeenCalledTimes(1);
+    expect(setAgentSessionStatus).toHaveBeenCalledWith({
+      channelId: "DUSER",
+      threadTs: "1718800000.000100",
+      status: "processing",
     });
-    expect(addReaction).toHaveBeenCalledTimes(1);
+    expect(addReaction).not.toHaveBeenCalled();
+    expect(removeReaction).not.toHaveBeenCalled();
     expect(markInboundEventStatus).not.toHaveBeenCalledWith("EvSuperseded", "failed");
     expect(info).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -381,6 +391,7 @@ describe("Slack inbound webhook contract", () => {
         postMessage,
         addReaction: vi.fn(async () => undefined),
         removeReaction: vi.fn(async () => undefined),
+        ...idleSlackAgentSessionClient(),
       }),
     });
     const { app, markInboundEventStatus } = createApp({
@@ -406,7 +417,7 @@ describe("Slack inbound webhook contract", () => {
     expect(markInboundEventStatus).not.toHaveBeenCalledWith("EvSupersededStatusFailure", "failed");
   });
 
-  it("dispatches app_mention events and ignores ordinary channel messages", async () => {
+  it("dispatches app_mention events to the mention handler only", async () => {
     const mention = createApp();
     const mentionBody = JSON.stringify(appMentionPayload("EvMention"));
     const mentionResponse = await request(mention.app)
@@ -427,17 +438,177 @@ describe("Slack inbound webhook contract", () => {
       }),
     }));
     expect(mention.handleMessageIm).not.toHaveBeenCalled();
+    expect(mention.handleChannelMessage).not.toHaveBeenCalled();
+  });
 
-    const channelMessage = createApp();
-    const channelBody = JSON.stringify(messagePayload("EvChannel", { channel_type: "channel", channel: "C123" }));
-    const channelResponse = await request(channelMessage.app)
+  it("dispatches public and private channel messages to the channel handler, never the DM handler", async () => {
+    for (const channelType of ["channel", "group"] as const) {
+      const channelMessage = createApp();
+      const eventId = `EvChannel-${channelType}`;
+      const channelBody = JSON.stringify(messagePayload(eventId, {
+        channel_type: channelType,
+        channel: "C123",
+        thread_ts: "1718800000.000050",
+      }));
+      const channelResponse = await request(channelMessage.app)
+        .post("/api/connectors/slack/events")
+        .set(createSignedHeaders(channelBody))
+        .type("application/json")
+        .send(channelBody);
+      expect(channelResponse.status).toBe(200);
+      await vi.waitFor(() => expect(channelMessage.handleChannelMessage).toHaveBeenCalledWith({
+        eventId,
+        teamId: "TTEST",
+        event: {
+          type: "message",
+          channel_type: channelType,
+          channel: "C123",
+          user: "UUSER",
+          text: "Question",
+          ts: "1718800000.000100",
+          thread_ts: "1718800000.000050",
+        },
+      }));
+      expect(channelMessage.handleMessageIm).not.toHaveBeenCalled();
+      expect(channelMessage.handleAppMention).not.toHaveBeenCalled();
+    }
+
+    const dm = createApp();
+    const dmBody = JSON.stringify(messagePayload("EvDm"));
+    await request(dm.app)
+      .post("/api/connectors/slack/events")
+      .set(createSignedHeaders(dmBody))
+      .type("application/json")
+      .send(dmBody);
+    await vi.waitFor(() => expect(dm.handleMessageIm).toHaveBeenCalledTimes(1));
+    expect(dm.handleChannelMessage).not.toHaveBeenCalled();
+  });
+
+  it("skips channel message subtypes such as edits, deletions, joins, and bot posts", async () => {
+    for (const subtype of ["message_changed", "message_deleted", "channel_join", "bot_message", "thread_broadcast"]) {
+      const { app, handleChannelMessage, handleMessageIm, markInboundEventStatus } = createApp();
+      const eventId = `EvSubtype-${subtype}`;
+      const body = JSON.stringify(messagePayload(eventId, { channel_type: "channel", channel: "C123", subtype }));
+      const response = await request(app)
+        .post("/api/connectors/slack/events")
+        .set(createSignedHeaders(body))
+        .type("application/json")
+        .send(body);
+      expect(response.status).toBe(200);
+      await vi.waitFor(() => expect(markInboundEventStatus).toHaveBeenCalledWith(eventId, "skipped"));
+      expect(handleChannelMessage).not.toHaveBeenCalled();
+      expect(handleMessageIm).not.toHaveBeenCalled();
+    }
+  });
+
+  it("accepts a question posted with an attachment (file_share) in channels and direct messages", async () => {
+    const channel = createApp();
+    const channelBody = JSON.stringify(messagePayload("EvFileChannel", {
+      channel_type: "channel",
+      channel: "C123",
+      subtype: "file_share",
+    }));
+    await request(channel.app)
       .post("/api/connectors/slack/events")
       .set(createSignedHeaders(channelBody))
       .type("application/json")
       .send(channelBody);
-    expect(channelResponse.status).toBe(200);
-    expect(channelMessage.handleMessageIm).not.toHaveBeenCalled();
-    expect(channelMessage.handleAppMention).not.toHaveBeenCalled();
-    expect(channelMessage.markInboundEventStatus).toHaveBeenCalledWith("EvChannel", "skipped");
+    await vi.waitFor(() => expect(channel.handleChannelMessage).toHaveBeenCalledWith(expect.objectContaining({
+      eventId: "EvFileChannel",
+      event: expect.objectContaining({ channel_type: "channel", text: "Question" }),
+    })));
+
+    const dm = createApp();
+    const dmBody = JSON.stringify(messagePayload("EvFileDm", { subtype: "file_share" }));
+    await request(dm.app)
+      .post("/api/connectors/slack/events")
+      .set(createSignedHeaders(dmBody))
+      .type("application/json")
+      .send(dmBody);
+    await vi.waitFor(() => expect(dm.handleMessageIm).toHaveBeenCalledWith(expect.objectContaining({
+      eventId: "EvFileDm",
+      event: expect.objectContaining({ channel_type: "im", text: "Question" }),
+    })));
+  });
+
+  it("skips direct message subtypes such as edits, joins, and bot posts", async () => {
+    for (const subtype of ["message_changed", "bot_message", "channel_join"]) {
+      const { app, handleMessageIm, handleChannelMessage, markInboundEventStatus } = createApp();
+      const eventId = `EvDmSubtype-${subtype}`;
+      const body = JSON.stringify(messagePayload(eventId, { subtype }));
+      const response = await request(app)
+        .post("/api/connectors/slack/events")
+        .set(createSignedHeaders(body))
+        .type("application/json")
+        .send(body);
+      expect(response.status).toBe(200);
+      await vi.waitFor(() => expect(markInboundEventStatus).toHaveBeenCalledWith(eventId, "skipped"));
+      expect(handleMessageIm).not.toHaveBeenCalled();
+      expect(handleChannelMessage).not.toHaveBeenCalled();
+    }
+  });
+
+  it("keeps the session thread on direct messages and dispatches them to the DM handler", async () => {
+    const { app, handleMessageIm, handleChannelMessage } = createApp();
+    const body = JSON.stringify(messagePayload("EvSession", { thread_ts: "1718800000.000050" }));
+    const response = await request(app)
+      .post("/api/connectors/slack/events")
+      .set(createSignedHeaders(body))
+      .type("application/json")
+      .send(body);
+    expect(response.status).toBe(200);
+    await vi.waitFor(() => expect(handleMessageIm).toHaveBeenCalledWith({
+      eventId: "EvSession",
+      teamId: "TTEST",
+      event: {
+        type: "message",
+        channel_type: "im",
+        channel: "DUSER",
+        user: "UUSER",
+        text: "Question",
+        ts: "1718800000.000100",
+        thread_ts: "1718800000.000050",
+      },
+    }));
+    expect(handleChannelMessage).not.toHaveBeenCalled();
+  });
+
+  it("dispatches app_home_opened with its tab to the Home handler", async () => {
+    for (const tab of ["messages", "home"] as const) {
+      const { app, handleAppHomeOpened, handleMessageIm } = createApp();
+      const eventId = `EvHome-${tab}`;
+      const body = JSON.stringify({
+        token: "ignored",
+        type: "event_callback",
+        team_id: "TTEST",
+        event_id: eventId,
+        event: { type: "app_home_opened", user: "UUSER", channel: "DUSER", tab, event_ts: "1718800000.000300" },
+      });
+      const response = await request(app)
+        .post("/api/connectors/slack/events")
+        .set(createSignedHeaders(body))
+        .type("application/json")
+        .send(body);
+      expect(response.status).toBe(200);
+      await vi.waitFor(() => expect(handleAppHomeOpened).toHaveBeenCalledWith({
+        eventId,
+        teamId: "TTEST",
+        event: { type: "app_home_opened", user: "UUSER", channel: "DUSER", tab },
+      }));
+      expect(handleMessageIm).not.toHaveBeenCalled();
+    }
+  });
+
+  it("skips channel messages without a timestamp", async () => {
+    const { app, handleChannelMessage, markInboundEventStatus } = createApp();
+    const body = JSON.stringify(messagePayload("EvNoTs", { channel_type: "channel", channel: "C123", ts: undefined }));
+    const response = await request(app)
+      .post("/api/connectors/slack/events")
+      .set(createSignedHeaders(body))
+      .type("application/json")
+      .send(body);
+    expect(response.status).toBe(200);
+    await vi.waitFor(() => expect(markInboundEventStatus).toHaveBeenCalledWith("EvNoTs", "skipped"));
+    expect(handleChannelMessage).not.toHaveBeenCalled();
   });
 });

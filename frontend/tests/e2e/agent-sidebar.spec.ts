@@ -22,7 +22,7 @@ test('agent sidebar keeps the selected hierarchy and configured channel catalog'
       { id: 'mcp-credential', audience: 'mcp', label: 'MCP', prefix: 'rd_mcp', status: 'active', createdAt: nowIso, expiresAt: nowIso, lastUsedAt: null, revokedAt: null },
     ],
     slackStatus: { status: 'needs_reauth', readiness: { configured: true, missingEnvVars: [] }, teamName: 'Radioso' },
-    slackBinding: { channelId: null, answeringAgentId: defaultAgentId, escalationChannelId: null, gapEscalationEnabled: false },
+    slackBinding: { channelId: null, answeringAgentId: defaultAgentId, escalationChannelId: null, gapEscalationEnabled: false, respondMode: "mention" },
   })
   await page.route('**/backend/api/v1/agents', async (route) => {
     if (route.request().method() !== 'GET') return route.fallback()

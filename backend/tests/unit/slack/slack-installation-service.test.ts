@@ -256,6 +256,7 @@ class InMemorySlackBindings implements SlackBindingRepositoryPort {
         ? existing?.escalationChannelId ?? null
         : input.escalationChannelId,
       gapEscalationEnabled: input.gapEscalationEnabled ?? existing?.gapEscalationEnabled ?? false,
+      respondMode: input.respondMode ?? existing?.respondMode ?? "mention",
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
     };
@@ -411,6 +412,41 @@ describe("SlackInstallationService", () => {
       escalationChannelId: null,
       gapEscalationEnabled: true,
     });
+  });
+
+  it("stores a channel binding's respond mode and rejects every_message on the default binding", async () => {
+    const { service } = createService();
+    await service.saveInstallation({
+      workspaceId: "workspace-1",
+      teamId: "T123",
+      teamName: "Acme",
+      botUserId: "U_BOT",
+      botAccessToken: "xoxb-token",
+      grantedScopes: [...slackBotScopes],
+      answeringAgentId: "agent-1",
+    });
+
+    const channelBinding = await service.setBinding({
+      workspaceId: "workspace-1",
+      channelId: "C_SALES",
+      answeringAgentId: "agent-1",
+      respondMode: "every_message",
+    });
+    expect(channelBinding).toMatchObject({ channelId: "C_SALES", respondMode: "every_message" });
+    expect(await service.getBinding("workspace-1")).toMatchObject({ channelId: null, respondMode: "mention" });
+
+    await expect(service.setBinding({
+      workspaceId: "workspace-1",
+      answeringAgentId: "agent-1",
+      respondMode: "every_message",
+    })).rejects.toMatchObject({ statusCode: 400 });
+    await expect(service.setBinding({
+      workspaceId: "workspace-1",
+      channelId: null,
+      answeringAgentId: "agent-1",
+      respondMode: "every_message",
+    })).rejects.toMatchObject({ statusCode: 400 });
+    expect(await service.getBinding("workspace-1")).toMatchObject({ respondMode: "mention" });
   });
 
   it("lists the default binding first and then channel bindings for the workspace account install", async () => {

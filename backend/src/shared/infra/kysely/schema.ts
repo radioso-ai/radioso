@@ -1386,6 +1386,7 @@ export interface SlackChannelBindings {
   gap_escalation_enabled: Generated<boolean>;
   id: string;
   installation_id: string;
+  respond_mode: Generated<string>;
   updated_at: Generated<Timestamp>;
   workspace_id: string;
 }

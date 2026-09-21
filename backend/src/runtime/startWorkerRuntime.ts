@@ -41,6 +41,7 @@ export const startWorkerRuntime = async (options: StartWorkerRuntimeOptions): Pr
   dependencies.copilotRetentionWorker.start();
   dependencies.testExecutionRetentionWorker.start();
   dependencies.revisionEvalRunRetentionWorker.start();
+  dependencies.slackInboundEventRetentionWorker.start();
   dependencies.agentBundleImportCleanupWorker.start();
 
   let shuttingDown = false;
@@ -58,6 +59,7 @@ export const startWorkerRuntime = async (options: StartWorkerRuntimeOptions): Pr
         await dependencies.copilotRetentionWorker.stop();
         await dependencies.testExecutionRetentionWorker.stop();
         await dependencies.revisionEvalRunRetentionWorker.stop();
+        await dependencies.slackInboundEventRetentionWorker.stop();
         await dependencies.agentBundleImportCleanupWorker.stop();
         await dependencies.actionDispatchWorker.stop();
         await dependencies.facetExtractionWorker?.stop();

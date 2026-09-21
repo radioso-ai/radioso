@@ -24,8 +24,14 @@ For the runtime model behind routines, see
 
 ## Start a routine
 
-Open **Routines** and choose **New routine**. Set the routine **Name** in the
-header. Open **Starts when** in the Document editor to set:
+Open **Routines** and choose **New routine**. The routine's name is the page
+title — click it and type. A pill beside it reads **Draft** or **Live**,
+matching the round publish button at the top right: press it to take the
+routine live, press it again to pull it back to a draft. **Test** opens the
+draft in Test Chat, and the overflow menu holds **Draft with AI** and
+**Delete routine**.
+
+Open **When to trigger** in the Document editor, then **Starts when**, to set:
 
 - **Priority** — the tie-breaker when several routines match a turn.
 - **Reentry** — how the routine behaves after it finishes in a conversation.
@@ -60,14 +66,22 @@ later matching message does:
 
 ## Document view
 
-**Document** lays a routine out from top to bottom: a **Starts when** line,
-**Information**, numbered steps, branch rows, and endings. A skill step includes
-a **uses → sets** line so its input bindings and assigned outputs remain visible
-in the flow.
+**Document** lays a routine out from top to bottom: a collapsible **When to
+trigger** section holding **Starts when**, then **Instructions** — the numbered
+steps and their branch rows. **Collected information**, **Endings**, and
+**Completion export** sit inside an **Endings & information** disclosure at
+the bottom, closed by default since a branch row already names the ending it
+reaches inline. A skill step's **uses → sets** line lives in its step editor,
+opened from the step's own token, so its input bindings and assigned outputs
+stay out of the way until you need them.
 
 Edit the **Starts when** line directly. Add information, steps, branches, and
 endings where they belong in the flow. That proximity makes the decision behind
-each transition easy to review with the instructions it follows.
+each transition easy to review with the instructions it follows. A blank line
+always sits after the last step — click it to write the next one. Delete a step
+by pressing Backspace in its empty instruction, from the trash next to its
+reorder arrows on hover, or from the step editor panel itself; any branch that
+pointed at it retargets to a new, blank ending.
 
 Every change saves into the agent's private draft as you make it, so the document
 you are reading is always the one a colleague can open to learn what the agent
@@ -116,16 +130,19 @@ skill**. Choose the intended skill, then validate the routine.
 
 ### Shape branches with condition rows
 
-Add a condition row beneath a step to decide where the routine goes next. Each
-row names its target: another step, a **Finish** ending, or a **Hand off** ending.
-Rows run in order, so place the general path after the more specific paths.
+Add a condition row beneath a step — the round **+** under its branches, or
+**+ Condition** in the step's own editor — to decide where the routine goes
+next. Each row names its target: another step, a **Finish** ending, or a
+**Hand off** ending. Rows run in order, so place the general path after the
+more specific paths.
 
 Choose the decision mode on the row:
 
 - **Rule** makes an exact, typed check, such as `amount is greater than 100`,
   `email is present`, a skill outcome of `failed`, or a bounded retry count.
 - **AI decides** gives the agent a condition to judge in context, such as
-  “the customer seems unsure.”
+  “the customer seems unsure.” Write the condition in plain language; type `@`
+  to reference a collected value by name.
 
 Use **Rule** for stable facts like amounts, dates, present values, skill
 outcomes, and retry limits. Use **AI decides** when the choice depends on the
@@ -175,7 +192,7 @@ missing webhook destination for completion export.
 
 ## Map
 
-Choose **Map** to read the routine as a graph — the trigger, every step, every
+Choose **Map** from the header's overflow menu to read the routine as a graph — the trigger, every step, every
 ending, and the branches between them — over the full width of the window. Close it
 to return to the document.
 
@@ -201,15 +218,16 @@ conversation.
 
 ## Try a routine before it ships
 
-Choose **Test draft** to open the agent's **Test Chat** with the draft selected.
+Choose **Test** to open the agent's **Test Chat** with the draft selected.
 The routine can activate and run turn by turn in that conversation, then returns
 to normal answering when it finishes.
 
 - The draft holds the edit you just made alongside the rest of the agent's
   unpublished work, so the test exercises the routine exactly as a publish would
   ship it.
-- The routine has to be enabled: a disabled routine sits outside the draft's
-  activation set, so **Test draft** is disabled until you turn the routine on.
+- The routine has to be **Live**: one that still reads **Draft** sits outside
+  the agent draft's activation set, so **Test** is disabled until you switch
+  it over with the round button beside the pill.
 - Each test conversation is private to you and keeps the revision it started on.
 
 Use the test to check the trigger, information collection, skill bindings,
@@ -233,7 +251,8 @@ an eval case captures only from a test that kept skills off.
 
 ## Completion export
 
-The **Completion export** panel lets a routine send its collected values to a
+Open the document's **Endings & information** disclosure to find the
+**Completion export** panel, which lets a routine send its collected values to a
 workspace webhook destination when it reaches selected terminal kinds. Enable
 the export, choose the destination, then select `complete`, `handoff`, or both.
 
@@ -279,17 +298,19 @@ A conversation pins one agent revision for its whole life. A visitor part-way
 through a routine finishes on the version they started with, while you work on
 the next one.
 
-Each routine carries an `enabled` flag, set through the same update call as the
-rest of its content:
+Each routine carries an `enabled` flag — the **Draft** and **Live** pill in the
+header, flipped by the round button beside it — set through the same update
+call as the rest of its content:
 
 ```http
 PATCH /api/v1/agents/{agentId}/routines/{routineId}
 ```
 
-Turn a routine off to take it out of play while keeping everything you built.
-That is what you want when you are comparing agent behavior with and without it,
-or parking a flow you are still working out; turning it back on restores the
-routine exactly as you left it.
+Switch a routine to **Draft** to take it out of play while keeping everything
+you built. That is what you want when you are comparing agent behavior with
+and without it, or parking a flow you are still working out; switching it back
+to **Live** restores the routine exactly as you left it. Either way, the
+change only reaches customers after the next Review & Publish.
 
 The rest of the authoring API is create, read, update, and delete under
 `/api/v1/agents/{agentId}/routines`, plus

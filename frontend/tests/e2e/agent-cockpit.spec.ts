@@ -1051,8 +1051,10 @@ test('leaves a routine detail when navigating to cockpit and channel sections', 
 
   await page.goto(routineUrl)
   const expectRoutineDetail = async () => {
-    await expect(page.getByRole('heading', { name: 'Routine', level: 1, exact: true })).toBeVisible()
-    await expect(page.getByRole('heading', { name: 'Collect pricing intake', level: 2, exact: true })).toBeVisible()
+    // The routine's own name is the page title now, editable in place; the document body
+    // beneath it no longer repeats the name as a heading of its own.
+    await expect(page.getByLabel('Name', { exact: true })).toHaveValue('Collect pricing intake')
+    await expect(page.getByRole('article', { name: 'Routine document editor' })).toBeVisible()
   }
   await expectRoutineDetail()
   const cockpit = page.getByRole('navigation', { name: 'Agent cockpit' })
@@ -1076,9 +1078,9 @@ test('leaves a routine detail when navigating to cockpit and channel sections', 
 test('tests a routine draft in the agent Test Chat', async ({ page }) => {
   await installCockpitMocks(page, { routines: [pricingRoutine()] })
   await page.goto(pricingRoutineUrl)
-  await expect(page.getByRole('heading', { name: 'Collect pricing intake', level: 2, exact: true })).toBeVisible()
+  await expect(page.getByLabel('Name', { exact: true })).toHaveValue('Collect pricing intake')
 
-  const testDraft = page.getByRole('button', { name: 'Test draft', exact: true })
+  const testDraft = page.getByRole('button', { name: 'Test', exact: true })
   await expect(testDraft).toBeEnabled()
   await testDraft.click()
   await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}$`))
@@ -1090,7 +1092,7 @@ test('flushes a pending autosave before Test draft navigates away', async ({ pag
   const routineUpdates: RoutineMutationFixture[] = []
   await installCockpitMocks(page, { routines: [pricingRoutine()], routineUpdates })
   await page.goto(pricingRoutineUrl)
-  await expect(page.getByRole('heading', { name: 'Collect pricing intake', level: 2, exact: true })).toBeVisible()
+  await expect(page.getByLabel('Name', { exact: true })).toHaveValue('Collect pricing intake')
 
   const editor = page.getByRole('article', { name: 'Routine document editor' })
   await editor.getByRole('button', { name: 'Starts when', exact: true }).click()
@@ -1099,7 +1101,7 @@ test('flushes a pending autosave before Test draft navigates away', async ({ pag
 
   // Click well inside the 1500ms autosave debounce: without a flush, this edit would still
   // be sitting on the timer when navigation unmounts the section and cancels it.
-  const testDraft = page.getByRole('button', { name: 'Test draft', exact: true })
+  const testDraft = page.getByRole('button', { name: 'Test', exact: true })
   await expect(testDraft).toBeEnabled()
   await testDraft.click()
 
@@ -1116,9 +1118,9 @@ test('flushes a pending autosave before Test draft navigates away', async ({ pag
 test('withholds the routine draft test while the routine is disabled', async ({ page }) => {
   await installCockpitMocks(page, { routines: [pricingRoutine(false)] })
   await page.goto(pricingRoutineUrl)
-  await expect(page.getByRole('heading', { name: 'Collect pricing intake', level: 2, exact: true })).toBeVisible()
+  await expect(page.getByLabel('Name', { exact: true })).toHaveValue('Collect pricing intake')
 
-  const testDraft = page.getByRole('button', { name: 'Test draft', exact: true })
+  const testDraft = page.getByRole('button', { name: 'Test', exact: true })
   await expect(testDraft).toBeDisabled()
   await expect(testDraft).toHaveAttribute('title', 'Enable this routine to test it.')
 })

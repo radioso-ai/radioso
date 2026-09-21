@@ -392,29 +392,24 @@ function MapBody({ draft }: { draft: RoutineDefinitionDraft }) {
   )
 }
 
-export function RoutineMapButton({ draft }: { draft: RoutineDefinitionDraft }) {
-  const [open, setOpen] = useState(false)
+// The trigger lives in the header's overflow menu now, so this is the dialog alone —
+// the caller owns the open state a `DropdownMenuItem` can flip.
+export function RoutineMapDialog({ draft, open, onOpenChange }: { draft: RoutineDefinitionDraft; open: boolean; onOpenChange: (open: boolean) => void }) {
   return (
-    <>
-      <Button type="button" size="sm" variant="outline" onClick={() => setOpen(true)}>
-        <Waypoints className="mr-1 h-4 w-4" />
-        Map
-      </Button>
-      <Sheet open={open} onOpenChange={setOpen}>
-        <SheetContent side="bottom" className="h-[78vh] gap-0 p-0">
-          <SheetHeader className="border-b border-border p-5 pr-12">
-            <SheetTitle className="flex items-center gap-2 text-base font-medium">
-              <Waypoints className="h-4 w-4 text-muted-foreground" />
-              Map
-            </SheetTitle>
-            <SheetDescription>
-              Every step and ending, and the branches between them. A dashed line is a branch the model decides.
-            </SheetDescription>
-          </SheetHeader>
-          {/* The graph is only worth projecting while someone is looking at it. */}
-          {open ? <MapBody draft={draft} /> : null}
-        </SheetContent>
-      </Sheet>
-    </>
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent side="bottom" className="h-[78vh] gap-0 p-0">
+        <SheetHeader className="border-b border-border p-5 pr-12">
+          <SheetTitle className="flex items-center gap-2 text-base font-medium">
+            <Waypoints className="h-4 w-4 text-muted-foreground" />
+            Map
+          </SheetTitle>
+          <SheetDescription>
+            Every step and ending, and the branches between them. A dashed line is a branch the model decides.
+          </SheetDescription>
+        </SheetHeader>
+        {/* The graph is only worth projecting while someone is looking at it. */}
+        {open ? <MapBody draft={draft} /> : null}
+      </SheetContent>
+    </Sheet>
   )
 }

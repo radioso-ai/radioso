@@ -5,6 +5,7 @@ import { AlertTriangle, ArrowDown, ArrowUp, CheckCircle2, CircleDashed, CornerUp
 
 import { findRoutineSkillDescriptor, RoutineSkillCatalogContext } from '@/components/dashboard/settings/routine-skill-catalog-popover'
 import { Button } from '@/components/ui/button'
+import { contextVariableLabel } from '@/lib/routine-context-variables'
 import { branchDecisionLabel, branchIsImplicitFallThrough, documentTextToSegments, guardToSentence } from '@/lib/routine-document'
 import type { RoutineBlockBranch, RoutineBlockDoc, RoutineBlockEnding, RoutineBlockInstructionSegment, RoutineBlockSlot, RoutineBlockStep } from '@/lib/routine-prose'
 
@@ -34,17 +35,23 @@ function SlotBadge({ slotKey }: { slotKey: string }) {
   return <span className="mx-0.5 rounded-sm bg-muted/50 px-1 py-0 align-baseline text-foreground"><span className="text-muted-foreground">@</span>{slotKey}</span>
 }
 
+// A context reference reads like a slot reference but shows the name the picker used
+// ("Current page"), since the visitor never supplies it and it is not in Information.
+function ReferenceBadge({ segment }: { segment: Exclude<RoutineBlockInstructionSegment, { kind: 'text' }> }) {
+  return segment.kind === 'slotReference' ? <SlotBadge slotKey={segment.key} /> : <SlotBadge slotKey={contextVariableLabel(segment.key)} />
+}
+
 function InstructionSentence({ segments, editable = false }: { segments: RoutineBlockInstructionSegment[]; editable?: boolean }) {
   if (instructionIsEmpty(segments)) {
     return editable ? <p className="rounded-md border border-dashed border-border px-3 py-2 text-sm text-muted-foreground">Write what this step should do…</p> : null
   }
   // The instruction keeps the line breaks its author wrote, so the row reads them back
   // instead of collapsing every line into one.
-  return <p className="whitespace-pre-wrap leading-7 text-foreground">{segments.map((segment, index) => segment.kind === 'text' ? segment.text : <SlotBadge key={`${segment.key}-${index}`} slotKey={segment.key} />)}</p>
+  return <p className="whitespace-pre-wrap leading-7 text-foreground">{segments.map((segment, index) => segment.kind === 'text' ? segment.text : <ReferenceBadge key={`${segment.key}-${index}`} segment={segment} />)}</p>
 }
 
 function InlineSlotText({ text }: { text: string }) {
-  return <>{documentTextToSegments(text).map((segment, index) => segment.kind === 'text' ? segment.text : <SlotBadge key={`${segment.key}-${index}`} slotKey={segment.key} />)}</>
+  return <>{documentTextToSegments(text).map((segment, index) => segment.kind === 'text' ? segment.text : <ReferenceBadge key={`${segment.key}-${index}`} segment={segment} />)}</>
 }
 
 function DiagnosticNotes({ notes }: { notes?: string[] }) {

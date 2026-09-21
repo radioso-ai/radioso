@@ -1,4 +1,5 @@
 import type { Routine, RoutineGuard, RoutineSlotSchema, RoutineStep } from "@radioso/conversation-contract";
+import { collectContextVariableRefs } from "@radioso/routine-definition";
 
 import type { RoutineDefinition, RoutineStepMetadata } from "./domain.js";
 import { collectSlotKeys, collectedSlotsByStep } from "./slotCollection.js";
@@ -118,6 +119,18 @@ export const compileRoutineDefinition = (definition: RoutineDefinition): Routine
   const slotsCollectedByStep = collectedSlotsByStep(definition);
   const collectedSlotsForStep = (step: RoutineDefinition["steps"][number]): string[] =>
     slotsCollectedByStep.get(step.stableStepId) ?? [];
+  // What a step reads and collects, stamped as metadata so runtime gates (the page-read
+  // decision reads `contextRefs`) and the runner (`collectsSlots`) never re-parse
+  // instructions. Keys are present only when non-empty, so a plain step's metadata shape
+  // is unchanged.
+  const referenceMetadata = (step: RoutineDefinition["steps"][number]): Record<string, string[]> => {
+    const collectsSlots = collectedSlotsForStep(step);
+    const contextRefs = collectContextVariableRefs(step.instruction);
+    return {
+      ...(collectsSlots.length > 0 ? { collectsSlots } : {}),
+      ...(contextRefs.length > 0 ? { contextRefs } : {}),
+    };
+  };
   const autoGatedStepIds = new Set(
     [...slotsCollectedByStep.keys()].filter((stepId) => {
       const outgoing = definition.transitions.filter((transition) => transition.fromStep === stepId);
@@ -141,8 +154,7 @@ export const compileRoutineDefinition = (definition: RoutineDefinition): Routine
     }));
   const steps: RoutineStep[] = [
     ...sortedSteps.map((step): RoutineStep => {
-      const collectsSlots = collectedSlotsForStep(step);
-      const authorMetadata = authoredMetadata(step.metadata);
+      const metadata = { ...authoredMetadata(step.metadata), authoredKind: step.kind, ...referenceMetadata(step) };
       if (step.kind === "approval") {
         return {
           id: step.stableStepId,
@@ -156,9 +168,7 @@ export const compileRoutineDefinition = (definition: RoutineDefinition): Routine
               ...(option.description ? { description: option.description } : {}),
             })),
           },
-          metadata: Object.keys(authorMetadata).length > 0
-            ? { ...authorMetadata, authoredKind: step.kind }
-            : { authoredKind: step.kind },
+          metadata,
         };
       }
       if (step.kind === "tool") {
@@ -168,11 +178,7 @@ export const compileRoutineDefinition = (definition: RoutineDefinition): Routine
           skillName: step.toolRef ?? undefined,
           action: step.instruction,
           ...typedStepMetadata(step.metadata),
-          metadata: {
-            ...authorMetadata,
-            authoredKind: step.kind,
-            ...(collectsSlots.length > 0 ? { collectsSlots } : {}),
-          },
+          metadata,
         };
       }
       if (step.kind === "action") {
@@ -180,18 +186,14 @@ export const compileRoutineDefinition = (definition: RoutineDefinition): Routine
           id: step.stableStepId,
           kind: "action",
           actionType: step.actionType ?? undefined,
-          metadata: Object.keys(authorMetadata).length > 0
-            ? { ...authorMetadata, authoredKind: step.kind, ...(collectsSlots.length > 0 ? { collectsSlots } : {}) }
-            : { authoredKind: step.kind, ...(collectsSlots.length > 0 ? { collectsSlots } : {}) },
+          metadata,
         };
       }
       return {
         id: step.stableStepId,
         kind: "chat",
         action: step.instruction,
-        metadata: Object.keys(authorMetadata).length > 0
-          ? { ...authorMetadata, authoredKind: step.kind, ...(collectsSlots.length > 0 ? { collectsSlots } : {}) }
-          : { authoredKind: step.kind, ...(collectsSlots.length > 0 ? { collectsSlots } : {}) },
+        metadata,
       };
     }),
     ...sortedTerminals.map((terminal): RoutineStep => {

@@ -2,7 +2,7 @@
 
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { AtSign, CircleCheck, CornerUpRight, GitBranch, ListChecks, Plus, Wrench } from 'lucide-react'
+import { AtSign, CircleCheck, CornerUpRight, GitBranch, Globe, ListChecks, Plus, Wrench } from 'lucide-react'
 
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext'
 import {
@@ -86,15 +86,17 @@ const CHIP_GROUP_LABEL: Partial<Record<RoutineChipKind, string>> = {
   end: 'Logic & flow controls',
   handoff: 'Logic & flow controls',
   variable: 'Information',
+  context: 'Visitor context',
   skill: 'Skills',
 }
-const CHIP_GROUP_ORDER = ['Logic & flow controls', 'Information', 'Skills', 'More']
+const CHIP_GROUP_ORDER = ['Logic & flow controls', 'Information', 'Visitor context', 'Skills', 'More']
 const CHIP_GROUP_TILE_CLASS: Partial<Record<RoutineChipKind, string>> = {
   condition: 'bg-violet-500/15 text-violet-600 dark:text-violet-400',
   decision: 'bg-violet-500/15 text-violet-600 dark:text-violet-400',
   end: 'bg-violet-500/15 text-violet-600 dark:text-violet-400',
   handoff: 'bg-violet-500/15 text-violet-600 dark:text-violet-400',
   variable: 'bg-sky-500/15 text-sky-600 dark:text-sky-400',
+  context: 'bg-amber-500/15 text-amber-600 dark:text-amber-400',
   skill: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400',
 }
 
@@ -102,6 +104,7 @@ function chipOptionIcon(option: ChipMenuOption) {
   if (option.isNew) return <Plus className="h-3.5 w-3.5" />
   switch (option.kind) {
     case 'variable': return <AtSign className="h-3.5 w-3.5" />
+    case 'context': return <Globe className="h-3.5 w-3.5" />
     case 'skill': return <Wrench className="h-3.5 w-3.5" />
     case 'condition': return <GitBranch className="h-3.5 w-3.5" />
     case 'decision': return <ListChecks className="h-3.5 w-3.5" />
@@ -120,6 +123,8 @@ function chipOptionDescription(option: ChipMenuOption): string | null {
   switch (option.kind) {
     case 'variable':
       return option.isNew ? 'Create a new variable to reuse across this routine.' : 'Insert this collected value into the sentence.'
+    case 'context':
+      return 'Let this step read what the agent already knows about the visitor.'
     case 'skill':
       return option.isNew ? 'Reference a skill this routine will call.' : 'Reference this skill by name.'
     case 'condition':
@@ -306,6 +311,17 @@ export function ChipTypeaheadPlugin({
         refId: variable.id,
         name: variable.name,
       }))
+    // Context the agent already holds about the visitor — read by the step, never collected
+    // from the visitor, so it is its own group rather than an Information entry.
+    result.push(...skillCatalog.contextVariables
+      .filter((variable) => !lowered || variable.label.toLowerCase().includes(lowered) || variable.name.toLowerCase().includes(lowered))
+      .map((variable) => new ChipMenuOption(`context-${variable.name}`, {
+        display: variable.label,
+        kind: 'context',
+        isNew: false,
+        refId: variable.name,
+        name: variable.label,
+      })))
     if (raw) {
       // A name identifies one thing: once it's used by a chip, don't offer to
       // create a different kind with the same name (so a variable and an action
@@ -391,7 +407,7 @@ export function ChipTypeaheadPlugin({
       }))
     }
     return result.slice(0, 8)
-  }, [editor, skillCatalog.skills, variables, reservedRefKinds, query, trigger, skillsOnly, variablesOnly, skillMenuNotice, skillMenuEmptyMessage, onCreateSkill])
+  }, [editor, skillCatalog.skills, skillCatalog.contextVariables, variables, reservedRefKinds, query, trigger, skillsOnly, variablesOnly, skillMenuNotice, skillMenuEmptyMessage, onCreateSkill])
 
   const onSelectOption = useCallback(
     (option: ChipMenuOption, nodeToReplace: TextNode | null, closeMenu: () => void) => {
@@ -433,6 +449,7 @@ export function ChipTypeaheadPlugin({
           // A typed decision branch: `<captureKey> is <choice>` → a decision field guard.
           chip = $createConditionChipNode(option.refId, option.op ?? 'equals', option.chipLabel ?? option.name, option.value ?? null, null, null)
         } else {
+          // A context chip shows its picker label ("Current page"); its ref stays the token name.
           const label = option.kind === 'variable' ? `@${option.name}` : option.name
           chip = $createChipNode(option.kind, option.refId, label)
         }

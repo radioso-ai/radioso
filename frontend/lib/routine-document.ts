@@ -1,6 +1,7 @@
 import { formatConditionLabel, formatSlotFilledLabel, instructionToBlockSegments, type ProseParagraph, type RoutineBlockBranch, type RoutineBlockEnding, type RoutineBlockGuard, type RoutineBlockInstructionSegment, type RoutineInputBinding } from '@/lib/routine-prose'
 
 import type { RoutineDefinitionDraft, RoutineValidationDiagnostic } from '@/lib/api-types'
+import { contextVariableLabel } from '@/lib/routine-context-variables'
 
 const TARGET_MESSAGE_LIMIT = 40
 
@@ -26,8 +27,12 @@ export function instructionToProseParagraphs(segments: RoutineBlockInstructionSe
   const paragraphs: ProseParagraph[] = [{ segments: [] }]
   const currentSegments = () => paragraphs[paragraphs.length - 1].segments
   for (const segment of segments) {
-    if (segment.kind !== 'text') {
+    if (segment.kind === 'slotReference') {
       currentSegments().push({ kind: 'chip', chipKind: 'variable', refId: segment.key, label: segment.key })
+      continue
+    }
+    if (segment.kind === 'contextReference') {
+      currentSegments().push({ kind: 'chip', chipKind: 'context', refId: segment.key, label: contextVariableLabel(segment.key) })
       continue
     }
     const lines = segment.text.split('\n')
@@ -39,18 +44,20 @@ export function instructionToProseParagraphs(segments: RoutineBlockInstructionSe
   return paragraphs.map((paragraph) => paragraph.segments.length > 0 ? paragraph : { segments: [{ kind: 'text', text: '' }] })
 }
 
-// A step instruction persists as text plus `{{slot.<key>}}` references only
-// (RoutineBlockInstructionSegment) — a skill is called by a tool step, not by step text. Only
-// a `variable` chip carries a slot the routine has declared, so only that kind becomes a slot
-// reference here; any other chip kind (a skill, handoff, decision, condition, or end chip —
-// e.g. arriving via paste) writes back as the text its author typed (`#skill`, `@handoff`)
-// instead of silently turning into an undeclared slot reference.
+// A step instruction persists as text plus `{{slot.<key>}}` and `{{context.<name>}}`
+// references only (RoutineBlockInstructionSegment) — a skill is called by a tool step, not by
+// step text. A `variable` chip carries a slot the routine has declared and a `context` chip a
+// context variable the agent has, so only those kinds become references here; any other chip
+// kind (a skill, handoff, decision, condition, or end chip — e.g. arriving via paste) writes
+// back as the text its author typed (`#skill`, `@handoff`) instead of silently turning into
+// an undeclared slot reference.
 export function proseParagraphsToInstruction(paragraphs: ProseParagraph[]): RoutineBlockInstructionSegment[] {
   const instruction = paragraphs.flatMap((paragraph, index): RoutineBlockInstructionSegment[] => [
     ...(index > 0 ? [{ kind: 'text' as const, text: '\n' }] : []),
     ...paragraph.segments.map((segment): RoutineBlockInstructionSegment => {
       if (segment.kind === 'text') return segment
       if (segment.chipKind === 'variable') return { kind: 'slotReference', key: segment.refId, source: `{{slot.${segment.refId}}}` }
+      if (segment.chipKind === 'context') return { kind: 'contextReference', key: segment.refId, source: `{{context.${segment.refId}}}` }
       return { kind: 'text', text: `${segment.chipKind === 'skill' ? '#' : '@'}${segment.refId}` }
     }),
   ])

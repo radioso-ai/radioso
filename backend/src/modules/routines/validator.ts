@@ -1,5 +1,5 @@
 import type { RoutineDefinition } from "./domain.js";
-import { routineValidationCodes, type RoutineValidationCode } from "@radioso/routine-definition";
+import { collectContextVariableRefs, routineValidationCodes, type RoutineValidationCode } from "@radioso/routine-definition";
 import type { SkillAuthoringDescriptor, SkillAuthoringInput } from "../skills/public.js";
 import { analyzeGuaranteedVariablesOnEntry } from "./variablePopulation.js";
 
@@ -180,6 +180,19 @@ export const validateRoutineDefinition = (
   }
 
   for (const step of steps) {
+    // A `{{context.<name>}}` in the instruction reads a context variable at runtime; the
+    // name must be one the agent actually has, else the step silently reads nothing.
+    if (context.availableContextVariables) {
+      for (const name of collectContextVariableRefs(step.instruction)) {
+        if (!context.availableContextVariables.has(name)) {
+          diagnostics.push({
+            code: "unknown_context_variable",
+            location: `step:${step.stableStepId}.instruction`,
+            message: `unknown context variable: step "${step.stableStepId}" references context variable "${name}", which is not available to this agent.`,
+          });
+        }
+      }
+    }
     // A tool step compiles to a skill step dispatched through the shared
     // skill-executor port (see RoutineSkillExecutorDispatcher); it must name the
     // authored skill it invokes — an unbound tool step is the dangling case.

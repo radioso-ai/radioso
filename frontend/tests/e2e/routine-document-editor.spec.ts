@@ -314,10 +314,18 @@ test("a step instruction offers only the variable menu, never a skill or flow-ta
   await instruction.pressSequentially(" then @order_total");
   await expect(page.getByRole("listbox", { name: "Insert a variable" })).toBeVisible();
   await page.getByRole("option", { name: /Create variable “order_total”/ }).click();
+
+  // The same menu offers what the agent already knows about the visitor. "Current page"
+  // places a context chip the step reads — it is not a slot the visitor is asked for, so
+  // nothing new appears under Information.
+  await instruction.pressSequentially(" on @Current");
+  await page.getByRole("option", { name: "Current page", exact: true }).click();
+  await expect(instruction.locator('[data-routine-chip="context"]')).toHaveCount(1);
+  await expect(instruction.locator('[data-routine-chip="variable"]')).toHaveCount(1);
   await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
 
   // The `#` text was never converted to a chip: it reads back exactly as typed.
-  await expect(documentEditor).toContainText("Ask via #ananda_edizioni_mcp then @order_total");
+  await expect(documentEditor).toContainText("Ask via #ananda_edizioni_mcp then @order_total on @Current page");
 });
 
 test("a variable chip is clickable and selectable, and either selection path removes it as a whole", async ({ page }) => {

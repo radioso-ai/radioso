@@ -1669,6 +1669,16 @@ export type PreparedRoutineCandidates =
   | { kind: "claim"; activation: RoutineActivationResult }
   | { kind: "none" };
 
+/**
+ * Renders one staged context variable as text a step instruction can embed (the engine
+ * substitutes each `{{context.<name>}}` token in a step's action with it); null when the
+ * variable is absent or must not be shown. The host owns what any variable looks like — the
+ * engine knows no field of any of them.
+ */
+export interface RoutineContextRenderer {
+  render(input: { name: string; stagedContext: readonly StagedContext[] }): string | null;
+}
+
 /** Renders a grounded answer for a routine step, or null when the step is not groundable. */
 export interface RoutineGroundedAnswerRenderer {
   render(input: {

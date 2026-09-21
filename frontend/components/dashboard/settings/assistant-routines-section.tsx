@@ -2,23 +2,14 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import {
-  AlertTriangle,
-  ArrowLeft,
-  CheckCircle2,
-  FlaskConical,
-  MoreHorizontal,
-  Plus,
-  Route,
-  Trash2,
-  WandSparkles,
-} from 'lucide-react'
+import { Plus, Route, Trash2 } from 'lucide-react'
 
 import { RoutineDiagnosticList } from '@/components/dashboard/settings/routine-editor-controls'
 import { RoutineDraftAssistDialog } from '@/components/dashboard/settings/routine-draft-assist-dialog'
 import { RoutineCompletionExportPanel } from '@/components/dashboard/settings/routine-completion-export-panel'
-import { RoutineMapButton } from '@/components/dashboard/settings/routine-canvas'
+import { RoutineMapDialog } from '@/components/dashboard/settings/routine-canvas'
 import { RoutineDocumentTab } from '@/components/dashboard/settings/routine-document-tab'
+import { RoutineEditorHeader, type RoutineValidationStatus } from '@/components/dashboard/settings/routine-editor-header'
 import { RoutineSkillCatalogProvider } from '@/components/dashboard/settings/routine-skill-catalog-popover'
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import { useSettingsSaveStatus } from '@/components/dashboard/settings/use-settings-save-status'
@@ -35,18 +26,8 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { agentSectionRoute } from '@/lib/dashboard-areas'
 import { buildAgentSectionHref, buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
@@ -70,6 +51,14 @@ import {
 } from '@/lib/routine-form'
 import { useCopilotEntity } from '@/lib/copilot-context'
 
+// A stable no-op: the editor's own toggle supplies request-scoped callbacks per call instead
+// (see `toggleRoutineEnabled` below), so `useRoutineEnabledToggle`'s defaults never fire here.
+// A fresh arrow function on every render would do just as well functionally, but it would
+// also change identity every render, which — now that the header action memo below depends on
+// the toggle — would recompute the routine header every render and loop the header-registration
+// effect that mirrors it into the page shell.
+const noop = () => {}
+
 function CopilotRoutineEntity({ routine }: { routine: RoutineDefinition }) {
   useCopilotEntity('routine', routine.id, routine.name || 'Untitled routine')
   return null
@@ -86,34 +75,6 @@ const emptyRoutineDraft = (): RoutineDefinitionDraft => ({
   transitions: [{ fromStep: 'step_1', toRef: 'complete', guardKind: 'default', guardText: null, outcomeStatus: null, counterLimit: null, fieldRef: null, fieldOp: null, fieldValue: null, fieldValues: null, fieldUnit: null, ordinal: 0 }],
   terminals: [{ stableStepId: 'complete', kind: 'complete', instruction: 'Confirm completion.', ordinal: 0 }],
 })
-
-function RoutineValidationStatusIcon({
-  state,
-}: {
-  state: 'checking' | 'invalid' | 'valid'
-}) {
-  const label = state === 'valid'
-    ? 'Routine valid'
-    : state === 'invalid'
-      ? 'Routine has validation issues'
-      : 'Checking routine'
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span
-          role="status"
-          aria-label={label}
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground"
-        >
-          {state === 'valid' ? <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" /> : null}
-          {state === 'invalid' ? <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" /> : null}
-          {state === 'checking' ? <Spinner className="h-4 w-4" /> : null}
-        </span>
-      </TooltipTrigger>
-      <TooltipContent>{label}</TooltipContent>
-    </Tooltip>
-  )
-}
 
 const draftError = (draft: RoutineDefinitionDraft): string | null => {
   if (!draft.name.trim()) return 'Name is required.'
@@ -522,6 +483,7 @@ function RoutineEditorScreen({
   const [webhookDestinationsError, setWebhookDestinationsError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [deleteRoutineDialogOpen, setDeleteRoutineDialogOpen] = useState(false)
+  const [mapDialogOpen, setMapDialogOpen] = useState(false)
   const currentRoutineIdRef = useRef<string | null>(null)
   const isTogglingEnabledRef = useRef(false)
   const pendingRoutineToggleRef = useRef<{ routineId: string; previousEnabled: boolean } | null>(null)
@@ -574,7 +536,7 @@ function RoutineEditorScreen({
   )
   const nameLocalValidationError = !draftHeader.name.trim() ? 'Name is required.' : null
   const isValidationCurrent = Boolean(activeRoutineDraftSignature && validatedDraftSignature === activeRoutineDraftSignature)
-  const validationStatus = activeRoutineDraftError || (isValidationCurrent && validation && !validation.ok)
+  const validationStatus: RoutineValidationStatus = activeRoutineDraftError || (isValidationCurrent && validation && !validation.ok)
     ? 'invalid'
     : isValidationCurrent && validation?.ok
       ? 'valid'
@@ -807,10 +769,10 @@ function RoutineEditorScreen({
     agentId,
     // The editor supplies request-scoped callbacks below. List rows use the default callbacks
     // directly because their state lives in one collection rather than a routed editor.
-    onSuccess: () => {},
-    onError: () => {},
+    onSuccess: noop,
+    onError: noop,
   })
-  const toggleRoutineEnabled = async (enabled: boolean) => {
+  const toggleRoutineEnabled = useCallback(async (enabled: boolean) => {
     // The ref closes the small gap before React has rendered the disabled switch. Without it,
     // two discrete events could still start overlapping PATCHes and let the older response win.
     if (isTogglingEnabledRef.current) return
@@ -840,7 +802,7 @@ function RoutineEditorScreen({
         setIsTogglingEnabled(false)
       }
     }
-  }
+  }, [applyRoutineEnabledToggle, draftHeader.enabled, editingRoutineId])
 
   const deleteRoutine = async () => {
     if (!editingRoutine) return
@@ -885,76 +847,53 @@ function RoutineEditorScreen({
     actionHandlersRef.current = { loadAssistedDraft, openDeleteRoutineDialog }
   })
 
-  const headerActions = useMemo(() => {
-    // Editing is autosaved, so the header carries no save action. "Test draft" is the one
-    // affordance the routine itself offers; AI drafting and delete live in an overflow menu
-    // so the header stays a status line rather than a row of competing buttons.
-    const isPersisted = Boolean(editingRoutine)
-    // A disabled routine is left out of the draft snapshot's activation set, so a
-    // draft test could never reach it.
-    const canTestDraft = draftHeader.enabled
-
-    return (
-      <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-        {form ? <RoutineValidationStatusIcon state={validationStatus} /> : null}
-        {isPersisted ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={handleTestDraft}
-            disabled={isSaving || !canTestDraft}
-            title={canTestDraft ? 'Test this routine in Test Chat as part of the draft.' : 'Enable this routine to test it.'}
-          >
-            <FlaskConical className="mr-2 h-4 w-4" />
-            Test draft
-          </Button>
-        ) : null}
-        {form ? (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button type="button" size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground" aria-label="More routine actions">
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48">
-              <DropdownMenuItem disabled={isSaving || isDraftingRoutine} onSelect={() => setDraftAssistDialogOpen(true)}>
-                <WandSparkles className="mr-2 h-4 w-4" />
-                Draft with AI
-              </DropdownMenuItem>
-              {isPersisted ? (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    disabled={isSaving}
-                    onSelect={() => actionHandlersRef.current.openDeleteRoutineDialog()}
-                    className="text-destructive focus:text-destructive"
-                  >
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    Delete routine
-                  </DropdownMenuItem>
-                </>
-              ) : null}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        ) : null}
-      </div>
-    )
-  }, [draftHeader.enabled, editingRoutine, form, handleTestDraft, isDraftingRoutine, isSaving, validationStatus])
-
-  const headerBackAction = useMemo(() => (
-    <Button type="button" variant="ghost" className="-ml-3 h-8 px-3 text-muted-foreground" onClick={() => router.push(listHref)}>
-      <ArrowLeft className="mr-2 h-4 w-4" />
-      Back to routines
-    </Button>
-  ), [listHref, router])
+  // A disabled routine is left out of the draft snapshot's activation set, so a draft test
+  // could never reach it.
+  const canTestDraft = draftHeader.enabled
+  const isPersisted = Boolean(editingRoutine)
+  const onNameChange = useCallback((name: string) => setDraftHeader((current) => ({ ...current, name })), [])
+  const onToggleEnabled = useCallback(() => void toggleRoutineEnabled(!draftHeader.enabled), [draftHeader.enabled, toggleRoutineEnabled])
+  const onOpenMap = useMemo(() => activeRoutineDraft ? () => setMapDialogOpen(true) : undefined, [activeRoutineDraft])
+  const onOpenDraftAssist = useCallback(() => setDraftAssistDialogOpen(true), [])
+  const onBack = useCallback(() => router.push(listHref), [listHref, router])
+  // One shared prop bag so the title and actions halves below — two separate elements,
+  // because the page shell's header registers them into two separate slots — can never drift
+  // out of sync with each other's view of the routine.
+  const headerProps = useMemo(() => ({
+    name: draftHeader.name,
+    onNameChange,
+    enabled: draftHeader.enabled,
+    onToggleEnabled,
+    isToggling: isTogglingEnabled,
+    canTest: canTestDraft,
+    onTest: handleTestDraft,
+    isPersisted,
+    isSaving,
+    isDrafting: isDraftingRoutine,
+    validationStatus,
+    onOpenMap,
+    onOpenDraftAssist,
+    // `openDeleteRoutineDialog` is already a permanently stable `useCallback` ([] deps), so it
+    // can sit directly in this bag without the ref indirection `loadAssistedDraft` needs
+    // elsewhere in this file — that trick is for keeping an *unstable* callback's identity out
+    // of a memo's deps, which doesn't apply here.
+    onDelete: openDeleteRoutineDialog,
+    onBack,
+    showActions: Boolean(form),
+  }), [canTestDraft, draftHeader.enabled, draftHeader.name, form, handleTestDraft, isDraftingRoutine, isPersisted, isSaving, isTogglingEnabled, onBack, onNameChange, onOpenDraftAssist, onOpenMap, onToggleEnabled, openDeleteRoutineDialog, validationStatus])
+  const routineHeaderTitle = useMemo(() => <RoutineEditorHeader slot="title" {...headerProps} />, [headerProps])
+  const routineHeaderActions = useMemo(() => <RoutineEditorHeader slot="actions" {...headerProps} />, [headerProps])
 
   const routineHeader = useMemo(() => ({
-    actions: headerActions,
-    backAction: headerBackAction,
-    description: editingRoutine?.name ?? (isNewRoutine ? 'New routine' : 'Loading…'),
-    title: 'Routine',
-  }), [editingRoutine?.name, headerActions, headerBackAction, isNewRoutine])
+    actions: routineHeaderActions,
+    backAction: null,
+    // Loading has its own inline spinner in the body; the header itself carries no subtitle
+    // once the routine is ready to show — `undefined` (not `null`) is reserved for "nothing
+    // registered a header yet" (see `emptyRoutineHeader`), so this section always registers
+    // one or the other explicitly rather than leaving the page shell to guess.
+    description: isLoading || !form ? undefined : null,
+    title: routineHeaderTitle,
+  }), [form, isLoading, routineHeaderActions, routineHeaderTitle])
 
   useRegisterRoutineHeader(routineHeader)
 
@@ -968,8 +907,7 @@ function RoutineEditorScreen({
         onProseChange={setDraftAssistProse}
         onLoadProposal={() => void actionHandlersRef.current.loadAssistedDraft()}
       />
-      <div className="overflow-visible rounded-lg border border-border bg-card/95 shadow-sm">
-        <div className="space-y-5 p-5">
+      <div className="space-y-5">
           {error ? <p className="text-sm text-destructive" role="alert">{error}</p> : null}
           {isLoading || !form ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -978,37 +916,10 @@ function RoutineEditorScreen({
             </div>
           ) : (
             <RoutineSkillCatalogProvider agentId={agentId}>
-            <div className="flex items-start justify-between gap-4">
-              <div className="min-w-0 flex-1 space-y-1">
-                <Label htmlFor="routineName">Name</Label>
-                <Input
-                  id="routineName"
-                  value={draftHeader.name}
-                  onChange={(event) => {
-                    setDraftHeader((current) => ({ ...current, name: event.target.value }))
-                  }}
-                />
-                {nameLocalValidationError ? <p className="text-xs text-destructive" role="status">{nameLocalValidationError}</p> : null}
-              </div>
-              <div className="flex shrink-0 items-center gap-2 pt-6">
-                <Switch
-                  checked={draftHeader.enabled}
-                  onCheckedChange={(enabled) => void toggleRoutineEnabled(enabled)}
-                  disabled={isTogglingEnabled}
-                  aria-label={draftHeader.enabled ? 'Disable routine' : 'Enable routine'}
-                />
-                <span className="text-sm text-muted-foreground">{draftHeader.enabled ? 'Enabled' : 'Disabled'}</span>
-              </div>
-            </div>
+            {nameLocalValidationError ? <p className="text-xs text-destructive" role="status">{nameLocalValidationError}</p> : null}
             <RoutineDiagnosticList diagnostics={routineDiagnostics} />
-
-
-
-
             {activeRoutineDraft ? (
-              <div className="flex justify-end">
-                <RoutineMapButton draft={activeRoutineDraft} />
-              </div>
+              <RoutineMapDialog draft={activeRoutineDraft} open={mapDialogOpen} onOpenChange={setMapDialogOpen} />
             ) : null}
 
             {activeRoutineDraft ? (
@@ -1027,28 +938,28 @@ function RoutineEditorScreen({
                   setForm(routineToForm(draftAsRoutine(mergedDraft, editingRoutine)))
                   setDraftHeader(headerFromDraft(mergedDraft))
                 }}
-              />
-            ) : null}
-
-            {activeRoutineDraft ? (
-              <RoutineCompletionExportPanel
-                idPrefix="document-completion-export"
-                payloadPreview={form ? buildCompletionExportPayloadPreview(form) : undefined}
-                value={activeRoutineDraft.completionExport ?? { enabled: false, triggerKinds: [], destinationRef: '' }}
-                onChange={(next) => {
-                  const merged = { ...(documentDraft ?? activeRoutineDraft), completionExport: next }
-                  setDocumentDraft(merged)
-                  setForm(routineToForm(draftAsRoutine(merged, editingRoutine)))
-                }}
-                webhookDestinations={webhookDestinations}
-                isLoading={isWebhookDestinationsLoading}
-                error={webhookDestinationsError}
+                // Rendered inside the document's own "Details" disclosure, alongside Endings
+                // and Collected information, rather than as a card of its own below it.
+                detailsExtra={(
+                  <RoutineCompletionExportPanel
+                    idPrefix="document-completion-export"
+                    payloadPreview={form ? buildCompletionExportPayloadPreview(form) : undefined}
+                    value={activeRoutineDraft.completionExport ?? { enabled: false, triggerKinds: [], destinationRef: '' }}
+                    onChange={(next) => {
+                      const merged = { ...(documentDraft ?? activeRoutineDraft), completionExport: next }
+                      setDocumentDraft(merged)
+                      setForm(routineToForm(draftAsRoutine(merged, editingRoutine)))
+                    }}
+                    webhookDestinations={webhookDestinations}
+                    isLoading={isWebhookDestinationsLoading}
+                    error={webhookDestinationsError}
+                  />
+                )}
               />
             ) : null}
 
             </RoutineSkillCatalogProvider>
           )}
-        </div>
       </div>
       <DeleteRoutineDialog
         open={deleteRoutineDialogOpen}

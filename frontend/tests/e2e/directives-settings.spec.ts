@@ -460,7 +460,7 @@ test("agent directives reach inline skill creation from the keyboard", async ({ 
   // The retrieve skill form carries its own "Instruction" setting, so the directive's field is
   // only unambiguous once that dialog has gone.
   await expect(page.getByRole("dialog", { name: /Configure Knowledge Retrieval/ })).toBeHidden();
-  await expect(instruction).toHaveText("Refund the order using refundlookup");
+  await expect(instruction).toHaveText("Refund the order using @refundlookup ");
   await expect.poll(() => agentSkillRequests.length).toBe(1);
 });
 
@@ -553,7 +553,7 @@ test("agent directives create a skill inline from the action field and bind it",
   await page.getByRole("button", { name: "Create skill", exact: true }).click();
 
   await expect(page.getByRole("dialog", { name: /Configure Knowledge Retrieval/ })).toBeHidden();
-  await expect(instruction).toHaveText("Refund the order using refundlookup");
+  await expect(instruction).toHaveText("Refund the order using @refundlookup ");
   await expect(page.getByText(/is available to bind/)).toHaveCount(0);
 
   await page.getByRole("button", { name: "Save directive" }).click();
@@ -757,7 +757,7 @@ test("agent directives reopen and resave a bound action that ends a sentence", a
 
   await page.getByRole("button", { name: "Edit refund-handoff" }).click();
   // A chip renders its bare name; the period stayed in the prose beside it.
-  await expect(page.getByLabel("Instruction")).toHaveText("Escalate using issue_refund.");
+  await expect(page.getByLabel("Instruction")).toHaveText("Escalate using @issue_refund.");
   await expect(page.getByText(/is available to bind/)).toHaveCount(0);
 
   await page.getByLabel("Priority").fill("70");
@@ -801,7 +801,7 @@ test("agent directives keep a binding when the action names a longer skill", asy
   await page.getByRole("button", { name: "Edit refund-handoff" }).click();
   // The stored characters are untouched and the bound skill is now visible as a chip the author
   // can remove, rather than an invisible rule that a no-op save would drop.
-  await expect(page.getByLabel("Instruction")).toHaveText(`${storedAction} issue_refund`);
+  await expect(page.getByLabel("Instruction")).toHaveText(`${storedAction} @issue_refund`);
 
   await page.getByRole("button", { name: "Save directive" }).click();
   await expect(page.getByRole("dialog")).toBeHidden();
@@ -841,7 +841,7 @@ test("agent directives resave an action naming both its bound skill and a longer
   await openDirectives(page);
 
   await page.getByRole("button", { name: "Edit refund-handoff" }).click();
-  await expect(page.getByLabel("Instruction")).toHaveText("Try #issue_refund-tier2, then fall back to issue_refund.");
+  await expect(page.getByLabel("Instruction")).toHaveText("Try #issue_refund-tier2, then fall back to @issue_refund.");
 
   await page.getByRole("button", { name: "Save directive" }).click();
   await expect(page.getByRole("dialog")).toBeHidden();

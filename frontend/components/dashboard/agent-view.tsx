@@ -171,7 +171,9 @@ function AgentSettingsDashboardPage({
   return (
     <DashboardPage
       title={isRoutineDetail ? routineHeader.title ?? 'Routine' : meta.title}
-      description={isRoutineDetail ? routineHeader.description ?? 'Loading…' : meta.description}
+      // Only the absence of any registration reads as loading; a routine section that has
+      // loaded and deliberately registered no subtitle (`null`) shows none.
+      description={isRoutineDetail ? (routineHeader.description === undefined ? 'Loading…' : routineHeader.description) : meta.description}
       backAction={isRoutineDetail ? routineHeader.backAction ?? null : undefined}
       titleAccessory={saveStateAccessory}
       actions={

@@ -165,9 +165,9 @@ The setup uses these API surfaces:
 - `DELETE /api/v1/workspaces/{workspaceId}/slack/binding?channelId={channelId}`
 
 A binding carries `channelId`, `answeringAgentId`, `escalationChannelId`,
-`gapEscalationEnabled`, and `respondMode`. `channelId` is the Slack channel
-ID, the `C…` (public) or `G…` (private) value shown at the bottom of the
-channel's details in Slack, not the `#name`. Slack delivers events by ID, so a
+`gapEscalationEnabled`, and `respondMode`. `channelId` is the channel ID shown
+in Slack's channel details (it starts with `C`), not the `#name`. Slack
+delivers events by ID, so a
 binding saved under `#support` matches nothing: mentions there fall back to the
 default agent and an `every_message` setting on it never fires. `respondMode`
 is `mention` or `every_message`; omit it on `PUT` to keep the stored value.

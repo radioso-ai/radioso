@@ -3227,6 +3227,7 @@ CREATE TABLE public.slack_channel_bindings (
     gap_escalation_enabled boolean DEFAULT false NOT NULL,
     channel_id text,
     respond_mode text DEFAULT 'mention'::text NOT NULL,
+    CONSTRAINT slack_channel_bindings_default_binding_mention_only CHECK (((channel_id IS NOT NULL) OR (respond_mode = 'mention'::text))),
     CONSTRAINT slack_channel_bindings_respond_mode_check CHECK ((respond_mode = ANY (ARRAY['mention'::text, 'every_message'::text])))
 );
 
@@ -7901,6 +7902,13 @@ CREATE UNIQUE INDEX skill_intake_states_one_open_flow_idx ON public.skill_intake
 --
 
 CREATE INDEX skill_intake_states_workspace_conversation_idx ON public.skill_intake_states USING btree (workspace_id, conversation_id, updated_at DESC);
+
+
+--
+-- Name: slack_inbound_events_received_at_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX slack_inbound_events_received_at_idx ON public.slack_inbound_events USING btree (received_at);
 
 
 --

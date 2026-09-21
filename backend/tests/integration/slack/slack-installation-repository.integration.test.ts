@@ -242,6 +242,18 @@ describeIfDatabase("slack installation + binding repositories (postgres, kysely)
     expect(await bindings.removeByInstallationChannel(installation!.id, "C_SALES")).toBe(true);
   });
 
+  it("lets the database refuse an every_message default binding whatever the caller does", async () => {
+    const installation = await installations.findByTeamId("TEAM1");
+    await expect(bindings.upsert({
+      installationId: installation!.id,
+      workspaceId,
+      channelId: null,
+      answeringAgentId: agentId,
+      respondMode: "every_message",
+    })).rejects.toMatchObject({ code: "23514" });
+    expect((await bindings.findByInstallationId(installation!.id))?.respondMode).toBe("mention");
+  });
+
   it("removes binding then installation and reports the deletions", async () => {
     const installation = await installations.findByTeamId("TEAM1");
     expect(await bindings.removeByInstallationId(installation!.id)).toBe(true);

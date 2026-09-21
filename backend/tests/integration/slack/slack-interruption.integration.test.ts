@@ -144,6 +144,8 @@ describe("Slack interruption", () => {
         user: "U1",
         text: "latest message",
         ts: "1700000000.000002",
+        // Same agent-pane session as the first message: Slack threads it under that ts.
+        thread_ts: "1700000000.000001",
       },
     });
     releaseFirstRouting.resolve();

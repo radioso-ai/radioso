@@ -17,7 +17,7 @@ test("Slack channel connects, confirms binding, and disconnects", async ({ page 
   await installDashboardApiMocks(page, {
     slackRequests,
     slackStatus: { status: "not_configured" },
-    slackBinding: { channelId: null, answeringAgentId: null, escalationChannelId: null, gapEscalationEnabled: false },
+    slackBinding: { channelId: null, answeringAgentId: null, escalationChannelId: null, gapEscalationEnabled: false, respondMode: "mention" },
   });
 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=channels&anchor=slack-channel`);
@@ -117,11 +117,61 @@ test("Slack channel connects, confirms binding, and disconnects", async ({ page 
   await expect(page.getByRole("button", { name: "Add to Slack" })).toBeVisible();
 });
 
+test("Slack channel binding switches to answering every message", async ({ page }) => {
+  const slackRequests: Array<{ method: string; path: string; body?: unknown }> = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    slackRequests,
+    slackStatus: {
+      status: "connected",
+      installationId: "99999999-9999-4999-8999-000000000003",
+      teamName: "Radioso Test",
+      answeringAgentId: defaultAgentId,
+    },
+    slackBinding: { channelId: null, answeringAgentId: defaultAgentId, escalationChannelId: null, gapEscalationEnabled: false, respondMode: "mention" },
+  });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=channels&anchor=slack-channel`);
+
+  // Only the default binding exists, and it never offers a respond mode.
+  await expect(page.getByLabel("Default agent")).toContainText("Marta");
+  await expect(page.getByText("No channel-specific bindings for this agent.")).toBeVisible();
+  await expect(page.getByRole("group", { name: /Responds to/ })).toHaveCount(0);
+
+  await page.getByLabel("Channel ID").fill("#ask-support");
+  await page.getByRole("button", { name: "Add" }).click();
+
+  const respondsTo = page.getByRole("group", { name: "Responds to (#ask-support)" });
+  await expect(respondsTo).toBeVisible();
+  await expect(respondsTo.getByRole("button", { name: "@mentions only", pressed: true })).toBeVisible();
+
+  await respondsTo.getByRole("button", { name: "Every message" }).click();
+
+  await expect(respondsTo.getByRole("button", { name: "Every message", pressed: true })).toBeVisible();
+  await expect.poll(() =>
+    slackRequests.some((request) =>
+      request.method === "PUT" &&
+      request.path === `/workspaces/${workspaceId}/slack/binding` &&
+      JSON.stringify(request.body) === JSON.stringify({
+        channelId: "#ask-support",
+        answeringAgentId: defaultAgentId,
+        escalationChannelId: null,
+        gapEscalationEnabled: false,
+        respondMode: "every_message",
+      }),
+    ),
+  ).toBe(true);
+
+  // The control belongs to the channel row alone; the default binding still has none.
+  await expect(page.getByRole("group", { name: /Responds to/ })).toHaveCount(1);
+});
+
 test("Slack self-host setup shows generated manifest and env checklist before connect", async ({ page }) => {
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, {
     slackStatus: { status: "not_configured" },
-    slackBinding: { channelId: null, answeringAgentId: null, escalationChannelId: null, gapEscalationEnabled: false },
+    slackBinding: { channelId: null, answeringAgentId: null, escalationChannelId: null, gapEscalationEnabled: false, respondMode: "mention" },
   });
 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=channels&anchor=slack-channel`);
@@ -146,7 +196,7 @@ test("Slack install is disabled when backend Slack env is incomplete", async ({ 
         missingEnvVars: ["SLACK_SIGNING_SECRET"],
       },
     },
-    slackBinding: { channelId: null, answeringAgentId: null, escalationChannelId: null, gapEscalationEnabled: false },
+    slackBinding: { channelId: null, answeringAgentId: null, escalationChannelId: null, gapEscalationEnabled: false, respondMode: "mention" },
   });
 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=channels&anchor=slack-channel`);
@@ -187,7 +237,7 @@ test("Slack routine skill authoring creates and disables a skill", async ({ page
       teamName: "Radioso Test",
       answeringAgentId: defaultAgentId,
     },
-    slackBinding: { channelId: null, answeringAgentId: defaultAgentId, escalationChannelId: "#support", gapEscalationEnabled: false },
+    slackBinding: { channelId: null, answeringAgentId: defaultAgentId, escalationChannelId: "#support", gapEscalationEnabled: false, respondMode: "mention" },
     slackSkills: [],
   });
 

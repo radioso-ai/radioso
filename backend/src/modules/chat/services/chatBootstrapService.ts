@@ -2,8 +2,8 @@ import { createHash, randomUUID } from "node:crypto";
 
 import type { AuditService } from "../../audit/contracts/index.js";
 import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
-import type { AgentService, AgentRevisionRuntimeResolver, ConversationAgent } from "../../agents/public.js";
-import { DEFAULT_AGENT_LOCALE_FALLBACK, isAgentBootstrapActive, readAgentRevisionGreeting } from "../../agents/public.js";
+import type { AgentService, ConversationAgent } from "../../agents/public.js";
+import { isAgentBootstrapActive } from "../../agents/public.js";
 import type { BootstrapGreetingCacheRepositoryPort } from "../../../db/repositories/bootstrapGreetingCacheRepository.js";
 import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import type { ChatGateway } from "../contracts/chatGateway.js";
@@ -20,12 +20,13 @@ import {
   NoopProductAnalyticsService,
   type ProductAnalyticsPort,
 } from "../../../shared/analytics/productAnalyticsService.js";
-import { AppError } from "../../../shared/domain/errors.js";
+import type { ExactContentChipResolution, ExactContentItem } from "../../../shared/domain/exactContent.js";
 import {
-  resolveExactContent,
-  type ExactContentChipResolution,
-  type ExactContentItem,
-} from "../../../shared/domain/exactContent.js";
+  exactGreetingContent,
+  resolveExactGreeting,
+  resolveRevisionGreeting,
+  type RevisionGreetingResolverPort,
+} from "./agentRevisionGreeting.js";
 
 const emptyChatResponse = (answer: string): ChatBootstrapResponse => ({
   route: {
@@ -77,7 +78,7 @@ export class ChatBootstrapService {
      * bootstrap — bootstrap then behaves as if no agent has ever published exact
      * greeting content, i.e. Automatic only, exactly today's behavior.
      */
-    private readonly agentRevisionRuntimeResolver?: Pick<AgentRevisionRuntimeResolver, "resolveNew" | "resolvePinned">,
+    private readonly agentRevisionRuntimeResolver?: RevisionGreetingResolverPort,
   ) {}
 
   async startConversation(input: {
@@ -118,13 +119,14 @@ export class ChatBootstrapService {
       assistantDefaultLocale: agent.assistantDefaultLocale,
     });
 
-    const revisionGreeting = await this.resolveRevisionGreeting({
+    const revisionGreeting = await resolveRevisionGreeting(this.agentRevisionRuntimeResolver, {
       workspaceId: input.workspaceId,
       agent,
       trustedRevision: Boolean(input.agentOverride && input.revisionId),
       revisionId: input.revisionId,
     });
-    if (revisionGreeting?.greeting.exactWordsEnabled && revisionGreeting.greeting.exactContent) {
+    const exactContent = exactGreetingContent(revisionGreeting);
+    if (revisionGreeting && exactContent) {
       // Exact mode never reserves usage and never calls the model (spec 1150 F5). It
       // still writes to bootstrap_greeting_cache — not as an LLM-avoidance cache (there
       // is no LLM call to avoid), but as the delivery record of what this visitor was
@@ -136,7 +138,7 @@ export class ChatBootstrapService {
         revisionId: revisionGreeting.revisionId,
         requestedLocale: requestedLocale ?? null,
         workflowPolicy,
-        exactContent: revisionGreeting.greeting.exactContent,
+        exactContent,
       });
     }
 
@@ -273,46 +275,6 @@ export class ChatBootstrapService {
   }
 
   /**
-   * The same revision selection a normal turn uses for this conversation (spec 1150
-   * F13): the published revision for a production start, or the pinned candidate for
-   * a trusted test-execution bootstrap (the sole caller that supplies both
-   * `agentOverride` and `revisionId`, already established by
-   * `TrustedTestExecutionRunnerAdapter`). Returns `null` when no resolver is wired, or
-   * when the agent has never published a revision — both leave Automatic as the only
-   * option, exactly today's behavior; this never becomes a second way of picking a
-   * revision.
-   */
-  private async resolveRevisionGreeting(input: {
-    workspaceId: string;
-    agent: ConversationAgent;
-    trustedRevision: boolean;
-    revisionId?: string;
-  }): Promise<{ revisionId: string; greeting: ReturnType<typeof readAgentRevisionGreeting> } | null> {
-    if (!this.agentRevisionRuntimeResolver) {
-      return null;
-    }
-    try {
-      const resolved = input.trustedRevision && input.revisionId
-        ? await this.agentRevisionRuntimeResolver.resolvePinned({
-            workspaceId: input.workspaceId,
-            agent: input.agent,
-            revisionId: input.revisionId,
-            allowCandidate: true,
-          })
-        : await this.agentRevisionRuntimeResolver.resolveNew({
-            workspaceId: input.workspaceId,
-            agent: input.agent,
-          });
-      return { revisionId: resolved.revision.id, greeting: readAgentRevisionGreeting(resolved.revision.snapshot) };
-    } catch (error) {
-      if (error instanceof AppError && error.statusCode === 404) {
-        return null;
-      }
-      throw error;
-    }
-  }
-
-  /**
    * Exact mode's whole delivery: resolve the authored variant/chips for the
    * requested locale and either persist+return them verbatim (FR-003) or fall
    * through to the channel's existing unavailable/no-greeting outcome with no
@@ -327,11 +289,7 @@ export class ChatBootstrapService {
     exactContent: ExactContentItem;
   }): Promise<ChatBootstrapResponse | null> {
     const { startInput, agent, revisionId, requestedLocale, workflowPolicy, exactContent } = input;
-    const outcome = resolveExactContent(exactContent, {
-      requestedLocale,
-      agentDefaultLocale: agent.assistantDefaultLocale ?? DEFAULT_AGENT_LOCALE_FALLBACK,
-      references: new Map(),
-    });
+    const outcome = resolveExactGreeting(exactContent, { agent, requestedLocale });
 
     if (outcome.kind !== "resolved") {
       await this.auditService.record({

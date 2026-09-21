@@ -1,6 +1,7 @@
 export {
   SlackWebApiClient,
   SlackWebApiError,
+  type SlackSuggestedPrompt,
   type SlackUserInfo,
   type SlackWebApiClientOptions,
 } from "./client/slackWebApiClient.js";
@@ -17,6 +18,8 @@ export {
 } from "./manifest/slackManifest.js";
 export {
   SLACK_MAX_MESSAGE_TEXT_LENGTH,
+  describeSlackError,
+  postSlackMarkdown,
   postSlackText,
   slackAuthErrorCode,
 } from "./delivery/slackDelivery.js";
@@ -32,7 +35,9 @@ export {
   SlackInstallationRepository,
   PostgresWorkspaceAccountLookup,
   SlackInstallationService,
+  slackBindingRespondModes,
   type SlackBindingRepositoryPort,
+  type SlackBindingRespondMode,
   type SlackChannelBindingRecord,
   type SlackInstallationRecord,
   type SlackInstallationRepositoryPort,
@@ -63,3 +68,7 @@ export {
 export { PostgresSlackConversationLinkLookup } from "./operator/slackConversationLinkLookup.js";
 export { createSlackInteractivityRouter } from "./operator/slackInteractivityRouter.js";
 export { isValidSlackSignature } from "./transport/slackSignature.js";
+export {
+  PostgresSlackInboundEventRetention,
+  SLACK_INBOUND_EVENT_RETENTION_DAYS,
+} from "./retention/slackInboundEventRetention.js";

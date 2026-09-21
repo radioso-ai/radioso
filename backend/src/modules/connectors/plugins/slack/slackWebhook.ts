@@ -3,7 +3,13 @@ import { Router, type Request } from "express";
 import type { ConnectorLogger } from "@radioso/connector-api";
 
 import { isValidSlackSignature, type SlackInstallationRepositoryPort } from "../../../slack/public.js";
-import type { SlackAppMentionEvent, SlackMessageHandler, SlackMessageImEvent } from "./slackMessageHandler.js";
+import type {
+  SlackAppHomeOpenedEvent,
+  SlackAppMentionEvent,
+  SlackChannelMessageEvent,
+  SlackMessageHandler,
+  SlackMessageImEvent,
+} from "./slackMessageHandler.js";
 import type { SlackPersistencePort } from "./slackPersistence.js";
 
 interface SlackWebhookRouterOptions {
@@ -11,7 +17,10 @@ interface SlackWebhookRouterOptions {
   signingSecret: string;
   installations: SlackInstallationRepositoryPort;
   persistence: Pick<SlackPersistencePort, "createInboundEvent" | "markInboundEventStatus">;
-  messageHandler: Pick<SlackMessageHandler, "handleAppMention" | "handleMessageIm" | "isBotLoop">;
+  messageHandler: Pick<
+    SlackMessageHandler,
+    "handleAppMention" | "handleMessageIm" | "handleChannelMessage" | "handleAppHomeOpened" | "isBotLoop"
+  >;
   now?: () => number;
   processingRetryDelaysMs?: readonly number[];
 }
@@ -28,6 +37,7 @@ const isObject = (value: unknown): value is Record<string, unknown> =>
 const readString = (value: unknown): string | null =>
   typeof value === "string" && value.length > 0 ? value : null;
 
+// A direct message; `thread_ts` marks an agent-pane session message.
 const parseMessageImEvent = (event: unknown): SlackMessageImEvent | null => {
   if (!isObject(event)) {
     return null;
@@ -38,17 +48,68 @@ const parseMessageImEvent = (event: unknown): SlackMessageImEvent | null => {
   const channel = readString(event.channel);
   const user = readString(event.user);
   const text = typeof event.text === "string" ? event.text : null;
-  if (!channel || !user || text === null) {
+  const ts = readString(event.ts);
+  if (!channel || !user || text === null || !ts) {
     return null;
   }
+  const threadTs = readString(event.thread_ts);
+  const botId = readString(event.bot_id);
   return {
     type: "message",
     channel_type: "im",
     channel,
     user,
     text,
-    ...(readString(event.ts) ? { ts: readString(event.ts)! } : {}),
-    ...(readString(event.bot_id) ? { bot_id: readString(event.bot_id)! } : {}),
+    ts,
+    ...(threadTs ? { thread_ts: threadTs } : {}),
+    ...(botId ? { bot_id: botId } : {}),
+  };
+};
+
+const parseAppHomeOpenedEvent = (event: unknown): SlackAppHomeOpenedEvent | null => {
+  if (!isObject(event) || event.type !== "app_home_opened") {
+    return null;
+  }
+  const user = readString(event.user);
+  const channel = readString(event.channel);
+  const tab = event.tab === "messages" || event.tab === "home" ? event.tab : null;
+  if (!user || !channel || !tab) {
+    return null;
+  }
+  return { type: "app_home_opened", user, channel, tab };
+};
+
+// Un-mentioned traffic in public (`channel`) and private (`group`) channels. Only a fresh
+// human post qualifies: any subtype (message_changed, message_deleted, channel_join,
+// bot_message, thread_broadcast, ...) is not a new question and is dropped here.
+const parseChannelMessageEvent = (event: unknown): SlackChannelMessageEvent | null => {
+  if (!isObject(event) || event.type !== "message") {
+    return null;
+  }
+  const channelType = event.channel_type === "channel" || event.channel_type === "group"
+    ? event.channel_type
+    : null;
+  if (!channelType || event.subtype !== undefined) {
+    return null;
+  }
+  const channel = readString(event.channel);
+  const user = readString(event.user);
+  const text = typeof event.text === "string" ? event.text : null;
+  const ts = readString(event.ts);
+  if (!channel || !user || text === null || !ts) {
+    return null;
+  }
+  const threadTs = readString(event.thread_ts);
+  const botId = readString(event.bot_id);
+  return {
+    type: "message",
+    channel_type: channelType,
+    channel,
+    user,
+    text,
+    ts,
+    ...(threadTs ? { thread_ts: threadTs } : {}),
+    ...(botId ? { bot_id: botId } : {}),
   };
 };
 
@@ -72,6 +133,32 @@ const parseAppMentionEvent = (event: unknown): SlackAppMentionEvent | null => {
     ...(readString(event.thread_ts) ? { thread_ts: readString(event.thread_ts)! } : {}),
     ...(readString(event.bot_id) ? { bot_id: readString(event.bot_id)! } : {}),
   };
+};
+
+type ParsedInboundEvent =
+  | { kind: "im"; event: SlackMessageImEvent }
+  | { kind: "mention"; event: SlackAppMentionEvent }
+  | { kind: "channel"; event: SlackChannelMessageEvent }
+  | { kind: "app_home_opened"; event: SlackAppHomeOpenedEvent };
+
+const parseInboundEvent = (event: unknown): ParsedInboundEvent | null => {
+  const messageImEvent = parseMessageImEvent(event);
+  if (messageImEvent) {
+    return { kind: "im", event: messageImEvent };
+  }
+  const appMentionEvent = parseAppMentionEvent(event);
+  if (appMentionEvent) {
+    return { kind: "mention", event: appMentionEvent };
+  }
+  const channelMessageEvent = parseChannelMessageEvent(event);
+  if (channelMessageEvent) {
+    return { kind: "channel", event: channelMessageEvent };
+  }
+  const appHomeOpenedEvent = parseAppHomeOpenedEvent(event);
+  if (appHomeOpenedEvent) {
+    return { kind: "app_home_opened", event: appHomeOpenedEvent };
+  }
+  return null;
 };
 
 export const createSlackWebhookRouter = (options: SlackWebhookRouterOptions): Router => {
@@ -117,27 +204,35 @@ export const createSlackWebhookRouter = (options: SlackWebhookRouterOptions): Ro
         return;
       }
 
-      const messageImEvent = parseMessageImEvent(payload.event);
-      const appMentionEvent = parseAppMentionEvent(payload.event);
-      const event = messageImEvent ?? appMentionEvent;
-      if (!event) {
+      const inbound = parseInboundEvent(payload.event);
+      if (!inbound) {
         await options.persistence.markInboundEventStatus(eventId, "skipped");
         res.sendStatus(200);
         return;
       }
 
       const installation = await options.installations.findByTeamId(teamId);
-      if (options.messageHandler.isBotLoop(installation, event)) {
+      if (options.messageHandler.isBotLoop(installation, inbound.event)) {
         await options.persistence.markInboundEventStatus(eventId, "skipped");
         res.sendStatus(200);
         return;
       }
 
+      const dispatch = (): Promise<void> => {
+        switch (inbound.kind) {
+          case "im":
+            return options.messageHandler.handleMessageIm({ eventId, teamId, event: inbound.event });
+          case "mention":
+            return options.messageHandler.handleAppMention({ eventId, teamId, event: inbound.event });
+          case "channel":
+            return options.messageHandler.handleChannelMessage({ eventId, teamId, event: inbound.event });
+          case "app_home_opened":
+            return options.messageHandler.handleAppHomeOpened({ eventId, teamId, event: inbound.event });
+        }
+      };
+
       const processInbound = (attempt: number): void => {
-        const processing = messageImEvent
-          ? options.messageHandler.handleMessageIm({ eventId, teamId, event: messageImEvent })
-          : options.messageHandler.handleAppMention({ eventId, teamId, event: appMentionEvent! });
-        void processing.catch((error) => {
+        void dispatch().catch((error) => {
           const retryDelayMs = processingRetryDelaysMs[attempt];
           if (retryDelayMs !== undefined) {
             options.logger.warn(

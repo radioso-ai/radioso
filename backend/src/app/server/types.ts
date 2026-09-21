@@ -1,5 +1,6 @@
 import type {
   ActionDispatchWorker,
+  AgentStarterPromptReader,
   AssistantChatService,
   AssistantHistoryService,
   ChatBootstrapService,
@@ -240,7 +241,9 @@ export interface AppDependencies {
   /** Purges old private test-execution/revision-eval-run evidence (JSONB transcripts, frozen snapshots). */
   testExecutionRetentionWorker: TtlRetentionWorker;
   revisionEvalRunRetentionWorker: TtlRetentionWorker;
+  slackInboundEventRetentionWorker: TtlRetentionWorker;
   chatBootstrapService: ChatBootstrapService;
+  agentStarterPromptReader: AgentStarterPromptReader;
   chatHistoryService: ChatHistoryService;
   assistantChatService: AssistantChatService;
   assistantHistoryService: AssistantHistoryService;

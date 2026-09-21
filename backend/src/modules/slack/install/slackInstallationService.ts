@@ -3,7 +3,7 @@ import { sql, type Kysely, type Transaction } from "kysely";
 
 import { currentTimestamp } from "../../../shared/infra/kysely/sqlHelpers.js";
 import type { DB, Db } from "../../../shared/infra/kysely/types.js";
-import { conflict, notFound } from "../../../shared/domain/errors.js";
+import { badRequest, conflict, notFound } from "../../../shared/domain/errors.js";
 import type {
   CreateOauthConnectionInput,
   OauthConnectionRecord,
@@ -32,6 +32,16 @@ export interface SlackInstallationRecord {
   updatedAt: Date;
 }
 
+/**
+ * When the bound agent speaks in a channel without being addressed: `mention` waits for an
+ * @mention (and keeps answering inside threads it already owns); `every_message` also opens
+ * a thread under every top-level human message in that channel. The installation default
+ * binding is always `mention`.
+ */
+export const slackBindingRespondModes = ["mention", "every_message"] as const;
+export type SlackBindingRespondMode = (typeof slackBindingRespondModes)[number];
+const DEFAULT_SLACK_BINDING_RESPOND_MODE: SlackBindingRespondMode = "mention";
+
 export interface SlackChannelBindingRecord {
   id: string;
   installationId: string;
@@ -41,6 +51,7 @@ export interface SlackChannelBindingRecord {
   answeringAgentId: string;
   escalationChannelId: string | null;
   gapEscalationEnabled: boolean;
+  respondMode: SlackBindingRespondMode;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -62,6 +73,8 @@ export interface UpsertSlackBindingInput {
   answeringAgentId: string;
   escalationChannelId?: string | null;
   gapEscalationEnabled?: boolean;
+  // Omitted keeps the stored mode (or `mention` for a new binding).
+  respondMode?: SlackBindingRespondMode;
 }
 
 export interface SlackInstallationRepositoryPort {
@@ -88,7 +101,7 @@ export interface SlackBindingRepositoryPort {
   removeByInstallationChannel(installationId: string, channelId: string): Promise<boolean>;
 }
 
-export interface SlackInstallationServiceOptions {
+interface SlackInstallationServiceOptions {
   oauthConnections: Pick<OauthConnectionRepositoryPort, "create" | "findById" | "setOauthTokens"> & {
     remove?: OauthConnectionRepositoryPort["remove"];
   };
@@ -103,7 +116,7 @@ export interface WorkspaceAccountLookup {
   getAccountId(workspaceId: string): Promise<string | null>;
 }
 
-export interface SaveSlackInstallationInput {
+interface SaveSlackInstallationInput {
   workspaceId: string;
   oauthConnectionId?: string;
   teamId: string;
@@ -116,14 +129,14 @@ export interface SaveSlackInstallationInput {
   gapEscalationEnabled?: boolean;
 }
 
-export interface SaveSlackInstallationResult {
+interface SaveSlackInstallationResult {
   oauthConnection: OauthConnectionRecord;
   connection: IntegrationConnectionRecord;
   installation: SlackInstallationRecord;
   binding: SlackChannelBindingRecord | null;
 }
 
-export interface SlackInstallationStatus {
+interface SlackInstallationStatus {
   status: "connected" | "needs_reauth" | "disabled" | "not_configured";
   installationId?: string;
   teamName?: string;
@@ -261,7 +274,14 @@ export class SlackInstallationService {
     answeringAgentId: string;
     escalationChannelId?: string | null;
     gapEscalationEnabled?: boolean;
+    respondMode?: SlackBindingRespondMode;
   }): Promise<SlackChannelBindingRecord> {
+    const channelId = input.channelId ?? null;
+    // The default binding answers DMs and every unbound channel; letting it answer every
+    // message would make the bot speak in channels nobody configured.
+    if (channelId === null && input.respondMode === "every_message") {
+      throw badRequest("respondMode every_message requires a channelId");
+    }
     const installation = await this.findInstallationForWorkspace(input.workspaceId);
     if (!installation) {
       throw notFound("Slack installation is not configured");
@@ -269,10 +289,11 @@ export class SlackInstallationService {
     return this.options.bindings.upsert({
       installationId: installation.id,
       workspaceId: input.workspaceId,
-      channelId: input.channelId ?? null,
+      channelId,
       answeringAgentId: input.answeringAgentId,
       escalationChannelId: input.escalationChannelId,
       gapEscalationEnabled: input.gapEscalationEnabled,
+      respondMode: input.respondMode,
     });
   }
 
@@ -563,6 +584,7 @@ interface SlackChannelBindingRow {
   answering_agent_id: string;
   escalation_channel_id: string | null;
   gap_escalation_enabled: boolean;
+  respond_mode: string;
   created_at: Date;
   updated_at: Date;
 }
@@ -571,6 +593,17 @@ type SlackBindingDb = Omit<DB, "slack_channel_bindings"> & {
   slack_channel_bindings: DB["slack_channel_bindings"] & {
     gap_escalation_enabled: boolean;
   };
+};
+
+const isRespondMode = (value: string): value is SlackBindingRespondMode =>
+  (slackBindingRespondModes as readonly string[]).includes(value);
+
+// The column carries a CHECK constraint, so anything else is a schema/type drift worth failing loudly on.
+const readRespondMode = (value: string): SlackBindingRespondMode => {
+  if (!isRespondMode(value)) {
+    throw new Error(`slack_channel_bindings.respond_mode holds an unknown value: ${value}`);
+  }
+  return value;
 };
 type SlackBindingDbExecutor = Kysely<SlackBindingDb> | Transaction<SlackBindingDb>;
 
@@ -581,6 +614,7 @@ const bindingColumns = [
   "channel_id",
   "answering_agent_id",
   "escalation_channel_id",
+  "respond_mode",
   "created_at",
   "updated_at",
 ] as const;
@@ -593,6 +627,7 @@ const mapBinding = (row: SlackChannelBindingRow): SlackChannelBindingRecord => (
   answeringAgentId: row.answering_agent_id,
   escalationChannelId: row.escalation_channel_id,
   gapEscalationEnabled: row.gap_escalation_enabled,
+  respondMode: readRespondMode(row.respond_mode),
   createdAt: new Date(row.created_at),
   updatedAt: new Date(row.updated_at),
 });
@@ -663,6 +698,7 @@ export class SlackChannelBindingRepository implements SlackBindingRepositoryPort
       answering_agent_id: input.answeringAgentId,
       escalation_channel_id: input.escalationChannelId ?? null,
       gap_escalation_enabled: input.gapEscalationEnabled ?? false,
+      respond_mode: input.respondMode ?? DEFAULT_SLACK_BINDING_RESPOND_MODE,
     };
     const row = await this.db
       .insertInto("slack_channel_bindings")
@@ -676,6 +712,9 @@ export class SlackChannelBindingRepository implements SlackBindingRepositoryPort
             : {}),
           ...(input.gapEscalationEnabled !== undefined
             ? { gap_escalation_enabled: eb.ref("excluded.gap_escalation_enabled") }
+            : {}),
+          ...(input.respondMode !== undefined
+            ? { respond_mode: eb.ref("excluded.respond_mode") }
             : {}),
           updated_at: currentTimestamp(),
         })),

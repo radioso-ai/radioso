@@ -313,6 +313,12 @@ variable "copilot_retention_schedule" {
   default     = null
 }
 
+variable "slack_inbound_event_retention_schedule" {
+  description = "Optional cron schedule for the Slack inbound-event dedup ledger sweep. The worker deletes event ids older than SLACK_INBOUND_EVENT_RETENTION_DAYS only when this sweep runs, so a deployment without it keeps the ledger forever."
+  type        = string
+  default     = null
+}
+
 variable "agent_bundle_import_orphan_age_ms" {
   description = "Milliseconds an active bundle-import job may run before orphan cleanup reclaims it. Imports normally take seconds; use a larger value only for a deployment with known slow imports."
   type        = number

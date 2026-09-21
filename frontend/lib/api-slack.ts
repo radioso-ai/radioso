@@ -2,7 +2,7 @@ import { request } from './api-client'
 
 export type SlackInstallStatus = 'connected' | 'needs_reauth' | 'disabled' | 'not_configured'
 
-export type SlackInstallStartResponse = {
+type SlackInstallStartResponse = {
   authorizationUrl: string
   connectionId: string
   status: 'pending'
@@ -19,18 +19,24 @@ export type SlackInstallStatusResponse = {
   answeringAgentId?: string
 }
 
+// `mention` answers @mentions and threads the agent already owns; `every_message` also answers
+// every top-level message in the bound channel. The default binding (channelId null) is always `mention`.
+export type SlackRespondMode = 'mention' | 'every_message'
+
 export type SlackBinding = {
   channelId: string | null
   answeringAgentId: string | null
   escalationChannelId: string | null
   gapEscalationEnabled: boolean
+  respondMode: SlackRespondMode
 }
 
-export type SlackBindingUpdate = {
+type SlackBindingUpdate = {
   channelId?: string | null
   answeringAgentId: string
   escalationChannelId?: string | null
   gapEscalationEnabled?: boolean
+  respondMode?: SlackRespondMode
 }
 
 export type SlackManifestResponse = {

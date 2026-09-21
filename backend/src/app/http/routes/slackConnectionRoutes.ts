@@ -3,7 +3,12 @@ import { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
 import { badRequest, serviceUnavailable } from "../../../shared/domain/errors.js";
-import { buildSlackManifest, getSlackReadiness, requiredSlackEnvVars } from "../../../modules/slack/public.js";
+import {
+  buildSlackManifest,
+  getSlackReadiness,
+  requiredSlackEnvVars,
+  slackBindingRespondModes,
+} from "../../../modules/slack/public.js";
 import { requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { requireWorkspaceSession } from "../middleware/requireWorkspaceSession.js";
 import { validateBody } from "../middleware/validate.js";
@@ -20,6 +25,8 @@ const bindingUpdateSchema = z.object({
   answeringAgentId: z.string().uuid(),
   escalationChannelId: z.string().trim().min(1).nullable().optional(),
   gapEscalationEnabled: z.boolean().optional(),
+  // Omitted keeps the stored mode. every_message needs a channelId; the service rejects it otherwise.
+  respondMode: z.enum(slackBindingRespondModes).optional(),
 });
 const bindingDeleteBodySchema = z.object({
   channelId: z.string().trim().min(1).optional(),
@@ -38,6 +45,7 @@ const presentBinding = (binding: Awaited<ReturnType<AppDependencies["slackInstal
   answeringAgentId: binding?.answeringAgentId ?? null,
   escalationChannelId: binding?.escalationChannelId ?? null,
   gapEscalationEnabled: binding?.gapEscalationEnabled ?? false,
+  respondMode: binding?.respondMode ?? "mention",
 });
 
 const parseChannelId = (req: { query: Record<string, unknown>; body?: unknown }): string => {
@@ -177,6 +185,7 @@ export const createSlackConnectionRoutes = (dependencies: SlackConnectionRouteDe
           answeringAgentId: req.body.answeringAgentId,
           escalationChannelId: req.body.escalationChannelId,
           gapEscalationEnabled: req.body.gapEscalationEnabled,
+          respondMode: req.body.respondMode,
         });
         res.status(200).json(presentBinding(binding));
       } catch (error) {

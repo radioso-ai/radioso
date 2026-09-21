@@ -1,6 +1,6 @@
 ---
 title: Slack channel
-description: Connect Radioso agents to Slack as an inbound conversation channel, route channels to specific agents, and act on escalations from Slack.
+description: Connect Radioso agents to Slack as an inbound conversation channel, route channels to specific agents, choose when the agent speaks, and act on escalations from Slack.
 ---
 
 # Slack channel
@@ -17,10 +17,31 @@ You manage it from an agent's **Channels**, alongside Web chat — which carries
 
 - Direct messages to the Slack bot are routed to the default Radioso agent.
 - `@mention` events in Slack channels are answered in the originating thread. A channel-specific binding wins when one exists; otherwise Radioso uses the default agent.
+- Once the agent has answered in a thread, it keeps following it: replies reach the agent without another `@mention`, so a follow-up is just the next message. It stays out of threads it was never brought into.
 - While the agent works on a message, Radioso adds an `eyes` reaction. Once the reply is posted, that reaction is replaced with a check mark, or an `x` if the reply could not be delivered.
-- Each DM user and each mentioned channel thread maps to one Radioso conversation.
+- Answers are posted as formatted Slack messages, so bold text, lists, and links render the way they do in the web chat.
+- Radioso appears in Slack's agent pane, the **Agents & AI Apps** entry next to the message list. Each chat started there is a session with its own Radioso conversation, a working indicator while the agent answers, a title taken from the person's first message, and the agent's greeting chips as suggested prompts.
+- Each DM user, each agent-pane session, and each channel thread maps to one Radioso conversation.
 - When a turn's outcome is `no_context`, gap escalation is enabled, and an escalation channel is configured, Radioso posts a human follow-up to that channel. Setting only the channel is not enough — the escalation toggle must also be on. A question the agent declined as out of scope carries the `out_of_scope` outcome instead and never escalates, so scope probes don't page a person.
 - Approval gates, handoffs, and unanswered questions arrive as interactive messages an operator can act on from Slack.
+
+## Choosing when the agent speaks
+
+Each channel binding has a **Responds to** setting. `@mentions only`, the default, means the agent speaks when someone tags it and inside threads it already answers in. `Every message` means it also answers every top-level message posted in that channel, each in a new thread under the message — the fit for a dedicated `#ask-support` channel where every post is a question.
+
+The default agent binding, the one that covers direct messages and every channel without its own binding, is always `@mentions only`. That keeps an agent from starting to answer unprompted in a channel nobody configured. In the API the field is `respondMode`, with values `mention` and `every_message`; a `PUT` that sets `every_message` without a `channelId` is rejected with `400`.
+
+## Radioso in Slack's agent pane
+
+Slack lists agent apps in a pane of their own, reachable from the sidebar and the top of any channel, and Radioso registers there so people can open a chat with the agent without finding its direct message first.
+
+A chat started in the pane is a session. Slack keeps each session as a thread in the app's direct message, and Radioso keeps one conversation per session, the same way it keeps one per channel thread. Replies go into the session thread, and an operator reply from the Inbox lands there too. A direct message sent from the app's Messages tab, outside any session, keeps its own per-person conversation.
+
+While the agent works on a session message, the pane shows Slack's working indicator instead of the `eyes` reaction, and clears it once the reply is posted, or when the turn fails or is replaced by a newer message. After the first answer, the session takes its title from the person's first message, collapsed to one line and cut at 60 characters, so the sidebar shows what each session was about in the person's own words.
+
+The Messages tab shows up to four suggested prompts: the greeting chips authored on the default agent's published revision, the same chips the website widget shows under the greeting, resolved in the agent's default language. An agent whose greeting is automatic, switched off, or has no chips offers no prompts. Prompts refresh each time someone opens the Messages tab; nothing is started or recorded by that visit.
+
+The pane needs the `assistant:write` scope and the `app_home_opened` event. An install that predates them shows `needs_reauth` in the install status and logs `missing_scope` when a session message arrives; the agent still answers, without the working indicator, title, or prompts. Reinstall or re-consent the app to enable them.
 
 ## Operator actions in Slack
 
@@ -50,7 +71,7 @@ Self-hosted deployments use the standard Slack OAuth flow, with one difference: 
    - `SLACK_OAUTH_CLIENT_SECRET`
    - `SLACK_SIGNING_SECRET`
 6. Restart the backend.
-7. Use **Add to Slack** in the Radioso UI, approve the install, and confirm the default agent. Optionally add channel-specific agent bindings and an escalation channel such as `#support`.
+7. Use **Add to Slack** in the Radioso UI, approve the install, and confirm the default agent. Optionally add channel-specific agent bindings, set **Responds to** per channel, and pick an escalation channel such as `#support`.
 
 Slack is available only when all three environment variables are set. If one is missing, Radioso does not start Slack OAuth install and the UI shows which variable you still need to configure.
 
@@ -60,7 +81,11 @@ The manifest is available from:
 GET /api/v1/workspaces/{workspaceId}/slack/manifest
 ```
 
-It requests bot scopes for mentions, chat posting, message reactions, direct messages, and Slack user lookup (`users:read`, `users:read.email`), and fills the OAuth redirect, event, and interactivity URLs. If an existing Slack app was installed before message reactions or interactive operator actions were configured, reinstall or re-consent the app so Slack grants the reaction and user-lookup scopes and sends interactivity callbacks.
+It requests bot scopes for mentions, chat posting, message reactions, direct messages, channel message history (`channels:history`, `groups:history`), the agent pane (`assistant:write`), and Slack user lookup (`users:read`, `users:read.email`); subscribes the app to `app_mention`, `message.im`, `message.channels`, `message.groups`, and `app_home_opened`; registers the app in the agent pane through `features.agent_view` with the Messages tab enabled under `features.app_home`; and fills the OAuth redirect, event, and interactivity URLs. Suggested prompts are set per workspace at runtime, so the manifest carries none.
+
+The channel message events are what let the agent follow a thread without a re-tag and answer every message in a channel set up that way. Radioso acts on them only for threads it already answers in or channels bound with `Every message`. For everything else it keeps the Slack event id alone, with no message text, so a redelivery of the same event is recognised, and deletes that id after 7 days (`SLACK_INBOUND_EVENT_RETENTION_DAYS`; the sweep runs in the document worker, or as a scheduled push to `POST /internal/tasks/slack-inbound-event-retention/sweep` under the task runtime).
+
+If an existing Slack app was installed before some of these scopes or events were part of the manifest, the install status shows `needs_reauth` and the agent keeps answering mentions and direct messages only. Update the app's event subscriptions from the current manifest, then reinstall or re-consent the app so Slack grants the new scopes.
 
 ### Split-host deployments
 
@@ -81,13 +106,18 @@ PUT    /api/v1/workspaces/{workspaceId}/slack/binding
 DELETE /api/v1/workspaces/{workspaceId}/slack/binding?channelId={channelId}
 ```
 
-Slack sends Events API payloads to `/api/connectors/slack/events` and interaction callbacks to `/api/connectors/slack/interactivity`. Radioso verifies the Slack signature, checks replay age, deduplicates by `event_id`, ignores bot-authored events, resolves the agent from the channel binding, and runs the normal chat path with `sourceChannel: "slack"`.
+A binding carries `channelId`, `answeringAgentId`, `escalationChannelId`, `gapEscalationEnabled`, and `respondMode`. Omit `respondMode` on `PUT` to keep the stored value.
+
+Slack sends Events API payloads to `/api/connectors/slack/events` and interaction callbacks to `/api/connectors/slack/interactivity`. Radioso verifies the Slack signature, checks replay age, deduplicates by `event_id` (kept without message text for 7 days), ignores bot-authored events and message edits, deletions, and joins, resolves the agent from the channel binding, decides from the binding's `respondMode` and thread ownership whether an un-mentioned channel message gets an answer, and runs the normal chat path with `sourceChannel: "slack"`.
 
 ## Common failure modes
 
 - **Add to Slack** does nothing and the UI names a missing variable: one of the three `SLACK_*` environment variables is unset. Set all three and restart the backend.
 - An operator's Slack action is rejected with a private message: their Slack email does not match a Radioso member with the takeover permission.
 - Buttons or reactions do not work after an upgrade: the app was installed before those scopes existed. Reinstall or re-consent the app.
+- Thread follow-ups without a tag go unanswered, or `Every message` has no effect: the app is missing the `message.channels` and `message.groups` events or the history scopes, and install status shows `needs_reauth`. Update the event subscriptions from the manifest and re-consent.
+- The agent answers a top-level message nobody tagged it in: that channel's binding is set to `Every message`. Switch it back to `@mentions only`.
+- Sessions in the agent pane keep spinning, have no title, or show no suggested prompts: the app is missing `assistant:write` or `app_home_opened`, and the backend logs `missing_scope`. Update the app from the manifest and re-consent. Prompts also stay empty when the default agent's greeting is automatic or has no chips.
 - OAuth or inbound events fail on a split-host deployment: `CONNECTOR_PUBLIC_BASE_URL` is unset or points at a host Slack cannot reach over public HTTPS.
 
 ## Read next

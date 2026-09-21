@@ -17,7 +17,7 @@ interface ServerLike {
   close(callback?: (error?: Error) => void): void;
 }
 
-export interface StartApiRuntimeOptions {
+interface StartApiRuntimeOptions {
   env: Env;
   logger?: AppLogger;
   runMigrations?: (connectionString: string, logger: AppLogger, options: MigrationTimeoutOptions) => Promise<void>;
@@ -71,6 +71,7 @@ export const startApiRuntime = async (options: StartApiRuntimeOptions): Promise<
     auditService: dependencies.auditService,
     metricsRegistry: dependencies.metricsRegistry,
     workspaceInvalidationPublisher: dependencies.workspaceInvalidationPublisher,
+    agentStarterPrompts: dependencies.agentStarterPromptReader,
     assertPublicUrl: dependencies.assertPublicWebsiteUrl,
     fetchPublicUrl,
   });

@@ -8,7 +8,7 @@ import type {
   SlackInstallationService,
 } from "../../../src/modules/slack/public.js";
 import type { SlackPersistencePort } from "../../../src/modules/connectors/plugins/slack/slackPersistence.js";
-import { InMemorySlackBindingRepository } from "../../support/inMemorySlack.js";
+import { InMemorySlackBindingRepository, idleSlackAgentSessionClient } from "../../support/inMemorySlack.js";
 
 const installation: SlackInstallationRecord = {
   id: "11111111-1111-1111-1111-111111111111",
@@ -94,7 +94,12 @@ const makeHandler = (bindings: InMemorySlackBindingRepository) => {
     bindings,
     installationService,
     persistence,
-    clientFactory: () => ({ postMessage: vi.fn(), addReaction: vi.fn(), removeReaction: vi.fn() }),
+    clientFactory: () => ({
+      postMessage: vi.fn(),
+      addReaction: vi.fn(),
+      removeReaction: vi.fn(),
+      ...idleSlackAgentSessionClient(),
+    }),
   });
   return { handler, answeredWith, answeredWorkspaces, persistence };
 };
@@ -123,7 +128,7 @@ describe("Slack channel-scoped answerer routing", () => {
     await handler.handleMessageIm({
       eventId: "Ev-dm",
       teamId: "T1",
-      event: { type: "message", channel_type: "im", channel: "D1", user: "U1", text: "hi" },
+      event: { type: "message", channel_type: "im", channel: "D1", user: "U1", text: "hi", ts: "1.2" },
     });
     expect(answeredWith).toEqual([AGENT_DEFAULT]);
   });
@@ -147,6 +152,33 @@ describe("Slack channel-scoped answerer routing", () => {
       agentId: AGENT_SALES,
       sourceChannel: "slack",
     }));
+  });
+});
+
+describe("Slack binding respond mode persistence", () => {
+  it("defaults a binding to mention-only and keeps the stored mode when an update omits it", async () => {
+    const bindings = await seededBindings();
+    expect((await bindings.findAnswerer(installation.id, "CSALES"))?.respondMode).toBe("mention");
+    expect((await bindings.findAnswerer(installation.id, null))?.respondMode).toBe("mention");
+
+    await bindings.upsert({
+      installationId: installation.id,
+      workspaceId: installation.workspaceId,
+      channelId: "CSALES",
+      answeringAgentId: AGENT_SALES,
+      respondMode: "every_message",
+    });
+    expect((await bindings.findAnswerer(installation.id, "CSALES"))?.respondMode).toBe("every_message");
+
+    await bindings.upsert({
+      installationId: installation.id,
+      workspaceId: installation.workspaceId,
+      channelId: "CSALES",
+      answeringAgentId: AGENT_DEFAULT,
+    });
+    const preserved = await bindings.findAnswerer(installation.id, "CSALES");
+    expect(preserved?.answeringAgentId).toBe(AGENT_DEFAULT);
+    expect(preserved?.respondMode).toBe("every_message");
   });
 });
 

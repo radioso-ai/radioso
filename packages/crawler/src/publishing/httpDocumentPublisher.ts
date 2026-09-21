@@ -4,8 +4,26 @@ import type {
   DocumentPublisherResult
 } from "../types.js";
 
+// Character loops rather than anchored `\/+` regexes: a greedy run backtracks quadratically on
+// long slash runs.
+const trimTrailingSlashes = (value: string): string => {
+  let end = value.length;
+  while (end > 0 && value[end - 1] === "/") {
+    end -= 1;
+  }
+  return value.slice(0, end);
+};
+
+const trimLeadingSlashes = (value: string): string => {
+  let start = 0;
+  while (start < value.length && value[start] === "/") {
+    start += 1;
+  }
+  return value.slice(start);
+};
+
 const joinUrl = (baseUrl: string, path: string) =>
-  `${baseUrl.replace(/\/+$/, "")}/${path.replace(/^\/+/, "")}`;
+  `${trimTrailingSlashes(baseUrl)}/${trimLeadingSlashes(path)}`;
 
 const parseJsonSafely = async (response: Response) => {
   try {

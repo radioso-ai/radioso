@@ -160,7 +160,7 @@ describe("document publishers", () => {
       });
 
     const publisher = createHttpDocumentPublisher({
-      baseUrl: "https://host.example.com",
+      baseUrl: "https://host.example.com///",
       fetchImpl: fetchMock as typeof fetch
     });
 

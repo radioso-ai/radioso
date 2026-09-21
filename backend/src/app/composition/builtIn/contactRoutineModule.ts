@@ -7,7 +7,6 @@ import {
   CONTACT_INTENT_NAME,
   ConfiguredContactDeliveryResolver,
   ContactSendActionHandler,
-  type ConversationLinkResolver,
   EmailWebhookOperatorNotificationSink,
   FetchContactWebhookHttpClient,
   HandoffNotifyActionHandler,
@@ -38,7 +37,7 @@ import type { Database } from "../../../shared/infra/database.js";
 import type { Env } from "../../config/env.js";
 import type { ApplicationModule, MailTransportPort } from "../applicationModule.js";
 import { fetchPublicUrl } from "../../../shared/infra/http/publicUrlFetch.js";
-import { conversationPermalink } from "../../../shared/domain/dashboardLinks.js";
+import { buildConversationLinkResolver } from "../conversationLinkResolver.js";
 
 /** Reads the per-agent contact-requests flag and delivery config for the advertiser. */
 interface AgentContactFlagLookup {
@@ -78,30 +77,6 @@ const isContactIntentClick = (metadata: Record<string, unknown> | undefined): bo
     (intent as { skillName?: unknown }).skillName === CONTACT_INTENT_SKILL_NAME;
 };
 
-/**
- * Turns a workspace id into the dashboard link an operator can actually click. The workspace's
- * public route key is not on the notification — a routine action step has no reason to know the
- * dashboard's URL shape — so it is resolved here, at the delivery edge.
- */
-const buildConversationLinkResolver = (input: {
-  database: Database;
-  appBaseUrl?: string;
-}): ConversationLinkResolver => {
-  const workspaces = new WorkspaceRepository(input.database.kysely);
-  return {
-    async resolve({ workspaceId, conversationId }) {
-      const workspace = await workspaces.findById(workspaceId);
-      if (!workspace) {
-        return null;
-      }
-      return conversationPermalink(
-        { workspacePublicRouteKey: workspace.publicRouteKey, conversationId },
-        input.appBaseUrl,
-      );
-    },
-  };
-};
-
 const buildOperatorNotificationDispatcher = (input: {
   database: Database;
   env: Env;
@@ -119,13 +94,14 @@ const buildOperatorNotificationDispatcher = (input: {
     ownerFallback,
     new AgentSkillRepository(input.database.kysely),
   );
+  const conversationLinks = buildConversationLinkResolver({ database: input.database, appBaseUrl: input.env.APP_BASE_URL });
   return new OperatorNotificationDispatcher([
     new EmailWebhookOperatorNotificationSink(
       input.mailService,
       recipients,
       input.logger,
       new FetchContactWebhookHttpClient(input.assertPublicWebsiteUrl, { fetchImpl: fetchPublicUrl }),
-      buildConversationLinkResolver({ database: input.database, appBaseUrl: input.env.APP_BASE_URL }),
+      conversationLinks,
     ),
     new SlackOperatorNotificationSink({
       installations: new SlackInstallationRepository(input.database.kysely),
@@ -133,6 +109,8 @@ const buildOperatorNotificationDispatcher = (input: {
       bindings: new SlackChannelBindingRepository(input.database.kysely),
       pendingDecisions: new PendingDecisionRepository(input.database.kysely),
       outbox: new ActionRequestRepository(input.database.kysely),
+      conversationLinks,
+      logger: input.logger,
     }),
   ], input.logger);
 };

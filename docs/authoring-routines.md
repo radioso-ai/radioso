@@ -1,7 +1,7 @@
 ---
 title: "Authoring Routines"
 description: "Create and edit dashboard routines in the Document view, read the Map, connect skills, and try a change in a test chat before it ships."
-last_updated: 2026-09-20
+last_updated: 2026-09-21
 ---
 
 # Authoring Routines
@@ -279,8 +279,11 @@ secret, and delivers it through the action outbox.
 
 When a routine reaches a `handoff` terminal, the chat turn sends the routine's
 reply, requests human ownership of the conversation, and queues a
-`handoff.notify` action. The notice gives operators the conversation, workspace,
-agent, and routine context they need to open the conversation in the dashboard.
+`handoff.notify` action. The notice reaches the agent's contact recipients by
+email and, when one is configured, the contact webhook. Both carry the
+conversation, workspace, agent, and reason, plus a `dashboardUrl` that opens the
+conversation in the dashboard; the webhook body is documented under
+[Handoff and approval notifications](../docs-portal/content/api/agents-and-skills.mdx).
 
 ## How a routine goes live
 

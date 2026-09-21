@@ -276,7 +276,6 @@ const buildApprovalRequestAction = (input: {
     agentId: input.agentId,
     routineId: input.routineId,
     stepId: input.stepId,
-    dashboardPath: `/conversations/${input.conversationId}`,
   },
 });
 

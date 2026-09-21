@@ -21,7 +21,9 @@ export type SlotCorrectionResult =
 
 // Structural format check, not English product vocabulary: a localpart, "@", and a dotted
 // domain. Deliberately permissive — the source of truth for deliverability is elsewhere.
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/u;
+// Domain labels are dot-separated with no dots inside a label, so the domain part has exactly
+// one parse and the check stays linear on long inputs.
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/u;
 // ISO calendar date (YYYY-MM-DD). Protocol syntax, not a keyword list.
 const ISO_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/u;
 

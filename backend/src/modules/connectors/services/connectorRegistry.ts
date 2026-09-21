@@ -23,6 +23,7 @@ import type { OperatorReplyService } from "../../handoff/public.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import { stringifyUnknown } from "../../../shared/text/stringifyUnknown.js";
 import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
+import type { ConversationLinkResolver } from "../../../shared/domain/conversationLinkResolver.js";
 import {
   decryptField,
   encryptField,
@@ -128,6 +129,7 @@ export class ConnectorRegistry {
     metricsRegistry?: Pick<MetricsRegistry, "incrementCounter"> | null;
     workspaceInvalidationPublisher?: WorkspaceInvalidationPublisher;
     agentStarterPrompts?: AgentStarterPromptReader;
+    conversationLinks?: ConversationLinkResolver;
     assertPublicUrl?: (url: string) => Promise<void>;
     fetchPublicUrl?: typeof fetch;
   }): Promise<void> {
@@ -144,6 +146,7 @@ export class ConnectorRegistry {
           metricsRegistry: context.metricsRegistry,
           workspaceInvalidationPublisher: context.workspaceInvalidationPublisher,
           agentStarterPrompts: context.agentStarterPrompts,
+          conversationLinks: context.conversationLinks,
           assertPublicUrl: context.assertPublicUrl,
           publicHttp: {
             assertPublicUrl: context.assertPublicUrl ?? (async () => {

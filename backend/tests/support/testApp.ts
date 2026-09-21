@@ -2295,6 +2295,7 @@ export const createTestDependencies = (overrides: {
     agentBundleImportService: agentBundleServices.importService,
     agentBundleImportCleanupWorker: agentBundleServices.cleanupWorker,
     workspaceInvalidationPublisher: { enqueue: () => ({ accepted: false, reason: "disabled" }) },
+    conversationLinks: { resolve: async () => null },
     realtimePublisherLifecycle: { shutdown: async () => undefined },
     credentialExpiryWarningLifecycle,
     realtimeRolloutPolicy: overrides.realtimeRolloutPolicy ?? { allows: () => false },
@@ -2513,6 +2514,7 @@ export const createTestDependencies = (overrides: {
     chat: createConnectorChatPort(dependencies.chatService),
     ingestion: dependencies.connectorIngestionPort,
     agentStarterPrompts: dependencies.agentStarterPromptReader,
+    conversationLinks: dependencies.conversationLinks,
   });
 
   return {

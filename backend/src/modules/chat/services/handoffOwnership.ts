@@ -68,7 +68,6 @@ export const buildHandoffNotifyAction = (input: {
     reason: input.reason,
     routineId: input.routineId,
     stepId: input.stepId,
-    dashboardPath: `/conversations/${input.conversationId}`,
   },
 });
 

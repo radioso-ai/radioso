@@ -2,6 +2,7 @@ import type {
   RoutineDefinition,
   RoutineDefinitionDraft,
   RoutineCompletionExport,
+  RoutineExposure,
   RoutineFieldGuardOp,
   RoutineFieldGuardUnit,
   RoutineGuardKind,
@@ -87,6 +88,9 @@ export type RoutineFormState = {
     triggerKinds: RoutineTerminalKind[]
     destinationRef: string
   }
+  // Carried as authored: the Form has no exposure controls (they live in the Document
+  // header), so the form only has to keep the block a document edit wrote.
+  exposure?: RoutineExposure
 }
 
 export type RoutineDraftHeader = Pick<RoutineFormState, 'name' | 'enabled' | 'activation'>
@@ -292,6 +296,7 @@ export const routineToForm = (routine: RoutineDefinition): RoutineFormState => {
         : ['complete'],
       destinationRef: routine.completionExport?.destinationRef ?? '',
     },
+    ...(routine.exposure ? { exposure: { ...routine.exposure } } : {}),
   }
 }
 
@@ -394,6 +399,7 @@ export const formToRoutineDraft = (
       ordinal: index,
     })),
     ...(completionExport ? { completionExport } : {}),
+    ...(form.exposure ? { exposure: { ...form.exposure } } : {}),
   }
 }
 

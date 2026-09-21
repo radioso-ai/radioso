@@ -174,6 +174,57 @@ test("a step instruction keeps the lines its author wrote", async ({ page }) => 
   await expect(documentEditor.getByLabel("Step 1 instruction")).toContainText("Then ask what they need.");
 });
 
+test("exposes a routine as a tool, shows the name diagnostic, and saves the corrected name", async ({ page }) => {
+  const routineUpdates: RoutineMutationFixture[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { routineUpdates });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await expect(page.getByRole("heading", { name: "Routines", level: 1 })).toBeVisible();
+  await page.getByRole("button", { name: "New routine" }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Start a return");
+
+  const documentEditor = page.getByRole("article", { name: "Routine document editor" });
+  await documentEditor.getByRole("button", { name: "Starts when", exact: true }).click();
+  await documentEditor.getByLabel("Activation trigger", { exact: true }).fill("a customer wants to return an order.");
+  // The exposure controls sit inside the "Starts when" editor; the name and description
+  // fields only appear once the switch is on.
+  await expect(documentEditor.getByLabel("Tool name")).toHaveCount(0);
+  await documentEditor.getByRole("switch", { name: "Expose as a tool" }).click();
+  await documentEditor.getByLabel("Tool name").fill("Start Return");
+  await documentEditor.getByLabel("Tool description").fill("Start a return for an order.");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  await documentEditor.getByRole("button", { name: "Step", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Chat" }).click();
+  await documentEditor.getByRole("button", { name: "Chat", exact: true }).click();
+  const instruction = documentEditor.getByLabel("Step 1 instruction");
+  await instruction.click();
+  await instruction.pressSequentially("Ask for the order number.");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  // The reader line names the tool, and the saved draft carries the block as typed: the
+  // grammar is a validator diagnostic, not a refused save.
+  await expect(documentEditor.getByRole("button", { name: "Starts when", exact: true })).toContainText("Start Return");
+  await expect.poll(
+    () => routineUpdates.find((update) => update.method === "POST")?.body?.exposure,
+    { timeout: 15_000 },
+  ).toEqual({ enabled: true, toolName: "Start Return", description: "Start a return for an order." });
+  await expect(page.getByText(/invalid tool name: "Start Return"/u)).toBeVisible({ timeout: 15_000 });
+
+  await documentEditor.getByRole("button", { name: "Starts when", exact: true }).click();
+  await documentEditor.getByLabel("Tool name").fill("start_return");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  await expect.poll(
+    () => routineUpdates.filter((update) => update.method === "PATCH").at(-1)?.body?.exposure,
+    { timeout: 15_000 },
+  ).toEqual({ enabled: true, toolName: "start_return", description: "Start a return for an order." });
+  await expect(page.getByText(/invalid tool name/u)).toHaveCount(0);
+  await expect(page.getByRole("status", { name: "Routine valid" })).toBeVisible({ timeout: 15_000 });
+});
+
 const addChatStep = async (page: Page, documentEditor: Locator, text: string) => {
   await documentEditor.getByRole("button", { name: "Step", exact: true }).click();
   await page.getByRole("menuitem", { name: "Chat" }).click();

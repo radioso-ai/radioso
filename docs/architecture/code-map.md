@@ -426,7 +426,7 @@ Public and tool surfaces:
 - `backend/src/modules/operatorCopilot/contracts.ts`, `catalog.ts`, `service.ts`, and `routes.ts`
 - `backend/src/modules/operatorCopilot/tools/index.ts` (catalog contributions)
 - `backend/src/modules/operatorCopilot/tools/agentTurnProbe.ts` (`test_agent_turn` contract and projection)
-- `backend/src/modules/operatorCopilot/tools/routines.ts` (`routine_definition`, `validate_routine`, `propose_routine`, `propose_routine_edit`)
+- `backend/src/modules/operatorCopilot/tools/routines.ts` (`routine_definition`, `validate_routine`, `propose_routine`, `propose_routine_edit`, `propose_routine_exposure`)
 - `backend/src/app/composition/copilotProposalAdapters.ts` (proposal adapters: directive, agent setting, and the routine edit apply rules)
 - `backend/src/app/composition/copilotToolCatalog.ts` (default wiring and contributed-tool assembly)
 - `backend/src/modules/operatorCopilot/contribution.ts` (what a contributing module declares)
@@ -1000,7 +1000,8 @@ Public surfaces and contracts:
 
 - `backend/src/modules/routines/public.ts` (definition types, compiler, validator)
 - `backend/src/modules/routines/authoringEdit.ts` (stable-id field patch and the keyed projection an external authoring surface reviews a routine through)
-- `packages/routine-definition` (shared definition schemas and types)
+- `backend/src/modules/routines/exposure/` (how a routine is offered to a calling agent as a named tool: `reservedToolNames.ts` holds the names the agent surface keeps for itself; `exposureSnapshotRules.ts` is the cross-routine publish gate — duplicate names among serving routines, and a tool name frozen for its lineage from the revision that first published it — called from `agents/agentRevision.ts` with the currently published snapshot; per-routine rules — name grammar, reserved name, gated activation — live in `validator.ts`)
+- `packages/routine-definition` (shared definition schemas and types, including `routineExposureSchema` and `routineExposureToolNamePattern`)
 - `packages/routine-document` (routine block-document projection and shared guard/condition labeling, including `branchDecisionLabel` — the one place a branch's decision is named for the Document editor and the map)
 - `packages/routine-definition` also owns the shared slot-collection rule (`collectedSlotsByStep`, `SLOT_REFERENCE_PATTERN`) so the compiler, the population analysis, and the authoring surfaces agree on which step captures a slot
 - `backend/src/app/http/routes/agentRoutes.ts` (`/api/v1/agents/:agentId/routines` CRUD and validate)
@@ -1012,7 +1013,7 @@ Public surfaces and contracts:
 Primary internals:
 
 - `backend/src/modules/routines/compiler.ts`, `validator.ts`, `domain.ts`, `service.ts`
-- `backend/src/db/repositories/routineDefinitionRepository.ts`, migrations `084`–`090`
+- `backend/src/db/repositories/routineDefinitionRepository.ts`, migrations `084`–`090` and `194` (exposure columns)
 - `backend/src/app/composition/routineDefinitionSource.ts` (loads + compiles the agent's enabled routines for activation and pinned routines for resume)
 - `packages/conversation-engine/src/routineRunner.ts` (runtime: activation, resume, guards, fast-forward)
 - `backend/prompts/chat/routine-next-step.md`, `routine-step-reply.md`, `routine-ranked-activation.md`
@@ -1024,6 +1025,7 @@ Primary internals:
 Focused checks:
 
 - `cd backend && pnpm test -- tests/unit/routine-definition-domain.test.ts tests/unit/routine-definition-service.test.ts tests/integration/chat.integration.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/routines/exposureSnapshotRules.test.ts tests/unit/agent-revision-snapshot-schema.test.ts tests/integration/agent-revision-publication.integration.test.ts` (tool exposure rules and the publish gate)
 - `cd frontend && pnpm exec vitest run tests/unit/routine-flow.test.ts`
 - `cd frontend && pnpm exec playwright test tests/e2e/routine-canvas.spec.ts`
 - `cd packages/conversation-engine && pnpm test`

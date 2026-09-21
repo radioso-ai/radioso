@@ -45,6 +45,9 @@ interface RoutineDefinitionRow {
   transitions: unknown;
   terminals: unknown;
   completion_export: unknown;
+  exposure_enabled: boolean;
+  exposure_tool_name: string | null;
+  exposure_description: string | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -188,6 +191,9 @@ const definitionSelect = sql`
     COALESCE(transitions.items, '[]'::json) AS transitions,
     COALESCE(terminals.items, '[]'::json) AS terminals,
     completion_export.item AS completion_export,
+    d.exposure_enabled,
+    d.exposure_tool_name,
+    d.exposure_description,
     d.created_at,
     d.updated_at
   FROM routine_definition d
@@ -334,8 +340,24 @@ const mapRow = (row: RoutineDefinitionRow): RoutineDefinition => ({
       destinationRef: readString(exportRecord, "destinationRef"),
     };
   })(),
+  // The block is present exactly when a tool name column is set; `exposure_enabled` alone
+  // says nothing without a name to be enabled under.
+  ...(row.exposure_tool_name === null ? {} : {
+    exposure: {
+      enabled: row.exposure_enabled,
+      toolName: row.exposure_tool_name,
+      description: row.exposure_description ?? "",
+    },
+  }),
   createdAt: new Date(row.created_at),
   updatedAt: new Date(row.updated_at),
+});
+
+/** The three routine_definition columns a draft's exposure block writes, cleared when absent. */
+const exposureColumns = (draft: RoutineDefinitionDraftInput) => ({
+  exposure_enabled: draft.exposure?.enabled ?? false,
+  exposure_tool_name: draft.exposure?.toolName ?? null,
+  exposure_description: draft.exposure ? draft.exposure.description : null,
 });
 
 export class RoutineDefinitionRepository {
@@ -401,6 +423,7 @@ export class RoutineDefinitionRepository {
         activation_priority: draft.activation.priority,
         activation_reentry_mode: draft.activation.reentryMode,
         activation_coverage_criteria: draft.activation.coverageCriteria ? toJsonb(draft.activation.coverageCriteria) : null,
+        ...exposureColumns(draft),
         lineage_id: id,
       }).execute();
       await this.replaceChildren(trx, id, draft);
@@ -430,6 +453,7 @@ export class RoutineDefinitionRepository {
           activation_priority: draft.activation.priority,
           activation_reentry_mode: draft.activation.reentryMode,
           activation_coverage_criteria: draft.activation.coverageCriteria ? toJsonb(draft.activation.coverageCriteria) : null,
+          ...exposureColumns(draft),
           updated_at: nextAuthoredUpdatedAt(),
         })
         .where("agent_id", "=", agentId)
@@ -626,6 +650,7 @@ export class RoutineDefinitionRepository {
           activation_priority: draft.activation.priority,
           activation_reentry_mode: draft.activation.reentryMode,
           activation_coverage_criteria: draft.activation.coverageCriteria ? toJsonb(draft.activation.coverageCriteria) : null,
+          ...exposureColumns(draft),
           lineage_id: id,
         })
         .execute();
@@ -662,6 +687,7 @@ export class RoutineDefinitionRepository {
           activation_priority: draft.activation.priority,
           activation_reentry_mode: draft.activation.reentryMode,
           activation_coverage_criteria: draft.activation.coverageCriteria ? toJsonb(draft.activation.coverageCriteria) : null,
+          ...exposureColumns(draft),
           updated_at: nextAuthoredUpdatedAt(),
         })
         .where("agent_id", "=", agentId)

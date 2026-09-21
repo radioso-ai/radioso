@@ -56,8 +56,17 @@ const routineCannotReworkBranching = deferred(
 const routineEditCompletionExportUnreachable = deferred(
   "Editing an existing routine's completion-export destination has no field on this patch. Wiring a routine's completion to an operator's webhook destination waits on the same Wave 5 webhook-destination review as creating or changing the destination itself (catalogCoverage's webhookDestinationConfiguration).",
 );
+const routineExposureCarriedFlat = permanent(
+  "Carried flat as `enabled`, `toolName`, and `description` — the three fields of the exposure block — rather than as a nested `exposure` object, because the tool transport renders a nested input object as the bare word \"object\" (routineExposureInputSchema in tools/routines.ts). `enabled` on this tool is the exposure's own switch, not the routine's; the routine's stays as stored.",
+);
+const routineExposureLeavesFieldsAlone = permanent(
+  "propose_routine_exposure changes only the exposure block of an already-authored routine. Its wording, trigger, fields, steps, endings, branches, and completion export stay whatever the stored routine already has — the same one-concern shape propose_directive_enablement takes toward a directive.",
+);
 const routineStructuralPreparationNesting = permanent(
   "Carried nested: each of these is set either as an `operations[]` entry (set_enabled, insert/replace/remove_step, insert/replace/remove_slot, insert/replace/remove_terminal, insert/replace/remove_transition) or, for a brand-new routine, nested under `draft` — never as a same-named top-level field.",
+);
+const routineStructuralPreparationExposureViaOwnTool = permanent(
+  "Reachable nested under `draft.exposure` when creating a routine; for an existing routine, exposure is one concern with its own reviewed card, propose_routine_exposure, rather than an `operations[]` entry here.",
 );
 const routineStructuralPreparationCompletionExportUnreachable = deferred(
   "Reachable only when creating a routine, nested under `draft.completionExport`; no `operations[]` entry updates an existing routine's completion-export destination, so editing one waits on the same Wave 5 webhook-destination review as propose_routine_edit's gap.",
@@ -160,15 +169,20 @@ export const fieldExclusions: Record<string, Record<string, FieldParityExclusion
     ...fields(["assistant", "channels"], workspaceSettingFlattensGroups),
   },
   propose_routine: {
-    ...fields(["name", "enabled", "activation", "slots", "steps", "transitions", "terminals", "completionExport"], routineIntentDrafted),
+    ...fields(["name", "enabled", "activation", "slots", "steps", "transitions", "terminals", "completionExport", "exposure"], routineIntentDrafted),
   },
   propose_routine_edit: {
-    ...fields(["name", "enabled", "activation", "slots", "steps", "terminals"], routineEditFieldPatchNesting),
+    ...fields(["name", "enabled", "activation", "slots", "steps", "terminals", "exposure"], routineEditFieldPatchNesting),
     ...fields(["transitions"], routineCannotReworkBranching),
     ...fields(["completionExport"], routineEditCompletionExportUnreachable),
   },
+  propose_routine_exposure: {
+    ...fields(["exposure"], routineExposureCarriedFlat),
+    ...fields(["name", "activation", "slots", "steps", "transitions", "terminals", "completionExport"], routineExposureLeavesFieldsAlone),
+  },
   prepare_routine_structure: {
     ...fields(["name", "enabled", "activation", "slots", "steps", "terminals", "transitions"], routineStructuralPreparationNesting),
+    ...fields(["exposure"], routineStructuralPreparationExposureViaOwnTool),
     ...fields(["completionExport"], routineStructuralPreparationCompletionExportUnreachable),
   },
   propose_skill_config: {

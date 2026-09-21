@@ -75,6 +75,7 @@ export type RoutineBlockDoc = {
   steps: RoutineBlockStep[]
   unreferencedEndings: RoutineBlockEnding[]
   completionExport?: RoutineDefinitionDraftEditingInput['completionExport']
+  exposure?: RoutineDefinitionDraftEditingInput['exposure']
 }
 
 export type RoutineBlockDiagnostic =
@@ -231,6 +232,7 @@ export function routineToBlockDoc(input: RoutineDefinitionDraftEditingAuthoringI
         return terminals.filter((terminal) => !referenced.has(terminal.stableStepId)).map((terminal) => ({ ...terminal }))
       })(),
       ...(draft.completionExport === undefined ? {} : { completionExport: draft.completionExport }),
+      ...(draft.exposure === undefined ? {} : { exposure: draft.exposure }),
     },
   }
 }
@@ -299,5 +301,6 @@ export function draftFromBlockDoc(doc: RoutineBlockDoc): RoutineDefinitionDraftA
     })),
     terminals,
     ...(doc.completionExport === undefined ? {} : { completionExport: doc.completionExport }),
+    ...(doc.exposure === undefined ? {} : { exposure: doc.exposure }),
   }
 }

@@ -112,6 +112,7 @@ export type RoutineTerminal = Omit<ApiSchemas['RoutineDefinition']['terminals'][
   kind: RoutineTerminalKind
 }
 export type RoutineCompletionExport = NonNullable<ApiSchemas['RoutineDefinition']['completionExport']>
+export type RoutineExposure = NonNullable<ApiSchemas['RoutineDefinition']['exposure']>
 export type RoutineDefinitionDraft = {
   name: string
   // Whether the routine may activate. Optional on the draft shape so a caller that never reads
@@ -133,6 +134,9 @@ export type RoutineDefinitionDraft = {
   transitions: RoutineTransition[]
   terminals: RoutineTerminal[]
   completionExport?: RoutineCompletionExport
+  // How the routine is offered to calling AI agents as a named tool. Absent means not offered;
+  // omitted from an update payload means unchanged, the same as completionExport.
+  exposure?: RoutineExposure
 }
 export type RoutineDefinition = RoutineDefinitionDraft & {
   id: string

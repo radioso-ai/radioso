@@ -1,6 +1,7 @@
 import type { RoutineDefinition } from "./domain.js";
-import { collectContextVariableRefs, routineValidationCodes, type RoutineValidationCode } from "@radioso/routine-definition";
+import { collectContextVariableRefs, routineExposureToolNamePattern, routineValidationCodes, type RoutineValidationCode } from "@radioso/routine-definition";
 import type { SkillAuthoringDescriptor, SkillAuthoringInput } from "../skills/public.js";
+import { reservedRoutineToolNames } from "./exposure/reservedToolNames.js";
 import { analyzeGuaranteedVariablesOnEntry } from "./variablePopulation.js";
 
 export { routineValidationCodes, type RoutineValidationCode };
@@ -169,6 +170,32 @@ export const validateRoutineDefinition = (
       location: `routine:${definition.name}`,
       message: `missing terminal: routine "${definition.name}" must declare at least one terminal.`,
     });
+  }
+
+  // A disabled exposure block is inert: it only keeps a tool name that may already be frozen
+  // by a published revision (exposureSnapshotRules.ts), so nothing about it can break a turn.
+  if (definition.exposure?.enabled) {
+    const toolName = definition.exposure.toolName;
+    if (!routineExposureToolNamePattern.test(toolName)) {
+      diagnostics.push({
+        code: "exposure_tool_name_invalid",
+        location: "exposure.toolName",
+        message: `invalid tool name: "${toolName}" must be 2-63 characters of lower-case letters, digits, and underscores, starting with a letter.`,
+      });
+    } else if (reservedRoutineToolNames.has(toolName)) {
+      diagnostics.push({
+        code: "exposure_tool_name_reserved",
+        location: "exposure.toolName",
+        message: `reserved tool name: "${toolName}" is a built-in tool of the agent surface; choose another name.`,
+      });
+    }
+    if (definition.activation.gateRef) {
+      diagnostics.push({
+        code: "exposure_requires_ungated_activation",
+        location: "exposure.enabled",
+        message: `exposure requires ungated activation: routine "${definition.name}" has an activation gate, and a tool call would bypass it; remove the gate or keep the routine reachable through conversation only.`,
+      });
+    }
   }
 
   if (definition.completionExport?.enabled && definition.completionExport.destinationRef.trim().length === 0) {

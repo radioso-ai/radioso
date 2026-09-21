@@ -480,6 +480,14 @@ export const updateApproval = (doc: RoutineBlockDoc, stepId: string, patch: { in
 
 export const updateActivation = (doc: RoutineBlockDoc, patch: Partial<RoutineBlockDoc['activation']>): RoutineBlockDoc => ({ ...copy(doc), activation: { ...doc.activation, ...copy(patch) } })
 
+// The block starts empty when exposure is first switched on, and switching it off keeps the
+// name: a tool name is frozen once the agent is published with it, so clearing it here would
+// only turn the next publish into a refused rename.
+export const updateExposure = (doc: RoutineBlockDoc, patch: Partial<NonNullable<RoutineBlockDoc['exposure']>>): RoutineBlockDoc => ({
+  ...copy(doc),
+  exposure: { enabled: false, toolName: '', description: '', ...copy(doc.exposure ?? {}), ...copy(patch) },
+})
+
 // Convert a step in place. A kind owns its catalog reference and its decision fields, so
 // switching kinds clears the ones the new kind cannot carry — leaving them behind would save
 // fields the validator rejects. The instruction and any branch the author wrote are theirs,

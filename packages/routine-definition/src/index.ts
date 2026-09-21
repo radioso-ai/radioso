@@ -17,6 +17,8 @@ export const ROUTINE_DEFINITION_LIMITS = {
   destinationRef: 300,
   fieldRef: 200,
   fieldValue: 500,
+  exposureToolName: 63,
+  exposureDescription: 500,
 } as const;
 
 // Reentry policy for a completed routine instance within a conversation (issue #746).
@@ -62,6 +64,11 @@ export const routineValidationCodes = [
   "unknown_context_variable",
   "variable_name_collision",
   "node_id_collision",
+  "exposure_tool_name_invalid",
+  "exposure_tool_name_reserved",
+  "exposure_tool_name_duplicate",
+  "exposure_tool_name_changed",
+  "exposure_requires_ungated_activation",
 ] as const;
 
 export const routineIdentifierPattern = /^[A-Za-z_][A-Za-z0-9_.-]*$/u;
@@ -382,6 +389,25 @@ export const routineCompletionExportSchema = createRoutineCompletionExportSchema
   }
 });
 
+/**
+ * The grammar of a tool name a calling agent invokes a routine by: a lower-case
+ * identifier of 2–63 characters, as MCP and function-calling catalogs expect. The
+ * validator enforces it (`exposure_tool_name_invalid`), so a draft can hold a
+ * half-typed name and report it as a diagnostic rather than refuse the save.
+ */
+export const routineExposureToolNamePattern = /^[a-z][a-z0-9_]{1,62}$/u;
+
+/**
+ * How a routine is offered to a calling agent as a named tool. `toolName` is frozen once a
+ * published revision carries it (the revision gate enforces `exposure_tool_name_changed`),
+ * so a disabled block keeps its name rather than dropping it.
+ */
+export const routineExposureSchema = z.object({
+  enabled: z.boolean(),
+  toolName: z.string().trim().max(ROUTINE_DEFINITION_LIMITS.exposureToolName),
+  description: z.string().trim().max(ROUTINE_DEFINITION_LIMITS.exposureDescription),
+}).strict();
+
 const routineDefinitionDraftSchema = <
   TName extends z.ZodTypeAny,
   TTriggerDescription extends z.ZodTypeAny,
@@ -415,6 +441,9 @@ const routineDefinitionDraftSchema = <
   transitions,
   terminals,
   completionExport,
+  // Optional with no default: absent means "not offered as a tool", and the update schema
+  // below can carry an omission forward as-is because no field inside it defaults either.
+  exposure: routineExposureSchema.optional(),
 }).strict();
 
 // Fields added to the persistence draft schema must be classified as strict or
@@ -600,6 +629,7 @@ export type RoutineInputBinding = z.infer<typeof routineInputBindingSchema>;
 export type RoutineStepMode = z.infer<typeof routineStepModeSchema>;
 export type RoutineStepMetadata = z.infer<typeof routineStepMetadataSchema>;
 export type RoutineCompletionExport = z.infer<typeof routineCompletionExportSchema>;
+export type RoutineExposure = z.infer<typeof routineExposureSchema>;
 export type RoutineDefinitionDraftInput = z.infer<typeof routineDefinitionDraftInputSchema>;
 // Pre-parse authoring shape: what callers may submit before Zod applies defaults
 // (e.g. activation.reentryMode is optional here, required post-parse). Authoring

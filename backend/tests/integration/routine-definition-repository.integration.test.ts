@@ -243,6 +243,21 @@ describeIntegration("RoutineDefinitionRepository (Postgres)", () => {
     expect(cleared.activation.coverageCriteria).toBeUndefined();
   });
 
+  it("round-trips tool exposure through its three columns, keeping an empty name and a disabled block distinct from absence", async () => {
+    const exposure = { enabled: true, toolName: "start_return", description: "Start a return for an order." };
+    const created = await repository.createDraft(agentId, baseDraft({ exposure }));
+    expect(created.exposure).toEqual(exposure);
+
+    const withdrawn = await repository.updateDraft(agentId, created.id, baseDraft({ exposure: { ...exposure, enabled: false } }));
+    expect(withdrawn.exposure).toEqual({ ...exposure, enabled: false });
+
+    const unnamed = await repository.updateDraft(agentId, created.id, baseDraft({ exposure: { enabled: true, toolName: "", description: "" } }));
+    expect(unnamed.exposure).toEqual({ enabled: true, toolName: "", description: "" });
+
+    const cleared = await repository.updateDraft(agentId, created.id, baseDraft());
+    expect(cleared).not.toHaveProperty("exposure");
+  });
+
   it("updateDraft replaces children in place without branching the lineage", async () => {
     const created = await repository.createDraft(agentId, baseDraft());
 

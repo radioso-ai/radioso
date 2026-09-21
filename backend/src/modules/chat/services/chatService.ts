@@ -66,10 +66,10 @@ import {
   ChatTurnAssembly,
   type ChatTurnAssemblyFactory,
   buildChatTurnContext,
-  type ChatRoutineProvider,
   type ChatTurnAssemblyCoordinationHook,
   type ChatTurnAssemblyRoutineResult,
 } from "./chatTurnAssembly.js";
+import type { ChatRoutineProvider } from "../contracts/routineProvider.js";
 import type { RetrievalTurnPort } from "./retrievalTurnDispatch.js";
 import {
   noopRouteScopedDirectiveRuntime,
@@ -158,7 +158,7 @@ import { buildAgentChatWorkspaceContext } from "./agentChatWorkspaceContext.js";
 
 export type { ChatGateway } from "../contracts/chatGateway.js";
 export type { ChatStreamEvent } from "../contracts/streamEvents.js";
-export type { ChatRoutineProvider } from "./chatTurnAssembly.js";
+export type { ChatRoutineProvider } from "../contracts/routineProvider.js";
 export { buildRoutinePendingDecisionTransition } from "./chatTurnAssembly.js";
 export { BlankChatAnswerError } from "./chatAnswerErrors.js";
 export { ModelChatGateway } from "./chatGateways.js";

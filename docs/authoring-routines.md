@@ -104,6 +104,29 @@ call:
 }
 ```
 
+### What a calling agent sees
+
+Once the agent is published, a calling agent lists the routine as a tool built
+from the information the routine collects. Each declared slot becomes one input:
+a text slot is a string, number and yes/no slots keep their types, an email slot
+is a string that must look like an address, and a date slot is a string that
+must be an ISO calendar day (`2026-09-01`). A slot marked required is required
+in the tool; the slot's description travels with it, so a clear description
+helps the caller fill it correctly. A routine with no slots is still a valid
+tool — a "request a callback" routine needs nothing up front.
+
+A call with values filled in skips the steps that would have asked for them and
+lands on the first step that still needs something: a slot the caller left out,
+an approval, a skill. From there the routine runs exactly as it does in chat,
+and the reply names the routine, where it stopped, and every slot it still
+needs. A call that does not match the tool's inputs is refused before the
+conversation records anything. The operator view shows a tool call as a block
+with the tool name and the values it carried, and the same call in text form is
+what the agent reads as the customer's message.
+
+[MCP Client Setup](./mcp-client-setup.md#routines-as-tools) shows the catalog
+and the call from the caller's side.
+
 ## Document view
 
 **Document** lays a routine out from top to bottom: a collapsible **When to

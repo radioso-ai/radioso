@@ -37,4 +37,10 @@ export interface RoutineTurnState {
  */
 export interface RoutineTurnReporter {
   describe(input: { state: RoutineState; awaitingDecision?: boolean }): RoutineTurnState | null;
+  /**
+   * The routine a direct invocation named when this turn's activator declined to
+   * admit it (already completed under `once_per_conversation`), reported as
+   * completed so the caller learns why nothing started; null on any other turn.
+   */
+  describeDeclined(): RoutineTurnState | null;
 }

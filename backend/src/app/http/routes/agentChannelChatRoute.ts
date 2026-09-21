@@ -15,13 +15,39 @@ import { onSuccessfulHttpResponse } from "../middleware/httpResponseCompletion.j
 import { presentChatPayload, sendChatJson, sendChatSse } from "../presenters/chatPresenter.js";
 import { recordEdgeFactsProofRejected, resolveConversationRequestContext } from "../shared/conversationRequestContext.js";
 import { agentChannelChatSchema } from "../schemas/agentChannelSchemas.js";
-import { buildAgentReplyEnvelope, isChatTurnResponse } from "../../../modules/chat/contracts/index.js";
+import {
+  buildAgentReplyEnvelope,
+  chatRequestInputFor,
+  isChatTurnResponse,
+  resolveAgentTurnInput,
+  type AgentTurnInput,
+} from "../../../modules/chat/contracts/index.js";
 
 type AgentChannelChatRouteDependencies = AgentChannelRateLimiterDependencies
   & Pick<
     AppDependencies,
-    "accessGrantService" | "agentRepository" | "assistantChatService" | "env" | "visitorGeoResolver" | "metricsRegistry" | "logger"
+    | "accessGrantService"
+    | "agentRepository"
+    | "agentToolCatalog"
+    | "assistantChatService"
+    | "conversationRepository"
+    | "env"
+    | "visitorGeoResolver"
+    | "metricsRegistry"
+    | "logger"
   >;
+
+const pinnedRevisionIdFor = async (
+  dependencies: Pick<AgentChannelChatRouteDependencies, "conversationRepository">,
+  workspaceId: string,
+  conversationId: string | undefined,
+): Promise<string | undefined> => {
+  if (!conversationId) {
+    return undefined;
+  }
+  const conversation = await dependencies.conversationRepository.findByIdAndWorkspaceId(conversationId, workspaceId);
+  return conversation?.agentRevisionId ?? undefined;
+};
 
 /**
  * `POST /:agentId/chat` — the REST agent channel. A machine caller holding a
@@ -48,12 +74,22 @@ export const registerAgentChannelChatRoute = (
         if (rejection) {
           recordEdgeFactsProofRejected(dependencies, rejection, req);
         }
+        // A tool call is validated against the catalog of the release the
+        // conversation is pinned to, before any turn state is written.
+        const turnInput: AgentTurnInput | null = req.body.startConversation
+          ? null
+          : await resolveAgentTurnInput(dependencies.agentToolCatalog, {
+              workspaceId: agentChannelGrant.workspaceId,
+              agentId: agentChannelGrant.agentId,
+              agentRevisionId: await pinnedRevisionIdFor(dependencies, agentChannelGrant.workspaceId, req.body.conversationId),
+              body: req.body,
+            }, { metrics: dependencies.metricsRegistry, logger: dependencies.logger });
         const chatInput = {
           workspaceId: agentChannelGrant.workspaceId,
           agentId: agentChannelGrant.agentId,
           accountId: undefined,
           conversationId: req.body.conversationId,
-          message: req.body.message,
+          ...(turnInput ? chatRequestInputFor(turnInput) : {}),
           startConversation: req.body.startConversation,
           stream: req.body.stream,
           userExpectedLocale: req.body.userExpectedLocale,

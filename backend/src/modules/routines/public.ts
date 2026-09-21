@@ -43,6 +43,11 @@ export {
 } from "./skillDispatcher.js";
 export { createRoutineSkillResolverChain } from "./routineSkillResolverChain.js";
 export { validateExposureAcrossSnapshot } from "./exposure/exposureSnapshotRules.js";
+export { type AgentToolDescriptor } from "./exposure/agentToolDescriptor.js";
+export { createAgentToolCatalog, type AgentToolCatalogPort } from "./exposure/agentToolCatalog.js";
+export { validateRoutineInvocation, type RoutineInvocation } from "./exposure/routineInvocationValidator.js";
+export { renderRoutineInvocation } from "./exposure/renderRoutineInvocation.js";
+export { createDirectInvocationTurnPorts } from "./exposure/directInvocationTurn.js";
 export {
   routineValidationCodes,
   validateRoutineDefinition,

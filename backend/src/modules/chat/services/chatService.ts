@@ -25,6 +25,7 @@ import type { AuditService } from "../../audit/contracts/index.js";
 import type { CapabilityPolicy } from "../../../shared/domain/capabilityPolicy.js";
 import type { ActionCapabilityMap } from "../../../shared/domain/actionCapabilities.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
+import type { RoutineInvocation } from "../contracts/routineInvocation.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import type { ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
 import type { MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
@@ -296,6 +297,7 @@ interface ChatAnswerInput {
   verifiedCustomerId?: string | null;
   verifiedIdentity?: Record<string, unknown> | null;
   previewRoutineIds?: string[];
+  routineInvocation?: RoutineInvocation;
   usageAttribution?: ModelCallUsageAttribution;
   executionMode?: TurnExecutionMode;
 }
@@ -1217,6 +1219,7 @@ export class ChatService {
     verifiedCustomerId?: string | null;
     verifiedIdentity?: Record<string, unknown> | null;
     previewRoutineIds?: string[];
+    routineInvocation?: RoutineInvocation;
   }): AsyncIterable<ChatStreamEvent> {
     const streamStartedAt = Date.now();
     const coordination: TurnCoordinationState = {
@@ -1271,6 +1274,7 @@ export class ChatService {
     verifiedCustomerId?: string | null;
     verifiedIdentity?: Record<string, unknown> | null;
     previewRoutineIds?: string[];
+    routineInvocation?: RoutineInvocation;
   }, coordination: TurnCoordinationState, modelCallTrace: ModelCallTraceCollector, streamStartedAt: number): AsyncIterable<ChatStreamEvent> {
     let firstAnswerChunkObserved = false;
     const observeFirstAnswerChunk = (

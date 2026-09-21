@@ -26,6 +26,7 @@ import type { EvalLlmJudgePort } from "../../../src/modules/eval/services/evalJu
 import {
   BOOK_DEMO_ROUTINE_ID,
   CONTACT_SUPPORT_ROUTINE_ID,
+  START_RETURN_ROUTINE_ID,
   conversationQualityAgentConfig,
   conversationQualityCases,
   conversationQualityRoutines,
@@ -66,6 +67,42 @@ describe("trace assertions", () => {
     });
     expect(evaluateTraceAssertion({ type: "turn_uses_skill", skillName: "retrieval.answer" }, output).status).toBe("pass");
     expect(evaluateTraceAssertion({ type: "turn_uses_skill", skillName: "clarification.answer" }, output).status).toBe("fail");
+  });
+
+  it("sees a skill a routine step dispatched, and turn_skips_skill is its negation", () => {
+    const routineTurn = (steps: Array<Record<string, unknown>>) => observed({
+      turnTrace: trace([
+        {
+          id: `routine:${START_RETURN_ROUTINE_ID}`,
+          kind: "routine_activate",
+          status: "applied",
+          outputs: { routineId: START_RETURN_ROUTINE_ID },
+          subTrace: {
+            namespace: "routine",
+            version: 1,
+            payload: {
+              routineId: START_RETURN_ROUTINE_ID,
+              startStepId: "ask_order",
+              landedStepId: "done",
+              capturedSlotKeys: [],
+              filledSlotKeys: ["orderId", "reason"],
+              steps,
+            },
+          },
+        },
+      ]),
+    });
+    const dispatched = routineTurn([
+      { stepId: "ask_order", kind: "chat", event: "fast_forwarded" },
+      { stepId: "create_return", kind: "skill", event: "skill_dispatched", skillName: "create_return_ticket", skillStatus: "completed" },
+    ]);
+    const waiting = routineTurn([{ stepId: "ask_reason", kind: "chat", event: "rendered" }]);
+
+    expect(evaluateTraceAssertion({ type: "turn_uses_skill", skillName: "create_return_ticket" }, dispatched).status).toBe("pass");
+    expect(evaluateTraceAssertion({ type: "turn_skips_skill", skillName: "create_return_ticket" }, dispatched).status).toBe("fail");
+    expect(evaluateTraceAssertion({ type: "turn_uses_skill", skillName: "create_return_ticket" }, waiting).status).toBe("fail");
+    expect(evaluateTraceAssertion({ type: "turn_skips_skill", skillName: "create_return_ticket" }, waiting).status).toBe("pass");
+    expect(evaluateTraceAssertion({ type: "turn_skips_skill", skillName: "create_return_ticket" }, observed({})).status).toBe("error");
   });
 
   it("passes turn_activates_routine and routine_step_reached from the routine stage + subtrace", () => {
@@ -617,9 +654,26 @@ describe("seed fixtures", () => {
     ).toThrow();
   });
 
+  it("accepts a routine invocation in place of a query and rejects a case with neither", () => {
+    const [parsed] = parseConversationQualityCases([
+      {
+        id: "invoke",
+        name: "invoke",
+        routineInvocation: { toolName: "start_return", input: { orderId: "A-1001", reason: "Wrong size" } },
+        assertions: [{ type: "turn_skips_skill", skillName: "create_return_ticket" }],
+      },
+    ]);
+    expect(parsed?.routineInvocation).toEqual({ toolName: "start_return", input: { orderId: "A-1001", reason: "Wrong size" } });
+    expect(parsed?.query).toBeUndefined();
+    expect(() => parseConversationQualityCases([{ id: "neither", name: "neither", assertions: [] }])).toThrow();
+    expect(() => parseConversationQualityCases([
+      { id: "both", name: "both", query: "hi", routineInvocation: { toolName: "start_return", input: {} }, assertions: [] },
+    ])).toThrow();
+  });
+
   it("only references document and routine ids that exist in the fixtures", () => {
     const documentIds = new Set(conversationQualityCorpus.map((doc) => doc.id));
-    const routineIds = new Set([CONTACT_SUPPORT_ROUTINE_ID, BOOK_DEMO_ROUTINE_ID]);
+    const routineIds = new Set([CONTACT_SUPPORT_ROUTINE_ID, BOOK_DEMO_ROUTINE_ID, START_RETURN_ROUTINE_ID]);
     for (const evalCase of conversationQualityCases) {
       for (const assertion of evalCase.assertions) {
         if ("documentId" in assertion) {

@@ -50,8 +50,8 @@ describe("AgentConverseService conversation publisher seam", () => {
       },
     };
 
-    await service.askAgent(principal, { message: "first" });
-    await service.askAgent(principal, { message: "second" });
+    await service.askAgent(principal, { kind: "message", message: "first" });
+    await service.askAgent(principal, { kind: "message", message: "second" });
 
     expect(publisher.enqueue).toHaveBeenCalledTimes(1);
     expect(publisher.enqueue).toHaveBeenCalledWith("workspace-1", ["conversation.created"]);

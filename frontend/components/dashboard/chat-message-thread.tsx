@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import { TypingIndicator } from '@/components/ui/typing-indicator'
-import { Check, CircleCheckBig, Copy, PauseCircle, ThumbsDown, ThumbsUp, Workflow } from 'lucide-react'
+import { Check, CircleCheckBig, Copy, PauseCircle, ThumbsDown, ThumbsUp, Wrench, Workflow } from 'lucide-react'
 import { DEFAULT_WEBSITE_EMBED_COPY, type WebsiteEmbedCopy, type WebsiteEmbedTheme } from '@/lib/embed-widget'
 import { computeSkillGroupInfo } from '@/lib/skill-thread-grouping'
 import type { RoutineThreadMarker } from '@/lib/routine-thread-grouping'
@@ -131,6 +131,41 @@ export interface ChatThreadMessage {
   skill?: SkillStreamPayload
   /** Display name of the human operator who authored a takeover reply. */
   operatorDisplayName?: string
+}
+
+/**
+ * A calling agent's tool call, recorded with its structured form. Renders the tool
+ * name and each slot value it supplied; the message content stays the fallback.
+ */
+const RoutineInvocationBlock = ({
+  invocation,
+  fallback,
+}: {
+  invocation: NonNullable<ChatUserInputMetadata['routine']>
+  fallback: string
+}) => {
+  const entries = Object.entries(invocation.input ?? {})
+  if (!invocation.toolName) {
+    return <p className="select-text whitespace-pre-wrap text-sm">{linkifyText(fallback)}</p>
+  }
+  return (
+    <div className="select-text text-sm" data-testid="routine-invocation-block">
+      <div className="flex items-center gap-1.5 font-mono text-xs">
+        <Wrench className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+        <span>{invocation.toolName}</span>
+      </div>
+      {entries.length > 0 ? (
+        <dl className="mt-1.5 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
+          {entries.map(([key, value]) => (
+            <div key={key} className="contents">
+              <dt className="font-mono text-xs opacity-80">{key}</dt>
+              <dd className="break-words">{typeof value === 'string' ? value : JSON.stringify(value)}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : null}
+    </div>
+  )
 }
 
 const SKILL_ACCENT_FALLBACK = '#0f172a'
@@ -691,7 +726,11 @@ export function ChatMessageThread({
                           : undefined
                       }
                     >
-                      <p className="select-text whitespace-pre-wrap text-sm">{linkifyText(message.content)}</p>
+                      {message.inputMetadata?.method === 'routine_invocation' && message.inputMetadata.routine ? (
+                        <RoutineInvocationBlock invocation={message.inputMetadata.routine} fallback={message.content} />
+                      ) : (
+                        <p className="select-text whitespace-pre-wrap text-sm">{linkifyText(message.content)}</p>
+                      )}
                     </div>
                     {message.createdAt ? <p
                       className="px-1 text-xs text-muted-foreground"

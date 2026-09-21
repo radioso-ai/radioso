@@ -223,6 +223,7 @@ const seedFixtures = async (
         transitions: routine.transitions,
         terminals: routine.terminals,
         completionExport: routine.completionExport,
+        exposure: routine.exposure,
       });
       // A routine goes live the moment it is created — there is no separate publish step any
       // more, the agent's own Review & Publish is the one release gate.

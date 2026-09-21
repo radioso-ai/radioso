@@ -433,6 +433,7 @@ export class ChatTurnAssembly {
       accountId: input.accountId,
       pinnedRoutineIds: await this.routineCatalogPinIds(session, input.activeRoutine),
       previewRoutineIds: session.previewRoutineIds,
+      routineInvocation: session.routineInvocation,
       skillEffects: session.skillEffects,
       conversationDurability: session.conversationDurability,
       responseLanguage: input.responseLanguage,
@@ -514,6 +515,12 @@ export class ChatTurnAssembly {
         presentRoutineRenderableAnswer(this.options.chatAnswerPresenter, response),
     });
     if (!outcome) {
+      // A direct invocation the activator declined leaves no routine state; the
+      // turn answers normally and the envelope still names the completed routine.
+      const declinedRoutine = routineTurnPorts.reporter?.describeDeclined() ?? null;
+      if (declinedRoutine) {
+        session.declinedRoutine = declinedRoutine;
+      }
       return null;
     }
     this.recordTraceClarificationDecisions(outcome.result.trace);
@@ -646,6 +653,7 @@ export class ChatTurnAssembly {
       accountId: input.accountId,
       pinnedRoutineIds: await this.routineCatalogPinIds(session, null),
       previewRoutineIds: session.previewRoutineIds,
+      routineInvocation: session.routineInvocation,
       skillEffects: session.skillEffects,
       conversationDurability: session.conversationDurability,
       responseLanguage: input.responseLanguage,

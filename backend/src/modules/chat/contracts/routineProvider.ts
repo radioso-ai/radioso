@@ -15,6 +15,7 @@ import type {
   TurnExecutionMode,
 } from "../../../shared/domain/turnExecutionMode.js";
 import type { ChatTurnPlanHandle } from "../services/turnPlanCoordinator.js";
+import type { RoutineInvocation } from "./routineInvocation.js";
 import type { ChatRoutineTurnReporter } from "./routineTurnState.js";
 
 /**
@@ -37,6 +38,11 @@ export interface ChatRoutineProvider {
      * for every live end-user turn.
      */
     previewRoutineIds?: string[];
+    /**
+     * A calling agent's tool call naming one exposed routine; the provider admits it
+     * directly instead of matching. Absent on every message turn.
+     */
+    routineInvocation?: RoutineInvocation;
     executionMode?: TurnExecutionMode;
     skillEffects?: SkillEffectPolicy;
     conversationDurability?: ConversationDurability;

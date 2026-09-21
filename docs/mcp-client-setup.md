@@ -1,7 +1,7 @@
 ---
 title: "MCP Client Setup"
 description: "Connect an MCP client either to one Radioso agent or to Ray's governed operator tools."
-last_updated: 2026-09-21
+last_updated: 2026-09-22
 ---
 
 # MCP Client Setup
@@ -129,6 +129,79 @@ Read it field by field:
 - `traceId` is the turn's trace id, the one an operator sees in Activity; quote it when you report a problem.
 
 The standalone MCP server forwards this envelope unchanged as the `ask_agent` tool's `structuredContent`; the tool's text content is `answer.text`. The REST agent channel (`POST /api/v1/agents/{agentId}/chat`) returns the same `answerCoverage`, `ownership`, `routine`, and `traceId` fields beside its own `answer` string and `citations` array, and its SSE `done` frame carries them too.
+
+### Routines as tools
+
+An operator can expose a routine as a named tool (see [Authoring Routines](./authoring-routines.md#expose-a-routine-as-a-tool)). Read the catalog once per session to see what the agent can do beyond answering:
+
+```http
+GET /api/v1/mcp/converse/tools
+Authorization: Bearer <session token>
+```
+
+```json
+{
+  "agent": { "name": "Acme Support", "description": null },
+  "tools": [
+    {
+      "toolName": "start_return",
+      "description": "Start a return for an order the customer already has.",
+      "routineLineageId": "7c1e…",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "orderId": { "type": "string", "description": "The order number on the confirmation email." },
+          "reason": { "type": "string", "description": "Why the order is coming back." }
+        },
+        "required": ["orderId"],
+        "additionalProperties": false
+      }
+    }
+  ]
+}
+```
+
+Each descriptor's `inputSchema` is JSON Schema built from the routine's declared slots: `text` becomes `string`, `number` and `boolean` keep their types, `email` is `string` with `format: "email"`, `date` is `string` with `format: "date"` (an ISO calendar day such as `2026-09-01`), and `required` follows the slot. A routine with no slots is a tool with an empty object schema.
+
+Call a tool by sending `routine` instead of `message` on the same ask route. The routine starts at once with those slots filled, skips the steps that would have asked for them, and then behaves exactly as it would for a person: confirmation steps, approvals, and handoff all apply.
+
+```http
+POST /api/v1/mcp/converse/ask
+Authorization: Bearer <session token>
+
+{ "routine": { "toolName": "start_return", "input": { "orderId": "A-1001" } } }
+```
+
+The reply is the same envelope, and `routine` tells you where the call landed:
+
+```json
+{
+  "conversationId": "5f3c…",
+  "answer": { "text": "Got it — order A-1001. Why is it coming back?", "citations": [] },
+  "answerCoverage": { "availability": "not_recorded", "originatingTurnId": "c3…", "originatingRequestId": "c3…" },
+  "ownership": { "state": "ai_owned", "suppressed": false },
+  "routine": {
+    "toolName": "start_return",
+    "name": "Start a return",
+    "status": "waiting_for_input",
+    "pendingInput": [
+      { "key": "reason", "type": "text", "required": false, "description": "Why the order is coming back." }
+    ]
+  }
+}
+```
+
+Supply the pending slots in a follow-up `message`; the routine reads them the way it reads any reply. A call with every slot the routine collects runs straight through to its skill steps and reports `status: "completed"`, or `waiting_for_approval` when a step needs a person's decision.
+
+Input is checked against the descriptor before anything is recorded, so a bad call leaves the conversation untouched:
+
+- An unknown tool name returns `404` with `error.details.code` `routine_tool_unknown`.
+- Input that does not match the schema returns `400` with `error.details.code` `routine_invocation_invalid` and `error.details.errors`, one entry per field: `{ "path": "orderId", "code": "required" }`, with `code` one of `required`, `type`, `format`, or `unknown_field`. Fix every listed field in one retry; values are never echoed back.
+- A body with both `message` and `routine`, or neither, returns `400`.
+
+Reentry follows the routine's own setting. Calling a tool whose routine already completed in this conversation under **Once per conversation** answers normally and still carries `routine: { "toolName", "name", "status": "completed", "pendingInput": [] }`, so a client learns why nothing started; under **Every time it matches** the routine starts again with the new input. If a different routine is mid-flight, the call is treated like any other message to it.
+
+The catalog reflects the agent's current published release. A conversation stays pinned to the release it started on, so a routine exposed or renamed after that point is listed by `tools` before the conversation can run it; open a new session (a fresh conversation) to use it. Draft routines are never listed — the operator's Test Chat is the place to try one.
 
 If another ask arrives for the same conversation before the first reply starts,
 the first request returns HTTP `409` with error code `chat_turn_superseded`. The

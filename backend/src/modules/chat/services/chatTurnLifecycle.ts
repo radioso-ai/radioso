@@ -491,6 +491,7 @@ const notRecordedAnswerCoverage = (requestMessageId: string): ChatAnswerCoverage
 });
 
 const describeRoutineTurn = (input: {
+  session: Pick<PreparedSession, "declinedRoutine">;
   routineStateTransition?: CapturedRoutineTransition | null;
   routineReporter?: ChatRoutineTurnReporter;
   suspended?: boolean;
@@ -500,7 +501,7 @@ const describeRoutineTurn = (input: {
         state: input.routineStateTransition.state,
         awaitingDecision: input.suspended === true,
       })
-    : null;
+    : input.session.declinedRoutine ?? null;
 
 export class ChatTurnLifecycle {
   private readonly activitySummaryPresenter = new ActivitySummaryPresenter();

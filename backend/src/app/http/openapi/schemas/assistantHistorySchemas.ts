@@ -584,6 +584,25 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     }),
   );
 
+  // How a recorded user message was produced. `routine_invocation` is a calling
+  // agent's tool call: `routine` carries its structured form for tool-call rendering
+  // while `content` holds the same call as text.
+  const UserMessageInputMetadataSchema = registry.register(
+    "UserMessageInputMetadata",
+    z.object({
+      method: z.enum(["typed", "suggestion_click", "intent_click", "routine_invocation"]),
+      suggestionSourceMessageId: z.string().uuid().optional(),
+      intent: z.object({
+        skillName: z.string(),
+        intentName: z.string().optional(),
+      }).optional(),
+      routine: z.object({
+        toolName: z.string(),
+        input: z.record(z.unknown()),
+      }).optional(),
+    }),
+  );
+
   // Shared by the operator and public message schemas. `debug` and `turnFailure` are
   // operator-only and are added on top of this shape for the dashboard schema alone:
   // both carry turn diagnostics (and `turnFailure` carries raw error text), and the
@@ -594,14 +613,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     source: z.enum(["customer", "ai_agent", "human_agent", "human_agent_on_behalf_of_ai_agent", "system"]),
     content: z.string(),
     createdAt: z.string().datetime(),
-    inputMetadata: z.object({
-      method: z.enum(["typed", "suggestion_click", "intent_click"]),
-      suggestionSourceMessageId: z.string().uuid().optional(),
-      intent: z.object({
-        skillName: z.string(),
-        intentName: z.string().optional(),
-      }).optional(),
-    }).optional(),
+    inputMetadata: UserMessageInputMetadataSchema.optional(),
     citations: z.array(schemas.CitationSchema).optional(),
     answerSegments: z.array(schemas.AnswerSegmentSchema).optional(),
     suggestions: z.array(ChatSuggestionSchema).optional(),
@@ -640,14 +652,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       source: z.enum(["customer", "ai_agent", "human_agent", "human_agent_on_behalf_of_ai_agent", "system"]).optional(),
       content: z.string(),
       metadata: z.record(z.unknown()).optional(),
-      inputMetadata: z.object({
-        method: z.enum(["typed", "suggestion_click", "intent_click"]),
-        suggestionSourceMessageId: z.string().uuid().optional(),
-        intent: z.object({
-          skillName: z.string(),
-          intentName: z.string().optional(),
-        }).optional(),
-      }).optional(),
+      inputMetadata: UserMessageInputMetadataSchema.optional(),
       skillName: z.string().optional(),
       skillOutcome: z.string().optional(),
       skillStatus: z.string().optional(),

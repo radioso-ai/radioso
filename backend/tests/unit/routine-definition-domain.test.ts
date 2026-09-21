@@ -227,6 +227,23 @@ describe("routine definition compiler and validator", () => {
     expect(validateRoutineDefinition(baseDefinition())).toEqual({ ok: true, diagnostics: [] });
   });
 
+  it("carries the lineage and, only while enabled, the exposed tool name in compiled metadata", () => {
+    const plain = compileRoutineDefinition(baseDefinition());
+    const exposed = compileRoutineDefinition({
+      ...baseDefinition(),
+      exposure: { enabled: true, toolName: "collect_intro", description: "Collect a visitor intro." },
+    });
+    const parked = compileRoutineDefinition({
+      ...baseDefinition(),
+      exposure: { enabled: false, toolName: "collect_intro", description: "" },
+    });
+
+    expect(plain.metadata).toMatchObject({ lineageId: baseDefinition().lineageId });
+    expect(plain.metadata).not.toHaveProperty("exposure");
+    expect(exposed.metadata).toMatchObject({ exposure: { toolName: "collect_intro" } });
+    expect(parked.metadata).not.toHaveProperty("exposure");
+  });
+
   it("compiles publishable structured transition guards additively", () => {
     const definition: RoutineDefinition = {
       ...baseDefinition(),

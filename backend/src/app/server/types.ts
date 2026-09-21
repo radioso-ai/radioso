@@ -84,7 +84,7 @@ import type { AgentSkillsService } from "../../modules/agentSkills/public.js";
 import type { AgentBundleExportService, AgentBundleImportCleanupWorker, AgentBundleImportService } from "../../modules/agentBundle/public.js";
 import type { SkillCapabilityRegistry } from "../../modules/skills/public.js";
 import type { AgentService, AgentSurfaceExtensionRegistry, AuthoredDirectiveService, DirectiveAuthorService } from "../../modules/agents/public.js";
-import type { RoutineDefinitionService, RoutineDraftAssistService } from "../../modules/routines/public.js";
+import type { AgentToolCatalogPort, RoutineDefinitionService, RoutineDraftAssistService } from "../../modules/routines/public.js";
 import type { AgentRepositoryPort } from "../../db/repositories/agentRepository.js";
 import type {
   ContextVariableResolutionReaderPort,
@@ -247,6 +247,8 @@ export interface AppDependencies {
   slackInboundEventRetentionWorker: TtlRetentionWorker;
   chatBootstrapService: ChatBootstrapService;
   agentStarterPromptReader: AgentStarterPromptReader;
+  /** Exposed-routine descriptors a calling agent lists and both agent-facing doors validate tool calls against. */
+  agentToolCatalog: AgentToolCatalogPort;
   chatHistoryService: ChatHistoryService;
   assistantChatService: AssistantChatService;
   assistantHistoryService: AssistantHistoryService;

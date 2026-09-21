@@ -5,6 +5,7 @@ import type { AgentConverseAudit } from "./agentConverseAudit.js";
 import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
 import type { ChatCitation } from "../contracts/answerTypes.js";
 import { buildAgentReplyEnvelope, isChatTurnResponse, type AgentReplyEnvelopeCore } from "./agentReplyEnvelope.js";
+import { chatRequestInputFor, type AgentTurnInput } from "./agentTurnInput.js";
 
 interface AgentConverseConversationStore {
   getOrCreateByAnonymousSession?(input: {
@@ -38,7 +39,8 @@ export class AgentConverseService {
     },
   ) {}
 
-  async askAgent(principal: AgentConversePrincipal, input: { message: string; stream?: boolean }): Promise<AgentConverseAskResult> {
+  /** `input` is already resolved (`resolveAgentTurnInput`), so a bad tool call never reaches here. */
+  async askAgent(principal: AgentConversePrincipal, input: AgentTurnInput): Promise<AgentConverseAskResult> {
     try {
       const getOrCreateConversation =
         this.dependencies.conversationRepository.getOrCreateByAnonymousSession?.bind(
@@ -62,15 +64,16 @@ export class AgentConverseService {
       const response = await this.dependencies.assistantChatService.answer({
         workspaceId: principal.workspaceId,
         agentId: principal.agentId,
-        message: input.message,
+        ...chatRequestInputFor(input),
         stream: false,
         conversationId: conversation.record.id,
         anonymousSessionId: principal.publicSessionId,
         sourceChannel: "mcp",
         sourceOrigin: null,
       });
-      // The converse route always sends a message, never `startConversation`, so
-      // the reply is a completed turn; a missing turn or conversation is a fault.
+      // The converse route always runs a turn (a message or a tool call), never
+      // `startConversation`, so the reply is a completed turn; a missing turn or
+      // conversation is a fault.
       if (!response || !isChatTurnResponse(response)) {
         throw serviceUnavailable("MCP converse response is unavailable.", {
           code: "mcp_converse_empty_response",

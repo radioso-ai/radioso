@@ -18,6 +18,8 @@ import type {
   MessageRole,
   UserMessageInputMetadata,
 } from "../../../db/repositories/messageRepository.js";
+import type { RoutineInvocation } from "../contracts/routineInvocation.js";
+import type { ChatRoutineTurnState } from "../contracts/routineTurnState.js";
 import { isAudiencePulseCustomerSource, isAudiencePulseEndUserChannel } from "../audiencePulseHistorySource.js";
 import type { FacetExtractionJobStore } from "../../facets/public.js";
 import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
@@ -189,6 +191,18 @@ export interface PreparedSession {
    */
   previewRoutineIds?: string[];
   /**
+   * A calling agent's tool call carried from {@link PrepareChatSessionInput}; the routine
+   * provider admits the named routine directly. Absent on every message turn.
+   */
+  routineInvocation?: RoutineInvocation;
+  /**
+   * Set by the routine turn when a direct invocation named a routine the activator
+   * declined (already completed under `once_per_conversation`): the turn falls through to
+   * a normal answer, and the lifecycle reports this state in the reply envelope so the
+   * caller learns why nothing started. Absent on every other turn.
+   */
+  declinedRoutine?: ChatRoutineTurnState;
+  /**
    * Rolling conversation summary text (issue #866), loaded once at prepare from the
    * per-conversation summary store. Absent for new/short conversations. Injected
    * alongside the recent-message window into turn interpretation and answer
@@ -282,6 +296,11 @@ export interface PrepareChatSessionInput {
    * persisted; only the authenticated workbench chat sets it.
    */
   previewRoutineIds?: string[];
+  /**
+   * A calling agent's tool call, resolved and validated before this turn. `query` is its
+   * rendered text; the recorded user message carries the structured form as input metadata.
+   */
+  routineInvocation?: RoutineInvocation;
 }
 
 interface PrepareChatSessionOptions {
@@ -326,6 +345,15 @@ interface WorkbenchReplayBaselineCapability {
 export const historicalWorkbenchReplayBaseline: WorkbenchReplayBaselineCapability = {
   [historicalWorkbenchReplayBaselineBrand]: true,
 };
+
+/**
+ * The recorded form of a tool call: Activity and the Inbox render it as a tool-call block
+ * from this, while the message content stays the rendered text a person would have typed.
+ */
+const routineInvocationInputMetadata = (invocation: RoutineInvocation): UserMessageInputMetadata => ({
+  method: "routine_invocation",
+  routine: { toolName: invocation.toolName, input: { ...invocation.input } },
+});
 
 export class ChatSessionPreparer {
   constructor(
@@ -496,7 +524,9 @@ export class ChatSessionPreparer {
       workspaceId: input.workspaceId,
       role: "user",
       content: input.query,
-      inputMetadata: input.inputMetadata,
+      inputMetadata: input.routineInvocation
+        ? routineInvocationInputMetadata(input.routineInvocation)
+        : input.inputMetadata,
     }));
     this.enqueueFacetExtraction(userMessage, persistedConversation);
     // The direct-only (non-grounded) base turn. Used as-is when retrieval is
@@ -561,6 +591,7 @@ export class ChatSessionPreparer {
         : {}),
       ...(options.preResolvedHostVariables ? { preResolvedHostVariables: options.preResolvedHostVariables } : {}),
       previewRoutineIds: input.previewRoutineIds,
+      routineInvocation: input.routineInvocation,
       ...this.stagedSpineFor(retrieval, null, hostVariables, requestFacts),
     };
   }

@@ -141,6 +141,16 @@ The tool's text content is the agent's answer. Its `structuredContent` is the **
 
 The REST agent channel, `POST /api/v1/agents/{agentId}/chat`, returns the same `answerCoverage`, `ownership`, `routine`, and `traceId` fields beside its `answer` string and `citations` array. Both routes publish the envelope as `AgentReplyEnvelopeCore` in the OpenAPI document.
 
+### Routines as tools
+
+A routine an operator has [exposed as a tool](/guides/authoring-routines#expose-a-routine-as-a-tool) is listed for the session by `GET /api/v1/mcp/converse/tools`, one `AgentToolDescriptor` per routine with a JSON Schema `inputSchema` built from the routine's declared slots. A direct converse client invokes it by sending `routine` instead of `message` on the ask route:
+
+```json
+{ "routine": { "toolName": "start_return", "input": { "orderId": "A-1001" } } }
+```
+
+The routine starts with those slots filled, skips the steps that would have asked for them, and reports where it landed in the envelope's `routine` field (`toolName` names the tool). Input is validated against the descriptor before anything is recorded: an unknown tool returns `404` with `error.details.code` `routine_tool_unknown`; mismatched input returns `400` with `routine_invocation_invalid` and one `{ path, code }` entry per field (`required`, `type`, `format`, `unknown_field`). A conversation keeps the release it started on, so a routine exposed after that shows up in the catalog but runs from the next session. Calling a tool whose routine already completed in the conversation under **Once per conversation** answers normally and still reports `routine.status: "completed"`, so the client learns why nothing started.
+
 The converse session does not grant access to other agents, workspace administration, account management, API-access settings, Ray, the skill catalogue, connector secrets, or provider keys.
 
 ## Radioso documentation tools
@@ -176,6 +186,7 @@ An existing document's body, its upload, its reprocessing, and its removal stay 
 - **The MCP endpoint returns `401`.** Confirm that the bearer is an active, unexpired MCP-audience credential for this agent. A personal token, service-account credential, or REST-audience agent credential is rejected.
 - **The converse client cannot connect.** Confirm the MCP URL is reachable over HTTPS for hosted clients, and check `RADIOSO_BASE_URL` and the standalone bind settings. When Redis is configured, check `RADIOSO_MCP_SIGNING_SECRET` too.
 - **A converse session is rejected.** Its credential may be revoked, expired, or issued for a different agent. Create or revoke credentials from the agent's MCP card with a current dashboard session.
+- **A routine call returns `404 routine_tool_unknown`.** The routine is not exposed, is switched off, or is only in the agent's draft. Switch exposure on in the routine editor and publish the agent; the tool appears in the next session's catalog.
 
 ## Read next
 

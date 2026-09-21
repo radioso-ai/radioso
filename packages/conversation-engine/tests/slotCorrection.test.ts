@@ -42,6 +42,25 @@ describe("verifySlotCorrection", () => {
       .toEqual({ ok: false, reason: "immutable" });
   });
 
+  it("accepts dotted, single-label, and non-ASCII email domains", () => {
+    for (const rawValue of ["a@b.c.d.com", "user@localhost.local", "üñî@dömäin.çöm", "x@xn--bcher-kva.example"]) {
+      expect(verifySlotCorrection({ slots, slotKey: "email", rawValue })).toEqual({ ok: true, key: "email", value: rawValue });
+    }
+  });
+
+  it("rejects email domains with empty labels", () => {
+    for (const rawValue of ["a@b..com", "a@b.com.", "a@.b.com", "a@b..", "a@b"]) {
+      expect(verifySlotCorrection({ slots, slotKey: "email", rawValue })).toEqual({ ok: false, reason: "invalid_value" });
+    }
+  });
+
+  it("validates a pathological email in linear time", () => {
+    const rawValue = `a@${"a.".repeat(100_000)} `;
+    const startedAt = performance.now();
+    expect(verifySlotCorrection({ slots, slotKey: "email", rawValue })).toEqual({ ok: false, reason: "invalid_value" });
+    expect(performance.now() - startedAt).toBeLessThan(200);
+  });
+
   it("rejects a value that fails its declared type", () => {
     expect(verifySlotCorrection({ slots, slotKey: "email", rawValue: "not-an-email" }))
       .toEqual({ ok: false, reason: "invalid_value" });

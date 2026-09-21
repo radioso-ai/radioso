@@ -1,7 +1,7 @@
 'use client'
 
 import { useContext, type ReactNode } from 'react'
-import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, CheckCircle2, CircleDashed, CornerUpRight, GitBranch, ListChecks, Plus, Wrench } from 'lucide-react'
+import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, CheckCircle2, CircleDashed, CornerUpRight, GitBranch, Plus } from 'lucide-react'
 
 import { findRoutineSkillDescriptor, RoutineSkillCatalogContext } from '@/components/dashboard/settings/routine-skill-catalog-popover'
 import { Button } from '@/components/ui/button'
@@ -203,10 +203,11 @@ export function RoutineStepRow({ step, stepIndex, slotNames, index, nextStepId =
   const instruction = editing === 'instruction'
     ? <div className="min-w-0 flex-1">{instructionEditor}</div>
     : <button type="button" aria-label="Instruction" onClick={onEditInstruction} disabled={!editable} className="group block min-w-0 flex-1 text-left disabled:cursor-default"><InstructionSentence segments={step.instruction} editable={editable} /><EditHint editable={editable} /></button>
-  // The skill or approval identity reads as a chip inline with the sentence — the same visual
-  // language as a variable chip — rather than a right-aligned pill announcing the row's kind.
-  // It is still the same "open the step editor" control non-chat kinds have always had.
-  const kindBadge = !isChat ? <button type="button" aria-label={label} onClick={onEditStep} disabled={!editable} className="group mr-1.5 inline-flex shrink-0 items-center gap-1 rounded-md border border-sky-300 bg-sky-100 px-1.5 py-0 align-baseline text-xs font-medium text-sky-900 disabled:cursor-default">{step.kind === 'approval' ? <ListChecks className="h-3 w-3" /> : <Wrench className="h-3 w-3" />}{label}</button> : null
+  // The skill or approval identity reads as a chip inline with the sentence — the same quiet
+  // "@name" treatment a variable chip gets, muted background and all, not a coloured pill with
+  // its own icon — so a step reads as one continuous line of prose with tokens in it. It is
+  // still the same "open the step editor" control non-chat kinds have always had.
+  const kindBadge = !isChat ? <button type="button" aria-label={label} onClick={onEditStep} disabled={!editable} className="group mr-1.5 inline-flex shrink-0 items-baseline gap-0.5 rounded-sm bg-muted/50 px-1 py-0 align-baseline text-foreground outline-none hover:bg-muted disabled:cursor-default disabled:hover:bg-muted/50"><span className="text-muted-foreground">@</span>{label}</button> : null
   const plainBranchRows: ReactNode[] = []
   const railBranchRows: ReactNode[] = []
   let anyBranchEditing = false

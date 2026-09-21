@@ -13,7 +13,9 @@ export type SlackTurnSurfaceRef =
   | { kind: "dm" | "channel" }
   | { kind: "dm_session"; threadTs: string };
 
-type SlackTurnOutcome = "answered" | "failed" | "superseded";
+// "silent": the turn completed but produced nothing to post — a conversation a person has
+// taken over answers this way. The surface stops signalling work and claims no outcome.
+export type SlackTurnOutcome = "answered" | "silent" | "failed" | "superseded";
 
 interface SlackTurnSurface {
   /** The turn is being worked on. */

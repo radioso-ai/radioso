@@ -73,6 +73,12 @@ describe("splitSlackMarkdownText", () => {
     expect(splitSlackMarkdownText("a".repeat(25), 10)).toEqual(["a".repeat(10), "a".repeat(10), "a".repeat(5)]);
   });
 
+  it("never emits an empty chunk, even when the tail is only blank lines", () => {
+    expect(splitSlackMarkdownText("para one\n\n\n\n", 8)).toEqual(["para one"]);
+    expect(splitSlackMarkdownText("abcdefgh\n\nxy\n\n\n", 10)).toEqual(["abcdefgh", "xy"]);
+    expect(splitSlackMarkdownText("   \n\n", 10)).toEqual([]);
+  });
+
   it("never emits a chunk over the limit and never loses content", () => {
     const paragraphs = Array.from({ length: 40 }, (_, index) => `Paragraph ${index} ${"word ".repeat(index % 7)}`.trim());
     const text = paragraphs.join("\n\n");

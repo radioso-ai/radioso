@@ -153,6 +153,17 @@ describe("MCP converse HTTP contract", () => {
     expect(document.components?.schemas?.RoutineTurnState).toMatchObject({
       properties: { toolName: { type: "string" } },
     });
+    expect(document.components?.schemas?.RoutineInvocationInvalidDetails).toMatchObject({
+      required: ["code", "toolName", "errors"],
+      properties: {
+        code: { enum: ["routine_invocation_invalid"] },
+        errors: { items: { $ref: "#/components/schemas/RoutineInvocationError" } },
+      },
+    });
+    expect(document.components?.schemas?.RoutineInvocationError).toMatchObject({
+      required: ["path", "code"],
+      properties: { code: { enum: ["required", "type", "format", "unknown_field", "too_long"] } },
+    });
 
     const restChat = document.paths?.["/api/v1/agents/{agentId}/chat"]?.post;
     expect(document.components?.schemas?.AgentChannelChatRequest).toMatchObject({

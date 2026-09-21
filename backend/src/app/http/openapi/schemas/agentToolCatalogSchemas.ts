@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 
+import { ROUTINE_INVOCATION_MAX_STRING_LENGTH, routineInvocationErrorCodes } from "../../../../modules/routines/public.js";
 import type { OpenApiSchemaCatalog } from "../openApiRegistry.js";
 
 /**
@@ -52,9 +53,32 @@ export const registerAgentToolCatalogSchemas = (registry: OpenAPIRegistry, schem
     }),
   );
 
+  const RoutineInvocationErrorSchema = registry.register(
+    "RoutineInvocationError",
+    z.object({
+      path: z.string().openapi({ description: "The slot key the problem is on." }),
+      code: z.enum(routineInvocationErrorCodes),
+    }).openapi({
+      description: `One field-level problem with a tool call's input. \`too_long\` is a string value over ${ROUTINE_INVOCATION_MAX_STRING_LENGTH} characters; \`format\` is an \`email\` or \`date\` slot whose value does not parse as one.`,
+    }),
+  );
+
+  const RoutineInvocationInvalidDetailsSchema = registry.register(
+    "RoutineInvocationInvalidDetails",
+    z.object({
+      code: z.literal("routine_invocation_invalid"),
+      toolName: z.string(),
+      errors: z.array(RoutineInvocationErrorSchema),
+    }).openapi({
+      description: "The `error.details` of a 400 that refused a tool call before any turn state was written: every problem at once, so a caller can fix the whole call in one retry. Values are never echoed back.",
+    }),
+  );
+
   Object.assign(schemas, {
     AgentToolInputSchemaSchema,
     AgentToolDescriptorSchema,
     McpConverseToolsResponseSchema,
+    RoutineInvocationErrorSchema,
+    RoutineInvocationInvalidDetailsSchema,
   });
 };

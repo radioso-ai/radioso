@@ -14,7 +14,17 @@ export interface RoutineInvocation {
   input: Record<string, RoutineInvocationInputValue>;
 }
 
-type RoutineInvocationErrorCode = "required" | "type" | "format" | "unknown_field";
+/** Every field-level reason a tool call's input can be refused; published in OpenAPI as-is. */
+export const routineInvocationErrorCodes = ["required", "type", "format", "unknown_field", "too_long"] as const;
+type RoutineInvocationErrorCode = (typeof routineInvocationErrorCodes)[number];
+
+/**
+ * The longest string one slot accepts from a tool call. A slot value becomes a routine
+ * variable the model reads on every later step, so the cap bounds prompt growth the
+ * way the chat message limit bounds a typed turn; the whole call is also bounded at
+ * the HTTP edge.
+ */
+export const ROUTINE_INVOCATION_MAX_STRING_LENGTH = 2000;
 
 /** One field-level problem with a tool call's input, named by slot key. */
 interface RoutineInvocationError {
@@ -95,6 +105,10 @@ export const validateRoutineInvocation = (descriptor: AgentToolDescriptor, rawIn
     }
     if (!hasExpectedType(property, value)) {
       errors.push({ path: key, code: "type" });
+      continue;
+    }
+    if (typeof value === "string" && value.length > ROUTINE_INVOCATION_MAX_STRING_LENGTH) {
+      errors.push({ path: key, code: "too_long" });
       continue;
     }
     if (typeof value === "string" && !hasExpectedFormat(property, value)) {

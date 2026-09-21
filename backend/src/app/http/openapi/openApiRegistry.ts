@@ -122,6 +122,8 @@ export interface OpenApiSchemaCatalog {
   ChatOwnershipAckSchema: z.ZodTypeAny;
   McpConverseAskResponseSchema: z.ZodTypeAny;
   McpConverseToolsResponseSchema: z.ZodTypeAny;
+  RoutineInvocationErrorSchema: z.ZodTypeAny;
+  RoutineInvocationInvalidDetailsSchema: z.ZodTypeAny;
   RoutinePendingInputSchema: z.ZodTypeAny;
   RoutineTurnStateSchema: z.ZodTypeAny;
   AssistantLogoUploadRequestSchema: z.ZodTypeAny;

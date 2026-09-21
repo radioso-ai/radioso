@@ -132,7 +132,7 @@ The standalone MCP server forwards this envelope unchanged as the `ask_agent` to
 
 ### Routines as tools
 
-An operator can expose a routine as a named tool (see [Authoring Routines](./authoring-routines.md#expose-a-routine-as-a-tool)). Read the catalog once per session to see what the agent can do beyond answering:
+An operator can expose a routine as a named tool (see [Authoring Routines](./authoring-routines.md#expose-a-routine-as-a-tool)). Read the catalog to see what the agent can do beyond answering:
 
 ```http
 GET /api/v1/mcp/converse/tools
@@ -196,16 +196,16 @@ Supply the pending slots in a follow-up `message`; the routine reads them the wa
 Input is checked against the descriptor before anything is recorded, so a bad call leaves the conversation untouched:
 
 - An unknown tool name returns `404` with `error.details.code` `routine_tool_unknown`.
-- Input that does not match the schema returns `400` with `error.details.code` `routine_invocation_invalid` and `error.details.errors`, one entry per field: `{ "path": "orderId", "code": "required" }`, with `code` one of `required`, `type`, `format`, or `unknown_field`. Fix every listed field in one retry; values are never echoed back.
+- Input that does not match the schema returns `400` with `error.details.code` `routine_invocation_invalid` and `error.details.errors`, one entry per field: `{ "path": "orderId", "code": "required" }`, with `code` one of `required`, `type`, `format`, `unknown_field`, or `too_long` (a string value over 2000 characters). Fix every listed field in one retry; values are never echoed back.
 - A body with both `message` and `routine`, or neither, returns `400`.
 
 Reentry follows the routine's own setting. Calling a tool whose routine already completed in this conversation under **Once per conversation** answers normally and still carries `routine: { "toolName", "name", "status": "completed", "pendingInput": [] }`, so a client learns why nothing started; under **Every time it matches** the routine starts again with the new input. If a different routine is mid-flight, the call is treated like any other message to it.
 
-The catalog reflects the agent's current published release. A conversation stays pinned to the release it started on, so a routine exposed or renamed after that point is listed by `tools` before the conversation can run it; open a new session (a fresh conversation) to use it. Draft routines are never listed — the operator's Test Chat is the place to try one.
+`GET /api/v1/mcp/converse/tools` returns the agent's current published catalog on every call; the session token only says which agent. The conversation behind the session stays on the release it started on, so a routine exposed or renamed after that point can appear in `tools` before the conversation can run it, and calling it returns `routine_tool_unknown`; rotating the credential starts a fresh conversation on the current release. Draft routines are never listed — the operator's Test Chat is the place to try one.
 
 ### Routine tools over standalone MCP
 
-An MCP client sees the same catalog without calling the REST route itself. The standalone server reads `GET /api/v1/mcp/converse/tools` once, when it exchanges the credential for a session, and pins the result to that session. `tools/list` for the session is then:
+An MCP client sees the same catalog without calling the REST route itself. The standalone server reads `GET /api/v1/mcp/converse/tools` once, at the moment it exchanges the credential for a session, and pins the result to that session, so `tools/list` is stable for the session's lifetime. It is then:
 
 - `ask_agent`
 - `radioso_docs` and `radioso_doc_page`, Radioso's own documentation
@@ -213,7 +213,7 @@ An MCP client sees the same catalog without calling the REST route itself. The s
 
 So the `start_return` example above appears to the client as a tool `start_return(orderId, reason?)`. Calling it is the routine invocation from the previous section: the server checks the arguments against the schema before the backend sees them (a call missing `orderId` fails at the MCP layer as a tool error), then sends `{ "routine": { "toolName": "start_return", "input": { … } } }` on the ask route. The result's `structuredContent` is the full agent reply envelope, and its text content is `answer.text` — the same shape `ask_agent` returns, so a client reads `routine.status` and `pendingInput` the same way whichever tool it called.
 
-The catalog is fixed for the session's lifetime. A routine exposed, renamed, or withdrawn after the session opened is picked up when the client's next session is established (after the current one expires, or after the credential is exchanged again); the server sends no `notifications/tools/list_changed`. When the pinned catalog and the release a conversation runs on disagree, the backend refuses the call and the client sees a tool error whose `details.code` is `routine_tool_unknown`.
+A routine exposed, renamed, or withdrawn after the session opened is picked up when the client's next session is established (after the current one expires, or after the credential is exchanged again); the server sends no `notifications/tools/list_changed`. When the pinned catalog and the release a conversation runs on disagree, the backend refuses the call and the client sees a tool error whose `details.code` is `routine_tool_unknown`.
 
 Operators who expose a routine under a name the server reserves for a static tool cannot publish it — the backend refuses reserved names. If a deployment ever presents one anyway, the server keeps the static tool, leaves that routine out of the session's list, and logs a warning.
 

@@ -62,6 +62,7 @@ const makeHandler = (input: {
   escalationChannelId?: string | null;
   gapEscalationEnabled?: boolean;
   outbox?: SlackPostOutboxPort;
+  conversationLinks?: { resolve: () => Promise<string | null> };
 }) => {
   const chat: ConnectorChatPort = {
     answer: vi.fn(async () => ({
@@ -117,6 +118,7 @@ const makeHandler = (input: {
       persistence: basePersistence(),
       slackPostOutbox: outbox,
       clientFactory: () => ({ postMessage: posted, addReaction: vi.fn(), removeReaction: vi.fn() }),
+      conversationLinks: input.conversationLinks,
     }),
     installationService,
   };
@@ -178,6 +180,20 @@ describe("Slack gap escalation policy", () => {
       conversationId: "44444444-4444-4444-4444-444444444444",
       workspaceId: installation.workspaceId,
     });
+  });
+
+  it("links the escalation post to the resolved conversation permalink", async () => {
+    const permalink = "https://app.radioso.ai/w/support-abc/activity?tab=all&filter=chat&itemKind=chat&itemId=conv_1";
+    const { handler, outbox } = makeHandler({
+      outcome: "no_context",
+      gapEscalationEnabled: true,
+      conversationLinks: { resolve: async () => permalink },
+    });
+
+    await handler.handleMessageIm(event);
+
+    const payload = vi.mocked(outbox.enqueue).mock.calls[0]?.[0].payload as { blocks: unknown[] };
+    expect(JSON.stringify(payload.blocks)).toContain(`<${permalink.replaceAll("&", "&amp;")}|Open in dashboard>`);
   });
 
   it("does not escalate an out-of-scope decline, which is correct behavior rather than a gap", async () => {

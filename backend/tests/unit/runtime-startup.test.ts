@@ -146,6 +146,7 @@ const createDependencies = () =>
     metricsRegistry: null,
     workspaceInvalidationPublisher: { enqueue: vi.fn(() => ({ accepted: false, reason: "disabled" })) },
     conversationLinks: { resolve: vi.fn(async () => null) },
+    agentStarterPromptReader: { listStarterPrompts: vi.fn(async () => []) },
     realtimePublisherLifecycle: { shutdown: vi.fn().mockResolvedValue(undefined) },
     credentialExpiryWarningLifecycle: {
       start: vi.fn().mockResolvedValue(undefined),
@@ -231,6 +232,7 @@ describe("runtime startup", () => {
       expect.objectContaining({
         workspaceInvalidationPublisher: dependencies.workspaceInvalidationPublisher,
         conversationLinks: dependencies.conversationLinks,
+        agentStarterPrompts: dependencies.agentStarterPromptReader,
       }),
     );
     expect(dependencies.applicationModules.initializeAll).toHaveBeenCalledOnce();

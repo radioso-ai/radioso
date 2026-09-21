@@ -449,6 +449,8 @@ describe("Slack agent session helpers", () => {
     expect(sessionTitleFromMessage("  hello\n\n  world  ")).toBe("hello world");
     expect(sessionTitleFromMessage("a".repeat(60))).toBe("a".repeat(60));
     expect(sessionTitleFromMessage("a".repeat(61))).toBe(`${"a".repeat(60)}…`);
+    // An emoji on the cut is a surrogate pair; the title must keep it whole rather than emit half of it.
+    expect(sessionTitleFromMessage(`${"a".repeat(59)}😀b`)).toBe(`${"a".repeat(59)}😀…`);
   });
 
   it("maps chip labels onto Slack prompt pairs", () => {

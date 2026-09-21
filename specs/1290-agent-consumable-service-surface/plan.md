@@ -470,3 +470,29 @@ Where the code differed from the file-level plan above:
   (`method` gains `routine_invocation`, plus `routine`); `chat-message-thread.tsx` renders the
   block (`data-testid="routine-invocation-block"`), and the request-side `inputMetadata` schema is
   unchanged so a client cannot claim the method.
+
+## Implementation notes (slice 4, 2026-09-22)
+
+- **Descriptors are stored on the session, not refetched.** `AccessSessionRecord.toolCatalog` is
+  `{ key, tools }` (one field, consistent by construction), written by `authService` right after
+  the exchange's `validate` and serialised by the Redis store as plain JSON (the record's only
+  secret stays the encrypted converse token). This makes "catalog fixed for the session's
+  lifetime" hold across server-cache eviction and across MCP replicas, and the http layer needs
+  no backend call to build a server. A record without the field renders the static tools only.
+- **Decision 8: pass-through.** `ToolDefinition.inputSchema` needs a Standard Schema object, and
+  the SDK ships `fromJsonSchema()` (AJV-backed, `email`/`date` formats, `additionalProperties`
+  honoured) for exactly that; `tools/routineToolSchema.ts` is a one-call wrapper. No five-shape
+  converter. The SDK rejects a schema miss as a tool result with `isError: true` before the
+  handler runs, so the backend only ever sees valid input from MCP.
+- **Server cache**: LRU keyed by catalog key, 64 entries, 15-minute idle TTL, concurrent first
+  requests for one key coalesced. Evicted servers are dropped without `close()`: in-flight
+  requests keep their reference and the JSON-response transport holds no timers.
+- **Name collisions** with static tools are filtered in `server.ts` with a `warn` (injectable,
+  defaults to `console.warn`); the reserved-name list on the backend makes this unreachable in
+  practice.
+- **Smoke**: the harness seeds a `start_return` routine through the test app's
+  `routineDefinitionService.createDraft` (a draft is already active there) and asserts
+  `tools/list`, a valid call's envelope, a schema-rejected call, and that the audit log carries the
+  tool name but no slot value; the Redis smoke asserts the second node lists the pinned catalog.
+- **Observability**: routine tool calls ride the existing `tool.executed`/`tool.failed`/`tool.denied`
+  audit events with `toolName` only; nothing else new.

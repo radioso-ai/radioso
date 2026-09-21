@@ -36,7 +36,7 @@ describe("standalone MCP pre-authentication controls", () => {
     const exchange = vi.fn();
     const server = createHttpServer({
       authService: createAuthService({
-        converseApi: { ask: vi.fn(), exchange, validate: vi.fn(), recordUse: vi.fn() },
+        converseApi: { ask: vi.fn(), exchange, validate: vi.fn(), recordUse: vi.fn(), tools: vi.fn() },
         sessionStore: createInMemorySessionStore(),
       }),
       config,
@@ -61,7 +61,7 @@ describe("standalone MCP pre-authentication controls", () => {
     const consume = vi.fn().mockReturnValue(false);
     const server = createHttpServer({
       authService: createAuthService({
-        converseApi: { ask: vi.fn(), exchange: vi.fn(), validate: vi.fn(), recordUse: vi.fn() },
+        converseApi: { ask: vi.fn(), exchange: vi.fn(), validate: vi.fn(), recordUse: vi.fn(), tools: vi.fn() },
         sessionStore: createInMemorySessionStore(),
       }),
       config: { ...config, trustedProxyHops: 2 },
@@ -148,6 +148,7 @@ describe("standalone MCP pre-authentication controls", () => {
             permissions: [],
           }),
           recordUse,
+          tools: vi.fn().mockResolvedValue({ agent: { name: "Agent", description: null }, tools: [] }),
         },
         sessionStore: createInMemorySessionStore(),
       }),

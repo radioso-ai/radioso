@@ -5,6 +5,7 @@ import { RadiosoApiError } from "../converseApiAdapter.js";
 import { toMcpRequestAuthInfo, type McpRequestAuthInfo } from "./authInfo.js";
 import type { AccessSessionRecord, SessionStore } from "./sessionStore.js";
 import { hashToken } from "./token.js";
+import { toToolCatalogKey } from "./toolCatalogKey.js";
 
 export class AuthServiceError extends Error {
   constructor(
@@ -17,7 +18,7 @@ export class AuthServiceError extends Error {
   }
 }
 
-export interface AuthServiceDependencies {
+interface AuthServiceDependencies {
   converseApi: ConverseApiAdapter;
   now?: () => Date;
   sessionStore: SessionStore;
@@ -75,6 +76,10 @@ export const createAuthService = (dependencies: AuthServiceDependencies): AuthSe
         client: { name: "radioso-mcp-server" },
       }, { sourceDigest });
       await dependencies.converseApi.validate(exchange.sessionToken, { sourceDigest });
+      // The catalog is read once here and pinned to the session: every MCP instance that
+      // later serves this session renders the same tools, and a routine exposed after this
+      // point appears when the client opens its next session.
+      const catalog = await dependencies.converseApi.tools(exchange.sessionToken, { sourceDigest });
 
       return dependencies.sessionStore.save({
         accessToken,
@@ -84,6 +89,7 @@ export const createAuthService = (dependencies: AuthServiceDependencies): AuthSe
         issuedAt,
         conversationId: exchange.conversationId,
         sessionId: `converse_${randomUUID()}`,
+        toolCatalog: { key: toToolCatalogKey(catalog.tools), tools: catalog.tools },
       });
     } catch (error) {
       if (isAuthenticationFailure(error)) {

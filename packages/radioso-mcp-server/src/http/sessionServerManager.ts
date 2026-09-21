@@ -3,7 +3,8 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import type { AuditLogger } from "../audit/auditLogger.js";
 import { AuthServiceError } from "../auth/authService.js";
 import { toMcpRequestAuthInfo } from "../auth/authInfo.js";
-import type { AccessSessionRecord } from "../auth/sessionStore.js";
+import type { AccessSessionRecord, SessionToolCatalog } from "../auth/sessionStore.js";
+import { toToolCatalogKey } from "../auth/toolCatalogKey.js";
 import type { RadiosoMcpConfig } from "../config.js";
 import { createConverseApiAdapter } from "../converseApiAdapter.js";
 import { createRadiosoMcpServer, getRemoteToolAuthInfo } from "../server.js";
@@ -22,24 +23,55 @@ const toInternalAuthInfo = (
   token: accessToken,
 });
 
+/** A session persisted before catalogs were pinned sees the static tools only. */
+const STATIC_TOOL_CATALOG: SessionToolCatalog = { key: toToolCatalogKey([]), tools: [] };
+
+const DEFAULT_SERVER_CACHE_MAX_ENTRIES = 64;
+const DEFAULT_SERVER_CACHE_IDLE_TTL_MS = 15 * 60_000;
+
+export interface SessionServerCacheOptions {
+  /** Distinct tool sets kept warm at once; the least recently used one goes first. */
+  maxEntries?: number;
+  /** A server nobody has used for this long is rebuilt on its next request. */
+  idleTtlMs?: number;
+  now?: () => number;
+}
+
 export interface SessionServerManagerDependencies {
   auditLogger?: AuditLogger;
   config: RadiosoMcpConfig;
   entryPoint?: "merged" | "standalone";
+  serverCache?: SessionServerCacheOptions;
+}
+
+interface CachedServer {
+  handle: SessionMcpServerHandle;
+  lastUsedAt: number;
 }
 
 export const createSessionMcpServerManager = ({
   auditLogger,
   config,
   entryPoint = "standalone",
+  serverCache = {},
 }: SessionServerManagerDependencies): SessionMcpServerManager => {
-  const sessionHandles = new Map<string, SessionMcpServerHandle>();
-  const toToolCatalogKey = () => "ask_agent";
+  const maxEntries = serverCache.maxEntries ?? DEFAULT_SERVER_CACHE_MAX_ENTRIES;
+  const idleTtlMs = serverCache.idleTtlMs ?? DEFAULT_SERVER_CACHE_IDLE_TTL_MS;
+  const now = serverCache.now ?? Date.now;
+  // Insertion order doubles as recency: a hit re-inserts its entry at the end. An evicted
+  // server is simply dropped; a request still using it keeps its own reference, and the
+  // JSON-response transport holds no timers or sockets that need closing.
+  const servers = new Map<string, CachedServer>();
+  const pendingServers = new Map<string, Promise<SessionMcpServerHandle>>();
+  const converseAdapter = createConverseApiAdapter({
+    baseUrl: config.baseUrl,
+    requestTimeoutMs: config.requestTimeoutMs,
+    signingSecret: config.signingSecret,
+  });
 
   const createSessionHandle = async (
-    _session: AccessSessionRecord,
+    toolCatalog: SessionToolCatalog,
   ): Promise<SessionMcpServerHandle> => {
-    const toolCatalogKey = toToolCatalogKey();
     const serverHandle = createRadiosoMcpServer({
       onToolError: async (tool, context, error) => {
         if (!auditLogger) {
@@ -89,15 +121,12 @@ export const createSessionMcpServerManager = ({
 
         return {
           authInfo,
-          converseAdapter: createConverseApiAdapter({
-            baseUrl: config.baseUrl,
-            requestTimeoutMs: config.requestTimeoutMs,
-            signingSecret: config.signingSecret,
-          }),
+          converseAdapter,
           converseSessionToken,
           serverContext: ctx,
         };
       },
+      routineTools: toolCatalog.tools,
       serverName: config.serverName,
     });
     const transport = new WebStandardStreamableHTTPServerTransport({
@@ -111,25 +140,65 @@ export const createSessionMcpServerManager = ({
 
     return {
       serverHandle,
-      toolCatalogKey,
+      toolCatalogKey: toolCatalog.key,
       transport,
     };
   };
 
+  const touch = (toolCatalogKey: string, cached: CachedServer): void => {
+    servers.delete(toolCatalogKey);
+    servers.set(toolCatalogKey, { ...cached, lastUsedAt: now() });
+  };
+
+  const readCached = (toolCatalogKey: string): SessionMcpServerHandle | null => {
+    const cached = servers.get(toolCatalogKey);
+    if (!cached) {
+      return null;
+    }
+    if (now() - cached.lastUsedAt > idleTtlMs) {
+      servers.delete(toolCatalogKey);
+      return null;
+    }
+    touch(toolCatalogKey, cached);
+    return cached.handle;
+  };
+
+  const store = (toolCatalogKey: string, handle: SessionMcpServerHandle): void => {
+    servers.delete(toolCatalogKey);
+    servers.set(toolCatalogKey, { handle, lastUsedAt: now() });
+    while (servers.size > maxEntries) {
+      const oldest = servers.keys().next().value;
+      if (oldest === undefined) {
+        break;
+      }
+      servers.delete(oldest);
+    }
+  };
+
   return {
     async evict(toolCatalogKey) {
-      sessionHandles.delete(toolCatalogKey);
+      servers.delete(toolCatalogKey);
     },
     async getOrCreate(session) {
-      const toolCatalogKey = toToolCatalogKey();
-      const existing = sessionHandles.get(toolCatalogKey);
+      const toolCatalog = session.toolCatalog ?? STATIC_TOOL_CATALOG;
+      const existing = readCached(toolCatalog.key);
       if (existing) {
         return existing;
       }
 
-      const handle = await createSessionHandle(session);
-      sessionHandles.set(toolCatalogKey, handle);
-      return handle;
+      const pending = pendingServers.get(toolCatalog.key);
+      if (pending) {
+        return pending;
+      }
+
+      const creation = createSessionHandle(toolCatalog).then((handle) => {
+        store(toolCatalog.key, handle);
+        return handle;
+      }).finally(() => {
+        pendingServers.delete(toolCatalog.key);
+      });
+      pendingServers.set(toolCatalog.key, creation);
+      return creation;
     },
   };
 };

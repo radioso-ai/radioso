@@ -818,7 +818,6 @@
   "types|packages/radioso-docs-importer/src/radioso/client.ts|HttpClientConfig",
   "types|packages/radioso-docs-importer/src/readme/buildReadmeDocuments.ts|BuildReadmeDocumentsOptions",
   "types|packages/radioso-mcp-server/src/audit/auditLogger.ts|AuditOutcome",
-  "types|packages/radioso-mcp-server/src/auth/authService.ts|AuthServiceDependencies",
   "types|packages/radioso-mcp-server/src/http/expressAdapter.ts|ExpressLikeMcpMiddleware",
   "types|packages/radioso-mcp-server/src/http/mcpRoutes.ts|McpRouteDependencies",
   "types|packages/radioso-mcp-server/src/http/requestHandler.ts|McpRequestHandlerDependencies",

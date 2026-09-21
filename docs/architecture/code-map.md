@@ -1439,6 +1439,7 @@ Primary paths:
 - `packages/radioso-mcp-server/testing/`
 - `packages/radioso-mcp-server/tests/`
 - `packages/radioso-mcp-server/src/tools/productDocsTools.ts` (`radioso_docs`, `radioso_doc_page`)
+- `packages/radioso-mcp-server/src/tools/routineTools.ts` (one tool per exposed routine descriptor; `routineToolSchema.ts` hands the descriptor's JSON Schema to the SDK) and `src/http/sessionServerManager.ts` (servers cached per session catalog key, read once at exchange in `src/auth/authService.ts`)
 - `packages/product-docs/` (the documentation corpus both surfaces read; `scripts/buildCorpus.ts` compiles `docs-portal/content` into the committed `src/generated/corpus.json` through `@radioso/docs-importer`'s MDX converter, and `pnpm --filter @radioso/product-docs run sync` refreshes it — the CI docs job and `backend`'s contract suite both fail on drift)
 - `packages/mcp-source-proof/src/index.ts`
 - `packages/mcp-source-proof/tests/`

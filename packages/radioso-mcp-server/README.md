@@ -6,9 +6,13 @@ MCP server package for one-agent conversation and a separate OAuth-protected Ray
 
 The package connects to an existing Radioso deployment over its public HTTP API and exposes one MCP surface.
 
-**Agent converse surface (`/mcp`).** A client talks to one agent through that agent's turn loop, using an agent-bound MCP channel credential. The agent applies its own persona, directives, and routines. The sole tool is:
+**Agent converse surface (`/mcp`).** A client talks to one agent through that agent's turn loop, using an agent-bound MCP channel credential. The agent applies its own persona, directives, and routines. Its `tools/list` is built per session:
 
 - `ask_agent` for a full agent reply (persona, directives, routines, history)
+- `radioso_docs` and `radioso_doc_page` for Radioso's own documentation
+- one typed tool per routine the operator has exposed on that agent, named by the operator (`start_return`, for example) with a JSON Schema input built from the routine's slots
+
+The routine tools come from the backend's session-bound catalog (`GET /api/v1/mcp/converse/tools`), read once when the session is established and pinned to it. Every call to a routine tool runs that routine directly with the arguments as its slot values and returns the same agent reply envelope `ask_agent` returns.
 
 **Operator surface (`/operator/mcp`).** An OAuth-capable remote client acts as the signed-in person who granted access. Its fresh catalog exposes the reviewed subset of Ray's reads, probes, proposals, and acts that current scopes and permissions allow. Agent revision publication, private candidate testing, and frozen revision evals remain REST/dashboard operations and are not MCP tools. See [Operator MCP OAuth access](../../docs/operator-mcp.md) for the current tool boundary, consent, grant management, and compatibility status.
 
@@ -66,8 +70,8 @@ pnpm run build
 
 The package includes smoke commands that do not touch your existing Radioso PostgreSQL data.
 
-- `pnpm run smoke:http` starts the backend's in-memory test app and completes an `ask_agent` call through the standalone MCP server.
-- `pnpm run smoke:redis` starts two MCP HTTP instances with a shared Redis store and completes an `ask_agent` call through the shared session. It uses `RADIOSO_MCP_SMOKE_REDIS_URL` when provided, otherwise it starts a disposable local Redis instance with `redis-server` or Docker.
+- `pnpm run smoke:http` starts the backend's in-memory test app, exposes one routine as `start_return`, and completes an `ask_agent` call and a `start_return` call through the standalone MCP server.
+- `pnpm run smoke:redis` starts two MCP HTTP instances with a shared Redis store, completes an `ask_agent` call through the shared session, and checks that the second instance lists the catalog pinned to it. It uses `RADIOSO_MCP_SMOKE_REDIS_URL` when provided, otherwise it starts a disposable local Redis instance with `redis-server` or Docker.
 - `pnpm run smoke:all` runs both.
 
 ## Start The Remote HTTP Server
@@ -158,7 +162,7 @@ curl -s http://127.0.0.1:8787/mcp \
   }'
 ```
 
-The converse surface exposes only `ask_agent`. Document tools, direct grounded answers, and resources are intentionally not part of this package.
+The list holds `ask_agent`, the two documentation tools, and one entry per exposed routine. The catalog is fixed for the session's lifetime: the server reads it when it exchanges the credential and renders the same tools until that session expires, so a routine exposed or withdrawn afterwards shows up when the client opens its next session. The server sends no `notifications/tools/list_changed`. Workspace document tools, direct grounded answers, and resources are intentionally not part of this surface.
 
 ```bash
 curl -s http://127.0.0.1:8787/mcp \
@@ -179,6 +183,29 @@ curl -s http://127.0.0.1:8787/mcp \
   }'
 ```
 
+Call an exposed routine by its tool name with its slots as arguments. The server validates the arguments against the descriptor's schema before anything reaches the backend; a valid call starts the routine with those slots filled and returns the agent reply envelope as `structuredContent`, with `answer.text` as the text content and `routine` reporting where the routine landed.
+
+```bash
+curl -s http://127.0.0.1:8787/mcp \
+  -H "authorization: Bearer $RADIOSO_MCP_ACCESS_TOKEN" \
+  -H 'content-type: application/json' \
+  -H 'accept: application/json, text/event-stream' \
+  -H 'mcp-protocol-version: 2025-11-25' \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": "return-1",
+    "method": "tools/call",
+    "params": {
+      "name": "start_return",
+      "arguments": {
+        "orderId": "A-1001"
+      }
+    }
+  }'
+```
+
+Sessions whose catalogs are identical share one in-process MCP server; the server cache is bounded (64 distinct catalogs, rebuilt after 15 idle minutes). Per-call state — the session token, conversation, and source digest — comes from the request, never from the shared server.
+
 ## Scope
 
-An agent-bound MCP credential carries only `ask_agent`. This package covers session validation and runtime readiness.
+An agent-bound MCP credential carries `ask_agent`, the documentation tools, and the agent's exposed routines. This package covers session validation and runtime readiness.

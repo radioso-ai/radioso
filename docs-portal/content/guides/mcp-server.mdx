@@ -1,14 +1,14 @@
 ---
 title: "MCP server"
 description: "Connect an MCP client to one Radioso agent or to Ray through delegated Operator MCP access."
-last_updated: 2026-09-21
+last_updated: 2026-09-22
 ---
 
 import { Callout, Steps } from 'nextra/components'
 
 # MCP server
 
-Radioso's standalone MCP server lets a client talk to one agent through `ask_agent`, and read Radioso's own documentation through `radioso_docs` and `radioso_doc_page`. The credential has no workspace role: it is bound to that agent and to the MCP audience.
+Radioso's standalone MCP server lets a client talk to one agent through `ask_agent`, start any routine the operator has exposed through a typed tool of its own, and read Radioso's own documentation through `radioso_docs` and `radioso_doc_page`. The credential has no workspace role: it is bound to that agent and to the MCP audience.
 
 ## Two surfaces, two boundaries
 
@@ -151,6 +151,10 @@ A routine an operator has [exposed as a tool](/guides/authoring-routines#expose-
 
 The routine starts with those slots filled, skips the steps that would have asked for them, and reports where it landed in the envelope's `routine` field (`toolName` names the tool). Input is validated against the descriptor before anything is recorded: an unknown tool returns `404` with `error.details.code` `routine_tool_unknown`; mismatched input returns `400` with `routine_invocation_invalid` and one `{ path, code }` entry per field (`required`, `type`, `format`, `unknown_field`). A conversation keeps the release it started on, so a routine exposed after that shows up in the catalog but runs from the next session. Calling a tool whose routine already completed in the conversation under **Once per conversation** answers normally and still reports `routine.status: "completed"`, so the client learns why nothing started.
 
+An MCP client gets the same catalog as tools. The standalone server reads it once, when it exchanges the credential for a session, and the session's `tools/list` is `ask_agent`, the two documentation tools, and one tool per exposed routine — `start_return(orderId, reason?)` in the example above — each carrying the operator's description and the descriptor's JSON Schema as its input schema. Calling a routine tool checks the arguments against that schema first (a call missing a required slot comes back as a tool error before the backend is involved), then runs the invocation above. The result's `structuredContent` is the full agent reply envelope and its text content is `answer.text`, exactly as for `ask_agent`, so `routine.status` and `pendingInput` read the same way whichever tool the client called.
+
+The catalog is fixed for the session's lifetime: a routine exposed, renamed, or withdrawn afterwards appears when the client's next session is established, and the server sends no `notifications/tools/list_changed`.
+
 The converse session does not grant access to other agents, workspace administration, account management, API-access settings, Ray, the skill catalogue, connector secrets, or provider keys.
 
 ## Radioso documentation tools
@@ -187,6 +191,7 @@ An existing document's body, its upload, its reprocessing, and its removal stay 
 - **The converse client cannot connect.** Confirm the MCP URL is reachable over HTTPS for hosted clients, and check `RADIOSO_BASE_URL` and the standalone bind settings. When Redis is configured, check `RADIOSO_MCP_SIGNING_SECRET` too.
 - **A converse session is rejected.** Its credential may be revoked, expired, or issued for a different agent. Create or revoke credentials from the agent's MCP card with a current dashboard session.
 - **A routine call returns `404 routine_tool_unknown`.** The routine is not exposed, is switched off, or is only in the agent's draft. Switch exposure on in the routine editor and publish the agent; the tool appears in the next session's catalog.
+- **An exposed routine is missing from `tools/list`.** The session opened before the routine was exposed and published. The catalog is read once per session, so let the session expire or exchange the credential again and the tool is listed.
 
 ## Read next
 

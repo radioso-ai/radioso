@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { routineInvocationRequestSchema } from "./routineInvocationSchemas.js";
 import { chatMessageSchema } from "./textInputLimits.js";
 
 const labelControlCharacter = /[\u0000-\u001F\u007F-\u009F]/u;
@@ -42,15 +43,25 @@ export const agentChannelCredentialParamsSchema = z.object({
 export const agentChannelChatSchema = z.object({
   conversationId: z.string().uuid().optional(),
   message: chatMessageSchema.optional(),
+  routine: routineInvocationRequestSchema.optional(),
   startConversation: z.boolean().optional().default(false),
   stream: z.boolean().optional().default(false),
   userExpectedLocale: z.string().trim().max(35).optional(),
 }).strict().superRefine((value, ctx) => {
-  if (!value.message && !value.startConversation) {
+  // Exactly one turn kind per request: a message, a tool call, or a bootstrap greeting.
+  const turnKinds = [value.message, value.routine, value.startConversation || undefined].filter((kind) => kind !== undefined);
+  if (turnKinds.length === 0) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: "message is required unless startConversation is true",
+      message: "message or routine is required unless startConversation is true",
       path: ["message"],
+    });
+  }
+  if (turnKinds.length > 1) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "message, routine, and startConversation are mutually exclusive",
+      path: [value.routine ? "routine" : "message"],
     });
   }
   if (value.startConversation && value.conversationId) {

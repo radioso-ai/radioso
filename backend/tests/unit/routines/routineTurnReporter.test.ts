@@ -117,3 +117,43 @@ describe("createRoutineTurnReporter", () => {
     expect(unnamed.describe({ state: state({ status: "completed" }) })?.name).toBe(bookDemo.id);
   });
 });
+
+describe("createRoutineTurnReporter with exposed routines", () => {
+  const exposed: Routine = {
+    ...bookDemo,
+    metadata: { ...bookDemo.metadata, exposure: { toolName: "book_demo" } },
+  };
+
+  it("names the tool the routine is exposed under on every report", () => {
+    const reporter = createRoutineTurnReporter([exposed]);
+
+    expect(reporter.describe({ state: state({ path: ["ask_name"] }) })).toMatchObject({
+      toolName: "book_demo",
+      name: "Book a demo",
+      status: "waiting_for_input",
+    });
+    expect(reporter.describe({ state: state({ status: "completed" }) })).toEqual({
+      toolName: "book_demo",
+      name: "Book a demo",
+      status: "completed",
+      pendingInput: [],
+    });
+  });
+
+  it("describes a routine an invocation named but the turn declined as completed, so the caller learns why nothing started", () => {
+    const reporter = createRoutineTurnReporter([exposed], { declinedRoutineId: () => exposed.id });
+
+    expect(reporter.describeDeclined()).toEqual({
+      toolName: "book_demo",
+      name: "Book a demo",
+      status: "completed",
+      pendingInput: [],
+    });
+  });
+
+  it("describes nothing declined on an ordinary turn", () => {
+    expect(createRoutineTurnReporter([exposed]).describeDeclined()).toBeNull();
+    expect(createRoutineTurnReporter([exposed], { declinedRoutineId: () => null }).describeDeclined()).toBeNull();
+    expect(createRoutineTurnReporter([exposed], { declinedRoutineId: () => "routine-unknown" }).describeDeclined()).toBeNull();
+  });
+});

@@ -55,7 +55,7 @@ import {
 } from "../../src/modules/agents/public.js";
 import type { TestExecutionService } from "../../src/modules/test-execution/testExecution.js";
 import type { RevisionEvalRunService } from "../../src/modules/eval/services/revisionEvalRun.js";
-import { createRoutineTurnReporter, ProbeRoutineReader, RoutineDefinitionService, RoutineDraftAssistService, selectCanonicalRoutineDefinitions } from "../../src/modules/routines/public.js";
+import { createAgentToolCatalog, createDirectInvocationTurnPorts, createRoutineTurnReporter, ProbeRoutineReader, RoutineDefinitionService, RoutineDraftAssistService, selectCanonicalRoutineDefinitions } from "../../src/modules/routines/public.js";
 import { InMemoryAgentRevisionRepository } from "./agentRevisionFakes.js";
 import { toDefaultRetrieveSkillConfig } from "../../src/db/repositories/agentRepository.js";
 import {
@@ -509,6 +509,13 @@ class InMemoryRoutineStateStore implements ConversationRoutineStore {
 
   async loadActive({ sessionId }: { sessionId: string }): Promise<RoutineState | null> {
     return this.states.get(sessionId) ?? null;
+  }
+
+  // Mirrors the Postgres store: a completed instance is what reentry and the
+  // activator's suppression list see on the next turn (one row per session).
+  async loadCompleted({ sessionId }: { sessionId: string }): Promise<RoutineState[]> {
+    const state = this.states.get(sessionId);
+    return state?.status === "completed" ? [state] : [];
   }
 
   async save(state: RoutineState): Promise<void> {
@@ -1773,7 +1780,7 @@ export const createTestDependencies = (overrides: {
   });
   const staticRoutineRegistrations: RoutineRegistration[] = [];
   const routineProvider: ChatRoutineProvider = {
-    async forTurn({ modelGateway, agentId, pinnedRoutineIds = [], responseLanguage, groundedAnswerRenderer }) {
+    async forTurn({ modelGateway, agentId, pinnedRoutineIds = [], routineInvocation, responseLanguage, groundedAnswerRenderer }) {
       let publishedRegistrations: RoutineRegistration[];
       try {
         publishedRegistrations = await publishedRoutineSource.load({ agentId });
@@ -1813,22 +1820,38 @@ export const createTestDependencies = (overrides: {
       if (routineRegistry.isEmpty && routines.length === 0) {
         return null;
       }
+      const runner = new DefaultRoutineRunner(
+        routines,
+        new RoutineNextStepSelector(modelGateway, {
+          promptTemplate: loadPromptTemplate("chat/routine-next-step.md"),
+        }),
+        new RoutineStepRenderer(modelGateway, {
+          promptTemplate: loadPromptTemplate("chat/routine-step-reply.md"),
+          responseLanguage,
+          groundedAnswerRenderer,
+        }),
+      );
+      if (routineInvocation) {
+        // Same port pairing production uses (routines/exposure/directInvocationTurn.ts).
+        const direct = createDirectInvocationTurnPorts({
+          registrations: [...staticRoutineRegistrations, ...publishedRegistrations, ...pinnedRegistrations],
+          routines,
+          invocation: routineInvocation,
+        });
+        return {
+          reporter: direct.reporter,
+          activator: direct.activator,
+          reentryGate: direct.reentryGate,
+          slotCorrection: direct.slotCorrection,
+          runner,
+        };
+      }
       return {
         reporter: createRoutineTurnReporter(routines),
         activator: routineRegistry.isEmpty
           ? { activate: async () => null }
           : routineRegistry.activator(modelGateway),
-        runner: new DefaultRoutineRunner(
-          routines,
-          new RoutineNextStepSelector(modelGateway, {
-            promptTemplate: loadPromptTemplate("chat/routine-next-step.md"),
-          }),
-          new RoutineStepRenderer(modelGateway, {
-            promptTemplate: loadPromptTemplate("chat/routine-step-reply.md"),
-            responseLanguage,
-            groundedAnswerRenderer,
-          }),
-        ),
+        runner,
       };
     },
   };
@@ -2459,6 +2482,19 @@ export const createTestDependencies = (overrides: {
     }),
     chatBootstrapService,
     agentStarterPromptReader,
+    // The same live definitions the test routine provider activates from, so the
+    // catalog a calling agent reads matches what a tool call can admit.
+    agentToolCatalog: createAgentToolCatalog({
+      agents: {
+        find: async ({ workspaceId, agentId }) => {
+          const agent = await agentRepository.findByIdAndWorkspaceId(agentId, workspaceId);
+          return agent ? { name: agent.name, description: null } : null;
+        },
+      },
+      publishedRoutines: {
+        listPublished: ({ agentId }) => routineDefinitionRepository.listActiveByAgent(agentId),
+      },
+    }),
     chatHistoryService,
     assistantChatService,
     assistantHistoryService,

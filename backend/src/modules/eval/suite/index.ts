@@ -1,4 +1,5 @@
 export {
+  conversationQualityCaseTurnText,
   parseConversationQualityCases,
   type ConversationQualityCase,
 } from "./caseSchema.js";

@@ -4450,6 +4450,25 @@
             "minLength": 1,
             "maxLength": 4000
           },
+          "routine": {
+            "type": "object",
+            "properties": {
+              "toolName": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 63
+              },
+              "input": {
+                "type": "object",
+                "additionalProperties": {}
+              }
+            },
+            "required": [
+              "toolName",
+              "input"
+            ],
+            "additionalProperties": false
+          },
           "startConversation": {
             "type": "boolean",
             "default": false
@@ -15187,6 +15206,57 @@
           "cleared"
         ]
       },
+      "UserMessageInputMetadata": {
+        "type": "object",
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "typed",
+              "suggestion_click",
+              "intent_click",
+              "routine_invocation"
+            ]
+          },
+          "suggestionSourceMessageId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "intent": {
+            "type": "object",
+            "properties": {
+              "skillName": {
+                "type": "string"
+              },
+              "intentName": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "skillName"
+            ]
+          },
+          "routine": {
+            "type": "object",
+            "properties": {
+              "toolName": {
+                "type": "string"
+              },
+              "input": {
+                "type": "object",
+                "additionalProperties": {}
+              }
+            },
+            "required": [
+              "toolName",
+              "input"
+            ]
+          }
+        },
+        "required": [
+          "method"
+        ]
+      },
       "ChatConversationMessage": {
         "type": "object",
         "properties": {
@@ -15220,38 +15290,7 @@
             "format": "date-time"
           },
           "inputMetadata": {
-            "type": "object",
-            "properties": {
-              "method": {
-                "type": "string",
-                "enum": [
-                  "typed",
-                  "suggestion_click",
-                  "intent_click"
-                ]
-              },
-              "suggestionSourceMessageId": {
-                "type": "string",
-                "format": "uuid"
-              },
-              "intent": {
-                "type": "object",
-                "properties": {
-                  "skillName": {
-                    "type": "string"
-                  },
-                  "intentName": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "skillName"
-                ]
-              }
-            },
-            "required": [
-              "method"
-            ]
+            "$ref": "#/components/schemas/UserMessageInputMetadata"
           },
           "citations": {
             "type": "array",
@@ -15328,38 +15367,7 @@
             "format": "date-time"
           },
           "inputMetadata": {
-            "type": "object",
-            "properties": {
-              "method": {
-                "type": "string",
-                "enum": [
-                  "typed",
-                  "suggestion_click",
-                  "intent_click"
-                ]
-              },
-              "suggestionSourceMessageId": {
-                "type": "string",
-                "format": "uuid"
-              },
-              "intent": {
-                "type": "object",
-                "properties": {
-                  "skillName": {
-                    "type": "string"
-                  },
-                  "intentName": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "skillName"
-                ]
-              }
-            },
-            "required": [
-              "method"
-            ]
+            "$ref": "#/components/schemas/UserMessageInputMetadata"
           },
           "citations": {
             "type": "array",
@@ -15449,38 +15457,7 @@
             "additionalProperties": {}
           },
           "inputMetadata": {
-            "type": "object",
-            "properties": {
-              "method": {
-                "type": "string",
-                "enum": [
-                  "typed",
-                  "suggestion_click",
-                  "intent_click"
-                ]
-              },
-              "suggestionSourceMessageId": {
-                "type": "string",
-                "format": "uuid"
-              },
-              "intent": {
-                "type": "object",
-                "properties": {
-                  "skillName": {
-                    "type": "string"
-                  },
-                  "intentName": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "skillName"
-                ]
-              }
-            },
-            "required": [
-              "method"
-            ]
+            "$ref": "#/components/schemas/UserMessageInputMetadata"
           },
           "skillName": {
             "type": "string"
@@ -16185,6 +16162,123 @@
           }
         ],
         "description": "A chat turn carries the agent reply envelope core beside the answer; a bootstrap greeting (`startConversation`) has no turn and carries none."
+      },
+      "AgentToolInputSchema": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "object"
+            ]
+          },
+          "properties": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "string",
+                    "number",
+                    "boolean"
+                  ]
+                },
+                "format": {
+                  "type": "string",
+                  "enum": [
+                    "email",
+                    "date"
+                  ]
+                },
+                "description": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type"
+              ]
+            }
+          },
+          "required": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": {
+            "type": "boolean",
+            "enum": [
+              false
+            ]
+          }
+        },
+        "required": [
+          "type",
+          "properties",
+          "required",
+          "additionalProperties"
+        ],
+        "description": "JSON Schema for the tool's input: one property per declared routine slot (`text`→string, `number`, `boolean`, `email`→string/format=email, `date`→string/format=date), `required` from the slot."
+      },
+      "AgentToolDescriptor": {
+        "type": "object",
+        "properties": {
+          "toolName": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "inputSchema": {
+            "$ref": "#/components/schemas/AgentToolInputSchema"
+          },
+          "routineLineageId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "toolName",
+          "description",
+          "inputSchema",
+          "routineLineageId"
+        ],
+        "description": "One exposed routine as a calling agent sees it: the name it invokes, the operator-authored description, and the input schema built from the routine's slots."
+      },
+      "McpConverseToolsResponse": {
+        "type": "object",
+        "properties": {
+          "agent": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "description": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "name",
+              "description"
+            ]
+          },
+          "tools": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentToolDescriptor"
+            }
+          }
+        },
+        "required": [
+          "agent",
+          "tools"
+        ],
+        "description": "The bound agent's tool catalog: exposed routines from its current published release."
       },
       "ConnectorField": {
         "type": "object",
@@ -31242,6 +31336,7 @@
           "Agent Channels"
         ],
         "summary": "Run chat through a REST credential bound to this agent",
+        "description": "Send exactly one of `message`, `routine` (a tool call to one exposed routine; validated against the catalog before any turn state is written, with the same `routine_tool_unknown` / `routine_invocation_invalid` errors as the MCP converse ask route), or `startConversation`.",
         "operationId": "createAgentChannelChatResponse",
         "security": [
           {
@@ -31289,7 +31384,7 @@
             "description": "Conversation start completed without a greeting"
           },
           "400": {
-            "description": "Request validation failed",
+            "description": "Request validation failed, or routine invocation input did not match the tool's schema",
             "content": {
               "application/json": {
                 "schema": {
@@ -31300,6 +31395,16 @@
           },
           "401": {
             "description": "Invalid, inactive, cross-audience, or cross-agent credential",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Routine tool is not in the agent's catalog",
             "content": {
               "application/json": {
                 "schema": {
@@ -51083,12 +51188,70 @@
         }
       }
     },
+    "/api/v1/mcp/converse/tools": {
+      "get": {
+        "tags": [
+          "MCP Converse"
+        ],
+        "summary": "List the bound agent's exposed routines as tools",
+        "description": "Returns the agent's name and one descriptor per exposed routine in its current published release. A session reads the catalog once; a routine exposed or withdrawn after that shows up for the next session.",
+        "operationId": "getMcpConverseTools",
+        "security": [
+          {
+            "mcpConverseSessionBearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The bound agent's tool catalog",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpConverseToolsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid converse session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Converse session is no longer authorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "MCP converse rate limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/mcp/converse/ask": {
       "post": {
         "tags": [
           "MCP Converse"
         ],
-        "summary": "Run one MCP ask_agent turn through the bound agent",
+        "summary": "Run one turn through the bound agent: a message, or a tool call to an exposed routine",
+        "description": "Send exactly one of `message` or `routine`. A `routine` call is validated against the tool's `inputSchema` from the catalog before any turn state is written: an unknown tool returns 404 with `details.code` `routine_tool_unknown`; invalid input returns 400 with `details.code` `routine_invocation_invalid` and field-level `details.errors`.",
         "operationId": "askMcpConverseAgent",
         "security": [
           {
@@ -51106,16 +51269,32 @@
                     "type": "string",
                     "minLength": 1
                   },
+                  "routine": {
+                    "type": "object",
+                    "properties": {
+                      "toolName": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 63
+                      },
+                      "input": {
+                        "type": "object",
+                        "additionalProperties": {}
+                      }
+                    },
+                    "required": [
+                      "toolName",
+                      "input"
+                    ],
+                    "additionalProperties": false
+                  },
                   "stream": {
                     "type": "boolean",
                     "enum": [
                       false
                     ]
                   }
-                },
-                "required": [
-                  "message"
-                ]
+                }
               }
             }
           }
@@ -51127,6 +51306,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/McpConverseAskResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Routine invocation input did not match the tool's schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -51143,6 +51332,16 @@
           },
           "403": {
             "description": "Converse session is no longer authorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Routine tool is not in the agent's catalog",
             "content": {
               "application/json": {
                 "schema": {

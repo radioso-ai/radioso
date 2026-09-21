@@ -1,5 +1,6 @@
 import type { Routine, RoutineState, RoutineStep } from "@radioso/conversation-contract";
 
+import { compiledRoutineToolName } from "./exposure/directInvocationActivator.js";
 import type {
   RoutinePendingInput,
   RoutineTurnReporter,
@@ -68,13 +69,26 @@ const pendingInputFor = (
 const isOpen = (status: RoutineTurnStatus): boolean =>
   status !== "completed" && status !== "abandoned";
 
+const identityOf = (routine: Routine): Pick<RoutineTurnState, "toolName" | "name"> => {
+  const toolName = compiledRoutineToolName(routine);
+  return {
+    ...(toolName ? { toolName } : {}),
+    name: routineDisplayName(routine),
+  };
+};
+
 /**
  * Reports a routine state in envelope terms over the routines this turn could
- * see. Exposure is irrelevant here: any admitted routine is described the same
- * way, and an unknown routine id (a state from a routine no longer registered)
- * reports nothing rather than guessing.
+ * see. Exposure only adds the tool name: any admitted routine is described the
+ * same way, and an unknown routine id (a state from a routine no longer
+ * registered) reports nothing rather than guessing. `declinedRoutineId` names
+ * the routine a direct invocation asked for when this turn's activator refused
+ * it, so the reply can still say the routine is completed (Decision 9).
  */
-export const createRoutineTurnReporter = (routines: readonly Routine[]): RoutineTurnReporter => {
+export const createRoutineTurnReporter = (
+  routines: readonly Routine[],
+  options: { declinedRoutineId?: () => string | null } = {},
+): RoutineTurnReporter => {
   const routinesById = new Map(routines.map((routine) => [routine.id, routine]));
   return {
     describe: ({ state, awaitingDecision = false }): RoutineTurnState | null => {
@@ -88,10 +102,15 @@ export const createRoutineTurnReporter = (routines: readonly Routine[]): Routine
       const currentStep = routine.steps.find((step) => step.id === currentStepId);
       const status = statusFor(state, currentStep, awaitingDecision);
       return {
-        name: routineDisplayName(routine),
+        ...identityOf(routine),
         status,
         pendingInput: isOpen(status) ? pendingInputFor(routine, state, currentStep) : [],
       };
+    },
+    describeDeclined: (): RoutineTurnState | null => {
+      const declinedRoutineId = options.declinedRoutineId?.() ?? null;
+      const routine = declinedRoutineId ? routinesById.get(declinedRoutineId) : undefined;
+      return routine ? { ...identityOf(routine), status: "completed", pendingInput: [] } : null;
     },
   };
 };

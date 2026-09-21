@@ -8,6 +8,7 @@ import { registerCommonSchemas } from "./schemas/commonSchemas.js";
 import { registerIdentitySchemas } from "./schemas/identitySchemas.js";
 import { registerSettingsSchemas } from "./schemas/settingsSchemas.js";
 import { registerAgentSchemas } from "./schemas/agentSchemas.js";
+import { registerAgentToolCatalogSchemas } from "./schemas/agentToolCatalogSchemas.js";
 import { registerDocumentRetrievalSchemas } from "./schemas/documentRetrievalSchemas.js";
 import { registerAssistantHistorySchemas } from "./schemas/assistantHistorySchemas.js";
 import { registerConnectorSchemas } from "./schemas/connectorSchemas.js";
@@ -116,8 +117,11 @@ export interface OpenApiSchemaCatalog {
   AgentChannelChatResponseSchema: z.ZodTypeAny;
   AgentChannelChatTurnResponseSchema: z.ZodTypeAny;
   AgentReplyEnvelopeCoreSchema: z.ZodTypeAny;
+  AgentToolDescriptorSchema: z.ZodTypeAny;
+  AgentToolInputSchemaSchema: z.ZodTypeAny;
   ChatOwnershipAckSchema: z.ZodTypeAny;
   McpConverseAskResponseSchema: z.ZodTypeAny;
+  McpConverseToolsResponseSchema: z.ZodTypeAny;
   RoutinePendingInputSchema: z.ZodTypeAny;
   RoutineTurnStateSchema: z.ZodTypeAny;
   AssistantLogoUploadRequestSchema: z.ZodTypeAny;
@@ -408,6 +412,7 @@ export const createOpenApiRegistry = () => {
   registerAgentSchemas(registry, schemas);
   registerDocumentRetrievalSchemas(registry, schemas);
   registerAssistantHistorySchemas(registry, schemas);
+  registerAgentToolCatalogSchemas(registry, schemas);
   registerConnectorSchemas(registry, schemas);
   registerQualitySchemas(registry, schemas);
   registerUsageTrendSchemas(registry, schemas);

@@ -27,8 +27,8 @@ export const forbidden = (message = "Forbidden"): AppError =>
 export const conflict = (message: string): AppError =>
   new AppError(409, "conflict", message);
 
-export const notFound = (message: string): AppError =>
-  new AppError(404, "not_found", message);
+export const notFound = (message: string, details?: unknown): AppError =>
+  new AppError(404, "not_found", message, details);
 
 export const tooManyRequests = (message: string, details?: unknown): AppError =>
   new AppError(429, "rate_limit_exceeded", message, details);

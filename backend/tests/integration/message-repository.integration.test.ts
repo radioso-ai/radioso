@@ -71,6 +71,33 @@ describeIntegration("MessageRepository (Postgres)", () => {
     expect(reloaded?.metadata).toEqual(nested);
   });
 
+  it("round-trips a routine invocation's input metadata and drops an unknown input method on read", async () => {
+    const invocation = await repository.create({
+      conversationId,
+      workspaceId,
+      role: "user",
+      content: 'start_return {"orderId":"A-1001","reason":"Wrong size"}',
+      inputMetadata: {
+        method: "routine_invocation",
+        routine: { toolName: "start_return", input: { orderId: "A-1001", reason: "Wrong size" } },
+      },
+    });
+    const unknownMethod = await repository.create({
+      conversationId,
+      workspaceId,
+      role: "user",
+      content: "hi",
+      metadata: { method: "voice_note", routine: { toolName: "start_return", input: {} } },
+    });
+
+    const reloaded = await repository.listByConversationId(workspaceId, conversationId);
+    expect(reloaded.find((m) => m.id === invocation.id)?.inputMetadata).toEqual({
+      method: "routine_invocation",
+      routine: { toolName: "start_return", input: { orderId: "A-1001", reason: "Wrong size" } },
+    });
+    expect(reloaded.find((m) => m.id === unknownMethod.id)?.inputMetadata).toBeUndefined();
+  });
+
   it("windows newest-first with a stable cursor and total", async () => {
     const ids: string[] = [];
     for (let i = 0; i < 3; i += 1) {

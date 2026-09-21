@@ -7,6 +7,11 @@ import type { RoutineDefinition } from "../../../src/modules/routines/public.js"
  */
 export const CONTACT_SUPPORT_ROUTINE_ID = "routine:cq-agent:contact-support:v1";
 export const BOOK_DEMO_ROUTINE_ID = "routine:cq-agent:book-demo:v1";
+export const START_RETURN_ROUTINE_ID = "routine:cq-agent:start-return:v1";
+/** The tool name `startReturnRoutine` is exposed under; the same name in chat and on the agent-facing doors. */
+export const START_RETURN_TOOL_NAME = "start_return";
+/** The skill the return routine dispatches once it holds an order id and a reason. */
+export const CREATE_RETURN_TICKET_SKILL = "create_return_ticket";
 
 export const CQ_AGENT_ID = "cq-agent";
 
@@ -94,4 +99,48 @@ export const bookDemoRoutine: RoutineDefinition = {
   ],
 };
 
-export const conversationQualityRoutines: RoutineDefinition[] = [contactSupportRoutine, bookDemoRoutine];
+/**
+ * The exposed routine SC-002 drives two ways — as a human transcript and as one tool
+ * call — to show both reach the same step and the same skill effect. It carries a
+ * tool step so "the skill ran" is observable in the trace.
+ */
+export const startReturnRoutine: RoutineDefinition = {
+  id: START_RETURN_ROUTINE_ID,
+  agentId: CQ_AGENT_ID,
+  lineageId: "lineage:start-return",
+  version: 1,
+  enabled: true,
+  createdAt: FIXED_DATE,
+  updatedAt: FIXED_DATE,
+  name: "Start a return",
+  activation: {
+    triggerDescription: "the user wants to return or send back an order they received",
+    gateRef: null,
+    priority: 10,
+    reentryMode: "once_per_conversation",
+  },
+  exposure: {
+    enabled: true,
+    toolName: START_RETURN_TOOL_NAME,
+    description: "Start a return for an order the customer received. Needs the order id; a reason helps the team route it.",
+  },
+  slots: [
+    { stableSlotId: "slot_order", key: "orderId", type: "text", required: true, description: "The order number on the confirmation email.", ordinal: 0 },
+    { stableSlotId: "slot_reason", key: "reason", type: "text", required: false, description: "Why the order is coming back.", ordinal: 1 },
+  ],
+  steps: [
+    { stableStepId: "ask_order", kind: "chat", instruction: "Ask for the order number: {{slot.orderId}}", toolRef: null, actionType: null, ordinal: 0, metadata: {} },
+    { stableStepId: "ask_reason", kind: "chat", instruction: "Ask why the order is coming back: {{slot.reason}}", toolRef: null, actionType: null, ordinal: 1, metadata: {} },
+    { stableStepId: "create_return", kind: "tool", instruction: "Open the return ticket for {{slot.orderId}}.", toolRef: CREATE_RETURN_TICKET_SKILL, actionType: null, ordinal: 2, metadata: {} },
+  ],
+  transitions: [
+    defaultTransition("ask_order", "ask_reason", 0),
+    defaultTransition("ask_reason", "create_return", 1),
+    defaultTransition("create_return", "done", 2),
+  ],
+  terminals: [
+    { stableStepId: "done", kind: "complete", instruction: "Confirm the return ticket is open and what happens next.", ordinal: 0 },
+  ],
+};
+
+export const conversationQualityRoutines: RoutineDefinition[] = [contactSupportRoutine, bookDemoRoutine, startReturnRoutine];

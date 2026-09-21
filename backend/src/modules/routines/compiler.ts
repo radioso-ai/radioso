@@ -252,9 +252,15 @@ export const compileRoutineDefinition = (definition: RoutineDefinition): Routine
     metadata: {
       definitionId: definition.id,
       agentId: definition.agentId,
+      lineageId: definition.lineageId,
       name: definition.name,
       version: definition.version,
       slotSchema: slots,
+      // Only a switched-on exposure names a tool: a direct invocation resolves against
+      // this, so a disabled block must not make the routine reachable by name.
+      ...(definition.exposure?.enabled && definition.exposure.toolName.length > 0
+        ? { exposure: { toolName: definition.exposure.toolName } }
+        : {}),
     },
   };
 };

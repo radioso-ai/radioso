@@ -308,9 +308,12 @@ export const toGeneralSettings = (settings: PlatformSettings): GeneralSettings =
 type GeneratedChatUserInputMetadata = NonNullable<
   Extract<ApiSchemas['AssistantChatRequest'], { inputMetadata?: unknown }>['inputMetadata']
 >
+/** A calling agent's tool call as recorded on a user message (history `UserMessageInputMetadata.routine`). */
+export type ChatUserRoutineInvocation = NonNullable<ApiSchemas['UserMessageInputMetadata']['routine']>
 export type ChatUserInputMetadata = Omit<GeneratedChatUserInputMetadata, 'method' | 'intent'> & {
-  method: 'typed' | 'suggestion_click' | 'intent_click'
+  method: ApiSchemas['UserMessageInputMetadata']['method']
   intent?: PublicChatIntakeAction
+  routine?: ChatUserRoutineInvocation
 }
 export type Citation = ApiSchemas['Citation']
 export type SkillDisplayMetadata = NonNullable<ApiSchemas['SkillCatalogEntry']['display']>

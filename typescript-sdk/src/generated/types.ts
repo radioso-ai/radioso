@@ -1281,7 +1281,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Run chat through a REST credential bound to this agent */
+        /**
+         * Run chat through a REST credential bound to this agent
+         * @description Send exactly one of `message`, `routine` (a tool call to one exposed routine; validated against the catalog before any turn state is written, with the same `routine_tool_unknown` / `routine_invocation_invalid` errors as the MCP converse ask route), or `startConversation`.
+         */
         post: operations["createAgentChannelChatResponse"];
         delete?: never;
         options?: never;
@@ -3695,6 +3698,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/mcp/converse/tools": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the bound agent's exposed routines as tools
+         * @description Returns the agent's name and one descriptor per exposed routine in its current published release. A session reads the catalog once; a routine exposed or withdrawn after that shows up for the next session.
+         */
+        get: operations["getMcpConverseTools"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/mcp/converse/ask": {
         parameters: {
             query?: never;
@@ -3704,7 +3727,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Run one MCP ask_agent turn through the bound agent */
+        /**
+         * Run one turn through the bound agent: a message, or a tool call to an exposed routine
+         * @description Send exactly one of `message` or `routine`. A `routine` call is validated against the tool's `inputSchema` from the catalog before any turn state is written: an unknown tool returns 404 with `details.code` `routine_tool_unknown`; invalid input returns 400 with `details.code` `routine_invocation_invalid` and field-level `details.errors`.
+         */
         post: operations["askMcpConverseAgent"];
         delete?: never;
         options?: never;
@@ -4956,6 +4982,12 @@ export interface components {
             /** Format: uuid */
             conversationId?: string;
             message?: string;
+            routine?: {
+                toolName: string;
+                input: {
+                    [key: string]: unknown;
+                };
+            };
             /** @default false */
             startConversation: boolean;
             /** @default false */
@@ -7463,6 +7495,22 @@ export interface components {
         ClearAnswerFeedbackResponse: {
             cleared: boolean;
         };
+        UserMessageInputMetadata: {
+            /** @enum {string} */
+            method: "typed" | "suggestion_click" | "intent_click" | "routine_invocation";
+            /** Format: uuid */
+            suggestionSourceMessageId?: string;
+            intent?: {
+                skillName: string;
+                intentName?: string;
+            };
+            routine?: {
+                toolName: string;
+                input: {
+                    [key: string]: unknown;
+                };
+            };
+        };
         ChatConversationMessage: {
             /** Format: uuid */
             id: string;
@@ -7473,16 +7521,7 @@ export interface components {
             content: string;
             /** Format: date-time */
             createdAt: string;
-            inputMetadata?: {
-                /** @enum {string} */
-                method: "typed" | "suggestion_click" | "intent_click";
-                /** Format: uuid */
-                suggestionSourceMessageId?: string;
-                intent?: {
-                    skillName: string;
-                    intentName?: string;
-                };
-            };
+            inputMetadata?: components["schemas"]["UserMessageInputMetadata"];
             citations?: components["schemas"]["Citation"][];
             answerSegments?: components["schemas"]["AnswerSegment"][];
             suggestions?: components["schemas"]["ChatSuggestion"][];
@@ -7501,16 +7540,7 @@ export interface components {
             content: string;
             /** Format: date-time */
             createdAt: string;
-            inputMetadata?: {
-                /** @enum {string} */
-                method: "typed" | "suggestion_click" | "intent_click";
-                /** Format: uuid */
-                suggestionSourceMessageId?: string;
-                intent?: {
-                    skillName: string;
-                    intentName?: string;
-                };
-            };
+            inputMetadata?: components["schemas"]["UserMessageInputMetadata"];
             citations?: components["schemas"]["Citation"][];
             answerSegments?: components["schemas"]["AnswerSegment"][];
             suggestions?: components["schemas"]["ChatSuggestion"][];
@@ -7535,16 +7565,7 @@ export interface components {
             metadata?: {
                 [key: string]: unknown;
             };
-            inputMetadata?: {
-                /** @enum {string} */
-                method: "typed" | "suggestion_click" | "intent_click";
-                /** Format: uuid */
-                suggestionSourceMessageId?: string;
-                intent?: {
-                    skillName: string;
-                    intentName?: string;
-                };
-            };
+            inputMetadata?: components["schemas"]["UserMessageInputMetadata"];
             skillName?: string;
             skillOutcome?: string;
             skillStatus?: string;
@@ -7702,6 +7723,38 @@ export interface components {
         };
         /** @description A chat turn carries the agent reply envelope core beside the answer; a bootstrap greeting (`startConversation`) has no turn and carries none. */
         AgentChannelChatResponse: components["schemas"]["AgentChannelChatTurnResponse"] | components["schemas"]["ChatBootstrapResponse"];
+        /** @description JSON Schema for the tool's input: one property per declared routine slot (`text`→string, `number`, `boolean`, `email`→string/format=email, `date`→string/format=date), `required` from the slot. */
+        AgentToolInputSchema: {
+            /** @enum {string} */
+            type: "object";
+            properties: {
+                [key: string]: {
+                    /** @enum {string} */
+                    type: "string" | "number" | "boolean";
+                    /** @enum {string} */
+                    format?: "email" | "date";
+                    description?: string;
+                };
+            };
+            required: string[];
+            /** @enum {boolean} */
+            additionalProperties: false;
+        };
+        /** @description One exposed routine as a calling agent sees it: the name it invokes, the operator-authored description, and the input schema built from the routine's slots. */
+        AgentToolDescriptor: {
+            toolName: string;
+            description: string;
+            inputSchema: components["schemas"]["AgentToolInputSchema"];
+            routineLineageId: string;
+        };
+        /** @description The bound agent's tool catalog: exposed routines from its current published release. */
+        McpConverseToolsResponse: {
+            agent: {
+                name: string;
+                description: string | null;
+            };
+            tools: components["schemas"]["AgentToolDescriptor"][];
+        };
         ConnectorField: {
             key: string;
             label: string;
@@ -14185,7 +14238,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Request validation failed */
+            /** @description Request validation failed, or routine invocation input did not match the tool's schema */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -14196,6 +14249,15 @@ export interface operations {
             };
             /** @description Invalid, inactive, cross-audience, or cross-agent credential */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Routine tool is not in the agent's catalog */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -25174,6 +25236,53 @@ export interface operations {
             };
         };
     };
+    getMcpConverseTools: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The bound agent's tool catalog */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpConverseToolsResponse"];
+                };
+            };
+            /** @description Invalid converse session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Converse session is no longer authorized */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description MCP converse rate limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     askMcpConverseAgent: {
         parameters: {
             query?: never;
@@ -25184,7 +25293,13 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    message: string;
+                    message?: string;
+                    routine?: {
+                        toolName: string;
+                        input: {
+                            [key: string]: unknown;
+                        };
+                    };
                     /** @enum {boolean} */
                     stream?: false;
                 };
@@ -25200,6 +25315,15 @@ export interface operations {
                     "application/json": components["schemas"]["McpConverseAskResponse"];
                 };
             };
+            /** @description Routine invocation input did not match the tool's schema */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Invalid converse session */
             401: {
                 headers: {
@@ -25211,6 +25335,15 @@ export interface operations {
             };
             /** @description Converse session is no longer authorized */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Routine tool is not in the agent's catalog */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

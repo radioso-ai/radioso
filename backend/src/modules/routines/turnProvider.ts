@@ -35,7 +35,11 @@ import type { RoutineTriggerEmbeddingService } from "./routineTriggerEmbeddingSe
 import { createRoutineActivationPrefilter } from "./routineActivationPrefilter.js";
 import { createRoutineTurnReporter } from "./routineTurnReporter.js";
 import { loadPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
+import { setTraceAttributes } from "../../shared/observability/tracing/operations.js";
 import type { RoutineTurnReporter } from "./turnReport.js";
+import type { DirectInvocationOutcome } from "./exposure/directInvocationActivator.js";
+import { createDirectInvocationTurnPorts } from "./exposure/directInvocationTurn.js";
+import type { RoutineInvocation } from "./exposure/routineInvocationValidator.js";
 
 interface RoutineRegistrationSource {
   load(input: { agentId: string; workspaceId?: string; agentRevisionId?: string }): Promise<RoutineRegistration[]>;
@@ -84,6 +88,12 @@ interface RoutineTurnProvider {
     accountId?: string;
     pinnedRoutineIds?: string[];
     previewRoutineIds?: string[];
+    /**
+     * A tool call naming one exposed routine. When present the turn admits that
+     * routine directly (no prefilter, ranked match, coverage activation, reentry
+     * gate, or slot correction) with the input as its initial variables.
+     */
+    routineInvocation?: RoutineInvocation;
     responseLanguage?: string | Promise<string | undefined>;
     groundedAnswerRenderer?: RoutineGroundedAnswerRenderer;
     throwIfCancelled?: () => void;
@@ -121,6 +131,20 @@ const coverageCriteriaMatches = (criteria: AnswerCoverageCriteria, turn: TurnCon
     && (criteria.reasons === undefined || criteria.reasons.includes(reason as NonNullable<AnswerCoverageCriteria["reasons"]>[number]));
 };
 
+const ROUTINE_INVOCATIONS_TOTAL = "routine_invocations_total";
+
+const invocationOutcomeLabel = (outcome: DirectInvocationOutcome): "started" | "reentry" | "unknown_tool" => {
+  switch (outcome.kind) {
+    case "started":
+      return "started";
+    case "reentered":
+    case "declined":
+      return "reentry";
+    case "unknown_tool":
+      return "unknown_tool";
+  }
+};
+
 export const createRoutineTurnProvider = (
   dependencies: RoutineTurnProviderDependencies,
 ): RoutineTurnProvider => ({
@@ -132,6 +156,7 @@ export const createRoutineTurnProvider = (
     accountId,
     pinnedRoutineIds = [],
     previewRoutineIds = [],
+    routineInvocation,
     responseLanguage,
     groundedAnswerRenderer,
     throwIfCancelled,
@@ -345,6 +370,76 @@ export const createRoutineTurnProvider = (
       },
     };
 
+    const runner = new DefaultRoutineRunner(
+      routines,
+      new RoutineNextStepSelector(modelGateway, {
+        promptTemplate: loadPromptTemplate("chat/routine-next-step.md"),
+      }),
+      new RoutineStepRenderer(modelGateway, {
+        promptTemplate: loadPromptTemplate("chat/routine-step-reply.md"),
+        terminalHandoffWithMessagePromptTemplate: loadPromptTemplate("chat/routine-step-terminal-handoff-with-message.md"),
+        terminalHandoffDefaultPromptTemplate: loadPromptTemplate("chat/routine-step-terminal-handoff-default.md"),
+        responseLanguage,
+        groundedAnswerRenderer,
+      }),
+      new RoutineSkillExecutorDispatcher(
+        createRoutineSkillResolverChain({
+          webhookSkillNames,
+          emailSkillNames,
+          slackSkillNames,
+          retrieveSkills,
+          notifySkills,
+        }),
+        dependencies.skillExecutorRegistry,
+        {
+          workspaceId,
+          ...(accountId ? { accountId } : {}),
+          capabilityGate: (capability) => dependencies.capabilityPolicy.can({ capability, workspaceId }),
+          metricsRegistry: dependencies.metricsRegistry ?? null,
+          throwIfCancelled,
+          skillEffects,
+          conversationDurability,
+        },
+      ),
+      // `{{context.<name>}}` in a step instruction reads staged visitor context through
+      // the context-variables module, which owns what each variable may show.
+      { contextRenderer: routineContextRenderer },
+    );
+
+    if (routineInvocation) {
+      const direct = createDirectInvocationTurnPorts({
+        registrations: effectiveRegistrations,
+        routines,
+        invocation: routineInvocation,
+        onOutcome: (outcome) => {
+          dependencies.metricsRegistry?.incrementCounter(ROUTINE_INVOCATIONS_TOTAL, {
+            help: "Routine tool invocations by outcome.",
+            labels: { outcome: invocationOutcomeLabel(outcome) },
+          });
+          if (outcome.kind === "unknown_tool") {
+            dependencies.logger.warn(
+              { agentId, agentRevisionId, toolName: routineInvocation.toolName },
+              "Routine invocation named a tool no routine of this turn's release carries; answering normally",
+            );
+          }
+        },
+      });
+      // Attributes on the turn spine (the active span), never a new span; counts only.
+      setTraceAttributes({
+        "routine.invocation.tool_name": routineInvocation.toolName,
+        "routine.invocation.slot_count": direct.routine?.slots?.length ?? 0,
+        "routine.invocation.prefilled_count": Object.keys(routineInvocation.input).length,
+      });
+      return {
+        routines,
+        reporter: direct.reporter,
+        activator: direct.activator,
+        slotCorrection: direct.slotCorrection,
+        reentryGate: direct.reentryGate,
+        runner,
+      };
+    }
+
     return {
       routines,
       reporter: createRoutineTurnReporter(routines),
@@ -396,41 +491,7 @@ export const createRoutineTurnProvider = (
         }),
       }),
       reentryGate: preEvidenceReentryGate,
-      runner: new DefaultRoutineRunner(
-        routines,
-        new RoutineNextStepSelector(modelGateway, {
-          promptTemplate: loadPromptTemplate("chat/routine-next-step.md"),
-        }),
-        new RoutineStepRenderer(modelGateway, {
-          promptTemplate: loadPromptTemplate("chat/routine-step-reply.md"),
-          terminalHandoffWithMessagePromptTemplate: loadPromptTemplate("chat/routine-step-terminal-handoff-with-message.md"),
-          terminalHandoffDefaultPromptTemplate: loadPromptTemplate("chat/routine-step-terminal-handoff-default.md"),
-          responseLanguage,
-          groundedAnswerRenderer,
-        }),
-        new RoutineSkillExecutorDispatcher(
-          createRoutineSkillResolverChain({
-            webhookSkillNames,
-            emailSkillNames,
-            slackSkillNames,
-            retrieveSkills,
-            notifySkills,
-          }),
-          dependencies.skillExecutorRegistry,
-          {
-            workspaceId,
-            ...(accountId ? { accountId } : {}),
-            capabilityGate: (capability) => dependencies.capabilityPolicy.can({ capability, workspaceId }),
-            metricsRegistry: dependencies.metricsRegistry ?? null,
-            throwIfCancelled,
-            skillEffects,
-            conversationDurability,
-          },
-        ),
-        // `{{context.<name>}}` in a step instruction reads staged visitor context through
-        // the context-variables module, which owns what each variable may show.
-        { contextRenderer: routineContextRenderer },
-      ),
+      runner,
     };
   },
 });

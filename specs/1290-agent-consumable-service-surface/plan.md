@@ -421,3 +421,52 @@ Where the code differed from the file-level plan above:
 - **Observability:** audit metadata on `routine_definition.create/update` gains `exposureEnabled` and
   `exposureToolName` (never the description); no new runtime path, so no new logs, metrics, or spans.
 
+
+## Implementation notes (slice 3, 2026-09-22)
+
+Where the code differed from the file-level plan above:
+
+- **`RoutineInvocation` is `{ toolName, input }`.** The lineage id stays on the descriptor the call
+  validated against (`AgentTurnInput.descriptor.routineLineageId`): the tool name is the routine's
+  identity within a release, nothing downstream reads the lineage, and the eval harness can then
+  author an invocation without knowing lineages. The type is owned by `routines/exposure/
+  routineInvocationValidator.ts` and re-exported through `chat/contracts/routineInvocation.ts`.
+- **Rendering happens at the entries, not in the preparer.** `assistantChatService.ts` and the
+  replay adapter (`scripts/evalRunnerAdapter.ts`, via `conversationQualityCaseTurnText`) set
+  `query = renderRoutineInvocation(invocation)`; the preparer keeps `query` required, passes
+  `routineInvocation` through to the session, and derives `inputMetadata` from it when recording
+  the user message. `ChatService` and `chatTurnAssembly` are pass-through only.
+- **Decision 9 mechanism.** The activator returns null and no routine state is saved, so the
+  lifecycle's `describeRoutineTurn` has nothing to describe. `RoutineTurnReporter` gained
+  `describeDeclined()`; `routines/exposure/directInvocationTurn.ts` pairs the direct activator with
+  the silenced reentry/slot-correction gates and a reporter whose `declinedRoutineId` reads the
+  activator's outcome; `chatTurnAssembly.attemptRoutineTurn` writes the description onto
+  `PreparedSession.declinedRoutine` when the engine yields, and the lifecycle falls back to it. The
+  session is the one object every normal-answer branch already hands the lifecycle.
+- **`decisionMetadata`** is the contract's `ClarificationDecision` (`auto_pick`, reason `priority`)
+  with the metadata-level `reason: "direct_invocation"`, which is what the clarification stage
+  records; the string is not a new `ClarificationAutoPickReason`.
+- **Catalog readers.** `createAgentToolCatalog({ agents, publishedRoutines })` takes two narrow
+  readers; the agent's `description` is `null` until US6. Composition (`app/composition/
+  agentToolCatalog.ts`) reads the pinned revision or the current published one. The test app
+  composes the same port over `routineDefinitionRepository.listActiveByAgent`, the source its own
+  routine provider serves from, so the catalog and the activator agree there.
+- **`turn_uses_skill` now sees routine skill steps** (a `skill_dispatched` entry in the routine
+  subtrace), which the SC-002 cases need; `turn_skips_skill` is its negation over the same set.
+  In the live suite the fixture's `create_return_ticket` is not a registered skill, so the dispatch
+  is recorded with `skillStatus: "failed"` (`unknown_skill`) on both the transcript and the
+  invocation path; the parity assertion is on the dispatch, not its success.
+- **Error codes** ride `error.details.code` (`routine_tool_unknown`, `routine_invocation_invalid`)
+  with `error.code` staying `not_found` / `bad_request`, matching the converse service's existing
+  `mcp_converse_*` convention; `notFound` gained an optional `details` argument.
+- **Metrics** `converse_turns_total{input_kind}` and `routine_invocations_total{outcome}` are
+  emitted from `resolveAgentTurnInput` (`message`/`routine_invocation`, `validation_failed`,
+  `unknown_tool`) and from the turn provider's `onOutcome` (`started`; `reentry` for both a
+  re-admitted and a declined completed routine; `unknown_tool` when the tool is absent from the
+  turn's pinned release — Decision 7's race — also logged at `warn`).
+- **Test app fidelity.** `InMemoryRoutineStateStore` gained `loadCompleted`, without which the
+  engine never suppresses a completed routine and AS-5 cannot be observed.
+- **Frontend** history types come from `UserMessageInputMetadata`, now one OpenAPI component
+  (`method` gains `routine_invocation`, plus `routine`); `chat-message-thread.tsx` renders the
+  block (`data-testid="routine-invocation-block"`), and the request-side `inputMetadata` schema is
+  unchanged so a client cannot claim the method.

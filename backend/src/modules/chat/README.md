@@ -42,6 +42,21 @@ rows. Start at `test-execution/README.md` and
   state the turn saved. `presentChatPayload` strips `routine` from the human-facing
   routes; only `sendChatSse(..., { agentEnvelope: true })` and the agent channel
   route publish it.
+- `services/agentTurnInput.ts` (exported through `contracts/`): `resolveAgentTurnInput`
+  turns an agent-facing body into `{ kind: "message" }` or `{ kind: "routine_invocation" }`
+  once, before any turn state exists — both the MCP converse `ask` route and the REST
+  agent chat route call it, so neither transport validates a tool call on its own. It
+  loads the release's catalog (`AgentToolCatalogPort`, composed in
+  `app/composition/agentToolCatalog.ts`), validates the input with the routines
+  module's validator, and throws `routine_tool_unknown` (404) or
+  `routine_invocation_invalid` (400, field-level `details.errors`). The validated
+  `RoutineInvocation` (`contracts/routineInvocation.ts`) rides `AssistantChatRequest`
+  → `ChatService` → `PrepareChatSessionInput` → `PreparedSession` → the routine
+  provider unread; `assistantChatService.ts` renders it as the turn's query text and
+  the preparer records the user message with `inputMetadata.method =
+  "routine_invocation"`. When the provider's activator declines the call (the routine
+  completed under `once_per_conversation`), `chatTurnAssembly.ts` sets
+  `PreparedSession.declinedRoutine` and the lifecycle reports it in the envelope.
 - `composition.ts`: chat module wiring used by application composition.
 - `llmAdapters.ts`: LLM-provider registration for chat.
 - `retrievalSupport.ts`: narrow helpers used by retrieval answer assembly.

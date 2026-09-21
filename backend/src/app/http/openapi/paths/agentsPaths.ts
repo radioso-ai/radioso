@@ -60,6 +60,7 @@ export const registerAgentsPaths = (
     path: "/api/v1/agents/{agentId}/chat",
     tags: ["Agent Channels"],
     summary: "Run chat through a REST credential bound to this agent",
+    description: "Send exactly one of `message`, `routine` (a tool call to one exposed routine; validated against the catalog before any turn state is written, with the same `routine_tool_unknown` / `routine_invocation_invalid` errors as the MCP converse ask route), or `startConversation`.",
     operationId: "createAgentChannelChatResponse",
     security: [{ [security.agentChannelBearerAuthScheme.name]: [] }],
     request: {
@@ -78,8 +79,9 @@ export const registerAgentsPaths = (
         },
       },
       204: { description: "Conversation start completed without a greeting" },
-      400: { description: "Request validation failed", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      400: { description: "Request validation failed, or routine invocation input did not match the tool's schema", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
       401: { description: "Invalid, inactive, cross-audience, or cross-agent credential", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Routine tool is not in the agent's catalog", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
       429: { description: "Agent channel rate limit exceeded", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
     },
   });

@@ -14,8 +14,11 @@ const SESSION_TITLE_MAX_LENGTH = 60;
 // assistant.threads.setSuggestedPrompts accepts at most four prompts.
 const SUGGESTED_PROMPTS_MAX = 4;
 
-const truncate = (text: string, maxLength: number): string =>
-  text.length > maxLength ? `${text.slice(0, maxLength)}…` : text;
+// Counted in code points so an emoji on the boundary is kept whole rather than split into a lone surrogate.
+const truncate = (text: string, maxLength: number): string => {
+  const characters = Array.from(text);
+  return characters.length > maxLength ? `${characters.slice(0, maxLength).join("")}…` : text;
+};
 
 /** The user's own first words, collapsed to one line, as the session's sidebar title. */
 export const sessionTitleFromMessage = (text: string): string =>

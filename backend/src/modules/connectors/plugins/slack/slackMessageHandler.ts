@@ -31,8 +31,8 @@ import type { SlackPersistencePort } from "./slackPersistence.js";
 import { createSlackTurnSurface, type SlackTurnOutcome, type SlackTurnSurfaceRef } from "./slackTurnSurface.js";
 import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
 
-// A direct message to the app. In Slack's agent pane every session is a thread in the
-// app DM, so a `thread_ts` marks a session message; without it this is a plain DM.
+// A direct message to the app. In Slack's agent pane every session is a thread in the app
+// DM: the first message carries only `ts`, its follow-ups carry `thread_ts` = that ts.
 export interface SlackMessageImEvent {
   type: "message";
   channel_type: "im";
@@ -124,10 +124,9 @@ interface SlackMessageHandlerOptions {
   starterPrompts?: SlackStarterPromptsPort;
 }
 
-const dmSlackKey = (teamId: string, userId: string): string => `dm:${teamId}:${userId}`;
-// One conversation per channel thread. The `mention:` prefix is historical — it predates
-// un-mentioned thread follow-ups — and stays because persisted links and
-// slackCustomerReplyDeliverer parse it.
+// One conversation per thread, in channels and in the app DM alike. The `mention:` prefix is
+// historical — it predates un-mentioned follow-ups and DM sessions — and stays because
+// persisted links and slackCustomerReplyDeliverer parse it.
 const threadSlackKey = (teamId: string, channelId: string, threadTs: string): string =>
   `mention:${teamId}:${channelId}:${threadTs}`;
 
@@ -176,41 +175,26 @@ export class SlackMessageHandler {
     if (!binding) {
       return;
     }
-    const team = {
-      id: installation.teamId,
-      ...(installation.teamName ? { name: installation.teamName } : {}),
-    };
-    if (event.thread_ts) {
-      // An agent-pane session: one conversation per thread, keyed like a channel thread so
-      // operator replies (slackCustomerReplyDeliverer) land in the session unchanged.
-      await this.handleSlackTurn({
-        envelope: input,
-        installation,
-        binding,
-        surface: { kind: "dm_session", threadTs: event.thread_ts },
-        slackKey: threadSlackKey(installation.teamId, event.channel, event.thread_ts),
-        replyThreadTs: event.thread_ts,
-        channelContext: {
-          provider: "slack",
-          team,
-          channel: { id: event.channel, type: "im" },
-          threadTs: event.thread_ts,
-          user: { id: event.user },
-        },
-      });
-      return;
-    }
+    // Every direct message is an agent-pane session: Slack anchors a session on the first
+    // message's ts and sends later messages with that thread_ts, so the first message opens the
+    // thread and the follow-ups join it. Keyed like a channel thread so operator replies
+    // (slackCustomerReplyDeliverer) land in the session unchanged.
+    const threadTs = event.thread_ts ?? event.ts;
     await this.handleSlackTurn({
       envelope: input,
       installation,
       binding,
-      surface: { kind: "dm" },
-      slackKey: dmSlackKey(installation.teamId, event.user),
-      replyThreadTs: undefined,
+      surface: { kind: "dm_session", threadTs },
+      slackKey: threadSlackKey(installation.teamId, event.channel, threadTs),
+      replyThreadTs: threadTs,
       channelContext: {
         provider: "slack",
-        team,
+        team: {
+          id: installation.teamId,
+          ...(installation.teamName ? { name: installation.teamName } : {}),
+        },
         channel: { id: event.channel, type: "im" },
+        threadTs,
         user: { id: event.user },
       },
     });

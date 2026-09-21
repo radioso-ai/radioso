@@ -1,4 +1,15 @@
+import type { AgentToolDescriptor } from "../converseApiAdapter.js";
 import { hashToken, isExpired } from "./token.js";
+
+/**
+ * The routine tools a session sees, read from the backend once when the session is
+ * established. `key` names the exact tool set (see `toolCatalogKey.ts`) so sessions with
+ * identical catalogs can share one MCP server; `tools` is what that server renders.
+ */
+export interface SessionToolCatalog {
+  key: string;
+  tools: AgentToolDescriptor[];
+}
 
 export interface AccessSessionRecord {
   accessTokenHash: string;
@@ -9,6 +20,8 @@ export interface AccessSessionRecord {
   conversationId?: string;
   converseSessionToken?: string;
   sessionId: string;
+  /** Absent on a record persisted before catalogs were pinned; such a session sees the static tools only. */
+  toolCatalog?: SessionToolCatalog;
 }
 
 export interface SessionStore {
@@ -23,6 +36,7 @@ export interface SessionStore {
     conversationId?: string;
     converseSessionToken?: string;
     sessionId: string;
+    toolCatalog?: SessionToolCatalog;
   }): Promise<AccessSessionRecord>;
 }
 
@@ -81,6 +95,7 @@ export const createInMemorySessionStore = (): SessionStore => {
         conversationId: input.conversationId,
         converseSessionToken: input.converseSessionToken,
         sessionId: input.sessionId,
+        toolCatalog: input.toolCatalog,
       };
 
       const previousSession = sessionsById.get(session.sessionId);

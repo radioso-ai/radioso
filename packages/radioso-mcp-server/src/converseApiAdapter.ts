@@ -25,13 +25,23 @@ export type ConverseSessionExchangeResponse =
 export type ConverseSessionValidateResponse =
   operations["validateMcpConverseSession"]["responses"][200]["content"]["application/json"];
 
+/** One turn: a `message`, or a `routine` invocation of a tool from the session's catalog. */
+export type ConverseAskRequest =
+  operations["askMcpConverseAgent"]["requestBody"]["content"]["application/json"];
+
 /** The agent reply envelope core plus `answer.{text,citations}`; forwarded verbatim as structuredContent. */
 export type ConverseAskResponse = components["schemas"]["McpConverseAskResponse"];
+
+/** The bound agent's exposed routines as tools, read once per session. */
+export type ConverseToolsResponse = components["schemas"]["McpConverseToolsResponse"];
+
+export type AgentToolDescriptor = components["schemas"]["AgentToolDescriptor"];
 
 export interface ConverseApiAdapter {
   exchange(body: ConverseSessionExchangeRequest, context?: ConverseSourceContext): Promise<ConverseSessionExchangeResponse>;
   validate(sessionToken: string, context?: ConverseSourceContext): Promise<ConverseSessionValidateResponse>;
-  ask(sessionToken: string, body: { message: string }, context?: ConverseSourceContext): Promise<ConverseAskResponse>;
+  tools(sessionToken: string, context?: ConverseSourceContext): Promise<ConverseToolsResponse>;
+  ask(sessionToken: string, body: ConverseAskRequest, context?: ConverseSourceContext): Promise<ConverseAskResponse>;
   recordUse(sessionToken: string, context?: ConverseSourceContext): Promise<void>;
 }
 
@@ -127,6 +137,16 @@ export const createConverseApiAdapter = (
         method: "POST",
         headers: sourceProofHeaders(path, "POST", context),
         body: JSON.stringify({ sessionToken }),
+      });
+    },
+    tools: (sessionToken, context) => {
+      const path = "/api/v1/mcp/converse/tools";
+      return request(path, {
+        method: "GET",
+        headers: {
+          authorization: `Bearer ${sessionToken}`,
+          ...sourceProofHeaders(path, "GET", context),
+        },
       });
     },
     ask: (sessionToken, body, context) => {

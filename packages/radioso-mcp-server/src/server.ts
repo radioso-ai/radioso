@@ -1,10 +1,12 @@
 import type { ServerContext } from "@modelcontextprotocol/server";
 import { McpServer } from "@modelcontextprotocol/server";
 
+import type { AgentToolDescriptor } from "./converseApiAdapter.js";
 import { toStructuredToolError } from "./errors.js";
 import { toCallToolResult, toErrorCallToolResult } from "./toolResult.js";
 import { createConverseToolDefinitions } from "./tools/converseTools.js";
 import { createProductDocsToolDefinitions } from "./tools/productDocsTools.js";
+import { createRoutineToolDefinitions } from "./tools/routineTools.js";
 import type { RemoteToolAuthInfo, ToolDefinition, ToolExecutionContext } from "./types.js";
 
 export interface RadiosoMcpServerContext {
@@ -20,6 +22,9 @@ export interface RadiosoMcpServerContext {
     args: Record<string, unknown>,
     ctx: ServerContext,
   ) => Promise<ToolExecutionContext>;
+  /** The session's exposed routines, one tool each, listed after the static tools. */
+  routineTools?: AgentToolDescriptor[];
+  warn?: (message: string) => void;
 }
 
 export interface RadiosoMcpServerHandle {
@@ -36,11 +41,33 @@ export const getRemoteToolAuthInfo = (ctx: ServerContext): RemoteToolAuthInfo | 
   return null;
 };
 
+/**
+ * The backend refuses reserved tool names at publish time, so a collision here means the
+ * two sides disagree about that list. The static tool wins and the routine is left out of
+ * this server rather than failing every session that shares the catalog.
+ */
+const withoutStaticNameCollisions = (
+  staticTools: ToolDefinition[],
+  routineTools: AgentToolDescriptor[],
+  warn: (message: string) => void,
+): AgentToolDescriptor[] => {
+  const staticNames = new Set(staticTools.map((tool) => tool.name));
+  return routineTools.filter((descriptor) => {
+    if (!staticNames.has(descriptor.toolName)) {
+      return true;
+    }
+    warn(`Skipping routine tool "${descriptor.toolName}": the name belongs to a static MCP tool.`);
+    return false;
+  });
+};
+
 export const createRadiosoMcpServer = ({
   onToolError,
   onToolResult,
   resolveExecutionContext,
+  routineTools = [],
   serverName,
+  warn = console.warn,
 }: RadiosoMcpServerContext): RadiosoMcpServerHandle => {
   const server = new McpServer({
     name: serverName,
@@ -51,7 +78,11 @@ export const createRadiosoMcpServer = ({
   // Documentation tools sit beside the converse tool rather than behind a flag: a client that
   // can reach this server is already authorized for the workspace, and the corpus is the same
   // public documentation for every one of them.
-  const toolDefinitions = [...converseToolDefinitions, ...createProductDocsToolDefinitions()];
+  const staticToolDefinitions = [...converseToolDefinitions, ...createProductDocsToolDefinitions()];
+  const toolDefinitions = [
+    ...staticToolDefinitions,
+    ...createRoutineToolDefinitions(withoutStaticNameCollisions(staticToolDefinitions, routineTools, warn)),
+  ];
   const executionResolver = resolveExecutionContext;
 
   if (!executionResolver) {

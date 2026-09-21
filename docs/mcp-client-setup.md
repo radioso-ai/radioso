@@ -6,7 +6,7 @@ last_updated: 2026-09-22
 
 # MCP Client Setup
 
-Radioso exposes an MCP surface for clients that need to talk to one configured agent. It publishes one tool, `ask_agent`, which runs the same persona, directives, routines, and retrieval behavior as the agent's other chat channels.
+Radioso exposes an MCP surface for clients that need to talk to one configured agent. Its `ask_agent` tool runs the same persona, directives, routines, and retrieval behavior as the agent's other chat channels, and every routine the operator has exposed on the agent is listed beside it as a typed tool of its own.
 
 For Ray's workspace-level read, probe, and proposal tools, use the separate [Operator MCP OAuth flow](./operator-mcp.md) under **Settings → API access**. Its `/operator/mcp` resource uses browser consent and never accepts an agent-channel credential.
 
@@ -203,6 +203,20 @@ Reentry follows the routine's own setting. Calling a tool whose routine already 
 
 The catalog reflects the agent's current published release. A conversation stays pinned to the release it started on, so a routine exposed or renamed after that point is listed by `tools` before the conversation can run it; open a new session (a fresh conversation) to use it. Draft routines are never listed — the operator's Test Chat is the place to try one.
 
+### Routine tools over standalone MCP
+
+An MCP client sees the same catalog without calling the REST route itself. The standalone server reads `GET /api/v1/mcp/converse/tools` once, when it exchanges the credential for a session, and pins the result to that session. `tools/list` for the session is then:
+
+- `ask_agent`
+- `radioso_docs` and `radioso_doc_page`, Radioso's own documentation
+- one tool per descriptor, named by its `toolName`, carrying the operator's description and the descriptor's `inputSchema` verbatim
+
+So the `start_return` example above appears to the client as a tool `start_return(orderId, reason?)`. Calling it is the routine invocation from the previous section: the server checks the arguments against the schema before the backend sees them (a call missing `orderId` fails at the MCP layer as a tool error), then sends `{ "routine": { "toolName": "start_return", "input": { … } } }` on the ask route. The result's `structuredContent` is the full agent reply envelope, and its text content is `answer.text` — the same shape `ask_agent` returns, so a client reads `routine.status` and `pendingInput` the same way whichever tool it called.
+
+The catalog is fixed for the session's lifetime. A routine exposed, renamed, or withdrawn after the session opened is picked up when the client's next session is established (after the current one expires, or after the credential is exchanged again); the server sends no `notifications/tools/list_changed`. When the pinned catalog and the release a conversation runs on disagree, the backend refuses the call and the client sees a tool error whose `details.code` is `routine_tool_unknown`.
+
+Operators who expose a routine under a name the server reserves for a static tool cannot publish it — the backend refuses reserved names. If a deployment ever presents one anyway, the server keeps the static tool, leaves that routine out of the session's list, and logs a warning.
+
 If another ask arrives for the same conversation before the first reply starts,
 the first request returns HTTP `409` with error code `chat_turn_superseded`. The
 newer ask waits for cleanup and answers from the latest conversation history. If
@@ -258,7 +272,7 @@ MCP credentials are secret bearers bound to one agent. Public chat and website e
 
 ## Endpoint Model
 
-The standalone `/mcp` endpoint serves the agent-converse surface. `ask_agent` runs the bound agent's turn loop. The original MCP credential fixes the agent and its authorization boundary; standalone performs the credential-to-session exchange.
+The standalone `/mcp` endpoint serves the agent-converse surface. `ask_agent` runs the bound agent's turn loop, and each exposed routine is a tool that starts that routine directly. The original MCP credential fixes the agent and its authorization boundary; standalone performs the credential-to-session exchange and reads the agent's tool catalog at that moment.
 
 Workspace retrieval and document operations remain REST surfaces. Personal and service-account REST credentials do not become MCP tool credentials.
 
@@ -347,4 +361,4 @@ const response = await client.responses.create({
 
 `authorization` is the Responses API MCP tool's bearer credential field. Read the value from your secret manager (the example uses `RADIOSO_MCP_ACCESS_TOKEN`); do not commit the credential to source.
 
-`require_approval: "never"` skips the host-side prompt. The MCP surface contains `ask_agent`; it does not expose Ray or a skill catalogue.
+`require_approval: "never"` skips the host-side prompt. The MCP surface contains `ask_agent`, the documentation tools, and the agent's exposed routines; it does not expose Ray or a skill catalogue.

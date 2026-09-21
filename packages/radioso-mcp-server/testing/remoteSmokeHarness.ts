@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import { createInMemoryAuditSink } from "../src/audit/auditLogger.js";
 import type { RadiosoMcpConfig } from "../src/config.js";
+import type { AgentToolDescriptor, ConverseAskResponse } from "../src/converseApiAdapter.js";
 import { createRemoteHttpRuntime } from "../src/http/runtime.js";
 
 const MCP_PROTOCOL_VERSION = "2025-11-25";
@@ -11,6 +12,7 @@ const backendPackageDir = fileURLToPath(new URL("../../../backend", import.meta.
 
 type JsonRpcPayload = Record<string, unknown>;
 type TestAppModule = typeof import("../../../backend/tests/support/testApp.js");
+type TestAppDependencies = ReturnType<TestAppModule["createTestApp"]>["dependencies"];
 type McpConverseRoutesModule = typeof import("../../../backend/src/app/http/routes/mcpConverseRoutes.js");
 type DependencyBuildersModule = typeof import("../../../backend/src/app/server/dependencyBuilders.js");
 
@@ -22,6 +24,8 @@ interface BackendHarness {
   app: unknown;
   baseUrl: string;
   close(): Promise<void>;
+  /** Exposes one routine as the `start_return` tool on the agent and returns its descriptor. */
+  exposeStartReturnRoutine(grant: { agentId: string; workspaceId: string }): Promise<AgentToolDescriptor>;
   issueConverseGrant(email?: string): Promise<{ agentId: string; token: string; workspaceId: string }>;
 }
 
@@ -135,6 +139,42 @@ const getStructuredContent = (payload: unknown): unknown => {
 const asAskAgentAnswer = (structuredContent: unknown): { answer: { text: string } } =>
   structuredContent as { answer: { text: string } };
 
+// A routine tool's structuredContent is the full agent reply envelope.
+const asReplyEnvelope = (structuredContent: unknown): ConverseAskResponse =>
+  structuredContent as ConverseAskResponse;
+
+const START_RETURN_DESCRIPTION = "Start a return for an order.";
+
+/**
+ * The same shape the backend's routine-invocation integration suite seeds: two text slots,
+ * one required, collected over two chat steps. In the in-memory test app a created draft is
+ * already the agent's active routine, so no publish step is needed.
+ */
+const startReturnRoutineDraft = (): Parameters<TestAppDependencies["routineDefinitionService"]["createDraft"]>[2] => ({
+  name: "Start a return",
+  enabled: true,
+  activation: {
+    triggerDescription: "When the user wants to return an order.",
+    gateRef: null,
+    priority: 10,
+    reentryMode: "once_per_conversation",
+  },
+  exposure: { enabled: true, toolName: "start_return", description: START_RETURN_DESCRIPTION },
+  slots: [
+    { stableSlotId: "slot_order", key: "orderId", type: "text", required: true, description: "The order number", ordinal: 0 },
+    { stableSlotId: "slot_reason", key: "reason", type: "text", required: false, description: "Why it is coming back", ordinal: 1 },
+  ],
+  steps: [
+    { stableStepId: "ask_order", kind: "chat", instruction: "Ask for {{slot.orderId}}.", toolRef: null, ordinal: 0, metadata: {} },
+    { stableStepId: "ask_reason", kind: "chat", instruction: "Ask for {{slot.reason}}.", toolRef: null, ordinal: 1, metadata: {} },
+  ],
+  transitions: [
+    { fromStep: "ask_order", toRef: "ask_reason", guardKind: "default", guardText: null, ordinal: 0 },
+    { fromStep: "ask_reason", toRef: "done", guardKind: "default", guardText: null, ordinal: 1 },
+  ],
+  terminals: [{ stableStepId: "done", kind: "complete", instruction: "Confirm the return for {{slot.orderId}}.", ordinal: 2 }],
+});
+
 const startBackendHarness = async (): Promise<BackendHarness> => {
   const { createTestApp, issueTestSession } = await loadTestAppModule();
   const { createMcpConverseRoutes } = await loadMcpConverseRoutesModule();
@@ -156,6 +196,23 @@ const startBackendHarness = async (): Promise<BackendHarness> => {
     baseUrl: resolveBaseUrl(server),
     async close() {
       await closeServer(server);
+    },
+    async exposeStartReturnRoutine(grant) {
+      const saved = await dependencies.routineDefinitionService.createDraft(grant.workspaceId, grant.agentId, startReturnRoutineDraft());
+      return {
+        toolName: "start_return",
+        description: START_RETURN_DESCRIPTION,
+        inputSchema: {
+          type: "object",
+          properties: {
+            orderId: { type: "string", description: "The order number" },
+            reason: { type: "string", description: "Why it is coming back" },
+          },
+          required: ["orderId"],
+          additionalProperties: false,
+        },
+        routineLineageId: saved.routine.lineageId,
+      };
     },
     async issueConverseGrant(email?: string) {
       const session = await issueTestSession(app, email);
@@ -241,7 +298,7 @@ const listTools = async (baseUrl: string, accessToken: string) => {
   });
   const payload = await readJson(response);
   assert.equal(response.status, 200, `Expected tools/list to succeed, got ${response.status}: ${JSON.stringify(payload)}`);
-  return payload as { result: { tools: Array<{ name: string }> } };
+  return payload as { result: { tools: Array<{ name: string; description?: string; inputSchema?: unknown }> } };
 };
 
 const callTool = async (
@@ -276,15 +333,21 @@ export const runConverseGrantSmoke = async (logger: SmokeLogger): Promise<Conver
     logger.step("issuing MCP converse grant");
     const grant = await backend.issueConverseGrant("mcp-converse-smoke@example.com");
 
+    logger.step("exposing a routine as the start_return tool before the session opens");
+    const startReturn = await backend.exposeStartReturnRoutine(grant);
+
     logger.step("initializing MCP session directly with converse grant bearer");
     await initializeSession(remote.baseUrl, grant.token);
 
-    logger.step("listing the converse and documentation tools");
+    logger.step("listing the converse, documentation, and routine tools");
     const tools = await listTools(remote.baseUrl, grant.token);
     assert.deepEqual(
       tools.result.tools.map((tool) => tool.name).sort(),
-      ["ask_agent", "radioso_doc_page", "radioso_docs"],
+      ["ask_agent", "radioso_doc_page", "radioso_docs", "start_return"],
     );
+    const listedStartReturn = tools.result.tools.find((tool) => tool.name === "start_return");
+    assert.equal(listedStartReturn?.description, startReturn.description);
+    assert.deepEqual(listedStartReturn?.inputSchema, startReturn.inputSchema);
     assert.ok(!tools.result.tools.some((tool) => tool.name === "describe_capabilities"));
     assert.ok(!tools.result.tools.some((tool) => tool.name === "list_documents"));
     assert.ok(!tools.result.tools.some((tool) => tool.name === "get_document"));
@@ -298,6 +361,30 @@ export const runConverseGrantSmoke = async (logger: SmokeLogger): Promise<Conver
     const askAnswer = asAskAgentAnswer(ask.structuredContent).answer;
     assert.equal(typeof askAnswer.text, "string");
     assert.ok(askAnswer.text.length > 0);
+
+    logger.step("calling the start_return routine tool with its required slot");
+    const invocation = await callTool(remote.baseUrl, grant.token, "start_return", { orderId: "A-1001" });
+    assert.equal(invocation.response.status, 200, `Expected start_return to succeed: ${JSON.stringify(invocation.payload)}`);
+    const invocationResult = (invocation.payload as { result?: { isError?: boolean } }).result;
+    assert.ok(!invocationResult?.isError, `Expected start_return to run, got ${JSON.stringify(invocation.payload)}`);
+    const envelope = asReplyEnvelope(invocation.structuredContent);
+    assert.equal(typeof envelope.answer.text, "string");
+    assert.equal(envelope.routine?.toolName, "start_return");
+    assert.equal(envelope.routine?.name, "Start a return");
+    assert.ok(envelope.ownership, "Expected the routine tool to return the agent reply envelope");
+
+    logger.step("confirming the routine tool validates arguments before the backend sees them");
+    const rejected = await callTool(remote.baseUrl, grant.token, "start_return", { reason: "no order id" });
+    const rejectedPayload = rejected.payload as { error?: unknown; result?: { isError?: boolean } };
+    assert.ok(rejectedPayload.error ?? rejectedPayload.result?.isError, "Expected a start_return call without orderId to be refused");
+    assert.ok(
+      !remote.auditEvents.some((event) => JSON.stringify(event).includes("A-1001")),
+      "Expected slot values to stay out of the audit log",
+    );
+    assert.ok(
+      remote.auditEvents.some((event) => event.eventType === "tool.executed" && event.toolName === "start_return"),
+      "Expected the routine tool call to be audited by name",
+    );
 
     logger.step("confirming no direct agent resources are exposed");
     const resourcesResponse = await mcpRequest(remote.baseUrl, grant.token, {
@@ -346,6 +433,7 @@ export const runSharedStoreConverseSmoke = async (
   try {
     logger.step("issuing an agent MCP credential for the shared store");
     const grant = await backend.issueConverseGrant("mcp-converse-redis-smoke@example.com");
+    await backend.exposeStartReturnRoutine(grant);
 
     logger.step("using the credential through both shared-store nodes");
     await initializeSession(runtimeA.baseUrl, grant.token);
@@ -356,6 +444,13 @@ export const runSharedStoreConverseSmoke = async (
     assert.equal(ask.response.status, 200);
     const askAnswer = asAskAgentAnswer(ask.structuredContent).answer;
     assert.equal(typeof askAnswer.text, "string");
+
+    logger.step("confirming the second node renders the catalog pinned to the shared session");
+    const toolsOnB = await listTools(runtimeB.baseUrl, grant.token);
+    assert.deepEqual(
+      toolsOnB.result.tools.map((tool) => tool.name).sort(),
+      ["ask_agent", "radioso_doc_page", "radioso_docs", "start_return"],
+    );
 
     return {
       agentId: grant.agentId,

@@ -27,6 +27,8 @@ rows. Start at `test-execution/README.md` and
 
 - `contracts/`: chat response types, stream events, gateway contracts, and
   extension provider ports.
+  `contracts/routineProvider.ts` is the `ChatRoutineProvider` port the routines
+  module implements (`modules/routines/turnProvider.ts`); chat never names a routine.
 - `composition.ts`: chat module wiring used by application composition.
 - `llmAdapters.ts`: LLM-provider registration for chat.
 - `retrievalSupport.ts`: narrow helpers used by retrieval answer assembly.

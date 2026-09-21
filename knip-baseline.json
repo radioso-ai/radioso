@@ -253,7 +253,6 @@
   "types|backend/src/app/composition/realtimeComposition.ts|RealtimeComposition",
   "types|backend/src/app/composition/skillCapabilityRegistry.ts|SkillCapabilityExecutorBinding",
   "types|backend/src/app/composition/workspaceEmbeddingBindingResolver.ts|WorkspaceEmbeddingBindingResolverOptions",
-  "types|backend/src/app/http/middleware/agentChannelRateLimiter.ts|AgentChannelRateLimiterDependencies",
   "types|backend/src/app/http/middleware/expensiveAuthenticatedRateLimiter.ts|ExpensiveAuthenticatedRateLimiterDependencies",
   "types|backend/src/app/http/middleware/requireApiToken.ts|ApiTokenDependencies",
   "types|backend/src/app/http/middleware/requirePermission.ts|PermissionDependencies",

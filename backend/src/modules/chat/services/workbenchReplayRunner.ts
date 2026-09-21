@@ -44,9 +44,9 @@ import {
   type PreparedSession,
 } from "./chatSessionPreparer.js";
 import type { SkillEffectPolicy, TurnExecutionMode } from "../../../shared/domain/turnExecutionMode.js";
+import type { ChatRoutineProvider } from "../contracts/routineProvider.js";
 import {
   ChatTurnAssembly,
-  type ChatRoutineProvider,
   type ChatTurnAssemblyFactory,
   type ChatTurnAssemblyClarification,
   type ChatTurnAssemblyOptions,

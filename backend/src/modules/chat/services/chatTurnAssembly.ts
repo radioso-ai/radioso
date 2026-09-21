@@ -3,13 +3,9 @@ import type {
   ConversationCoverageRoutineActivator,
   ConversationCoverageReactionRecorder,
   ConversationEngine,
-  ConversationModelGateway,
   ConversationProgressPort,
   ConversationRetrievalWorkPort,
-  ConversationRoutineActivator,
-  ConversationRoutineReentryGate,
   ConversationRoutineRunner,
-  ConversationRoutineSlotCorrection,
   ConversationRoutineStore,
   ConversationTrace,
   ConversationTurnInterpreter,
@@ -18,20 +14,19 @@ import type {
   ClarificationPolicy,
   PendingClarification,
   RoutineActionRequest,
-  Routine,
   RoutineAwaitingDecision,
   RoutineState,
   ProcessTurnResult,
   TurnContext,
   TurnOutcome,
 } from "@radioso/conversation-contract";
-import type { RoutineGroundedAnswerRenderer } from "@radioso/conversation-contract";
 
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import { CHAT_TURN_ROUTE } from "../../../shared/domain/chatTurnRoute.js";
 import { buildPendingDecisionTransition } from "../../approvals/public.js";
 import type { ChatGateway } from "../contracts/chatGateway.js";
 import type { ChatStatusStage } from "../contracts/streamEvents.js";
+import type { ChatRoutineProvider } from "../contracts/routineProvider.js";
 import type { ChatAnswerPresenter, ChatPresentedAnswer } from "./chatAnswerPresenter.js";
 import { ChatAnswerSupport } from "./chatAnswerSupport.js";
 import type { RoutineHandoffEffect } from "./handoffOwnership.js";
@@ -93,8 +88,6 @@ import {
 } from "./conversationContractMappers.js";
 import type { TurnRouter, TurnRouting } from "./turnRouter.js";
 import { APPROVAL_REQUEST_ACTION_TYPE } from "./actions/approvalRequestActionHandler.js";
-import type { ChatTurnPlanHandle } from "./turnPlanCoordinator.js";
-import type { ConversationDurability, SkillEffectPolicy, TurnExecutionMode } from "../../../shared/domain/turnExecutionMode.js";
 import type { AnswerCoverageHeadRecorder } from "./answerCoverageHeadRecorder.js";
 import type { AnswerCoverageShadowAssessor } from "./answerCoverageShadowAssessor.js";
 import type { AnswerCoverageRecord } from "../../answerCoverage/public.js";
@@ -204,38 +197,6 @@ export const applyCoverageInteractionTrace = (
     }),
   };
 };
-
-export interface ChatRoutineProvider {
-  forTurn(input: {
-    modelGateway: ConversationModelGateway;
-    agentId: string;
-    /** Immutable release pinned on the conversation; absent only for fixture/replay paths. */
-    agentRevisionId?: string;
-    workspaceId?: string;
-    accountId?: string;
-    pinnedRoutineIds?: string[];
-    /**
-     * Operator-only workbench test override: routine definition ids (drafts included)
-     * to make eligible for this turn, bypassing the published-only gate. Empty/absent
-     * for every live end-user turn.
-     */
-    previewRoutineIds?: string[];
-    executionMode?: TurnExecutionMode;
-    skillEffects?: SkillEffectPolicy;
-    conversationDurability?: ConversationDurability;
-    responseLanguage?: string | Promise<string | undefined>;
-    groundedAnswerRenderer?: RoutineGroundedAnswerRenderer;
-    throwIfCancelled?: () => void;
-    turnPlan?: ChatTurnPlanHandle;
-  }): Promise<{
-    routines?: readonly Routine[];
-    activator: ConversationRoutineActivator;
-    coverageActivator?: ConversationCoverageRoutineActivator;
-    runner: ConversationRoutineRunner;
-    slotCorrection?: ConversationRoutineSlotCorrection;
-    reentryGate?: ConversationRoutineReentryGate;
-  } | null>;
-}
 
 export const buildRoutinePendingDecisionTransition = (input: {
   session: PreparedSession;

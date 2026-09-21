@@ -5,12 +5,12 @@ import { sessionTitleFromMessage } from "./slackAgentSession.js";
 
 /**
  * Where a turn is happening on Slack. The surface decides how the turn shows its
- * progress: reactions on the originating message in channels and plain DMs, the
- * session status indicator in the agent pane, where a session is a thread in the
- * app DM and is addressed by that thread.
+ * progress: reactions on the originating message in channels, the session status
+ * indicator in the agent pane, where every DM is a session thread addressed by its
+ * thread timestamp.
  */
 export type SlackTurnSurfaceRef =
-  | { kind: "dm" | "channel" }
+  | { kind: "channel" }
   | { kind: "dm_session"; threadTs: string };
 
 // "silent": the turn completed but produced nothing to post — a conversation a person has
@@ -93,7 +93,9 @@ const sessionSurface = (input: SlackTurnSurfaceInput, threadTs: string): SlackTu
     bestEffort(input, `status_${status}`, () => input.client.setAgentSessionStatus({ ...session, status }));
   return {
     begin: () => setStatus("processing"),
-    settle: () => setStatus("active"),
+    // A superseded turn leaves the indicator alone: the newer turn that replaced it has already
+    // set "processing" and settles it itself.
+    settle: (outcome) => (outcome === "superseded" ? Promise.resolve() : setStatus("active")),
     abandon: () => setStatus("active"),
     nameConversation: (firstMessage) =>
       bestEffort(input, "rename", () =>

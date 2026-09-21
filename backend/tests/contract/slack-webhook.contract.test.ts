@@ -244,6 +244,7 @@ describe("Slack inbound webhook contract", () => {
     const postMessage = vi.fn(async () => ({ channel: "DUSER", ts: "reply-ts" }));
     const addReaction = vi.fn(async () => undefined);
     const removeReaction = vi.fn(async () => undefined);
+    const setAgentSessionStatus = vi.fn(async () => undefined);
     const markHandledStatus = vi.fn(async () => undefined);
     const info = vi.fn();
     const handler = new SlackMessageHandler({
@@ -290,7 +291,7 @@ describe("Slack inbound webhook contract", () => {
         }),
         markInboundEventStatus: markHandledStatus,
       } as never,
-      clientFactory: () => ({ postMessage, addReaction, removeReaction, ...idleSlackAgentSessionClient() }),
+      clientFactory: () => ({ postMessage, addReaction, removeReaction, ...idleSlackAgentSessionClient(), setAgentSessionStatus }),
     });
     const { app, markInboundEventStatus } = createApp({
       messageHandler: handler,
@@ -309,12 +310,16 @@ describe("Slack inbound webhook contract", () => {
     await new Promise((resolve) => setTimeout(resolve, 10));
     expect(answer).toHaveBeenCalledTimes(1);
     expect(postMessage).not.toHaveBeenCalled();
-    expect(removeReaction).toHaveBeenCalledWith({
-      channel: "DUSER",
-      timestamp: "1718800000.000100",
-      name: "eyes",
+    // A DM is an agent-pane session: it signals work through the session status, never
+    // reactions, and a superseded turn leaves the indicator to the turn that replaced it.
+    expect(setAgentSessionStatus).toHaveBeenCalledTimes(1);
+    expect(setAgentSessionStatus).toHaveBeenCalledWith({
+      channelId: "DUSER",
+      threadTs: "1718800000.000100",
+      status: "processing",
     });
-    expect(addReaction).toHaveBeenCalledTimes(1);
+    expect(addReaction).not.toHaveBeenCalled();
+    expect(removeReaction).not.toHaveBeenCalled();
     expect(markInboundEventStatus).not.toHaveBeenCalledWith("EvSuperseded", "failed");
     expect(info).toHaveBeenCalledWith(
       expect.objectContaining({

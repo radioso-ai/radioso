@@ -158,6 +158,7 @@ describe("Slack gap escalation policy", () => {
         provider: "slack",
         team: { id: "T1", name: "Acme" },
         channel: { id: "D1", type: "im" },
+        threadTs: "1700000000.000010",
         user: { id: "U1" },
       },
     }));

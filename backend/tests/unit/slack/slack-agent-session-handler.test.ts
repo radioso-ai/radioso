@@ -199,24 +199,29 @@ describe("SlackMessageHandler agent sessions (DM threads)", () => {
     expect(JSON.stringify(info.mock.calls)).not.toContain("refunds");
   });
 
-  it("keeps a top-level DM on the per-user key with reactions and no session calls", async () => {
-    const { handler, bindings, calls, persistence, info } = makeHandler();
+  it("treats the first message of a DM as the start of a session under its own timestamp", async () => {
+    const { handler, bindings, calls, persistence, info, statuses } = makeHandler({ linkCreated: true });
     await seedDefaultBinding(bindings);
 
     await handler.handleMessageIm(dm());
 
     expect(persistence.getOrCreateConversationLink).toHaveBeenCalledWith(expect.objectContaining({
-      slackKey: "dm:T1:U1",
-      channelContext: expect.not.objectContaining({ threadTs: expect.anything() }),
+      slackKey: "mention:T1:D1:1700000000.000200",
+      channelContext: expect.objectContaining({
+        channel: { id: "D1", type: "im" },
+        threadTs: "1700000000.000200",
+        user: { id: "U1" },
+      }),
     }));
     expect(calls).toEqual([
-      { op: "reaction", action: "add", name: "eyes" },
-      { op: "post", channel: "D1", markdownText: "**bold** answer" },
-      { op: "reaction", action: "remove", name: "eyes" },
-      { op: "reaction", action: "add", name: "white_check_mark" },
+      { op: "status", channelId: "D1", threadTs: "1700000000.000200", status: "processing" },
+      { op: "post", channel: "D1", threadTs: "1700000000.000200", markdownText: "**bold** answer" },
+      { op: "status", channelId: "D1", threadTs: "1700000000.000200", status: "active" },
+      { op: "rename", channelId: "D1", threadTs: "1700000000.000200", title: "how do refunds work?" },
     ]);
+    expect(statuses).toEqual(["processed"]);
     expect(info).toHaveBeenCalledWith(
-      expect.objectContaining({ eventId: "Ev-dm", surface: "dm" }),
+      expect.objectContaining({ eventId: "Ev-dm", surface: "dm_session" }),
       "Slack turn dispatch started",
     );
   });
@@ -237,7 +242,7 @@ describe("SlackMessageHandler agent sessions (DM threads)", () => {
     ]);
   });
 
-  it("returns the session to active when the turn is superseded", async () => {
+  it("leaves the session indicator to the newer turn when this one is superseded", async () => {
     const { handler, bindings, calls, statuses } = makeHandler({
       answerImpl: async () => {
         throw new ChatTurnSupersededError(CONVERSATION_ID, "routing");
@@ -247,9 +252,10 @@ describe("SlackMessageHandler agent sessions (DM threads)", () => {
 
     await handler.handleMessageIm(session());
 
+    // The superseding turn owns the "processing" indicator now; clearing it here would blank
+    // the pane while that turn is still working.
     expect(calls).toEqual([
       { op: "status", channelId: "D1", threadTs: "1700000000.000100", status: "processing" },
-      { op: "status", channelId: "D1", threadTs: "1700000000.000100", status: "active" },
     ]);
     expect(statuses).toEqual(["skipped"]);
   });

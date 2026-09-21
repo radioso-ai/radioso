@@ -224,8 +224,9 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
       },
     });
 
+    // Every direct message is an agent-pane session thread anchored on the first message's ts.
     const [link] = await database.query<{ conversation_id: string }>(
-      `SELECT conversation_id FROM slack_conversation_links WHERE slack_key = 'dm:TDM:UUSER'`,
+      `SELECT conversation_id FROM slack_conversation_links WHERE slack_key = 'mention:TDM:DUSER:1700000000.000001'`,
     );
     expect(link?.conversation_id).toBeTruthy();
     const [conversation] = await database.query<{ source_channel: string | null }>(
@@ -233,7 +234,7 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
       [link.conversation_id],
     );
     expect(conversation.source_channel).toBe("slack");
-    expect(posts).toEqual([{ channel: "DUSER", markdownText: "reply:first question" }]);
+    expect(posts).toEqual([{ channel: "DUSER", markdownText: "reply:first question", threadTs: "1700000000.000001" }]);
 
     await database.query(
       `INSERT INTO slack_inbound_events (event_id, team_id, status) VALUES ('EvTwo', 'TDM', 'received')`,
@@ -248,13 +249,16 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
         user: "UUSER",
         text: "follow up",
         ts: "1700000000.000002",
+        thread_ts: "1700000000.000001",
       },
     });
 
     expect(chatInputs[1]).toMatchObject({ conversationId: link.conversation_id, sourceChannel: "slack", query: "follow up" });
-    const links = await database.query(`SELECT id FROM slack_conversation_links WHERE slack_key = 'dm:TDM:UUSER'`);
+    const links = await database.query(
+      `SELECT id FROM slack_conversation_links WHERE slack_key LIKE 'mention:TDM:DUSER:%'`,
+    );
     expect(links).toHaveLength(1);
-    expect(posts.at(-1)).toEqual({ channel: "DUSER", markdownText: "reply:follow up" });
+    expect(posts.at(-1)).toEqual({ channel: "DUSER", markdownText: "reply:follow up", threadTs: "1700000000.000001" });
   });
 
   it("maps a channel mention thread to one conversation and escalates no-context mention turns", async () => {

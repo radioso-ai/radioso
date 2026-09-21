@@ -45,8 +45,8 @@ the knowledge base.
   indicator while the agent answers, and takes its title from the person's
   first message. The Messages tab offers the agent's greeting chips as
   suggested prompts.
-- Each DM user, each agent-pane session, and each channel thread maps to one
-  Radioso conversation.
+- Each agent-pane session (every direct message thread) and each channel
+  thread maps to one Radioso conversation.
 - When the turn outcome is `no_context`, gap escalation is enabled, and an
   escalation channel is configured, Radioso posts a human follow-up message to
   that channel. A turn the agent declined as `out_of_scope` never escalates:
@@ -72,16 +72,17 @@ Slack lists agent apps in a pane of their own, reachable from the sidebar and
 the top of any channel. Radioso registers there, so people can open a chat
 with the agent without finding its direct message first.
 
-A chat started in the pane is a session. Slack keeps each session as a thread
-in the app's direct message, and Radioso keeps one conversation per session,
-the same way it keeps one per channel thread. Replies go into the session
-thread, and an operator reply from the Inbox lands there too. A direct message
-sent from the app's Messages tab, outside any session, keeps its own per-person
-conversation.
+Every direct message to the app is a session. Slack keeps each session as a
+thread in the app's direct message, anchored on the first message, and Radioso
+keeps one conversation per session, the same way it keeps one per channel
+thread. Replies go into the session thread, and an operator reply from the
+Inbox lands there too. Starting a new chat in the pane starts a new session;
+writing inside an existing one continues it.
 
 While the agent works on a session message, the pane shows Slack's working
 indicator instead of the `eyes` reaction, and clears it once the reply is
-posted, or when the turn fails or is replaced by a newer message. After the
+posted or the turn fails; a message replaced by a newer one in the same session
+leaves the indicator to that newer message. After the
 first answer, the session takes its title from the person's first message,
 collapsed to one line and cut at 60 characters, so the sidebar shows what each
 session was about in the person's own words.
@@ -93,11 +94,12 @@ language. An agent whose greeting is automatic, switched off, or has no chips
 offers no prompts. Prompts refresh each time someone opens the Messages tab;
 nothing is started or recorded by that visit.
 
-The pane needs the `assistant:write` scope and the `app_home_opened` event.
-An install that predates them shows `needs_reauth` in the install status and
-logs `missing_scope` when a session message arrives; the agent still answers,
-without the working indicator, title, or prompts. Reinstall or re-consent the
-app to enable them.
+Sessions, the working indicator, and titles work with the `chat:write` scope
+every install has. Suggested prompts need the `assistant:write` scope and the
+`app_home_opened` event. An install that predates them shows `needs_reauth` in
+the install status and logs `missing_scope` when someone opens the Messages
+tab; sessions keep working in full, only the prompts stay empty until you
+reinstall or re-consent the app.
 
 ## Operator Actions in Slack
 

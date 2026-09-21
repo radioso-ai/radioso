@@ -105,6 +105,7 @@ import { createDefaultVisitorGeoResolver } from "../composition/visitorGeoResolv
 import { buildConversationLinkResolver } from "../composition/conversationLinkResolver.js";
 import { resolveWorkspaceManagedLlmModels } from "../../shared/infra/llm/workspaceManagedModels.js";
 import type { OperatorMcpClientMetadataSnapshot } from "../../modules/operatorMcpAuthorization/public.js";
+import { PostgresSlackInboundEventRetention } from "../../modules/slack/public.js";
 
 interface BuildDependenciesOptions {
   modules?: ApplicationModule[];
@@ -888,6 +889,15 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     logger,
     retentionDays: env.AGENT_TEST_EXECUTION_RETENTION_DAYS,
   });
+  // Slack event ids exist only to deduplicate redelivery; channel subscriptions write one per
+  // message in every joined channel, so the ledger is swept on the same timer machinery.
+  const slackInboundEventRetentionWorker = new TtlRetentionWorker({
+    subject: "slack_inbound_event",
+    sweep: new PostgresSlackInboundEventRetention(infrastructure.database.kysely),
+    audit: infrastructure.auditService,
+    logger,
+    retentionDays: env.SLACK_INBOUND_EVENT_RETENTION_DAYS,
+  });
   const operatorMcp = buildOperatorMcpServices({
     env,
     database: infrastructure.database,
@@ -1006,6 +1016,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     workbenchReplayRunner: chat.workbenchReplayRunner,
     testExecutionService,
     chatBootstrapService: chat.chatBootstrapService,
+    agentStarterPromptReader: chat.agentStarterPromptReader,
     chatHistoryService: chat.chatHistoryService,
     assistantChatService: chat.assistantChatService,
     assistantHistoryService: chat.assistantHistoryService,
@@ -1055,6 +1066,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     copilotRetentionWorker,
     testExecutionRetentionWorker,
     revisionEvalRunRetentionWorker,
+    slackInboundEventRetentionWorker,
     copilotToolCatalog,
     copilotCapabilityRunner,
     copilotPrompt,

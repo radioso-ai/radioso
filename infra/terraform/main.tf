@@ -42,6 +42,12 @@ locals {
     var.agent_bundle_import_cleanup_schedule,
     "*/5 * * * *",
   )
+  # The Slack inbound-event ledger only dedups webhook retries, which Slack stops within the hour;
+  # a daily sweep of the 7-day window is plenty.
+  slack_inbound_event_retention_schedule = coalesce(
+    var.slack_inbound_event_retention_schedule,
+    "45 4 * * *",
+  )
   public_chat_base_url = (
     var.public_chat_base_url_override != null
     ? var.public_chat_base_url_override

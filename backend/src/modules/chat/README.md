@@ -271,7 +271,11 @@ imports from `services/`.
   to `setVerifiedCustomerId`. Identity-resolution rules live in
   `modules/visitors/`, not here.
 - Bootstrap and public chat: `chatBootstrapService.ts`,
-  public chat routes and presenters.
+  public chat routes and presenters. Revision greeting selection and exact-mode
+  resolution live in `services/agentRevisionGreeting.ts`, shared by bootstrap and
+  `services/agentStarterPromptReader.ts` — the read-only port (exported from
+  `composition.ts`) channels use to show an agent's greeting chips outside a
+  conversation, such as Slack's agent pane. It starts, records, and reserves nothing.
 - Seed a private test execution from a conversation:
   `services/conversationTestExecutionSeedSource.ts` implements the test-execution
   module's `TestExecutionSeedSource` port. It reads the user+assistant thread (system

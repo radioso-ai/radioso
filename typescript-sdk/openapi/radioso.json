@@ -38856,13 +38856,21 @@
                     },
                     "gapEscalationEnabled": {
                       "type": "boolean"
+                    },
+                    "respondMode": {
+                      "type": "string",
+                      "enum": [
+                        "mention",
+                        "every_message"
+                      ]
                     }
                   },
                   "required": [
                     "channelId",
                     "answeringAgentId",
                     "escalationChannelId",
-                    "gapEscalationEnabled"
+                    "gapEscalationEnabled",
+                    "respondMode"
                   ]
                 }
               }
@@ -38937,6 +38945,13 @@
                   },
                   "gapEscalationEnabled": {
                     "type": "boolean"
+                  },
+                  "respondMode": {
+                    "type": "string",
+                    "enum": [
+                      "mention",
+                      "every_message"
+                    ]
                   }
                 },
                 "required": [
@@ -38975,13 +38990,21 @@
                     },
                     "gapEscalationEnabled": {
                       "type": "boolean"
+                    },
+                    "respondMode": {
+                      "type": "string",
+                      "enum": [
+                        "mention",
+                        "every_message"
+                      ]
                     }
                   },
                   "required": [
                     "channelId",
                     "answeringAgentId",
                     "escalationChannelId",
-                    "gapEscalationEnabled"
+                    "gapEscalationEnabled",
+                    "respondMode"
                   ]
                 }
               }
@@ -39154,13 +39177,21 @@
                           },
                           "gapEscalationEnabled": {
                             "type": "boolean"
+                          },
+                          "respondMode": {
+                            "type": "string",
+                            "enum": [
+                              "mention",
+                              "every_message"
+                            ]
                           }
                         },
                         "required": [
                           "channelId",
                           "answeringAgentId",
                           "escalationChannelId",
-                          "gapEscalationEnabled"
+                          "gapEscalationEnabled",
+                          "respondMode"
                         ]
                       }
                     }

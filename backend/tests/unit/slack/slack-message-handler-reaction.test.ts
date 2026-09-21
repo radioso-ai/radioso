@@ -9,6 +9,7 @@ import {
 import type { SlackConversationLinkCreateOutcome } from "../../../src/modules/connectors/plugins/slack/slackPersistence.js";
 import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
 import { ChatTurnSupersededError } from "../../../src/modules/chat/services/conversationTurnRegistry.js";
+import { idleSlackAgentSessionClient } from "../../support/inMemorySlack.js";
 
 const PROCESSING_REACTION = "eyes";
 const ANSWERED_REACTION = "white_check_mark";
@@ -42,7 +43,7 @@ const installation = {
 const buildHandler = (overrides: {
   reactions: ReactionCall[];
   events: string[];
-  postImpl?: (input: { channel: string; text: string; threadTs?: string }) => Promise<{ channel: string; ts: string }>;
+  postImpl?: (input: { channel: string; markdownText?: string; threadTs?: string }) => Promise<{ channel: string; ts: string }>;
   answerImpl?: ConnectorChatPort["answer"];
   getOrCreateConversationLinkImpl?: () => Promise<SlackConversationLinkCreateOutcome>;
   publisher?: WorkspaceInvalidationPublisher;
@@ -100,6 +101,7 @@ const buildHandler = (overrides: {
       removeReaction: async (input: { channel: string; timestamp: string; name: string }) => {
         overrides.reactions.push({ op: "remove", ...input });
       },
+      ...idleSlackAgentSessionClient(),
     }),
     workspaceInvalidationPublisher: overrides.publisher,
   });
@@ -265,7 +267,7 @@ describe("SlackMessageHandler reaction lifecycle", () => {
         return { conversationId: input.conversationId!, answer: "newest reply", outcome: "answered" };
       },
       postImpl: async (input) => {
-        posts.push(input.text);
+        posts.push(input.markdownText ?? "");
         return { channel: input.channel, ts: "reply-ts" };
       },
     });

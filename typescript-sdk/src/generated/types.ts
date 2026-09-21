@@ -18605,6 +18605,8 @@ export interface operations {
                         answeringAgentId: string | null;
                         escalationChannelId: string | null;
                         gapEscalationEnabled: boolean;
+                        /** @enum {string} */
+                        respondMode: "mention" | "every_message";
                     };
                 };
             };
@@ -18645,6 +18647,8 @@ export interface operations {
                     answeringAgentId: string;
                     escalationChannelId?: string | null;
                     gapEscalationEnabled?: boolean;
+                    /** @enum {string} */
+                    respondMode?: "mention" | "every_message";
                 };
             };
         };
@@ -18661,6 +18665,8 @@ export interface operations {
                         answeringAgentId: string | null;
                         escalationChannelId: string | null;
                         gapEscalationEnabled: boolean;
+                        /** @enum {string} */
+                        respondMode: "mention" | "every_message";
                     };
                 };
             };
@@ -18775,6 +18781,8 @@ export interface operations {
                             answeringAgentId: string | null;
                             escalationChannelId: string | null;
                             gapEscalationEnabled: boolean;
+                            /** @enum {string} */
+                            respondMode: "mention" | "every_message";
                         }[];
                     };
                 };

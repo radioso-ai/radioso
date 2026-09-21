@@ -8,8 +8,9 @@ locals {
   action_dispatch_recovery_url  = var.deploy_services ? "${google_cloud_run_v2_service.document_worker[0].uri}/internal/tasks/actions/recover" : null
   action_dispatch_recovery_body = base64encode(jsonencode({ maxJobs = var.action_dispatch_recovery_max_jobs }))
   # Retention has no per-item queue behind it, so this schedule is the whole trigger.
-  copilot_retention_url           = var.deploy_services ? "${google_cloud_run_v2_service.document_worker[0].uri}/internal/tasks/copilot-retention/sweep" : null
-  agent_bundle_import_cleanup_url = var.deploy_services ? "${google_cloud_run_v2_service.document_worker[0].uri}/internal/tasks/agent-bundle-imports/sweep" : null
+  copilot_retention_url             = var.deploy_services ? "${google_cloud_run_v2_service.document_worker[0].uri}/internal/tasks/copilot-retention/sweep" : null
+  agent_bundle_import_cleanup_url   = var.deploy_services ? "${google_cloud_run_v2_service.document_worker[0].uri}/internal/tasks/agent-bundle-imports/sweep" : null
+  slack_inbound_event_retention_url = var.deploy_services ? "${google_cloud_run_v2_service.document_worker[0].uri}/internal/tasks/slack-inbound-event-retention/sweep" : null
 }
 
 resource "google_cloud_scheduler_job" "document_worker_recovery" {
@@ -121,6 +122,29 @@ resource "google_cloud_scheduler_job" "agent_bundle_import_cleanup" {
     oidc_token {
       service_account_email = data.google_service_account.worker_task_invoker.email
       audience              = local.agent_bundle_import_cleanup_url
+    }
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+resource "google_cloud_scheduler_job" "slack_inbound_event_retention" {
+  count    = var.deploy_services ? 1 : 0
+  name     = "${local.resource_name_prefix}-slack-inbound-event-retention"
+  region   = var.region
+  schedule = local.slack_inbound_event_retention_schedule
+
+  http_target {
+    http_method = "POST"
+    uri         = local.slack_inbound_event_retention_url
+    body        = base64encode(jsonencode({}))
+    headers = {
+      "Content-Type"           = "application/json"
+      "X-Radioso-Worker-Token" = random_password.worker_task_auth_token.result
+    }
+    oidc_token {
+      service_account_email = data.google_service_account.worker_task_invoker.email
+      audience              = local.slack_inbound_event_retention_url
     }
   }
 

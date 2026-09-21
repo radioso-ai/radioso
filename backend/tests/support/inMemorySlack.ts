@@ -142,6 +142,7 @@ export class InMemorySlackBindingRepository implements SlackBindingRepositoryPor
         ? existing?.escalationChannelId ?? null
         : input.escalationChannelId,
       gapEscalationEnabled: input.gapEscalationEnabled ?? existing?.gapEscalationEnabled ?? false,
+      respondMode: input.respondMode ?? existing?.respondMode ?? "mention",
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
     };
@@ -172,3 +173,10 @@ export class InMemorySlackBindingRepository implements SlackBindingRepositoryPor
     return true;
   }
 }
+
+/** Agent-pane client methods for tests that never reach Slack's agent surface. */
+export const idleSlackAgentSessionClient = () => ({
+  setAgentSessionStatus: async () => undefined,
+  renameAgentSession: async () => undefined,
+  setSuggestedPrompts: async () => undefined,
+});

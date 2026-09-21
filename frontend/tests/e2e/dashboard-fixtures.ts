@@ -123,11 +123,13 @@ type SlackInstallStatusFixture = {
   teamName?: string;
   answeringAgentId?: string;
 };
+type SlackBindingRespondModeFixture = "mention" | "every_message";
 type SlackBindingFixture = {
   channelId: string | null;
   answeringAgentId: string | null;
   escalationChannelId: string | null;
   gapEscalationEnabled: boolean;
+  respondMode: SlackBindingRespondModeFixture;
 };
 
 type SlackManifestFixture = {
@@ -1111,6 +1113,7 @@ export const installDashboardApiMocks = async (
     answeringAgentId: null,
     escalationChannelId: null,
     gapEscalationEnabled: false,
+    respondMode: "mention" as const,
   };
   let slackBindings = options.slackBindings ?? [slackBinding];
   const slackManifest = options.slackManifest ?? {
@@ -1690,6 +1693,7 @@ export const installDashboardApiMocks = async (
         answeringAgentId: defaultAgentId,
         escalationChannelId: null,
         gapEscalationEnabled: false,
+        respondMode: "mention",
       };
       slackBindings = [slackBinding];
       await json(route, {
@@ -1717,19 +1721,20 @@ export const installDashboardApiMocks = async (
       }
 
       if (request.method() === "PUT") {
-        const body = request.postDataJSON() as SlackBindingFixture;
+        const body = request.postDataJSON() as Partial<SlackBindingFixture> & { answeringAgentId: string };
         options.slackRequests?.push({ method: request.method(), path, body });
         const channelId = body.channelId ?? null;
         const previousBinding = channelId === null
           ? slackBinding
           : slackBindings.find((binding) => binding.channelId === channelId);
-        const nextBinding = {
+        const nextBinding: SlackBindingFixture = {
           channelId,
           answeringAgentId: body.answeringAgentId,
           escalationChannelId: body.escalationChannelId === undefined
             ? previousBinding?.escalationChannelId ?? null
             : body.escalationChannelId,
           gapEscalationEnabled: body.gapEscalationEnabled ?? previousBinding?.gapEscalationEnabled ?? false,
+          respondMode: body.respondMode ?? previousBinding?.respondMode ?? "mention",
         };
         slackBindings = [
           ...slackBindings.filter((binding) => binding.channelId !== channelId),
@@ -1763,7 +1768,7 @@ export const installDashboardApiMocks = async (
     if (path === `/workspaces/${workspaceId}/slack/installation` && request.method() === "DELETE") {
       options.slackRequests?.push({ method: request.method(), path });
       slackStatus = { status: "not_configured", readiness: slackReady };
-      slackBinding = { channelId: null, answeringAgentId: null, escalationChannelId: null, gapEscalationEnabled: false };
+      slackBinding = { channelId: null, answeringAgentId: null, escalationChannelId: null, gapEscalationEnabled: false, respondMode: "mention" };
       slackBindings = [slackBinding];
       slackSkills = [];
       await route.fulfill({ status: 204 });

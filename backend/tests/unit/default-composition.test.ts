@@ -142,6 +142,19 @@ describe("default application composition", () => {
   });
 
   it("registers Slack OAuth provider when Slack OAuth credentials are configured", () => {
+    const slackScopes = [
+      "app_mentions:read",
+      "assistant:write",
+      "channels:history",
+      "chat:write",
+      "groups:history",
+      "im:history",
+      "im:read",
+      "im:write",
+      "reactions:write",
+      "users:read",
+      "users:read.email",
+    ];
     const absent = createDefaultApplicationComposition({
       logger: createLogger(),
       env: {
@@ -167,8 +180,8 @@ describe("default application composition", () => {
         tokenEndpoint: "https://slack.com/api/oauth.v2.access",
         clientId: "slack-client",
         clientSecret: "slack-secret",
-        defaultScopes: ["app_mentions:read", "chat:write", "im:history", "im:read", "im:write", "reactions:write", "users:read", "users:read.email"],
-        allowedScopes: ["app_mentions:read", "chat:write", "im:history", "im:read", "im:write", "reactions:write", "users:read", "users:read.email"],
+        defaultScopes: slackScopes,
+        allowedScopes: slackScopes,
       }),
     ]);
   });

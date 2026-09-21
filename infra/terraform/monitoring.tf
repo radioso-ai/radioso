@@ -34,6 +34,7 @@ locals {
     "${local.resource_name_prefix}-crawler-worker-recovery",
     "${local.resource_name_prefix}-action-dispatch-recovery",
     "${local.resource_name_prefix}-copilot-retention",
+    "${local.resource_name_prefix}-slack-inbound-event-retention",
     "${local.resource_name_prefix}-agent-bundle-import-cleanup",
   ] : []
 

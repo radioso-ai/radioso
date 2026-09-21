@@ -70,7 +70,8 @@ export const splitSlackMarkdownText = (
   maxLength = SLACK_MAX_MARKDOWN_TEXT_LENGTH,
 ): string[] => {
   const chunks: string[] = [];
-  let remaining = markdownText;
+  // Slack rejects an empty markdown_text, so trailing blank lines never become a chunk of their own.
+  let remaining = markdownText.trimEnd();
   while (remaining.length > maxLength) {
     const window = remaining.slice(0, maxLength);
     const paragraphBreak = window.lastIndexOf("\n\n");
@@ -84,7 +85,9 @@ export const splitSlackMarkdownText = (
     // A window can end on the first half of a paragraph break; the next chunk never starts blank.
     remaining = remaining.slice(cut + separatorLength).replace(/^\n+/u, "");
   }
-  chunks.push(remaining);
+  if (remaining.length > 0) {
+    chunks.push(remaining);
+  }
   return chunks;
 };
 

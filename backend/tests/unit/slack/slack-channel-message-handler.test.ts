@@ -59,17 +59,19 @@ interface PostedMessage {
 
 const makeHandler = (
   bindings: InMemorySlackBindingRepository,
-  options: { ownedThreadKeys?: string[] } = {},
+  options: { ownedThreadKeys?: string[]; answerText?: string } = {},
 ) => {
   const posted: PostedMessage[] = [];
   const answered: Array<{ agentId: string; query: string }> = [];
   const statuses: Array<{ eventId: string; status: string }> = [];
+  const reactions: string[] = [];
+  const order: string[] = [];
   const info = vi.fn();
   const logger: ConnectorLogger = { info, warn: vi.fn(), error: vi.fn() };
   const chat: ConnectorChatPort = {
     answer: vi.fn(async (req) => {
       answered.push({ agentId: req.agentId, query: req.query });
-      return { conversationId: CONVERSATION_ID, answer: "**bold** answer", outcome: "answered" as const };
+      return { conversationId: CONVERSATION_ID, answer: options.answerText ?? "**bold** answer", outcome: "answered" as const };
     }),
   };
   const installations: SlackInstallationRepositoryPort = {
@@ -96,7 +98,10 @@ const makeHandler = (
     markStaleInboundEventsFailed: vi.fn(async () => 0),
     findConversationLink: vi.fn(async (input) => (ownedThreadKeys.has(input.slackKey) ? linkFor(input) : null)),
     findConversationLinkByConversationId: vi.fn(async () => null),
-    getOrCreateConversationLink: vi.fn(async (input) => ({ link: linkFor(input), created: false })),
+    getOrCreateConversationLink: vi.fn(async (input) => {
+      order.push("link");
+      return { link: linkFor(input), created: false };
+    }),
     upsertConversationLink: vi.fn(),
   };
   const installationService: Pick<SlackInstallationService, "markNeedsReauthForInstallation" | "resolveBotTokenForInstallation"> = {
@@ -115,12 +120,17 @@ const makeHandler = (
         posted.push(input);
         return { channel: input.channel, ts: "reply-ts" };
       }),
-      addReaction: vi.fn(),
-      removeReaction: vi.fn(),
+      addReaction: vi.fn(async (input: { name: string }) => {
+        order.push(`add_${input.name}`);
+        reactions.push(`add_${input.name}`);
+      }),
+      removeReaction: vi.fn(async (input: { name: string }) => {
+        reactions.push(`remove_${input.name}`);
+      }),
       ...idleSlackAgentSessionClient(),
     }),
   });
-  return { handler, posted, answered, statuses, persistence, info };
+  return { handler, posted, answered, statuses, persistence, info, reactions, order };
 };
 
 const channelMessage = (
@@ -207,9 +217,35 @@ describe("SlackMessageHandler.handleChannelMessage", () => {
 
     expect(answered).toEqual([]);
     expect(statuses).toEqual([{ eventId: "Ev-channel", status: "skipped" }]);
+    // The common case in every joined channel: skipped silently, not logged per message.
+    expect(info).not.toHaveBeenCalledWith(
+      expect.objectContaining({ reason: "mention_only" }),
+      expect.any(String),
+    );
+  });
+
+  it("claims the thread conversation before signalling work, so a fast follow-up sees the link", async () => {
+    const { handler, order } = makeHandler(await seededBindings("every_message"));
+
+    await handler.handleChannelMessage(channelMessage());
+
+    expect(order.slice(0, 2)).toEqual(["link", "add_eyes"]);
+  });
+
+  it("stays quiet when the turn returns no reply, such as a thread a person has taken over", async () => {
+    const { handler, posted, statuses, reactions, info } = makeHandler(await seededBindings("mention"), {
+      ownedThreadKeys: ["mention:T1:CSALES:1700000000.000100"],
+      answerText: "   ",
+    });
+
+    await handler.handleChannelMessage(channelMessage({ thread_ts: "1700000000.000100" }));
+
+    expect(posted).toEqual([]);
+    expect(reactions).toEqual(["add_eyes", "remove_eyes"]);
+    expect(statuses).toEqual([{ eventId: "Ev-channel", status: "processed" }]);
     expect(info).toHaveBeenCalledWith(
-      expect.objectContaining({ eventId: "Ev-channel", reason: "mention_only" }),
-      expect.stringContaining("Slack inbound skipped"),
+      expect.objectContaining({ eventId: "Ev-channel", reason: "empty_answer" }),
+      expect.any(String),
     );
   });
 

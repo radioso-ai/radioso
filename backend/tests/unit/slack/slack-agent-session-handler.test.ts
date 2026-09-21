@@ -280,6 +280,21 @@ describe("SlackMessageHandler agent sessions (DM threads)", () => {
     expect(calls.some((call) => call.op === "rename")).toBe(false);
   });
 
+  it("returns the session to active without posting when the turn returns no reply", async () => {
+    const { handler, bindings, calls, statuses } = makeHandler({
+      answerImpl: async () => ({ conversationId: CONVERSATION_ID, answer: "", outcome: "answered" as const }),
+    });
+    await seedDefaultBinding(bindings);
+
+    await handler.handleMessageIm(session());
+
+    expect(calls).toEqual([
+      { op: "status", channelId: "D1", threadTs: "1700000000.000100", status: "processing" },
+      { op: "status", channelId: "D1", threadTs: "1700000000.000100", status: "active" },
+    ]);
+    expect(statuses).toEqual(["processed"]);
+  });
+
   it("never lets a status failure fail the turn and logs only the Slack error code", async () => {
     const { handler, bindings, calls, statuses, warn } = makeHandler({
       statusImpl: async () => {
@@ -389,6 +404,27 @@ describe("SlackMessageHandler.handleAppHomeOpened", () => {
 
     expect(installationService.markNeedsReauthForInstallation).not.toHaveBeenCalled();
     expect(statuses).toEqual(["failed"]);
+  });
+
+  it("marks the event failed without retrying when the starter prompts cannot be read", async () => {
+    const { handler, bindings, calls, statuses, warn } = makeHandler({
+      starterPrompts: {
+        listStarterPrompts: vi.fn(async () => {
+          throw new Error("Agent not found");
+        }),
+      },
+    });
+    await seedDefaultBinding(bindings);
+
+    await expect(handler.handleAppHomeOpened(homeOpened("messages"))).resolves.toBeUndefined();
+
+    expect(calls).toEqual([]);
+    expect(statuses).toEqual(["failed"]);
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({ eventId: "Ev-home", errorType: "Error" }),
+      expect.any(String),
+    );
+    expect(JSON.stringify(warn.mock.calls)).not.toContain("Agent not found");
   });
 
   it("skips quietly when no starter-prompt source is wired", async () => {

@@ -500,7 +500,7 @@ export function SlackChannelCard({ workspaceId, agentId, agentName }: SlackChann
                     id="slack-channel-binding"
                     value={channelDraft}
                     onChange={(event) => setChannelDraft(event.target.value)}
-                    placeholder="C1234567890 or #support"
+                    placeholder="C1234567890"
                     disabled={busyAction === 'binding'}
                     className="min-w-0 flex-1"
                   />

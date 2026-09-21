@@ -14,6 +14,9 @@ export type {
   PublicChatActionAdvertiserPort,
 } from "../services/publicChatActionAdvertiser.js";
 export type { ChatGateway } from "./chatGateway.js";
+// Read-only conversation starters (greeting chips) for channels that show them outside a
+// conversation, such as Slack's agent pane; the connector registry carries this port.
+export type { AgentStarterPromptReader } from "./agentStarterPrompts.js";
 export type { WorkbenchReplayResult } from "../services/workbenchReplayRunner.js";
 export type { PublicConversationEventBus } from "../services/publicConversationEventBus.js";
 export { SKILL_TURN_OUTCOME } from "../services/assistantTurnOutcomeTypes.js";

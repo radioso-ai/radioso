@@ -28,7 +28,7 @@ import {
   type SlackChannelMessageSkipReason,
 } from "./slackChannelMessageDisposition.js";
 import type { SlackPersistencePort } from "./slackPersistence.js";
-import { createSlackTurnSurface, type SlackTurnSurfaceRef } from "./slackTurnSurface.js";
+import { createSlackTurnSurface, type SlackTurnOutcome, type SlackTurnSurfaceRef } from "./slackTurnSurface.js";
 import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
 
 // A direct message to the app. In Slack's agent pane every session is a thread in the
@@ -234,10 +234,23 @@ export class SlackMessageHandler {
     if (!binding) {
       return;
     }
-    const prompts = toSuggestedPrompts(await this.options.starterPrompts.listStarterPrompts({
-      workspaceId: binding.workspaceId,
-      agentId: binding.answeringAgentId,
-    }));
+    const logContext = { workspaceId: binding.workspaceId, installationId: installation.id, eventId: input.eventId };
+    let prompts: ReturnType<typeof toSuggestedPrompts>;
+    try {
+      prompts = toSuggestedPrompts(await this.options.starterPrompts.listStarterPrompts({
+        workspaceId: binding.workspaceId,
+        agentId: binding.answeringAgentId,
+      }));
+    } catch (error) {
+      // A Home open is not worth a retry: the bound agent being gone (or any other read failure)
+      // would otherwise re-run on every visit to the Messages tab.
+      this.options.logger.warn(
+        { ...logContext, errorType: error instanceof Error ? error.name : typeof error },
+        "Slack suggested prompts could not be read",
+      );
+      await this.options.persistence.markInboundEventStatus(input.eventId, "failed");
+      return;
+    }
     if (prompts.length === 0) {
       await this.options.persistence.markInboundEventStatus(input.eventId, "skipped");
       return;
@@ -248,7 +261,6 @@ export class SlackMessageHandler {
       await this.options.persistence.markInboundEventStatus(input.eventId, "skipped");
       return;
     }
-    const logContext = { workspaceId: binding.workspaceId, installationId: installation.id, eventId: input.eventId };
     try {
       await this.clientFactory({ botToken }).setSuggestedPrompts({ channelId: event.channel, prompts });
     } catch (error) {
@@ -345,6 +357,11 @@ export class SlackMessageHandler {
     binding?: SlackChannelBindingRecord,
   ): Promise<void> {
     await this.options.persistence.markInboundEventStatus(envelope.eventId, "skipped");
+    // With channels:history every top-level post in every joined channel arrives here; the
+    // mention-only skip is the expected fate of almost all of it and is not worth a line each.
+    if (reason === "mention_only") {
+      return;
+    }
     this.options.logger.info(
       {
         workspaceId: binding?.workspaceId ?? installation.workspaceId,
@@ -416,6 +433,21 @@ export class SlackMessageHandler {
       return;
     }
     const client = this.clientFactory({ botToken });
+    // Claim the thread's conversation before any Slack round-trip: an un-mentioned follow-up
+    // that lands while this turn is still signalling work must already find the link.
+    const conversationLinkOutcome = await this.options.persistence.getOrCreateConversationLink({
+      workspaceId: binding.workspaceId,
+      installationId: installation.id,
+      slackKey,
+      agentId: binding.answeringAgentId,
+      sourceChannel: "slack",
+      channelContext,
+    });
+    const conversationLink = conversationLinkOutcome.link;
+    if (conversationLinkOutcome.created) {
+      this.options.workspaceInvalidationPublisher?.enqueue(binding.workspaceId, ["conversation.created"]);
+    }
+
     const surface = createSlackTurnSurface({
       surface: input.surface,
       client,
@@ -426,25 +458,12 @@ export class SlackMessageHandler {
     });
     await surface.begin();
     let settled = false;
-    const settle = async (outcome: "answered" | "failed" | "superseded"): Promise<void> => {
+    const settle = async (outcome: SlackTurnOutcome): Promise<void> => {
       settled = true;
       await surface.settle(outcome);
     };
 
     try {
-      const conversationLinkOutcome = await this.options.persistence.getOrCreateConversationLink({
-        workspaceId: binding.workspaceId,
-        installationId: installation.id,
-        slackKey,
-        agentId: binding.answeringAgentId,
-        sourceChannel: "slack",
-        channelContext,
-      });
-      const conversationLink = conversationLinkOutcome.link;
-      if (conversationLinkOutcome.created) {
-        this.options.workspaceInvalidationPublisher?.enqueue(binding.workspaceId, ["conversation.created"]);
-      }
-
       this.options.logger.info(logContext, "Slack turn dispatch started");
       let response: Awaited<ReturnType<ConnectorChatPort["answer"]>>;
       try {
@@ -488,6 +507,18 @@ export class SlackMessageHandler {
         conversationId: response.conversationId,
         outcome: response.outcome,
       });
+
+      // A turn can complete with nothing to say — a conversation a person has taken over
+      // answers this way — and Slack rejects an empty post, so there is nothing to deliver.
+      if (response.answer.trim() === "") {
+        await settle("silent");
+        await this.options.persistence.markInboundEventStatus(envelope.eventId, "processed");
+        this.options.logger.info(
+          { ...logContext, conversationId: response.conversationId, reason: "empty_answer" },
+          "Slack turn produced no reply",
+        );
+        return;
+      }
 
       try {
         await postSlackMarkdown(client, {

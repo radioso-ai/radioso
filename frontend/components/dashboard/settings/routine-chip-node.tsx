@@ -787,6 +787,7 @@ function ChipMenu({ nodeKey, kind, refId, label }: { nodeKey: NodeKey; kind: Rou
           data-routine-chip={kind}
           className={`${CHIP_WRAPPER_CLASS} inline-flex flex-col gap-0.5 py-1 text-left ${isSelected ? CHIP_SELECTED_CLASS : ''}`}
           onClick={() => { select(); setIsApprovalOpen(true) }}
+          onDoubleClick={convertToText}
         >
           <span className="inline-flex items-center gap-1">
             <span className="text-muted-foreground">@</span>

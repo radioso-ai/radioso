@@ -251,9 +251,8 @@ an eval case captures only from a test that kept skills off.
 
 ## Completion export
 
-Open the document's **Endings & information** disclosure for the **Completion
-export** panel. It
-lets a routine send its collected values to a
+Open the document's **Endings & information** disclosure to find the
+**Completion export** panel, which lets a routine send its collected values to a
 workspace webhook destination when it reaches selected terminal kinds. Enable
 the export, choose the destination, then select `complete`, `handoff`, or both.
 

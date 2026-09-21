@@ -78,7 +78,10 @@ stay out of the way until you need them.
 Edit the **Starts when** line directly. Add information, steps, branches, and
 endings where they belong in the flow. That proximity makes the decision behind
 each transition easy to review with the instructions it follows. A blank line
-always sits after the last step — click it to write the next one.
+always sits after the last step — click it to write the next one. Delete a step
+by pressing Backspace in its empty instruction, from the trash next to its
+reorder arrows on hover, or from the step editor panel itself; any branch that
+pointed at it retargets to a new, blank ending.
 
 Every change saves into the agent's private draft as you make it, so the document
 you are reading is always the one a colleague can open to learn what the agent

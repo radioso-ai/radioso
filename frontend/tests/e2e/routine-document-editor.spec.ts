@@ -466,3 +466,105 @@ test("leaving a chip's raw text unresolved persists as plain step text, not a br
   ).toBe("Ask for @order_total ");
   await expect(page.getByRole("status", { name: "Routine has validation issues" })).toBeVisible({ timeout: 15_000 });
 });
+
+test("Backspace on an empty step deletes it and focuses the previous step", async ({ page }) => {
+  const routineUpdates: RoutineMutationFixture[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { routineUpdates });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await page.getByRole("button", { name: "New routine" }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Backspace deletes an empty step");
+
+  const documentEditor = page.getByRole("article", { name: "Routine document editor" });
+  await documentEditor.getByRole("button", { name: "Starts when", exact: true }).click();
+  await documentEditor.getByLabel("Activation trigger", { exact: true }).fill("a visitor opens a conversation.");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  await addChatStep(page, documentEditor, "First step text");
+
+  // A second step, created but left empty — no text, no chips.
+  await documentEditor.getByRole("button", { name: "Step", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Chat" }).click();
+  await documentEditor.getByRole("button", { name: "Chat", exact: true }).last().click();
+  const secondInstruction = documentEditor.getByLabel("Step 2 instruction");
+  await expect(secondInstruction).toBeVisible();
+  await secondInstruction.click();
+
+  await page.keyboard.press("Backspace");
+
+  // The empty step is gone, and typing lands in the previous step's editor, at its end —
+  // continuing its sentence rather than overwriting the start of it.
+  await expect(documentEditor.getByLabel("Step 2 instruction")).toHaveCount(0);
+  const firstInstruction = documentEditor.getByLabel("Step 1 instruction");
+  await expect(firstInstruction).toBeVisible();
+  await page.keyboard.type(" continued");
+  await expect(firstInstruction).toContainText("First step text continued");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  await expect.poll(
+    () => routineUpdates.find((update) => update.method === "POST")?.body?.steps,
+    { timeout: 15_000 },
+  ).toMatchObject([{ instruction: "First step text continued" }]);
+});
+
+test("Backspace on an empty first step is a no-op — nothing before it to focus", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {});
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await page.getByRole("button", { name: "New routine" }).click();
+  await page.getByLabel("Name", { exact: true }).fill("First step Backspace is a no-op");
+
+  const documentEditor = page.getByRole("article", { name: "Routine document editor" });
+  await documentEditor.getByRole("button", { name: "Starts when", exact: true }).click();
+  await documentEditor.getByLabel("Activation trigger", { exact: true }).fill("a visitor opens a conversation.");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  await documentEditor.getByRole("button", { name: "Step", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Chat" }).click();
+  await documentEditor.getByRole("button", { name: "Chat", exact: true }).click();
+  const firstInstruction = documentEditor.getByLabel("Step 1 instruction");
+  await expect(firstInstruction).toBeVisible();
+  await firstInstruction.click();
+
+  await page.keyboard.press("Backspace");
+
+  // Still there — an empty first step has no previous step to remove it in favor of.
+  await expect(documentEditor.getByLabel("Step 1 instruction")).toBeVisible();
+  await expect(documentEditor.getByRole("button", { name: "Add step" })).toBeVisible();
+});
+
+test("the gutter's hover trash deletes a step and persists the removal through autosave", async ({ page }) => {
+  const routineUpdates: RoutineMutationFixture[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { routineUpdates });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await page.getByRole("button", { name: "New routine" }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Hover trash deletes a step");
+
+  const documentEditor = page.getByRole("article", { name: "Routine document editor" });
+  await documentEditor.getByRole("button", { name: "Starts when", exact: true }).click();
+  await documentEditor.getByLabel("Activation trigger", { exact: true }).fill("a visitor opens a conversation.");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  await addChatStep(page, documentEditor, "First step text");
+  await addChatStep(page, documentEditor, "Second step text");
+
+  const firstRow = documentEditor.getByRole("button", { name: "Instruction" }).filter({ hasText: "First step text" }).locator("xpath=ancestor::li[1]");
+  await firstRow.hover();
+  // Disambiguated from the step editor panel's own "Remove step" trash — both can be on
+  // screen at once, so the gutter one needs its own name.
+  await firstRow.getByRole("button", { name: "Delete step", exact: true }).click();
+
+  await expect(documentEditor).not.toContainText("First step text");
+  await expect(documentEditor).toContainText("Second step text");
+
+  await expect.poll(
+    () => routineUpdates.find((update) => update.method === "POST")?.body?.steps,
+    { timeout: 15_000 },
+  ).toMatchObject([{ instruction: "Second step text" }]);
+});

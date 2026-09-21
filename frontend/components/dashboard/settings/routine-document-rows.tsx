@@ -1,7 +1,7 @@
 'use client'
 
 import { useContext, type ReactNode } from 'react'
-import { AlertTriangle, ArrowDown, ArrowUp, CheckCircle2, CircleDashed, CornerUpRight, GitBranch, Plus } from 'lucide-react'
+import { AlertTriangle, ArrowDown, ArrowUp, CheckCircle2, CircleDashed, CornerUpRight, GitBranch, Plus, Trash2 } from 'lucide-react'
 
 import { findRoutineSkillDescriptor, RoutineSkillCatalogContext } from '@/components/dashboard/settings/routine-skill-catalog-popover'
 import { Button } from '@/components/ui/button'
@@ -154,7 +154,7 @@ function RoutineBranchRow({ branch, slotNames, index, editable = false, editing 
   </button></li>
 }
 
-export function RoutineStepRow({ step, stepIndex, slotNames, index, nextStepId = null, notes, editable = false, editing, onEditInstruction, onEditApproval, onEditBranch, onAddBranch, onEditStep, onMoveStepUp, onMoveStepDown, canMoveStepUp = false, canMoveStepDown = false, instructionEditor, bindingEditor, approvalEditor, branchEditor, stepEditor, insertStepAfter }: {
+export function RoutineStepRow({ step, stepIndex, slotNames, index, nextStepId = null, notes, editable = false, editing, onEditInstruction, onEditApproval, onEditBranch, onAddBranch, onEditStep, onMoveStepUp, onMoveStepDown, onRemoveStep, canMoveStepUp = false, canMoveStepDown = false, instructionEditor, bindingEditor, approvalEditor, branchEditor, stepEditor, insertStepAfter }: {
   step: RoutineBlockStep
   stepIndex: number
   slotNames: Map<string, string>
@@ -173,6 +173,9 @@ export function RoutineStepRow({ step, stepIndex, slotNames, index, nextStepId =
   onEditStep?: () => void
   onMoveStepUp?: () => void
   onMoveStepDown?: () => void
+  // The hover-only gutter trash, next to the reorder arrows — a second, discoverable way to
+  // delete a step alongside the step editor panel's own "Remove step" button.
+  onRemoveStep?: () => void
   canMoveStepUp?: boolean
   canMoveStepDown?: boolean
   instructionEditor?: ReactNode
@@ -202,7 +205,10 @@ export function RoutineStepRow({ step, stepIndex, slotNames, index, nextStepId =
     : <span aria-hidden="true" className={numeralClassName}>{stepIndex + 1}.</span>
   // Reorder is a hover/focus affordance, not a permanent fixture in the gutter — pinned to the
   // left of the numeral by absolute position so its own height never widens the row at rest.
-  const moveControls = editable && (onMoveStepUp || onMoveStepDown) ? <div className="pointer-events-none absolute right-full top-0 mr-0.5 opacity-0 transition-opacity group-hover/insertafter:opacity-100 group-focus-within/insertafter:opacity-100">
+  // The trash sits beside that stack, not stacked under it — a third button added to the
+  // column would grow taller than a short one-line row and start overlapping the row below.
+  const moveControls = editable && (onMoveStepUp || onMoveStepDown || onRemoveStep) ? <div className="pointer-events-none absolute right-full top-0 mr-0.5 flex items-start gap-0.5 opacity-0 transition-opacity group-hover/insertafter:opacity-100 group-focus-within/insertafter:opacity-100">
+    {onRemoveStep ? <button type="button" aria-label="Delete step" onClick={onRemoveStep} className="pointer-events-auto flex h-4 w-4 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-destructive"><Trash2 className="h-3 w-3" /></button> : null}
     <div className="pointer-events-auto flex flex-col">
       <button type="button" aria-label={`Move step ${stepIndex + 1} up`} onClick={onMoveStepUp} disabled={!canMoveStepUp} className="flex h-4 w-4 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-30"><ArrowUp className="h-3 w-3" /></button>
       <button type="button" aria-label={`Move step ${stepIndex + 1} down`} onClick={onMoveStepDown} disabled={!canMoveStepDown} className="flex h-4 w-4 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-30"><ArrowDown className="h-3 w-3" /></button>

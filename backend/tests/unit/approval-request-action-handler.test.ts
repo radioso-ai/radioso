@@ -23,7 +23,6 @@ describe("ApprovalRequestActionHandler", () => {
         workspaceId: "ws_1",
         agentId: "agent_1",
         handle: "pd_abc",
-        dashboardPath: "/conversations/conv_1",
       },
       context,
     });
@@ -34,7 +33,6 @@ describe("ApprovalRequestActionHandler", () => {
       workspaceId: "ws_1",
       agentId: "agent_1",
       handle: "pd_abc",
-      dashboardPath: "/conversations/conv_1",
     }, {
       requestId: "request_1",
       workspaceId: "ws_1",
@@ -57,7 +55,6 @@ describe("ApprovalRequestActionHandler", () => {
       workspaceId: "ws_1",
       agentId: "unknown",
       handle: "unknown",
-      dashboardPath: "/conversations/conv_1",
     }), expect.any(Object));
   });
 });

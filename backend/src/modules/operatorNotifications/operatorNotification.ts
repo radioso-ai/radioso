@@ -4,7 +4,6 @@ export type ApprovalOperatorNotification = {
   conversationId: string;
   agentId: string;
   handle: string;
-  dashboardPath: string;
 };
 
 export type HandoffOperatorNotification = {
@@ -13,7 +12,6 @@ export type HandoffOperatorNotification = {
   conversationId: string;
   agentId: string;
   reason: string;
-  dashboardPath: string;
 };
 
 export type OperatorNotification = ApprovalOperatorNotification | HandoffOperatorNotification;

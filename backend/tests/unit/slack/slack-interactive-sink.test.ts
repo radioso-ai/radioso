@@ -67,7 +67,6 @@ const notification = {
   conversationId: "conv_1",
   agentId: "agent_1",
   handle: "pd_1",
-  dashboardPath: "/conversations/conv_1",
 };
 
 const handoffNotification = {
@@ -76,13 +75,13 @@ const handoffNotification = {
   conversationId: "conv_1",
   agentId: "agent_1",
   reason: "Customer asked for a human",
-  dashboardPath: "/conversations/conv_1",
 };
 
 const createSink = (overrides: {
   installation?: SlackInstallationRecord | null;
   binding?: SlackChannelBindingRecord | null;
   decision?: PendingDecisionRecord | null;
+  conversationLinks?: { resolve: () => Promise<string | null> };
 } = {}) => {
   const enqueued: Parameters<SlackPostOutboxPort["enqueue"]>[0][] = [];
   const outbox: SlackPostOutboxPort = {
@@ -106,11 +105,57 @@ const createSink = (overrides: {
         Object.prototype.hasOwnProperty.call(overrides, "decision") ? overrides.decision! : decision()),
     },
     outbox,
+    conversationLinks: overrides.conversationLinks,
   });
   return { sink, enqueued };
 };
 
+const permalink = "https://app.radioso.ai/w/support-abc/activity?tab=all&filter=chat&itemKind=chat&itemId=conv_1";
+
+const linkTexts = (enqueued: Parameters<SlackPostOutboxPort["enqueue"]>[0][]): string[] => {
+  const payload = enqueued[0].payload as { blocks: Array<{ type: string; elements?: Array<{ text?: string }> }> };
+  return payload.blocks
+    .filter((block) => block.type === "context")
+    .flatMap((block) => block.elements ?? [])
+    .map((element) => element.text ?? "");
+};
+
 describe("SlackOperatorNotificationSink", () => {
+  it("links the decision post to the resolved conversation permalink", async () => {
+    const { sink, enqueued } = createSink({ conversationLinks: { resolve: async () => permalink } });
+
+    await sink.deliver(notification, { requestId: "request_1" });
+
+    expect(linkTexts(enqueued)).toContain(`<${permalink}|Open in dashboard>`);
+  });
+
+  it("links the handoff post to the resolved conversation permalink", async () => {
+    const { sink, enqueued } = createSink({ conversationLinks: { resolve: async () => permalink } });
+
+    await sink.deliver(handoffNotification, { requestId: "request_1" });
+
+    expect(linkTexts(enqueued)).toContain(`<${permalink}|Open in dashboard>`);
+  });
+
+  it("posts without a link rather than a dead one when the permalink cannot be resolved", async () => {
+    const { sink, enqueued } = createSink({ conversationLinks: { resolve: async () => null } });
+
+    await sink.deliver(notification, { requestId: "request_1" });
+
+    expect(enqueued).toHaveLength(1);
+    expect(linkTexts(enqueued).join("\n")).not.toContain("conv_1");
+  });
+
+  it("still posts when resolving the permalink fails", async () => {
+    const { sink, enqueued } = createSink({
+      conversationLinks: { resolve: async () => { throw new Error("workspace lookup failed"); } },
+    });
+
+    await sink.deliver(handoffNotification, { requestId: "request_1" });
+
+    expect(enqueued).toHaveLength(1);
+  });
+
   it("enqueues an operator-channel Slack post with one button per decision option", async () => {
     const { sink, enqueued } = createSink();
 

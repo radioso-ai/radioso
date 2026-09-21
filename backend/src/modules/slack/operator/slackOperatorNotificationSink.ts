@@ -2,7 +2,13 @@ import type {
   PendingDecisionRecord,
   PendingDecisionRepository,
 } from "../../../db/repositories/pendingDecisionRepository.js";
-import type { OperatorNotification, OperatorNotificationContext, OperatorNotificationSink } from "../../operatorNotifications/public.js";
+import {
+  resolveConversationLink,
+  type ConversationLinkResolver,
+  type OperatorNotification,
+  type OperatorNotificationContext,
+  type OperatorNotificationSink,
+} from "../../operatorNotifications/public.js";
 import type {
   SlackBindingRepositoryPort,
   SlackInstallationRepositoryPort,
@@ -29,6 +35,8 @@ export class SlackOperatorNotificationSink implements OperatorNotificationSink {
     bindings: Pick<SlackBindingRepositoryPort, "findByInstallationId">;
     pendingDecisions: Pick<PendingDecisionRepository, "loadByHandle">;
     outbox: SlackPostOutboxPort;
+    conversationLinks?: ConversationLinkResolver;
+    logger?: { warn(payload: Record<string, unknown>, message: string): void };
   }) {}
 
   async deliver(notification: OperatorNotification, context: OperatorNotificationContext): Promise<void> {
@@ -44,13 +52,18 @@ export class SlackOperatorNotificationSink implements OperatorNotificationSink {
     if (!binding?.escalationChannelId) {
       return;
     }
+    const dashboardUrl = await resolveConversationLink(
+      this.options.conversationLinks,
+      { workspaceId: notification.workspaceId, conversationId: notification.conversationId },
+      this.options.logger,
+    );
     if (notification.kind === "handoff") {
       const message = buildOwnershipMessage({
         conversationId: notification.conversationId,
         workspaceId: notification.workspaceId,
         state: "ai_owned",
         contextText: notification.reason,
-        dashboardPath: notification.dashboardPath,
+        dashboardUrl,
       });
 
       await enqueueSlackPostAction(this.options.outbox, {
@@ -87,7 +100,7 @@ export class SlackOperatorNotificationSink implements OperatorNotificationSink {
       handle: decision.handle,
       contentHash: decision.contentHash,
       agentId: decision.agentId,
-      dashboardPath: notification.dashboardPath,
+      dashboardUrl,
     });
 
     await enqueueSlackPostAction(this.options.outbox, {

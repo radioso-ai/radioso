@@ -5,12 +5,14 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
+  '@faker-js/faker@<10.5.0': ^10.5.0
   '@grpc/grpc-js@<1.14.4': ^1.14.4
   '@sentry/browser': 7.119.1
   '@types/react': 19.2.14
   '@types/react-dom': 19.2.3
   '@tootallnate/once': 3.0.1
   '@xmldom/xmldom': 0.9.12
+  adm-zip@<0.6.1: ^0.6.1
   esbuild@<0.28.1: ^0.28.1
   file-type: 21.3.2
   fast-uri: 3.1.6
@@ -337,8 +339,8 @@ importers:
         specifier: 19.2.3
         version: 19.2.3(@types/react@19.2.14)
       firebase-tools:
-        specifier: 15.28.2
-        version: 15.28.2(@cfworker/json-schema@4.1.1)(@types/node@24.13.3)
+        specifier: 15.30.2
+        version: 15.30.2(@cfworker/json-schema@4.1.1)(@types/node@24.13.3)
       postcss:
         specifier: 8.5.23
         version: 8.5.23
@@ -1554,9 +1556,9 @@ packages:
     resolution: {integrity: sha512-43/qtrDUokr7LJqoF2c3+RInu/t4zfrpYdoSDfYyhg52rwLV6TnOvdG4fXm7IkSB3wErkcmJS9iEhjVtOSEjjA==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
 
-  '@faker-js/faker@5.5.3':
-    resolution: {integrity: sha512-R11tGE6yIFwqpaIqcfkcg7AICXzFg14+5h5v0TfF/9+RMDL6jhzCy/pxHVOfbALGdtVYdt6JdR21tuxEgl34dw==}
-    deprecated: Please update to a newer version.
+  '@faker-js/faker@10.6.0':
+    resolution: {integrity: sha512-3RQHgEtvL1Frl/d1cSreo7qhJ3Gk1OdNUai/CtZ8G+wYeRQnJih3s9xJ9/kgYekPQRdwgh0HXRPqMlzWGwivIQ==}
+    engines: {node: ^20.19.0 || ^22.13.0 || ^23.5.0 || >=24.0.0, npm: '>=10'}
 
   '@fast-csv/format@4.3.5':
     resolution: {integrity: sha512-8iRn6QF3I8Ak78lNAa+Gdl5MJJBM5vRHivFtMRUWINdevNo00K7OXxS2PshawLKTejVwieIlPmK5YlLu6w4u8A==}
@@ -4491,8 +4493,8 @@ packages:
     engines: {node: '>=0.4.0'}
     hasBin: true
 
-  adm-zip@0.6.0:
-    resolution: {integrity: sha512-XleryMhbuksdKtofnWZ9Sk+4CUTbms4Mb/EU32SZwToAyZ5RgVos/ki8n+yr0LWHOGKuakbXTuuYNHLQjhddgg==}
+  adm-zip@0.6.1:
+    resolution: {integrity: sha512-Xwrja8nx9e5o2N1my4DsKCeKpdrnACyr1wtbPxBDgGzKzKyE9kRtBFA8mWldI+RVlD7CBZNWY/wQ2+ydwOR6kQ==}
     engines: {node: '>=14.0'}
 
   agent-base@6.0.2:
@@ -6345,8 +6347,8 @@ packages:
       puppeteer:
         optional: true
 
-  firebase-tools@15.28.2:
-    resolution: {integrity: sha512-oC4qfRyY+voiNGR3JHmpfZ68SSNl4QjrLS625bvflxDnvWN1PumDSGWYkfZjs1XIosceSDHM7x5cGzBMxswi5w==}
+  firebase-tools@15.30.2:
+    resolution: {integrity: sha512-9Y6fsgUh5CsL/hzB565iyIYdu3pgbKcONi7vRlSbZuB3d3RpZy4u49lMesKmQSGd1AqKvFyVw5ls8GCZNYy0MQ==}
     engines: {node: '>=20.0.0 || >=22.0.0 || >=24.0.0'}
     hasBin: true
 
@@ -11655,7 +11657,7 @@ snapshots:
       '@eslint/core': 0.17.0
       levn: 0.4.1
 
-  '@faker-js/faker@5.5.3': {}
+  '@faker-js/faker@10.6.0': {}
 
   '@fast-csv/format@4.3.5':
     dependencies:
@@ -14889,7 +14891,7 @@ snapshots:
 
   acorn@8.18.0: {}
 
-  adm-zip@0.6.0: {}
+  adm-zip@0.6.1: {}
 
   agent-base@6.0.2:
     dependencies:
@@ -17154,7 +17156,7 @@ snapshots:
     optionalDependencies:
       playwright: 1.62.1
 
-  firebase-tools@15.28.2(@cfworker/json-schema@4.1.1)(@types/node@24.13.3):
+  firebase-tools@15.30.2(@cfworker/json-schema@4.1.1)(@types/node@24.13.3):
     dependencies:
       '@apphosting/common': 0.0.8
       '@electric-sql/pglite': 0.3.16
@@ -17410,7 +17412,7 @@ snapshots:
 
   generative-bayesian-network@2.1.88:
     dependencies:
-      adm-zip: 0.6.0
+      adm-zip: 0.6.1
       tslib: 2.8.1
 
   generator-function@2.0.1: {}
@@ -20410,7 +20412,7 @@ snapshots:
 
   postman-collection@4.5.0:
     dependencies:
-      '@faker-js/faker': 5.5.3
+      '@faker-js/faker': 10.6.0
       file-type: 21.3.2
       http-reasons: 0.1.0
       iconv-lite: 0.6.3

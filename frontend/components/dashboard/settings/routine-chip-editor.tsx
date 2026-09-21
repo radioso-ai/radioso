@@ -8,11 +8,17 @@ import { LexicalErrorBoundary } from '@lexical/react/LexicalErrorBoundary'
 import { HistoryPlugin } from '@lexical/react/LexicalHistoryPlugin'
 import { RichTextPlugin } from '@lexical/react/LexicalRichTextPlugin'
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext'
-import type { EditorState } from 'lexical'
+import {
+  $getRoot,
+  $isElementNode,
+  COMMAND_PRIORITY_LOW,
+  KEY_BACKSPACE_COMMAND,
+  type EditorState,
+} from 'lexical'
 
 import { HeadingNode } from '@lexical/rich-text'
 
-import { ChipNode, type RoutineChipKind } from '@/components/dashboard/settings/routine-chip-node'
+import { $isChipNode, ChipNode, type RoutineChipKind } from '@/components/dashboard/settings/routine-chip-node'
 import { ChipTypeaheadPlugin, type RoutineEditorVariable } from '@/components/dashboard/settings/routine-chip-typeahead-plugin'
 import { $initializeFromParagraphs, $readProseParagraphs } from '@/components/dashboard/settings/routine-prose-nodes'
 import { RoutineVariablesProvider } from '@/components/dashboard/settings/routine-variables-context'
@@ -53,6 +59,67 @@ function OnParagraphChangePlugin({ onParagraphChange }: { onParagraphChange: (pa
   return null
 }
 
+// Backspace on a genuinely empty step (no text, no chips — not just whitespace) removes the
+// step instead of doing nothing, so deleting a step the operator has emptied out is a single
+// keystroke instead of a trip to the step editor's own trash button. Registered at the same
+// priority as a chip's own Backspace handling; the two never actually compete, because a
+// selected chip and an empty editor are mutually exclusive states. This also means the "must
+// not fire while the @ typeahead is open" requirement holds for free — the typeahead can only
+// be open once "@" has been typed, at which point the editor is no longer empty.
+function EmptyStepBackspacePlugin({ onEmptyBackspace }: { onEmptyBackspace?: () => void }) {
+  const [editor] = useLexicalComposerContext()
+  const callbackRef = useRef(onEmptyBackspace)
+  useEffect(() => {
+    callbackRef.current = onEmptyBackspace
+  })
+
+  useEffect(() => editor.registerCommand(KEY_BACKSPACE_COMMAND, (event: KeyboardEvent) => {
+    if (!callbackRef.current) return false
+    let hasContent = false
+    for (const block of $getRoot().getChildren()) {
+      if (!$isElementNode(block)) continue
+      for (const child of block.getChildren()) {
+        if ($isChipNode(child) || child.getTextContent().trim().length > 0) {
+          hasContent = true
+          break
+        }
+      }
+      if (hasContent) break
+    }
+    if (hasContent) return false
+    // The host removes this editor's whole row on the next render, not this keystroke's
+    // native character deletion — left un-prevented, that native default can still land on
+    // whatever the focus hand-off moves into (the previous step's editor), clipping a
+    // character off text that was never meant to be touched.
+    event.preventDefault()
+    callbackRef.current()
+    return true
+  }, COMMAND_PRIORITY_LOW), [editor])
+
+  return null
+}
+
+// Opens a step's instruction editor with the caret already at the end, for the one moment
+// that matters: right after Backspace removed the step after it, so typing continues where
+// the operator left off instead of landing at the start of whatever text is already there.
+// `hasRunRef` makes this fire once per mount — a plain click into the field positions its own
+// caret and must not be overridden by this running again.
+function AutoFocusEndPlugin({ enabled, onDone }: { enabled?: boolean; onDone?: () => void }) {
+  const [editor] = useLexicalComposerContext()
+  const hasRunRef = useRef(false)
+  useEffect(() => {
+    if (!enabled || hasRunRef.current) return
+    hasRunRef.current = true
+    editor.getRootElement()?.focus()
+    editor.update(() => {
+      $getRoot().selectEnd()
+    })
+    onDone?.()
+  }, [editor, enabled, onDone])
+
+  return null
+}
+
 // The routine instruction editor for one document row: plain language plus `@` variable
 // chips. A skill runs through a tool step (`+ Step → Tool steps`), never through step text,
 // so this surface offers no `#` skill menu.
@@ -62,6 +129,9 @@ export function RoutineInstructionEditor({
   onCreateVariable,
   onChange,
   onBlur,
+  onEmptyBackspace,
+  autoFocusEnd,
+  onAutoFocused,
   ariaLabel,
 }: {
   initialContent: ProseParagraph[]
@@ -73,6 +143,13 @@ export function RoutineInstructionEditor({
   // Leaving the field is what closes editing — every keystroke already saved live through
   // `onChange`, so blur has nothing left to commit but the host's own edit-mode flag.
   onBlur?: () => void
+  // Backspace with the step already empty — the host removes the step and decides where
+  // focus goes next; this editor only reports the keystroke.
+  onEmptyBackspace?: () => void
+  // Set once, right after this row opens as the target of that removal, so the caret lands
+  // at the end instead of the start.
+  autoFocusEnd?: boolean
+  onAutoFocused?: () => void
   ariaLabel?: string
 }): JSX.Element {
   const reservedRefKinds = useMemo(
@@ -154,6 +231,8 @@ export function RoutineInstructionEditor({
           </div>
           <HistoryPlugin />
           <OnParagraphChangePlugin onParagraphChange={onChange} />
+          <EmptyStepBackspacePlugin onEmptyBackspace={onEmptyBackspace} />
+          <AutoFocusEndPlugin enabled={autoFocusEnd} onDone={onAutoFocused} />
           <ChipTypeaheadPlugin variables={variables} reservedRefKinds={reservedRefKinds} onCreateVariable={onCreateVariable} variablesOnly />
         </div>
       </RoutineVariablesProvider>

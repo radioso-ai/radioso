@@ -3702,7 +3702,7 @@ export interface paths {
         };
         /**
          * List the bound agent's exposed routines as tools
-         * @description Returns the agent's name and one descriptor per exposed routine in its current published release. A session reads the catalog once; a routine exposed or withdrawn after that shows up for the next session.
+         * @description Returns the agent's name and one descriptor per exposed routine in its current published release, on every call. The standalone MCP server reads this once at session exchange and pins the result, so an MCP client's `tools/list` is stable for a session; a direct caller sees the current catalog each time.
          */
         get: operations["getMcpConverseTools"];
         put?: never;
@@ -3724,7 +3724,7 @@ export interface paths {
         put?: never;
         /**
          * Run one turn through the bound agent: a message, or a tool call to an exposed routine
-         * @description Send exactly one of `message` or `routine`. A `routine` call is validated against the tool's `inputSchema` from the catalog before any turn state is written: an unknown tool returns 404 with `details.code` `routine_tool_unknown`; invalid input returns 400 with `details.code` `routine_invocation_invalid` and field-level `details.errors`.
+         * @description Send exactly one of `message` or `routine`. A `routine` call is validated against the tool's `inputSchema` from the catalog before any turn state is written: an unknown tool returns 404 with `details.code` `routine_tool_unknown`; invalid input returns 400 whose `details` is `RoutineInvocationInvalidDetails` (`code` `routine_invocation_invalid`, field-level `errors`).
          */
         post: operations["askMcpConverseAgent"];
         delete?: never;
@@ -7749,6 +7749,20 @@ export interface components {
                 description: string | null;
             };
             tools: components["schemas"]["AgentToolDescriptor"][];
+        };
+        /** @description One field-level problem with a tool call's input. `too_long` is a string value over 2000 characters; `format` is an `email` or `date` slot whose value does not parse as one. */
+        RoutineInvocationError: {
+            /** @description The slot key the problem is on. */
+            path: string;
+            /** @enum {string} */
+            code: "required" | "type" | "format" | "unknown_field" | "too_long";
+        };
+        /** @description The `error.details` of a 400 that refused a tool call before any turn state was written: every problem at once, so a caller can fix the whole call in one retry. Values are never echoed back. */
+        RoutineInvocationInvalidDetails: {
+            /** @enum {string} */
+            code: "routine_invocation_invalid";
+            toolName: string;
+            errors: components["schemas"]["RoutineInvocationError"][];
         };
         ConnectorField: {
             key: string;
@@ -25310,7 +25324,7 @@ export interface operations {
                     "application/json": components["schemas"]["McpConverseAskResponse"];
                 };
             };
-            /** @description Routine invocation input did not match the tool's schema */
+            /** @description Routine invocation input did not match the tool's schema (`details` is `RoutineInvocationInvalidDetails`), or the body failed validation */
             400: {
                 headers: {
                     [name: string]: unknown;

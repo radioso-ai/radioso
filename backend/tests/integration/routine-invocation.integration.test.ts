@@ -323,11 +323,11 @@ describe("routine invocation (US2)", () => {
     expect(ctx.gatewayCalls.rankedActivation).toBe(0);
   });
 
-  it("re-enters a completed routine under always reentry with the new input and no model decision (AS-5)", async () => {
+  it.each(["always", "semantic"] as const)("re-enters a completed routine under %s reentry with the new input and no model decision (AS-5)", async (reentryMode) => {
     const ctx = createApp();
     const converse = await openConverseSession(ctx);
     await ctx.dependencies.routineDefinitionService.createDraft(converse.workspaceId, converse.agent.id, startReturnDraft({
-      activation: { triggerDescription: "When the user wants to return an order.", gateRef: null, priority: 10, reentryMode: "always" },
+      activation: { triggerDescription: "When the user wants to return an order.", gateRef: null, priority: 10, reentryMode },
     }));
     const first = await converseAsk(ctx, converse.sessionToken, {
       routine: { toolName: "start_return", input: { orderId: "A-1001", reason: "Wrong size" } },

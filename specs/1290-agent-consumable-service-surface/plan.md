@@ -310,9 +310,10 @@ routine (manual gate; the harness in `testing/remoteSmokeHarness.ts` gains a too
    `ownership`, `routine?`, `traceId?`); MCP keeps `answer: { text, citations }`, REST keeps `answer: string` +
    `citations[]`. Citations stay `ChatCitation` (`sourceUrl`). Spec FR-001/FR-002/FR-004 updated.
 2. **Recorded text for an invocation** carries values verbatim (`toolName {json}`), exactly as if a person had
-   typed them, so LLM-visible history matches chat; `inputMetadata.routine` holds the structured form; `email`
-   values are redacted in operator views via the existing visitor-context redaction, not at write time. Spec
-   FR-016 updated; drop the write-time redaction from `renderRoutineInvocation.ts`.
+   typed them, so LLM-visible history matches chat; `inputMetadata.routine` holds the structured form. Operator
+   views show the values as they show a typed message — the pushed-context redaction covers host-supplied identity
+   facts, not what a caller chose to send (review 2026-09-22 found the earlier "redact email slots" clause had no
+   coherent implementation; spec FR-016 amended).
 3. **Frozen name semantics** as proposed: once published with exposure enabled, the lineage's `toolName` is frozen
    even while later disabled; a new name means a new routine. Duplicate detection counts enabled exposures only.
 4. **`answerCoverage` always present** with the `not_recorded` fallback. Implementer verifies

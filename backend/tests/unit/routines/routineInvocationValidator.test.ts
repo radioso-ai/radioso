@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import type { AgentToolDescriptor } from "../../../src/modules/routines/exposure/agentToolDescriptor.js";
-import { validateRoutineInvocation } from "../../../src/modules/routines/exposure/routineInvocationValidator.js";
+import {
+  ROUTINE_INVOCATION_MAX_STRING_LENGTH,
+  validateRoutineInvocation,
+} from "../../../src/modules/routines/exposure/routineInvocationValidator.js";
 
 const descriptor: AgentToolDescriptor = {
   toolName: "start_return",
@@ -85,6 +88,21 @@ describe("validateRoutineInvocation", () => {
     const result = validateRoutineInvocation(descriptor, { orderId: "A-1001", purchasedOn: "2026-02-30" });
 
     expect(result).toEqual({ ok: false, errors: [{ path: "purchasedOn", code: "format" }] });
+  });
+
+  it("caps every string value at the exported length and reports the overrun per field", () => {
+    const atCap = "x".repeat(ROUTINE_INVOCATION_MAX_STRING_LENGTH);
+    const overCap = `${atCap}x`;
+
+    expect(validateRoutineInvocation(descriptor, { orderId: atCap })).toMatchObject({ ok: true });
+    expect(validateRoutineInvocation(descriptor, { orderId: overCap, contact: `${overCap}@example.com` })).toEqual({
+      ok: false,
+      errors: [
+        { path: "orderId", code: "too_long" },
+        { path: "contact", code: "too_long" },
+      ],
+    });
+    expect(ROUTINE_INVOCATION_MAX_STRING_LENGTH).toBe(2000);
   });
 
   it("reports fields the descriptor does not declare", () => {

@@ -40,7 +40,11 @@ interface DirectInvocationActivator extends ConversationRoutineActivator {
  * routine's initial variables, so the runner's fast-forward skips every
  * collection step those slots satisfy. Reentry is decided here, without a
  * model call: a completed `once_per_conversation` routine stays closed (and is
- * remembered so the reply can say so); `always` and `semantic` re-admit.
+ * remembered so the reply can say so). Both `always` and `semantic` re-admit,
+ * because the semantic gate's question of a chat message — "does the visitor
+ * want this routine again, with fresh values?" — is exactly what an explicit
+ * tool call carrying new input already states; there is nothing left for a
+ * judge to decide.
  */
 export const createDirectInvocationActivator = (
   registrations: readonly RoutineRegistration[],

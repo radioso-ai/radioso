@@ -12,7 +12,7 @@ The package connects to an existing Radioso deployment over its public HTTP API 
 - `radioso_docs` and `radioso_doc_page` for Radioso's own documentation
 - one typed tool per routine the operator has exposed on that agent, named by the operator (`start_return`, for example) with a JSON Schema input built from the routine's slots
 
-The routine tools come from the backend's session-bound catalog (`GET /api/v1/mcp/converse/tools`), read once when the session is established and pinned to it. Every call to a routine tool runs that routine directly with the arguments as its slot values and returns the same agent reply envelope `ask_agent` returns.
+The routine tools come from the backend's catalog route (`GET /api/v1/mcp/converse/tools`, which returns the agent's current published catalog on every call); the server reads it once at session exchange and pins the result, so `tools/list` is stable for the session. Every call to a routine tool runs that routine directly with the arguments as its slot values and returns the same agent reply envelope `ask_agent` returns.
 
 **Operator surface (`/operator/mcp`).** An OAuth-capable remote client acts as the signed-in person who granted access. Its fresh catalog exposes the reviewed subset of Ray's reads, probes, proposals, and acts that current scopes and permissions allow. Agent revision publication, private candidate testing, and frozen revision evals remain REST/dashboard operations and are not MCP tools. See [Operator MCP OAuth access](../../docs/operator-mcp.md) for the current tool boundary, consent, grant management, and compatibility status.
 
@@ -162,7 +162,7 @@ curl -s http://127.0.0.1:8787/mcp \
   }'
 ```
 
-The list holds `ask_agent`, the two documentation tools, and one entry per exposed routine. The catalog is fixed for the session's lifetime: the server reads it when it exchanges the credential and renders the same tools until that session expires, so a routine exposed or withdrawn afterwards shows up when the client opens its next session. The server sends no `notifications/tools/list_changed`. Workspace document tools, direct grounded answers, and resources are intentionally not part of this surface.
+The list holds `ask_agent`, the two documentation tools, and one entry per exposed routine. The server pins the catalog at session exchange and renders the same tools until that session expires, so a routine exposed or withdrawn afterwards shows up when the client opens its next session. The server sends no `notifications/tools/list_changed`. Workspace document tools, direct grounded answers, and resources are intentionally not part of this surface.
 
 ```bash
 curl -s http://127.0.0.1:8787/mcp \

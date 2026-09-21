@@ -2,26 +2,14 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import {
-  AlertTriangle,
-  CheckCircle2,
-  FlaskConical,
-  MoreHorizontal,
-  Pause,
-  Play,
-  Plus,
-  Route,
-  Trash2,
-  WandSparkles,
-  Waypoints,
-  X,
-} from 'lucide-react'
+import { Plus, Route, Trash2 } from 'lucide-react'
 
 import { RoutineDiagnosticList } from '@/components/dashboard/settings/routine-editor-controls'
 import { RoutineDraftAssistDialog } from '@/components/dashboard/settings/routine-draft-assist-dialog'
 import { RoutineCompletionExportPanel } from '@/components/dashboard/settings/routine-completion-export-panel'
 import { RoutineMapDialog } from '@/components/dashboard/settings/routine-canvas'
 import { RoutineDocumentTab } from '@/components/dashboard/settings/routine-document-tab'
+import { RoutineEditorHeader, type RoutineValidationStatus } from '@/components/dashboard/settings/routine-editor-header'
 import { RoutineSkillCatalogProvider } from '@/components/dashboard/settings/routine-skill-catalog-popover'
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import { useSettingsSaveStatus } from '@/components/dashboard/settings/use-settings-save-status'
@@ -37,18 +25,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import { Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { agentSectionRoute } from '@/lib/dashboard-areas'
 import { buildAgentSectionHref, buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
@@ -96,34 +75,6 @@ const emptyRoutineDraft = (): RoutineDefinitionDraft => ({
   transitions: [{ fromStep: 'step_1', toRef: 'complete', guardKind: 'default', guardText: null, outcomeStatus: null, counterLimit: null, fieldRef: null, fieldOp: null, fieldValue: null, fieldValues: null, fieldUnit: null, ordinal: 0 }],
   terminals: [{ stableStepId: 'complete', kind: 'complete', instruction: 'Confirm completion.', ordinal: 0 }],
 })
-
-function RoutineValidationStatusIcon({
-  state,
-}: {
-  state: 'checking' | 'invalid' | 'valid'
-}) {
-  const label = state === 'valid'
-    ? 'Routine valid'
-    : state === 'invalid'
-      ? 'Routine has validation issues'
-      : 'Checking routine'
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span
-          role="status"
-          aria-label={label}
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground"
-        >
-          {state === 'valid' ? <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" /> : null}
-          {state === 'invalid' ? <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" /> : null}
-          {state === 'checking' ? <Spinner className="h-4 w-4" /> : null}
-        </span>
-      </TooltipTrigger>
-      <TooltipContent>{label}</TooltipContent>
-    </Tooltip>
-  )
-}
 
 const draftError = (draft: RoutineDefinitionDraft): string | null => {
   if (!draft.name.trim()) return 'Name is required.'
@@ -585,7 +536,7 @@ function RoutineEditorScreen({
   )
   const nameLocalValidationError = !draftHeader.name.trim() ? 'Name is required.' : null
   const isValidationCurrent = Boolean(activeRoutineDraftSignature && validatedDraftSignature === activeRoutineDraftSignature)
-  const validationStatus = activeRoutineDraftError || (isValidationCurrent && validation && !validation.ok)
+  const validationStatus: RoutineValidationStatus = activeRoutineDraftError || (isValidationCurrent && validation && !validation.ok)
     ? 'invalid'
     : isValidationCurrent && validation?.ok
       ? 'valid'
@@ -896,138 +847,53 @@ function RoutineEditorScreen({
     actionHandlersRef.current = { loadAssistedDraft, openDeleteRoutineDialog }
   })
 
-  // The routine's own name is the page title, edited in place; nothing else in this row
-  // owns "Name" as a label, so the accessible name stays on the field itself.
-  const routineTitle = useMemo(() => (
-    <input
-      id="routineName"
-      aria-label="Name"
-      value={draftHeader.name}
-      onChange={(event) => setDraftHeader((current) => ({ ...current, name: event.target.value }))}
-      placeholder="Untitled routine"
-      className="w-full min-w-0 max-w-md truncate border-b border-dashed border-muted-foreground/30 bg-transparent text-lg font-medium leading-none text-foreground outline-none placeholder:text-muted-foreground/60 hover:border-muted-foreground/60 focus:border-foreground focus:outline-none"
-    />
-  ), [draftHeader.name])
-
-  const routineStatusPill = useMemo(() => (
-    <Badge
-      variant={draftHeader.enabled ? 'default' : 'secondary'}
-      className={draftHeader.enabled
-        ? 'shrink-0 border-transparent bg-emerald-500/15 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400'
-        : 'shrink-0 border-transparent bg-muted text-muted-foreground'}
-    >
-      {draftHeader.enabled ? 'Live' : 'Draft'}
-    </Badge>
-  ), [draftHeader.enabled])
-
-  const headerActions = useMemo(() => {
-    // Editing is autosaved, so the header carries no save action. "Test" is the one
-    // affordance the routine itself offers beyond the publish toggle; AI drafting and delete
-    // live in an overflow menu so the header stays a status line rather than a row of
-    // competing buttons.
-    const isPersisted = Boolean(editingRoutine)
-    // A disabled routine is left out of the draft snapshot's activation set, so a
-    // draft test could never reach it.
-    const canTestDraft = draftHeader.enabled
-
-    return (
-      <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-        {form ? <RoutineValidationStatusIcon state={validationStatus} /> : null}
-        {form ? (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button type="button" size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground" aria-label="More routine actions">
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48">
-              {activeRoutineDraft ? (
-                <>
-                  <DropdownMenuItem onSelect={() => setMapDialogOpen(true)}>
-                    <Waypoints className="mr-2 h-4 w-4" />
-                    Map
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                </>
-              ) : null}
-              <DropdownMenuItem disabled={isSaving || isDraftingRoutine} onSelect={() => setDraftAssistDialogOpen(true)}>
-                <WandSparkles className="mr-2 h-4 w-4" />
-                Draft with AI
-              </DropdownMenuItem>
-              {isPersisted ? (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    disabled={isSaving}
-                    onSelect={() => actionHandlersRef.current.openDeleteRoutineDialog()}
-                    className="text-destructive focus:text-destructive"
-                  >
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    Delete routine
-                  </DropdownMenuItem>
-                </>
-              ) : null}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        ) : null}
-        {isPersisted ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={handleTestDraft}
-            disabled={isSaving || !canTestDraft}
-            title={canTestDraft ? 'Test this routine in Test Chat as part of the draft.' : 'Enable this routine to test it.'}
-          >
-            <FlaskConical className="mr-2 h-4 w-4" />
-            Test
-          </Button>
-        ) : null}
-        {form ? (
-          <Button
-            type="button"
-            size="icon"
-            onClick={() => void toggleRoutineEnabled(!draftHeader.enabled)}
-            disabled={isTogglingEnabled}
-            aria-pressed={draftHeader.enabled}
-            aria-label={draftHeader.enabled ? 'Disable routine' : 'Enable routine'}
-            title={draftHeader.enabled ? 'Take this routine out of service' : 'Publish this routine'}
-            className={draftHeader.enabled
-              ? 'h-8 w-8 rounded-full bg-amber-500 text-white hover:bg-amber-500/90 focus-visible:ring-amber-500/50'
-              : 'h-8 w-8 rounded-full bg-emerald-500 text-white hover:bg-emerald-500/90 focus-visible:ring-emerald-500/50'}
-          >
-            {draftHeader.enabled ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-          </Button>
-        ) : null}
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 text-muted-foreground"
-          onClick={() => router.push(listHref)}
-          aria-label="Back to routines"
-        >
-          <X className="h-4 w-4" />
-        </Button>
-      </div>
-    )
-  }, [activeRoutineDraft, draftHeader.enabled, editingRoutine, form, handleTestDraft, isDraftingRoutine, isSaving, isTogglingEnabled, listHref, router, toggleRoutineEnabled, validationStatus])
+  // A disabled routine is left out of the draft snapshot's activation set, so a draft test
+  // could never reach it.
+  const canTestDraft = draftHeader.enabled
+  const isPersisted = Boolean(editingRoutine)
+  const onNameChange = useCallback((name: string) => setDraftHeader((current) => ({ ...current, name })), [])
+  const onToggleEnabled = useCallback(() => void toggleRoutineEnabled(!draftHeader.enabled), [draftHeader.enabled, toggleRoutineEnabled])
+  const onOpenMap = useMemo(() => activeRoutineDraft ? () => setMapDialogOpen(true) : undefined, [activeRoutineDraft])
+  const onOpenDraftAssist = useCallback(() => setDraftAssistDialogOpen(true), [])
+  const onBack = useCallback(() => router.push(listHref), [listHref, router])
+  // One shared prop bag so the title and actions halves below — two separate elements,
+  // because the page shell's header registers them into two separate slots — can never drift
+  // out of sync with each other's view of the routine.
+  const headerProps = useMemo(() => ({
+    name: draftHeader.name,
+    onNameChange,
+    enabled: draftHeader.enabled,
+    onToggleEnabled,
+    isToggling: isTogglingEnabled,
+    canTest: canTestDraft,
+    onTest: handleTestDraft,
+    isPersisted,
+    isSaving,
+    isDrafting: isDraftingRoutine,
+    validationStatus,
+    onOpenMap,
+    onOpenDraftAssist,
+    // `openDeleteRoutineDialog` is already a permanently stable `useCallback` ([] deps), so it
+    // can sit directly in this bag without the ref indirection `loadAssistedDraft` needs
+    // elsewhere in this file — that trick is for keeping an *unstable* callback's identity out
+    // of a memo's deps, which doesn't apply here.
+    onDelete: openDeleteRoutineDialog,
+    onBack,
+    showActions: Boolean(form),
+  }), [canTestDraft, draftHeader.enabled, draftHeader.name, form, handleTestDraft, isDraftingRoutine, isPersisted, isSaving, isTogglingEnabled, onBack, onNameChange, onOpenDraftAssist, onOpenMap, onToggleEnabled, openDeleteRoutineDialog, validationStatus])
+  const routineHeaderTitle = useMemo(() => <RoutineEditorHeader slot="title" {...headerProps} />, [headerProps])
+  const routineHeaderActions = useMemo(() => <RoutineEditorHeader slot="actions" {...headerProps} />, [headerProps])
 
   const routineHeader = useMemo(() => ({
-    actions: headerActions,
+    actions: routineHeaderActions,
     backAction: null,
     // Loading has its own inline spinner in the body; the header itself carries no subtitle
     // once the routine is ready to show — `undefined` (not `null`) is reserved for "nothing
     // registered a header yet" (see `emptyRoutineHeader`), so this section always registers
     // one or the other explicitly rather than leaving the page shell to guess.
     description: isLoading || !form ? undefined : null,
-    title: (
-      <span className="flex min-w-0 items-center gap-2">
-        {routineTitle}
-        {routineStatusPill}
-      </span>
-    ),
-  }), [form, headerActions, isLoading, routineStatusPill, routineTitle])
+    title: routineHeaderTitle,
+  }), [form, isLoading, routineHeaderActions, routineHeaderTitle])
 
   useRegisterRoutineHeader(routineHeader)
 

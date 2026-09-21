@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { canonicalRoutineAuthoringDraft, projectRoutineToPortableDocument, routineDefinitionDraftInputSchema, routineFieldPatchSchema, type RoutineDefinition } from "../../routines/public.js";
+import { canonicalRoutineAuthoringDraft, projectRoutineToPortableDocument, ROUTINE_DEFINITION_LIMITS, routineDefinitionDraftInputSchema, routineFieldPatchSchema, type RoutineDefinition } from "../../routines/public.js";
 import type {
   CopilotMcpInvocationReconciliation,
   CopilotMcpProposalRecoveryPort,
@@ -332,6 +332,15 @@ const routineProposalIdentitySchema = {
   evidenceIds: citedEvidenceSchema,
 };
 const routineEditInputSchema = z.object({ ...routineProposalIdentitySchema, changes: routineFieldPatchSchema }).strict();
+// Flat rather than nested under an `exposure` object: the tool transport renders a nested input
+// object as the bare word "object", and these three fields are the whole change.
+const routineExposureInputSchema = z.object({
+  ...routineProposalIdentitySchema,
+  enabled: z.boolean(),
+  toolName: z.string().trim().max(ROUTINE_DEFINITION_LIMITS.exposureToolName),
+  description: z.string().trim().max(ROUTINE_DEFINITION_LIMITS.exposureDescription),
+}).strict();
+const routineExposureDescription = `Propose offering a routine to calling AI agents as a named tool, or withdrawing that offer. A calling agent then starts the routine directly with its information fields filled in, instead of describing the request in prose. \`toolName\` is the name the agent calls, 2-63 lower-case letters, digits, and underscores, starting with a letter (for example start_return); \`description\` tells a calling agent when to use it. A tool name is fixed once the agent is published with it, so pass the routine's current name when only changing \`enabled\` or \`description\`. Routines whose activation has a gate cannot be exposed. ${scopedAgentDraftPublicationNote}`;
 
 // The tool transport renders a nested input object as the bare word "object", so the shape of
 // `changes` has to live in the description or the model invents one of its own. Shared by both
@@ -489,6 +498,45 @@ export const createRoutineProposalCopilotTools = (deps: RoutineProposalCopilotTo
           const versionToken = await routineAdapter.readVersionToken(context.workspaceId, targetRef);
           await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
           const draft = await routineAdapter.draftEdit(context.workspaceId, targetRef, changes, rationale);
+          return proposeRoutineChange(deps, routineAdapter, context, targetRef, draft, versionToken, evidenceIds);
+        },
+      }),
+      describeEntity: (input, context) => describeRoutineTarget(input as z.infer<typeof validateRoutineInputSchema>, context, deps),
+    },
+    {
+      // Rides the routine edit path (`changes.exposure` on routineFieldPatchSchema), so the same
+      // adapter drafts, previews, and applies it and the card has one producer. A tool of its own
+      // so the model sees three named fields, not a generic patch object.
+      name: "propose_routine_exposure", shape: "propose", verificationCost: () => 0, uiLabel: "Drafting a tool exposure", contributingModule: "routines", dashboardSubject: { type: "proposal" }, requiredPermissions: ["workspace.agents.manage"],
+      description: routineExposureDescription,
+      inputSchema: routineExposureInputSchema, outputSchema: routineProposalOutputSchema,
+      reconcileMcpInvocation: async ({ invocation, context, staleBefore, now }) => {
+        if (!invocation.operationId) return { status: "conflict" };
+        const recovery = await deps.proposalRecovery.recoverOperatorMcpProposal({
+          invocationId: invocation.id,
+          grantId: invocation.grantId,
+          workspaceId: context.workspaceId,
+          operatorUserId: context.operatorUserId,
+          operationId: invocation.operationId,
+          descriptorName: "propose_routine_exposure",
+          inputDigest: invocation.inputDigest,
+          staleBefore,
+          now,
+        });
+        if (recovery.status !== "recovered") return recovery;
+        return reconcileRoutineProposalPayload(recovery.proposal, routineEditProposalPayloadSchema);
+      },
+      createTool: (context) => ({
+        name: "propose_routine_exposure",
+        description: routineExposureDescription,
+        inputSchema: routineExposureInputSchema,
+        outputSchema: routineProposalOutputSchema,
+        invoke: async ({ agentId, routineId, enabled, toolName, description, rationale, evidenceIds }) => {
+          const targetRef = { agentId: agentId ?? requiredPageAgent(context.pageContext.agentId), routineId: requiredRoutine(routineId) };
+          await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
+          const versionToken = await routineAdapter.readVersionToken(context.workspaceId, targetRef);
+          await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
+          const draft = await routineAdapter.draftEdit(context.workspaceId, targetRef, { exposure: { enabled, toolName, description } }, rationale);
           return proposeRoutineChange(deps, routineAdapter, context, targetRef, draft, versionToken, evidenceIds);
         },
       }),

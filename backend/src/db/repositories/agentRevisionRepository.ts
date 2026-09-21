@@ -46,6 +46,22 @@ const liveAgentDefaultLocale = async (
   return typeof locale === "string" && locale.trim().length > 0 ? locale : DEFAULT_AGENT_LOCALE_FALLBACK;
 };
 
+/**
+ * The snapshot calling agents currently see, read on the same transaction as the candidate or
+ * publish check so a concurrent publish cannot slip a different baseline in between. `null`
+ * when the agent has never published. The revision gate freezes routine tool names against it.
+ */
+const publishedSnapshot = async (
+  trx: Transaction<DB>,
+  workspaceId: string,
+  agentId: string,
+  publishedRevisionId: string | null,
+): Promise<AgentRevisionSnapshot | null> => {
+  if (!publishedRevisionId) return null;
+  const row = await trx.selectFrom("agent_revisions").select("snapshot").where("workspace_id", "=", workspaceId).where("agent_id", "=", agentId).where("id", "=", publishedRevisionId).executeTakeFirst();
+  return row ? parseAgentRevisionSnapshot(row.snapshot) : null;
+};
+
 /** Live-reads agent_skills on the same transaction a draft/candidate write is already
  * running on, for the writers below that must reconstruct `snapshot.agentSkills` the
  * first time they touch a snapshot that predates skill tracking (see agentRevision.ts). */
@@ -127,7 +143,11 @@ export class AgentRevisionRepository implements AgentRevisionRepositoryPort {
       const parsedSnapshot: AgentRevisionSnapshot = draftSnapshot.agentSkills !== undefined
         ? draftSnapshot
         : { ...draftSnapshot, agentSkills: await liveAgentSkillsSnapshot(trx, workspaceId, agentId) };
-      assertCandidateSnapshotIsRunnable(parsedSnapshot, { agentDefaultLocale: await liveAgentDefaultLocale(trx, workspaceId, agentId) });
+      const agent = await trx.selectFrom("agents").select("published_revision_id").where("workspace_id", "=", workspaceId).where("id", "=", agentId).executeTakeFirst();
+      assertCandidateSnapshotIsRunnable(parsedSnapshot, {
+        agentDefaultLocale: await liveAgentDefaultLocale(trx, workspaceId, agentId),
+        publishedSnapshot: await publishedSnapshot(trx, workspaceId, agentId, agent?.published_revision_id ?? null),
+      });
       let existingQuery = trx.selectFrom("agent_revisions")
         .select(["id", "snapshot", "source_draft_generation", "source_base_published_revision_id", "created_at", "published_at", "published_version"])
         .where("workspace_id", "=", workspaceId)
@@ -155,7 +175,10 @@ export class AgentRevisionRepository implements AgentRevisionRepositoryPort {
         trx.selectFrom("agent_revisions").select(["id", "snapshot", "source_draft_generation", "source_base_published_revision_id", "published_at"]).where("id", "=", input.revisionId).where("agent_id", "=", input.agentId).where("workspace_id", "=", input.workspaceId).executeTakeFirst(),
       ]);
       if (!agent || !draft || !revision || revision.published_at !== null || draft.generation !== input.expectedDraftGeneration || agent.published_revision_id !== input.expectedPublishedRevisionId || revision.source_draft_generation !== draft.generation || revision.source_base_published_revision_id !== draft.base_published_revision_id) return "conflict";
-      assertCandidateSnapshotIsRunnable(parseAgentRevisionSnapshot(revision.snapshot), { agentDefaultLocale: await liveAgentDefaultLocale(trx, input.workspaceId, input.agentId) });
+      assertCandidateSnapshotIsRunnable(parseAgentRevisionSnapshot(revision.snapshot), {
+        agentDefaultLocale: await liveAgentDefaultLocale(trx, input.workspaceId, input.agentId),
+        publishedSnapshot: await publishedSnapshot(trx, input.workspaceId, input.agentId, agent.published_revision_id),
+      });
       const publicationId = randomUUID(); const publishedAt = currentTimestamp();
       const latest = await trx.selectFrom("agent_revisions").select("published_version").where("workspace_id", "=", input.workspaceId).where("agent_id", "=", input.agentId).where("published_version", "is not", null).orderBy("published_version", "desc").executeTakeFirst();
       const publishedVersion = (latest?.published_version ?? 0) + 1;

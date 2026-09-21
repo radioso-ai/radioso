@@ -381,3 +381,43 @@ Where the code differed from the file-level plan above:
   turn where an active routine yields to normal answering saves no state, so it carries no `routine` either.
 - **Test app** now wires `conversationOwnershipReader` into `ChatService` (as production does) so the human-owned
   path runs in integration tests.
+
+## Implementation notes (slice 2, 2026-09-21)
+
+Where the code differed from the file-level plan above:
+
+- **Migration number** is `194_routine_definition_exposure.sql` (193 was the latest on the branch).
+- **Pattern lives in the validator, not the schema.** `routineExposureSchema` bounds the shape (trimmed,
+  `toolName` ≤ 63, `description` ≤ 500, both may be empty) and exports `routineExposureToolNamePattern`;
+  `validator.ts` reports `exposure_tool_name_invalid` / `_reserved` / `exposure_requires_ungated_activation`
+  as diagnostics **only while `exposure.enabled`**. A draft can therefore hold a half-typed name and the
+  editor shows the note the way it shows an unreachable step, instead of the save failing with a 400 —
+  which is what the "invalid name shows the diagnostic" journey needs. A disabled block is inert.
+- **Ray rides the field patch, not an op.** `routineFieldPatchSchema` (an object of optional fields, not
+  an `op` list) gains `exposure`; `propose_routine_exposure` takes flat `{ routineId, enabled, toolName,
+  description }` and calls the routine adapter's `draftEdit` with `{ exposure }`, so preview/apply/reconcile
+  are the existing edit path and the card has one producer. `projectRoutineForReview` gains `exposure`.
+  Governance entries: `capabilityProvenance`, `operatorMcpDisposition`, `fieldParity` (permanent
+  exclusions; the tool's `enabled` is the exposure switch and coincides with the body's routine `enabled`),
+  and `docs/operator-mcp.md`.
+- **Frozen-name baseline.** `validateExposureAcrossSnapshot` freezes any non-empty `toolName` the
+  currently published snapshot carries for a lineage (enabled or not), so Decision 3 holds with one
+  previous snapshot; a name typed but never enabled is frozen once published too. Duplicates count
+  routines that can serve (`enabled && exposure.enabled`), matching the structural gate's parked-routine rule.
+  The repository loads `agents.published_revision_id` → `agent_revisions.snapshot` inside the candidate and
+  publish transactions; `describeCandidateRelease` is unchanged (the candidate was already gated).
+- **Persistence.** The block is present iff `exposure_tool_name IS NOT NULL` (an empty string is a present,
+  unnamed block). No table-level uniqueness.
+- **Frontend.** `RoutineBlockDoc` (`packages/routine-document`) and `RoutineFormState` carry `exposure`
+  through their round-trips; `updateExposure` lives in `lib/routine-document-edits.ts` beside
+  `updateActivation`; the editor is `RoutineExposureEditor` inside the "Starts when" editor, and the reader
+  line names the tool. Exposure diagnostics carry `exposure.*` locations and render in the routine-level list.
+- **Tests** landed in the existing files rather than new parallel ones: AS-8 in
+  `agent-revision-publication.integration.test.ts`, the repository round-trip in
+  `routine-definition-repository.integration.test.ts`, transforms in `routine-form.test.ts` and
+  `routine-document-edits.test.ts`, the journey in `routine-document-editor.spec.ts` (the e2e mock validator
+  mirrors the grammar rule). The deterministic copilot case `routine-exposure-proposal` has no live baseline
+  entry yet; the live diff files it under `newCases` until `evals:copilot:update-baseline` runs.
+- **Observability:** audit metadata on `routine_definition.create/update` gains `exposureEnabled` and
+  `exposureToolName` (never the description); no new runtime path, so no new logs, metrics, or spans.
+

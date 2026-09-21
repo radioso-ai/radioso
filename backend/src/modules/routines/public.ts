@@ -1,4 +1,5 @@
 export {
+  ROUTINE_DEFINITION_LIMITS,
   routineDefinitionDraftInputSchema,
   routineDefinitionDraftUpdateInputSchema,
   routineDefinitionSchema,
@@ -41,6 +42,7 @@ export {
   type RoutineSkillResolver,
 } from "./skillDispatcher.js";
 export { createRoutineSkillResolverChain } from "./routineSkillResolverChain.js";
+export { validateExposureAcrossSnapshot } from "./exposure/exposureSnapshotRules.js";
 export {
   routineValidationCodes,
   validateRoutineDefinition,

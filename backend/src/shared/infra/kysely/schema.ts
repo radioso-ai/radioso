@@ -1279,6 +1279,9 @@ export interface RoutineDefinition {
   agent_id: string;
   created_at: Generated<Timestamp>;
   enabled: Generated<boolean>;
+  exposure_description: string | null;
+  exposure_enabled: Generated<boolean>;
+  exposure_tool_name: string | null;
   id: Generated<string>;
   lineage_id: string;
   name: string;

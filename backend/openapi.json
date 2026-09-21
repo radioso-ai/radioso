@@ -5757,6 +5757,28 @@
               }
             },
             "additionalProperties": false
+          },
+          "exposure": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "toolName": {
+                "type": "string",
+                "maxLength": 63
+              },
+              "description": {
+                "type": "string",
+                "maxLength": 500
+              }
+            },
+            "required": [
+              "enabled",
+              "toolName",
+              "description"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [
@@ -6328,6 +6350,28 @@
                   }
                 },
                 "additionalProperties": false
+              },
+              "exposure": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "toolName": {
+                    "type": "string",
+                    "maxLength": 63
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "enabled",
+                  "toolName",
+                  "description"
+                ],
+                "additionalProperties": false
               }
             },
             "required": [
@@ -6397,7 +6441,12 @@
                     "unknown_variable_ref",
                     "unknown_context_variable",
                     "variable_name_collision",
-                    "node_id_collision"
+                    "node_id_collision",
+                    "exposure_tool_name_invalid",
+                    "exposure_tool_name_reserved",
+                    "exposure_tool_name_duplicate",
+                    "exposure_tool_name_changed",
+                    "exposure_requires_ungated_activation"
                   ]
                 },
                 "location": {
@@ -6971,6 +7020,28 @@
                 "default": ""
               }
             },
+            "additionalProperties": false
+          },
+          "exposure": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "toolName": {
+                "type": "string",
+                "maxLength": 63
+              },
+              "description": {
+                "type": "string",
+                "maxLength": 500
+              }
+            },
+            "required": [
+              "enabled",
+              "toolName",
+              "description"
+            ],
             "additionalProperties": false
           },
           "id": {
@@ -7617,6 +7688,28 @@
                     "default": ""
                   }
                 },
+                "additionalProperties": false
+              },
+              "exposure": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "toolName": {
+                    "type": "string",
+                    "maxLength": 63
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "enabled",
+                  "toolName",
+                  "description"
+                ],
                 "additionalProperties": false
               }
             },
@@ -9274,6 +9367,28 @@
                     "default": ""
                   }
                 },
+                "additionalProperties": false
+              },
+              "exposure": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "toolName": {
+                    "type": "string",
+                    "maxLength": 63
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "enabled",
+                  "toolName",
+                  "description"
+                ],
                 "additionalProperties": false
               }
             },

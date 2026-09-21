@@ -3894,6 +3894,22 @@ components:
               maxLength: 300
               default: ""
           additionalProperties: false
+        exposure:
+          type: object
+          properties:
+            enabled:
+              type: boolean
+            toolName:
+              type: string
+              maxLength: 63
+            description:
+              type: string
+              maxLength: 500
+          required:
+            - enabled
+            - toolName
+            - description
+          additionalProperties: false
       required:
         - name
         - activation
@@ -4253,6 +4269,22 @@ components:
                   type: string
                   maxLength: 300
               additionalProperties: false
+            exposure:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+                toolName:
+                  type: string
+                  maxLength: 63
+                description:
+                  type: string
+                  maxLength: 500
+              required:
+                - enabled
+                - toolName
+                - description
+              additionalProperties: false
           required:
             - name
             - activation
@@ -4312,6 +4344,11 @@ components:
                   - unknown_context_variable
                   - variable_name_collision
                   - node_id_collision
+                  - exposure_tool_name_invalid
+                  - exposure_tool_name_reserved
+                  - exposure_tool_name_duplicate
+                  - exposure_tool_name_changed
+                  - exposure_requires_ungated_activation
               location:
                 type: string
               message:
@@ -4672,6 +4709,22 @@ components:
               type: string
               maxLength: 300
               default: ""
+          additionalProperties: false
+        exposure:
+          type: object
+          properties:
+            enabled:
+              type: boolean
+            toolName:
+              type: string
+              maxLength: 63
+            description:
+              type: string
+              maxLength: 500
+          required:
+            - enabled
+            - toolName
+            - description
           additionalProperties: false
         id:
           type: string
@@ -5088,6 +5141,22 @@ components:
                   type: string
                   maxLength: 300
                   default: ""
+              additionalProperties: false
+            exposure:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+                toolName:
+                  type: string
+                  maxLength: 63
+                description:
+                  type: string
+                  maxLength: 500
+              required:
+                - enabled
+                - toolName
+                - description
               additionalProperties: false
           required:
             - name
@@ -6192,6 +6261,22 @@ components:
                   type: string
                   maxLength: 300
                   default: ""
+              additionalProperties: false
+            exposure:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+                toolName:
+                  type: string
+                  maxLength: 63
+                description:
+                  type: string
+                  maxLength: 500
+              required:
+                - enabled
+                - toolName
+                - description
               additionalProperties: false
           required:
             - name

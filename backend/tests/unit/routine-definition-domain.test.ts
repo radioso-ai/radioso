@@ -1066,3 +1066,53 @@ describe("routine field guards (deterministic branch-on-value) and provenance", 
     }
   });
 });
+
+describe("routine exposure validation (agent-consumable service surface)", () => {
+  const exposed = (exposure: NonNullable<RoutineDefinition["exposure"]>, gateRef: string | null = null): RoutineDefinition => {
+    const definition = baseDefinition();
+    return { ...definition, activation: { ...definition.activation, gateRef }, exposure };
+  };
+  const exposureCodes = (definition: RoutineDefinition) =>
+    validateRoutineDefinition(definition).diagnostics.filter((diagnostic) => diagnostic.code.startsWith("exposure_")).map((diagnostic) => diagnostic.code);
+
+  it("accepts a well-formed enabled exposure on an ungated routine", () => {
+    expect(exposureCodes(exposed({ enabled: true, toolName: "start_return", description: "Start a return." }))).toEqual([]);
+  });
+
+  it("reports a tool name outside the grammar, so a half-typed name is a diagnostic rather than a refused save", () => {
+    for (const toolName of ["", "Start return", "start-return", "1start", "a"]) {
+      expect(exposureCodes(exposed({ enabled: true, toolName, description: "" })), toolName).toEqual(["exposure_tool_name_invalid"]);
+    }
+    const [diagnostic] = validateRoutineDefinition(exposed({ enabled: true, toolName: "Start return", description: "" })).diagnostics;
+    expect(diagnostic).toMatchObject({ code: "exposure_tool_name_invalid", location: "exposure.toolName" });
+  });
+
+  it("reports a reserved tool name the MCP surface already claims", () => {
+    for (const toolName of ["ask_agent", "get_conversation_updates"]) {
+      expect(exposureCodes(exposed({ enabled: true, toolName, description: "" })), toolName).toEqual(["exposure_tool_name_reserved"]);
+    }
+  });
+
+  it("refuses exposure on a routine whose activation is gated", () => {
+    expect(exposureCodes(exposed({ enabled: true, toolName: "start_return", description: "" }, "vip_customers")))
+      .toEqual(["exposure_requires_ungated_activation"]);
+  });
+
+  it("leaves a disabled exposure block inert, whatever it carries", () => {
+    expect(exposureCodes(exposed({ enabled: false, toolName: "Start return", description: "" }, "vip_customers"))).toEqual([]);
+    expect(exposureCodes(exposed({ enabled: false, toolName: "", description: "" }))).toEqual([]);
+  });
+
+  it("parses the exposure block through the draft schema and compiles the definition unchanged", () => {
+    const parsed = routineDefinitionDraftInputSchema.parse({
+      name: "Start a return",
+      activation: { triggerDescription: "A customer wants to return an order.", priority: 0 },
+      steps: [{ stableStepId: "ask", kind: "chat", instruction: "Ask for the order number.", ordinal: 0 }],
+      terminals: [{ stableStepId: "done", kind: "complete", instruction: "Done.", ordinal: 0 }],
+      exposure: { enabled: true, toolName: "start_return", description: "Start a return." },
+    });
+    expect(parsed.exposure).toEqual({ enabled: true, toolName: "start_return", description: "Start a return." });
+    expect(compileRoutineDefinition(exposed({ enabled: true, toolName: "start_return", description: "" })).metadata).toMatchObject({ name: "handoff" });
+  });
+});
+

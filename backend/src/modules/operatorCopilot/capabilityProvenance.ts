@@ -10,7 +10,7 @@ type ProductionDescriptorName =
   | "product_doc_page" | "product_docs"
   | "propose_ingestion_settings" | "propose_workspace_setting" | "start_crawl"
   | "propose_directive_enablement" | "propose_directive_removal" | "propose_routine"
-  | "propose_routine_edit" | "propose_skill_config" | "quality_signals"
+  | "propose_routine_edit" | "propose_routine_exposure" | "propose_skill_config" | "quality_signals"
   | "replay_eval_case"
   | "recrawl_source" | "reprocess_document" | "retrieval_probe"
   | "routine_definition" | "run_eval_suite" | "set_triage_state" | "test_agent_turn" | "turn_trace" | "validate_routine"
@@ -70,6 +70,7 @@ export const copilotCapabilityProvenance: Readonly<Record<ProductionDescriptorNa
   start_crawl: { backingOperationIds: ["crawlWebsiteDocuments"], applicationPrimitiveIds: ["websiteCrawler.crawl.propose", "operatorCopilot.proposal.create"], ...rayOnly("Ray presents a website crawl as a pending, operator-confirmed proposal, because starting one fetches an external site and spends crawl budget.") },
   propose_routine: { backingOperationIds: ["createAgentRoutine"], applicationPrimitiveIds: ["routines.proposal.prepare", "operatorCopilot.proposal.create"], ...rayOnly("Ray drafts routine evidence and review state; authority over what an agent serves remains with the agent revision service.") },
   propose_routine_edit: { backingOperationIds: ["updateAgentRoutine"], applicationPrimitiveIds: ["routines.proposal.prepare", "operatorCopilot.proposal.create"], ...rayOnly("Ray-specific stale-draft guards protect a proposal without expanding routine mutation authority.") },
+  propose_routine_exposure: { backingOperationIds: ["updateAgentRoutine"], applicationPrimitiveIds: ["routines.proposal.prepare", "operatorCopilot.proposal.create"], ...rayOnly("Ray drafts a routine's tool exposure as an operator-reviewable edit; the revision gate, not Ray, decides whether the tool name may go live.") },
   prepare_routine_structure: { backingOperationIds: ["updateAgentRoutine"], applicationPrimitiveIds: ["routines.proposal.prepare", "routines.validation", "operatorCopilot.proposal.create"] },
   execute_reviewed_proposal: { applicationPrimitiveIds: ["operatorCopilot.proposal.create"], ...rayOnly("The trusted MCP client invokes this digest-bound, one-time execution receipt after conversational confirmation; it is not a Ray turn capability.") },
   reviewed_proposal_outcome: { applicationPrimitiveIds: ["operatorCopilot.proposal.create"], ...rayOnly("A grant-and-client-bound read reconciles one immutable reviewed operation without becoming authority to execute it.") },

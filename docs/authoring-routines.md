@@ -64,6 +64,46 @@ later matching message does:
 - **Let the assistant decide** — the agent chooses whether to resume the run,
   start a fresh one, or leave the completed run in place.
 
+### Expose a routine as a tool
+
+A routine normally starts when its trigger matches what a customer says. An AI
+agent calling your agent on a customer's behalf can start it more directly: as a
+named tool, with the routine's collected information filled in up front. Open
+**Starts when** and switch on **Expose as a tool**, then give the tool a name and
+a one-line description that tells a calling agent when to use it.
+
+The name is what the calling agent invokes, so it follows the grammar tool
+catalogs expect: 2–63 characters of lower-case letters, digits, and underscores,
+starting with a letter — `start_return`, `request_callback`. The editor accepts
+whatever you type and reports a name outside that grammar as a validation note,
+the same way it reports an unreachable step; Review & Publish refuses the
+revision until the name is fixed. Two routines on the same agent cannot share a
+name, and `ask_agent` and `get_conversation_updates` are taken by the agent's own
+tools.
+
+Once the agent is published with a tool name, that name stays fixed for the
+routine — even while you later switch exposure off — so a calling agent never
+finds the same routine under two names. A publish that renames it is refused
+with `exposure_tool_name_changed`. To offer the routine under a different name,
+switch its exposure off and create a new routine with the new name.
+
+A routine whose activation has a gate cannot be exposed: a tool call would start
+it without the gate being checked. Such a routine stays reachable through
+conversation as before.
+
+The block is part of the routine's own content, saved through the same update
+call:
+
+```json
+{
+  "exposure": {
+    "enabled": true,
+    "toolName": "start_return",
+    "description": "Start a return for an order the customer already has."
+  }
+}
+```
+
 ## Document view
 
 **Document** lays a routine out from top to bottom: a collapsible **When to

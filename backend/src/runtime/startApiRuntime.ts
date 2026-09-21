@@ -71,7 +71,7 @@ export const startApiRuntime = async (options: StartApiRuntimeOptions): Promise<
     auditService: dependencies.auditService,
     metricsRegistry: dependencies.metricsRegistry,
     workspaceInvalidationPublisher: dependencies.workspaceInvalidationPublisher,
-    conversationLinks: dependencies.conversationLinkResolver,
+    conversationLinks: dependencies.conversationLinks,
     assertPublicUrl: dependencies.assertPublicWebsiteUrl,
     fetchPublicUrl,
   });

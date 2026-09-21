@@ -933,7 +933,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     applicationRouteMounts: composition.routeMounts,
     applicationModules: composition.lifecycle,
     workspaceInvalidationPublisher: realtimePublisherComposition.publisher,
-    conversationLinkResolver: buildConversationLinkResolver({
+    conversationLinks: buildConversationLinkResolver({
       database: infrastructure.database,
       appBaseUrl: env.APP_BASE_URL,
     }),

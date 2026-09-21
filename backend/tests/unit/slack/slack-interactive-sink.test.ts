@@ -126,7 +126,7 @@ describe("SlackOperatorNotificationSink", () => {
 
     await sink.deliver(notification, { requestId: "request_1" });
 
-    expect(linkTexts(enqueued)).toContain(`<${permalink}|Open in dashboard>`);
+    expect(linkTexts(enqueued)).toContain(`<${permalink.replaceAll("&", "&amp;")}|Open in dashboard>`);
   });
 
   it("links the handoff post to the resolved conversation permalink", async () => {
@@ -134,7 +134,7 @@ describe("SlackOperatorNotificationSink", () => {
 
     await sink.deliver(handoffNotification, { requestId: "request_1" });
 
-    expect(linkTexts(enqueued)).toContain(`<${permalink}|Open in dashboard>`);
+    expect(linkTexts(enqueued)).toContain(`<${permalink.replaceAll("&", "&amp;")}|Open in dashboard>`);
   });
 
   it("posts without a link rather than a dead one when the permalink cannot be resolved", async () => {

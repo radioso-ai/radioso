@@ -97,8 +97,10 @@ describe("slackBlockKitBuilder", () => {
     const actions = readActionBlocks(message.blocks)[0];
     expect(actions.elements).toHaveLength(25);
     expect(actions.elements.every((element) => (element.text as { text: string }).text.length <= 75)).toBe(true);
-    expect(JSON.stringify(message.blocks)).toContain("…");
-    expect(message.blocks.filter((block) => block.type === "context")).toHaveLength(2);
+    const contexts = message.blocks.filter((block) => block.type === "context");
+    expect(contexts).toHaveLength(1);
+    expect(JSON.stringify(contexts[0])).toContain("5 more in the dashboard …");
+    expect(JSON.stringify(contexts[0])).toContain("Open in dashboard");
   });
 
   it("renders a resolved decision outcome with the chosen label first", () => {
@@ -138,7 +140,7 @@ describe("slackBlockKitBuilder", () => {
     });
 
     expect(JSON.stringify(message.blocks)).toContain("Customer needs help with billing.");
-    expect(JSON.stringify(message.blocks)).toContain(`<${permalink}|Open in dashboard>`);
+    expect(JSON.stringify(message.blocks)).toContain(`<${permalink.replaceAll("&", "&amp;")}|Open in dashboard>`);
     const actions = message.blocks.find((block) => block.type === "actions") as { elements: Array<Record<string, unknown>> };
     expect(actions.elements.map((element) => element.action_id)).toEqual(["ownership_takeover"]);
     expect(JSON.parse(actions.elements[0].value as string)).toEqual({

@@ -3,7 +3,7 @@ import type { AuditPort } from "../../audit/contracts/index.js";
 import type { PendingDecisionRepository } from "../../../db/repositories/pendingDecisionRepository.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
-import { resolveConversationLink, type ConversationLinkResolver } from "../../operatorNotifications/public.js";
+import { resolveConversationLink, type ConversationLinkResolver } from "../../../shared/domain/conversationLinkResolver.js";
 import type { SlackInstallationRecord, SlackInstallationRepositoryPort } from "../public.js";
 import type {
   OperatorReplyService,

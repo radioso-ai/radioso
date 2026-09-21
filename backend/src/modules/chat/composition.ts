@@ -10,10 +10,8 @@ export { AgentConverseAudit } from "./services/agentConverseAudit.js";
 export { AgentConverseService } from "./services/agentConverseService.js";
 export { AssistantHistoryService } from "./services/assistantHistoryService.js";
 export { ChatBootstrapService } from "./services/chatBootstrapService.js";
-export {
-  RevisionGreetingStarterPromptReader,
-  type AgentStarterPromptReader,
-} from "./services/agentStarterPromptReader.js";
+export { RevisionGreetingStarterPromptReader } from "./services/agentStarterPromptReader.js";
+export type { AgentStarterPromptReader } from "./contracts/agentStarterPrompts.js";
 export {
   ChatService,
   type ChatRoutineProvider,

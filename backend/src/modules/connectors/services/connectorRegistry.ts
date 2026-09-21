@@ -18,7 +18,7 @@ import { randomBytes } from "node:crypto";
 
 import type { ApprovalDecisionService } from "../../approvals/public.js";
 import type { AuditPort } from "../../audit/contracts/index.js";
-import type { AgentStarterPromptReader } from "../../chat/composition.js";
+import type { AgentStarterPromptReader } from "../../chat/contracts/agentStarterPrompts.js";
 import type { OperatorReplyService } from "../../handoff/public.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import { stringifyUnknown } from "../../../shared/text/stringifyUnknown.js";

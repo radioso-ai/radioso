@@ -15,7 +15,6 @@ const notification = {
   conversationId: "conv_1",
   agentId: "agent_1",
   handle: "pd_abc",
-  dashboardPath: "/conversations/conv_1",
 };
 
 const handoffNotification = {
@@ -24,7 +23,6 @@ const handoffNotification = {
   conversationId: "conv_1",
   agentId: "agent_1",
   reason: "routine_handoff",
-  dashboardPath: "/conversations/conv_1",
 };
 
 const context = {
@@ -163,9 +161,48 @@ describe("EmailWebhookOperatorNotificationSink", () => {
       workspaceId: "ws_1",
       agentId: "agent_1",
       handle: "pd_abc",
-      dashboardPath: "/conversations/conv_1",
+      dashboardUrl: null,
+      dashboardPath: null,
       requestId: "request_1",
     });
+  });
+
+  it("sends the webhook the resolved permalink, absolute and as a routable path", async () => {
+    const { mailer } = recordingMailer();
+    const { httpClient, requests } = recordingWebhookClient();
+    const sink = new EmailWebhookOperatorNotificationSink(
+      mailer,
+      { resolve: async () => ({ emails: [], webhook: { url: "https://hooks.example.com/approval" } }) },
+      undefined,
+      httpClient,
+      { resolve: async () => "https://app.radioso.ai/w/support-abc/activity?tab=all&filter=chat&itemKind=chat&itemId=conv_1" },
+    );
+
+    await sink.deliver(notification, context);
+
+    expect(JSON.parse(requests[0].rawBody)).toMatchObject({
+      dashboardUrl: "https://app.radioso.ai/w/support-abc/activity?tab=all&filter=chat&itemKind=chat&itemId=conv_1",
+      // Deprecated in favour of `dashboardUrl`; kept for one release so consumers that prefix
+      // their own origin keep working, now with a path the dashboard actually routes.
+      dashboardPath: "/w/support-abc/activity?tab=all&filter=chat&itemKind=chat&itemId=conv_1",
+    });
+  });
+
+  it("sends the webhook null links rather than a path that does not route when the workspace cannot be resolved", async () => {
+    const { mailer } = recordingMailer();
+    const { httpClient, requests } = recordingWebhookClient();
+    const sink = new EmailWebhookOperatorNotificationSink(
+      mailer,
+      { resolve: async () => ({ emails: [], webhook: { url: "https://hooks.example.com/approval" } }) },
+      undefined,
+      httpClient,
+      { resolve: async () => null },
+    );
+
+    await sink.deliver(notification, context);
+
+    expect(requests).toHaveLength(1);
+    expect(JSON.parse(requests[0].rawBody)).toMatchObject({ dashboardUrl: null, dashboardPath: null });
   });
 
   it("preserves handoff email delivery", async () => {
@@ -221,7 +258,8 @@ describe("EmailWebhookOperatorNotificationSink", () => {
       workspaceId: "ws_1",
       agentId: "agent_1",
       reason: "routine_handoff",
-      dashboardPath: "/conversations/conv_1",
+      dashboardUrl: null,
+      dashboardPath: null,
       requestId: "request_1",
     });
   });

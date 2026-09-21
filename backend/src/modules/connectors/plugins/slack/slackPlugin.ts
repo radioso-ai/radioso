@@ -13,6 +13,7 @@ import type { AuditPort } from "../../../audit/contracts/index.js";
 import { ConversationOwnershipRepository, type OperatorReplyService } from "../../../handoff/public.js";
 import type { MetricsRegistry } from "../../../../shared/observability/metrics/metricsRegistry.js";
 import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
+import type { ConversationLinkResolver } from "../../../../shared/domain/conversationLinkResolver.js";
 import { IntegrationConnectionRepository } from "../../../integrationConnections/public.js";
 import {
   createSlackInteractivityRouter,
@@ -47,6 +48,7 @@ type SlackConnectorContext = ConnectorContext & {
   assertPublicUrl?: (url: string) => Promise<void>;
   workspaceInvalidationPublisher?: WorkspaceInvalidationPublisher;
   agentStarterPrompts?: SlackStarterPromptsPort;
+  conversationLinks?: ConversationLinkResolver;
 };
 
 export class SlackPlugin implements ConnectorPlugin {
@@ -122,6 +124,7 @@ export class SlackPlugin implements ConnectorPlugin {
       clientFactory: this.options.clientFactory,
       workspaceInvalidationPublisher: extendedContext.workspaceInvalidationPublisher,
       starterPrompts: extendedContext.agentStarterPrompts,
+      conversationLinks: extendedContext.conversationLinks,
     });
 
     context.http.mount(
@@ -162,6 +165,7 @@ export class SlackPlugin implements ConnectorPlugin {
           audit: extendedContext.auditService,
           metrics: extendedContext.metricsRegistry ?? undefined,
           workspaceInvalidationPublisher: extendedContext.workspaceInvalidationPublisher,
+          conversationLinks: extendedContext.conversationLinks,
           logger: context.logger,
         }),
       }),

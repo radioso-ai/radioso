@@ -20,7 +20,7 @@ describe("operator backend adapter", () => {
 
   it("signs internal calls with body binding and never leaks raw credential/error bodies", async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({ proof }), { status: 200 }));
-    const adapter = createOperatorBackendAdapter({ baseUrl: "https://app.example/", fetchImpl, internalSecret: "adapter-secret-key-12345678901234567890", requestTimeoutMs: 1000 });
+    const adapter = createOperatorBackendAdapter({ baseUrl: "https://app.example///", fetchImpl, internalSecret: "adapter-secret-key-12345678901234567890", requestTimeoutMs: 1000 });
     await adapter.admit({ accessToken: "raw-access-token", bodyDigest: sha256Digest("{}"), invocationId: id, method: "tools/list", nonce: "n", resource: "https://mcp.example/operator/mcp", timestamp: "1" });
     expect(fetchImpl).toHaveBeenCalledWith("https://app.example/api/v1/internal/operator-copilot/mcp/admissions", expect.objectContaining({ method: "POST" }));
     const init = fetchImpl.mock.calls[0]?.[1] as RequestInit;

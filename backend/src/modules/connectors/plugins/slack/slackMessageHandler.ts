@@ -30,6 +30,7 @@ import {
 import type { SlackPersistencePort } from "./slackPersistence.js";
 import { createSlackTurnSurface, type SlackTurnOutcome, type SlackTurnSurfaceRef } from "./slackTurnSurface.js";
 import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
+import { resolveConversationLink, type ConversationLinkResolver } from "../../../../shared/domain/conversationLinkResolver.js";
 
 // A direct message to the app. In Slack's agent pane every session is a thread in the app
 // DM: the first message carries only `ts`, its follow-ups carry `thread_ts` = that ts.
@@ -122,6 +123,7 @@ interface SlackMessageHandlerOptions {
   workspaceInvalidationPublisher?: WorkspaceInvalidationPublisher;
   /** Absent when no starter source is wired; the agent pane then shows no prompts. */
   starterPrompts?: SlackStarterPromptsPort;
+  conversationLinks?: ConversationLinkResolver;
 }
 
 // One conversation per thread, in channels and in the app DM alike. The `mention:` prefix is
@@ -558,7 +560,11 @@ export class SlackMessageHandler {
       workspaceId: input.workspaceId,
       state: "ai_owned",
       contextText: input.query,
-      dashboardPath: `/conversations/${input.conversationId}`,
+      dashboardUrl: await resolveConversationLink(
+        this.options.conversationLinks,
+        { workspaceId: input.workspaceId, conversationId: input.conversationId },
+        this.options.logger,
+      ),
     });
     await enqueueSlackPostAction(this.options.slackPostOutbox, {
       workspaceId: input.workspaceId,

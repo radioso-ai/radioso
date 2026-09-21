@@ -21,14 +21,12 @@ export class ApprovalRequestActionHandler implements ActionHandler {
     const workspaceId = asString(input.payload.workspaceId) ?? input.context.workspaceId ?? "unknown";
     const agentId = asString(input.payload.agentId) ?? "unknown";
     const handle = asString(input.payload.handle) ?? "unknown";
-    const dashboardPath = asString(input.payload.dashboardPath) ?? `/conversations/${conversationId}`;
     await this.dispatcher.dispatch({
       kind: "approval",
       workspaceId,
       conversationId,
       agentId,
       handle,
-      dashboardPath,
     }, {
       requestId: input.context.requestId,
       workspaceId: input.context.workspaceId,

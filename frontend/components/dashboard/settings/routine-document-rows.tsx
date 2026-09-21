@@ -146,7 +146,7 @@ function RoutineBranchRow({ branch, slotNames, index, editable = false, editing 
   return <li className="rounded-md px-1 py-1 transition-colors hover:bg-muted/40"><button type="button" aria-label={branchDecisionLabel(branch.guard.kind)} onClick={onEdit} disabled={!editable} className="group flex w-full flex-wrap items-center gap-2 text-left outline-none disabled:cursor-default">
     <span aria-hidden="true" className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-violet-500/15 text-violet-600 dark:text-violet-400"><GitBranch className="h-3.5 w-3.5" /></span>
     <span aria-hidden="true" className="shrink-0 font-mono text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">If</span>
-    <span className="min-w-0 flex-1 truncate rounded-sm bg-muted/40 px-2.5 py-1 text-foreground group-focus-visible:ring-1 group-focus-visible:ring-ring">
+    <span className="min-w-0 flex-1 truncate rounded-sm bg-muted/50 px-2.5 py-1 text-foreground group-focus-visible:ring-1 group-focus-visible:ring-ring">
       <InlineSlotText text={guardToSentence(branch.guard, slotNames)} />
     </span>
     <BranchTarget branch={branch} index={index} />

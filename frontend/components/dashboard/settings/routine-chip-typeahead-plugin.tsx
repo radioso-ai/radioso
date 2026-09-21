@@ -490,7 +490,7 @@ export function ChipTypeaheadPlugin({
               role="option"
               aria-selected={highlighted}
               aria-disabled={option.notice ? true : undefined}
-              className={`flex items-start gap-2 rounded-sm px-2 py-1.5 ${option.notice ? 'text-muted-foreground' : 'cursor-pointer'} ${highlighted && !option.notice ? 'bg-accent text-secondary-foreground' : ''}`}
+              className={`flex items-start gap-2 rounded-sm px-2 py-1.5 ${option.notice ? 'text-muted-foreground' : 'cursor-pointer'} ${highlighted && !option.notice ? 'bg-muted text-foreground' : ''}`}
               onMouseEnter={() => setHighlightedIndex(index)}
               onMouseDown={(event) => {
                 event.preventDefault()

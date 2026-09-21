@@ -216,7 +216,7 @@ function DocumentEditor({ initialDoc, onDraftChange, diagnostics, detailsExtra }
         <h2 className="text-xl font-semibold tracking-tight text-foreground">When to trigger</h2>
         <CollapsibleTrigger asChild>
           <Button type="button" variant="ghost" size="icon" className="group h-7 w-7 shrink-0 text-muted-foreground" aria-label="Toggle when to trigger">
-            <ChevronDown className="h-4 w-4 transition-transform group-data-[state=closed]:-rotate-90" />
+            <ChevronDown className="h-4 w-4 transition-transform group-data-[state=open]:rotate-180" />
           </Button>
         </CollapsibleTrigger>
       </div>
@@ -247,7 +247,7 @@ function DocumentEditor({ initialDoc, onDraftChange, diagnostics, detailsExtra }
         <h2 className="text-xl font-semibold tracking-tight text-foreground">Endings &amp; information</h2>
         <CollapsibleTrigger asChild>
           <Button type="button" variant="ghost" size="icon" className="group h-7 w-7 shrink-0 text-muted-foreground" aria-label="Toggle details">
-            <ChevronDown className="h-4 w-4 transition-transform group-data-[state=closed]:-rotate-90" />
+            <ChevronDown className="h-4 w-4 transition-transform group-data-[state=open]:rotate-180" />
           </Button>
         </CollapsibleTrigger>
       </div>

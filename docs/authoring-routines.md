@@ -69,11 +69,11 @@ later matching message does:
 **Document** lays a routine out from top to bottom: a collapsible **When to
 trigger** section holding **Starts when**, then **Instructions** — the numbered
 steps and their branch rows. **Collected information**, **Endings**, and
-**Completion export** sit inside a **Details** disclosure at the bottom, closed
-by default since a branch row already names the ending it reaches inline. A
-skill step includes a **uses → sets** line, shown when you hover or open the
-step, so its input bindings and assigned outputs stay out of the way until
-you need them.
+**Completion export** sit inside an **Endings & information** disclosure at
+the bottom, closed by default since a branch row already names the ending it
+reaches inline. A skill step's **uses → sets** line lives in its step editor,
+opened from the step's own token, so its input bindings and assigned outputs
+stay out of the way until you need them.
 
 Edit the **Starts when** line directly. Add information, steps, branches, and
 endings where they belong in the flow. That proximity makes the decision behind
@@ -248,7 +248,8 @@ an eval case captures only from a test that kept skills off.
 
 ## Completion export
 
-Open the document's **Details** disclosure for the **Completion export** panel. It
+Open the document's **Endings & information** disclosure for the **Completion
+export** panel. It
 lets a routine send its collected values to a
 workspace webhook destination when it reaches selected terminal kinds. Enable
 the export, choose the destination, then select `complete`, `handoff`, or both.

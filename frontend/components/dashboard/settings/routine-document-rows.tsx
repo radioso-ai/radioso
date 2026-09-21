@@ -1,11 +1,11 @@
 'use client'
 
 import { useContext, type ReactNode } from 'react'
-import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, CheckCircle2, CircleDashed, CornerUpRight, GitBranch, Plus } from 'lucide-react'
+import { AlertTriangle, ArrowDown, ArrowUp, CheckCircle2, CircleDashed, CornerUpRight, GitBranch, Plus } from 'lucide-react'
 
 import { findRoutineSkillDescriptor, RoutineSkillCatalogContext } from '@/components/dashboard/settings/routine-skill-catalog-popover'
 import { Button } from '@/components/ui/button'
-import { branchDecisionLabel, branchIsImplicitFallThrough, documentTextToSegments, formatBindingLine, guardToSentence } from '@/lib/routine-document'
+import { branchDecisionLabel, branchIsImplicitFallThrough, documentTextToSegments, guardToSentence } from '@/lib/routine-document'
 import type { RoutineBlockBranch, RoutineBlockDoc, RoutineBlockEnding, RoutineBlockInstructionSegment, RoutineBlockSlot, RoutineBlockStep } from '@/lib/routine-prose'
 
 export const instructionIsEmpty = (segments: RoutineBlockInstructionSegment[]) =>
@@ -127,12 +127,26 @@ function RoutineBranchRow({ branch, slotNames, index, editable = false, editing 
   const isDefault = branch.guard.kind === 'default'
   if (editing) return <li className="rounded-md border border-border bg-muted/30 p-3 text-sm">{editor}</li>
   if (isDefault) {
+    // A fall-through ending is still an ending — an operator can click to edit its message —
+    // so it gets the same left-marker language as an IF row (a small muted tile, a mono
+    // label, the text itself at normal size) instead of reading as a footnote under the step.
+    const ending = branch.target.kind !== 'step' && branch.target.kind !== 'unresolved'
+      ? (branch.target.ending ?? index?.endings.get(branch.target.terminalId))
+      : null
+    if (ending) {
+      return <li className="rounded-md px-1 py-1 transition-colors hover:bg-muted/40"><button type="button" aria-label={branchDecisionLabel(branch.guard.kind)} onClick={onEdit} disabled={!editable} className="group flex w-full flex-wrap items-center gap-2 text-left outline-none disabled:cursor-default">
+        <span aria-hidden="true" className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">{ending.kind === 'complete' ? <CheckCircle2 className="h-3.5 w-3.5" /> : <CornerUpRight className="h-3.5 w-3.5" />}</span>
+        <span aria-hidden="true" className="shrink-0 font-mono text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Then</span>
+        <span className="min-w-0 flex-1 text-foreground">{ending.kind === 'complete' ? 'Finish' : 'Hand off'}{ending.instruction ? <>: <InlineSlotText text={ending.instruction} /></> : null}</span>
+        <EditHint editable={editable} />
+      </button></li>
+    }
     return <li className="py-0.5 text-xs text-muted-foreground"><button type="button" aria-label={branchDecisionLabel(branch.guard.kind)} onClick={onEdit} disabled={!editable} className="group text-left disabled:cursor-default">then <PlainBranchTarget branch={branch} index={index} /><EditHint editable={editable} /></button></li>
   }
-  return <li className="py-1"><button type="button" aria-label={branchDecisionLabel(branch.guard.kind)} onClick={onEdit} disabled={!editable} className="group flex w-full flex-wrap items-center gap-2 text-left disabled:cursor-default">
+  return <li className="rounded-md px-1 py-1 transition-colors hover:bg-muted/40"><button type="button" aria-label={branchDecisionLabel(branch.guard.kind)} onClick={onEdit} disabled={!editable} className="group flex w-full flex-wrap items-center gap-2 text-left outline-none disabled:cursor-default">
     <span aria-hidden="true" className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-violet-500/15 text-violet-600 dark:text-violet-400"><GitBranch className="h-3.5 w-3.5" /></span>
     <span aria-hidden="true" className="shrink-0 font-mono text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">If</span>
-    <span className="min-w-0 flex-1 truncate rounded-md border border-border bg-muted/20 px-2.5 py-1 text-foreground">
+    <span className="min-w-0 flex-1 truncate rounded-sm bg-muted/40 px-2.5 py-1 text-foreground group-focus-visible:ring-1 group-focus-visible:ring-ring">
       <InlineSlotText text={guardToSentence(branch.guard, slotNames)} />
     </span>
     <BranchTarget branch={branch} index={index} />
@@ -140,7 +154,7 @@ function RoutineBranchRow({ branch, slotNames, index, editable = false, editing 
   </button></li>
 }
 
-export function RoutineStepRow({ step, stepIndex, slotNames, index, nextStepId = null, notes, editable = false, editing, onEditInstruction, onEditBinding, onEditApproval, onEditBranch, onAddBranch, onEditStep, onMoveStepUp, onMoveStepDown, canMoveStepUp = false, canMoveStepDown = false, instructionEditor, bindingEditor, approvalEditor, branchEditor, stepEditor, insertStepAfter }: {
+export function RoutineStepRow({ step, stepIndex, slotNames, index, nextStepId = null, notes, editable = false, editing, onEditInstruction, onEditApproval, onEditBranch, onAddBranch, onEditStep, onMoveStepUp, onMoveStepDown, canMoveStepUp = false, canMoveStepDown = false, instructionEditor, bindingEditor, approvalEditor, branchEditor, stepEditor, insertStepAfter }: {
   step: RoutineBlockStep
   stepIndex: number
   slotNames: Map<string, string>
@@ -150,7 +164,6 @@ export function RoutineStepRow({ step, stepIndex, slotNames, index, nextStepId =
   editable?: boolean
   editing?: string | null
   onEditInstruction?: () => void
-  onEditBinding?: () => void
   onEditApproval?: () => void
   onEditBranch?: (index: number) => void
   // Appends a new branch under this step and opens it for editing — the round "+" at the
@@ -202,7 +215,7 @@ export function RoutineStepRow({ step, stepIndex, slotNames, index, nextStepId =
   // marks it as active, matching the bare-sentence read state either side of it.
   const instruction = editing === 'instruction'
     ? <div className="min-w-0 flex-1">{instructionEditor}</div>
-    : <button type="button" aria-label="Instruction" onClick={onEditInstruction} disabled={!editable} className="group block min-w-0 flex-1 text-left disabled:cursor-default"><InstructionSentence segments={step.instruction} editable={editable} /><EditHint editable={editable} /></button>
+    : <button type="button" aria-label="Instruction" onClick={onEditInstruction} disabled={!editable} className="group block min-w-0 flex-1 text-left disabled:cursor-default"><InstructionSentence segments={step.instruction} editable={editable} /></button>
   // The skill or approval identity reads as a chip inline with the sentence — the same quiet
   // "@name" treatment a variable chip gets, muted background and all, not a coloured pill with
   // its own icon — so a step reads as one continuous line of prose with tokens in it. It is
@@ -235,13 +248,14 @@ export function RoutineStepRow({ step, stepIndex, slotNames, index, nextStepId =
     {editable && onAddBranch ? <div className={`pointer-events-none absolute -bottom-2.5 left-0 -translate-x-1/2${railHoverClass}`}><button type="button" aria-label={`Add a branch to step ${stepIndex + 1}`} onClick={onAddBranch} className="pointer-events-auto flex h-5 w-5 items-center justify-center rounded-full border border-border bg-background text-muted-foreground hover:border-primary hover:text-primary"><Plus className="h-3 w-3" /></button></div> : null}
   </div> : null
   const details = <>
+    {/* The uses/sets summary and its "Edit inputs" affordance live in the step editor now (the
+        same panel the "@name" chip above opens) rather than as a line that only shows up on
+        hover — a step's row keeps only the reorder handle and the insert-between "+" as hover
+        chrome. */}
     {step.kind === 'tool' || step.kind === 'action' ? (
       editing === 'binding'
         ? <div className="mt-2"><div className="rounded-md border border-border bg-muted/30 p-3">{bindingEditor}</div></div>
-        // A CSS grid row collapsed to `0fr` takes no space at rest and expands to its natural
-        // height on hover/focus, so this line reserves nothing when it isn't shown — unlike an
-        // opacity fade, which keeps the element's layout box (and the gap it leaves) at rest.
-        : <div className="grid grid-rows-[0fr] transition-[grid-template-rows] group-hover/insertafter:grid-rows-[1fr] group-focus-within/insertafter:grid-rows-[1fr]"><div className="overflow-hidden"><button type="button" aria-label="Bindings" onClick={onEditBinding} disabled={!editable} className="group mt-1 flex items-center gap-1 text-left text-xs text-muted-foreground disabled:cursor-default"><ArrowRight className="h-3.5 w-3.5" />{formatBindingLine(step.inputBindings, step.outputAssignments) ?? 'uses nothing → sets nothing'}<EditHint editable={editable} /></button></div></div>
+        : null
     ) : null}
     {step.kind === 'approval' ? <div className="mt-2">{editing === 'approval' ? <div className="rounded-md border border-border bg-muted/30 p-3">{approvalEditor}</div> : <button type="button" aria-label="Approval choices" onClick={onEditApproval} disabled={!editable} className="group block w-full text-left text-sm disabled:cursor-default"><p className="font-medium">A person chooses:<EditHint editable={editable} /></p><ul className="mt-2 space-y-1">{(step.options ?? []).map((option) => <li key={option.id}>{option.label}{option.description ? ` — ${option.description}` : ''}</li>)}</ul></button>}</div> : null}
     {plainBranchRows.length > 0 ? <ul className="mt-1">{plainBranchRows}</ul> : null}

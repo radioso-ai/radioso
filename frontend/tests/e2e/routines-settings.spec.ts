@@ -200,7 +200,7 @@ test("agent routines settings create, validate, and persist", async ({ page }) =
   await documentEditor.getByLabel("Step 1 id").fill("ask_email");
   await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
 
-  // Collected information and Endings live inside the collapsed "Details" disclosure.
+  // Collected information and Endings live inside the collapsed "Endings & information" disclosure.
   await documentEditor.getByRole("button", { name: "Toggle details", exact: true }).click();
   await documentEditor.getByRole("button", { name: "email", exact: true }).click();
   await documentEditor.getByLabel("Slot email type").selectOption("email");

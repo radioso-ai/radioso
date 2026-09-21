@@ -822,7 +822,9 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       response,
       // A terminal step ends the routine — clear its state.
       nextState: step.kind === "terminal" ? null : nextState,
-      ...(terminalKind ? { terminal: { kind: terminalKind, stepId: step.id } } : {}),
+      ...(terminalKind
+        ? { terminal: { kind: terminalKind, stepId: step.id, collected: declaredSlotVariables(routine, variables) } }
+        : {}),
       ...(actions.length > 0 ? { actions } : {}),
       trace,
     };

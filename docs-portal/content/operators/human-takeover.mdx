@@ -1,7 +1,7 @@
 ---
 title: "Human takeover"
 description: "Let an operator own a conversation while the AI stays silent, reply as a human, and hand back — from the dashboard or the API."
-last_updated: 2026-09-18
+last_updated: 2026-09-21
 ---
 
 # Human takeover
@@ -27,7 +27,7 @@ Handoff is request-driven. The AI does not silently decide to transfer a convers
 
 In the agent's **Profile → Answers** settings, turn on **Hand off on retrieval miss** to enable this trigger.
 
-Both request human ownership, notify an operator through the contact-delivery transport with a `handoff.notify` action, and record a `hitl.ownership` audit event.
+Both request human ownership, notify an operator through the contact-delivery transport with a `handoff.notify` action, and record a `hitl.ownership` audit event. A routine handoff's notice names the routine and lists the values it collected; a retrieval-miss notice carries the ids and the reason. The webhook body is documented under [Handoff and approval notifications](/api/agents-and-skills#handoff-and-approval-notifications).
 
 ## Operator console
 

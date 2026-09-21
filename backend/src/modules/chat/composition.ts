@@ -50,6 +50,7 @@ export {
   WorkspaceOwnerContactRecipientResolver,
 } from "./services/actions/contactSendActionHandler.js";
 export { HandoffNotifyActionHandler } from "./services/actions/handoffNotifyActionHandler.js";
+export { RepositoryHandoffNotificationSubjectResolver } from "./services/actions/handoffNotificationSubjectResolver.js";
 export { EmailWebhookOperatorNotificationSink } from "./services/actions/emailWebhookSink.js";
 export {
   ApprovalRequestActionHandler,

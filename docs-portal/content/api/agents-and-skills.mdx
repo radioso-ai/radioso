@@ -330,12 +330,20 @@ Each notice is emailed to the resolved recipients and, when a webhook is configu
   "agentId": "...",
   "conversationId": "...",
   "reason": "routine_handoff",
+  "routine": { "id": "...", "name": "Book accommodation" },
+  "collected": {
+    "program": "Yoga retreat",
+    "arrival": "2026-10-12",
+    "departure": "2026-10-16",
+    "guest_name": "Alex Rivera",
+    "guest_email": "alex@example.com"
+  },
   "dashboardUrl": "https://app.radioso.ai/w/support-abc/activity?tab=all&filter=chat&itemKind=chat&itemId=...",
   "requestId": "..."
 }
 ```
 
-A handoff carries `reason`, either `routine_handoff` or `retrieval_miss`. An approval carries `handle` instead — the value you pass to `POST /api/v1/agents/{agentId}/decisions/{handle}/resolve`, described in [Human takeover](/operators/human-takeover). That is how a receiver tells the two apart. `dashboardUrl` opens the conversation in the dashboard; it is `null` when the link cannot be resolved, for example because the workspace has since been deleted, so a receiver that needs a link should fall back to `conversationId`. The same `Idempotency-Key` and delivery rules as contact requests apply.
+A handoff carries `reason`, either `routine_handoff` or `retrieval_miss`. `routine` names the routine whose hand-off ending raised the notice, with `name` set to `null` when the routine has since been deleted; it is `null` for a retrieval-miss handoff. `collected` holds the routine's declared values keyed by slot key, in the order the routine declares them, and is empty for a retrieval-miss handoff. Text, number, and boolean values are included; a slot holding a structured value is left out. The email version of the notice lists the same values under a `Collected:` heading. An approval carries `handle` instead — the value you pass to `POST /api/v1/agents/{agentId}/decisions/{handle}/resolve`, described in [Human takeover](/operators/human-takeover). That is how a receiver tells the two apart. `dashboardUrl` opens the conversation in the dashboard; it is `null` when the link cannot be resolved, for example because the workspace has since been deleted, so a receiver that needs a link should fall back to `conversationId`. The same `Idempotency-Key` and delivery rules as contact requests apply.
 
 ## Move an agent between workspaces
 

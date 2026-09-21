@@ -280,9 +280,16 @@ secret, and delivers it through the action outbox.
 When a routine reaches a `handoff` terminal, the chat turn sends the routine's
 reply, requests human ownership of the conversation, and queues a
 `handoff.notify` action. The notice reaches the agent's contact recipients by
-email and, when one is configured, the contact webhook. Both carry the
-conversation, workspace, agent, and reason, plus a `dashboardUrl` that opens the
-conversation in the dashboard; the webhook body is documented under
+email and, when one is configured, the contact webhook, and the Slack
+escalation channel when the workspace has one. Each carries the routine's name,
+the agent's name, the reason, the conversation and workspace ids, and every
+value the routine collected — its declared slots, keyed by slot key, in the
+order the routine declares them. A booking desk that receives a "Book
+accommodation" handoff reads the program, dates, and guest name in the notice
+itself instead of opening the transcript first. Slot values that are text,
+numbers, or yes/no appear in the notice; a slot holding a structured value is
+left out of it. The email adds a `dashboardUrl` line that opens the conversation
+in the dashboard; the webhook body is documented under
 [Handoff and approval notifications](../docs-portal/content/api/agents-and-skills.mdx).
 
 ## How a routine goes live

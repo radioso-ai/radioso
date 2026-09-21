@@ -114,7 +114,10 @@ choice continues along its decision edge.
 
 An ending row completes the routine with **Finish** or escalates it with **Hand
 off**. Set a message on the ending the agent should deliver. Named endings let
-different paths provide different completion messages.
+different paths provide different completion messages. A **Hand off** ending
+also sends the operators the routine's name and every value it collected, by
+email, the contact webhook, and Slack, so the person picking the conversation
+up starts with what the visitor already said.
 
 ## Validation and publishing
 

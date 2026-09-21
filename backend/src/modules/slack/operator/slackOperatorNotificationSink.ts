@@ -3,6 +3,10 @@ import type {
   PendingDecisionRepository,
 } from "../../../db/repositories/pendingDecisionRepository.js";
 import type { OperatorNotification, OperatorNotificationContext, OperatorNotificationSink } from "../../operatorNotifications/public.js";
+import {
+  resolveConversationLink,
+  type ConversationLinkResolver,
+} from "../../../shared/domain/conversationLinkResolver.js";
 import type {
   SlackBindingRepositoryPort,
   SlackInstallationRepositoryPort,
@@ -29,6 +33,8 @@ export class SlackOperatorNotificationSink implements OperatorNotificationSink {
     bindings: Pick<SlackBindingRepositoryPort, "findByInstallationId">;
     pendingDecisions: Pick<PendingDecisionRepository, "loadByHandle">;
     outbox: SlackPostOutboxPort;
+    conversationLinks?: ConversationLinkResolver;
+    logger?: { warn(payload: Record<string, unknown>, message: string): void };
   }) {}
 
   async deliver(notification: OperatorNotification, context: OperatorNotificationContext): Promise<void> {
@@ -50,7 +56,7 @@ export class SlackOperatorNotificationSink implements OperatorNotificationSink {
         workspaceId: notification.workspaceId,
         state: "ai_owned",
         contextText: notification.reason,
-        dashboardPath: notification.dashboardPath,
+        dashboardUrl: await this.resolveDashboardUrl(notification),
       });
 
       await enqueueSlackPostAction(this.options.outbox, {
@@ -87,7 +93,7 @@ export class SlackOperatorNotificationSink implements OperatorNotificationSink {
       handle: decision.handle,
       contentHash: decision.contentHash,
       agentId: decision.agentId,
-      dashboardPath: notification.dashboardPath,
+      dashboardUrl: await this.resolveDashboardUrl(notification),
     });
 
     await enqueueSlackPostAction(this.options.outbox, {
@@ -107,5 +113,13 @@ export class SlackOperatorNotificationSink implements OperatorNotificationSink {
         blocks: message.blocks,
       },
     });
+  }
+
+  private resolveDashboardUrl(notification: OperatorNotification): Promise<string | null> {
+    return resolveConversationLink(
+      this.options.conversationLinks,
+      { workspaceId: notification.workspaceId, conversationId: notification.conversationId },
+      this.options.logger,
+    );
   }
 }

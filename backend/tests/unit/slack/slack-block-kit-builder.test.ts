@@ -18,7 +18,33 @@ const readMrkdwnTexts = (blocks: Array<Record<string, unknown>>): string[] =>
 const readActionBlocks = (blocks: Array<Record<string, unknown>>): Array<{ elements: Array<Record<string, unknown>> }> =>
   blocks.filter((block) => block.type === "actions") as Array<{ elements: Array<Record<string, unknown>> }>;
 
+const permalink = "https://app.radioso.ai/w/support-abc/activity?tab=all&filter=chat&itemKind=chat&itemId=conv_1";
+
 describe("slackBlockKitBuilder", () => {
+  it("omits the dashboard link from decision and ownership posts when there is none", () => {
+    const decision = buildDecisionMessage({
+      reason: "Pick the next branch",
+      options: [{ id: "ship", label: "Ship it" }],
+      handle: "pd_1",
+      contentHash: "hash_1",
+      agentId: "agent_1",
+      dashboardUrl: null,
+    });
+    const ownership = buildOwnershipMessage({
+      conversationId: "conv_1",
+      workspaceId: "ws_1",
+      state: "human_owned",
+      contextText: "Customer needs help with billing.",
+      dashboardUrl: null,
+      ownerName: "Dana",
+      version: 3,
+    });
+
+    expect(decision.blocks.filter((block) => block.type === "context")).toHaveLength(0);
+    expect(ownership.blocks.filter((block) => block.type === "context")).toHaveLength(0);
+    expect(JSON.stringify([decision.blocks, ownership.blocks])).not.toContain("conv_1|");
+  });
+
   it("renders one decision button per option with encoded option ids", () => {
     const message = buildDecisionMessage({
       reason: "Pick the next branch",
@@ -30,7 +56,7 @@ describe("slackBlockKitBuilder", () => {
       handle: "pd_1",
       contentHash: "hash_1",
       agentId: "agent_1",
-      dashboardPath: "/conversations/conv_1",
+      dashboardUrl: permalink,
     });
 
     expect(JSON.stringify(message.blocks)).toContain("Pick the next branch");
@@ -64,15 +90,17 @@ describe("slackBlockKitBuilder", () => {
       handle: "pd_1",
       contentHash: "hash_1",
       agentId: "agent_1",
-      dashboardPath: "/conversations/conv_1",
+      dashboardUrl: permalink,
     });
 
     expect(readMrkdwnTexts(message.blocks).every((text) => text.length <= 3_000)).toBe(true);
     const actions = readActionBlocks(message.blocks)[0];
     expect(actions.elements).toHaveLength(25);
     expect(actions.elements.every((element) => (element.text as { text: string }).text.length <= 75)).toBe(true);
-    expect(JSON.stringify(message.blocks)).toContain("…");
-    expect(message.blocks.filter((block) => block.type === "context")).toHaveLength(2);
+    const contexts = message.blocks.filter((block) => block.type === "context");
+    expect(contexts).toHaveLength(1);
+    expect(JSON.stringify(contexts[0])).toContain("5 more in the dashboard …");
+    expect(JSON.stringify(contexts[0])).toContain("Open in dashboard");
   });
 
   it("renders a resolved decision outcome with the chosen label first", () => {
@@ -102,17 +130,33 @@ describe("slackBlockKitBuilder", () => {
     expect(JSON.stringify(message.blocks)).toContain("…");
   });
 
+  it("notes overflowing options in one context block even without a link", () => {
+    const message = buildDecisionMessage({
+      reason: "Pick one",
+      options: Array.from({ length: 30 }, (_, index) => ({ id: `option_${index}`, label: `option ${index}` })),
+      handle: "pd_1",
+      contentHash: "hash_1",
+      agentId: "agent_1",
+      dashboardUrl: null,
+    });
+
+    const contexts = message.blocks.filter((block) => block.type === "context");
+    expect(contexts).toHaveLength(1);
+    const elements = contexts[0].elements as Array<{ text: string }>;
+    expect(elements.map((element) => element.text)).toEqual(["5 more in the dashboard …"]);
+  });
+
   it("renders pre-takeover ownership with only the takeover action", () => {
     const message = buildOwnershipMessage({
       conversationId: "conv_1",
       workspaceId: "ws_1",
       state: "ai_owned",
       contextText: "Customer needs help with billing.",
-      dashboardPath: "/conversations/conv_1",
+      dashboardUrl: permalink,
     });
 
     expect(JSON.stringify(message.blocks)).toContain("Customer needs help with billing.");
-    expect(JSON.stringify(message.blocks)).toContain("/conversations/conv_1");
+    expect(JSON.stringify(message.blocks)).toContain(`<${permalink.replaceAll("&", "&amp;")}|Open in dashboard>`);
     const actions = message.blocks.find((block) => block.type === "actions") as { elements: Array<Record<string, unknown>> };
     expect(actions.elements.map((element) => element.action_id)).toEqual(["ownership_takeover"]);
     expect(JSON.parse(actions.elements[0].value as string)).toEqual({
@@ -127,7 +171,7 @@ describe("slackBlockKitBuilder", () => {
       workspaceId: "ws_1",
       state: "ai_owned",
       contextText: "c".repeat(3_100),
-      dashboardPath: "/conversations/conv_1",
+      dashboardUrl: permalink,
     });
 
     expect(readMrkdwnTexts(message.blocks).every((text) => text.length <= 3_000)).toBe(true);
@@ -140,7 +184,7 @@ describe("slackBlockKitBuilder", () => {
       workspaceId: "ws_1",
       state: "human_owned",
       contextText: "Customer needs help with billing.",
-      dashboardPath: "/conversations/conv_1",
+      dashboardUrl: permalink,
       ownerName: "Dana",
       version: 3,
     });

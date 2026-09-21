@@ -102,6 +102,7 @@ import { RoutineStateRepository } from "../../db/repositories/routineStateReposi
 import { QUALITY_RESOLUTION_REASONS } from "../../modules/quality/domain/resolution.js";
 import { buildOperatorMcpServices } from "./builders/operatorMcp.js";
 import { createDefaultVisitorGeoResolver } from "../composition/visitorGeoResolver.js";
+import { buildConversationLinkResolver } from "../composition/conversationLinkResolver.js";
 import { resolveWorkspaceManagedLlmModels } from "../../shared/infra/llm/workspaceManagedModels.js";
 import type { OperatorMcpClientMetadataSnapshot } from "../../modules/operatorMcpAuthorization/public.js";
 
@@ -932,6 +933,10 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     applicationRouteMounts: composition.routeMounts,
     applicationModules: composition.lifecycle,
     workspaceInvalidationPublisher: realtimePublisherComposition.publisher,
+    conversationLinks: buildConversationLinkResolver({
+      database: infrastructure.database,
+      appBaseUrl: env.APP_BASE_URL,
+    }),
     realtimePublisherLifecycle: realtimePublisherComposition,
     realtimeRolloutPolicy,
     vectorIndexReconciler,

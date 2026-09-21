@@ -145,6 +145,7 @@ const createDependencies = () =>
   ({
     metricsRegistry: null,
     workspaceInvalidationPublisher: { enqueue: vi.fn(() => ({ accepted: false, reason: "disabled" })) },
+    conversationLinks: { resolve: vi.fn(async () => null) },
     realtimePublisherLifecycle: { shutdown: vi.fn().mockResolvedValue(undefined) },
     credentialExpiryWarningLifecycle: {
       start: vi.fn().mockResolvedValue(undefined),
@@ -225,6 +226,7 @@ describe("runtime startup", () => {
     expect(dependencies.connectorRegistry.initializeAll).toHaveBeenCalledWith(
       expect.objectContaining({
         workspaceInvalidationPublisher: dependencies.workspaceInvalidationPublisher,
+        conversationLinks: dependencies.conversationLinks,
       }),
     );
     expect(dependencies.applicationModules.initializeAll).toHaveBeenCalledOnce();

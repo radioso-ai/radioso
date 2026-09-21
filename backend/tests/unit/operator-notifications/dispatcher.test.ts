@@ -13,7 +13,6 @@ const notification: OperatorNotification = {
   conversationId: "conv_1",
   agentId: "agent_1",
   handle: "pd_1",
-  dashboardPath: "/conversations/conv_1",
 };
 
 const context: OperatorNotificationContext = {

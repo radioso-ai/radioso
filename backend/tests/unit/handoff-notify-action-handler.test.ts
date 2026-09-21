@@ -25,7 +25,6 @@ describe("HandoffNotifyActionHandler", () => {
         workspaceId: "ws_1",
         agentId: "agent_1",
         reason: "routine_handoff",
-        dashboardPath: "/conversations/conv_1",
       },
       context,
     });
@@ -36,7 +35,6 @@ describe("HandoffNotifyActionHandler", () => {
       conversationId: "conv_1",
       agentId: "agent_1",
       reason: "routine_handoff",
-      dashboardPath: "/conversations/conv_1",
     }, {
       requestId: "request_1",
       workspaceId: "ws_1",
@@ -60,7 +58,6 @@ describe("HandoffNotifyActionHandler", () => {
       conversationId: "conv_1",
       agentId: "unknown",
       reason: "routine_handoff",
-      dashboardPath: "/conversations/conv_1",
     }), expect.any(Object));
   });
 });

@@ -22,6 +22,7 @@ import {
 } from "../../../slack/public.js";
 import type { SlackPersistencePort } from "./slackPersistence.js";
 import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
+import { resolveConversationLink, type ConversationLinkResolver } from "../../../../shared/domain/conversationLinkResolver.js";
 
 export interface SlackMessageImEvent {
   type: "message";
@@ -81,7 +82,7 @@ const readSupersededTurn = (error: unknown): { conversationId?: string; stage?: 
   return { conversationId, stage };
 };
 
-export interface SlackMessageHandlerOptions {
+interface SlackMessageHandlerOptions {
   logger: ConnectorLogger;
   chat: ConnectorChatPort;
   installations: SlackInstallationRepositoryPort;
@@ -91,6 +92,7 @@ export interface SlackMessageHandlerOptions {
   slackPostOutbox?: SlackPostOutboxPort;
   clientFactory?: SlackWebApiClientFactory;
   workspaceInvalidationPublisher?: WorkspaceInvalidationPublisher;
+  conversationLinks?: ConversationLinkResolver;
 }
 
 const dmSlackKey = (teamId: string, userId: string): string => `dm:${teamId}:${userId}`;
@@ -386,7 +388,11 @@ export class SlackMessageHandler {
       workspaceId: input.workspaceId,
       state: "ai_owned",
       contextText: input.query,
-      dashboardPath: `/conversations/${input.conversationId}`,
+      dashboardUrl: await resolveConversationLink(
+        this.options.conversationLinks,
+        { workspaceId: input.workspaceId, conversationId: input.conversationId },
+        this.options.logger,
+      ),
     });
     await enqueueSlackPostAction(this.options.slackPostOutbox, {
       workspaceId: input.workspaceId,

@@ -113,6 +113,13 @@ export interface OpenApiSchemaCatalog {
   AppliedConstraintSchema: z.ZodTypeAny;
   AssistantChatRequestSchema: z.ZodTypeAny;
   AssistantChatResponseSchema: z.ZodTypeAny;
+  AgentChannelChatResponseSchema: z.ZodTypeAny;
+  AgentChannelChatTurnResponseSchema: z.ZodTypeAny;
+  AgentReplyEnvelopeCoreSchema: z.ZodTypeAny;
+  ChatOwnershipAckSchema: z.ZodTypeAny;
+  McpConverseAskResponseSchema: z.ZodTypeAny;
+  RoutinePendingInputSchema: z.ZodTypeAny;
+  RoutineTurnStateSchema: z.ZodTypeAny;
   AssistantLogoUploadRequestSchema: z.ZodTypeAny;
   AssistantRouteDiagnosticsSchema: z.ZodTypeAny;
   AssistantRouteSchema: z.ZodTypeAny;

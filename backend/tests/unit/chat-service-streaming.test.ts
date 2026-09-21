@@ -3962,6 +3962,12 @@ describe("chat service streaming", () => {
       citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Intro" }],
       answerSegments: [{ text: "full answer", citationIndices: [0] }],
       suggestions: undefined,
+      // Every completed turn carries the coverage slot; this fixture records no head verdict.
+      answerCoverage: {
+        availability: "not_recorded",
+        originatingTurnId: expect.any(String),
+        originatingRequestId: expect.any(String),
+      },
       activitySummary: expect.objectContaining({
         parsedQuery: expect.objectContaining({
           originalQuery: "page do",

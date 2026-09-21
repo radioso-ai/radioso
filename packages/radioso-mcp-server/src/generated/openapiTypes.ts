@@ -7630,6 +7630,48 @@ export interface components {
             nextCursor: string | null;
             hasMore: boolean;
         };
+        /** @description Who owns the conversation after this turn. `suppressed` is true when a human owns it and the agent generated nothing. */
+        ChatOwnershipAck: {
+            /** @enum {string} */
+            state: "ai_owned" | "human_owned";
+            suppressed: boolean;
+        };
+        RoutinePendingInput: {
+            key: string;
+            /** @enum {string} */
+            type: "text" | "number" | "boolean" | "email" | "date";
+            required: boolean;
+            description?: string;
+        };
+        /** @description Where the turn left the routine it touched. `pendingInput` lists every unfilled required slot plus the current step's unfilled optional slots, so a caller can supply everything in one re-call. */
+        RoutineTurnState: {
+            toolName?: string;
+            name: string;
+            /** @enum {string} */
+            status: "active" | "waiting_for_input" | "waiting_for_approval" | "completed" | "abandoned";
+            pendingInput: components["schemas"]["RoutinePendingInput"][];
+        };
+        /** @description The machine-readable part of an agent reply, identical on the MCP converse ask route and the REST agent chat route. */
+        AgentReplyEnvelopeCore: {
+            /** Format: uuid */
+            conversationId: string;
+            answerCoverage: components["schemas"]["AnswerCoverageAssessment"];
+            ownership: components["schemas"]["ChatOwnershipAck"];
+            routine?: components["schemas"]["RoutineTurnState"];
+            traceId?: string;
+        };
+        /** @description The machine-readable part of an agent reply, identical on the MCP converse ask route and the REST agent chat route. */
+        McpConverseAskResponse: components["schemas"]["AgentReplyEnvelopeCore"] & {
+            answer: {
+                text: string;
+                citations: components["schemas"]["Citation"][];
+            };
+        };
+        AgentChannelChatTurnResponse: components["schemas"]["ChatResponse"] & components["schemas"]["AgentReplyEnvelopeCore"] & {
+            citations: components["schemas"]["Citation"][];
+        };
+        /** @description A chat turn carries the agent reply envelope core beside the answer; a bootstrap greeting (`startConversation`) has no turn and carries none. */
+        AgentChannelChatResponse: components["schemas"]["AgentChannelChatTurnResponse"] | components["schemas"]["ChatBootstrapResponse"];
         ConnectorField: {
             key: string;
             label: string;
@@ -14096,13 +14138,13 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Agent chat response returned as JSON or SSE */
+            /** @description Agent chat response returned as JSON or SSE; the SSE `done` frame carries the same envelope core as the JSON body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AssistantChatResponse"];
+                    "application/json": components["schemas"]["AgentChannelChatResponse"];
                     "text/event-stream": string;
                 };
             };
@@ -25119,21 +25161,13 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Agent answer */
+            /** @description Agent reply envelope with the answer text and citations */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        /** Format: uuid */
-                        conversationId: string;
-                        answer: {
-                            text: string;
-                            citations: unknown[];
-                        };
-                        traceId?: string;
-                    };
+                    "application/json": components["schemas"]["McpConverseAskResponse"];
                 };
             };
             /** @description Invalid converse session */

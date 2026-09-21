@@ -1,7 +1,7 @@
 ---
 title: "MCP Client Setup"
 description: "Connect an MCP client either to one Radioso agent or to Ray's governed operator tools."
-last_updated: 2026-09-04
+last_updated: 2026-09-21
 ---
 
 # MCP Client Setup
@@ -97,6 +97,38 @@ Authorization: Bearer <session token>
 
 { "message": "What is your refund window?" }
 ```
+
+The reply is an **agent reply envelope**: the answer text plus the facts a calling agent needs to decide what to do next. Whether the answer is grounded, whether a person has taken the conversation over, and what a running routine still needs are all fields, so a client does not have to guess from prose.
+
+```json
+{
+  "conversationId": "5f3c…",
+  "answer": {
+    "text": "You can return an order within 30 days of delivery.",
+    "citations": [
+      { "documentId": "a1…", "chunkId": "b2…", "title": "Refund policy", "sourceUrl": "https://example.com/refunds" }
+    ]
+  },
+  "answerCoverage": {
+    "availability": "assessed",
+    "coverage": "answered",
+    "reason": "sufficient_evidence",
+    "originatingTurnId": "c3…",
+    "originatingRequestId": "c3…"
+  },
+  "ownership": { "state": "ai_owned", "suppressed": false },
+  "traceId": "d4…"
+}
+```
+
+Read it field by field:
+
+- `answerCoverage` is the same coverage verdict the dashboard trace shows for the turn. `coverage` is `answered`, `partial`, `unanswered`, or `unclear`, and `reason` says why; `intentional_scope_boundary` with `unanswered` means the agent declined on purpose. When no assessment ran for the turn (a direct reply, a routine step), `availability` is `not_recorded` and the verdict fields are absent.
+- `ownership` tells you who owns the conversation after this turn. `{ "state": "human_owned", "suppressed": true }` means a person has taken over and the agent generated nothing; keep the `conversationId` and come back for the reply.
+- `routine` appears when the turn ran a routine. `status` is one of `active`, `waiting_for_input`, `waiting_for_approval`, `completed`, or `abandoned`, and `pendingInput` lists every required slot the routine still needs plus the current step's optional ones, each with its `key`, `type` (`text`, `number`, `boolean`, `email`, `date`), `required` flag, and `description` — so you can supply all of them in one follow-up message.
+- `traceId` is the turn's trace id, the one an operator sees in Activity; quote it when you report a problem.
+
+The standalone MCP server forwards this envelope unchanged as the `ask_agent` tool's `structuredContent`; the tool's text content is `answer.text`. The REST agent channel (`POST /api/v1/agents/{agentId}/chat`) returns the same `answerCoverage`, `ownership`, `routine`, and `traceId` fields beside its own `answer` string and `citations` array, and its SSE `done` frame carries them too.
 
 If another ask arrives for the same conversation before the first reply starts,
 the first request returns HTTP `409` with error code `chat_turn_superseded`. The

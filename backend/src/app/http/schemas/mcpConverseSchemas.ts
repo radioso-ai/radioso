@@ -8,7 +8,7 @@ const boundedClientValue = (max: number) => z.string()
   .refine((value) => value.trim().length > 0, "Client metadata must not be blank")
   .transform((value) => value.trim());
 
-export const mcpConverseClientSchema = z.object({
+const mcpConverseClientSchema = z.object({
   name: boundedClientValue(128).optional(),
   version: boundedClientValue(64).optional(),
 }).optional();
@@ -44,13 +44,4 @@ export const mcpConverseSessionValidateResponseSchema = z.object({
   agentId: z.string().uuid(),
   conversationId: z.string().uuid(),
   permissions: z.array(z.string()),
-});
-
-export const mcpConverseAskResponseSchema = z.object({
-  conversationId: z.string().uuid(),
-  answer: z.object({
-    text: z.string(),
-    citations: z.array(z.unknown()),
-  }),
-  traceId: z.string().optional(),
 });

@@ -1,5 +1,7 @@
 import { createMcpSourceProof, MCP_SOURCE_PROOF_HEADERS } from "@radioso/mcp-source-proof";
 
+import type { components, operations } from "./generated/openapiTypes.js";
+
 export class RadiosoApiError extends Error {
   constructor(
     message: string,
@@ -12,41 +14,19 @@ export class RadiosoApiError extends Error {
   }
 }
 
-export interface ConverseSessionExchangeRequest {
-  launchToken: string;
-  client?: {
-    name?: string;
-    version?: string;
-  };
-}
+// The backend OpenAPI contract is the only source of these shapes; this package
+// never imports backend modules. Regenerate with `pnpm run sync:openapi`.
+export type ConverseSessionExchangeRequest =
+  operations["createMcpConverseSession"]["requestBody"]["content"]["application/json"];
 
-export interface ConverseSessionExchangeResponse {
-  sessionToken: string;
-  expiresAt: string;
-  resumeToken?: string;
-  agent: {
-    id: string;
-    name: string;
-  };
-  conversationId: string;
-}
+export type ConverseSessionExchangeResponse =
+  operations["createMcpConverseSession"]["responses"][201]["content"]["application/json"];
 
-export interface ConverseSessionValidateResponse {
-  valid: true;
-  workspaceId: string;
-  agentId: string;
-  conversationId: string;
-  permissions: string[];
-}
+export type ConverseSessionValidateResponse =
+  operations["validateMcpConverseSession"]["responses"][200]["content"]["application/json"];
 
-export interface ConverseAskResponse {
-  conversationId: string;
-  answer: {
-    text: string;
-    citations?: unknown[];
-  };
-  traceId?: string;
-}
+/** The agent reply envelope core plus `answer.{text,citations}`; forwarded verbatim as structuredContent. */
+export type ConverseAskResponse = components["schemas"]["McpConverseAskResponse"];
 
 export interface ConverseApiAdapter {
   exchange(body: ConverseSessionExchangeRequest, context?: ConverseSourceContext): Promise<ConverseSessionExchangeResponse>;

@@ -4,6 +4,7 @@ export {
   routineDefinitionSchema,
   routineGuardProvenance,
   routineReentryModes,
+  routineSlotTypes,
   routineStepSchema,
   routineSlotSchema,
   routineTerminalSchema,
@@ -33,6 +34,8 @@ export { RoutineTriggerEmbeddingService } from "./routineTriggerEmbeddingService
 export { ProbeRoutineReader, type ProbeRoutineReadPort } from "./probeRoutineReader.js";
 export { createRoutineActivationPrefilter } from "./routineActivationPrefilter.js";
 export { createRoutineTurnProvider } from "./turnProvider.js";
+export { createRoutineTurnReporter } from "./routineTurnReporter.js";
+export type { RoutineTurnReporter, RoutineTurnState } from "./turnReport.js";
 export {
   RoutineSkillExecutorDispatcher,
   type RoutineSkillResolver,

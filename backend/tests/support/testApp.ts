@@ -55,7 +55,7 @@ import {
 } from "../../src/modules/agents/public.js";
 import type { TestExecutionService } from "../../src/modules/test-execution/testExecution.js";
 import type { RevisionEvalRunService } from "../../src/modules/eval/services/revisionEvalRun.js";
-import { ProbeRoutineReader, RoutineDefinitionService, RoutineDraftAssistService, selectCanonicalRoutineDefinitions } from "../../src/modules/routines/public.js";
+import { createRoutineTurnReporter, ProbeRoutineReader, RoutineDefinitionService, RoutineDraftAssistService, selectCanonicalRoutineDefinitions } from "../../src/modules/routines/public.js";
 import { InMemoryAgentRevisionRepository } from "./agentRevisionFakes.js";
 import { toDefaultRetrieveSkillConfig } from "../../src/db/repositories/agentRepository.js";
 import {
@@ -1814,6 +1814,7 @@ export const createTestDependencies = (overrides: {
         return null;
       }
       return {
+        reporter: createRoutineTurnReporter(routines),
         activator: routineRegistry.isEmpty
           ? { activate: async () => null }
           : routineRegistry.activator(modelGateway),
@@ -1872,6 +1873,8 @@ export const createTestDependencies = (overrides: {
     conversationTurnRegistry: new InMemoryConversationTurnRegistry(
       new LoggingConversationTurnInterruptionObserver(logger, metricsRegistry),
     ),
+    // Mirror production wiring: a human-owned conversation suppresses the agent's turn.
+    conversationOwnershipReader: conversationOwnershipRepository,
     logger,
   });
   const chatBootstrapService = new ChatBootstrapService(

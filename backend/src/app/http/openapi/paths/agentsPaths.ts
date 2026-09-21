@@ -71,9 +71,9 @@ export const registerAgentsPaths = (
     },
     responses: {
       200: {
-        description: "Agent chat response returned as JSON or SSE",
+        description: "Agent chat response returned as JSON or SSE; the SSE `done` frame carries the same envelope core as the JSON body",
         content: {
-          "application/json": { schema: schemas.AssistantChatResponseSchema },
+          "application/json": { schema: schemas.AgentChannelChatResponseSchema },
           "text/event-stream": { schema: z.string() },
         },
       },

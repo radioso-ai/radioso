@@ -29,6 +29,19 @@ rows. Start at `test-execution/README.md` and
   extension provider ports.
   `contracts/routineProvider.ts` is the `ChatRoutineProvider` port the routines
   module implements (`modules/routines/turnProvider.ts`); chat never names a routine.
+  `contracts/routineTurnState.ts` re-exports the routines module's
+  `RoutineTurnReporter` (returned beside the activator) and the `RoutineTurnState`
+  it yields (`name`, `status`, `pendingInput`) under chat-side names; routines
+  owns those shapes in `modules/routines/turnReport.ts`.
+- `services/agentReplyEnvelope.ts` (exported through `contracts/`): the agent reply
+  envelope core — `conversationId`, `answerCoverage`, `ownership`, `routine?`,
+  `traceId?` — that the MCP converse `ask` route and the REST agent chat route
+  return beside their own answer layouts. `chatTurnLifecycle.ts` always records
+  `answerCoverage` (`not_recorded` when no assessment ran), marks `ownership`
+  human-owned on a handoff turn, and asks the reporter to describe the routine
+  state the turn saved. `presentChatPayload` strips `routine` from the human-facing
+  routes; only `sendChatSse(..., { agentEnvelope: true })` and the agent channel
+  route publish it.
 - `composition.ts`: chat module wiring used by application composition.
 - `llmAdapters.ts`: LLM-provider registration for chat.
 - `retrievalSupport.ts`: narrow helpers used by retrieval answer assembly.

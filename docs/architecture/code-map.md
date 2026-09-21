@@ -894,11 +894,24 @@ Primary internals:
   and answer prompts; state in `conversation_summaries`. The same regeneration call
   also produces a short conversation title #1114, written to `conversations.title`
   — a separate, non-expiring column — via `ConversationRepositoryPort.setTitle`)
+- `backend/src/modules/chat/services/agentReplyEnvelope.ts` (the agent reply
+  envelope core — `conversationId`, `answerCoverage`, `ownership`, `routine?`,
+  `traceId?` — built from a `ChatResponse` or the stream's `done` event; the MCP
+  converse `ask` route, the REST agent chat route, and its SSE `done` frame all
+  return it, #1290)
+- `backend/src/modules/routines/turnReport.ts` (`RoutineTurnState` and the
+  `RoutineTurnReporter` port, implemented by `routines/routineTurnReporter.ts`;
+  `chat/contracts/routineTurnState.ts` re-exports them under chat-side names, and
+  `chat/contracts/routineProvider.ts` is the `ChatRoutineProvider` port)
+- `backend/src/app/http/routes/agentChannelChatRoute.ts` (`POST /agents/:agentId/chat`)
+  and `backend/src/app/http/openapi/schemas/agentReplyEnvelopeSchemas.ts` (the
+  envelope's OpenAPI components, shared by both operations)
 - `backend/prompts/`
 
 Useful searches:
 
 - `rg "AssistantChat|chatService|chatTurn" backend/src backend/tests`
+- `rg "AgentReplyEnvelope|ChatRoutineTurnState|routineTurnReporter" backend/src backend/tests packages/radioso-mcp-server/src`
 - `rg "clarification|pending clarification|clarification_decisions_total" backend/src backend/tests`
 - `rg "citation|suggestion|skill intake|stream" backend/src/modules/chat frontend`
 - `rg "backend/prompts|prompt" backend/src/modules/chat backend/src/modules/retrieval`
@@ -907,6 +920,7 @@ Focused checks:
 
 - `cd backend && pnpm test -- tests/unit/chat-service-streaming.test.ts tests/unit/chat-history-service.test.ts tests/unit/chat-presenter.test.ts`
 - `cd backend && pnpm exec vitest run tests/unit/grounded-answer-head-reader.test.ts tests/unit/retrieval-answer-coverage-verdict.test.ts tests/unit/chat/answerCoverageHeadRecorder.test.ts tests/unit/chat/answerCoverageShadowAssessor.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/chat/agentReplyEnvelope.test.ts tests/unit/routines/routineTurnReporter.test.ts tests/contract/agent-reply-envelope.contract.test.ts tests/integration/agent-reply-envelope.integration.test.ts`
 - `cd frontend && pnpm test -- tests/unit/chat-message-thread.test.tsx tests/unit/chat-citations.test.tsx`
 - `cd frontend && pnpm run test:e2e -- assistant-history.spec.ts assistant-retrieval-settings.spec.ts`
 
@@ -921,6 +935,7 @@ Related docs and specs:
 - `specs/050-social-turn-intent/`
 - `specs/1149-answer-coverage-signals/`
 - `specs/1260-coverage-verdict-in-answer-head/`
+- `specs/1290-agent-consumable-service-surface/`
 
 ## Directives
 

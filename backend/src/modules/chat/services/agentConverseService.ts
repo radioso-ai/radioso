@@ -3,8 +3,10 @@ import type { AssistantChatService } from "./assistantChatService.js";
 import type { AgentConversePrincipal } from "../../settings/contracts/agentConverseSession.js";
 import type { AgentConverseAudit } from "./agentConverseAudit.js";
 import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
+import type { ChatCitation } from "../contracts/answerTypes.js";
+import { buildAgentReplyEnvelope, isChatTurnResponse, type AgentReplyEnvelopeCore } from "./agentReplyEnvelope.js";
 
-export interface AgentConverseConversationStore {
+interface AgentConverseConversationStore {
   getOrCreateByAnonymousSession?(input: {
     workspaceId: string;
     agentId: string;
@@ -14,13 +16,16 @@ export interface AgentConverseConversationStore {
   }): Promise<{ record: { id: string }; created: boolean }>;
 }
 
-export interface AgentConverseAskResult {
-  conversationId: string;
+/**
+ * The MCP `ask` reply: the agent reply envelope core plus the answer in this
+ * route's own layout. `conversationId` is the caller's public session id, the
+ * handle it exchanged for, never the conversation row id.
+ */
+export interface AgentConverseAskResult extends AgentReplyEnvelopeCore {
   answer: {
     text: string;
-    citations: unknown[];
+    citations: ChatCitation[];
   };
-  traceId?: string;
 }
 
 export class AgentConverseService {
@@ -64,7 +69,9 @@ export class AgentConverseService {
         sourceChannel: "mcp",
         sourceOrigin: null,
       });
-      if (!response) {
+      // The converse route always sends a message, never `startConversation`, so
+      // the reply is a completed turn; a missing turn or conversation is a fault.
+      if (!response || !isChatTurnResponse(response)) {
         throw serviceUnavailable("MCP converse response is unavailable.", {
           code: "mcp_converse_empty_response",
         });
@@ -79,6 +86,7 @@ export class AgentConverseService {
       });
 
       return {
+        ...buildAgentReplyEnvelope(response),
         conversationId: principal.publicSessionId,
         answer: {
           text: response.answer,

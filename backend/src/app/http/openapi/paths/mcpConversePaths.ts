@@ -3,7 +3,6 @@ import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 import type { OpenApiSchemas, OpenApiSecurity } from "../openApiRegistry.js";
 import {
   mcpConverseAskRequestSchema,
-  mcpConverseAskResponseSchema,
   mcpConverseSessionRequestSchema,
   mcpConverseSessionResponseSchema,
   mcpConverseSessionValidateRequestSchema,
@@ -86,8 +85,8 @@ export const registerMcpConversePaths = (
     },
     responses: {
       200: {
-        description: "Agent answer",
-        content: json(mcpConverseAskResponseSchema),
+        description: "Agent reply envelope with the answer text and citations",
+        content: json(schemas.McpConverseAskResponseSchema),
       },
       409: errorResponse("Turn superseded by a newer message in the same conversation"),
       401: errorResponse("Invalid converse session"),

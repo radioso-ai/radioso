@@ -12,9 +12,10 @@ import {
   type AgentChannelRateLimiterDependencies,
 } from "../middleware/agentChannelRateLimiter.js";
 import { onSuccessfulHttpResponse } from "../middleware/httpResponseCompletion.js";
-import { sendChatJson, sendChatSse } from "../presenters/chatPresenter.js";
+import { presentChatPayload, sendChatJson, sendChatSse } from "../presenters/chatPresenter.js";
 import { recordEdgeFactsProofRejected, resolveConversationRequestContext } from "../shared/conversationRequestContext.js";
 import { agentChannelChatSchema } from "../schemas/agentChannelSchemas.js";
+import { buildAgentReplyEnvelope, isChatTurnResponse } from "../../../modules/chat/contracts/index.js";
 
 type AgentChannelChatRouteDependencies = AgentChannelRateLimiterDependencies
   & Pick<
@@ -64,7 +65,7 @@ export const registerAgentChannelChatRoute = (
           onSuccessfulHttpResponse(res, () => dependencies.accessGrantService.recordAgentChannelChatSucceeded({
             grant: agentChannelGrant,
           }));
-          await sendChatSse(res, dependencies.assistantChatService.streamAnswer(chatInput));
+          await sendChatSse(res, dependencies.assistantChatService.streamAnswer(chatInput), { agentEnvelope: true });
           return;
         }
         const response = await dependencies.assistantChatService.answer(chatInput);
@@ -75,7 +76,16 @@ export const registerAgentChannelChatRoute = (
           res.status(204).end();
           return;
         }
-        sendChatJson(res, response);
+        // A bootstrap greeting (`startConversation`) has no turn, so no envelope.
+        if (!isChatTurnResponse(response)) {
+          sendChatJson(res, response);
+          return;
+        }
+        res.status(200).json({
+          ...presentChatPayload(response),
+          citations: response.citations ?? [],
+          ...buildAgentReplyEnvelope(response),
+        });
       } catch (error) {
         next(error);
       }

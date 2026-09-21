@@ -130,6 +130,22 @@ describe("slackBlockKitBuilder", () => {
     expect(JSON.stringify(message.blocks)).toContain("…");
   });
 
+  it("notes overflowing options in one context block even without a link", () => {
+    const message = buildDecisionMessage({
+      reason: "Pick one",
+      options: Array.from({ length: 30 }, (_, index) => ({ id: `option_${index}`, label: `option ${index}` })),
+      handle: "pd_1",
+      contentHash: "hash_1",
+      agentId: "agent_1",
+      dashboardUrl: null,
+    });
+
+    const contexts = message.blocks.filter((block) => block.type === "context");
+    expect(contexts).toHaveLength(1);
+    const elements = contexts[0].elements as Array<{ text: string }>;
+    expect(elements.map((element) => element.text)).toEqual(["5 more in the dashboard …"]);
+  });
+
   it("renders pre-takeover ownership with only the takeover action", () => {
     const message = buildOwnershipMessage({
       conversationId: "conv_1",

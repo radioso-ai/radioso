@@ -1,4 +1,4 @@
-import type { InternalClientConfig } from "./config.js";
+import { trimLeadingSlashes, trimTrailingSlashes, type InternalClientConfig } from "./config.js";
 import { normalizeError, parseErrorResponse } from "./errors.js";
 
 type QueryValue = string | number | boolean | null | undefined;
@@ -8,8 +8,8 @@ const buildUrl = (
   path: string,
   query?: Record<string, QueryValue>,
 ): string => {
-  const normalizedBaseUrl = baseUrl.replace(/\/+$/, "");
-  const normalizedPath = path.replace(/^\/+/, "");
+  const normalizedBaseUrl = trimTrailingSlashes(baseUrl);
+  const normalizedPath = trimLeadingSlashes(path);
   const url = new URL(`${normalizedBaseUrl}/${normalizedPath}`);
 
   if (query) {
@@ -49,7 +49,7 @@ const buildHeaders = (
   return result;
 };
 
-export interface JsonRequestOptions {
+interface JsonRequestOptions {
   method: string;
   path: string;
   query?: Record<string, QueryValue>;

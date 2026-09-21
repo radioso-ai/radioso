@@ -13,7 +13,7 @@ import type { AuditPort } from "../../../audit/contracts/index.js";
 import { ConversationOwnershipRepository, type OperatorReplyService } from "../../../handoff/public.js";
 import type { MetricsRegistry } from "../../../../shared/observability/metrics/metricsRegistry.js";
 import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
-import type { ConversationLinkResolver } from "../../../operatorNotifications/public.js";
+import type { ConversationLinkResolver } from "../../../../shared/domain/conversationLinkResolver.js";
 import { IntegrationConnectionRepository } from "../../../integrationConnections/public.js";
 import {
   createSlackInteractivityRouter,

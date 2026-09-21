@@ -22,7 +22,7 @@ import type { OperatorReplyService } from "../../handoff/public.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import { stringifyUnknown } from "../../../shared/text/stringifyUnknown.js";
 import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
-import type { ConversationLinkResolver } from "../../operatorNotifications/public.js";
+import type { ConversationLinkResolver } from "../../../shared/domain/conversationLinkResolver.js";
 import {
   decryptField,
   encryptField,

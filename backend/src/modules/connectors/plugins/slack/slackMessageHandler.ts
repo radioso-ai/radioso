@@ -22,7 +22,7 @@ import {
 } from "../../../slack/public.js";
 import type { SlackPersistencePort } from "./slackPersistence.js";
 import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
-import { resolveConversationLink, type ConversationLinkResolver } from "../../../operatorNotifications/public.js";
+import { resolveConversationLink, type ConversationLinkResolver } from "../../../../shared/domain/conversationLinkResolver.js";
 
 export interface SlackMessageImEvent {
   type: "message";

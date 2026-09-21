@@ -141,7 +141,7 @@ import type {
 } from "../../modules/operatorMcpAuthorization/public.js";
 import type { PersistedOperatorMcpClient } from "../../modules/operatorMcpAuthorization/contracts.js";
 import type { TestExecutionService } from "../../modules/test-execution/testExecution.js";
-import type { ConversationLinkResolver } from "../../modules/operatorNotifications/public.js";
+import type { ConversationLinkResolver } from "../../shared/domain/conversationLinkResolver.js";
 import type { RevisionEvalRunService } from "../../modules/eval/services/revisionEvalRun.js";
 
 export interface AppDependencies {
@@ -164,7 +164,7 @@ export interface AppDependencies {
   applicationModules: ApplicationModuleCoordinator;
   workspaceInvalidationPublisher: WorkspaceInvalidationPublisher;
   /** Dashboard permalinks for conversations, for delivery edges that post operator-facing links. */
-  conversationLinkResolver: ConversationLinkResolver;
+  conversationLinks: ConversationLinkResolver;
   realtimePublisherLifecycle: Pick<RealtimePublisherComposition, "shutdown">;
   realtimeRolloutPolicy: RealtimeRolloutPolicy;
   vectorIndexReconciler?: Pick<VectorIndexReconciler, "start" | "stop" | "runUntilIdle">;

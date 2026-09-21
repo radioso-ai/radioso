@@ -1,11 +1,13 @@
 import type { AgentContactWebhook } from "../../../agents/public.js";
+import type {
+  OperatorNotification,
+  OperatorNotificationContext,
+  OperatorNotificationSink,
+} from "../../../operatorNotifications/public.js";
 import {
   resolveConversationLink,
   type ConversationLinkResolver,
-  type OperatorNotification,
-  type OperatorNotificationContext,
-  type OperatorNotificationSink,
-} from "../../../operatorNotifications/public.js";
+} from "../../../../shared/domain/conversationLinkResolver.js";
 import type {
   ContactNotificationMailer,
   ContactRecipientResolver,
@@ -21,8 +23,12 @@ const deprecatedDashboardPath = (dashboardUrl: string | null): string | null => 
   if (!dashboardUrl) {
     return null;
   }
-  const url = new URL(dashboardUrl);
-  return `${url.pathname}${url.search}`;
+  try {
+    const url = new URL(dashboardUrl);
+    return `${url.pathname}${url.search}`;
+  } catch {
+    return null;
+  }
 };
 
 /**

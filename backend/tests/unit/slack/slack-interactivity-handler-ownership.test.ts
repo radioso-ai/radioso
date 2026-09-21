@@ -136,7 +136,7 @@ describe("SlackInteractivityHandler ownership branch", () => {
     }));
 
     expect(resolve).toHaveBeenCalledWith({ workspaceId: "ws_conversation", conversationId: "conv_1" });
-    expect(JSON.stringify(responsePosts[0].body.blocks)).toContain(`<${permalink}|Open in dashboard>`);
+    expect(JSON.stringify(responsePosts[0].body.blocks)).toContain(`<${permalink.replaceAll("&", "&amp;")}|Open in dashboard>`);
   });
 
   it("updates the Slack message without a link rather than a dead one when no resolver is wired", async () => {
@@ -147,7 +147,22 @@ describe("SlackInteractivityHandler ownership branch", () => {
       workspaceId: "ws_conversation",
     }));
 
-    expect(JSON.stringify(responsePosts[0].body.blocks)).not.toContain("/conversations/conv_1");
+    const blocks = responsePosts[0].body.blocks as Array<{ type: string }>;
+    expect(blocks.filter((block) => block.type === "context")).toHaveLength(0);
+  });
+
+  it("links the hand-back update to the resolved conversation permalink", async () => {
+    const permalink = "https://app.radioso.ai/w/support-abc/activity?tab=all&filter=chat&itemKind=chat&itemId=conv_1";
+    const resolve = vi.fn(async () => permalink);
+    const { handler, responsePosts } = createHandler({ conversationLinks: { resolve } });
+
+    await handler.handleBlockActions(blockPayload("ownership_handback", {
+      conversationId: "conv_1",
+      version: 2,
+    }));
+
+    expect(resolve).toHaveBeenCalledWith({ workspaceId: "ws_conversation", conversationId: "conv_1" });
+    expect(JSON.stringify(responsePosts[0].body.blocks)).toContain(`<${permalink.replaceAll("&", "&amp;")}|Open in dashboard>`);
   });
 
   it("takes over a conversation, audits it, and updates the Slack message with talk and handback", async () => {

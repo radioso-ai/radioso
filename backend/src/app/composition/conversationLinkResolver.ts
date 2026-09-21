@@ -1,5 +1,5 @@
 import { WorkspaceRepository } from "../../db/repositories/workspaceRepository.js";
-import type { ConversationLinkResolver } from "../../modules/operatorNotifications/public.js";
+import type { ConversationLinkResolver } from "../../shared/domain/conversationLinkResolver.js";
 import { conversationPermalink } from "../../shared/domain/dashboardLinks.js";
 import type { Database } from "../../shared/infra/database.js";
 

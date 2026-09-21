@@ -139,10 +139,10 @@ test("Slack channel binding switches to answering every message", async ({ page 
   await expect(page.getByText("No channel-specific bindings for this agent.")).toBeVisible();
   await expect(page.getByRole("group", { name: /Responds to/ })).toHaveCount(0);
 
-  await page.getByLabel("Channel ID").fill("#ask-support");
+  await page.getByLabel("Channel ID").fill("C0ASKSUPPORT");
   await page.getByRole("button", { name: "Add" }).click();
 
-  const respondsTo = page.getByRole("group", { name: "Responds to (#ask-support)" });
+  const respondsTo = page.getByRole("group", { name: "Responds to (C0ASKSUPPORT)" });
   await expect(respondsTo).toBeVisible();
   await expect(respondsTo.getByRole("button", { name: "@mentions only", pressed: true })).toBeVisible();
 
@@ -154,7 +154,7 @@ test("Slack channel binding switches to answering every message", async ({ page 
       request.method === "PUT" &&
       request.path === `/workspaces/${workspaceId}/slack/binding` &&
       JSON.stringify(request.body) === JSON.stringify({
-        channelId: "#ask-support",
+        channelId: "C0ASKSUPPORT",
         answeringAgentId: defaultAgentId,
         escalationChannelId: null,
         gapEscalationEnabled: false,

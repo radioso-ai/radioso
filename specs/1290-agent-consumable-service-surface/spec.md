@@ -59,7 +59,7 @@ A visiting agent asks a question or invokes a routine and receives, alongside th
 2. **Given** a question the corpus does not cover, **When** the caller asks, **Then** `answerCoverage.verdict` marks the miss and the text is whatever the agent's normal behaviour produces — no new hard-coded copy.
 3. **Given** a conversation a human has taken over, **When** the caller sends another message, **Then** `ownership.state = "human_owned"` and the caller is told nothing was generated (`ownership.suppressed = true`), with the conversation id to return to.
 4. **Given** an active routine that still needs a slot, **When** the reply is built, **Then** `routine.pendingInput[]` lists that slot's key, type, required flag, and description from the routine definition.
-5. **Given** `stream: true`, **When** the turn completes, **Then** the final frame carries the same envelope as the non-streaming response.
+5. **Given** `stream: true` on the REST route, **When** the turn completes, **Then** the `done` frame carries the same envelope core as the non-streaming response.
 
 ---
 
@@ -77,7 +77,7 @@ An operator marks "Start a return" as exposed, names it `start_return`, and publ
 2. **Given** the tool is called with valid input, **When** the turn runs, **Then** the routine is admitted without the activation matcher, the slots are prefilled, slot-collection steps for filled slots are skipped, and the reply envelope reports `routine.status` and any `pendingInput`.
 3. **Given** the tool is called with `orderId` missing or the wrong type, **When** validation runs, **Then** the call fails before any turn is recorded, with field-level errors, and no message is added to the conversation.
 4. **Given** the routine has an approval step, **When** invoked by tool, **Then** the approval is created exactly as in chat and the envelope reports `routine.status = "waiting_for_approval"`.
-5. **Given** the same routine is already active in the conversation, **When** the tool is called again, **Then** the routine's `activation.reentryMode` governs the outcome, same as chat.
+5. **Given** the same routine is already active in the conversation, **When** the tool is called again, **Then** the routine's `activation.reentryMode` governs the outcome, same as chat. When reentry refuses (e.g. `once_per_conversation` already completed), the turn answers normally and the envelope still carries `routine: { toolName, name, status: "completed", pendingInput: [] }` so the caller learns why nothing started.
 6. **Given** a different routine is active, **When** a tool is called, **Then** the invocation follows the existing interruption rules for a topic change; nothing tool-specific is added.
 7. **Given** an exposed routine is unpublished or its exposure disabled, **When** the next session starts, **Then** the tool is absent from the catalog and a call to it returns "unknown tool".
 8. **Given** an operator tries to change a tool name after first publish, **When** validating, **Then** publish is refused with `exposure_tool_name_changed`; the operator must disable that exposure and create a new one.
@@ -184,10 +184,10 @@ The operator copies a ready-made "connect your agent" snippet (endpoint, card UR
 
 ### Reply envelope
 
-- **FR-001** `POST /api/v1/mcp/converse/ask` and `POST /api/v1/agents/:agentId/chat` MUST return the same **agent reply envelope**: `conversationId`, `answer.text`, `answer.citations[]` (typed: `title`, `url?`, `documentId?`), `answerCoverage` (the existing assessment shape, unchanged), `ownership` (`state`, `suppressed`), `routine?` (`toolName?`, `name`, `status`, `pendingInput[]`), `traceId`.
-- **FR-002** Envelope fields MUST be additive on the REST route; existing top-level fields keep their names and shapes.
-- **FR-003** `routine.status` MUST be one of `active`, `waiting_for_input`, `waiting_for_approval`, `completed`, `abandoned`; `pendingInput[]` entries carry `key`, `type`, `required`, `description?` from the routine definition.
-- **FR-004** Streaming responses MUST deliver the full envelope in the terminal frame.
+- **FR-001** `POST /api/v1/mcp/converse/ask` and `POST /api/v1/agents/:agentId/chat` MUST return the same **agent reply envelope core**: `conversationId`, `answerCoverage` (the existing assessment shape, always present — `not_recorded` when no assessment ran), `ownership` (`state`, `suppressed`; `ai_owned`/`false` when nothing else applies), `routine?` (`toolName?`, `name`, `status`, `pendingInput[]`), `traceId?`. Citations use the existing `ChatCitation` shape (`documentId`, `chunkId`, `title`, `sourceUrl?`) on both routes.
+- **FR-002** The core is additive on both routes; existing fields keep their names and shapes. MCP keeps `answer: { text, citations }`; REST keeps `answer: string` + `citations[]`. The shared contract is the core, not the answer field's layout.
+- **FR-003** `routine.status` MUST be one of `active`, `waiting_for_input`, `waiting_for_approval`, `completed`, `abandoned`; `pendingInput[]` lists every declared required slot not yet filled plus the current step's unfilled optional slots, each with `key`, `type`, `required`, `description?` from the routine definition — so a calling agent can supply everything in one re-call.
+- **FR-004** The REST SSE path MUST deliver the full envelope core in the terminal `done` frame. The MCP `ask` route is non-streaming (`stream: false` by contract) and returns the envelope in its single response.
 - **FR-005** The MCP package MUST forward the envelope unchanged as `structuredContent` and keep `answer.text` as the summary content.
 
 ### Routine exposure
@@ -198,7 +198,7 @@ The operator copies a ready-made "connect your agent" snippet (endpoint, card UR
 - **FR-013** `GET /api/v1/mcp/converse/tools` (session-bound) MUST return the agent's descriptors plus `agent: { name, description }`; `tools/list` on the MCP surface MUST be `ask_agent`, `get_conversation_updates`, and one tool per descriptor.
 - **FR-014** `POST /api/v1/mcp/converse/ask` and `POST /agents/:id/chat` MUST accept a body of either `{ message }` or `{ routine: { toolName, input } }`. Input is validated against the descriptor's schema before any turn state is written; failures return field-level errors and record nothing.
 - **FR-015** A routine invocation MUST admit the named routine directly — bypassing the activation prefilter and ranked match — prefill its declared slots from `input` as routine variables, and otherwise run the existing turn: the runner's existing fast-forward (`isSatisfiedSlotCollectionStep` in `packages/conversation-engine/src/routineRunner.ts`) skips chat steps whose `collectsSlots` are all present; approvals, skills, directives, handoff, reentry, and interruption rules are unchanged.
-- **FR-016** The invocation MUST be recorded as a user-authored message with a structured payload (`kind: "routine_invocation"`, `toolName`, `input`) so Activity and Inbox render it; slot values that are `email` type are redacted in operator views the same way visitor context is.
+- **FR-016** The invocation MUST be recorded as a user-authored message: `content` is the structural rendering `toolName {json}` with values verbatim (what a person would have typed; the LLM-visible history matches chat), and `inputMetadata: { method: "routine_invocation", routine: { toolName, input } }` so Activity and Inbox render it as a tool-call block; `email`-typed values are redacted in operator views the same way visitor context is, not at write time.
 - **FR-017** The routine editor MUST offer exposure controls (toggle, tool name, description) and surface validator errors inline. Ray MUST offer `propose_routine_exposure` targeting a routine lineage with the same fields.
 
 ### Discovery
@@ -279,7 +279,7 @@ The operator copies a ready-made "connect your agent" snippet (endpoint, card UR
 
 - **SC-001** On a walk-in-enabled agent, an MCP client with no prior configuration completes discover (card) → connect → `tools/list` → one routine call → envelope with `routine.status`, with zero operator steps, in the e2e suite.
 - **SC-002** In the deterministic eval suite, a routine driven by tool invocation with all required slots reaches the same step and the same skill effects as the equivalent chat transcript for 100% of fixture routines.
-- **SC-003** A new `converse-tool-selection` eval suite, shaped like `tests/unit/operatorCopilot/copilot-eval-suite.test.ts` (deterministic half in CI, live half under `evals:*` with a committed baseline), shows a calling model given a task against a fixture agent exposing 5–10 tools selects the intended tool in ≥ 90% of cases.
+- **SC-003** *(follow-up after US6's description formatter; not part of slice 1)* A new `converse-tool-selection` eval suite, shaped like `tests/unit/operatorCopilot/copilot-eval-suite.test.ts` (deterministic half in CI, live half under `evals:*` with a committed baseline), shows a calling model given a task against a fixture agent exposing 5–10 tools selects the intended tool in ≥ 90% of cases.
 - **SC-004** 100% of converse and REST chat responses carry `answerCoverage` and `ownership` (contract test).
 - **SC-005** Card endpoints serve at p95 < 50 ms from cache and are validated against the A2A card schema in CI.
 - **SC-006** After a forced handoff and a human reply, `get_conversation_updates` returns the reply on the first long-poll in the e2e suite.

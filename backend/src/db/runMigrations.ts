@@ -160,7 +160,8 @@ const acquireMigrationLock = async (database: Database, logger: AppLogger): Prom
       await acquireBlockingMigrationLock(client);
     }
   } catch (error) {
-    client.release();
+    // Destroy rather than repool: a failed acquire may leave the connection unusable.
+    client.release(error instanceof Error ? error : new Error(String(error)));
     throw error;
   }
 

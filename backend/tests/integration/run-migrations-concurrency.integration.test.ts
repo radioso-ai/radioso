@@ -54,10 +54,8 @@ describeIfDatabase("runMigrations session-level advisory lock", () => {
   });
 
   afterAll(async () => {
-    if (admin) {
-      await admin.execute(`DROP DATABASE IF EXISTS "${isolatedName}"`);
-      await admin.close().catch(() => undefined);
-    }
+    await admin?.execute(`DROP DATABASE IF EXISTS "${isolatedName}" WITH (FORCE)`).catch(() => undefined);
+    await admin?.close().catch(() => undefined);
   });
 
   it(

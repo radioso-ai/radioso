@@ -5,7 +5,11 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 type RoutineHeaderState = {
   actions: ReactNode | null
   backAction: ReactNode | null
-  description: ReactNode | null
+  // `undefined` means no routine section has registered a description yet — the page shell
+  // reads that as still loading. `null` is a registered, deliberate "no subtitle"; a page shell
+  // reading `undefined` the same as `null` would show a permanent "Loading…" once the routine
+  // itself has nothing left to say.
+  description: ReactNode | null | undefined
   title: ReactNode | null
 }
 
@@ -18,7 +22,7 @@ const RoutineHeaderActionsContext = createContext<RoutineHeaderActionsContextVal
 const emptyRoutineHeader: RoutineHeaderState = {
   actions: null,
   backAction: null,
-  description: null,
+  description: undefined,
   title: null,
 }
 

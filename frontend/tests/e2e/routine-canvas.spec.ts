@@ -52,9 +52,10 @@ test("the routine map opens on demand and shows where the model decides", async 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
   await page.getByRole("button", { name: /^Order return request\b/ }).click();
 
-  // The editor stays on the document until the map is asked for.
+  // The editor stays on the document until the map is asked for, from the header's overflow menu.
   await expect(page.locator(".react-flow")).toHaveCount(0);
-  await page.getByRole("button", { name: "Map", exact: true }).click();
+  await page.getByRole("button", { name: "More routine actions" }).click();
+  await page.getByRole("menuitem", { name: "Map" }).click();
 
   const map = page.getByRole("dialog", { name: "Map" });
   await expect(map).toBeVisible();

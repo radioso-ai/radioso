@@ -1,10 +1,16 @@
 export type AgentChannelCatalogId = 'web-chat' | 'api-channel' | 'mcp-channel' | 'slack-channel' | 'whatsapp-channel'
-type AgentChannelCatalogStatus = 'active' | 'enabled' | 'attention' | 'available'
+
+/**
+ * What a listed channel is doing, independent of how the sidebar renders it.
+ * `active` means the channel can take traffic now; `available` means the
+ * channel is offered but nothing is configured yet; `attention` means it is
+ * configured and cannot serve.
+ */
+export type AgentChannelCatalogStatus = 'active' | 'available' | 'attention'
 
 interface AgentChannelCatalogEntry {
   id: AgentChannelCatalogId
   status: AgentChannelCatalogStatus
-  statusLabel: string
 }
 
 interface AgentChannelCatalogInput {
@@ -29,27 +35,19 @@ interface AgentChannelCatalogInput {
  */
 export function resolveAgentChannelCatalog(input: AgentChannelCatalogInput): AgentChannelCatalogEntry[] {
   const entries: AgentChannelCatalogEntry[] = []
-  if (input.webChatEnabled) entries.push({ id: 'web-chat', status: 'enabled', statusLabel: 'On' })
-  if (input.apiCredentialCount > 0) entries.push({ id: 'api-channel', status: 'active', statusLabel: 'Active' })
-  if (input.mcpCredentialCount > 0) {
-    entries.push({
-      id: 'mcp-channel',
-      status: 'active',
-      statusLabel: 'Active',
-    })
-  }
+  if (input.webChatEnabled) entries.push({ id: 'web-chat', status: 'active' })
+  if (input.apiCredentialCount > 0) entries.push({ id: 'api-channel', status: 'active' })
+  if (input.mcpCredentialCount > 0) entries.push({ id: 'mcp-channel', status: 'active' })
   if (input.slackConfigured || input.slackConnected || input.slackBound) {
     entries.push({
       id: 'slack-channel',
       status: input.slackConnected && input.slackBound ? 'active' : 'attention',
-      statusLabel: input.slackConnected && input.slackBound ? 'Active' : 'Needs setup',
     })
   }
   if (input.whatsappAvailable || input.whatsappConfigured || input.whatsappError) {
     entries.push({
       id: 'whatsapp-channel',
       status: input.whatsappError ? 'attention' : input.whatsappConfigured ? 'active' : 'available',
-      statusLabel: input.whatsappError ? 'Needs setup' : input.whatsappConfigured ? 'Active' : 'Available',
     })
   }
   return entries

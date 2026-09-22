@@ -148,6 +148,12 @@ Staff identities are global to the deployment and carry one role:
 - `billing_write` — also change an organization's tier and edit the tier catalog.
 - `owner` — also manage staff identities and their roles.
 
+The organizations list shows each account's tier and the meter that tier bills
+on, for the current UTC month. A catalog-plan account reads the conversation
+meter (`12.5 / 50 conv`); an answer-metered profile such as `starter_100` reads
+the answer counter (`8 / 100`). An account with no assigned profile reads
+unlimited.
+
 The console API is mounted at:
 
 ```text

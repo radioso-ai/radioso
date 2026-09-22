@@ -16,6 +16,11 @@ export interface RadiosoMcpServerContext {
     error: ReturnType<typeof toStructuredToolError>,
   ) => Promise<void>;
   onToolResult?: (tool: ToolDefinition, context: ToolExecutionContext, result: Awaited<ReturnType<ToolDefinition["execute"]>>) => Promise<void>;
+  /**
+   * A routine tool call whose arguments missed the descriptor's schema. The SDK answers
+   * it as a tool error before the handler runs, so this is the only hook that sees it.
+   */
+  onToolInputRejected?: (tool: ToolDefinition) => Promise<void>;
   serverName: string;
   resolveExecutionContext?: (
     tool: ToolDefinition,
@@ -63,6 +68,7 @@ const withoutStaticNameCollisions = (
 
 export const createRadiosoMcpServer = ({
   onToolError,
+  onToolInputRejected,
   onToolResult,
   resolveExecutionContext,
   routineTools = [],
@@ -81,7 +87,9 @@ export const createRadiosoMcpServer = ({
   const staticToolDefinitions = [...converseToolDefinitions, ...createProductDocsToolDefinitions()];
   const toolDefinitions = [
     ...staticToolDefinitions,
-    ...createRoutineToolDefinitions(withoutStaticNameCollisions(staticToolDefinitions, routineTools, warn)),
+    ...createRoutineToolDefinitions(withoutStaticNameCollisions(staticToolDefinitions, routineTools, warn), {
+      onInputRejected: onToolInputRejected,
+    }),
   ];
   const executionResolver = resolveExecutionContext;
 

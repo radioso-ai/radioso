@@ -88,6 +88,30 @@ describe("agent-channel MCP authentication", () => {
     expect(again?.toolCatalog).toEqual(session?.toolCatalog);
   });
 
+  it("serves the static catalog, with a warning, when the backend has no tools route", async () => {
+    const converseApi = createConverseApi();
+    vi.mocked(converseApi.tools).mockRejectedValueOnce(new RadiosoApiError("Not Found", 404, "not_found"));
+    const store = createInMemorySessionStore();
+    const warn = vi.fn();
+    const auth = createAuthService({ converseApi, sessionStore: store, warn });
+
+    const session = await auth.resolveBearerSession("agent-channel-credential");
+
+    expect(session?.toolCatalog).toEqual({ key: toToolCatalogKey([]), tools: [] });
+    expect(warn).toHaveBeenCalledOnce();
+    expect(warn.mock.calls[0][0]).toContain("tools");
+  });
+
+  it("fails the exchange when the catalog read fails for any other reason", async () => {
+    const converseApi = createConverseApi();
+    vi.mocked(converseApi.tools).mockRejectedValueOnce(new RadiosoApiError("Bad Gateway", 502, "upstream"));
+    const store = createInMemorySessionStore();
+    const auth = createAuthService({ converseApi, sessionStore: store });
+
+    await expect(auth.resolveBearerSession("agent-channel-credential")).rejects.toMatchObject({ status: 502 });
+    await expect(store.getByAccessToken("agent-channel-credential")).resolves.toBeNull();
+  });
+
   it("treats a catalog read the backend refuses as an invalid credential", async () => {
     const converseApi = createConverseApi();
     vi.mocked(converseApi.tools).mockRejectedValueOnce(new RadiosoApiError("Forbidden", 403, "forbidden"));

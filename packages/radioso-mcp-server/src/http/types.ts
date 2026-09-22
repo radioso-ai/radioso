@@ -1,11 +1,8 @@
-import type { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/server";
-
 import type { McpRequestAuthInfo } from "../auth/authInfo.js";
 import type { AuthService } from "../auth/authService.js";
 import type { AuditLogger } from "../audit/auditLogger.js";
 import type { AccessSessionRecord } from "../auth/sessionStore.js";
 import type { RadiosoMcpConfig } from "../config.js";
-import type { RadiosoMcpServerHandle } from "../server.js";
 import type { RuntimeStoreReadiness } from "../state/runtimeStores.js";
 import type { PreAuthSourceBudget } from "./preAuthSourceBudget.js";
 import type { OperatorHttpDependencies } from "../operator/types.js";
@@ -18,15 +15,13 @@ export interface InternalMcpRequestAuthInfo extends McpRequestAuthInfo {
   token: string;
 }
 
-export interface SessionMcpServerHandle {
-  serverHandle: RadiosoMcpServerHandle;
-  toolCatalogKey: string;
-  transport: WebStandardStreamableHTTPServerTransport;
-}
-
 export interface SessionMcpServerManager {
-  evict(toolCatalogKey: string): Promise<void>;
-  getOrCreate(session: AccessSessionRecord): Promise<SessionMcpServerHandle>;
+  /** Answers one MCP request for an authenticated session on a server and transport of its own. */
+  handleRequest(
+    session: AccessSessionRecord,
+    request: Request,
+    options: { authInfo: InternalMcpRequestAuthInfo },
+  ): Promise<Response>;
 }
 
 export interface RemoteHttpDependencies {

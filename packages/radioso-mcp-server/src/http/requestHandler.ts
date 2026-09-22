@@ -10,7 +10,7 @@ export type McpBearerTokenVerifier = (
   sourceDigest?: string,
 ) => Promise<AccessSessionRecord | null>;
 
-export interface McpRequestHandlerDependencies {
+interface McpRequestHandlerDependencies {
   config: Pick<RadiosoMcpConfig, "bindHost" | "bindPort">;
   readiness?: RuntimeStoreReadiness;
   serverManager: SessionMcpServerManager;
@@ -152,8 +152,7 @@ export const createMcpRequestHandler = ({
       };
     }
 
-    const handle = await serverManager.getOrCreate(session);
-    const response = await handle.transport.handleRequest(withMcpAcceptHeader(request), {
+    const response = await serverManager.handleRequest(session, withMcpAcceptHeader(request), {
       authInfo: toInternalAuthInfo(session, accessToken, sourceDigest),
     });
     return {

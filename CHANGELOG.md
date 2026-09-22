@@ -9,6 +9,37 @@ Cut a release with the **Cut Release** workflow. It reads the commits since the 
 tag, writes the entry above this line, tags the commit, and publishes a GitHub Release. A
 deploy then ships a release that already exists; it never mints one.
 
+## [1.3.0] - 2026-09-22
+
+### Added
+
+- **routines:** handoff notices carry collected values; chat steps read the current page ([#1291](https://github.com/radioso-ai/radioso/pull/1291))
+- **slack:** thread follow-ups, bound-channel respond mode, markdown replies, and the Slack agent pane ([#1289](https://github.com/radioso-ai/radioso/pull/1289))
+- **routines:** restyle the routine editor as a notebook-style procedure document ([#1284](https://github.com/radioso-ai/radioso/pull/1284))
+- **llm:** add provider-neutral input token caching ([#1282](https://github.com/radioso-ai/radioso/pull/1282))
+- **visitors:** show operators who they are talking to — visitor profiles, location, and previous conversations ([#1280](https://github.com/radioso-ai/radioso/pull/1280))
+
+### Fixed
+
+- **notifications:** send operator webhooks a dashboard link that routes ([#1285](https://github.com/radioso-ai/radioso/pull/1285))
+- **security:** replace backtracking anchored regexes with linear trims (CodeQL polynomial-redos) ([#1288](https://github.com/radioso-ai/radioso/pull/1288))
+- **deps:** run firebase-tools via pnpm dlx instead of a docs-portal devDependency ([#1287](https://github.com/radioso-ai/radioso/pull/1287))
+- **deps:** patch adm-zip and faker Dependabot alerts via pnpm overrides ([#1286](https://github.com/radioso-ai/radioso/pull/1286))
+- **db:** serialise migration ownership across instances with a session advisory lock ([#1283](https://github.com/radioso-ai/radioso/pull/1283))
+
+### Other
+
+- **terraform:** auto-generate the edge proof secret and stamp client geo headers at the load balancer ([#1281](https://github.com/radioso-ai/radioso/pull/1281))
+
+### Database migrations
+
+This release adds 2 migrations. They run at service startup, so deploy one stack at a time; overlapping deploys contend on the same DDL lock and stall until one gives up.
+
+- `192_visitors.sql`
+- `193_slack_binding_respond_mode.sql`
+
+[1.3.0]: https://github.com/radioso-ai/radioso/compare/v1.2.1...v1.3.0
+
 ## [1.2.1] - 2026-09-18
 
 ### Fixed

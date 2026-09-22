@@ -66,6 +66,8 @@ const renderPageContext = (data: unknown): string | null => {
 const stagedValue = (data: unknown): unknown =>
   isRecord(data) && data.kind === "variable" && "value" in data ? data.value : data;
 
+// `name` is written into the tag attribute unescaped: it comes from the engine's
+// `{{context.<name>}}` capture, an identifier that cannot hold `&`, `<`, `>` or `"`.
 const renderVariable = (name: string, staged: StagedContext): string | null => {
   const metadata = isRecord(staged.metadata) ? staged.metadata : {};
   if (metadata.surfacing === "operator_only") {

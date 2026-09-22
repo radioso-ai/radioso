@@ -67,6 +67,8 @@ jobs:
       TF_VAR_slack_oauth_client_id: ${{ secrets.SLACK_OAUTH_CLIENT_ID }}
       TF_VAR_slack_oauth_client_secret: ${{ secrets.SLACK_OAUTH_CLIENT_SECRET }}
       TF_VAR_slack_signing_secret: ${{ secrets.SLACK_SIGNING_SECRET }}
+      TF_VAR_google_login_client_id: ${{ secrets.GOOGLE_LOGIN_CLIENT_ID }}
+      TF_VAR_google_login_client_secret: ${{ secrets.GOOGLE_LOGIN_CLIENT_SECRET }}
       TF_VAR_ee_usage_admin_token: ${{ secrets.EE_USAGE_ADMIN_TOKEN }}
 
     steps:

@@ -87,6 +87,13 @@ const nextConfig = {
         source: "/api/v1/operator-mcp/oauth/:path*",
         destination: "/backend/api/v1/operator-mcp/oauth/:path*",
       },
+      // Google login (EE) redirects the browser back to
+      // <APP_BASE_URL>/api/v1/ee/auth/google/callback. The state cookie was set
+      // through /backend, so the callback must reach the backend via the same proxy.
+      {
+        source: "/api/v1/ee/auth/google/:path*",
+        destination: "/backend/api/v1/ee/auth/google/:path*",
+      },
       {
         source: "/:path*",
         has: [{ type: "host", value: "platform.radioso.dev" }],

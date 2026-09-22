@@ -251,17 +251,27 @@ The redirect URI is derived from `APP_BASE_URL` by default. Override it with
 reverse proxy). After a successful sign-in the browser returns to `APP_BASE_URL`;
 override the landing page with `GOOGLE_LOGIN_SUCCESS_REDIRECT`.
 
-The callback lands on the dashboard origin on purpose. The sign-in starts through
-the dashboard's `/backend` proxy, which sets the CSRF state cookie on that
-origin; the frontend forwards `/api/v1/ee/auth/google/*` through the same proxy
-so the callback can read the state and set the session cookie where the app
-reads it. Pointing the redirect URI straight at the API host breaks both.
+The callback has to land on the dashboard origin. Both the CSRF state cookie and
+the session cookie are host-only, so a callback that arrives anywhere else can
+neither read the state it must match nor set a session the app sees; the
+frontend forwards `/api/v1/ee/auth/google/*` to the backend through its
+`/backend` proxy to keep the whole round trip on one origin. A redirect URI
+pointed at the API host fails every sign-in with an invalid-state error.
+Setting `GOOGLE_LOGIN_REDIRECT_URI` to
+`<APP_BASE_URL>/backend/api/v1/ee/auth/google/callback` reaches the same origin
+through that proxy directly, if you prefer to register the proxy path on the
+OAuth client instead.
 
 On the bundled Cloud Run stack, set `GOOGLE_LOGIN_CLIENT_ID` and
 `GOOGLE_LOGIN_CLIENT_SECRET` as GitHub environment secrets; the Terraform
 workflow stores them in Secret Manager and injects them into the backend
 service. Each region has its own `APP_BASE_URL`, so add every region's callback
 URL to the OAuth client.
+
+Deploy the frontend release that carries the callback route before you apply the
+credentials. Terraform reads the frontend image from the service already running
+and never advances it, so credentials applied first turn the button on while the
+browser still lands on a 404 coming back from Google.
 
 These variables are distinct from `GOOGLE_MAIL_OAUTH_*`, which configures the
 Gmail document connector, not user sign-in.

@@ -97,8 +97,8 @@ describe('next security headers', () => {
   })
 
   // Google redirects the browser to <APP_BASE_URL>/api/v1/ee/auth/google/callback.
-  // The state cookie was set through the /backend proxy, so the callback must
-  // land on the same origin and reach the backend through the same proxy.
+  // The OAuth state cookie and the session cookie are both host-only, so the
+  // callback has to land on the dashboard origin and reach the backend from there.
   it('proxies the Google login callback path to the backend API', async () => {
     const routes = await getRewriteRoutes()
 

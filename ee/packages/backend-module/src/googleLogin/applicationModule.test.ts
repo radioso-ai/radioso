@@ -1,6 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { resolveGoogleLoginConfig, resolveGoogleLoginSuccessRedirect } from "./applicationModule.js";
+import type { ApplicationModuleRegistrationContext, ApplicationRouteMount } from "../radiosoModuleTypes.js";
+import {
+  createGoogleLoginApplicationModule,
+  resolveGoogleLoginConfig,
+  resolveGoogleLoginSuccessRedirect,
+} from "./applicationModule.js";
 
 describe("resolveGoogleLoginConfig", () => {
   it("returns null when credentials are missing", () => {
@@ -60,5 +65,71 @@ describe("resolveGoogleLoginSuccessRedirect", () => {
         processEnv: { GOOGLE_LOGIN_SUCCESS_REDIRECT: "https://app.example.com/dashboard" },
       }),
     ).toBe("https://app.example.com/dashboard");
+  });
+});
+
+describe("createGoogleLoginApplicationModule", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  // Mounts the module the way the host does at boot: register, then build the
+  // router with the dependencies OSS hands every route mount.
+  const mountRouter = (dependencies: { APP_BASE_URL?: string; info: () => void }) => {
+    let mount: ApplicationRouteMount | undefined;
+    createGoogleLoginApplicationModule().register?.({
+      registerRouteMount: (registered: ApplicationRouteMount) => {
+        mount = registered;
+      },
+    } as unknown as ApplicationModuleRegistrationContext);
+    if (!mount) {
+      throw new Error("Expected the module to register a route mount");
+    }
+    mount.createRouter({
+      env: { APP_BASE_URL: dependencies.APP_BASE_URL },
+      logger: { info: dependencies.info },
+      authService: { federatedLogin: vi.fn() },
+      auditService: { record: vi.fn() },
+      abuseControlService: { enforce: vi.fn() },
+    } as unknown as Parameters<ApplicationRouteMount["createRouter"]>[0]);
+  };
+
+  it("names the missing credentials at boot when the sign-in stays disabled", () => {
+    vi.stubEnv("GOOGLE_LOGIN_CLIENT_ID", "");
+    vi.stubEnv("GOOGLE_LOGIN_CLIENT_SECRET", "");
+    vi.stubEnv("GOOGLE_LOGIN_REDIRECT_URI", "");
+    const info = vi.fn();
+
+    mountRouter({ APP_BASE_URL: "https://app.example.com", info });
+
+    expect(info).toHaveBeenCalledWith(
+      expect.objectContaining({ missing: ["GOOGLE_LOGIN_CLIENT_ID", "GOOGLE_LOGIN_CLIENT_SECRET"] }),
+      expect.stringContaining("disabled"),
+    );
+  });
+
+  it("names the redirect inputs when no app base URL is configured", () => {
+    vi.stubEnv("GOOGLE_LOGIN_CLIENT_ID", "client");
+    vi.stubEnv("GOOGLE_LOGIN_CLIENT_SECRET", "secret");
+    vi.stubEnv("GOOGLE_LOGIN_REDIRECT_URI", "");
+    const info = vi.fn();
+
+    mountRouter({ info });
+
+    expect(info).toHaveBeenCalledWith(
+      expect.objectContaining({ missing: ["GOOGLE_LOGIN_REDIRECT_URI or APP_BASE_URL"] }),
+      expect.any(String),
+    );
+  });
+
+  it("stays quiet once the sign-in is configured", () => {
+    vi.stubEnv("GOOGLE_LOGIN_CLIENT_ID", "client");
+    vi.stubEnv("GOOGLE_LOGIN_CLIENT_SECRET", "secret");
+    vi.stubEnv("GOOGLE_LOGIN_REDIRECT_URI", "");
+    const info = vi.fn();
+
+    mountRouter({ APP_BASE_URL: "https://app.example.com", info });
+
+    expect(info).not.toHaveBeenCalled();
   });
 });

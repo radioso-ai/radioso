@@ -675,6 +675,40 @@ Related docs:
 
 - [MCP Client Setup](../mcp-client-setup.md)
 
+## Agent Discovery Documents
+
+Owns the three public documents a visiting agent reads before it connects: an
+A2A Agent Card, an MCP server card, and a catalog entry. Each renderer is a pure
+function of one `AgentPublicProfile` and carries the Zod schema that types it;
+the OpenAPI layer registers those schemas rather than restating them, so the
+published contract and the served document cannot drift. Tool descriptors arrive
+through the routines module's published port as a type, so the module renders
+what a descriptor says while routines, slots, and exposure rules stay behind it.
+
+`AgentPublicProfilePort.load` answers null for every reason a caller is not
+entitled to a document — unknown id, card switched off, agent unpublished, agent
+deleted — which is how all four end in the same 404. It throws when
+`PUBLIC_MCP_CONVERSE_URL` is unset, so a misconfigured deployment refuses to
+publish a card instead of naming an endpoint that does not answer. An agent's
+endpoint is that value plus `/a/{publicId}`, and the standalone MCP server
+proxies the server card one segment past it.
+
+Public surfaces and key files:
+
+- `backend/src/modules/agentDiscovery/routes.ts` (`GET /.well-known/agent-card/{publicId}.json`, `/mcp/server-card/`, `/ai-catalog/`)
+- `backend/src/modules/agentDiscovery/contracts/agentPublicProfile.ts` (`AgentPublicProfile`, `AgentPublicProfilePort`)
+- `backend/src/modules/agentDiscovery/domain/` (`renderA2aAgentCard`, `renderMcpServerCard`, `renderAiCatalog`, `discoveryDocumentUrls`)
+- `backend/src/app/composition/agentDiscovery.ts` (profile from the agent row, its published release, and `AgentToolCatalogPort`)
+- `packages/radioso-mcp-server/src/http/resolveMcpRoute.ts` and `agentServerCard.ts` (`GET /mcp/a/{publicId}/server-card`)
+- `packages/wordpress-companion/radioso-agent-card.php` (the site-level `.well-known` redirects)
+- `frontend/lib/radioso-embed-launcher.js` (`<link rel="agent-card">` during bootstrap)
+- `backend/tests/unit/agentDiscovery/`, `backend/tests/contract/agent-discovery.contract.test.ts`, `backend/tests/integration/agent-discovery.integration.test.ts`
+
+Related docs:
+
+- [MCP Client Setup](../mcp-client-setup.md)
+- `docs-portal/content/guides/agent-converse.mdx`
+
 ## Conversation Engine Contracts
 
 Owns product-independent conversation runtime contracts: agents, input events,

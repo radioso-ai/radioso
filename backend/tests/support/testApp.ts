@@ -1,4 +1,5 @@
 import { createAgentBundleServices } from "../../src/app/composition/agentBundleComposition.js";
+import { createAgentPublicProfileComposition } from "../../src/app/composition/agentDiscovery.js";
 import { createDefaultVisitorGeoResolver } from "../../src/app/composition/visitorGeoResolver.js";
 import { InMemoryAgentBundleImportRepository } from "./inMemoryAgentBundleImports.js";
 import { setTimeout as delay } from "node:timers/promises";
@@ -418,6 +419,8 @@ export const createTestEnv = (): Env => ({
   SLACK_OAUTH_CLIENT_SECRET: undefined,
   SLACK_SIGNING_SECRET: undefined,
   PUBLIC_CHAT_BASE_URL: "http://localhost:3000/chat",
+  PUBLIC_MCP_CONVERSE_URL: "https://mcp.radioso.test/mcp",
+  PUBLIC_AGENT_DOCS_URL: "https://docs.radioso.test/guides/agent-converse",
   RADIOSO_EDITION: "oss",
   RADIOSO_APPLICATION_MODULES: undefined,
 });
@@ -2352,6 +2355,21 @@ export const createTestDependencies = (overrides: {
     mcpConnectionRepository,
     externalSkillDefinitionRepository,
   });
+  // By default the same live definitions the test routine provider activates from, so
+  // the catalog a calling agent reads matches what a tool call can admit; a test may
+  // compose the production reader over the published-revision fixture instead.
+  const agentToolCatalog = overrides.agentToolCatalog?.({ agentRepository, agentRevisionReader: publishedAgentRevisions })
+    ?? createAgentToolCatalog({
+      agents: {
+        find: async ({ workspaceId, agentId }) => {
+          const agent = await agentRepository.findByIdAndWorkspaceId(agentId, workspaceId);
+          return agent ? { name: agent.name, description: null } : null;
+        },
+      },
+      publishedRoutines: {
+        listPublished: ({ agentId }) => routineDefinitionRepository.listActiveByAgent(agentId),
+      },
+    });
   const dependencies: AppDependencies = {
     env,
     agentBundleExportService: agentBundleServices.exportService,
@@ -2519,21 +2537,14 @@ export const createTestDependencies = (overrides: {
     }),
     chatBootstrapService,
     agentStarterPromptReader,
-    // By default the same live definitions the test routine provider activates from, so
-    // the catalog a calling agent reads matches what a tool call can admit; a test may
-    // compose the production reader over the published-revision fixture instead.
-    agentToolCatalog: overrides.agentToolCatalog?.({ agentRepository, agentRevisionReader: publishedAgentRevisions })
-      ?? createAgentToolCatalog({
-        agents: {
-          find: async ({ workspaceId, agentId }) => {
-            const agent = await agentRepository.findByIdAndWorkspaceId(agentId, workspaceId);
-            return agent ? { name: agent.name, description: null } : null;
-          },
-        },
-        publishedRoutines: {
-          listPublished: ({ agentId }) => routineDefinitionRepository.listActiveByAgent(agentId),
-        },
-      }),
+    agentToolCatalog,
+    agentPublicProfile: createAgentPublicProfileComposition({
+      agentRepository,
+      agentRevisionReader: publishedAgentRevisions,
+      agentToolCatalog,
+      mcpBaseUrl: env.PUBLIC_MCP_CONVERSE_URL,
+      documentationUrl: env.PUBLIC_AGENT_DOCS_URL,
+    }),
     chatHistoryService,
     assistantChatService,
     assistantHistoryService,

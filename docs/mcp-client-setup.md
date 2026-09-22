@@ -307,6 +307,24 @@ Standalone mode keeps a separate public surface. In Terraform-managed Cloud Run,
 
 MCP credentials are secret bearers bound to one agent. Public chat and website embed launch credentials are separate credential types and are not accepted by the converse MCP surface. Personal, service-account, and REST-audience agent credentials do not authorize MCP.
 
+## Discovery Documents
+
+An agent whose operator has published its card is described by three public documents on the API host, scoped to the agent's public id:
+
+```
+GET https://api.radioso.ai/.well-known/agent-card/{publicId}.json
+GET https://api.radioso.ai/.well-known/mcp/server-card/{publicId}.json
+GET https://api.radioso.ai/.well-known/ai-catalog/{publicId}.json
+```
+
+The agent card is an A2A Agent Card. It names the agent, the MCP endpoint to connect to, the security schemes that endpoint accepts, and one `skills[]` entry per exposed routine. The server card is the same agent in MCP's server document shape, with the endpoint under `remotes`; the standalone server also answers it one segment past the endpoint, at `GET /mcp/a/{publicId}/server-card`, which is the path an MCP client dereferences when it starts from an endpoint URL rather than a hostname. The catalog entry carries the agent, its endpoint, its authentication, and its tools in one object.
+
+A caller reads `security` on the agent card to learn what it must bring. An empty requirement object means the endpoint accepts a caller with no `Authorization` header; `{ "bearer": [] }` means an operator-minted credential is required. Both are listed when credential-free access is on.
+
+Every document is served with `Cache-Control: max-age=300` and an `ETag`; send `If-None-Match` to revalidate. A public id that is unknown, has its card switched off, belongs to an unpublished agent, or belongs to a deleted one answers `404` with an identical body.
+
+A deployment serves these documents once `PUBLIC_MCP_CONVERSE_URL` names the MCP endpoint, without the per-agent suffix — one agent's endpoint is that value plus `/a/{publicId}`. Until it is set, the card routes answer `500` rather than publish a card whose endpoint is missing or guessed. `PUBLIC_AGENT_DOCS_URL` is optional and adds the connect guide link.
+
 ## Endpoint Model
 
 The standalone `/mcp` endpoint serves the agent-converse surface. `ask_agent` runs the bound agent's turn loop, and each exposed routine is a tool that starts that routine directly. The original MCP credential fixes the agent and its authorization boundary; standalone performs the credential-to-session exchange and reads the agent's tool catalog at that moment.

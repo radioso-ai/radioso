@@ -30,6 +30,76 @@ Beside the switches an operator writes a **Description** — the line a calling 
 
 Rotating the public id revokes it: every agent connected without a credential is dropped on its next request, and anything published carrying the old id stops resolving. Clients holding a credential keep working.
 
+## Where an agent publishes itself
+
+An agent that has a public id publishes three documents, all public, all readable without a credential:
+
+```
+https://api.radioso.ai/.well-known/agent-card/ag_7Qb3nT1xK9wZs2Pv0Lm4Rd.json
+https://api.radioso.ai/.well-known/mcp/server-card/ag_7Qb3nT1xK9wZs2Pv0Lm4Rd.json
+https://api.radioso.ai/.well-known/ai-catalog/ag_7Qb3nT1xK9wZs2Pv0Lm4Rd.json
+```
+
+The first is an [A2A Agent Card](https://a2a-protocol.org): the agent's name, the operator's description, the MCP endpoint to connect to, how to authenticate, and one entry in `skills[]` per exposed routine, keyed by the tool name a caller invokes.
+
+```json
+{
+  "protocolVersion": "0.3.0",
+  "name": "Ananda support",
+  "description": "Answers questions about bookings, rooms, and retreats.",
+  "url": "https://mcp.radioso.ai/mcp/a/ag_7Qb3nT1xK9wZs2Pv0Lm4Rd",
+  "preferredTransport": "MCP",
+  "version": "7",
+  "documentationUrl": "https://docs.radioso.ai/guides/agent-converse",
+  "securitySchemes": { "bearer": { "type": "http", "scheme": "bearer" } },
+  "security": [{}, { "bearer": [] }],
+  "skills": [{ "id": "book_table", "name": "book_table", "description": "Book a table for a date and party size.", "tags": [] }]
+}
+```
+
+`security` is where a caller reads what it needs to bring. The empty requirement `{}` is there when credential-free access is on, and it means exactly that: connect with no `Authorization` header. With credential-free access off the list is `[{ "bearer": [] }]` alone, and the card is still worth publishing — "this agent exists, here is its endpoint, ask the operator for a credential" is useful to the agent reading it.
+
+The second document is the same agent in MCP's server shape, with the endpoint under `remotes`. An MCP client that already has the endpoint URL finds it one segment away, at `https://mcp.radioso.ai/mcp/a/ag_7Qb3nT1xK9wZs2Pv0Lm4Rd/server-card`, without knowing anything about Radioso's hostnames. The third is the catalog entry: the agent, its endpoint, how to authenticate, and its tools in one object, for an index that lists several agents.
+
+All three carry `Cache-Control: max-age=300` and an `ETag`, so a caller that sends `If-None-Match` gets a `304` and no body. An id that is unknown, switched off, unpublished, or deleted answers `404` with the same body in every case, so a fetch tells a stranger nothing beyond "no document here".
+
+### Point your own domain at them
+
+A visiting agent usually starts from a hostname — `acme.com` — not from a Radioso URL. Three paths on your own origin are where it looks, and your site answers them with a redirect to the documents above:
+
+| Path on your site | Redirects to |
+|---|---|
+| `/.well-known/agent-card.json` | `/.well-known/agent-card/{publicId}.json` |
+| `/.well-known/mcp/server-card.json` | `/.well-known/mcp/server-card/{publicId}.json` |
+| `/.well-known/ai-catalog.json` | `/.well-known/ai-catalog/{publicId}.json` |
+
+On WordPress the [Radioso Sync plugin](/operators/wordpress-connector) does it: paste the API URL and the public id under **Settings → Radioso Agent Card**, and the three paths start answering.
+
+On nginx:
+
+```nginx
+location = /.well-known/agent-card.json {
+    return 302 https://api.radioso.ai/.well-known/agent-card/ag_7Qb3nT1xK9wZs2Pv0Lm4Rd.json;
+}
+location = /.well-known/mcp/server-card.json {
+    return 302 https://api.radioso.ai/.well-known/mcp/server-card/ag_7Qb3nT1xK9wZs2Pv0Lm4Rd.json;
+}
+location = /.well-known/ai-catalog.json {
+    return 302 https://api.radioso.ai/.well-known/ai-catalog/ag_7Qb3nT1xK9wZs2Pv0Lm4Rd.json;
+}
+```
+
+On Cloudflare, three Bulk Redirects with the same source and target URLs and a 302 status do the same thing without touching your origin.
+
+If the website embed is installed, the launcher also adds a hint to the page during bootstrap, so an agent that reads the HTML finds the card without running the widget:
+
+```html
+<link rel="agent-card" type="application/json"
+      href="https://api.radioso.ai/.well-known/agent-card/ag_7Qb3nT1xK9wZs2Pv0Lm4Rd.json">
+```
+
+The `<link>` appears once the agent publishes a card. The `/.well-known` paths are the authoritative ones; the link is a convenience for whatever is already parsing the page.
+
 ## What `ask_agent` returns
 
 The tool's text content is the agent's answer followed by the reply envelope as JSON; its `structuredContent` is that **agent reply envelope** alone, so a calling model can act on the outcome instead of guessing from prose:

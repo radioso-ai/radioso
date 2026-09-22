@@ -3753,6 +3753,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/.well-known/agent-card/{publicId}.json": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read an agent's A2A Agent Card */
+        get: operations["getAgentCard"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/.well-known/mcp/server-card/{publicId}.json": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read an agent's MCP server card */
+        get: operations["getAgentMcpServerCard"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/.well-known/ai-catalog/{publicId}.json": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read an agent's catalog entry */
+        get: operations["getAgentAiCatalog"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/public/chat/{token}": {
         parameters: {
             query?: never;
@@ -7803,6 +7854,86 @@ export interface components {
             code: "routine_invocation_invalid";
             toolName: string;
             errors: components["schemas"]["RoutineInvocationError"][];
+        };
+        /** @description An A2A Agent Card for one agent: who it is, where its MCP endpoint is, how a caller authenticates, and one skill per exposed routine. */
+        A2aAgentCard: {
+            protocolVersion: string;
+            name: string;
+            description: string;
+            url: string;
+            preferredTransport: string;
+            version: string;
+            documentationUrl?: string;
+            capabilities: {
+                streaming: boolean;
+                pushNotifications: boolean;
+                stateTransitionHistory: boolean;
+            };
+            defaultInputModes: string[];
+            defaultOutputModes: string[];
+            securitySchemes: {
+                [key: string]: {
+                    /** @enum {string} */
+                    type: "http";
+                    scheme: string;
+                    description?: string;
+                };
+            };
+            security: {
+                [key: string]: string[];
+            }[];
+            skills: {
+                id: string;
+                name: string;
+                description: string;
+                tags: string[];
+                inputModes: string[];
+                outputModes: string[];
+            }[];
+        };
+        /** @description The MCP server card for one agent, in the published MCP server document shape. `$schema` is omitted until the server-card extension publishes one. */
+        McpServerCard: {
+            name: string;
+            description: string;
+            version: string;
+            websiteUrl?: string;
+            remotes: {
+                /** @enum {string} */
+                type: "streamable-http";
+                url: string;
+            }[];
+            _meta: {
+                "ai.radioso/agent": {
+                    title: string;
+                    publicId: string;
+                    /** @enum {string} */
+                    authentication: "none" | "bearer";
+                    tools: string[];
+                    publishedAt: string;
+                };
+            };
+        };
+        /** @description The catalog entry for one agent: the index a customer's own origin points at. */
+        AiCatalog: {
+            agents: {
+                publicId: string;
+                name: string;
+                description: string | null;
+                documentationUrl: string | null;
+                /** @enum {string} */
+                authentication: "none" | "bearer";
+                mcp: {
+                    url: string;
+                    /** @enum {string} */
+                    transport: "streamable-http";
+                    serverCardUrl: string;
+                };
+                tools: {
+                    name: string;
+                    description: string;
+                }[];
+                publishedAt: string;
+            }[];
         };
         ConnectorField: {
             key: string;
@@ -25459,6 +25590,147 @@ export interface operations {
                 };
             };
             /** @description MCP converse ask rate limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAgentCard: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                publicId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Public document served */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["A2aAgentCard"];
+                };
+            };
+            /** @description Document unchanged since the caller's ETag */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No public document for this id */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Discovery read rate limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAgentMcpServerCard: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                publicId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Public document served */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpServerCard"];
+                };
+            };
+            /** @description Document unchanged since the caller's ETag */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No public document for this id */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Discovery read rate limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAgentAiCatalog: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                publicId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Public document served */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiCatalog"];
+                };
+            };
+            /** @description Document unchanged since the caller's ETag */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No public document for this id */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Discovery read rate limit exceeded */
             429: {
                 headers: {
                     [name: string]: unknown;

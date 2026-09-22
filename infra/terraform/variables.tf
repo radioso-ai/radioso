@@ -553,6 +553,20 @@ variable "mcp_public_origin" {
   }
 }
 
+variable "public_agent_docs_url" {
+  description = "Optional public URL of the connect guide an agent discovery document points a calling agent at. Unset omits the link; the documents stay valid."
+  type        = string
+  default     = null
+
+  validation {
+    condition = (
+      var.public_agent_docs_url == null ||
+      can(regex("^https://[^?#]+$", var.public_agent_docs_url))
+    )
+    error_message = "public_agent_docs_url must be an HTTPS URL without a query or fragment."
+  }
+}
+
 variable "operator_mcp_credential_epoch" {
   description = "Externally monotonic Operator MCP credential/key generation. Increase this explicitly during rotation or restore; every enabled replica must use the same value."
   type        = string

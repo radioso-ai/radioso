@@ -41,11 +41,32 @@ describe("agent channel chat rate limiter", () => {
 
   it("spends the same two durable budgets for MCP ask using the session-bound grant", async () => {
     const { enforceBatch } = await run("mcp", {
-      mcpConversePrincipal: { grantId: "grant-mcp", workspaceId: "workspace-1", agentId: "agent-1" },
+      mcpConversePrincipal: {
+        origin: { kind: "grant", grantId: "grant-mcp", grantVersion: "v1" },
+        publicSessionId: "session-1",
+        workspaceId: "workspace-1",
+        agentId: "agent-1",
+      },
     });
 
     expect(enforceBatch).toHaveBeenCalledWith([
       expect.objectContaining({ scope: "agent.channel.chat.grant", subjectKey: "grant:grant-mcp" }),
+      expect.objectContaining({ scope: "agent.channel.chat.workspace", subjectKey: "workspace:workspace-1:global" }),
+    ]);
+  });
+
+  it("charges a walk-in turn to its own session, so a credential-free caller is still budgeted", async () => {
+    const { enforceBatch } = await run("mcp", {
+      mcpConversePrincipal: {
+        origin: { kind: "walk_in", publicId: "ag_0123456789abcdefghijkl" },
+        publicSessionId: "session-1",
+        workspaceId: "workspace-1",
+        agentId: "agent-1",
+      },
+    });
+
+    expect(enforceBatch).toHaveBeenCalledWith([
+      expect.objectContaining({ scope: "agent.channel.chat.grant", subjectKey: "walkin:session-1" }),
       expect.objectContaining({ scope: "agent.channel.chat.workspace", subjectKey: "workspace:workspace-1:global" }),
     ]);
   });

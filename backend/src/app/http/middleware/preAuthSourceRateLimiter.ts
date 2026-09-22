@@ -52,7 +52,7 @@ const verifiedMcpSourceDigest = (
   });
 };
 
-const resolvedPreAuthSourceDigest = (
+export const resolvedPreAuthSourceDigest = (
   req: Parameters<RequestHandler>[0],
   signingSecret?: string,
   trustedProxyHops = 0,

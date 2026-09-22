@@ -183,6 +183,13 @@ const envSchema = z.object({
   MCP_CONVERSE_SESSION_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
   MCP_CONVERSE_SESSION_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(60),
   MCP_CONVERSE_SESSION_TOKEN_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(10),
+  // Walk-in exchanges carry no credential, so the budget is what bounds them: per calling
+  // source, and per agent, because a new walk-in conversation spends the workspace's
+  // conversation allowance. An agent's own `walkInConversationsPerHour` overrides the
+  // per-agent default.
+  MCP_WALK_IN_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(3_600_000),
+  MCP_WALK_IN_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(20),
+  MCP_WALK_IN_AGENT_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(60),
   // A skill-invoked external MCP tool call can be a full remote turn (e.g. a
   // Radioso-to-Radioso `converse` call), not just a round trip — this bounds only
   // `callTool`, separate from the shorter connect/discovery timeout.

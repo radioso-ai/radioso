@@ -24,8 +24,7 @@ const chatResponse = (): ChatResponse => ({
 const principal: AgentConversePrincipal = {
   workspaceId: "workspace-1",
   agentId: "agent-1",
-  grantId: "grant-1",
-  grantVersion: "grant-version-1",
+  origin: { kind: "grant", grantId: "grant-1", grantVersion: "grant-version-1" },
   publicSessionId: "session-1",
   sourceChannel: "mcp",
   sourceOrigin: null,

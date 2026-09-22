@@ -15,12 +15,19 @@ const signedIdentityPayloadSchema = z.object({
 
 export type SignedVisitorIdentityPayload = z.infer<typeof signedIdentityPayloadSchema>;
 
-export interface VerifySignedIdentityInput {
+interface VerifySignedIdentityInput {
   token: string;
   workspaceId: string;
   agentId: string;
   boundSessionId: string;
-  boundOrigin: string;
+  /**
+   * The origin the token must have been minted for. A browser-hosted caller always has
+   * one; an MCP converse session has no client-facing bootstrap and therefore no origin,
+   * so it supplies none and the session binding, issuance window, and single-use nonce
+   * carry the verification on their own. `origin` stays required on the payload as a
+   * recorded, untrusted caller-declared value.
+   */
+  boundOrigin?: string | null;
   now: number;
   secrets: string[];
   acceptanceWindowMs?: number;
@@ -28,7 +35,7 @@ export interface VerifySignedIdentityInput {
   markNonceUsed: (nonce: string, expiresAt: number) => Promise<void>;
 }
 
-export interface VerifiedVisitorIdentity {
+interface VerifiedVisitorIdentity {
   customerId: string;
   attributes: Record<string, unknown>;
 }
@@ -108,7 +115,10 @@ export const verifySignedIdentity = async (
     if (Math.abs(input.now - payload.issuedAt) > acceptanceWindowMs) {
       return null;
     }
-    if (payload.sessionId !== input.boundSessionId || payload.origin !== input.boundOrigin) {
+    if (payload.sessionId !== input.boundSessionId) {
+      return null;
+    }
+    if (input.boundOrigin != null && payload.origin !== input.boundOrigin) {
       return null;
     }
     if (await input.isNonceUsed(payload.nonce)) {

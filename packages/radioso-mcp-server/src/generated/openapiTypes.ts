@@ -3688,7 +3688,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Exchange an MCP converse launch token for a signed session */
+        /**
+         * Exchange a launch token or an agent's public id for a signed converse session
+         * @description Send exactly one of `launchToken` or `publicId`. A `launchToken` is the credential an operator minted for this agent. A `publicId` is the agent's public identifier and carries no secret: it works only while the agent accepts walk-in connections, and it opens a fresh conversation each time. Rotating the public id or closing walk-in access refuses the next request on every session issued against it.
+         */
         post: operations["createMcpConverseSession"];
         delete?: never;
         options?: never;
@@ -3744,7 +3747,7 @@ export interface paths {
         put?: never;
         /**
          * Run one turn through the bound agent: a message, or a tool call to an exposed routine
-         * @description Send exactly one of `message` or `routine`. A `routine` call is validated against the tool's `inputSchema` from the catalog before any turn state is written: an unknown tool returns 404 with `details.code` `routine_tool_unknown`; invalid input returns 400 whose `details` is `RoutineInvocationInvalidDetails` (`code` `routine_invocation_invalid`, field-level `errors`).
+         * @description Send exactly one of `message` or `routine`. An optional `signedIdentity` is the same HMAC visitor token the website embed sends, bound to this session's `conversationId` rather than a browser origin; one that does not verify leaves the turn anonymous. A `routine` call is validated against the tool's `inputSchema` from the catalog before any turn state is written: an unknown tool returns 404 with `details.code` `routine_tool_unknown`; invalid input returns 400 whose `details` is `RoutineInvocationInvalidDetails` (`code` `routine_invocation_invalid`, field-level `errors`).
          */
         post: operations["askMcpConverseAgent"];
         delete?: never;
@@ -25343,7 +25346,8 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    launchToken: string;
+                    launchToken?: string;
+                    publicId?: string;
                     client?: {
                         name?: string;
                         version?: string;
@@ -25382,7 +25386,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Grant channel or bound agent is not allowed */
+            /** @description Grant channel or bound agent is not allowed, or the agent does not accept walk-in connections */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -25529,6 +25533,7 @@ export interface operations {
                             [key: string]: unknown;
                         };
                     };
+                    signedIdentity?: string;
                     /** @enum {boolean} */
                     stream?: false;
                 };

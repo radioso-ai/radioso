@@ -10,9 +10,8 @@ import type { AppDependencies } from "../../src/app/server/types.js";
 const principal = {
   workspaceId: "workspace-1",
   agentId: "agent-1",
-  grantId: "grant-mcp",
+  origin: { kind: "grant", grantId: "grant-mcp", grantVersion: "version-1" },
   publicSessionId: "session-1",
-  grantVersion: "version-1",
   sourceChannel: "mcp",
   sourceOrigin: null,
   authPrincipal: {
@@ -33,6 +32,9 @@ const createDependencies = (overrides: Partial<AppDependencies> = {}): AppDepend
     MCP_CONVERSE_SESSION_RATE_LIMIT_WINDOW_MS: 60_000,
     MCP_CONVERSE_SESSION_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: 60,
     MCP_CONVERSE_SESSION_TOKEN_RATE_LIMIT_MAX_ATTEMPTS: 10,
+    MCP_WALK_IN_RATE_LIMIT_WINDOW_MS: 3_600_000,
+    MCP_WALK_IN_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: 20,
+    MCP_WALK_IN_AGENT_RATE_LIMIT_MAX_ATTEMPTS: 60,
     RADIOSO_MCP_SIGNING_SECRET: "0123456789abcdef0123456789abcdef",
     RADIOSO_TRUSTED_PROXY_HOPS: 0,
   },
@@ -54,8 +56,7 @@ const createApp = (dependencies = createDependencies()) => {
       workspaceId: "workspace-1",
       agentId: "agent-1",
       publicSessionId: "public-session-1",
-      grantId: "grant-mcp",
-      grantVersion: "version-1",
+      origin: { kind: "grant", grantId: "grant-mcp", grantVersion: "version-1" },
       sourceChannel: "mcp",
       sourceOrigin: null,
       authPrincipal: principal.authPrincipal,
@@ -65,12 +66,14 @@ const createApp = (dependencies = createDependencies()) => {
     permissions: vi.fn().mockReturnValue([]),
   };
   const converseService = { askAgent: vi.fn().mockResolvedValue({ answer: "Hello" }) };
+  const walkInObserver = { record: vi.fn() };
   const app = express();
   app.use(express.json());
   app.use("/api/v1/mcp/converse", createMcpConverseRoutes(dependencies, {
     audit: {} as never,
     sessionService: sessionService,
     converseService: converseService as never,
+    walkInObserver,
   }));
   app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     res.status((error as { statusCode?: number }).statusCode ?? 500).json({ code: (error as { code?: string }).code });

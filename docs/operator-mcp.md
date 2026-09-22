@@ -10,6 +10,8 @@ Operator MCP lets a signed-in workspace member inspect and author an agent from 
 
 This is separate from an agent's **Channels → MCP** connection. The agent connection exposes `ask_agent` for one configured agent. Operator MCP exposes a small set of Ray tools for the person who completed OAuth consent.
 
+Operator MCP always identifies a person. Its `/operator/mcp` resource requires browser consent and a grant tied to a workspace member, so the credential-free connection an operator can open on an agent (see [MCP Client Setup](./mcp-client-setup.md)) reaches `ask_agent` on that one agent and never reaches this surface. An agent's public id authorizes a conversation; it authorizes no read, probe, or proposal here.
+
 ## Connect from the dashboard
 
 1. Open **Settings → API access** and find **Operator MCP**.

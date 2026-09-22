@@ -100,6 +100,65 @@ If the website embed is installed, the launcher also adds a hint to the page dur
 
 The `<link>` appears once the agent publishes a card. The `/.well-known` paths are the authoritative ones; the link is a convenience for whatever is already parsing the page.
 
+## Connect without a credential
+
+**Allow connecting without a credential**, on the same **Channels → MCP** card, opens the agent's own endpoint to a caller that brings nothing:
+
+```
+https://mcp.radioso.ai/mcp/a/ag_7Qb3nT1xK9wZs2Pv0Lm4Rd
+```
+
+That is the `url` the agent card already publishes. A client points at it, sends no `Authorization` header, and gets the same session a credential buys: `ask_agent`, the documentation tools, and one tool per exposed routine.
+
+```json
+{
+  "mcpServers": {
+    "ananda-support": {
+      "url": "https://mcp.radioso.ai/mcp/a/ag_7Qb3nT1xK9wZs2Pv0Lm4Rd"
+    }
+  }
+}
+```
+
+Each connection opens its own conversation. The server names it in the `Mcp-Session-Id` header of the first reply, and a client that sends that header back continues the same conversation; one that drops it starts a fresh conversation on every call, which is fine for a single question and wrong for a booking.
+
+The shared `/mcp` endpoint is unaffected — it takes a credential and reaches whichever agent that credential is bound to.
+
+### What the public id does and does not carry
+
+The public id is an address. Publishing it costs you nothing beyond what the agent card already says out loud: this agent exists, here is its endpoint, here is what it can do.
+
+What it authorizes is one thing: a conversation with that one agent, through the same turn loop, persona, directives, routines, and retrieval scope every other channel runs. It reaches no other agent, no workspace settings, no documents, no Ray, and no connector or provider secret. It is also not the embed token — that one is a secret in page HTML, on its own rotation schedule.
+
+Rotating the id, or switching walk-in access off, refuses the **next** request on every connection opened against it. A caller mid-conversation gets a refusal on its following message rather than finishing the flow; that is the intended shape of a revocation, and it is why the two switches are the control to reach for when a caller misbehaves. Credential-bound clients are untouched by either.
+
+### The budget
+
+Walk-in traffic is spent against two hourly budgets before anything about the agent is resolved:
+
+| Budget | Default | Where it is set |
+|---|---|---|
+| New conversations per calling source | 20 an hour | `MCP_WALK_IN_SOURCE_RATE_LIMIT_MAX_ATTEMPTS` |
+| New conversations per agent | 60 an hour | **Channels → MCP**, or `MCP_WALK_IN_AGENT_RATE_LIMIT_MAX_ATTEMPTS` |
+
+The per-agent budget is the one that matters in practice: it is what stops a single looping caller from consuming the workspace's conversation allowance. Set it to the traffic you actually expect.
+
+A caller over either budget gets `429` with `Retry-After` and the `RateLimit-*` headers from [draft-ietf-httpapi-ratelimit-headers](https://datatracker.ietf.org/doc/draft-ietf-httpapi-ratelimit-headers/) — the signal to wait and retry, not to reconnect. Turns inside an open conversation are budgeted separately, per session and per workspace, exactly as they are for a credential-bound client.
+
+A refusal reads the same whether the agent has walk-in switched off, the public id has rotated, or no agent has that id. A caller probing for agents learns nothing from the difference.
+
+Walk-in conversations count on the workspace's conversation quota like conversations from any other channel. There is no separate allowance for agent callers; the per-agent budget above is the protection against a runaway one.
+
+### Identify the visitor behind the caller
+
+A caller that already knows who its user is can say so, with the same HMAC visitor token the website embed uses. Sign it with the workspace token secret, bind `sessionId` to the `conversationId` the exchange returned, and send it beside the message:
+
+```json
+{ "message": "Where is my order?", "signedIdentity": "eyJjdXN0b21lcklkIjoi…" }
+```
+
+The turn becomes a verified turn: `verifiedCustomerId` is set on the conversation and the operator sees the visitor's identity in Activity, exactly as for the embed. An MCP session has no browser origin, so the session binding, the five-minute issuance window, and the single-use nonce are what the verification rests on; the token's `origin` field is recorded as the caller declared it and trusted for nothing. A token that does not match leaves the turn anonymous and answers normally, with no error.
+
 ## What `ask_agent` returns
 
 The tool's text content is the agent's answer followed by the reply envelope as JSON; its `structuredContent` is that **agent reply envelope** alone, so a calling model can act on the outcome instead of guessing from prose:

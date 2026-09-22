@@ -16,8 +16,20 @@ const mcpConverseClientSchema = z.object({
 }).optional();
 
 export const mcpConverseSessionRequestSchema = z.object({
-  launchToken: z.string().min(1).max(2048).refine((value) => !controlCharacter.test(value)),
+  launchToken: z.string().min(1).max(2048).refine((value) => !controlCharacter.test(value)).optional(),
+  /** An agent's public id, for an agent that accepts walk-in connections. Carries no secret. */
+  publicId: z.string().min(1).max(128).regex(/^[A-Za-z0-9_-]+$/u).optional(),
   client: mcpConverseClientSchema,
+}).superRefine((value, ctx) => {
+  // An object with a refine, not a union: a union would silently match the first
+  // branch when both keys are present.
+  if (Boolean(value.launchToken) === Boolean(value.publicId)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "exactly one of launchToken or publicId is required",
+      path: [value.publicId ? "publicId" : "launchToken"],
+    });
+  }
 });
 
 export const mcpConverseSessionValidateRequestSchema = z.object({
@@ -27,6 +39,11 @@ export const mcpConverseSessionValidateRequestSchema = z.object({
 export const mcpConverseAskRequestSchema = z.object({
   message: z.string().trim().min(1).optional(),
   routine: routineInvocationRequestSchema.optional(),
+  /**
+   * The same HMAC visitor token the website embed sends, bound to this session's
+   * `conversationId` instead of a browser origin.
+   */
+  signedIdentity: z.string().max(8192).optional(),
   stream: z.literal(false).optional(),
 }).superRefine((value, ctx) => {
   // An object with a refine, not a union: a union would silently match the first

@@ -567,6 +567,24 @@ variable "public_agent_docs_url" {
   }
 }
 
+variable "mcp_walk_in_source_rate_limit_max_attempts" {
+  description = "Walk-in converse exchanges one calling source may make per window. Walk-in carries no credential, so this budget is what bounds an anonymous caller."
+  type        = number
+  default     = 20
+}
+
+variable "mcp_walk_in_agent_rate_limit_max_attempts" {
+  description = "Default walk-in conversations one agent accepts per window, before an agent's own walkInConversationsPerHour override. Stops one looping caller from spending a workspace's conversation allowance."
+  type        = number
+  default     = 60
+}
+
+variable "mcp_walk_in_rate_limit_window_ms" {
+  description = "Window both walk-in budgets are measured over, in milliseconds."
+  type        = number
+  default     = 3600000
+}
+
 variable "operator_mcp_credential_epoch" {
   description = "Externally monotonic Operator MCP credential/key generation. Increase this explicitly during rotation or restore; every enabled replica must use the same value."
   type        = string

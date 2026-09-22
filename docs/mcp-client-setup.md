@@ -325,6 +325,34 @@ Every document is served with `Cache-Control: max-age=300` and an `ETag`; send `
 
 A deployment serves these documents once `PUBLIC_MCP_CONVERSE_URL` names the MCP endpoint, without the per-agent suffix — one agent's endpoint is that value plus `/a/{publicId}`. Until it is set, the card routes answer `500` rather than publish a card whose endpoint is missing or guessed. `PUBLIC_AGENT_DOCS_URL` is optional and adds the connect guide link.
 
+## Connect Without a Credential
+
+An operator who turns on **Allow AI agents to connect without a credential** on the agent's **Channels → MCP** card opens a second door: the agent's own endpoint, one segment past the shared one.
+
+```
+https://mcp.radioso.ai/mcp/a/{publicId}
+```
+
+Point an MCP client at that URL and send no `Authorization` header. The server exchanges a session for you on the first request and answers `tools/list` and `tools/call` exactly as it does for a credential-bound client — `ask_agent` plus one tool per exposed routine.
+
+```json
+{
+  "mcpServers": {
+    "radioso-returns-desk": {
+      "url": "https://mcp.radioso.ai/mcp/a/ag_S7Qw2ZmKp1Rr4Yt8Nv6Lbc"
+    }
+  }
+}
+```
+
+Each connection gets its own conversation. The server names it in the `Mcp-Session-Id` response header on the first reply; a client that echoes that header on later requests continues the same conversation, and one that drops it starts a new one each call. Most MCP clients handle this for you.
+
+The public id is a routing key, not a secret — it appears in the agent card, in the embed's page markup, and in whatever config the caller saves. It grants exactly what the operator has published: a conversation with that one agent. Rotating it from the dashboard, or turning walk-in access off, refuses the next request on every connection opened against it.
+
+Walk-in traffic is budgeted twice: per calling source, and per agent. The per-agent budget defaults to 60 new conversations an hour and is adjustable on the same card. A caller over either budget gets `429` with `Retry-After` and the `RateLimit-*` headers, which is the signal to back off and retry rather than reconnect. Walk-in conversations are metered on the workspace's conversation quota like every other channel.
+
+The shared `/mcp` endpoint is unchanged and still requires an MCP credential.
+
 ## Endpoint Model
 
 The standalone `/mcp` endpoint serves the agent-converse surface. `ask_agent` runs the bound agent's turn loop, and each exposed routine is a tool that starts that routine directly. The original MCP credential fixes the agent and its authorization boundary; standalone performs the credential-to-session exchange and reads the agent's tool catalog at that moment.

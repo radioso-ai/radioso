@@ -14,6 +14,7 @@ import type {
   UsageLimitReservation,
 } from "../radiosoModuleTypes.js";
 import { UsageLimitAccountNotFoundError, UsageLimitExceededError } from "./errors.js";
+import { currentPeriodStart, nextPeriodStart } from "./period.js";
 
 export interface UsageLimitProfile {
   key: string;
@@ -137,17 +138,6 @@ const DOCUMENT_RESERVATION_TTL_MS = 10 * 60 * 1000;
 const STORAGE_RESERVATION_TTL_MS = 10 * 60 * 1000;
 
 const toIsoDate = (date: Date): string => date.toISOString().slice(0, 10);
-
-/** The UTC month the meters are scoped to. Exported so every surface that reports
- *  a counter reads the same period the charge was written under. */
-export const currentPeriodStart = (date = new Date()): string =>
-  `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-01`;
-
-const nextPeriodStart = (periodStart: string): string => {
-  const [year, month] = periodStart.split("-").map((part) => Number(part));
-  const date = new Date(Date.UTC(year, month, 1));
-  return date.toISOString();
-};
 
 const toNullableNumber = (value: unknown): number | null => {
   if (value === null || value === undefined) {

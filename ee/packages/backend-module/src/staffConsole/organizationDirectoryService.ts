@@ -2,7 +2,8 @@ import { sql } from "kysely";
 
 import { createEeKysely, type EeDb } from "../db/eeSchema.js";
 import type { UsageLimitDatabasePort } from "../radiosoModuleTypes.js";
-import { TENTHS_PER_CONVERSATION, currentPeriodStart } from "../usageLimits/usageLimitService.js";
+import { currentPeriodStart } from "../usageLimits/period.js";
+import { TENTHS_PER_CONVERSATION } from "../usageLimits/usageLimitService.js";
 
 export interface OrganizationDirectoryRow {
   accountId: string;
@@ -17,7 +18,8 @@ export interface OrganizationDirectoryRow {
   };
   /** Present when the assigned profile meters conversations, in which case
    *  `monthlyAnswers` is dormant and the headline meter is this one. Values are
-   *  conversations to one decimal, because ten test runs are one. */
+   *  conversations to one decimal: the counter is kept in tenths so the catalog's
+   *  fractional per-surface weights stay integer math. */
   monthlyConversations: {
     used: number;
     limit: number;

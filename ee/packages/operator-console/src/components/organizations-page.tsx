@@ -8,7 +8,7 @@ import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 
 import { staffAuthApi, type OrganizationDirectoryPage } from "../lib/staff-auth-api";
-import { directoryMeterText } from "../lib/meter-text";
+import { directoryMeterText, formatMeterNumber } from "../lib/meter-text";
 import { EmptyState, ErrorBanner, StaffLayout } from "./staff-layout";
 
 export function OrganizationsPage() {
@@ -105,7 +105,7 @@ export function OrganizationsPage() {
       {page ? (
         <div className="mt-4">
           <DashboardPagination
-            summary={`${page.pageInfo.total.toLocaleString()} organization${page.pageInfo.total === 1 ? "" : "s"}`}
+            summary={`${formatMeterNumber(page.pageInfo.total)} organization${page.pageInfo.total === 1 ? "" : "s"}`}
             currentPage={Math.floor(page.pageInfo.offset / page.pageInfo.limit) + 1}
             totalPages={Math.max(1, Math.ceil(page.pageInfo.total / page.pageInfo.limit))}
             previousHref="#"

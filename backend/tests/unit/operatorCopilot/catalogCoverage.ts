@@ -293,6 +293,7 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "rotateAnonymousChatToken",
     "rotateWebsiteEmbedToken",
     "rotateAgentChannelCredential",
+    "rotateAgentPublicId",
   ], neverListExclusion("secret_rotation")),
   ...coverage([
     "setWorkspaceProviderCredential",

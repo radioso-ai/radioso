@@ -16,6 +16,20 @@ The dashboard credential is bound to one agent and the MCP audience. Send its or
 
 The converse surface provides **`ask_agent`**, which sends a message through the agent's full turn loop and continues its conversation. Retrieval can participate in that turn when the agent's configuration calls for it. Direct document search and grounded-answer generation remain REST API workflows.
 
+## The agent's public id
+
+A credential names a client you approved. An agent's **public id** names the agent itself, and it is the one identifier you can hand out freely:
+
+```
+ag_7Qb3nT1xK9wZs2Pv0Lm4Rd
+```
+
+An operator mints it from **Channels → MCP** by turning on **Publish the agent card** or **Allow connecting without a credential**. The id is an address, not a secret — it belongs in a page, a card, or an email, and it authorizes nothing on its own. What it is *not* is the embed token: that one is a secret, it sits in the page HTML of every site running the widget, and it is rotated on its own schedule. Keeping them separate is what lets you publish one and protect the other.
+
+Beside the switches an operator writes a **Description** — the line a calling agent reads before deciding to ask — and, for credential-free access, a per-hour cap on new conversations.
+
+Rotating the public id revokes it: every agent connected without a credential is dropped on its next request, and anything published carrying the old id stops resolving. Clients holding a credential keep working.
+
 ## What `ask_agent` returns
 
 The tool's text content is the agent's answer followed by the reply envelope as JSON; its `structuredContent` is that **agent reply envelope** alone, so a calling model can act on the outcome instead of guessing from prose:

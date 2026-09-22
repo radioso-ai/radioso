@@ -1374,6 +1374,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agents/{agentId}/public-id/rotate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rotate the agent's public id
+         * @description Replaces the identifier callers reach this agent by. Every agent connected without a credential is dropped on its next request. The agent must already have a public id, which publishing its agent card mints.
+         */
+        post: operations["rotateAgentPublicId"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agents/{agentId}/directives": {
         parameters: {
             query?: never;
@@ -4706,6 +4726,15 @@ export interface components {
             assistantDefaultLocale: string | null;
             proactiveGreetingEnabled: boolean;
             assistantBootstrapActive: boolean;
+            /** @description Identifier other agents address this agent by. Null until the agent card is published; rotate it to drop every connected caller. */
+            publicId: string | null;
+            /** @description Operator-authored sentence the agent's public cards carry. */
+            publicDescription: string;
+            agentCardEnabled: boolean;
+            /** @description Whether a calling agent may connect with the public id and no credential. Requires agentCardEnabled. */
+            publicAgentAccessEnabled: boolean;
+            /** @description Per-agent walk-in conversation budget. Null leaves the deployment default in charge. */
+            walkInConversationsPerHour: number | null;
             chatModelOverride: {
                 /** @enum {string} */
                 provider: "openai" | "openai-compatible" | "gemini" | "claude";
@@ -4752,6 +4781,10 @@ export interface components {
             greetingInstruction?: string;
             assistantDefaultLocale?: string | null;
             proactiveGreetingEnabled?: boolean;
+            publicDescription?: string;
+            agentCardEnabled?: boolean;
+            publicAgentAccessEnabled?: boolean;
+            walkInConversationsPerHour?: number | null;
             chatModelOverride?: null | {
                 /** @enum {string} */
                 provider: "openai" | "openai-compatible" | "gemini" | "claude";
@@ -14634,6 +14667,55 @@ export interface operations {
                 };
             };
             /** @description Agent or channel credential not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    rotateAgentPublicId: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Agent with its replacement public id */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationAgent"];
+                };
+            };
+            /** @description The agent has no public id to rotate */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
             404: {
                 headers: {
                     [name: string]: unknown;

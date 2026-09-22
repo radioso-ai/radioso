@@ -850,6 +850,11 @@ CREATE TABLE public.agents (
     skill_settings jsonb DEFAULT '{}'::jsonb NOT NULL,
     internal_name text DEFAULT ''::text NOT NULL,
     published_revision_id uuid,
+    public_id text,
+    public_description text DEFAULT ''::text NOT NULL,
+    agent_card_enabled boolean DEFAULT false NOT NULL,
+    public_agent_access_enabled boolean DEFAULT false NOT NULL,
+    walk_in_conversations_per_hour integer,
     CONSTRAINT agents_chat_override_pair CHECK ((((chat_provider IS NULL) AND (chat_model IS NULL)) OR ((chat_provider IS NOT NULL) AND (chat_model IS NOT NULL)))),
     CONSTRAINT agents_chat_provider_check CHECK (((chat_provider IS NULL) OR (chat_provider = ANY (ARRAY['openai'::text, 'openai-compatible'::text, 'gemini'::text, 'claude'::text])))),
     CONSTRAINT agents_source_scope_mode_check CHECK ((source_scope_mode = ANY (ARRAY['all'::text, 'selected'::text])))
@@ -5743,6 +5748,13 @@ CREATE UNIQUE INDEX agent_skills_one_default_answer ON public.agent_skills USING
 --
 
 CREATE UNIQUE INDEX agent_test_executions_idempotency_key_key ON public.agent_test_executions USING btree (workspace_id, agent_id, idempotency_key);
+
+
+--
+-- Name: agents_public_id_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX agents_public_id_key ON public.agents USING btree (public_id) WHERE (public_id IS NOT NULL);
 
 
 --

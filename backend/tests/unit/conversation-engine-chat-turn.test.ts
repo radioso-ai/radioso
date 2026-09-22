@@ -56,6 +56,7 @@ import {
   runWithModelCallTrace,
 } from "../../src/shared/observability/tracing/modelCallTraceContext.js";
 import { buildTurnTraceEnvelope } from "../../src/modules/chat/services/turnTraceEnvelope.js";
+import { unpublishedAgentPublicIdentity } from "../../src/modules/agents/public.js";
 
 const conversation = (): ConversationRecord => ({
   id: "conv_1",
@@ -86,6 +87,7 @@ const message = (overrides: Partial<MessageRecord> = {}): MessageRecord => ({
 });
 
 const agent = (): AgentRecord => ({
+  ...unpublishedAgentPublicIdentity(),
   id: "agent_1",
   workspaceId: "workspace_1",
   name: "Support",

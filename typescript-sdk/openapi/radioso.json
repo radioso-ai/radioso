@@ -3390,6 +3390,31 @@
               "assistantBootstrapActive": {
                 "type": "boolean"
               },
+              "publicId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Identifier other agents address this agent by. Null until the agent card is published; rotate it to drop every connected caller."
+              },
+              "publicDescription": {
+                "type": "string",
+                "description": "Operator-authored sentence the agent's public cards carry."
+              },
+              "agentCardEnabled": {
+                "type": "boolean"
+              },
+              "publicAgentAccessEnabled": {
+                "type": "boolean",
+                "description": "Whether a calling agent may connect with the public id and no credential. Requires agentCardEnabled."
+              },
+              "walkInConversationsPerHour": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "description": "Per-agent walk-in conversation budget. Null leaves the deployment default in charge."
+              },
               "chatModelOverride": {
                 "type": [
                   "object",
@@ -3441,6 +3466,11 @@
               "assistantDefaultLocale",
               "proactiveGreetingEnabled",
               "assistantBootstrapActive",
+              "publicId",
+              "publicDescription",
+              "agentCardEnabled",
+              "publicAgentAccessEnabled",
+              "walkInConversationsPerHour",
               "chatModelOverride",
               "skillSettings",
               "surfaceSettings"
@@ -3587,6 +3617,24 @@
           },
           "proactiveGreetingEnabled": {
             "type": "boolean"
+          },
+          "publicDescription": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "agentCardEnabled": {
+            "type": "boolean"
+          },
+          "publicAgentAccessEnabled": {
+            "type": "boolean"
+          },
+          "walkInConversationsPerHour": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1,
+            "maximum": 100000
           },
           "chatModelOverride": {
             "anyOf": [
@@ -32050,6 +32098,74 @@
           },
           "404": {
             "description": "Agent or channel credential not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agents/{agentId}/public-id/rotate": {
+      "post": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Rotate the agent's public id",
+        "description": "Replaces the identifier callers reach this agent by. Every agent connected without a credential is dropped on its next request. The agent must already have a public id, which publishing its agent card mints.",
+        "operationId": "rotateAgentPublicId",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Agent with its replacement public id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationAgent"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The agent has no public id to rotate",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent not found",
             "content": {
               "application/json": {
                 "schema": {

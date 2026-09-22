@@ -7,6 +7,7 @@ import { AgentChannelCredentialList } from '@/components/dashboard/settings/agen
 import { CredentialIssuedDialog } from '@/components/dashboard/settings/credential-dialogs'
 import { McpConnectClientDialog } from '@/components/dashboard/settings/mcp-connect-client-dialog'
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
+import { WalkInAccessSection } from '@/components/dashboard/settings/walk-in-access-section'
 import { CodeSnippet } from '@/components/shared/api-snippets'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -21,9 +22,9 @@ const MCP_GUIDE_URL = `${DOCS_URL}/guides/mcp-server`
 
 const CARD_DESCRIPTION = 'This agent as a chat tool for MCP clients.'
 
-export type McpChannelSetupMode = 'disabled' | 'enabled' | 'failed' | 'resolving'
+type McpChannelSetupMode = 'disabled' | 'enabled' | 'failed' | 'resolving'
 
-export interface McpChannelSetup {
+interface McpChannelSetup {
   mcpUrl: string
   mode: McpChannelSetupMode
   retry?: () => void
@@ -59,7 +60,7 @@ export const resolveMcpChannelSetup = ({
   return { mcpUrl: resolvedUrl.toString(), mode: 'enabled' }
 }
 
-export const useMcpChannelSetup = (): McpChannelSetup => {
+const useMcpChannelSetup = (): McpChannelSetup => {
   const dashboardOrigin = useDashboardOrigin()
   const runtimeConfig = useRuntimeConfig()
   // Runtime config is authoritative for MCP availability. Keep destructive one-time-secret
@@ -150,6 +151,8 @@ function McpConnectedClients({ agentId, mcpUrl }: { agentId: string; mcpUrl: str
         onRevoke={engine.revoke}
         onRotate={rotate}
       />
+
+      <WalkInAccessSection agentId={agentId} />
 
       <div className="flex justify-end">
         <McpGuideLink>MCP setup guide</McpGuideLink>

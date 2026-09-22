@@ -4,7 +4,6 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Spinner } from '@/components/ui/spinner'
 import { authApi, seedWorkspaceSession } from '@/lib/api'
 import { useOptionalAuth } from '@/lib/auth-context'
 
@@ -117,10 +116,9 @@ export function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
           type="button"
           className="w-full"
           variant="outline"
-          disabled={isResendingVerification}
+          loading={isResendingVerification}
           onClick={handleResendVerification}
         >
-          {isResendingVerification ? <Spinner className="mr-2" /> : null}
           Resend verification email
         </Button>
         <Button type="button" className="w-full" onClick={onSwitchToLogin}>
@@ -186,8 +184,7 @@ export function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
       {message && (
         <p className="text-sm text-muted-foreground">{message}</p>
       )}
-      <Button type="submit" className="w-full" disabled={isLoading}>
-        {isLoading ? <Spinner className="mr-2" /> : null}
+      <Button type="submit" className="w-full" loading={isLoading}>
         Create account
       </Button>
       <p className="text-center text-sm text-muted-foreground">

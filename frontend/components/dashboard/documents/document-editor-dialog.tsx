@@ -10,16 +10,16 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { LogoSpinner, Spinner } from '@/components/ui/spinner'
+import { LogoSpinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
 import type { DocumentDialogEnrichmentChoice } from './document-import-dialog'
 
 type EditorMode = 'create' | 'edit' | 'view'
 
 /** Fields the plain-text inputs write. Metadata has its own typed channel. */
-export type DocumentEditorTextField = 'title' | 'content'
+type DocumentEditorTextField = 'title' | 'content'
 
-export type DocumentEditorValues = {
+type DocumentEditorValues = {
   title: string
   content: string
   metadata: MetadataRecord
@@ -166,9 +166,9 @@ export function DocumentEditorDialog({
               {isReadOnly ? null : (
                 <Button
                   type="submit"
-                  disabled={isSaving || !values.title.trim() || !values.content.trim() || Boolean(metadataError)}
+                  disabled={!values.title.trim() || !values.content.trim() || Boolean(metadataError)}
+                  loading={isSaving}
                 >
-                  {isSaving ? <Spinner className="mr-2" /> : null}
                   {mode === 'edit' ? 'Save Document' : 'Add Document'}
                 </Button>
               )}

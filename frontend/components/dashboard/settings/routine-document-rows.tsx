@@ -35,10 +35,14 @@ function SlotBadge({ slotKey }: { slotKey: string }) {
   return <span className="mx-0.5 rounded-sm bg-muted/50 px-1 py-0 align-baseline text-foreground"><span className="text-muted-foreground">@</span>{slotKey}</span>
 }
 
-// A context reference reads like a slot reference but shows the name the picker used
-// ("Current page"), since the visitor never supplies it and it is not in Information.
+// A context reference gets the same quiet backing but no "@": it shows the name the picker
+// used ("Current page"), since the visitor never supplies it and it is not in Information.
+function ContextBadge({ name }: { name: string }) {
+  return <span className="mx-0.5 rounded-sm bg-muted/50 px-1 py-0 align-baseline text-foreground">{contextVariableLabel(name)}</span>
+}
+
 function ReferenceBadge({ segment }: { segment: Exclude<RoutineBlockInstructionSegment, { kind: 'text' }> }) {
-  return segment.kind === 'slotReference' ? <SlotBadge slotKey={segment.key} /> : <SlotBadge slotKey={contextVariableLabel(segment.key)} />
+  return segment.kind === 'slotReference' ? <SlotBadge slotKey={segment.key} /> : <ContextBadge name={segment.key} />
 }
 
 function InstructionSentence({ segments, editable = false }: { segments: RoutineBlockInstructionSegment[]; editable?: boolean }) {

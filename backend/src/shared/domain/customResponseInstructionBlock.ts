@@ -1,3 +1,5 @@
+import { escapeXmlText } from "./escapeXmlText.js";
+
 const CUSTOM_RESPONSE_INSTRUCTIONS_TAG = "custom_response_instructions";
 
 export function renderCustomResponseInstructionBlock(customInstruction?: string): string | null {
@@ -18,6 +20,3 @@ export function renderCustomResponseInstructionBlock(customInstruction?: string)
   ].join("\n");
 }
 
-function escapeXmlText(value: string): string {
-  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}

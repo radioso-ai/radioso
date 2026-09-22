@@ -18,15 +18,16 @@ export function contextVariableLabel(name: string): string {
 }
 
 // Mirrors the backend's available set for validation: built-ins first, then every enabled
-// enablement whose variable row came back with it. A host-defined variable named after a
-// built-in keeps the built-in's place rather than appearing twice.
+// enablement whose variable row came back with it. As on the backend, a host-defined
+// variable named after a built-in takes the built-in's place, so the picker lists it once
+// under its own name.
 export function routineContextVariablesFromEnablements(
   enablements: readonly AgentContextVariableEnablement[],
 ): RoutineEditorContextVariable[] {
   const byName = new Map(BUILT_IN_CONTEXT_VARIABLES.map((variable) => [variable.name, variable]))
   for (const enablement of enablements) {
     const name = enablement.variable?.name
-    if (!enablement.enabled || !name || byName.has(name)) continue
+    if (!enablement.enabled || !name) continue
     byName.set(name, { name, label: name })
   }
   return [...byName.values()]

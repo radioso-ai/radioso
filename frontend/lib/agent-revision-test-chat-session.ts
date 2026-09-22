@@ -18,6 +18,8 @@ export type AgentRevisionTestChatSession = {
   execution: TestExecutionState | null
   evalRun: RevisionEvalRun | null
   error: string | null
+  /** Set only by `load()`: why the draft candidate (or eval cases/value catalog) degraded, independent of `error`'s transient action failures. */
+  degradedNotice: string | null
   cases: EvalCaseListItem[]
   selectedCaseIds: string[]
   restartNotice: string | null

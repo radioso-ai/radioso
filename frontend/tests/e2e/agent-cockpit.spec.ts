@@ -91,6 +91,8 @@ type CockpitMockOptions = {
   routineUpdates?: RoutineMutationFixture[]
   /** Refuse candidate creation with this message (the 422 an unreleasable draft routine produces). */
   candidateFailureMessage?: string
+  /** Per-routine diagnostics the 422 ships alongside `candidateFailureMessage`. */
+  candidateFailureDiagnostics?: Array<{ routineId: string | null; code: string; location: string; message: string }>
   candidateRequests?: unknown[]
 }
 
@@ -130,7 +132,18 @@ async function installCockpitMocks(page: Page, options: CockpitMockOptions = {})
     options.requestBodies?.push(route.request().postDataJSON())
     options.candidateRequests?.push(route.request().postDataJSON())
     if (options.candidateFailureMessage) {
-      await route.fulfill({ status: 422, json: { error: { message: options.candidateFailureMessage } } })
+      await route.fulfill({
+        status: 422,
+        json: {
+          error: {
+            code: 'revision_invalid',
+            message: options.candidateFailureMessage,
+            ...(options.candidateFailureDiagnostics
+              ? { details: { diagnostics: options.candidateFailureDiagnostics } }
+              : {}),
+          },
+        },
+      })
       return
     }
     await route.fulfill({ status: 201, json: { candidate } })
@@ -788,6 +801,28 @@ test('keeps published revisions testable when the draft candidate is refused', a
 
   await expect(page.getByRole('alert').filter({ hasText: candidateFailureMessage })).toBeVisible()
   await expect(testChatComposer(page)).toBeVisible()
+  const selector = page.getByRole('combobox', { name: 'Revision 1' })
+  await expect(selector).toHaveText('v4')
+  await selector.click()
+  await expect(page.getByRole('option', { name: 'v4', exact: true })).toBeVisible()
+  await expect(page.getByRole('option', { name: /Draft/ })).toHaveCount(0)
+})
+
+test('shows why the draft candidate is refused even after a proactive greeting starts', async ({ page }) => {
+  const candidateFailureMessage = 'The draft contains a routine that cannot be released.'
+  const diagnosticMessage = 'References a target that no longer exists.'
+  await installCockpitMocks(page, {
+    candidateFailureMessage,
+    candidateFailureDiagnostics: [
+      { routineId: 'routine-1', code: 'missing_target', location: 'step:1', message: diagnosticMessage },
+    ],
+    revisionState: { ...revisionState, proactiveGreetingEnabled: true },
+  })
+  await page.goto(testUrl)
+
+  await expect(page.getByText('Ciao, come posso aiutarti?', { exact: true })).toBeVisible()
+  await expect(page.getByRole('alert').filter({ hasText: candidateFailureMessage })).toBeVisible()
+  await expect(page.getByRole('alert').filter({ hasText: diagnosticMessage })).toBeVisible()
   const selector = page.getByRole('combobox', { name: 'Revision 1' })
   await expect(selector).toHaveText('v4')
   await selector.click()

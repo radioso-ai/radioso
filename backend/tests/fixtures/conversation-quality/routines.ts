@@ -114,7 +114,9 @@ export const startReturnRoutine: RoutineDefinition = {
   updatedAt: FIXED_DATE,
   name: "Start a return",
   activation: {
-    triggerDescription: "the user wants to return or send back an order they received",
+    // Narrow on purpose: refund-window and billing questions in this suite must keep routing to
+    // retrieval, so this fires only when the user is actually sending a physical order back.
+    triggerDescription: "the user has a physical order in hand and says they want to send it back for a return — not a question about refund timelines, billing, charges, or policy",
     gateRef: null,
     priority: 10,
     reentryMode: "once_per_conversation",

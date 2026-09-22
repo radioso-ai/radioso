@@ -1,10 +1,10 @@
 {
-  "generatedAt": "2026-09-16T20:58:52.573Z",
+  "generatedAt": "2026-09-22T10:51:07.911Z",
   "passThreshold": 1,
   "cases": {
     "clarification-ambiguous-plan": {
       "status": "fail",
-      "passRate": 0.8,
+      "passRate": 0.4,
       "samples": 5
     },
     "directive-refund-empathy": {
@@ -57,6 +57,11 @@
       "passRate": 1,
       "samples": 5
     },
+    "retrieval-partial-refund-and-fee": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
     "retrieval-pricing-pro": {
       "status": "pass",
       "passRate": 1,
@@ -87,17 +92,27 @@
       "passRate": 1,
       "samples": 5
     },
+    "routine-return-invocation": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "routine-return-invocation-partial": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "routine-return-transcript": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
     "routing-greeting-direct": {
       "status": "pass",
       "passRate": 1,
       "samples": 5
     },
     "routing-identity-direct": {
-      "status": "pass",
-      "passRate": 1,
-      "samples": 5
-    },
-    "retrieval-partial-refund-and-fee": {
       "status": "pass",
       "passRate": 1,
       "samples": 5

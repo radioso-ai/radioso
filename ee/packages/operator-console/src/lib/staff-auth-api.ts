@@ -66,6 +66,11 @@ export interface OrganizationDirectoryRow {
     used: number;
     limit: number | null;
   };
+  /** Present when the tier meters conversations; `monthlyAnswers` is dormant then. */
+  monthlyConversations: {
+    used: number;
+    limit: number;
+  } | null;
 }
 
 export interface OrganizationDirectoryPage {

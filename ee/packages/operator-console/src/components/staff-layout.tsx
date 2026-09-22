@@ -120,7 +120,3 @@ export function ErrorBanner({ message }: { message: string }) {
     </div>
   );
 }
-
-export function limitText(limit: number | null): string {
-  return limit === null ? "unlimited" : limit.toLocaleString();
-}

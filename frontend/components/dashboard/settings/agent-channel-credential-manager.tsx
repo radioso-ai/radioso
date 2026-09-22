@@ -154,8 +154,8 @@ export function AgentChannelCredentialList({
       </div>
 
       {hasMore ? (
-        <Button type="button" variant="outline" size="sm" onClick={onLoadMore} disabled={isLoadingMore}>
-          {isLoadingMore ? <Spinner className="mr-2 h-4 w-4" /> : null}Load more
+        <Button type="button" variant="outline" size="sm" onClick={onLoadMore} loading={isLoadingMore}>
+          Load more
         </Button>
       ) : null}
 
@@ -193,7 +193,7 @@ export function AgentChannelCredentialList({
               }}
             >
               {busyCredentialId ? <Spinner className="mr-2 h-4 w-4" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-              Rotate credential
+              <span>Rotate credential</span>
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -246,13 +246,13 @@ function IssueCredentialForm({
       <Button
         type="button"
         className="mt-2 justify-self-start md:col-start-3 md:row-start-2 md:mt-0"
-        disabled={isCreating || !label.trim() || !expiresAt}
+        disabled={!label.trim() || !expiresAt}
+        loading={isCreating} icon={<KeyRound />}
         onClick={() => {
           if (!expiresAt) return
           onIssue({ label: label.trim(), expiresAt })
         }}
       >
-        {isCreating ? <Spinner className="mr-2 h-4 w-4" /> : <KeyRound className="mr-2 h-4 w-4" />}
         Create credential
       </Button>
     </div>

@@ -48,7 +48,7 @@ const formatDateTime = (value: string | null | undefined) => {
 }
 
 /** Fields the plain-text inputs write. Metadata and source have typed channels. */
-export type DocumentEditorTextField = 'title' | 'content'
+type DocumentEditorTextField = 'title' | 'content'
 
 export type DocumentEditorValues = {
   title: string
@@ -186,8 +186,7 @@ export function DocumentEditorPage({
   const headerActions = (
     <div className="flex flex-wrap items-center gap-2">
       {isFailed ? (
-        <Button type="button" variant="outline" onClick={onRetry} disabled={isSaving || isDeleting || isRetrying}>
-          {isRetrying ? <Spinner className="mr-2" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+        <Button type="button" variant="outline" onClick={onRetry} disabled={isSaving || isDeleting} loading={isRetrying} icon={<RefreshCw />}>
           Retry processing
         </Button>
       ) : null}
@@ -206,9 +205,9 @@ export function DocumentEditorPage({
           </Button>
           <Button
             type="submit"
-            disabled={isSaving || !values.title.trim() || !values.content.trim() || Boolean(metadataError)}
+            disabled={!values.title.trim() || !values.content.trim() || Boolean(metadataError)}
+            loading={isSaving} icon={<Save />}
           >
-            {isSaving ? <Spinner className="mr-2" /> : <Save className="mr-2 h-4 w-4" />}
             Save document
           </Button>
         </>
@@ -484,9 +483,8 @@ export function DocumentEditorPage({
                           variant="outline"
                           size="sm"
                           onClick={onRunMetadataExtraction}
-                          disabled={Boolean(isRunningMetadataExtraction)}
+                          loading={Boolean(isRunningMetadataExtraction)}
                         >
-                          {isRunningMetadataExtraction ? <Spinner className="mr-2 h-3.5 w-3.5" /> : null}
                           Run metadata extraction
                         </Button>
                         <p className="text-xs text-muted-foreground">
@@ -514,9 +512,9 @@ export function DocumentEditorPage({
                         variant="outline"
                         size="sm"
                         onClick={onSaveMetadata}
-                        disabled={Boolean(isSavingMetadata) || Boolean(metadataError)}
+                        disabled={Boolean(metadataError)}
+                        loading={Boolean(isSavingMetadata)}
                       >
-                        {isSavingMetadata ? <Spinner className="mr-2 h-3.5 w-3.5" /> : null}
                         Save metadata
                       </Button>
                       <p className="text-xs text-muted-foreground">

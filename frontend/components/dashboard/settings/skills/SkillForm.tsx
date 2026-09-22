@@ -771,9 +771,9 @@ export function SkillForm({
                   variant="ghost"
                   size="sm"
                   onClick={() => void discoverTools(draft.targetId, draft.toolName)}
-                  disabled={!draft.targetId || isDiscovering}
+                  disabled={!draft.targetId}
+                  loading={isDiscovering} icon={<RefreshCw />}
                 >
-                  {isDiscovering ? <Spinner className="h-4 w-4" /> : <RefreshCw className="h-4 w-4" />}
                   Refresh tools
                 </Button>
               </div>
@@ -974,8 +974,7 @@ export function SkillForm({
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSaving}>
             Cancel
           </Button>
-          <Button type="button" onClick={() => void submit()} disabled={!canSubmit}>
-            {isSaving ? <Spinner className="h-4 w-4" /> : <Wrench className="h-4 w-4" />}
+          <Button type="button" onClick={() => void submit()} disabled={!canSubmit} loading={isSaving} icon={<Wrench />}>
             {editingSkill ? 'Save skill' : 'Create skill'}
           </Button>
         </DialogFooter>

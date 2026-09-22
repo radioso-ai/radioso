@@ -6,7 +6,6 @@ import { Clock, Info, Plus, UserPlus } from 'lucide-react'
 
 import { accountApi, workspaceApi, type AccountInvitationSummary, type AccountUserSummary, type AssignableAccountRole, type Workspace, type WorkspaceGrantSummary, type WorkspaceGrantRole } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
-import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
 import {
   DashboardTable,
   DashboardTableBody,
@@ -27,7 +26,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { LogoSpinner, Spinner } from '@/components/ui/spinner'
+import { LogoSpinner } from '@/components/ui/spinner'
 import { isValidEmailAddress } from '@/lib/validation'
 
 export function UsersPanel() {
@@ -336,9 +335,9 @@ export function UsersPanel() {
               </Button>
               <Button
                 onClick={() => void handleInvite()}
-                disabled={!isEmailValid || isSubmitting || !canManageUsers}
+                disabled={!isEmailValid || !canManageUsers}
+                loading={isSubmitting}
               >
-                {isSubmitting ? <Spinner className="mr-2 h-4 w-4" /> : null}
                 Send invite
               </Button>
               </div>
@@ -588,17 +587,5 @@ export function UsersPanel() {
         </>
       )}
     </div>
-  )
-}
-
-export function UsersView() {
-  return (
-    <DashboardPage
-      title="Users"
-      description="Invite teammates, manage organization roles, and adjust workspace access."
-      contentClassName="space-y-6 p-6"
-    >
-      <UsersPanel />
-    </DashboardPage>
   )
 }

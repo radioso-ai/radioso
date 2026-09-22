@@ -354,8 +354,7 @@ export function SlackChannelCard({ workspaceId, agentId, agentName }: SlackChann
                   </p>
                 ) : null}
               </div>
-              <Button type="button" onClick={startInstall} disabled={!canStartInstall || busyAction === 'install'}>
-                {busyAction === 'install' ? <Spinner className="mr-2 h-4 w-4" /> : <MessageSquare className="mr-2 h-4 w-4" />}
+              <Button type="button" onClick={startInstall} disabled={!canStartInstall} loading={busyAction === 'install'} icon={<MessageSquare />}>
                 {needsReauth(status) ? 'Reconnect Slack' : 'Add to Slack'}
               </Button>
             </div>
@@ -425,8 +424,7 @@ export function SlackChannelCard({ workspaceId, agentId, agentName }: SlackChann
                   <RefreshCw className="mr-2 h-4 w-4" />
                   Refresh
                 </Button>
-                <Button type="button" variant="outline" size="sm" onClick={disconnect} disabled={busyAction === 'disconnect'}>
-                  {busyAction === 'disconnect' ? <Spinner className="mr-2 h-4 w-4" /> : <Trash2 className="mr-2 h-4 w-4" />}
+                <Button type="button" variant="outline" size="sm" onClick={disconnect} loading={busyAction === 'disconnect'} icon={<Trash2 />}>
                   Disconnect
                 </Button>
               </div>
@@ -481,9 +479,8 @@ export function SlackChannelCard({ workspaceId, agentId, agentName }: SlackChann
                           variant="outline"
                           size="sm"
                           onClick={() => item.channelId ? void removeChannelBinding(item.channelId) : undefined}
-                          disabled={busyAction === 'binding'}
+                          loading={busyAction === 'binding'} icon={<Trash2 />}
                         >
-                          {busyAction === 'binding' ? <Spinner className="mr-2 h-4 w-4" /> : <Trash2 className="mr-2 h-4 w-4" />}
                           Remove
                         </Button>
                       </div>
@@ -508,9 +505,9 @@ export function SlackChannelCard({ workspaceId, agentId, agentName }: SlackChann
                     type="button"
                     variant="outline"
                     onClick={addChannelBinding}
-                    disabled={busyAction === 'binding' || !channelDraft.trim()}
+                    disabled={!channelDraft.trim()}
+                    loading={busyAction === 'binding'}
                   >
-                    {busyAction === 'binding' ? <Spinner className="mr-2 h-4 w-4" /> : null}
                     Add
                   </Button>
                 </div>
@@ -532,9 +529,8 @@ export function SlackChannelCard({ workspaceId, agentId, agentName }: SlackChann
                   type="button"
                   variant="outline"
                   onClick={updateEscalationChannel}
-                  disabled={busyAction === 'binding'}
+                  loading={busyAction === 'binding'}
                 >
-                  {busyAction === 'binding' ? <Spinner className="mr-2 h-4 w-4" /> : null}
                   Save
                 </Button>
               </div>

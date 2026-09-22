@@ -24,6 +24,10 @@
       "types": "./src/pagination.tsx",
       "default": "./src/pagination.tsx"
     },
+    "./spinner": {
+      "types": "./src/spinner.tsx",
+      "default": "./src/spinner.tsx"
+    },
     "./dashboard-pagination": {
       "types": "./src/dashboard-pagination.tsx",
       "default": "./src/dashboard-pagination.tsx"

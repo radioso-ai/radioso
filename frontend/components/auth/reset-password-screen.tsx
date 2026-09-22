@@ -7,7 +7,6 @@ import { useState, type FormEvent } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Spinner } from '@/components/ui/spinner'
 import { authApi, seedWorkspaceSession } from '@/lib/api'
 import { useAuth } from '@/lib/auth-context'
 import { buildDashboardHref } from '@/lib/dashboard-routes'
@@ -111,8 +110,7 @@ export function ResetPasswordScreen({ token, email: initialEmail }: { token?: st
               />
             </div>
             {error ? <p className="text-sm text-destructive">{error}</p> : null}
-            <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading ? <Spinner className="mr-2" /> : null}
+            <Button type="submit" className="w-full" loading={isLoading}>
               Reset Password
             </Button>
           </form>
@@ -135,8 +133,7 @@ export function ResetPasswordScreen({ token, email: initialEmail }: { token?: st
               />
             </div>
             {error ? <p className="text-sm text-destructive">{error}</p> : null}
-            <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading ? <Spinner className="mr-2" /> : null}
+            <Button type="submit" className="w-full" loading={isLoading}>
               Send Reset Link
             </Button>
           </form>

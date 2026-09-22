@@ -62,7 +62,7 @@ export function QuietRow({
   )
 }
 
-export interface RowActionEntry {
+interface RowActionEntry {
   id: string
   label: string
   icon: LucideIcon
@@ -74,7 +74,7 @@ export interface RowActionEntry {
  * One action stays an inline button; several collapse into a `⋯` menu, so a row never grows a
  * toolbar of competing verbs.
  */
-export function RowActions({
+function RowActions({
   subject,
   entries,
   busy = false,
@@ -92,12 +92,11 @@ export function RowActions({
         type="button"
         size="sm"
         variant="ghost"
-        disabled={busy}
+        loading={busy} icon={<only.icon />}
         className={only.destructive ? 'text-muted-foreground hover:text-destructive' : undefined}
         aria-label={`${only.label} ${subject}`}
         onClick={only.onSelect}
       >
-        {busy ? <Spinner className="mr-2 h-4 w-4" /> : <only.icon className="mr-2 h-3.5 w-3.5" />}
         {only.label}
       </Button>
     )
@@ -216,8 +215,7 @@ export function RenameDialog({
           {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button type="submit" disabled={!trimmed || isSaving}>
-              {isSaving ? <Spinner className="mr-2 h-4 w-4" /> : null}
+            <Button type="submit" disabled={!trimmed} loading={isSaving}>
               Save
             </Button>
           </DialogFooter>

@@ -19,7 +19,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Slider } from '@/components/ui/slider'
-import { LogoSpinner, Spinner } from '@/components/ui/spinner'
+import { LogoSpinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
 import { type IngestionSettings, settingsApi } from '@/lib/api'
 import { useWorkspace } from '@/lib/workspace-context'
@@ -411,8 +411,7 @@ export function IngestionSettingsPanel({
                   Changes apply to future ingests and document updates immediately. Existing documents keep their current chunks until you reprocess them.
                 </p>
                 <div className="flex items-center gap-3">
-                  <Button onClick={handleReprocess} disabled={isReprocessing}>
-                    {isReprocessing ? <Spinner className="mr-2" /> : <RefreshCw className="w-4 h-4 mr-2" />}
+                  <Button onClick={handleReprocess} loading={isReprocessing} icon={<RefreshCw />}>
                     Reprocess Existing Documents
                   </Button>
                   {reprocessMessage ? <p className="text-sm text-muted-foreground">{reprocessMessage}</p> : null}

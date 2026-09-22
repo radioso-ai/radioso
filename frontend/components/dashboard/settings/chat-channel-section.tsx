@@ -20,7 +20,6 @@ import {
 } from '@/components/dashboard/settings/website-embed-settings-controller'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
-import { Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
 import type {
   AgentBrandingSettings,
@@ -36,7 +35,7 @@ import { formatLastUsed } from '@/lib/format-last-used'
  * Everything the website widget placement needs is also what this page needs, so the
  * widget's contract is the shared port rather than a second copy of the same fields.
  */
-export interface ChatChannelSectionProps extends WebsiteEmbedSettingsControllerProps {
+interface ChatChannelSectionProps extends WebsiteEmbedSettingsControllerProps {
   assistantBehaviorSettings: AssistantBehaviorSettings | null
   retrievalDefaults: Pick<RetrievalDefaults, 'suggestedQuestionsEnabled'>
   onAssistantBehaviorDraft: (updater: (current: AssistantBehaviorSettings) => AssistantBehaviorSettings) => void
@@ -164,11 +163,10 @@ export function ChatChannelSection(props: ChatChannelSectionProps) {
                       variant="ghost"
                       size="sm"
                       onClick={onAnonymousChatTokenRotate}
-                      disabled={isAnonSaving}
+                      loading={isAnonSaving} icon={<RefreshCw />}
                       className="text-muted-foreground hover:text-foreground"
                       title="Generates a new public chat URL. The current link will stop working."
                     >
-                      {isAnonSaving ? <Spinner className="mr-2 h-4 w-4" /> : <RefreshCw className="mr-2 h-4 w-4" />}
                       Generate new link
                     </Button>
                     <Button asChild variant="default">

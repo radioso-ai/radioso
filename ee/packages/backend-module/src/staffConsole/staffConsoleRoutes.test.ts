@@ -253,6 +253,17 @@ const sampleOrganizationRows = {
       profileKey: "starter",
       profileDisplayName: "Starter",
       monthlyAnswers: { used: 7, limit: 10 },
+      monthlyConversations: null,
+    },
+    {
+      accountId: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+      name: "Comet Customer",
+      ownerEmail: "comet@example.com",
+      ownerCount: 1,
+      profileKey: "comet",
+      profileDisplayName: "Comet",
+      monthlyAnswers: { used: 0, limit: null },
+      monthlyConversations: { used: 12.5, limit: 50 },
     },
   ],
   pageInfo: {
@@ -260,7 +271,7 @@ const sampleOrganizationRows = {
     offset: 0,
     nextOffset: null,
     hasMore: false,
-    total: 1,
+    total: 2,
   },
 };
 

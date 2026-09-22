@@ -1,8 +1,11 @@
 import type { OrganizationDirectoryRow } from "./staff-auth-api";
 
-/** Pinned so a server render and a browser render of the same meter agree, and so a
- *  fractional conversation count keeps its decimal point on a non-English host. */
+/** The console is an English staff surface, so its meters are pinned rather than left to
+ *  the host locale: otherwise the same conversation count reads `12.5` in the directory
+ *  and `12,5` on the detail page of a German-locale browser. */
 const meterNumber = new Intl.NumberFormat("en-US");
+
+export const formatMeterNumber = (value: number): string => meterNumber.format(value);
 
 export function limitText(limit: number | null): string {
   return limit === null ? "unlimited" : meterNumber.format(limit);

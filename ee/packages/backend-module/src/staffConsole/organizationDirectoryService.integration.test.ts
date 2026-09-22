@@ -119,10 +119,16 @@ describeIfDatabase("organization directory service", () => {
     await usageLimitMigrator.migrate(database);
   });
 
-  // `count(*) OVER ()` counts every account in the schema, so accounts must not
-  // survive between tests. Profiles are left alone: the migrator seeds them once.
+  // `count(*) OVER ()` counts every account in the schema, so accounts must not survive
+  // between tests; everything metered cascades off them. Profiles are seeded once by the
+  // migrator and kept, but their answer caps are restored to the seeded null so a test
+  // that sets one to prove masking cannot hand it to the next test.
   beforeEach(async () => {
-    await database.query("TRUNCATE accounts, users CASCADE");
+    await database.query(`TRUNCATE "${schema}".accounts, "${schema}".users CASCADE`);
+    await database.query(
+      `UPDATE ee_usage_limit_profiles SET monthly_answer_limit = NULL
+       WHERE monthly_conversation_limit IS NOT NULL`,
+    );
   });
 
   afterAll(async () => {
@@ -241,7 +247,7 @@ describeIfDatabase("organization directory service", () => {
       `INSERT INTO ee_usage_limit_account_assignments (account_id, profile_key) VALUES ($1, $2)`,
       [cometAccountId, cometPlan.id],
     );
-    // 125 tenths is 12.5 conversations: ten test runs count as one.
+    // The counter is kept in tenths, so 125 is 12.5 conversations.
     await database.query(
       `INSERT INTO ee_usage_limit_unit_counters (account_id, period_start, used_tenths)
        VALUES ($1, '2026-06-01', 125)`,

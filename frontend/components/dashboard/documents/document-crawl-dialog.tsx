@@ -109,7 +109,7 @@ export function DocumentCrawlDialog({
             </Button>
             <Button type="submit" disabled={isCrawling || trimmedUrl.length === 0}>
               {isCrawling ? <Spinner className="mr-2" /> : null}
-              Start Crawl
+              <span>Start Crawl</span>
             </Button>
           </div>
         </form>

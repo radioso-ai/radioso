@@ -218,7 +218,7 @@ export function RenameDialog({
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
             <Button type="submit" disabled={!trimmed || isSaving}>
               {isSaving ? <Spinner className="mr-2 h-4 w-4" /> : null}
-              Save
+              <span>Save</span>
             </Button>
           </DialogFooter>
         </form>

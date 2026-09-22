@@ -155,7 +155,7 @@ export function AgentChannelCredentialList({
 
       {hasMore ? (
         <Button type="button" variant="outline" size="sm" onClick={onLoadMore} disabled={isLoadingMore}>
-          {isLoadingMore ? <Spinner className="mr-2 h-4 w-4" /> : null}Load more
+          {isLoadingMore ? <Spinner className="mr-2 h-4 w-4" /> : null}<span>Load more</span>
         </Button>
       ) : null}
 

@@ -511,7 +511,7 @@ export function SlackChannelCard({ workspaceId, agentId, agentName }: SlackChann
                     disabled={busyAction === 'binding' || !channelDraft.trim()}
                   >
                     {busyAction === 'binding' ? <Spinner className="mr-2 h-4 w-4" /> : null}
-                    Add
+                    <span>Add</span>
                   </Button>
                 </div>
               </div>
@@ -535,7 +535,7 @@ export function SlackChannelCard({ workspaceId, agentId, agentName }: SlackChann
                   disabled={busyAction === 'binding'}
                 >
                   {busyAction === 'binding' ? <Spinner className="mr-2 h-4 w-4" /> : null}
-                  Save
+                  <span>Save</span>
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground">

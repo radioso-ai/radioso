@@ -423,7 +423,7 @@ export function ServiceAccountSheet({
               }}
             >
               {isBusy ? <Spinner className="mr-2 h-4 w-4" /> : null}
-              Change role
+              <span>Change role</span>
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -446,7 +446,7 @@ export function ServiceAccountSheet({
               }}
             >
               {isBusy ? <Spinner className="mr-2 h-4 w-4" /> : null}
-              Archive service account
+              <span>Archive service account</span>
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

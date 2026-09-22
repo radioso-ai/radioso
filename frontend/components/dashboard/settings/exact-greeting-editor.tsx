@@ -352,7 +352,7 @@ export function ExactGreetingEditor({
       <div className="flex items-center gap-3">
         <Button type="button" size="sm" onClick={() => void handleSave()} disabled={saveState === 'saving'}>
           {saveState === 'saving' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-          Save greeting
+          <span>Save greeting</span>
         </Button>
         {saveState === 'saved' ? <span className="text-xs text-muted-foreground">Saved to draft</span> : null}
       </div>

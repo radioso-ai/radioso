@@ -1022,7 +1022,7 @@ function PublicChatContent({
                       }}
                     >
                       {isLoadingOlderMessages ? <Spinner className="mr-2 h-4 w-4" /> : null}
-                      {copy.publicChatLoadOlderMessages}
+                      <span>{copy.publicChatLoadOlderMessages}</span>
                     </Button>
                   </div>
                 ) : null}

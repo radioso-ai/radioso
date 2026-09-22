@@ -118,7 +118,7 @@ export function DocumentImportDialog({
             </Button>
             <Button type="submit" disabled={isImporting || !hasFile || !isMetadataValid}>
               {isImporting ? <Spinner className="mr-2" /> : null}
-              Import Document
+              <span>Import Document</span>
             </Button>
           </div>
         </form>

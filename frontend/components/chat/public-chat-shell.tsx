@@ -19,7 +19,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Spinner } from '@/components/ui/spinner'
 import { TypingIndicator } from '@/components/ui/typing-indicator'
 import {
   ChatMessageThread,
@@ -1013,7 +1012,7 @@ function PublicChatContent({
                       size="sm"
                       variant="outline"
                       onClick={() => void loadOlderMessages()}
-                      disabled={isLoadingOlderMessages}
+                      loading={isLoadingOlderMessages}
                       className="hover:opacity-90"
                       style={{
                         borderColor: theme.panelBorder,
@@ -1021,7 +1020,6 @@ function PublicChatContent({
                         color: theme.panelForeground,
                       }}
                     >
-                      {isLoadingOlderMessages ? <Spinner className="mr-2 h-4 w-4" /> : null}
                       {copy.publicChatLoadOlderMessages}
                     </Button>
                   </div>

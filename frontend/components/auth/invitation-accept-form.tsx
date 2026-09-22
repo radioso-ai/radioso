@@ -7,7 +7,6 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Spinner } from '@/components/ui/spinner'
 import { authApi, seedWorkspaceSession } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { useAuth } from '@/lib/auth-context'
@@ -151,8 +150,7 @@ export function InvitationAcceptForm({
         </div>
       )}
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
-      <Button type="submit" className="w-full" disabled={isSubmitting}>
-        {isSubmitting ? <Spinner className="mr-2 h-4 w-4" /> : null}
+      <Button type="submit" className="w-full" loading={isSubmitting}>
         Join account
       </Button>
       {requiresExistingPassword ? (

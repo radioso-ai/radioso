@@ -452,11 +452,10 @@ function WebsiteEmbedSettingsPanel({
               variant="ghost"
               size="sm"
               onClick={handleWebsiteEmbedTokenRotate}
-              disabled={isAnonSaving}
+              loading={isAnonSaving} icon={<RefreshCw />}
               className="text-muted-foreground hover:text-foreground"
               title="Generates a new install code. Any existing installations will stop working until you paste the new code."
             >
-              {isAnonSaving ? <Spinner className="mr-2 h-4 w-4" /> : <RefreshCw className="mr-2 h-4 w-4" />}
               Generate new code
             </Button>
             <Button

@@ -233,8 +233,7 @@ export function WebhookDestinationsPanel({
               <Button type="button" variant="ghost" onClick={() => setForm(null)} disabled={isBusy}>
                 Cancel
               </Button>
-              <Button type="button" onClick={() => void saveForm()} disabled={isBusy}>
-                {busyId === (form.id ?? 'create') ? <Spinner className="mr-2" /> : null}
+              <Button type="button" onClick={() => void saveForm()} disabled={isBusy} loading={busyId === (form.id ?? 'create')}>
                 {form.id ? 'Save destination' : 'Create destination'}
               </Button>
             </div>

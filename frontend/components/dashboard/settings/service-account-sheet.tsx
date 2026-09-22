@@ -317,10 +317,10 @@ export function ServiceAccountSheet({
                 <Button
                   type="button"
                   className="mt-2 justify-self-start sm:col-start-3 sm:row-start-2 sm:mt-0"
-                  disabled={!isEnabled || mutations.isPending('issue') || !credentialLabel.trim() || !credentialExpiry}
+                  disabled={!isEnabled || !credentialLabel.trim() || !credentialExpiry}
+                  loading={mutations.isPending('issue')} icon={<KeyRound />}
                   onClick={() => void issueCredential()}
                 >
-                  {mutations.isPending('issue') ? <Spinner className="mr-2 h-4 w-4" /> : <KeyRound className="mr-2 h-4 w-4" />}
                   Issue
                 </Button>
               </div>
@@ -423,7 +423,7 @@ export function ServiceAccountSheet({
               }}
             >
               {isBusy ? <Spinner className="mr-2 h-4 w-4" /> : null}
-              Change role
+              <span>Change role</span>
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -446,7 +446,7 @@ export function ServiceAccountSheet({
               }}
             >
               {isBusy ? <Spinner className="mr-2 h-4 w-4" /> : null}
-              Archive service account
+              <span>Archive service account</span>
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

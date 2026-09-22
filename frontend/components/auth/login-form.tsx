@@ -5,7 +5,6 @@ import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Spinner } from '@/components/ui/spinner'
 import { authApi, getStoredActiveWorkspaceId, seedWorkspaceSession } from '@/lib/api'
 import { getStoredLastAccountId, useOptionalAuth } from '@/lib/auth-context'
 import { normalizeSameOriginReturnPath } from '@/lib/auth-return-url'
@@ -121,8 +120,7 @@ export function LoginForm({
       {error && (
         <p className="text-sm text-destructive">{error}</p>
       )}
-      <Button type="submit" className="w-full" disabled={isLoading}>
-        {isLoading ? <Spinner className="mr-2" /> : null}
+      <Button type="submit" className="w-full" loading={isLoading}>
         Sign In
       </Button>
       {googleEnabled && (

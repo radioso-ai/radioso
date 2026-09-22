@@ -27,7 +27,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { LogoSpinner, Spinner } from '@/components/ui/spinner'
+import { LogoSpinner } from '@/components/ui/spinner'
 import { isValidEmailAddress } from '@/lib/validation'
 
 export function UsersPanel() {
@@ -336,9 +336,9 @@ export function UsersPanel() {
               </Button>
               <Button
                 onClick={() => void handleInvite()}
-                disabled={!isEmailValid || isSubmitting || !canManageUsers}
+                disabled={!isEmailValid || !canManageUsers}
+                loading={isSubmitting}
               >
-                {isSubmitting ? <Spinner className="mr-2 h-4 w-4" /> : null}
                 Send invite
               </Button>
               </div>

@@ -4,7 +4,6 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 
 import { Button } from '@/components/ui/button'
-import { Spinner } from '@/components/ui/spinner'
 import { authApi, seedWorkspaceSession } from '@/lib/api'
 import { getApiErrorMessage, getApiErrorStatus } from '@/lib/api-error'
 import { useAuth } from '@/lib/auth-context'
@@ -76,8 +75,7 @@ export function InvitationSessionJoin({
         Signed in as <span className="font-medium text-foreground">{signedInEmail}</span>.
       </p>
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
-      <Button type="button" className="w-full" onClick={handleJoin} disabled={isSubmitting}>
-        {isSubmitting ? <Spinner className="mr-2 h-4 w-4" /> : null}
+      <Button type="button" className="w-full" onClick={handleJoin} loading={isSubmitting}>
         Join account
       </Button>
       <p className="text-center text-sm">

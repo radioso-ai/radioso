@@ -16,12 +16,13 @@ import {
   MessageCircle,
   MessageSquare,
   Plus,
+  Settings2,
   Trash2,
   Wrench,
   type LucideIcon,
 } from 'lucide-react'
 
-import { SectionNavBody, SubNavRow, type SubNavGroup } from '@/components/dashboard/subnav-column'
+import { SectionNavBody, SubNavRow, type SubNavGroup, type SubNavStatus } from '@/components/dashboard/subnav-column'
 import {
   buildQualityTabHref,
   type QualitySurfaceTab,
@@ -41,7 +42,7 @@ import { getLastSelectedAgentId, setLastSelectedAgentId } from '@/lib/agent-sele
 import { agentChannelCredentialsApi } from '@/lib/api-agent-channel-credentials'
 import { slackApi } from '@/lib/api-slack'
 import { connectorsApi } from '@/lib/api-connectors'
-import { resolveAgentChannelCatalog, type AgentChannelCatalogId } from '@/lib/agent-channel-catalog'
+import { resolveAgentChannelCatalog, type AgentChannelCatalogId, type AgentChannelCatalogStatus } from '@/lib/agent-channel-catalog'
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useWorkspace } from '@/lib/workspace-context'
@@ -126,6 +127,14 @@ const channelMetadata: Record<AgentChannelCatalogId, { label: string; icon: Luci
   'mcp-channel': { label: 'MCP', icon: Wrench },
   'slack-channel': { label: 'Slack', icon: MessageCircle },
   'whatsapp-channel': { label: 'WhatsApp', icon: MessageCircle },
+}
+
+// One word per state, shared by every channel, so "on", "active" and
+// "available" can never describe the same thing in the same list.
+const channelStatusPresentation: Record<AgentChannelCatalogStatus, SubNavStatus> = {
+  active: { tone: 'active', label: 'On' },
+  available: { tone: 'available', label: 'Available' },
+  attention: { tone: 'attention', label: 'Needs setup' },
 }
 
 const initials = (name: string) => name.trim().split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase() || 'A'
@@ -250,24 +259,30 @@ export function AgentAreaSubNav({ accountId, routeState }: { accountId: string; 
   const logoUrl = selectedAgent ? agentToGeneralSettings(selectedAgent).assistantLogoUrl : null
   const selectedSection = activeSection
   const agentRowActive = !agentOpen
-  const channelGroups: SubNavGroup[] = [{ items: [
-    ...channelCatalog.map((entry) => ({
-    ...channelMetadata[entry.id],
-    id: entry.id,
-    href: selectedAgentId ? agentHref(accountId, routeState, selectedAgentId, entry.id, workspaceParts.workspaceId, workspaceParts.workspacePublicRouteKey) : undefined,
-    active: selectedSection === entry.id,
-    status: entry.status !== 'attention',
-    statusLabel: entry.statusLabel,
-    statusTone: entry.status === 'attention' ? ('attention' as const) : ('active' as const),
-    })),
+  // Managing channels is an action, not a channel: it sits in its own group so
+  // it is spaced apart from the list and cannot read as a sixth channel.
+  const channelGroups: SubNavGroup[] = [
     {
-      id: 'channels-overview',
-      label: 'Manage channels',
-      icon: Globe,
-      href: selectedAgentId ? agentHref(accountId, routeState, selectedAgentId, 'channels-overview', workspaceParts.workspaceId, workspaceParts.workspacePublicRouteKey) : undefined,
-      active: selectedSection === 'channels-overview',
+      items: channelCatalog.map((entry) => ({
+        ...channelMetadata[entry.id],
+        id: entry.id,
+        href: selectedAgentId ? agentHref(accountId, routeState, selectedAgentId, entry.id, workspaceParts.workspaceId, workspaceParts.workspacePublicRouteKey) : undefined,
+        active: selectedSection === entry.id,
+        status: channelStatusPresentation[entry.status],
+      })),
     },
-  ] }]
+    {
+      items: [
+        {
+          id: 'channels-overview',
+          label: 'Manage channels',
+          icon: Settings2,
+          href: selectedAgentId ? agentHref(accountId, routeState, selectedAgentId, 'channels-overview', workspaceParts.workspaceId, workspaceParts.workspacePublicRouteKey) : undefined,
+          active: selectedSection === 'channels-overview',
+        },
+      ],
+    },
+  ]
 
   return (
     <div className="ml-2 space-y-1 border-l border-sidebar-border/70 pl-2">

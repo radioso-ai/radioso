@@ -4,7 +4,9 @@ import {
   assembleTestableRevisions,
   candidateIsTestable,
   compareSelectionRepeatsRevision,
+  describeCandidateRefusal,
 } from '@/lib/agent-revision-testable-revisions'
+import { ApiError } from '@/lib/api-client'
 import type { AgentRevisionState, AgentRevisionSummary } from '@/lib/api-agent-revisions'
 
 const summary = (overrides: Partial<AgentRevisionSummary> & { id: string }): AgentRevisionSummary => ({
@@ -100,6 +102,64 @@ describe('assembleTestableRevisions', () => {
     })
 
     expect(result.defaultSelectedId).toBe('p1')
+  })
+})
+
+describe('describeCandidateRefusal', () => {
+  it('summarizes an ApiError refusal and appends each diagnostic message, deduped', () => {
+    const cause = new ApiError({
+      status: 422,
+      error: {
+        code: 'revision_invalid',
+        message: 'The draft contains a routine that cannot be released.',
+        details: {
+          diagnostics: [
+            { routineId: 'r1', code: 'missing_target', location: 'step:1', message: 'References a target that no longer exists.' },
+            { routineId: 'r2', code: 'missing_target', location: 'step:2', message: 'References a target that no longer exists.' },
+            { routineId: 'r1', code: 'missing_slot', location: 'step:3', message: 'A required slot has no source.' },
+          ],
+        },
+      },
+    })
+
+    expect(describeCandidateRefusal(cause)).toBe(
+      'Draft not testable: The draft contains a routine that cannot be released. References a target that no longer exists.; A required slot has no source.',
+    )
+  })
+
+  it('summarizes an ApiError refusal with no details as just the message', () => {
+    const cause = new ApiError({
+      status: 422,
+      error: { code: 'revision_invalid', message: 'The draft contains a routine that cannot be released.' },
+    })
+
+    expect(describeCandidateRefusal(cause)).toBe(
+      'Draft not testable: The draft contains a routine that cannot be released.',
+    )
+  })
+
+  it('ignores non-string diagnostic messages', () => {
+    const cause = new ApiError({
+      status: 422,
+      error: {
+        code: 'revision_invalid',
+        message: 'The draft contains content that cannot be released.',
+        details: { diagnostics: [{ routineId: null, code: 'x', location: 'greeting', message: 42 }] },
+      },
+    })
+
+    expect(describeCandidateRefusal(cause)).toBe(
+      'Draft not testable: The draft contains content that cannot be released.',
+    )
+  })
+
+  it('falls back to a generic message for a non-Error cause', () => {
+    expect(describeCandidateRefusal('not an error')).toBe(
+      'Draft not testable: The draft candidate is unavailable.',
+    )
+    expect(describeCandidateRefusal(undefined)).toBe(
+      'Draft not testable: The draft candidate is unavailable.',
+    )
   })
 })
 

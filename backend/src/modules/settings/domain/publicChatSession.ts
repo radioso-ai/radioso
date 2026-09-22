@@ -3,6 +3,12 @@ import { z } from "zod";
 
 import type { AgentConverseOrigin } from "../contracts/agentConverseSession.js";
 
+/**
+ * Absolute lifetime of a signed session, shared by the public chat session and the MCP
+ * converse session (credential-bound and walk-in alike). It is absolute rather than idle:
+ * the token carries its own expiry and nothing refreshes it, so a busy caller cannot
+ * extend a session indefinitely by staying busy (FR-031a).
+ */
 const PUBLIC_CHAT_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 const LAUNCH_TOKEN_BINDING_KEY_LABEL = "radioso/public-chat-session-launch-token/v1";
 const PUBLIC_CHAT_RESUME_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;

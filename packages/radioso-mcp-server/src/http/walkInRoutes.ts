@@ -28,10 +28,11 @@ const withWalkInSessionHeader = (response: Response, walkInKey: string): Respons
 /**
  * An agent's own MCP endpoint, `/mcp/a/{publicId}`. It takes no credential: the public id
  * in the path is the whole request to connect, and the backend decides whether the agent's
- * walk-in door is open. Continuity comes from the protocol's own `Mcp-Session-Id` — the
- * server mints one on first contact, the client echoes it, and each handle maps to one
- * conversation. A client that does not echo it gets a fresh conversation per call, which
- * is degraded but never another caller's conversation.
+ * walk-in door is open. Continuity comes from the protocol's own `Mcp-Session-Id`: the
+ * server mints a signed handle on first contact and the client echoes it. The signature
+ * binds the handle to this agent and this calling source, so a handle that was guessed,
+ * forged, or replayed from somewhere else names nothing — that caller gets a new
+ * conversation rather than someone else's.
  */
 export const createWalkInRouteHandler = ({
   authService,

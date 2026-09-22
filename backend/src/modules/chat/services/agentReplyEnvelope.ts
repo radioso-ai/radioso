@@ -1,5 +1,5 @@
 import type { ChatAnswerCoverageAssessment } from "../contracts/answerCoverage.js";
-import type { ChatRoutineTurnState } from "../contracts/routineTurnState.js";
+import type { ChatRoutineInvocationReport, ChatRoutineTurnState } from "../contracts/routineTurnState.js";
 import type { ChatOwnershipAck, ChatResponse } from "../types/chatResponses.js";
 import type { AssistantChatResponse } from "../types/assistantApi.js";
 
@@ -13,13 +13,15 @@ export interface AgentReplyEnvelopeCore {
   answerCoverage: ChatAnswerCoverageAssessment;
   ownership: ChatOwnershipAck;
   routine?: ChatRoutineTurnState;
+  /** Only on a routine-invocation turn: what became of the tool call. */
+  invocation?: ChatRoutineInvocationReport;
   traceId?: string;
 }
 
 /** Satisfied by both a `ChatResponse` and the stream's `done` event. */
 type AgentReplyEnvelopeSource = Pick<
   ChatResponse,
-  "conversationId" | "answerCoverage" | "ownership" | "routine" | "turnTrace"
+  "conversationId" | "answerCoverage" | "ownership" | "routine" | "invocation" | "turnTrace"
 >;
 
 const AI_OWNED_UNSUPPRESSED: ChatOwnershipAck = { state: "ai_owned", suppressed: false };
@@ -47,6 +49,7 @@ export const buildAgentReplyEnvelope = (source: AgentReplyEnvelopeSource): Agent
   answerCoverage: source.answerCoverage ?? notRecordedAnswerCoverage(),
   ownership: source.ownership ?? AI_OWNED_UNSUPPRESSED,
   ...(source.routine ? { routine: source.routine } : {}),
+  ...(source.invocation ? { invocation: source.invocation } : {}),
   // The turn spine is the root trace of the turn: the id an operator sees in Activity.
   ...(source.turnTrace?.spine.traceId ? { traceId: source.turnTrace.spine.traceId } : {}),
 });

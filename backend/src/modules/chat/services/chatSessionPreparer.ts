@@ -19,7 +19,7 @@ import type {
   UserMessageInputMetadata,
 } from "../../../db/repositories/messageRepository.js";
 import type { RoutineInvocation } from "../contracts/routineInvocation.js";
-import type { ChatRoutineTurnState } from "../contracts/routineTurnState.js";
+import type { ChatRoutineInvocationReport, ChatRoutineTurnState } from "../contracts/routineTurnState.js";
 import { isAudiencePulseCustomerSource, isAudiencePulseEndUserChannel } from "../audiencePulseHistorySource.js";
 import type { FacetExtractionJobStore } from "../../facets/public.js";
 import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
@@ -202,6 +202,17 @@ export interface PreparedSession {
    * caller learns why nothing started. Absent on every other turn.
    */
   declinedRoutine?: ChatRoutineTurnState;
+  /**
+   * Set when a routine suspended awaiting an approval decision kept this turn: the routine
+   * attempt is bypassed, so nothing else describes it, and the reply still says which routine
+   * is waiting and on what. Absent on every other turn.
+   */
+  suspendedRoutine?: ChatRoutineTurnState;
+  /**
+   * What became of the tool call this turn carried, set by the routine turn (or the bypass
+   * report) and forwarded in the reply envelope. Absent on every message turn.
+   */
+  routineInvocationReport?: ChatRoutineInvocationReport;
   /**
    * Rolling conversation summary text (issue #866), loaded once at prepare from the
    * per-conversation summary store. Absent for new/short conversations. Injected

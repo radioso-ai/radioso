@@ -2,9 +2,8 @@ import { Router } from "express";
 
 import type { AppDependencies } from "../../server/types.js";
 // The services are type-only imports: their instances are built in app composition
-// (mcpConverseModule) and injected. The turn-input resolver is a pure chat contract
-// both agent-facing doors call the same way.
-import { resolveAgentTurnInput, type AgentConverseAudit, type AgentConverseService } from "../../../modules/chat/contracts/index.js";
+// (mcpConverseModule) and injected.
+import type { AgentConverseAudit, AgentConverseService } from "../../../modules/chat/contracts/index.js";
 import type { AgentConverseSessionPort } from "../../../modules/settings/contracts/agentConverseSession.js";
 import { requirePublicChatPermission } from "../middleware/requirePermission.js";
 import { requireMcpConverseSession, type McpConverseLocals } from "../middleware/requireMcpConverseSession.js";
@@ -137,14 +136,9 @@ export const createMcpConverseRoutes = (
     async (req, res, next) => {
       try {
         const { mcpConversePrincipal } = res.locals as typeof res.locals & McpConverseLocals;
-        // A tool call is validated against the catalog here, before the converse
-        // service binds a conversation or records anything.
-        const turnInput = await resolveAgentTurnInput(dependencies.agentToolCatalog, {
-          workspaceId: mcpConversePrincipal.workspaceId,
-          agentId: mcpConversePrincipal.agentId,
-          body: req.body,
-        }, { metrics: dependencies.metricsRegistry, logger: dependencies.logger });
-        const result = await converseService.askAgent(mcpConversePrincipal, turnInput);
+        // The converse service binds the session's conversation and validates a tool
+        // call against the release it is pinned to before any turn state is written.
+        const result = await converseService.askAgent(mcpConversePrincipal, req.body);
         onSuccessfulHttpResponse(res, () => sessionService.recordSuccessfulUse(mcpConversePrincipal));
         res.status(200).json(result);
       } catch (error) {

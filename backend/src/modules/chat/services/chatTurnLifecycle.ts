@@ -490,8 +490,13 @@ const notRecordedAnswerCoverage = (requestMessageId: string): ChatAnswerCoverage
   originatingRequestId: requestMessageId,
 });
 
+/**
+ * The routine this turn left, for the reply: the state it saved when it ran one;
+ * otherwise the routine the turn named but could not advance — the completed one
+ * a direct invocation was declined for, or the suspended one that kept the turn.
+ */
 const describeRoutineTurn = (input: {
-  session: Pick<PreparedSession, "declinedRoutine">;
+  session: Pick<PreparedSession, "declinedRoutine" | "suspendedRoutine">;
   routineStateTransition?: CapturedRoutineTransition | null;
   routineReporter?: ChatRoutineTurnReporter;
   suspended?: boolean;
@@ -501,7 +506,9 @@ const describeRoutineTurn = (input: {
         state: input.routineStateTransition.state,
         awaitingDecision: input.suspended === true,
       })
-    : input.session.declinedRoutine ?? null;
+    : input.session.declinedRoutine ?? input.session.suspendedRoutine ?? null;
+
+const ROUTINE_INVOCATIONS_TOTAL = "routine_invocations_total";
 
 export class ChatTurnLifecycle {
   private readonly activitySummaryPresenter = new ActivitySummaryPresenter();
@@ -661,6 +668,15 @@ export class ChatTurnLifecycle {
   }): Promise<CompletedAssistantTurn> {
     const safeTestTurn = input.executionMode === "safe_test";
     const routineTurnState = describeRoutineTurn(input);
+    const invocationReport = input.session.routineInvocationReport ?? null;
+    if (invocationReport) {
+      // Every turn-time outcome is counted here, where the reply reports it, so a
+      // call another routine kept from starting is counted like one that started.
+      this.metrics?.incrementCounter(ROUTINE_INVOCATIONS_TOTAL, {
+        help: "Routine tool invocations by outcome.",
+        labels: { outcome: invocationReport.outcome },
+      });
+    }
     const presentation = buildTurnTraceForPresentation({
       workspaceId: input.workspaceId,
       accountId: input.accountId,
@@ -859,6 +875,7 @@ export class ChatTurnLifecycle {
         // was still generated, so it is not suppressed. Safe-test turns never hand off.
         ...(input.ownershipHandoff && !safeTestTurn ? { ownership: { state: "human_owned", suppressed: false } } : {}),
         ...(routineTurnState ? { routine: routineTurnState } : {}),
+        ...(invocationReport ? { invocation: invocationReport } : {}),
       },
     };
   }

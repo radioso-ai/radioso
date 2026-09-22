@@ -74,9 +74,15 @@ describe("agent reply envelope contract (SC-004)", () => {
     expect(core.properties?.answerCoverage).toEqual({ $ref: "#/components/schemas/AnswerCoverageAssessment" });
     expect(core.properties?.ownership).toEqual({ $ref: "#/components/schemas/ChatOwnershipAck" });
     expect(core.properties?.routine).toEqual({ $ref: "#/components/schemas/RoutineTurnState" });
+    expect(core.properties?.invocation).toEqual({ $ref: "#/components/schemas/RoutineInvocationReport" });
     expect(core.properties?.traceId).toMatchObject({ type: "string" });
     expect(core.required).not.toContain("routine");
+    expect(core.required).not.toContain("invocation");
     expect(core.required).not.toContain("traceId");
+    expect(schemas.RoutineInvocationReport.required).toEqual(expect.arrayContaining(["toolName", "outcome"]));
+    expect(schemas.RoutineInvocationReport.properties?.outcome).toMatchObject({
+      enum: ["started", "reentered", "declined", "not_started", "unknown_tool"],
+    });
 
     const routineState = schemas.RoutineTurnState;
     expect(routineState.required).toEqual(expect.arrayContaining(["name", "status", "pendingInput"]));
@@ -146,6 +152,34 @@ describe("agent reply envelope contract (SC-004)", () => {
       ownership: { state: "ai_owned", suppressed: false },
     });
     expect(response.body).not.toHaveProperty("debug");
+  });
+
+  it("keeps accepting message + startConversation on the REST channel and refuses only routine + startConversation", async () => {
+    const { app, dependencies } = createAppWithMcpConverse();
+    const session = await issueTestSession(app);
+    const agent = await dependencies.agentService.resolve(session.workspaceId);
+    const credential = await dependencies.accessGrantService.issueGrant({
+      agentId: agent.id,
+      workspaceId: session.workspaceId,
+      principalKind: "agent-api",
+      channel: "agent-api",
+      originConstraint: { mode: "allow-all", origins: [] },
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    const chat = (body: Record<string, unknown>) => request(app)
+      .post(`/api/v1/agents/${agent.id}/chat`)
+      .set("Authorization", `Bearer ${credential.token}`)
+      .send(body);
+
+    // A bootstrap greeting request that also carries a message predates the routine body and
+    // stays valid: the greeting is served and the message is ignored, as before.
+    const greetingWithMessage = await chat({ message: "Hello", startConversation: true });
+    const greetingWithRoutine = await chat({ routine: { toolName: "start_return", input: {} }, startConversation: true });
+    const neither = await chat({});
+
+    expect(greetingWithMessage.status).not.toBe(400);
+    expect(greetingWithRoutine.status).toBe(400);
+    expect(neither.status).toBe(400);
   });
 
   it("returns the envelope core on a live MCP converse ask", async () => {

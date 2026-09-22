@@ -6,6 +6,7 @@ import {
   type ChatCitation,
   type ChatOwnershipAck,
   type ChatRoute,
+  type ChatRoutineInvocationReport,
   type ChatRoutineTurnState,
   type ChatStreamEvent,
   type ChatSuggestion,
@@ -44,12 +45,13 @@ type ChatPayload = {
   turnTrace?: TurnTraceEnvelope;
   answerCoverage?: ChatAnswerCoverageAssessment;
   interactionTrace?: ChatAnswerCoverageInteractionTrace;
-  /** Agent-facing routine state; only the agent reply envelope publishes it. */
+  /** Agent-facing routine state and invocation outcome; only the agent reply envelope publishes them. */
   routine?: ChatRoutineTurnState;
+  invocation?: ChatRoutineInvocationReport;
 };
 
 type PresentedChatPayload =
-  Omit<ChatPayload, "route" | "activitySummary" | "activityTrace" | "turnTrace" | "routine"> & {
+  Omit<ChatPayload, "route" | "activitySummary" | "activityTrace" | "turnTrace" | "routine" | "invocation"> & {
     debug?: ChatDiagnosticPayload;
   };
 
@@ -71,8 +73,9 @@ export const presentChatPayload = (payload: ChatPayload, options: { includeDebug
     turnTrace,
     answerCoverage,
     interactionTrace,
-    // Agent-facing only: the envelope re-adds it on the agent routes.
+    // Agent-facing only: the envelope re-adds them on the agent routes.
     routine: _routine,
+    invocation: _invocation,
     ...publicPayload
   } = payload;
 

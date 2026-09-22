@@ -93,8 +93,9 @@ starting with a letter — `start_return`, `request_callback`. The editor accept
 whatever you type and reports a name outside that grammar as a validation note,
 the same way it reports an unreachable step; Review & Publish refuses the
 revision until the name is fixed. Two routines on the same agent cannot share a
-name, and `ask_agent` and `get_conversation_updates` are taken by the agent's own
-tools.
+name, and the names the MCP surface keeps for itself — `ask_agent`,
+`radioso_docs`, `radioso_doc_page`, and `get_conversation_updates` — are refused
+as `exposure_tool_name_reserved`.
 
 Once the agent is published with a tool name, that name stays fixed for the
 routine — even while you later switch exposure off — so a calling agent never

@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 import request from "supertest";
 
+import { createAgentToolCatalogComposition } from "../../src/app/composition/agentToolCatalog.js";
 import { createMcpConverseRoutes } from "../../src/app/http/routes/mcpConverseRoutes.js";
 import { buildMcpConverseServices } from "../../src/app/server/dependencyBuilders.js";
 import type { ChatGateway } from "../../src/modules/chat/contracts/chatGateway.js";
 import type { RoutineDefinitionDraftInput } from "../../src/modules/routines/public.js";
-import { createTestApp, issueTestSession } from "../support/testApp.js";
+import { createTestApp, issueTestSession, publishTestAgentBaseline } from "../support/testApp.js";
 
 const RANKED_ACTIVATION_MARKER = "wants to start any registered routine";
 
@@ -90,6 +91,42 @@ const supportIntakeDraft = (): RoutineDefinitionDraftInput => ({
   terminals: [{ stableStepId: "terminal_complete", kind: "complete", instruction: "Complete intake.", ordinal: 1 }],
 });
 
+/** `start_return` with an approval step after the order number: invoking it suspends the routine. */
+const startReturnWithApprovalDraft = (): RoutineDefinitionDraftInput => startReturnDraft({
+  slots: [{ stableSlotId: "slot_order", key: "orderId", type: "text", required: true, description: "The order number", ordinal: 0 }],
+  steps: [
+    chatStep("ask_order", "Ask for {{slot.orderId}}.", 0),
+    {
+      stableStepId: "approve",
+      kind: "approval",
+      instruction: "Approve the return for {{slot.orderId}}.",
+      toolRef: null,
+      captureKey: "decision",
+      options: [{ id: "approve", label: "Approve" }, { id: "reject", label: "Reject" }],
+      ordinal: 1,
+      metadata: {},
+    },
+  ],
+  transitions: [
+    edge("ask_order", "approve", 0),
+    { fromStep: "approve", toRef: "done", guardKind: "field", guardText: null, fieldRef: "decision.id", fieldOp: "equals", fieldValue: "approve", ordinal: 1 },
+    { fromStep: "approve", toRef: "declined", guardKind: "field", guardText: null, fieldRef: "decision.id", fieldOp: "equals", fieldValue: "reject", ordinal: 2 },
+  ],
+  terminals: [
+    { stableStepId: "done", kind: "complete", instruction: "Confirm the return for {{slot.orderId}}.", ordinal: 3 },
+    { stableStepId: "declined", kind: "complete", instruction: "Explain the return was declined.", ordinal: 4 },
+  ],
+});
+
+const requestCallbackDraft = (): RoutineDefinitionDraftInput => startReturnDraft({
+  name: "Request a callback",
+  exposure: { enabled: true, toolName: "request_callback", description: "Ask for a callback." },
+  slots: [{ stableSlotId: "slot_phone", key: "phone", type: "text", required: true, description: "Phone number", ordinal: 0 }],
+  steps: [chatStep("ask_phone", "Ask for {{slot.phone}}.", 0)],
+  transitions: [edge("ask_phone", "done", 0)],
+  terminals: [{ stableStepId: "done", kind: "complete", instruction: "Confirm the callback.", ordinal: 1 }],
+});
+
 const parseSseEvents = (body: string): Array<{ event: string; data: Record<string, unknown> }> =>
   body.trim().split("\n\n").filter(Boolean).map((block) => {
     const event = block.match(/^event: (.+)$/m)?.[1];
@@ -100,9 +137,10 @@ const parseSseEvents = (body: string): Array<{ event: string; data: Record<strin
     return { event, data: JSON.parse(data) as Record<string, unknown> };
   });
 
-const createApp = () => {
+const createApp = (options: { catalog?: "live_definitions" | "published_revisions" } = {}) => {
   const routineGateway = createRoutineGateway();
   const ctx = createTestApp({
+    envOverrides: { METRICS_ENABLED: true, METRICS_AUTH_TOKEN: "metrics-test-token" },
     chatGateway: routineGateway.gateway,
     turnRouter: {
       async classify() {
@@ -113,9 +151,14 @@ const createApp = () => {
       path: "/api/v1/mcp/converse",
       createRouter: (dependencies) => createMcpConverseRoutes(dependencies, buildMcpConverseServices(dependencies)),
     }],
+    // The production reader composes the catalog over the immutable release store.
+    ...(options.catalog === "published_revisions" ? { agentToolCatalog: createAgentToolCatalogComposition } : {}),
   });
   return { ...ctx, gatewayCalls: routineGateway.calls };
 };
+
+const invocationCounts = (ctx: App): string[] =>
+  (ctx.dependencies.metricsRegistry?.renderPrometheus() ?? "").split("\n").filter((line) => line.startsWith("radioso_routine_invocations_total{"));
 
 type App = ReturnType<typeof createApp>;
 
@@ -208,9 +251,11 @@ describe("routine invocation (US2)", () => {
       status: "waiting_for_input",
       pendingInput: [{ key: "reason", type: "text", required: false, description: "Why it is coming back" }],
     });
+    expect(partial.body.invocation).toEqual({ toolName: "start_return", outcome: "started" });
     expect(partial.body.ownership).toEqual({ state: "ai_owned", suppressed: false });
     expect(partial.body.answerCoverage).toMatchObject({ availability: "not_recorded" });
     expect(ctx.gatewayCalls.rankedActivation).toBe(0);
+    expect(invocationCounts(ctx)).toEqual(['radioso_routine_invocations_total{outcome="started"} 1']);
 
     const conversations = await ctx.repositories.conversationRepository.listPageByAnonymousSession(
       converse.workspaceId,
@@ -259,49 +304,46 @@ describe("routine invocation (US2)", () => {
         ],
       },
     });
-    const conversations = await ctx.repositories.conversationRepository.listPageByAnonymousSession(
-      converse.workspaceId,
-      converse.publicConversationId,
-      { limit: 1, agentId: converse.agent.id },
-    );
-    expect(conversations.conversations).toHaveLength(0);
+    // The session's conversation is bound (the call was resolved against its release) but no turn ran.
     expect([...ctx.repositories.messageRepository.items.values()].flat()).toHaveLength(0);
+    expect(ctx.routineStateStore.states.size).toBe(0);
   });
 
   it("creates the approval exactly as chat does and reports waiting_for_approval (AS-4)", async () => {
     const ctx = createApp();
     const converse = await openConverseSession(ctx);
-    const draft = await ctx.dependencies.routineDefinitionService.createDraft(converse.workspaceId, converse.agent.id, startReturnDraft({
-      slots: [{ stableSlotId: "slot_order", key: "orderId", type: "text", required: true, description: "The order number", ordinal: 0 }],
-      steps: [
-        chatStep("ask_order", "Ask for {{slot.orderId}}.", 0),
-        {
-          stableStepId: "approve",
-          kind: "approval",
-          instruction: "Approve the return for {{slot.orderId}}.",
-          toolRef: null,
-          captureKey: "decision",
-          options: [{ id: "approve", label: "Approve" }, { id: "reject", label: "Reject" }],
-          ordinal: 1,
-          metadata: {},
-        },
-      ],
-      transitions: [
-        edge("ask_order", "approve", 0),
-        { fromStep: "approve", toRef: "done", guardKind: "field", guardText: null, fieldRef: "decision.id", fieldOp: "equals", fieldValue: "approve", ordinal: 1 },
-        { fromStep: "approve", toRef: "declined", guardKind: "field", guardText: null, fieldRef: "decision.id", fieldOp: "equals", fieldValue: "reject", ordinal: 2 },
-      ],
-      terminals: [
-        { stableStepId: "done", kind: "complete", instruction: "Confirm the return for {{slot.orderId}}.", ordinal: 3 },
-        { stableStepId: "declined", kind: "complete", instruction: "Explain the return was declined.", ordinal: 4 },
-      ],
-    }));
+    const draft = await ctx.dependencies.routineDefinitionService.createDraft(converse.workspaceId, converse.agent.id, startReturnWithApprovalDraft());
     expect(draft.validation).toEqual({ ok: true, diagnostics: [] });
 
     const response = await converseAsk(ctx, converse.sessionToken, { routine: { toolName: "start_return", input: { orderId: "A-1001" } } });
 
     expect(response.status).toBe(200);
     expect(response.body.routine).toEqual({ toolName: "start_return", name: "Start a return", status: "waiting_for_approval", pendingInput: [] });
+    expect(response.body.invocation).toEqual({ toolName: "start_return", outcome: "started" });
+  });
+
+  it("reports a tool call as not_started while a routine is suspended awaiting approval, and names that routine (AS-6)", async () => {
+    const ctx = createApp();
+    const converse = await openConverseSession(ctx);
+    await ctx.dependencies.routineDefinitionService.createDraft(converse.workspaceId, converse.agent.id, startReturnWithApprovalDraft());
+    await ctx.dependencies.routineDefinitionService.createDraft(converse.workspaceId, converse.agent.id, requestCallbackDraft());
+    const suspended = await converseAsk(ctx, converse.sessionToken, { routine: { toolName: "start_return", input: { orderId: "A-1001" } } });
+    expect(suspended.body.routine.status).toBe("waiting_for_approval");
+
+    const invoked = await converseAsk(ctx, converse.sessionToken, { routine: { toolName: "request_callback", input: { phone: "+1 555 0100" } } });
+    const message = await converseAsk(ctx, converse.sessionToken, { message: "Any news?" });
+
+    expect(invoked.status).toBe(200);
+    expect(invoked.body.invocation).toEqual({ toolName: "request_callback", outcome: "not_started" });
+    expect(invoked.body.routine).toEqual({ toolName: "start_return", name: "Start a return", status: "waiting_for_approval", pendingInput: [] });
+    expect(invoked.body.answer.text).toBe('routine:request_callback {"phone":"+1 555 0100"}');
+    // A message turn on the same suspended conversation still learns which routine is waiting; no invocation to report.
+    expect(message.body.routine).toEqual({ toolName: "start_return", name: "Start a return", status: "waiting_for_approval", pendingInput: [] });
+    expect(message.body).not.toHaveProperty("invocation");
+    expect(invocationCounts(ctx).sort()).toEqual([
+      'radioso_routine_invocations_total{outcome="not_started"} 1',
+      'radioso_routine_invocations_total{outcome="started"} 1',
+    ]);
   });
 
   it("answers normally on a second call to a completed once_per_conversation routine and still names it (AS-5)", async () => {
@@ -320,6 +362,7 @@ describe("routine invocation (US2)", () => {
     expect(second.status).toBe(200);
     expect(second.body.answer.text).toBe('routine:start_return {"orderId":"A-2002"}');
     expect(second.body.routine).toEqual({ toolName: "start_return", name: "Start a return", status: "completed", pendingInput: [] });
+    expect(second.body.invocation).toEqual({ toolName: "start_return", outcome: "declined" });
     expect(ctx.gatewayCalls.rankedActivation).toBe(0);
   });
 
@@ -343,6 +386,7 @@ describe("routine invocation (US2)", () => {
       status: "waiting_for_input",
       pendingInput: [{ key: "reason", type: "text", required: false, description: "Why it is coming back" }],
     });
+    expect(second.body.invocation).toEqual({ toolName: "start_return", outcome: "reentered" });
     expect(ctx.gatewayCalls.rankedActivation).toBe(0);
   });
 
@@ -359,20 +403,15 @@ describe("routine invocation (US2)", () => {
     expect(invoked.status).toBe(200);
     expect(invoked.body.routine).toMatchObject({ name: "Support intake", status: "waiting_for_input" });
     expect(invoked.body.routine).not.toHaveProperty("toolName");
+    expect(invoked.body.invocation).toEqual({ toolName: "start_return", outcome: "not_started" });
+    expect(invocationCounts(ctx)).toEqual(['radioso_routine_invocations_total{outcome="not_started"} 1']);
   });
 
   it("never lets an unrelated completed routine capture an invocation turn (AS-6)", async () => {
     const ctx = createApp();
     const converse = await openConverseSession(ctx);
     await ctx.dependencies.routineDefinitionService.createDraft(converse.workspaceId, converse.agent.id, startReturnDraft());
-    await ctx.dependencies.routineDefinitionService.createDraft(converse.workspaceId, converse.agent.id, startReturnDraft({
-      name: "Request a callback",
-      exposure: { enabled: true, toolName: "request_callback", description: "Ask for a callback." },
-      slots: [{ stableSlotId: "slot_phone", key: "phone", type: "text", required: true, description: "Phone number", ordinal: 0 }],
-      steps: [chatStep("ask_phone", "Ask for {{slot.phone}}.", 0)],
-      transitions: [edge("ask_phone", "done", 0)],
-      terminals: [{ stableStepId: "done", kind: "complete", instruction: "Confirm the callback.", ordinal: 1 }],
-    }));
+    await ctx.dependencies.routineDefinitionService.createDraft(converse.workspaceId, converse.agent.id, requestCallbackDraft());
     const completed = await converseAsk(ctx, converse.sessionToken, {
       routine: { toolName: "start_return", input: { orderId: "A-1001", reason: "Wrong size" } },
     });
@@ -399,6 +438,48 @@ describe("routine invocation (US2)", () => {
     expect(invoked.body.error).toMatchObject({ code: "not_found", details: { code: "routine_tool_unknown", toolName: "start_return" } });
   });
 
+  it("resolves a tool call against the release the conversation is pinned to, not the catalog a later release advertises (AS-7)", async () => {
+    const ctx = createApp({ catalog: "published_revisions" });
+    const converse = await openConverseSession(ctx);
+    // v1 (the session's baseline) exposes nothing; the first turn pins the conversation to it.
+    const first = await converseAsk(ctx, converse.sessionToken, { message: "hello" });
+    expect(first.status).toBe(200);
+    // v2 exposes start_return: the catalog a new session reads now lists it...
+    const draft = await ctx.dependencies.routineDefinitionService.createDraft(converse.workspaceId, converse.agent.id, startReturnDraft());
+    await publishTestAgentBaseline(ctx.app, { workspaceId: converse.workspaceId, agentId: converse.agent.id, routines: [draft.routine] });
+    expect((await converseTools(ctx, converse.sessionToken)).body.tools.map((tool: { toolName: string }) => tool.toolName)).toEqual(["start_return"]);
+
+    // ...but this conversation still runs on v1, so the call is refused before any turn.
+    const invoked = await converseAsk(ctx, converse.sessionToken, { routine: { toolName: "start_return", input: { orderId: "A-1001" } } });
+
+    expect(invoked.status).toBe(404);
+    expect(invoked.body.error).toMatchObject({ code: "not_found", details: { code: "routine_tool_unknown", toolName: "start_return" } });
+    const conversations = await ctx.repositories.conversationRepository.listPageByAnonymousSession(
+      converse.workspaceId,
+      converse.publicConversationId,
+      { limit: 1, agentId: converse.agent.id },
+    );
+    const messages = await ctx.repositories.messageRepository.listByConversationId(converse.workspaceId, conversations.conversations[0].id);
+    expect(messages.map((message) => message.role)).toEqual(["user", "assistant"]);
+  });
+
+  it("lists only the published release's exposed routines through the production catalog reader, never a draft (FR-012)", async () => {
+    const ctx = createApp({ catalog: "published_revisions" });
+    const converse = await openConverseSession(ctx);
+    const published = await ctx.dependencies.routineDefinitionService.createDraft(converse.workspaceId, converse.agent.id, startReturnDraft());
+    await publishTestAgentBaseline(ctx.app, { workspaceId: converse.workspaceId, agentId: converse.agent.id, routines: [published.routine] });
+    // Exposed, enabled, but only a draft: the live definition store has it, the release does not.
+    await ctx.dependencies.routineDefinitionService.createDraft(converse.workspaceId, converse.agent.id, requestCallbackDraft());
+
+    const tools = await converseTools(ctx, converse.sessionToken);
+
+    expect(tools.status).toBe(200);
+    expect(tools.body).toEqual({
+      agent: { name: converse.agent.name, description: null },
+      tools: [startReturnDescriptor(published.routine.lineageId)],
+    });
+  });
+
   it("accepts the same routine body on the REST agent channel, as JSON and in the SSE done frame (AS-9)", async () => {
     const ctx = createApp();
     const rest = await issueRestCredential(ctx);
@@ -419,10 +500,12 @@ describe("routine invocation (US2)", () => {
       pendingInput: [{ key: "reason", type: "text", required: false, description: "Why it is coming back" }],
     });
     expect(json.body.ownership).toEqual({ state: "ai_owned", suppressed: false });
+    expect(json.body.invocation).toEqual({ toolName: "start_return", outcome: "started" });
     expect(stream.status).toBe(200);
     const done = parseSseEvents(stream.text).find((event) => event.event === "done");
     expect(done?.data).toMatchObject({
       routine: { toolName: "start_return", name: "Start a return", status: "completed", pendingInput: [] },
+      invocation: { toolName: "start_return", outcome: "started" },
       ownership: { state: "ai_owned", suppressed: false },
     });
     expect(both.status).toBe(400);

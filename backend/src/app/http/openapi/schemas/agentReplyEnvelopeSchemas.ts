@@ -5,6 +5,7 @@ import { routineSlotTypes } from "../../../../modules/routines/public.js";
 import type { OpenApiSchemaCatalog } from "../openApiRegistry.js";
 
 const routineTurnStatuses = ["active", "waiting_for_input", "waiting_for_approval", "completed", "abandoned"] as const;
+const routineInvocationOutcomes = ["started", "reentered", "declined", "not_started", "unknown_tool"] as const;
 
 /**
  * The agent reply envelope: one core schema, referenced by the MCP converse
@@ -53,6 +54,16 @@ export const registerAgentReplyEnvelopeSchemas = (
     }),
   );
 
+  const RoutineInvocationReportSchema = registry.register(
+    "RoutineInvocationReport",
+    z.object({
+      toolName: z.string(),
+      outcome: z.enum(routineInvocationOutcomes),
+    }).openapi({
+      description: "What became of the tool call this turn carried. `not_started`: another routine was active or suspended and the existing interruption/approval rules kept the turn; `routine` then describes that routine. `declined`: the named routine already completed under `once_per_conversation`. `unknown_tool`: the release the conversation is pinned to carries no routine under that name.",
+    }),
+  );
+
   const AgentReplyEnvelopeCoreSchema = registry.register(
     "AgentReplyEnvelopeCore",
     z.object({
@@ -60,6 +71,7 @@ export const registerAgentReplyEnvelopeSchemas = (
       answerCoverage: shared.AnswerCoverageAssessmentSchema,
       ownership: ChatOwnershipAckSchema,
       routine: RoutineTurnStateSchema.optional(),
+      invocation: RoutineInvocationReportSchema.optional(),
       traceId: z.string().optional(),
     }).openapi({
       description: "The machine-readable part of an agent reply, identical on the MCP converse ask route and the REST agent chat route.",
@@ -99,6 +111,7 @@ export const registerAgentReplyEnvelopeSchemas = (
     ChatOwnershipAckSchema,
     RoutinePendingInputSchema,
     RoutineTurnStateSchema,
+    RoutineInvocationReportSchema,
     AgentReplyEnvelopeCoreSchema,
     McpConverseAskResponseSchema,
     AgentChannelChatTurnResponseSchema,

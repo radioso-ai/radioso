@@ -337,10 +337,10 @@ const routineEditInputSchema = z.object({ ...routineProposalIdentitySchema, chan
 const routineExposureInputSchema = z.object({
   ...routineProposalIdentitySchema,
   enabled: z.boolean(),
-  toolName: z.string().trim().max(ROUTINE_DEFINITION_LIMITS.exposureToolName),
+  toolName: z.string().trim().max(ROUTINE_DEFINITION_LIMITS.exposureToolName).optional(),
   description: z.string().trim().max(ROUTINE_DEFINITION_LIMITS.exposureDescription),
 }).strict();
-const routineExposureDescription = `Propose offering a routine to calling AI agents as a named tool, or withdrawing that offer. A calling agent then starts the routine directly with its information fields filled in, instead of describing the request in prose. \`toolName\` is the name the agent calls, 2-63 lower-case letters, digits, and underscores, starting with a letter (for example start_return); \`description\` tells a calling agent when to use it. A tool name is fixed once the agent is published with it, so pass the routine's current name when only changing \`enabled\` or \`description\`. Routines whose activation has a gate cannot be exposed. ${scopedAgentDraftPublicationNote}`;
+const routineExposureDescription = `Propose offering a routine to calling AI agents as a named tool, or withdrawing that offer. A calling agent then starts the routine directly with its information fields filled in, instead of describing the request in prose. \`toolName\` is the name the agent calls, 2-63 lower-case letters, digits, and underscores, starting with a letter (for example start_return); \`description\` tells a calling agent when to use it. A tool name is fixed once the agent is published with it: omit \`toolName\` to keep the routine's current name when only changing \`enabled\` or \`description\`. Routines whose activation has a gate cannot be exposed. ${scopedAgentDraftPublicationNote}`;
 
 // The tool transport renders a nested input object as the bare word "object", so the shape of
 // `changes` has to live in the description or the model invents one of its own. Shared by both
@@ -536,7 +536,8 @@ export const createRoutineProposalCopilotTools = (deps: RoutineProposalCopilotTo
           await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
           const versionToken = await routineAdapter.readVersionToken(context.workspaceId, targetRef);
           await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
-          const draft = await routineAdapter.draftEdit(context.workspaceId, targetRef, { exposure: { enabled, toolName, description } }, rationale);
+          // A blank name keeps the routine's stored one (routines/authoringEdit.ts resolveRoutineFieldPatch).
+          const draft = await routineAdapter.draftEdit(context.workspaceId, targetRef, { exposure: { enabled, ...(toolName ? { toolName } : {}), description } }, rationale);
           return proposeRoutineChange(deps, routineAdapter, context, targetRef, draft, versionToken, evidenceIds);
         },
       }),

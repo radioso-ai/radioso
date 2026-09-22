@@ -6,7 +6,7 @@ import type {
   ChatAnswerCoverageAssessment,
   ChatAnswerCoverageInteractionTrace,
 } from "../contracts/answerCoverage.js";
-import type { ChatRoutineTurnState } from "../contracts/routineTurnState.js";
+import type { ChatRoutineInvocationReport, ChatRoutineTurnState } from "../contracts/routineTurnState.js";
 
 export type ChatSuggestionKind = string;
 
@@ -61,6 +61,8 @@ export interface ChatResponse {
   ownership?: ChatOwnershipAck;
   /** Where this turn left the routine it touched; absent when no routine ran. */
   routine?: ChatRoutineTurnState;
+  /** What became of the tool call this turn carried; absent on a message turn. */
+  invocation?: ChatRoutineInvocationReport;
   /**
    * Turn-trace envelope: conversation spine as the root span with capability
    * traces as typed leaves. Surfaced under `debug` (operator-only); the legacy

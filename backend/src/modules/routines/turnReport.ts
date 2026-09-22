@@ -31,6 +31,19 @@ export interface RoutineTurnState {
 }
 
 /**
+ * What became of the tool call a turn carried. `not_started` means the call
+ * reached the turn but never reached the activator: another routine was active
+ * or suspended and the existing interruption/approval rules kept the turn.
+ */
+export type RoutineInvocationOutcome = "started" | "reentered" | "declined" | "not_started" | "unknown_tool";
+
+/** Reported only on an invocation turn, beside the routine state the turn left. */
+export interface RoutineInvocationReport {
+  toolName: string;
+  outcome: RoutineInvocationOutcome;
+}
+
+/**
  * Describes a saved routine state for the turn that produced it, over the
  * compiled routines that turn could see. The turn provider returns one beside
  * its activator so the host can report without knowing routine internals.
@@ -43,4 +56,6 @@ export interface RoutineTurnReporter {
    * completed so the caller learns why nothing started; null on any other turn.
    */
   describeDeclined(): RoutineTurnState | null;
+  /** The tool call this turn carried and its outcome; null on a message turn. */
+  describeInvocation(): RoutineInvocationReport | null;
 }

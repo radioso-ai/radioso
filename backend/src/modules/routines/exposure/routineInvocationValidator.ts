@@ -83,6 +83,21 @@ const hasExpectedFormat = (property: AgentToolInputProperty, value: string): boo
  * turn state exists. Every problem is reported at once so a calling agent can
  * fix the whole call in one retry; values are never echoed back.
  */
+// A string is what the caller typed for the slot: trimmed like a chat answer
+// (`conversation-engine/src/slotCorrection.ts` `coerceValue`), and blank after
+// trimming is no value at all, so it can neither satisfy a required slot nor
+// prefill an optional one with an empty variable.
+const normalizeValue = (value: unknown): unknown => {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (typeof value !== "string") {
+    return value;
+  }
+  const trimmed = value.trim();
+  return trimmed.length === 0 ? undefined : trimmed;
+};
+
 export const validateRoutineInvocation = (descriptor: AgentToolDescriptor, rawInput: unknown): RoutineInvocationValidation => {
   const input = isRecord(rawInput) ? rawInput : {};
   const errors: RoutineInvocationError[] = [];
@@ -90,17 +105,18 @@ export const validateRoutineInvocation = (descriptor: AgentToolDescriptor, rawIn
   const { properties, required } = descriptor.inputSchema;
 
   for (const key of required) {
-    if (!(key in input) || input[key] === undefined || input[key] === null) {
+    if (normalizeValue(input[key]) === undefined) {
       errors.push({ path: key, code: "required" });
     }
   }
-  for (const [key, value] of Object.entries(input)) {
+  for (const [key, rawValue] of Object.entries(input)) {
     const property = properties[key];
     if (!property) {
       errors.push({ path: key, code: "unknown_field" });
       continue;
     }
-    if (value === undefined || value === null) {
+    const value = normalizeValue(rawValue);
+    if (value === undefined) {
       continue;
     }
     if (!hasExpectedType(property, value)) {

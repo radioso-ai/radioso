@@ -406,6 +406,34 @@ export class ChatTurnAssembly {
     }, "Coverage routine activation failed");
   }
 
+  /**
+   * A routine suspended awaiting an approval decision keeps the turn without
+   * running, so the routine attempt is bypassed and nothing else would describe
+   * it. Reports the suspended routine — and, on an invocation turn, that the tool
+   * call started nothing — onto the session for the reply envelope.
+   */
+  async describeSuspendedRoutineTurn(session: PreparedSession, suspendedRoutine: RoutineState): Promise<void> {
+    const reporter = await this.options.routineProvider?.reporterFor?.({
+      agentId: session.agent.id,
+      agentRevisionId: session.conversation.agentRevisionId ?? undefined,
+      workspaceId: session.conversation.workspaceId,
+      pinnedRoutineIds: [suspendedRoutine.routineId],
+      previewRoutineIds: session.previewRoutineIds,
+      routineInvocation: session.routineInvocation,
+    });
+    if (!reporter) {
+      return;
+    }
+    const described = reporter.describe({ state: suspendedRoutine, awaitingDecision: true });
+    if (described) {
+      session.suspendedRoutine = described;
+    }
+    const invocationReport = reporter.describeInvocation();
+    if (invocationReport) {
+      session.routineInvocationReport = invocationReport;
+    }
+  }
+
   async attemptRoutineTurn(
     session: PreparedSession,
     input: {
@@ -514,6 +542,12 @@ export class ChatTurnAssembly {
       presentRoutineReply: (response) =>
         presentRoutineRenderableAnswer(this.options.chatAnswerPresenter, response),
     });
+    // The tool call's outcome is known once the engine ran, whether or not a
+    // routine claimed the turn; the lifecycle reports it from the session.
+    const invocationReport = routineTurnPorts.reporter?.describeInvocation() ?? null;
+    if (invocationReport) {
+      session.routineInvocationReport = invocationReport;
+    }
     if (!outcome) {
       // A direct invocation the activator declined leaves no routine state; the
       // turn answers normally and the envelope still names the completed routine.

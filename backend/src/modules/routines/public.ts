@@ -26,6 +26,7 @@ export { compileRoutineDefinition, legacyCompiledRoutineId, routineCanActivate }
 export { selectCanonicalRoutineDefinitions } from "./draftProjection.js";
 export {
   applyRoutineFieldPatch,
+  resolveRoutineFieldPatch,
   canonicalRoutineAuthoringDraft,
   describeRoutineFieldPatch,
   projectRoutineForReview,
@@ -36,7 +37,7 @@ export { ProbeRoutineReader, type ProbeRoutineReadPort } from "./probeRoutineRea
 export { createRoutineActivationPrefilter } from "./routineActivationPrefilter.js";
 export { createRoutineTurnProvider } from "./turnProvider.js";
 export { createRoutineTurnReporter } from "./routineTurnReporter.js";
-export type { RoutineTurnReporter, RoutineTurnState } from "./turnReport.js";
+export type { RoutineInvocationReport, RoutineTurnReporter, RoutineTurnState } from "./turnReport.js";
 export {
   RoutineSkillExecutorDispatcher,
   type RoutineSkillResolver,

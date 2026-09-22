@@ -1104,8 +1104,9 @@ describe("routine exposure validation (agent-consumable service surface)", () =>
     expect(diagnostic).toMatchObject({ code: "exposure_tool_name_invalid", location: "exposure.toolName" });
   });
 
-  it("reports a reserved tool name the MCP surface already claims", () => {
-    for (const toolName of ["ask_agent", "get_conversation_updates"]) {
+  it("reports a reserved tool name the MCP surface already claims, the docs tools included", () => {
+    // Every static tool packages/radioso-mcp-server serves (server.ts), plus the resumption tool US5 adds.
+    for (const toolName of ["ask_agent", "get_conversation_updates", "radioso_docs", "radioso_doc_page"]) {
       expect(exposureCodes(exposed({ enabled: true, toolName, description: "" })), toolName).toEqual(["exposure_tool_name_reserved"]);
     }
   });

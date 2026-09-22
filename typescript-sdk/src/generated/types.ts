@@ -1283,7 +1283,7 @@ export interface paths {
         put?: never;
         /**
          * Run chat through a REST credential bound to this agent
-         * @description Send exactly one of `message`, `routine` (a tool call to one exposed routine; validated against the catalog before any turn state is written, with the same `routine_tool_unknown` / `routine_invocation_invalid` errors as the MCP converse ask route), or `startConversation`.
+         * @description Send `message` or `routine` (a tool call to one exposed routine; validated against the catalog of the release the conversation is pinned to before any turn state is written, with the same `routine_tool_unknown` / `routine_invocation_invalid` errors as the MCP converse ask route), never both. `startConversation: true` requests the bootstrap greeting instead of a turn: it accepts a `message` (ignored) but not a `routine`.
          */
         post: operations["createAgentChannelChatResponse"];
         delete?: never;
@@ -7702,6 +7702,12 @@ export interface components {
             status: "active" | "waiting_for_input" | "waiting_for_approval" | "completed" | "abandoned";
             pendingInput: components["schemas"]["RoutinePendingInput"][];
         };
+        /** @description What became of the tool call this turn carried. `not_started`: another routine was active or suspended and the existing interruption/approval rules kept the turn; `routine` then describes that routine. `declined`: the named routine already completed under `once_per_conversation`. `unknown_tool`: the release the conversation is pinned to carries no routine under that name. */
+        RoutineInvocationReport: {
+            toolName: string;
+            /** @enum {string} */
+            outcome: "started" | "reentered" | "declined" | "not_started" | "unknown_tool";
+        };
         /** @description The machine-readable part of an agent reply, identical on the MCP converse ask route and the REST agent chat route. */
         AgentReplyEnvelopeCore: {
             /** Format: uuid */
@@ -7709,6 +7715,7 @@ export interface components {
             answerCoverage: components["schemas"]["AnswerCoverageAssessment"];
             ownership: components["schemas"]["ChatOwnershipAck"];
             routine?: components["schemas"]["RoutineTurnState"];
+            invocation?: components["schemas"]["RoutineInvocationReport"];
             traceId?: string;
         };
         /** @description The machine-readable part of an agent reply, identical on the MCP converse ask route and the REST agent chat route. */

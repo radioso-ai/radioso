@@ -125,10 +125,11 @@ Read it field by field:
 
 - `answerCoverage` is the same coverage verdict the dashboard trace shows for the turn. `coverage` is `answered`, `partial`, `unanswered`, or `unclear`, and `reason` says why; `intentional_scope_boundary` with `unanswered` means the agent declined on purpose. When no assessment ran for the turn (a direct reply, a routine step), `availability` is `not_recorded` and the verdict fields are absent.
 - `ownership` tells you who owns the conversation after this turn. `{ "state": "human_owned", "suppressed": true }` means a person has taken over and the agent generated nothing; keep the `conversationId` and come back for the reply.
-- `routine` appears when the turn ran a routine. `status` is one of `active`, `waiting_for_input`, `waiting_for_approval`, `completed`, or `abandoned`, and `pendingInput` lists every required slot the routine still needs plus the current step's optional ones, each with its `key`, `type` (`text`, `number`, `boolean`, `email`, `date`), `required` flag, and `description` — so you can supply all of them in one follow-up message.
+- `routine` appears when the turn touched a routine: the one it ran, or the one that kept the turn while it waits for an operator's approval. `status` is one of `active`, `waiting_for_input`, `waiting_for_approval`, `completed`, or `abandoned`, and `pendingInput` lists every required slot the routine still needs plus the current step's optional ones, each with its `key`, `type` (`text`, `number`, `boolean`, `email`, `date`), `required` flag, and `description` — so you can supply all of them in one follow-up message.
+- `invocation` appears only when you called a routine tool (next section) and says what became of the call: `toolName` and an `outcome` of `started`, `reentered`, `declined`, `not_started`, or `unknown_tool`.
 - `traceId` is the turn's trace id, the one an operator sees in Activity; quote it when you report a problem.
 
-The standalone MCP server forwards this envelope unchanged as the `ask_agent` tool's `structuredContent`; the tool's text content is `answer.text`. The REST agent channel (`POST /api/v1/agents/{agentId}/chat`) returns the same `answerCoverage`, `ownership`, `routine`, and `traceId` fields beside its own `answer` string and `citations` array, and its SSE `done` frame carries them too.
+The standalone MCP server forwards this envelope unchanged as the `ask_agent` tool's `structuredContent`; the tool's text content is `answer.text` followed by a blank line and the same envelope as pretty-printed JSON, so a client that only reads text still sees every field. The REST agent channel (`POST /api/v1/agents/{agentId}/chat`) returns the same `answerCoverage`, `ownership`, `routine`, `invocation`, and `traceId` fields beside its own `answer` string and `citations` array, and its SSE `done` frame carries them too.
 
 ### Routines as tools
 
@@ -187,7 +188,8 @@ The reply is the same envelope, and `routine` tells you where the call landed:
     "pendingInput": [
       { "key": "reason", "type": "text", "required": false, "description": "Why the order is coming back." }
     ]
-  }
+  },
+  "invocation": { "toolName": "start_return", "outcome": "started" }
 }
 ```
 
@@ -196,12 +198,18 @@ Supply the pending slots in a follow-up `message`; the routine reads them the wa
 Input is checked against the descriptor before anything is recorded, so a bad call leaves the conversation untouched:
 
 - An unknown tool name returns `404` with `error.details.code` `routine_tool_unknown`.
-- Input that does not match the schema returns `400` with `error.details.code` `routine_invocation_invalid` and `error.details.errors`, one entry per field: `{ "path": "orderId", "code": "required" }`, with `code` one of `required`, `type`, `format`, `unknown_field`, or `too_long` (a string value over 2000 characters). Fix every listed field in one retry; values are never echoed back.
+- Input that does not match the schema returns `400` with `error.details.code` `routine_invocation_invalid` and `error.details.errors`, one entry per field: `{ "path": "orderId", "code": "required" }`, with `code` one of `required`, `type`, `format`, `unknown_field`, or `too_long` (a string value over 2000 characters). String values are trimmed first, and a blank string counts as missing: it fails a required slot and is dropped from an optional one. Fix every listed field in one retry; values are never echoed back.
 - A body with both `message` and `routine`, or neither, returns `400`.
 
-Reentry follows the routine's own setting. Calling a tool whose routine already completed in this conversation under **Once per conversation** answers normally and still carries `routine: { "toolName", "name", "status": "completed", "pendingInput": [] }`, so a client learns why nothing started; under **Every time it matches** the routine starts again with the new input. If a different routine is mid-flight, the call is treated like any other message to it.
+`invocation.outcome` tells you what the accepted call did, so you never have to infer it from the answer text:
 
-`GET /api/v1/mcp/converse/tools` returns the agent's current published catalog on every call; the session token only says which agent. The conversation behind the session stays on the release it started on, so a routine exposed or renamed after that point can appear in `tools` before the conversation can run it, and calling it returns `routine_tool_unknown`; rotating the credential starts a fresh conversation on the current release. Draft routines are never listed — the operator's Test Chat is the place to try one.
+- `started` — the routine began with your input.
+- `reentered` — the routine had already completed in this conversation and started again with the new input, because its reentry setting allows it (**Every time it matches**, or the semantic setting — an explicit call already answers the question that setting asks of a message).
+- `declined` — the routine had already completed and **Once per conversation** keeps it closed. The turn answers normally, and `routine` still carries `{ "toolName", "name", "status": "completed", "pendingInput": [] }` so you learn why nothing started.
+- `not_started` — a different routine was mid-flight or waiting for an operator's approval, so the existing interruption and approval rules kept the turn: an active routine reads your call like any other message, a suspended one holds it. `routine` describes that routine, so you can see what it still needs.
+- `unknown_tool` — the release this conversation runs on carries no routine under that name. The pre-check below normally refuses such a call with `404` before the turn; this outcome covers a release that changed between the check and the turn.
+
+The tool name is checked against the release the conversation is pinned to, on both the MCP ask route and the REST agent channel, before any message is recorded. The conversation behind a session stays on the release it started on, while `GET /api/v1/mcp/converse/tools` returns the agent's current published catalog on every call (the session token only says which agent), so a routine exposed or renamed after the conversation began can appear in `tools` yet return `routine_tool_unknown` when called; rotating the credential starts a fresh conversation on the current release. Draft routines are never listed — the operator's Test Chat is the place to try one.
 
 ### Routine tools over standalone MCP
 
@@ -211,9 +219,9 @@ An MCP client sees the same catalog without calling the REST route itself. The s
 - `radioso_docs` and `radioso_doc_page`, Radioso's own documentation
 - one tool per descriptor, named by its `toolName`, carrying the operator's description and the descriptor's `inputSchema` verbatim
 
-So the `start_return` example above appears to the client as a tool `start_return(orderId, reason?)`. Calling it is the routine invocation from the previous section: the server checks the arguments against the schema before the backend sees them (a call missing `orderId` fails at the MCP layer as a tool error), then sends `{ "routine": { "toolName": "start_return", "input": { … } } }` on the ask route. The result's `structuredContent` is the full agent reply envelope, and its text content is `answer.text` — the same shape `ask_agent` returns, so a client reads `routine.status` and `pendingInput` the same way whichever tool it called.
+So the `start_return` example above appears to the client as a tool `start_return(orderId, reason?)`. Calling it is the routine invocation from the previous section: the server checks the arguments against the schema before the backend sees them (a call missing `orderId` fails at the MCP layer as a tool error, and the server's audit log records the refusal with the tool name only), then sends `{ "routine": { "toolName": "start_return", "input": { … } } }` on the ask route. The result's `structuredContent` is the full agent reply envelope, and its text content is `answer.text` followed by the same envelope as JSON — the same shape `ask_agent` returns, so a client reads `routine.status`, `pendingInput`, and `invocation.outcome` the same way whichever tool it called.
 
-A routine exposed, renamed, or withdrawn after the session opened is picked up when the client's next session is established (after the current one expires, or after the credential is exchanged again); the server sends no `notifications/tools/list_changed`. When the pinned catalog and the release a conversation runs on disagree, the backend refuses the call and the client sees a tool error whose `details.code` is `routine_tool_unknown`.
+A routine exposed, renamed, or withdrawn after the session opened is picked up when the client's next session is established (after the current one expires, or after the credential is exchanged again); the server sends no `notifications/tools/list_changed`. The backend checks every call against the release the session's conversation is pinned to, so when the pinned catalog and that release disagree the client sees a tool error whose `details.code` is `routine_tool_unknown` and nothing is recorded.
 
 Operators who expose a routine under a name the server reserves for a static tool cannot publish it — the backend refuses reserved names. If a deployment ever presents one anyway, the server keeps the static tool, leaves that routine out of the session's list, and logs a warning.
 

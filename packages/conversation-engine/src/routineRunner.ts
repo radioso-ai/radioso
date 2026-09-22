@@ -7,6 +7,7 @@ import type {
   ConversationRoutineStepRenderer,
   Routine,
   RoutineActionRequest,
+  RoutineContextRenderer,
   RoutineGuard,
   RoutineNextStepDecision,
   RoutineRunTrace,
@@ -167,18 +168,13 @@ const projectStep = (step: RoutineStep): SteeringRule[] =>
       }]
     : [];
 
-const SLOT_REFERENCE = /\{\{\s*slot\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/gu;
+// A step instruction embeds two kinds of reference: `{{slot.<key>}}` reads a captured
+// variable, `{{context.<name>}}` reads a staged context variable (the visitor's current
+// page, a host-pushed value). Both resolve in ONE pass over the authored text, so a value
+// substituted for one reference is never re-scanned for the other — a visitor-typed slot
+// value or a page title cannot smuggle a second reference in.
+const STEP_REFERENCE = /\{\{\s*(slot|context)\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/gu;
 
-/**
- * Substitute `{{slot.<key>}}` references in a step's instruction with the values the
- * routine has captured so far, so a confirmation like "call you at {{slot.phone}}"
- * renders the real value rather than leaking the raw token to the user. A reference to
- * a slot not captured yet resolves to an empty string, not the literal token.
- */
-// Captured slot values come from LLM-extracted JSON and are typed as `unknown`; render
-// them with the same default stringification `String()` would use for any JS value
-// (including the "[object Object]" fallback for a plain object), just spelled out so the
-// static type of each branch is known rather than `unknown`.
 const stringifySlotValue = (value: unknown): string => {
   if (typeof value === "string") {
     return value;
@@ -195,9 +191,24 @@ const stringifySlotValue = (value: unknown): string => {
   return Array.isArray(value) ? value.toString() : Object.prototype.toString.call(value);
 };
 
-const interpolateSlots = (text: string, variables: Record<string, unknown>): string =>
-  text.replace(SLOT_REFERENCE, (_match, key: string) =>
-    Object.prototype.hasOwnProperty.call(variables, key) ? stringifySlotValue(variables[key]) : "");
+/**
+ * Fills captured slots and referenced context into a step's authored instruction before it
+ * is rendered. The host's renderer decides what any context variable looks like; the engine
+ * only substitutes. An uncaptured slot, an absent or withheld context variable, or no
+ * context renderer at all leaves an empty string, never the raw token.
+ */
+const resolveStepAction = (
+  action: string,
+  variables: Record<string, unknown>,
+  stagedContext: TurnContext["stagedContext"],
+  contextRenderer: RoutineContextRenderer | undefined,
+): string =>
+  action.replace(STEP_REFERENCE, (_match, kind: string, name: string) => {
+    if (kind === "context") {
+      return contextRenderer?.render({ name, stagedContext }) ?? "";
+    }
+    return Object.prototype.hasOwnProperty.call(variables, name) ? stringifySlotValue(variables[name]) : "";
+  });
 
 const assignOutputs = (
   outputAssignments: Record<string, string> | undefined,
@@ -325,15 +336,26 @@ const completionExportActionFor = (
  * mechanics; generation/presentation stays in the host. Implements the slice-1
  * `ConversationRoutineRunner` seam, so the engine resumes through it unchanged.
  */
+interface DefaultRoutineRunnerOptions {
+  /** Time source for relative-date guards; defaults to the wall clock. */
+  clock?: () => Date;
+  /** Renders `{{context.<name>}}` references in step instructions; absent means they resolve to nothing. */
+  contextRenderer?: RoutineContextRenderer;
+}
+
 export class DefaultRoutineRunner implements ConversationRoutineRunner {
   constructor(
     private readonly routines: readonly Routine[],
     private readonly selector: ConversationRoutineNextStepSelector,
     private readonly renderer: ConversationRoutineStepRenderer,
     private readonly skillDispatcher?: ConversationRoutineSkillDispatcher,
-    // Injectable so relative-date guards ("older_than 6 months") are deterministic in tests.
-    private readonly clock: () => Date = () => new Date(),
+    private readonly options: DefaultRoutineRunnerOptions = {},
   ) {}
+
+  // Injectable so relative-date guards ("older_than 6 months") are deterministic in tests.
+  private get clock(): () => Date {
+    return this.options.clock ?? (() => new Date());
+  }
 
   getCurrentStep(state: RoutineState): RoutineStep | null {
     const routine = this.routines.find((candidate) => candidate.id === state.routineId);
@@ -740,7 +762,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       }
       const nextState: RoutineState = { ...state, path, variables, attempts, status: "suspended" };
       const renderedStep = step.action
-        ? { ...step, action: interpolateSlots(step.action, variables) }
+        ? { ...step, action: resolveStepAction(step.action, variables, stagedContext, this.options.contextRenderer) }
         : step;
       const baseSteering = projectStep(renderedStep);
       const steering = input.steeringResolver
@@ -777,10 +799,11 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     }
 
     const nextState: RoutineState = { ...state, path, variables, attempts, status: "active" };
-    // Fill the captured slot values into the step's instruction before it reaches the
-    // renderer, so references like "{{slot.phone}}" render the real value.
+    // Fill the captured slot values and referenced context into the step's instruction
+    // before it reaches the renderer, so "{{slot.phone}}" renders the real value and
+    // "{{context.page_context}}" the host's rendering of the visitor's page.
     const renderedStep = step.action
-      ? { ...step, action: interpolateSlots(step.action, variables) }
+      ? { ...step, action: resolveStepAction(step.action, variables, stagedContext, this.options.contextRenderer) }
       : step;
     const turnWithStagedContext: TurnContext = stagedContext === turn.stagedContext
       ? turn
@@ -822,7 +845,9 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       response,
       // A terminal step ends the routine — clear its state.
       nextState: step.kind === "terminal" ? null : nextState,
-      ...(terminalKind ? { terminal: { kind: terminalKind, stepId: step.id } } : {}),
+      ...(terminalKind
+        ? { terminal: { kind: terminalKind, stepId: step.id, collected: declaredSlotVariables(routine, variables) } }
+        : {}),
       ...(actions.length > 0 ? { actions } : {}),
       trace,
     };

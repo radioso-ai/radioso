@@ -27,7 +27,7 @@ function FeedbackHarness({ onDraftChange }: { onDraftChange: (draft: RoutineDefi
   const echoOrder = useRef(0)
 
   return (
-    <RoutineSkillCatalogContext.Provider value={{ agentId: '', skills: [], isLoading: false, error: null }}>
+    <RoutineSkillCatalogContext.Provider value={{ agentId: '', skills: [], contextVariables: [], isLoading: false, error: null }}>
       <RoutineDocumentTab
         draft={draft}
         onDraftChange={(next) => {
@@ -48,7 +48,7 @@ function DocumentEditorSessionHarness({
   editingRoutineId: string | null
 }) {
   return (
-    <RoutineSkillCatalogContext.Provider value={{ agentId: '', skills: [], isLoading: false, error: null }}>
+    <RoutineSkillCatalogContext.Provider value={{ agentId: '', skills: [], contextVariables: [], isLoading: false, error: null }}>
       <div data-editing-routine-id={editingRoutineId ?? 'new'}>
         <RoutineDocumentTab
           key={`test-agent:${routineRouteId}`}
@@ -88,7 +88,7 @@ describe('RoutineDocumentTab', () => {
     expect(() => {
       act(() => {
         root.render(
-          <RoutineSkillCatalogContext.Provider value={{ agentId: '', skills: [], isLoading: false, error: null }}>
+          <RoutineSkillCatalogContext.Provider value={{ agentId: '', skills: [], contextVariables: [], isLoading: false, error: null }}>
             <RoutineDocumentTab draft={newRoutineDraft} onDraftChange={onDraftChange} />
           </RoutineSkillCatalogContext.Provider>,
         )
@@ -101,7 +101,7 @@ describe('RoutineDocumentTab', () => {
   it('opens the instruction editor when activating a step with an empty instruction', () => {
     act(() => {
       root.render(
-        <RoutineSkillCatalogContext.Provider value={{ agentId: '', skills: [], isLoading: false, error: null }}>
+        <RoutineSkillCatalogContext.Provider value={{ agentId: '', skills: [], contextVariables: [], isLoading: false, error: null }}>
           <RoutineDocumentTab draft={newRoutineDraft} onDraftChange={vi.fn()} />
         </RoutineSkillCatalogContext.Provider>,
       )
@@ -142,7 +142,7 @@ describe('RoutineDocumentTab', () => {
   it('opens the new condition editor when adding a branch to an active step', () => {
     act(() => {
       root.render(
-        <RoutineSkillCatalogContext.Provider value={{ agentId: '', skills: [], isLoading: false, error: null }}>
+        <RoutineSkillCatalogContext.Provider value={{ agentId: '', skills: [], contextVariables: [], isLoading: false, error: null }}>
           <RoutineDocumentTab draft={branchRoutineDraft} onDraftChange={vi.fn()} />
         </RoutineSkillCatalogContext.Provider>,
       )
@@ -176,7 +176,7 @@ describe('RoutineDocumentTab', () => {
     }
     act(() => {
       root.render(
-        <RoutineSkillCatalogContext.Provider value={{ agentId: '', skills: [], isLoading: false, error: null }}>
+        <RoutineSkillCatalogContext.Provider value={{ agentId: '', skills: [], contextVariables: [], isLoading: false, error: null }}>
           <RoutineDocumentTab
             draft={draft}
             onDraftChange={vi.fn()}

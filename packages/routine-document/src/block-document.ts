@@ -1,4 +1,5 @@
 import {
+  CONTEXT_REFERENCE_PATTERN,
   routineDefinitionDraftEditingInputSchema,
   routineGuardProvenance,
   type RoutineDefinitionDraftEditingAuthoringInput,
@@ -15,9 +16,14 @@ type DraftStep = RoutineDefinitionDraftEditingInput['steps'][number]
 type DraftTransition = RoutineDefinitionDraftEditingInput['transitions'][number]
 type DraftTerminal = RoutineDefinitionDraftEditingInput['terminals'][number]
 
+// A step instruction is text plus inline references: a `slotReference` reads a value the
+// routine collects (`{{slot.<key>}}`), a `contextReference` reads a context variable the
+// agent has — the visitor's current page, a host-pushed value (`{{context.<name>}}`).
+// `source` keeps the exact authored token so writing back changes nothing.
 export type RoutineBlockInstructionSegment =
   | { kind: 'text'; text: string }
   | { kind: 'slotReference'; key: string; source: string }
+  | { kind: 'contextReference'; key: string; source: string }
 
 export type RoutineBlockSlot = Omit<DraftSlot, 'ordinal'>
 
@@ -88,14 +94,25 @@ export type RoutineToBlockDocResult =
 
 const byOrdinal = <T extends { ordinal: number }>(left: T, right: T): number => left.ordinal - right.ordinal
 
+type ReferenceKind = Exclude<RoutineBlockInstructionSegment['kind'], 'text'>
+
+// Both reference grammars are scanned with their shared patterns and merged by position, so
+// this projection cannot drift from what the compiler and validator recognise.
+const referenceMatches = (instruction: string): Array<{ kind: ReferenceKind; key: string; source: string; start: number }> =>
+  [
+    ...[...instruction.matchAll(SLOT_REFERENCE)].map((match) => ({ kind: 'slotReference' as const, match })),
+    ...[...instruction.matchAll(CONTEXT_REFERENCE_PATTERN)].map((match) => ({ kind: 'contextReference' as const, match })),
+  ]
+    .map(({ kind, match }) => ({ kind, key: match[1], source: match[0], start: match.index ?? 0 }))
+    .sort((left, right) => left.start - right.start)
+
 export function instructionToBlockSegments(instruction: string): RoutineBlockInstructionSegment[] {
   const segments: RoutineBlockInstructionSegment[] = []
   let cursor = 0
-  for (const match of instruction.matchAll(SLOT_REFERENCE)) {
-    const start = match.index ?? 0
-    if (start > cursor) segments.push({ kind: 'text', text: instruction.slice(cursor, start) })
-    segments.push({ kind: 'slotReference', key: match[1], source: match[0] })
-    cursor = start + match[0].length
+  for (const reference of referenceMatches(instruction)) {
+    if (reference.start > cursor) segments.push({ kind: 'text', text: instruction.slice(cursor, reference.start) })
+    segments.push({ kind: reference.kind, key: reference.key, source: reference.source })
+    cursor = reference.start + reference.source.length
   }
   if (cursor < instruction.length || segments.length === 0) segments.push({ kind: 'text', text: instruction.slice(cursor) })
   return segments

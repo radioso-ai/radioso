@@ -237,7 +237,12 @@ describe("SlackOperatorNotificationSink", () => {
         channelId: "COPS",
         kind: "operator_notification",
         conversationRef: "conv_1",
-        text: "Customer asked for a human",
+        text: [
+          "Agent: agent_1",
+          "Reason: Customer asked for a human",
+          "Conversation: conv_1",
+          "Workspace: ws_1",
+        ].join("\n"),
       },
     });
     const payload = enqueued[0].payload as { blocks: Array<Record<string, unknown>> };
@@ -251,6 +256,35 @@ describe("SlackOperatorNotificationSink", () => {
       conversationId: "conv_1",
       workspaceId: "ws_1",
     });
+  });
+
+  it("shows the routine and collected values in the handoff post", async () => {
+    const { sink, enqueued } = createSink();
+
+    await sink.deliver({
+      ...handoffNotification,
+      reason: "routine_handoff",
+      agentName: "Retreat desk",
+      routine: { id: "routine_1", name: "Book accommodation" },
+      collected: { program: "Yoga retreat", arrival_date: "2026-10-12", needs_transfer: true },
+    }, { requestId: "request_1", idempotencyKey: "routine-action:conv_1:handoff.notify" });
+
+    expect(enqueued).toHaveLength(1);
+    const expectedText = [
+      "Agent: Retreat desk (agent_1)",
+      "Routine: Book accommodation",
+      "Reason: routine_handoff",
+      "Conversation: conv_1",
+      "Workspace: ws_1",
+      "",
+      "Collected:",
+      "  Program: Yoga retreat",
+      "  Arrival date: 2026-10-12",
+      "  Needs transfer: yes",
+    ].join("\n");
+    expect(enqueued[0].payload).toMatchObject({ text: expectedText });
+    const payload = enqueued[0].payload as { blocks: Array<{ type: string; text?: { text?: string } }> };
+    expect(payload.blocks[0]).toMatchObject({ type: "section", text: { text: expectedText } });
   });
 
   it("skips handoff Slack delivery when the workspace has no installation or operator channel", async () => {

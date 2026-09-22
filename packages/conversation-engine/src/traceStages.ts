@@ -140,7 +140,7 @@ export const createProcessTurnResult = (input: {
   response: RenderableTurn;
   trace: ConversationTrace;
   actions?: RoutineActionRequest[];
-  handoff?: { routineId: string; stepId: string };
+  handoff?: ProcessTurnResult["handoff"];
   routineExecution?: ProcessTurnResult["routineExecution"];
   routineClarificationRoutineIds?: ProcessTurnResult["routineClarificationRoutineIds"];
   awaitingDecision?: RoutineAwaitingDecision;

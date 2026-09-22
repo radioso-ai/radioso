@@ -1309,8 +1309,12 @@ export interface ConversationRoutineResumeResult {
   response: RenderableTurn;
   /** The next state to persist; `null` clears it (the routine reached a terminal step). */
   nextState: RoutineState | null;
-  /** Distinguishes terminal exits such as handoff from normal completion. */
-  terminal?: { kind: "complete" | "handoff" | "action"; stepId: string };
+  /**
+   * Distinguishes terminal exits such as handoff from normal completion. `collected`
+   * is the routine's declared slot values keyed by slot key — the same projection a
+   * completion export sends — so a handoff can carry what the routine gathered.
+   */
+  terminal?: { kind: "complete" | "handoff" | "action"; stepId: string; collected?: Record<string, unknown> };
   outcomes?: TurnOutcome[];
   /** Fire-and-forget side effects the routine emitted this turn, for the host to persist. */
   actions?: RoutineActionRequest[];
@@ -1546,8 +1550,11 @@ export interface ProcessTurnResult {
   awaitingDecision?: RoutineAwaitingDecision;
   /** Required fields that prevented selected skills from dispatching this turn. */
   awaitingSkillInput?: AwaitingSkillInput[];
-  /** True when a routine ended in a human handoff terminal. */
-  handoff?: { routineId: string; stepId: string };
+  /**
+   * Present when a routine ended in a human handoff terminal. `collected` carries the
+   * routine's declared slot values keyed by slot key, for the host's operator notice.
+   */
+  handoff?: { routineId: string; stepId: string; collected?: Record<string, unknown> };
 }
 
 export type ProcessTurnStreamEvent =
@@ -1661,6 +1668,16 @@ export type PreparedRoutineCandidates =
   | RankableRoutineCandidates
   | { kind: "claim"; activation: RoutineActivationResult }
   | { kind: "none" };
+
+/**
+ * Renders one staged context variable as text a step instruction can embed (the engine
+ * substitutes each `{{context.<name>}}` token in a step's action with it); null when the
+ * variable is absent or must not be shown. The host owns what any variable looks like — the
+ * engine knows no field of any of them.
+ */
+export interface RoutineContextRenderer {
+  render(input: { name: string; stagedContext: readonly StagedContext[] }): string | null;
+}
 
 /** Renders a grounded answer for a routine step, or null when the step is not groundable. */
 export interface RoutineGroundedAnswerRenderer {

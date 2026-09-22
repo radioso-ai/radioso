@@ -17,9 +17,9 @@ import type { DocumentDialogEnrichmentChoice } from './document-import-dialog'
 type EditorMode = 'create' | 'edit' | 'view'
 
 /** Fields the plain-text inputs write. Metadata has its own typed channel. */
-export type DocumentEditorTextField = 'title' | 'content'
+type DocumentEditorTextField = 'title' | 'content'
 
-export type DocumentEditorValues = {
+type DocumentEditorValues = {
   title: string
   content: string
   metadata: MetadataRecord

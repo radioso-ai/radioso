@@ -25,7 +25,7 @@ export const formatCredentialDate = (value: string | null | undefined): string =
   return parsed.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
 }
 
-export const CREDENTIAL_SAVED_ACKNOWLEDGEMENT = 'Secret saved — it won’t be shown again.'
+const CREDENTIAL_SAVED_ACKNOWLEDGEMENT = 'Secret saved — it won’t be shown again.'
 
 /**
  * Shown after every issue, create, and rotate. The secret exists only here, so the
@@ -157,7 +157,7 @@ export function RevokeConfirmDialog({
   )
 }
 
-export interface CredentialDetails {
+interface CredentialDetails {
   label: string
   prefix: string
   createdAt: string
@@ -168,7 +168,7 @@ export interface CredentialDetails {
 }
 
 /** Only the facts a record actually carries: an absent date is omitted, never rendered as "Never". */
-export const credentialDetailFacts = (details: CredentialDetails): string[] => {
+const credentialDetailFacts = (details: CredentialDetails): string[] => {
   const facts = [details.prefix]
   facts.push(details.createdByName
     ? `Created by ${details.createdByName} · ${formatCredentialDate(details.createdAt)}`

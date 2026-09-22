@@ -6,7 +6,6 @@ import { Clock, Info, Plus, UserPlus } from 'lucide-react'
 
 import { accountApi, workspaceApi, type AccountInvitationSummary, type AccountUserSummary, type AssignableAccountRole, type Workspace, type WorkspaceGrantSummary, type WorkspaceGrantRole } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
-import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
 import {
   DashboardTable,
   DashboardTableBody,
@@ -588,17 +587,5 @@ export function UsersPanel() {
         </>
       )}
     </div>
-  )
-}
-
-export function UsersView() {
-  return (
-    <DashboardPage
-      title="Users"
-      description="Invite teammates, manage organization roles, and adjust workspace access."
-      contentClassName="space-y-6 p-6"
-    >
-      <UsersPanel />
-    </DashboardPage>
   )
 }

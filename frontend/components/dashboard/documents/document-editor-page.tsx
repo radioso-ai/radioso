@@ -48,7 +48,7 @@ const formatDateTime = (value: string | null | undefined) => {
 }
 
 /** Fields the plain-text inputs write. Metadata and source have typed channels. */
-export type DocumentEditorTextField = 'title' | 'content'
+type DocumentEditorTextField = 'title' | 'content'
 
 export type DocumentEditorValues = {
   title: string

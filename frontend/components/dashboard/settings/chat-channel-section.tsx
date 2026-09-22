@@ -35,7 +35,7 @@ import { formatLastUsed } from '@/lib/format-last-used'
  * Everything the website widget placement needs is also what this page needs, so the
  * widget's contract is the shared port rather than a second copy of the same fields.
  */
-export interface ChatChannelSectionProps extends WebsiteEmbedSettingsControllerProps {
+interface ChatChannelSectionProps extends WebsiteEmbedSettingsControllerProps {
   assistantBehaviorSettings: AssistantBehaviorSettings | null
   retrievalDefaults: Pick<RetrievalDefaults, 'suggestedQuestionsEnabled'>
   onAssistantBehaviorDraft: (updater: (current: AssistantBehaviorSettings) => AssistantBehaviorSettings) => void

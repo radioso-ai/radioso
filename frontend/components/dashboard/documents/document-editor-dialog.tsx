@@ -169,7 +169,7 @@ export function DocumentEditorDialog({
                   disabled={isSaving || !values.title.trim() || !values.content.trim() || Boolean(metadataError)}
                 >
                   {isSaving ? <Spinner className="mr-2" /> : null}
-                  {mode === 'edit' ? 'Save Document' : 'Add Document'}
+                  <span>{mode === 'edit' ? 'Save Document' : 'Add Document'}</span>
                 </Button>
               )}
             </div>

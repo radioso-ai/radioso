@@ -1386,7 +1386,7 @@ export function AssistantDirectivesSection({
             </Button>
             <Button type="button" onClick={() => void handleSubmit()} disabled={isSaving}>
               {isSaving ? <Spinner className="mr-2" /> : null}
-              Save directive
+              <span>Save directive</span>
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1434,7 +1434,7 @@ export function AssistantDirectivesSection({
             </Button>
             <Button type="button" variant="destructive" onClick={() => void handleDelete()} disabled={isSaving}>
               {isSaving ? <Spinner className="mr-2" /> : null}
-              Delete directive
+              <span>Delete directive</span>
             </Button>
           </DialogFooter>
         </DialogContent>

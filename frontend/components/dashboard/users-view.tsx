@@ -339,7 +339,7 @@ export function UsersPanel() {
                 disabled={!isEmailValid || isSubmitting || !canManageUsers}
               >
                 {isSubmitting ? <Spinner className="mr-2 h-4 w-4" /> : null}
-                Send invite
+                <span>Send invite</span>
               </Button>
               </div>
             </DialogFooter>

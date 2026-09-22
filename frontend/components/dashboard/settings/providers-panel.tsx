@@ -1000,7 +1000,7 @@ function EmbeddingModelRow({
               disabled={canceling || busy}
             >
               {canceling ? <Spinner className="mr-2" /> : null}
-              Cancel
+              <span>Cancel</span>
             </Button>
           ) : (
             <Button

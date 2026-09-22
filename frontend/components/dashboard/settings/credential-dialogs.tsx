@@ -100,7 +100,7 @@ export function CredentialIssuedDialog({
           {onDiscard ? (
             <Button type="button" variant="ghost" disabled={isDiscarding} onClick={() => void discard()}>
               {isDiscarding ? <Spinner className="mr-2 h-4 w-4" /> : null}
-              {discardLabel}
+              <span>{discardLabel}</span>
             </Button>
           ) : null}
           <Button type="button" onClick={onDone} disabled={!acknowledged || isDiscarding}>Done</Button>
@@ -150,7 +150,7 @@ export function RevokeConfirmDialog({
             }}
           >
             {isRevoking ? <Spinner className="mr-2 h-4 w-4" /> : null}
-            Revoke
+            <span>Revoke</span>
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

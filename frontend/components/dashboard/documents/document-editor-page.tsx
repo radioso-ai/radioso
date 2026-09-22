@@ -487,7 +487,7 @@ export function DocumentEditorPage({
                           disabled={Boolean(isRunningMetadataExtraction)}
                         >
                           {isRunningMetadataExtraction ? <Spinner className="mr-2 h-3.5 w-3.5" /> : null}
-                          Run metadata extraction
+                          <span>Run metadata extraction</span>
                         </Button>
                         <p className="text-xs text-muted-foreground">
                           Processes this document again with metadata extraction forced on for that run.
@@ -517,7 +517,7 @@ export function DocumentEditorPage({
                         disabled={Boolean(isSavingMetadata) || Boolean(metadataError)}
                       >
                         {isSavingMetadata ? <Spinner className="mr-2 h-3.5 w-3.5" /> : null}
-                        Save metadata
+                        <span>Save metadata</span>
                       </Button>
                       <p className="text-xs text-muted-foreground">
                         Tags save on their own. The imported file&apos;s contents stay read-only.

@@ -113,7 +113,7 @@ export function ResetPasswordScreen({ token, email: initialEmail }: { token?: st
             {error ? <p className="text-sm text-destructive">{error}</p> : null}
             <Button type="submit" className="w-full" disabled={isLoading}>
               {isLoading ? <Spinner className="mr-2" /> : null}
-              Reset Password
+              <span>Reset Password</span>
             </Button>
           </form>
         ) : requestAccepted ? (
@@ -137,7 +137,7 @@ export function ResetPasswordScreen({ token, email: initialEmail }: { token?: st
             {error ? <p className="text-sm text-destructive">{error}</p> : null}
             <Button type="submit" className="w-full" disabled={isLoading}>
               {isLoading ? <Spinner className="mr-2" /> : null}
-              Send Reset Link
+              <span>Send Reset Link</span>
             </Button>
           </form>
         )}

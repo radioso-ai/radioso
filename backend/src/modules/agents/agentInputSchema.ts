@@ -55,6 +55,10 @@ export const agentInputFieldSchemas = {
     hidePoweredBy: z.boolean().optional(),
     privacyPolicyUrl: z.string().max(2048).nullable().optional(),
   }),
+  publicDescription: z.string().max(500),
+  agentCardEnabled: z.boolean(),
+  publicAgentAccessEnabled: z.boolean(),
+  walkInConversationsPerHour: z.number().int().min(1).max(100_000).nullable(),
   greetingInstruction: z.string().max(200),
   assistantDefaultLocale: z.string().max(35).nullable(),
   proactiveGreetingEnabled: z.boolean(),
@@ -87,4 +91,10 @@ export const agentInputFieldSchemas = {
     }).optional(),
     extensions: z.record(z.unknown()).optional(),
   }),
-} satisfies Record<keyof AgentInput, ZodType>;
+  /**
+   * `publicId` is deliberately absent. This map is the allowed-field list for both the PUT body
+   * (`agentBodySchema`) and Ray's `propose_agent_setting`, and a public id is minted and rotated
+   * by the agent service, never authored — an entry here would let a caller pick its own
+   * discovery key or quietly re-point one that is already in the wild.
+   */
+} satisfies Record<Exclude<keyof AgentInput, "publicId">, ZodType>;

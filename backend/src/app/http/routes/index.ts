@@ -13,6 +13,7 @@ import { createAssistantRoutes } from "./assistantRoutes.js";
 import { createAgentRoutes } from "./agentRoutes.js";
 import { createAgentExternalSkillsRoutes } from "./agentExternalSkillsRoutes.js";
 import { createAgentBundleRoutes } from "./agentBundleRoutes.js";
+import { createAgentPublicIdentityRoutes } from "./agentPublicIdentityRoutes.js";
 import { createDocumentRoutes } from "./documentRoutes.js";
 import { createHistoryRoutes } from "./historyRoutes.js";
 import { createMetricsRoutes } from "./metricsRoutes.js";
@@ -79,6 +80,7 @@ export const createApiRouteMounts = (_dependencies: AppDependencies): readonly A
   { path: "/api/v1/agents", createRouter: createDecisionRoutes },
   { path: "/api/v1/decisions", createRouter: createDecisionsQueryRoutes },
   { path: "/api/v1/agents", createRouter: createAgentBundleRoutes },
+  { path: "/api/v1/agents", createRouter: createAgentPublicIdentityRoutes },
   { path: "/api/v1/agents", createRouter: createAgentExternalSkillsRoutes },
   { path: "/api/v1/agents", createRouter: createEmailSkillRoutes },
   { path: "/api/v1/agents", createRouter: createWebhookSkillRoutes },

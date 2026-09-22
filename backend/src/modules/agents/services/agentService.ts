@@ -16,6 +16,7 @@ import {
   type AgentRecord,
 } from "../domain.js";
 import { DEFAULT_AGENT_LOCALE_FALLBACK, type AgentGreetingSnapshot } from "../agentRevision.js";
+import { ensurePublicIdMintedForInput } from "./agentPublicIdentity.js";
 
 export type AgentSettingsResource = Omit<AgentRecord, "authoredDirectives"> & {
   isDefault: boolean;
@@ -111,7 +112,15 @@ export class AgentService {
     if (!existing) {
       throw notFound("Agent not found");
     }
-    const updated = await this.agentRepository.update(agentId, workspaceId, input, options);
+    // Minting rides the same write that flips the flag, so a card can never be published for an
+    // agent that has no id to publish it under. Every writer — the dashboard, a bundle import,
+    // Ray's applied proposal — goes through here.
+    const updated = await this.agentRepository.update(
+      agentId,
+      workspaceId,
+      ensurePublicIdMintedForInput(existing, input),
+      options,
+    );
     await this.syncPublicLaunchGrants(existing, updated);
     if (workspace.defaultAgentId === agentId) {
       await this.syncLegacyWorkspaceDefaults(workspace, updated);

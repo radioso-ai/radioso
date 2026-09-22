@@ -204,3 +204,53 @@ test("operator creates a role-free Agent API credential against the canonical en
     request.method === "POST" && request.path === `/agents/${defaultAgentId}/channel-credentials/existing-rest-grant/rotate`,
   )).toBe(true);
 });
+
+test("operator opens the agent to credential-free callers and rotates its public id", async ({ page }) => {
+  const agentUpdates: unknown[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { agentUpdates });
+  await stubRuntimeConfig(page, { mcpUrl: MCP_SERVER_URL });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=channels&anchor=mcp-channel`);
+
+  const card = page.locator("#mcp-channel");
+  await expect(card.getByText("Open access", { exact: true })).toBeVisible();
+  await expect(card.getByRole("button", { name: "Copy agent public id" })).toHaveCount(0);
+  await expect(card.getByLabel("New conversations per hour")).toHaveCount(0);
+
+  // Opening the door publishes the card with it, and the id appears once.
+  await card.getByRole("switch", { name: "Allow connecting without a credential" }).click();
+  await expect(card.getByRole("button", { name: "Copy agent public id" })).toBeVisible();
+  await expect(card.getByRole("switch", { name: "Publish the agent card" })).toBeChecked();
+  await expect.poll(() => agentUpdates.at(-1)).toMatchObject({
+    agentCardEnabled: true,
+    publicAgentAccessEnabled: true,
+  });
+
+  await card.getByLabel("Description").fill("Answers questions about orders and returns.");
+  await card.getByLabel("New conversations per hour").fill("40");
+  await card.getByLabel("New conversations per hour").blur();
+  await expect.poll(() => agentUpdates.at(-1)).toMatchObject({ walkInConversationsPerHour: 40 });
+
+  const firstPublicId = await card.getByText(/^ag_/).innerText();
+
+  await card.getByRole("button", { name: "Rotate" }).click();
+  const confirm = page.getByRole("alertdialog", { name: "Rotate the public id?" });
+  await expect(confirm.getByText(/disconnected on its next request/i)).toBeVisible();
+  await confirm.getByRole("button", { name: "Cancel" }).click();
+  await expect(card.getByText(firstPublicId)).toBeVisible();
+
+  await card.getByRole("button", { name: "Rotate" }).click();
+  await page.getByRole("alertdialog", { name: "Rotate the public id?" }).getByRole("button", { name: "Rotate" }).click();
+  await expect(card.getByText(firstPublicId)).toHaveCount(0);
+  await expect(card.getByText(/^ag_/)).toBeVisible();
+
+  // Taking the card down closes the credential-free door with it.
+  await card.getByRole("switch", { name: "Publish the agent card" }).click();
+  await expect.poll(() => agentUpdates.at(-1)).toMatchObject({
+    agentCardEnabled: false,
+    publicAgentAccessEnabled: false,
+  });
+  await expect(card.getByLabel("New conversations per hour")).toHaveCount(0);
+});

@@ -646,6 +646,35 @@ Public surfaces and key files:
 Private Test Chat and revision evals consume the agents module's narrow
 revision-reader ports. They do not read mutable authoring rows directly.
 
+## Agent Public Identity
+
+Owns how an agent is named and reached from outside the workspace: the minted
+`publicId`, the operator-authored `publicDescription`, the two switches that
+publish the agent card and open credential-free access, and the per-agent walk-in
+budget. Minting is lazy and idempotent — the id appears on the write that first
+makes the agent reachable — and rotation is a revocation rather than a settings
+save, which is why it has its own route and its own audit event.
+
+The invariant that credential-free access requires a published card lives in
+`validateAgentInput`, so every writer carries it. `publicId` is deliberately
+absent from `agentInputFieldSchemas`, which is the allowed-field list for both
+the PUT body and Ray's `propose_agent_setting`: the id is minted, never authored.
+
+Public surfaces and key files:
+
+- `backend/src/modules/agents/domain.ts` (`AgentPublicIdentity`, the invariant, `unpublishedAgentPublicIdentity`)
+- `backend/src/modules/agents/services/agentPublicIdentity.ts` (`mintPublicId`, `ensurePublicIdMintedForInput`, `describePublicAccessChange`)
+- `backend/src/app/http/routes/agentPublicIdentityRoutes.ts` (`POST /api/v1/agents/:agentId/public-id/rotate`)
+- `backend/src/db/repositories/agentRepository.ts` (`findByPublicId`, the `agents.public_id` partial unique index)
+- `frontend/components/dashboard/settings/walk-in-access-section.tsx` (Channels -> MCP, Open access)
+- `backend/tests/unit/agents/agentPublicIdentity.test.ts`
+- `backend/tests/integration/agent-public-identity.integration.test.ts`
+- `frontend/tests/e2e/mcp-converse-channel.spec.ts`
+
+Related docs:
+
+- [MCP Client Setup](../mcp-client-setup.md)
+
 ## Conversation Engine Contracts
 
 Owns product-independent conversation runtime contracts: agents, input events,

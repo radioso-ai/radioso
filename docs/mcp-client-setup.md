@@ -63,6 +63,34 @@ Manage existing credentials with the same path:
 
 Credential changes take effect on the next request. Revoking, expiring, or rotating a credential stops its existing sessions, because every converse request re-checks the credential.
 
+### The agent's public id
+
+A credential is how a client you approved reaches the agent. A **public id** is how anything else identifies it. The same **Channels → MCP** card carries an **Open access** block with two switches and the id they mint:
+
+- **Publish the agent card** describes the agent to whoever asks: what it does, what it can run, and where its MCP endpoint is.
+- **Allow connecting without a credential** lets any AI agent holding the public id start a conversation. It needs the card published, because the card is what tells a caller how to connect.
+
+Turning on either switch mints the id, once, and the card shows it:
+
+```
+ag_7Qb3nT1xK9wZs2Pv0Lm4Rd
+```
+
+Treat it as an address rather than a secret. It is meant to appear in a page, a card, or a support email, and holding it grants nothing on its own — with **Allow connecting without a credential** off, a caller with the id still needs a credential. The id is separate from the embed token for exactly this reason: the embed token *is* a secret, and it sits in the page HTML.
+
+Alongside the switches, **Description** is the one line a calling agent reads before deciding to ask — write what the agent helps with, in the visitor's terms. **New conversations per hour** caps what one looping caller can spend from the workspace's conversation allowance; leave it empty to use the deployment's own budget.
+
+Rotating replaces the id:
+
+```http
+POST /api/v1/agents/{agentId}/public-id/rotate
+Cookie: <signed-in dashboard session>
+X-Radioso-CSRF: 1
+X-Workspace-Id: <workspace UUID>
+```
+
+Rotation is a revocation. Every agent connected without a credential is dropped on its next request, and anything published carrying the old id stops resolving, so rotate when an id needs to stop working — not as routine hygiene. Credential-bound clients are unaffected; rotating their credentials is a separate action on the same card. The rotation is recorded as an `agent.public_id.rotated` audit event, and changes to the two switches as `agent.public_access.changed`; neither event records the id itself.
+
 ### Use the credential with standalone MCP
 
 For the standalone MCP server, send the original credential secret as the bearer on `/mcp`. The standalone server exchanges it with the backend internally and keeps the resulting short-lived session in its runtime store. Do not send the backend session token to `/mcp`.
@@ -240,6 +268,7 @@ clients do not need to serialize the first ask.
 - The converse surface accepts only MCP-audience agent credentials and sessions created from them.
 - Each credential is bound to the `mcp` audience and exactly one agent. A credential issued with the `rest` audience is rejected even when it belongs to the same agent.
 - The plaintext credential is shown once. Inventory and detail responses expose only a safe prefix and lifecycle metadata.
+- An agent's public id is not a credential and authorizes nothing by itself.
 
 ### Authentication limits
 

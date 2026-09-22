@@ -242,7 +242,40 @@ interface Agent {
   updatedAt: Date;
 }
 
-export interface ConversationAgent extends Agent, AgentBehaviorSettings, AgentGreetingSettings {
+/**
+ * What an agent is to the outside world: the id other agents address it by, the sentence its
+ * cards carry, and whether those cards exist at all. Separate from `AgentBehaviorSettings`
+ * because none of it changes how a turn is answered — it decides who gets to ask.
+ *
+ * `publicId` is minted, never authored, which is why it has no entry in `agentInputFieldSchemas`
+ * and no place in the PUT body: `agentPublicIdentity.ts` is its only producer.
+ */
+export interface AgentPublicIdentity {
+  /** `ag_` + 22 base64url characters, or null until the agent is first made discoverable. */
+  publicId: string | null;
+  /** Operator-authored, public, and empty until someone writes one. */
+  publicDescription: string;
+  agentCardEnabled: boolean;
+  /** Credential-free access. Implies `agentCardEnabled`; see `assertPublicIdentityInvariant`. */
+  publicAgentAccessEnabled: boolean;
+  /** Per-agent walk-in budget; null leaves the deployment default in charge. */
+  walkInConversationsPerHour: number | null;
+}
+
+/**
+ * What an agent looks like to the outside world before anyone publishes it: nothing at all. The
+ * starting point for a synthetic or materialized agent, which reaches no public surface until an
+ * operator turns one on where the agent actually lives.
+ */
+export const unpublishedAgentPublicIdentity = (): AgentPublicIdentity => ({
+  publicId: null,
+  publicDescription: "",
+  agentCardEnabled: false,
+  publicAgentAccessEnabled: false,
+  walkInConversationsPerHour: null,
+});
+
+export interface ConversationAgent extends Agent, AgentBehaviorSettings, AgentGreetingSettings, AgentPublicIdentity {
   sourceScope: AgentSourceScope;
   surfaceSettings: ConversationAgentSurfaceSettings;
   skillSettings: Record<string, unknown>;
@@ -274,6 +307,7 @@ export type AgentInput = Partial<
     | "internalName"
     | keyof AgentBehaviorSettings
     | keyof AgentGreetingSettings
+    | keyof AgentPublicIdentity
     | "sourceScope"
     | "skillSettings"
     | "chatModelOverride"
@@ -765,6 +799,28 @@ export const normalizeWebsiteEmbedSurfaceSettings = (
   };
 };
 
+const normalizeWalkInConversationsPerHour = (value: unknown): number | null => {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 1 || value > 100_000) {
+    throw badRequest("walkInConversationsPerHour must be a whole number of conversations between 1 and 100000");
+  }
+  return value;
+};
+
+/**
+ * A card is how a calling agent learns an agent exists and what it needs to reach it — including
+ * "this one needs a credential". Opening the credential-free door without publishing that card
+ * would leave the door reachable only by guessing, so the two settle as one primary switch plus a
+ * card-only mode rather than two independent toggles.
+ */
+const assertPublicIdentityInvariant = (identity: Pick<AgentPublicIdentity, "agentCardEnabled" | "publicAgentAccessEnabled">): void => {
+  if (identity.publicAgentAccessEnabled && !identity.agentCardEnabled) {
+    throw badRequest("Walk-in access needs the agent card published, because the card is what tells a caller how to connect");
+  }
+};
+
 export const validateAgentInput = (
   input: AgentInput = {},
   options: ValidateAgentInputOptions = {},
@@ -783,7 +839,17 @@ export const validateAgentInput = (
   const extensions = normalizeSurfaceExtensions(input.surfaceSettings?.extensions, options.extensions);
   extensions.websiteEmbed = websiteEmbed;
 
+  const publicIdentity: AgentPublicIdentity = {
+    publicId: input.publicId ?? null,
+    publicDescription: normalizeText(input.publicDescription, "publicDescription", 500),
+    agentCardEnabled: Boolean(input.agentCardEnabled),
+    publicAgentAccessEnabled: Boolean(input.publicAgentAccessEnabled),
+    walkInConversationsPerHour: normalizeWalkInConversationsPerHour(input.walkInConversationsPerHour),
+  };
+  assertPublicIdentityInvariant(publicIdentity);
+
   return {
+    ...publicIdentity,
     name: normalizeText(input.name ?? "Agent", "name", 200),
     internalName: normalizeText(input.internalName ?? "", "internalName", 200),
     customInstruction: normalizeLongText(input.customInstruction, "customInstruction", 2000),

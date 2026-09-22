@@ -38,6 +38,7 @@ import {
   InMemoryConversationRepository,
   InMemoryMessageRepository,
 } from "../support/fakes.js";
+import { unpublishedAgentPublicIdentity } from "../../src/modules/agents/public.js";
 
 const fallbackReplyComposer: FallbackReplyComposer = {
   async composeNoContext() {
@@ -299,6 +300,7 @@ const publishedRuntimeResolver = (
 
 /** A published agent with no override or authored behavior; spread and override per test. */
 const baseAgentRecord = (): AgentRecord => ({
+  ...unpublishedAgentPublicIdentity(),
   id: "agent-1",
   workspaceId: "workspace-1",
   name: "Support",

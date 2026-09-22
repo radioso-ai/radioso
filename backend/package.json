@@ -138,6 +138,7 @@
     "@types/pg": "^8.15.5",
     "@types/supertest": "^6.0.3",
     "@vitest/coverage-v8": "^4.1.8",
+    "ajv": "^8.17.1",
     "dependency-cruiser": "^17.4.0",
     "kysely-codegen": "^0.20.0",
     "openapi-typescript": "^7.13.0",

@@ -13,6 +13,7 @@ import {
   publicChatSessionReadRateLimiter,
   type AnonymousRateLimiterDependencies,
 } from "../middleware/anonymousRateLimiter.js";
+import { buildAgentCardUrl } from "../../../modules/agentDiscovery/public.js";
 import { requireSurfaceExtension } from "../shared/requireSurfaceExtension.js";
 import { sendAssistantLogo } from "../shared/assistantIdentity.js";
 import { validateBody } from "../middleware/validate.js";
@@ -283,6 +284,12 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
           expertOverrides: websiteEmbed.expertOverrides,
           assistantLogoUrl: buildAssistantLogoUrl(req, launchToken, agent.logo),
           proactiveGreetingEnabled: agent.proactiveGreetingEnabled,
+          // FR-023: present only when this agent actually publishes a card, so the
+          // launcher never advertises a document that answers 404. The base is the
+          // deployment's public API origin, which is where `/.well-known` is served.
+          ...(agent.agentCardEnabled && agent.publicId && dependencies.env.CONNECTOR_PUBLIC_BASE_URL
+            ? { agentCardUrl: buildAgentCardUrl(dependencies.env.CONNECTOR_PUBLIC_BASE_URL, agent.publicId) }
+            : {}),
         });
       } catch (error) {
         next(error);

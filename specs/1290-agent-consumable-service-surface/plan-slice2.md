@@ -264,3 +264,13 @@ Observability: `mcp_converse_update_polls_total{outcome}` where `outcome ∈ imm
 - **FR-031's `callerKind = "agent"` and FR-034's `callerKind` on usage rows are FR-050 (US6) work**, which the spec puts in a later story than the one that asserts them.
 - **FR-021's site-level paths cannot be served multi-tenant** from the API host; decision 6 relocates them.
 - **FR-040's `since=<messageId>`** is not seekable against the existing keyset cursor; decision 10 uses the opaque cursor.
+
+## Implementation notes (slice 3, as built)
+
+- **An agent's endpoint is `${PUBLIC_MCP_CONVERSE_URL}/a/{publicId}`**, and `PUBLIC_MCP_CONVERSE_URL` is the MCP endpoint base (`https://mcp.example.com/mcp`). Slice 4 must serve `/mcp/a/{publicId}` at that path; `resolveMcpRoute` already returns `not_found` for it, with the server-card branch beside it.
+- **The A2A card is the v0.3.0 shape** (`url`, `protocolVersion`, `preferredTransport: "MCP"`, `securitySchemes`, `security`, `skills`), gated against `specification/json/a2a.json` from tag `v0.3.0`, vendored under `backend/tests/fixtures/discovery-schemas/`. A2A v1 renames `url` to `supportedInterfaces` and its published bundle sets `additionalProperties: false`, so the two shapes cannot both validate; revisit when clients follow.
+- **`securitySchemes` does not flip with walk-in; `security` does.** A2A's scheme union has no `none` member, so FR-020's "`none` iff walk-in enabled" is rendered as an empty security requirement `{}` — OpenAPI's and A2A's way of saying "no credential" — listed ahead of `{ bearer: [] }`. `securitySchemes` is `{ bearer }` in both states.
+- **The MCP server card follows the published MCP server document schema** (`static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json`, also vendored), which bounds `description` to 100 characters and requires a reverse-DNS `name` — rendered as `ai.radioso/{publicId}`. Walk-in state and the tool names ride in `_meta["ai.radioso/agent"]`.
+- **FR-023's card URL is built from `CONNECTOR_PUBLIC_BASE_URL`**, the existing public API origin, rather than a third new env var; `agentCardUrl` is absent from `embed-config` when it is unset.
+- **The discovery module imports `AgentToolDescriptor` type-only from `modules/routines/public.js`**, the sanctioned boundary — the alternative was a duplicated structural type. It reaches nothing else under `modules/routines`.
+- **`agentPublicProfile` is an `AppDependencies` port**, because the profile needs the current published revision (for `version`, `publishedAt`, and the unpublished 404) and the revision runtime reader is not otherwise on `AppDependencies`.

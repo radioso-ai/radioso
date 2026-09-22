@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { scopeTag } from "@radioso/conversation-defaults";
 import { getEnv, type Env } from "../config/env.js";
 import { AgentRevisionRuntimeRepository } from "../../db/repositories/agentRevisionRuntimeRepository.js";
+import { createAgentPublicProfileComposition } from "../composition/agentDiscovery.js";
 import { createAgentToolCatalogComposition } from "../composition/agentToolCatalog.js";
 import { apiPrincipalRouteInventory } from "../http/apiPrincipalRoutePolicy.js";
 import {
@@ -927,6 +928,13 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     mcpConnectionRepository,
     externalSkillDefinitionRepository,
   });
+  // Shared by the agent-facing catalog route and the public discovery documents, which
+  // describe the same published release and must not drift apart.
+  const agentDiscoveryRevisionReader = new AgentRevisionRuntimeRepository(infrastructure.database.kysely);
+  const agentToolCatalog = createAgentToolCatalogComposition({
+    agentRepository: repositories.agentRepository,
+    agentRevisionReader: agentDiscoveryRevisionReader,
+  });
   return {
     env,
     logger,
@@ -1019,9 +1027,13 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     testExecutionService,
     chatBootstrapService: chat.chatBootstrapService,
     agentStarterPromptReader: chat.agentStarterPromptReader,
-    agentToolCatalog: createAgentToolCatalogComposition({
+    agentToolCatalog,
+    agentPublicProfile: createAgentPublicProfileComposition({
       agentRepository: repositories.agentRepository,
-      agentRevisionReader: new AgentRevisionRuntimeRepository(infrastructure.database.kysely),
+      agentRevisionReader: agentDiscoveryRevisionReader,
+      agentToolCatalog,
+      mcpBaseUrl: env.PUBLIC_MCP_CONVERSE_URL,
+      documentationUrl: env.PUBLIC_AGENT_DOCS_URL,
     }),
     chatHistoryService: chat.chatHistoryService,
     assistantChatService: chat.assistantChatService,

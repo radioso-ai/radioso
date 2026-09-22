@@ -40,6 +40,7 @@ import { createCopilotRoutes } from "../../../modules/operatorCopilot/routes.js"
 import { createApiAccessRoutes } from "./apiAccessRoutes.js";
 import { createOperatorMcpSetupRoutes } from "../../../modules/operatorMcpSetup/routes.js";
 import { createOperatorMcpDashboardRoutes } from "../../../modules/operatorMcpAuthorization/dashboardRoutes.js";
+import { createAgentDiscoveryRoutes } from "../../../modules/agentDiscovery/public.js";
 import { createOperatorMcpDiscoveryRoutes, createOperatorMcpOauthRoutes } from "../../../modules/operatorMcpAuthorization/routes.js";
 import { createOperatorMcpInternalRoutes } from "../../../modules/operatorCopilot/mcpRoutes.js";
 import { createTestExecutionRoutes } from "./testExecutionRoutes.js";
@@ -55,6 +56,7 @@ type ApiRouteMount = {
  */
 export const createApiRouteMounts = (_dependencies: AppDependencies): readonly ApiRouteMount[] => [
   { path: "/.well-known", createRouter: createOperatorMcpDiscoveryRoutes },
+  { path: "/.well-known", createRouter: createAgentDiscoveryRoutes },
   { path: "/api/v1/auth", createRouter: createAuthRoutes },
   { path: "/api/v1/account", createRouter: createAccountRoutes },
   { path: "/api/v1/account", createRouter: createAccountUserRoutes },

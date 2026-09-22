@@ -256,6 +256,9 @@ importers:
       '@vitest/coverage-v8':
         specifier: ^4.1.8
         version: 4.1.11(vitest@4.1.11)
+      ajv:
+        specifier: ^8.17.1
+        version: 8.20.0
       dependency-cruiser:
         specifier: ^17.4.0
         version: 17.4.3

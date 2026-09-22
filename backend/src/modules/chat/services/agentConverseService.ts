@@ -10,6 +10,25 @@ import type { AgentToolCatalogPort } from "../contracts/routineInvocation.js";
 import { buildAgentReplyEnvelope, isChatTurnResponse, type AgentReplyEnvelopeCore } from "./agentReplyEnvelope.js";
 import { chatRequestInputFor, resolveAgentTurnInput, type AgentTurnInputBody } from "./agentTurnInput.js";
 
+/**
+ * Verifies the caller-supplied visitor token against this converse session. The MCP
+ * surface has no browser origin to bind to, so the session's `publicSessionId` is the
+ * binding; a token that does not match it leaves the turn anonymous rather than failing.
+ */
+export interface ConverseVisitorIdentityVerifier {
+  verify(input: {
+    token: string;
+    workspaceId: string;
+    agentId: string;
+    boundSessionId: string;
+  }): Promise<{ customerId: string; attributes: Record<string, unknown> } | null>;
+}
+
+/** One agent-facing turn: the turn input, plus an optional signed visitor identity. */
+interface AgentConverseTurnBody extends AgentTurnInputBody {
+  signedIdentity?: string;
+}
+
 interface AgentConverseConversationStore {
   getOrCreateByAnonymousSession?(input: {
     workspaceId: string;
@@ -32,6 +51,10 @@ export interface AgentConverseAskResult extends AgentReplyEnvelopeCore {
   };
 }
 
+/** Only a credential-bound session names a grant; a walk-in one has none. */
+const converseGrantId = (principal: AgentConversePrincipal): string | null =>
+  principal.origin.kind === "grant" ? principal.origin.grantId : null;
+
 export class AgentConverseService {
   constructor(
     private readonly dependencies: {
@@ -39,6 +62,7 @@ export class AgentConverseService {
       conversationRepository: AgentConverseConversationStore;
       agentToolCatalog: AgentToolCatalogPort;
       audit?: AgentConverseAudit;
+      visitorIdentity?: ConverseVisitorIdentityVerifier;
       publisher?: WorkspaceInvalidationPublisher;
       metrics?: Pick<MetricsRegistry, "incrementCounter"> | null;
       logger?: Pick<AppLogger, "info">;
@@ -51,7 +75,7 @@ export class AgentConverseService {
    * and only then runs the turn. A conversation not yet pinned (first turn)
    * resolves against the current release, which is what the turn pins it to.
    */
-  async askAgent(principal: AgentConversePrincipal, body: AgentTurnInputBody): Promise<AgentConverseAskResult> {
+  async askAgent(principal: AgentConversePrincipal, body: AgentConverseTurnBody): Promise<AgentConverseAskResult> {
     try {
       const getOrCreateConversation =
         this.dependencies.conversationRepository.getOrCreateByAnonymousSession?.bind(
@@ -78,6 +102,7 @@ export class AgentConverseService {
         ...(conversation.record.agentRevisionId ? { agentRevisionId: conversation.record.agentRevisionId } : {}),
         body,
       }, { metrics: this.dependencies.metrics, logger: this.dependencies.logger });
+      const verifiedIdentity = await this.verifyVisitorIdentity(principal, body.signedIdentity);
       const response = await this.dependencies.assistantChatService.answer({
         workspaceId: principal.workspaceId,
         agentId: principal.agentId,
@@ -87,6 +112,10 @@ export class AgentConverseService {
         anonymousSessionId: principal.publicSessionId,
         sourceChannel: "mcp",
         sourceOrigin: null,
+        verifiedCustomerId: verifiedIdentity?.customerId,
+        verifiedIdentity: verifiedIdentity
+          ? { customerId: verifiedIdentity.customerId, ...verifiedIdentity.attributes }
+          : undefined,
       });
       // The converse route always runs a turn (a message or a tool call), never
       // `startConversation`, so the reply is a completed turn; a missing turn or
@@ -100,7 +129,7 @@ export class AgentConverseService {
       await this.dependencies.audit?.recordAskOutcome({
         workspaceId: principal.workspaceId,
         agentId: principal.agentId,
-        grantId: principal.grantId,
+        grantId: converseGrantId(principal),
         publicSessionId: principal.publicSessionId,
         status: "success",
       });
@@ -117,12 +146,35 @@ export class AgentConverseService {
       await this.dependencies.audit?.recordAskOutcome({
         workspaceId: principal.workspaceId,
         agentId: principal.agentId,
-        grantId: principal.grantId,
+        grantId: converseGrantId(principal),
         publicSessionId: principal.publicSessionId,
         status: "failure",
         reason: error instanceof Error ? error.name : "unknown",
       });
       throw error;
+    }
+  }
+
+  /**
+   * A mismatched or unverifiable token leaves the turn anonymous with no error, exactly
+   * as the embed path treats one (spec 1290 edge case).
+   */
+  private async verifyVisitorIdentity(
+    principal: AgentConversePrincipal,
+    token: string | undefined,
+  ): Promise<{ customerId: string; attributes: Record<string, unknown> } | null> {
+    if (!token || !this.dependencies.visitorIdentity) {
+      return null;
+    }
+    try {
+      return await this.dependencies.visitorIdentity.verify({
+        token,
+        workspaceId: principal.workspaceId,
+        agentId: principal.agentId,
+        boundSessionId: principal.publicSessionId,
+      });
+    } catch {
+      return null;
     }
   }
 }

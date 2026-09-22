@@ -50,6 +50,12 @@ export const createMcpConverseTokenRateLimiter = (
   dependencies: McpConverseSessionRateLimiterDependencies,
 ): RequestHandler => async (req, _res, next) => {
   const launchToken = typeof req.body?.launchToken === "string" ? req.body.launchToken : "";
+  if (!launchToken) {
+    // A walk-in exchange presents no token; its own per-source and per-agent budgets
+    // bound it, and spending this bucket would key every walk-in caller alike.
+    next();
+    return;
+  }
   try {
     await dependencies.abuseControlService.enforce({
       scope: "mcp.converse.session.token",

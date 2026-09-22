@@ -709,6 +709,46 @@ Related docs:
 - [MCP Client Setup](../mcp-client-setup.md)
 - `docs-portal/content/guides/agent-converse.mdx`
 
+## MCP Converse Sessions
+
+Owns who is allowed to hold a converse session and for how long. A session names
+its **origin** — a minted credential, or an agent's public id — and every request
+re-checks that origin through one `AgentConverseOriginVerifier`. The HTTP
+middleware and `AgentConverseSessionService.validate` never branch on which kind
+it is; the two adapters in composition do, and each owns its own refusal codes
+and its own audit trail.
+
+Comparing the session's public id against the agent's current one is the whole
+walk-in invalidation mechanism: rotating the id or closing the door refuses the
+next request, with no session table to sweep. A credential-bound session resolves
+its conversation through `agent_converse_session_mappings`, which keeps one
+conversation across exchanges; a walk-in session mints a public session id and
+persists nothing, because each walk-in exchange opens a fresh conversation.
+
+Walk-in exchanges spend a per-source and a per-agent budget before the exchange
+resolves anything about the agent, so a throttled caller and an agent that does
+not exist are indistinguishable. Turns inside an open session spend the shared
+agent-channel budgets, keyed by grant for a credential and by session for a
+walk-in caller.
+
+Public surfaces and key files:
+
+- `backend/src/modules/settings/contracts/agentConverseSession.ts` (`AgentConverseOrigin`, `AgentConversePrincipal`, `AgentConverseOriginVerifier`, `AgentConverseWalkInIssuerPort`)
+- `backend/src/modules/settings/services/agentConverseSessionService.ts` and `converseExchangeOrigins.ts` (the two issue paths)
+- `backend/src/modules/settings/domain/publicChatSession.ts` (`issueConverseChatSession`, `verifyConverseChatSession`) and `converseGrantVersion.ts`
+- `backend/src/app/composition/agentConverseOrigins.ts` (both verifier adapters, the walk-in issuer, the outcome observer)
+- `backend/src/app/composition/converseVisitorIdentity.ts` (`signedIdentity` bound to the session rather than an origin)
+- `backend/src/app/http/middleware/mcpConverseWalkInRateLimiter.ts` and `requireMcpConverseSession.ts`
+- `backend/src/app/http/routes/mcpConverseRoutes.ts` (`POST /api/v1/mcp/converse/session` takes `launchToken` or `publicId`)
+- `packages/radioso-mcp-server/src/http/walkInRoutes.ts` and `auth/authService.ts` (`/mcp/a/{publicId}`)
+- `backend/tests/unit/settings/agentConverseOriginVerifier.test.ts`, `converseSessionPayload.test.ts`
+- `backend/tests/integration/walk-in-converse.integration.test.ts`, `mcp-converse-session-revalidation.integration.test.ts`
+
+Related docs:
+
+- [MCP Client Setup](../mcp-client-setup.md)
+- `docs-portal/content/guides/agent-converse.mdx`
+
 ## Conversation Engine Contracts
 
 Owns product-independent conversation runtime contracts: agents, input events,

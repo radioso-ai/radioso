@@ -1,6 +1,8 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 
+import type { AgentConverseOrigin } from "../contracts/agentConverseSession.js";
+
 const PUBLIC_CHAT_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 const LAUNCH_TOKEN_BINDING_KEY_LABEL = "radioso/public-chat-session-launch-token/v1";
 const PUBLIC_CHAT_RESUME_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -26,16 +28,46 @@ const publicChatSessionBasePayloadSchema = z.object({
   visitorKey: z.string().uuid().nullable().optional(),
 });
 
-const converseChatSessionPayloadSchema = z.object({
+const converseChatSessionClaimsSchema = z.object({
   workspaceId: z.string().uuid(),
   agentId: z.string().uuid(),
   publicSessionId: z.string().uuid(),
   sourceChannel: z.literal("mcp"),
   sourceOrigin: z.null(),
   expiresAt: z.string().datetime(),
-  grantId: z.string().uuid(),
-  grantVersion: z.string().min(1),
 });
+
+const converseChatSessionOriginSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("grant"),
+    grantId: z.string().uuid(),
+    grantVersion: z.string().min(1),
+  }),
+  z.object({
+    kind: z.literal("walk_in"),
+    publicId: z.string().min(1).max(128),
+  }),
+]);
+
+const converseChatSessionPayloadSchema = z.union([
+  converseChatSessionClaimsSchema.extend({
+    origin: converseChatSessionOriginSchema,
+  }),
+  /**
+   * Sessions signed before the origin became a union carried the grant flat. Kept for
+   * exactly one release so tokens minted by the previous deploy keep working, then
+   * dropped together with this comment.
+   */
+  converseChatSessionClaimsSchema
+    .extend({
+      grantId: z.string().uuid(),
+      grantVersion: z.string().min(1),
+    })
+    .transform(({ grantId, grantVersion, ...claims }): ConverseChatSessionPayload => ({
+      ...claims,
+      origin: { kind: "grant", grantId, grantVersion },
+    })),
+]);
 
 const publicChatSessionPayloadSchema = z.union([
   publicChatSessionBasePayloadSchema.extend({
@@ -47,7 +79,9 @@ const publicChatSessionPayloadSchema = z.union([
 ]);
 
 type PublicChatSessionPayload = z.infer<typeof publicChatSessionPayloadSchema>;
-export type ConverseChatSessionPayload = z.infer<typeof converseChatSessionPayloadSchema>;
+export type ConverseChatSessionPayload = z.infer<typeof converseChatSessionClaimsSchema> & {
+  origin: AgentConverseOrigin;
+};
 type PublicChatSessionClaims = z.infer<typeof publicChatSessionBasePayloadSchema>;
 type IssuePublicChatSessionInput = Omit<PublicChatSessionClaims, "expiresAt"> & {
   publicChatToken: string;

@@ -349,8 +349,6 @@
   "types|backend/src/modules/connectors/plugins/wordpress/wordpressIngest.ts|IngestInput",
   "types|backend/src/modules/context-variables/availableContextVariables.ts|AvailableContextVariable",
   "types|backend/src/modules/context-variables/contextBlockRenderer.ts|ContextBlockRenderResult",
-  "types|backend/src/modules/context-variables/identitySigning.ts|VerifiedVisitorIdentity",
-  "types|backend/src/modules/context-variables/identitySigning.ts|VerifySignedIdentityInput",
   "types|backend/src/modules/customerEmail/executor/emailSkillExecutor.ts|EmailSkillActivitySinkPort",
   "types|backend/src/modules/customerEmail/executor/emailSkillExecutor.ts|EmailSkillExecutorOptions",
   "types|backend/src/modules/customerEmail/oauthMailProviders.ts|CustomerEmailCapability",

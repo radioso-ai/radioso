@@ -35,6 +35,7 @@ export type { AgentConverseAudit } from "../services/agentConverseAudit.js";
 export type {
   AgentConverseAskResult,
   AgentConverseService,
+  ConverseVisitorIdentityVerifier,
 } from "../services/agentConverseService.js";
 // The agent reply envelope is shared by the MCP converse route, the REST agent
 // chat route, and the SSE presenter; composition never builds it.

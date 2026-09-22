@@ -8,6 +8,7 @@ import { isRequestBodyTooLargeError, toWebRequest, writeJson, writeJsonRpcError,
 import { createFixedWindowPreAuthSourceBudget, digestPeerSource } from "./preAuthSourceBudget.js";
 import { createAgentServerCardReader } from "./agentServerCard.js";
 import { resolveMcpRoute } from "./resolveMcpRoute.js";
+import { createWalkInRouteHandler } from "./walkInRoutes.js";
 import { createOperatorMcpRequestHandler } from "../operator/requestHandler.js";
 import { createOperatorProtectedResourceMetadata } from "../operator/protectedResource.js";
 import { createOperatorAuditObserver } from "../operator/observability.js";
@@ -31,6 +32,12 @@ export const createHttpServer = ({ authService, auditLogger, config, operatorMcp
     entryPoint: "standalone",
   });
   const handleMcp = createMcpRouteHandler({
+    authService,
+    config,
+    readiness,
+    serverManager: sessionServerManager,
+  });
+  const handleWalkIn = createWalkInRouteHandler({
     authService,
     config,
     readiness,
@@ -140,6 +147,14 @@ export const createHttpServer = ({ authService, auditLogger, config, operatorMcp
           const request = await toWebRequest(req, `${config.bindHost}:${config.bindPort}`, { maxBytes: 256 * 1024 });
           const response = await operatorHandler(request);
           await writeWebResponse(res, response);
+          return;
+        }
+        case "agent_walk_in_mcp": {
+          if (!await sourceBudget.consume({ sourceDigest: digestPeerSource(req, config.trustedProxyHops) })) {
+            writeJsonRpcError(res, 429, -32003, "Too many requests.", { code: "rate_limit_exceeded" });
+            return;
+          }
+          await handleWalkIn(req, res, route.publicId);
           return;
         }
         case "agent_server_card": {

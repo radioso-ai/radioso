@@ -45,8 +45,9 @@ describe("resolveMcpRoute", () => {
     expect(resolveMcpRoute({ method: "GET", pathname: "/healthz" })).toEqual({ kind: "health" });
     expect(resolveMcpRoute({ method: "POST", pathname: "/mcp" })).toEqual({ kind: "agent_mcp" });
     expect(resolveMcpRoute({ method: "POST", pathname: "/operator/mcp" })).toEqual({ kind: "operator_mcp" });
-    // The per-agent endpoint itself is not a route yet; walk-in access opens it.
-    expect(resolveMcpRoute({ method: "POST", pathname: "/mcp/a/ag_Public12345" })).toEqual({ kind: "not_found" });
+    // The per-agent endpoint itself is the walk-in door; the card is read-only.
+    expect(resolveMcpRoute({ method: "POST", pathname: "/mcp/a/ag_Public12345" }))
+      .toEqual({ kind: "agent_walk_in_mcp", publicId: "ag_Public12345" });
     expect(resolveMcpRoute({ method: "POST", pathname: "/mcp/a/ag_Public12345/server-card" })).toEqual({ kind: "not_found" });
     expect(resolveMcpRoute({ method: "GET", pathname: "/mcp/a/../secret/server-card" })).toEqual({ kind: "not_found" });
   });

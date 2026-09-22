@@ -44,22 +44,21 @@ describe("public chat session contract", () => {
       .set("Origin", origin)
       .send({ channel: "website_embed", ...body });
 
-  it("issues and verifies MCP converse sessions with grant identity and version fields", () => {
+  it("issues and verifies MCP converse sessions with a grant origin", () => {
     const secret = "00112233445566778899aabbccddeeff";
+    const grantId = randomUUID();
     const session = issueConverseChatSession(secret, {
       workspaceId: randomUUID(),
       agentId: randomUUID(),
       publicSessionId: randomUUID(),
-      grantId: randomUUID(),
-      grantVersion: "2026-06-27T09:30:00.000Z",
+      origin: { kind: "grant", grantId, grantVersion: "2026-06-27T09:30:00.000Z" },
     });
 
     const decoded = decodePublicSessionPayload(session.token);
     expect(decoded).toMatchObject({
       sourceChannel: "mcp",
       sourceOrigin: null,
-      grantId: session.grantId,
-      grantVersion: "2026-06-27T09:30:00.000Z",
+      origin: { kind: "grant", grantId, grantVersion: "2026-06-27T09:30:00.000Z" },
     });
 
     expect(verifyConverseChatSession(session.token, secret)).toMatchObject({
@@ -68,8 +67,23 @@ describe("public chat session contract", () => {
       publicSessionId: session.publicSessionId,
       sourceChannel: "mcp",
       sourceOrigin: null,
-      grantId: session.grantId,
-      grantVersion: "2026-06-27T09:30:00.000Z",
+      origin: { kind: "grant", grantId, grantVersion: "2026-06-27T09:30:00.000Z" },
+    });
+  });
+
+  it("issues and verifies MCP converse sessions with a walk-in origin", () => {
+    const secret = "00112233445566778899aabbccddeeff";
+    const session = issueConverseChatSession(secret, {
+      workspaceId: randomUUID(),
+      agentId: randomUUID(),
+      publicSessionId: randomUUID(),
+      origin: { kind: "walk_in", publicId: "ag_0123456789abcdefghijkl" },
+    });
+
+    expect(verifyConverseChatSession(session.token, secret)).toMatchObject({
+      sourceChannel: "mcp",
+      sourceOrigin: null,
+      origin: { kind: "walk_in", publicId: "ag_0123456789abcdefghijkl" },
     });
   });
 

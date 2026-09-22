@@ -144,16 +144,33 @@ import type { McpConverseRouteDependencies, McpConverseRouteServices } from "../
 import type { ChatTurnPlanHandle } from "../../../modules/chat/services/turnPlanCoordinator.js";
 import { buildInfrastructure } from "./infra.js";
 import { RoutineChatModelGateway } from "../../../modules/chat/services/routines/routineChatModelGateway.js";
+import {
+  createAgentConverseOriginVerifier,
+  createAgentConverseWalkInIssuer,
+  createAgentConverseWalkInObserver,
+} from "../../composition/agentConverseOrigins.js";
+import { createConverseVisitorIdentityVerifier } from "../../composition/converseVisitorIdentity.js";
 
 
 export const buildMcpConverseServices = (
   dependencies: McpConverseRouteDependencies,
 ): McpConverseRouteServices => {
   const audit = new AgentConverseAudit(dependencies.auditService);
+  const walkInObserver = createAgentConverseWalkInObserver({
+    metrics: dependencies.metricsRegistry,
+    logger: dependencies.logger,
+  });
   const sessionService = new AgentConverseSessionService({
     accessGrantService: dependencies.accessGrantService,
     agentLookup: dependencies.agentRepository,
     sessionMapping: dependencies.agentConverseSessionMappingRepository,
+    originVerifier: createAgentConverseOriginVerifier({
+      accessGrantService: dependencies.accessGrantService,
+      agentRepository: dependencies.agentRepository,
+      audit,
+    }),
+    walkInIssuer: createAgentConverseWalkInIssuer({ agentRepository: dependencies.agentRepository }),
+    walkInObserver,
     publicChatSessionSecret: dependencies.env.PUBLIC_CHAT_SESSION_SECRET,
     audit,
   });
@@ -162,11 +179,12 @@ export const buildMcpConverseServices = (
     conversationRepository: dependencies.conversationRepository,
     agentToolCatalog: dependencies.agentToolCatalog,
     audit,
+    visitorIdentity: createConverseVisitorIdentityVerifier(dependencies),
     publisher: dependencies.workspaceInvalidationPublisher,
     metrics: dependencies.metricsRegistry,
     logger: dependencies.logger,
   });
-  return { audit, sessionService, converseService };
+  return { audit, sessionService, converseService, walkInObserver };
 };
 
 export const buildChatServices = (input: {

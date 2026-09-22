@@ -523,6 +523,20 @@ resource "google_cloud_run_v2_service" "backend" {
           value = env.value
         }
       }
+      # Walk-in access budgets. Both are spent before the exchange resolves the agent, so
+      # a throttled caller and an agent that does not exist look the same.
+      env {
+        name  = "MCP_WALK_IN_RATE_LIMIT_WINDOW_MS"
+        value = tostring(var.mcp_walk_in_rate_limit_window_ms)
+      }
+      env {
+        name  = "MCP_WALK_IN_SOURCE_RATE_LIMIT_MAX_ATTEMPTS"
+        value = tostring(var.mcp_walk_in_source_rate_limit_max_attempts)
+      }
+      env {
+        name  = "MCP_WALK_IN_AGENT_RATE_LIMIT_MAX_ATTEMPTS"
+        value = tostring(var.mcp_walk_in_agent_rate_limit_max_attempts)
+      }
       dynamic "env" {
         for_each = local.operator_mcp_configured ? [var.operator_mcp_credential_epoch] : []
         content {
@@ -703,6 +717,20 @@ resource "google_cloud_run_v2_service" "mcp" {
           name  = "PUBLIC_AGENT_DOCS_URL"
           value = env.value
         }
+      }
+      # Walk-in access budgets. Both are spent before the exchange resolves the agent, so
+      # a throttled caller and an agent that does not exist look the same.
+      env {
+        name  = "MCP_WALK_IN_RATE_LIMIT_WINDOW_MS"
+        value = tostring(var.mcp_walk_in_rate_limit_window_ms)
+      }
+      env {
+        name  = "MCP_WALK_IN_SOURCE_RATE_LIMIT_MAX_ATTEMPTS"
+        value = tostring(var.mcp_walk_in_source_rate_limit_max_attempts)
+      }
+      env {
+        name  = "MCP_WALK_IN_AGENT_RATE_LIMIT_MAX_ATTEMPTS"
+        value = tostring(var.mcp_walk_in_agent_rate_limit_max_attempts)
       }
       dynamic "env" {
         for_each = local.operator_mcp_configured ? [var.operator_mcp_credential_epoch] : []

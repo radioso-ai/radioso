@@ -16,7 +16,6 @@ const apiMocks = vi.hoisted(() => ({
   getGoogleLoginStatus: vi.fn(),
   login: vi.fn(),
   getStoredActiveWorkspaceId: vi.fn(),
-  seedWorkspaceSession: vi.fn(),
 }))
 
 const authContextMocks = vi.hoisted(() => ({
@@ -34,7 +33,6 @@ vi.mock('@/lib/api', async (importOriginal) => {
       login: apiMocks.login,
     },
     getStoredActiveWorkspaceId: apiMocks.getStoredActiveWorkspaceId,
-    seedWorkspaceSession: apiMocks.seedWorkspaceSession,
   }
 })
 
@@ -71,7 +69,6 @@ describe('LoginForm submit button loading state', () => {
     // A login that never settles keeps the button in its loading state so the spinner insert runs.
     apiMocks.login.mockReturnValue(new Promise(() => undefined))
     apiMocks.getStoredActiveWorkspaceId.mockReturnValue(null)
-    apiMocks.seedWorkspaceSession.mockReturnValue(undefined)
     authContextMocks.useOptionalAuth.mockReturnValue({ login: vi.fn() })
     authContextMocks.getStoredLastAccountId.mockReturnValue(undefined)
     container = document.createElement('div')

@@ -60,6 +60,7 @@ export const registerAgentsPaths = (
     path: "/api/v1/agents/{agentId}/chat",
     tags: ["Agent Channels"],
     summary: "Run chat through a REST credential bound to this agent",
+    description: "Send `message` or `routine` (a tool call to one exposed routine; validated against the catalog of the release the conversation is pinned to before any turn state is written, with the same `routine_tool_unknown` / `routine_invocation_invalid` errors as the MCP converse ask route), never both. `startConversation: true` requests the bootstrap greeting instead of a turn: it accepts a `message` (ignored) but not a `routine`.",
     operationId: "createAgentChannelChatResponse",
     security: [{ [security.agentChannelBearerAuthScheme.name]: [] }],
     request: {
@@ -71,15 +72,16 @@ export const registerAgentsPaths = (
     },
     responses: {
       200: {
-        description: "Agent chat response returned as JSON or SSE",
+        description: "Agent chat response returned as JSON or SSE; the SSE `done` frame carries the same envelope core as the JSON body",
         content: {
-          "application/json": { schema: schemas.AssistantChatResponseSchema },
+          "application/json": { schema: schemas.AgentChannelChatResponseSchema },
           "text/event-stream": { schema: z.string() },
         },
       },
       204: { description: "Conversation start completed without a greeting" },
-      400: { description: "Request validation failed", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      400: { description: "Request validation failed, or routine invocation input did not match the tool's schema", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
       401: { description: "Invalid, inactive, cross-audience, or cross-agent credential", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Routine tool is not in the agent's catalog", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
       429: { description: "Agent channel rate limit exceeded", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
     },
   });

@@ -36,7 +36,7 @@ describe("standalone MCP pre-authentication controls", () => {
     const exchange = vi.fn();
     const server = createHttpServer({
       authService: createAuthService({
-        converseApi: { ask: vi.fn(), exchange, validate: vi.fn(), recordUse: vi.fn() },
+        converseApi: { ask: vi.fn(), exchange, validate: vi.fn(), recordUse: vi.fn(), tools: vi.fn() },
         sessionStore: createInMemorySessionStore(),
       }),
       config,
@@ -61,7 +61,7 @@ describe("standalone MCP pre-authentication controls", () => {
     const consume = vi.fn().mockReturnValue(false);
     const server = createHttpServer({
       authService: createAuthService({
-        converseApi: { ask: vi.fn(), exchange: vi.fn(), validate: vi.fn(), recordUse: vi.fn() },
+        converseApi: { ask: vi.fn(), exchange: vi.fn(), validate: vi.fn(), recordUse: vi.fn(), tools: vi.fn() },
         sessionStore: createInMemorySessionStore(),
       }),
       config: { ...config, trustedProxyHops: 2 },
@@ -91,7 +91,7 @@ describe("standalone MCP pre-authentication controls", () => {
 
   it("rejects oversized bearer and client metadata before auth or server allocation", async () => {
     const verifyBearerToken = vi.fn();
-    const serverManager = { evict: vi.fn(), getOrCreate: vi.fn() };
+    const serverManager = { handleRequest: vi.fn() };
     const handler = createMcpRequestHandler({ config, serverManager, verifyBearerToken });
 
     const oversizedBearer = await handler(new Request("http://localhost/mcp", {
@@ -124,7 +124,7 @@ describe("standalone MCP pre-authentication controls", () => {
     expect(invalidClient.response.status).toBe(400);
     expect(invalidBatchClient.response.status).toBe(400);
     expect(verifyBearerToken).not.toHaveBeenCalled();
-    expect(serverManager.getOrCreate).not.toHaveBeenCalled();
+    expect(serverManager.handleRequest).not.toHaveBeenCalled();
   });
 
   it("does not record a cold-cache credential when its first MCP request is unsupported", async () => {
@@ -148,6 +148,7 @@ describe("standalone MCP pre-authentication controls", () => {
             permissions: [],
           }),
           recordUse,
+          tools: vi.fn().mockResolvedValue({ agent: { name: "Agent", description: null }, tools: [] }),
         },
         sessionStore: createInMemorySessionStore(),
       }),

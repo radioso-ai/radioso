@@ -534,6 +534,14 @@ const validateRoutineFixture = (routine: RoutineDraftFixture | RoutineFixture): 
       message: `missing terminal: no terminal is reachable from the first step.`,
     });
   }
+  // Mirrors the backend validator's tool-name grammar (routineExposureToolNamePattern).
+  if (routine.exposure?.enabled && !/^[a-z][a-z0-9_]{1,62}$/u.test(routine.exposure.toolName)) {
+    diagnostics.push({
+      code: "exposure_tool_name_invalid",
+      location: "exposure.toolName",
+      message: `invalid tool name: "${routine.exposure.toolName}" must be 2-63 characters of lower-case letters, digits, and underscores, starting with a letter.`,
+    });
+  }
   return { ok: diagnostics.length === 0, diagnostics };
 };
 

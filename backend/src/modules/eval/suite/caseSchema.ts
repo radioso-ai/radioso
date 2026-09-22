@@ -5,6 +5,7 @@ import type {
   AssistantClientContextCapabilities,
   AssistantPageContext,
 } from "../../chat/contracts/index.js";
+import { renderRoutineInvocation } from "../../routines/public.js";
 import type { EvalRunRoutineStartState } from "../domain/types.js";
 import type { SuiteAssertion } from "./scoring.js";
 
@@ -27,7 +28,14 @@ export interface ConversationQualityCase {
   tags?: string[];
   /** Prior turns, oldest first, replayed as conversation history before `query`. */
   history?: Array<{ role: "user" | "assistant"; content: string }>;
-  query: string;
+  /** The message to drive; absent when the turn is a `routineInvocation`. */
+  query?: string;
+  /**
+   * Drive the turn as a calling agent's tool call to an exposed routine instead of a
+   * message: the named routine is admitted directly with these slot values prefilled.
+   * Exactly one of `query` and `routineInvocation` is set.
+   */
+  routineInvocation?: { toolName: string; input: Record<string, string | number | boolean> };
   /** Ephemeral host-page input supplied to this turn only. */
   pageContext?: AssistantPageContext;
   /** Client-advertised context capabilities supplied alongside `pageContext`. */
@@ -74,6 +82,7 @@ const suiteAssertionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("llm_judge"), expectedAnswer: z.string().min(1), criteria: z.string().optional() }),
   z.object({ type: z.literal("turn_route"), route: z.enum(["retrieval", "direct"]) }),
   z.object({ type: z.literal("turn_uses_skill"), skillName: z.string().min(1) }),
+  z.object({ type: z.literal("turn_skips_skill"), skillName: z.string().min(1) }),
   z.object({ type: z.literal("turn_activates_routine"), routineId: z.string().min(1) }),
   z.object({ type: z.literal("routine_step_reached"), routineId: z.string().min(1), stepId: z.string().min(1) }),
   z.object({ type: z.literal("turn_asks_clarification") }),
@@ -89,13 +98,28 @@ const conversationQualityCaseSchema = z.object({
   history: z
     .array(z.object({ role: z.enum(["user", "assistant"]), content: z.string() }))
     .optional(),
-  query: z.string().min(1),
+  query: z.string().min(1).optional(),
+  routineInvocation: z.object({
+    toolName: z.string().min(1),
+    input: z.record(z.union([z.string(), z.number(), z.boolean()])),
+  }).optional(),
   pageContext: pageContextSchema.optional(),
   clientContextCapabilities: clientContextCapabilitiesSchema.optional(),
   routineStartState: z.record(z.unknown()).optional(),
   agentConfigOverride: z.record(z.unknown()).optional(),
   assertions: z.array(suiteAssertionSchema),
-});
+}).refine(
+  (value) => (value.query === undefined) !== (value.routineInvocation === undefined),
+  { message: "exactly one of query or routineInvocation is required", path: ["query"] },
+);
+
+/**
+ * The text the case's turn runs on: the query, or a tool call rendered exactly as the
+ * chat module records it, so a judge and a replayed history read the same line.
+ */
+export const conversationQualityCaseTurnText = (
+  evalCase: Pick<ConversationQualityCase, "query" | "routineInvocation">,
+): string => evalCase.query ?? (evalCase.routineInvocation ? renderRoutineInvocation(evalCase.routineInvocation) : "");
 
 /**
  * Validates a dataset and returns it typed. Throws (via Zod) on malformed input, and

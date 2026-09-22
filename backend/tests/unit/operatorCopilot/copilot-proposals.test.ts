@@ -240,6 +240,7 @@ describe("US3 copilot proposals", () => {
       { name: "propose_directive_enablement", shape: "propose" },
       { name: "propose_routine", shape: "propose" },
       { name: "propose_routine_edit", shape: "propose" },
+      { name: "propose_routine_exposure", shape: "propose" },
       { name: "propose_agent_setting", shape: "propose" },
     ]);
 
@@ -2330,6 +2331,65 @@ describe("routine edit and lifecycle proposal tools", () => {
     }));
   });
 
+  it("drafts a tool exposure as a routine edit whose card carries the label and summary the adapter set", async () => {
+    const readVersionToken = vi.fn(async () => "routine-version");
+    const draftEdit = vi.fn(async (_workspaceId: string, _targetRef: unknown, changes: unknown, rationale?: string) => ({
+      payload: { kind: "edit", name: "Start a return", changes, rationale: rationale ?? "Edit routine Start a return: exposed as tool start_return." },
+      targetLabel: "Start a return",
+      summary: "Edit routine Start a return: exposed as tool start_return.",
+      diagnostics: [],
+    }));
+    const { createProposal, descriptors } = proposalTools({ readVersionToken, draftEdit, preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft: vi.fn() });
+
+    const result = await descriptors.find((descriptor) => descriptor.name === "propose_routine_exposure")!
+      .createTool(toolContext)
+      .invoke({ routineId, enabled: true, toolName: "start_return", description: "Start a return for an order." }, {} as never);
+
+    // The exposure rides the same field patch the edit tool uses, so preview and apply need no
+    // second producer of a routine card.
+    expect(draftEdit).toHaveBeenCalledWith(workspaceId, { agentId, routineId }, { exposure: { enabled: true, toolName: "start_return", description: "Start a return for an order." } }, undefined);
+    expect(createProposal).toHaveBeenCalledWith(expect.objectContaining({
+      targetType: "routine",
+      targetRef: { agentId, routineId },
+      versionToken: "routine-version",
+      payload: expect.objectContaining({ kind: "edit", changes: { exposure: { enabled: true, toolName: "start_return", description: "Start a return for an order." } } }),
+    }));
+    expect(result).toEqual(expect.objectContaining({
+      targetType: "routine",
+      targetLabel: "Start a return",
+      summary: "Edit routine Start a return: exposed as tool start_return.",
+      validation: { ok: true, diagnostics: [] },
+    }));
+  });
+
+  it("drafts an exposure change without a tool name, leaving the adapter to keep the routine's stored one", async () => {
+    const readVersionToken = vi.fn(async () => "routine-version");
+    const draftEdit = vi.fn(async (_workspaceId: string, _targetRef: unknown, changes: unknown, rationale?: string) => ({
+      payload: { kind: "edit", name: "Start a return", changes, rationale: rationale ?? "Edit routine Start a return: tool exposure off." },
+      targetLabel: "Start a return",
+      summary: "Edit routine Start a return: tool exposure off.",
+      diagnostics: [],
+    }));
+    const { descriptors } = proposalTools({ readVersionToken, draftEdit, preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft: vi.fn() });
+
+    await descriptors.find((descriptor) => descriptor.name === "propose_routine_exposure")!
+      .createTool(toolContext)
+      .invoke({ routineId, enabled: false, description: "Start a return for an order." }, {} as never);
+
+    expect(draftEdit).toHaveBeenCalledWith(workspaceId, { agentId, routineId }, { exposure: { enabled: false, description: "Start a return for an order." } }, undefined);
+  });
+
+  it("refuses to draft an exposure for a routine nobody named", async () => {
+    const draftEdit = vi.fn();
+    const { createProposal, descriptors } = proposalTools({ readVersionToken: vi.fn(), draftEdit, preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft: vi.fn() });
+
+    await expect(descriptors.find((descriptor) => descriptor.name === "propose_routine_exposure")!
+      .createTool(toolContext)
+      .invoke({ enabled: true, toolName: "start_return", description: "" }, {} as never)).rejects.toThrow(/routine/i);
+    expect(draftEdit).not.toHaveBeenCalled();
+    expect(createProposal).not.toHaveBeenCalled();
+  });
+
   it("refuses to draft an edit for a routine nobody named", async () => {
     const draftEdit = vi.fn();
     const { createProposal, descriptors } = proposalTools({ readVersionToken: vi.fn(), draftEdit, preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft: vi.fn() });
@@ -2387,6 +2447,45 @@ describe("routine proposal adapter edits", () => {
     expect(updatedId).toBe(targetRef.routineId);
     expect(input.enabled).toBe(false);
     expect(input.steps).toEqual(storedRoutine().steps);
+  });
+
+  it("exposes a routine as a tool through the same edit path, previewing the block and writing only it", async () => {
+    const ports = routineAdapterPorts();
+    const adapter = await routineAdapter(ports);
+    const exposure = { enabled: true, toolName: "start_return", description: "Start a return for an order." };
+    const draft = await adapter.draftEdit(workspaceId, targetRef, { exposure });
+
+    expect(draft.summary).toBe("Edit routine support-intake: exposed as tool start_return.");
+    expect(draft.payload).toMatchObject({ kind: "edit", name: "support-intake", changes: { exposure }, rationale: draft.summary });
+    expect(await adapter.preview(workspaceId, targetRef, draft.payload)).toMatchObject({
+      targetLabel: "support-intake",
+      current: { exposure: null },
+      proposed: { exposure },
+    });
+    expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token)).toEqual({
+      outcome: "applied",
+      appliedRef: { agentId, routineId: targetRef.routineId },
+    });
+    const [, , updatedId, input] = ports.updateDraft.mock.calls[0] as unknown as [string, string, string, { exposure: unknown; steps: unknown[] }];
+    expect(updatedId).toBe(targetRef.routineId);
+    expect(input.exposure).toEqual(exposure);
+    expect(input.steps).toEqual(storedRoutine().steps);
+  });
+
+  it("keeps the routine's stored tool name when an exposure edit leaves it blank, since a published name is frozen", async () => {
+    const ports = routineAdapterPorts(storedRoutine({ exposure: { enabled: true, toolName: "start_return", description: "Start a return." } }));
+    const adapter = await routineAdapter(ports);
+
+    const withdrawn = await adapter.draftEdit(workspaceId, targetRef, { exposure: { enabled: false, description: "Start a return." } });
+    const reworded = await adapter.draftEdit(workspaceId, targetRef, { exposure: { enabled: true, toolName: "", description: "Begin a return." } });
+
+    expect(withdrawn.payload).toMatchObject({ changes: { exposure: { enabled: false, toolName: "start_return", description: "Start a return." } } });
+    expect(withdrawn.summary).toBe("Edit routine support-intake: tool exposure off.");
+    expect(reworded.payload).toMatchObject({ changes: { exposure: { enabled: true, toolName: "start_return", description: "Begin a return." } } });
+    expect(reworded.summary).toBe("Edit routine support-intake: exposed as tool start_return.");
+    expect(await adapter.preview(workspaceId, targetRef, reworded.payload)).toMatchObject({
+      proposed: { exposure: { enabled: true, toolName: "start_return", description: "Begin a return." } },
+    });
   });
 
   it("declines to write when the routine moved under the proposal", async () => {

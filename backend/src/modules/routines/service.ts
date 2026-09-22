@@ -497,11 +497,15 @@ export class RoutineDefinitionService {
         workspaceId,
         eventType,
         eventStatus: "success",
+        // The tool name is operator-authored configuration a support engineer needs to
+        // correlate a calling agent's catalog with; the description is prose and stays out.
         metadata: {
           agentId,
           routineId: routine.id,
           lineageId: routine.lineageId,
           enabled: routine.enabled,
+          exposureEnabled: routine.exposure?.enabled ?? false,
+          exposureToolName: routine.exposure?.toolName ?? null,
         },
       });
     } catch (error) {

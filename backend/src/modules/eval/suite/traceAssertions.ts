@@ -17,6 +17,8 @@ import type { AssertionVerdictStatus, EvalRunObservedOutput } from "../domain/ty
 export type SuiteTraceAssertion =
   | { type: "turn_route"; route: "retrieval" | "direct" }
   | { type: "turn_uses_skill"; skillName: string }
+  /** No turn skill and no routine step dispatched the skill: the negation of `turn_uses_skill`. */
+  | { type: "turn_skips_skill"; skillName: string }
   | { type: "turn_activates_routine"; routineId: string }
   | { type: "routine_step_reached"; routineId: string; stepId: string }
   | { type: "turn_asks_clarification" }
@@ -26,6 +28,7 @@ export type SuiteTraceAssertion =
 const TRACE_ASSERTION_TYPES = new Set<string>([
   "turn_route",
   "turn_uses_skill",
+  "turn_skips_skill",
   "turn_activates_routine",
   "routine_step_reached",
   "turn_asks_clarification",
@@ -102,6 +105,22 @@ const routineTrace = (stage: TraceStage): RoutineRunTrace | undefined => {
   return sub.payload as RoutineRunTrace;
 };
 
+/**
+ * Every skill the turn dispatched, whether as a turn skill (`skill_dispatch` stage)
+ * or as a routine skill step (a `skill_dispatched` entry in the routine subtrace),
+ * so a case can assert the same skill effect however the routine was driven.
+ */
+const dispatchedSkillNames = (output: EvalRunObservedOutput): string[] => {
+  const fromStages = stages(output)
+    .filter((stage) => stage.kind === "skill_dispatch")
+    .map((stage) => readString(stage.outputs, "skillName") ?? stage.id.replace(/^dispatch:/u, ""));
+  const fromRoutineSteps = stages(output)
+    .flatMap((stage) => routineTrace(stage)?.steps ?? [])
+    .filter((step) => step.event === "skill_dispatched" && typeof step.skillName === "string")
+    .map((step) => step.skillName as string);
+  return [...fromStages, ...fromRoutineSteps];
+};
+
 export const evaluateTraceAssertion = (
   assertion: SuiteTraceAssertion,
   output: EvalRunObservedOutput,
@@ -130,24 +149,26 @@ export const evaluateTraceAssertion = (
       if (!output.turnTrace) {
         return missingTrace(assertion);
       }
-      const dispatched = stages(output).filter((stage) => stage.kind === "skill_dispatch");
-      const hit = dispatched.some(
-        (stage) =>
-          readString(stage.outputs, "skillName") === assertion.skillName ||
-          stage.id === `dispatch:${assertion.skillName}`,
-      );
-      if (hit) {
+      const dispatched = dispatchedSkillNames(output);
+      if (dispatched.includes(assertion.skillName)) {
         return pass(assertion, `Turn dispatched skill "${assertion.skillName}".`);
       }
-      const observed = dispatched
-        .map((stage) => readString(stage.outputs, "skillName") ?? stage.id)
-        .join(", ");
+      const observed = dispatched.join(", ");
       return fail(
         assertion,
         observed
           ? `Turn dispatched ${observed}; expected "${assertion.skillName}".`
           : `Turn dispatched no skill; expected "${assertion.skillName}".`,
       );
+    }
+    case "turn_skips_skill": {
+      if (!output.turnTrace) {
+        return missingTrace(assertion);
+      }
+      if (dispatchedSkillNames(output).includes(assertion.skillName)) {
+        return fail(assertion, `Turn dispatched skill "${assertion.skillName}"; expected it not to run.`);
+      }
+      return pass(assertion, `Turn did not dispatch skill "${assertion.skillName}".`);
     }
     case "turn_activates_routine": {
       if (!output.turnTrace) {

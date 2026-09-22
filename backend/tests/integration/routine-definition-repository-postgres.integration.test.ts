@@ -128,6 +128,10 @@ const createRoutineSchema = async (client: PoolClient, schema: string): Promise<
       activation_priority INTEGER NOT NULL DEFAULT 0,
       activation_reentry_mode TEXT NOT NULL DEFAULT 'once_per_conversation',
       activation_coverage_criteria JSONB NULL,
+      -- Mirrors migration 194_routine_definition_exposure.sql.
+      exposure_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+      exposure_tool_name TEXT NULL,
+      exposure_description TEXT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       UNIQUE(agent_id, name, version),

@@ -1,13 +1,17 @@
 import type { Response } from "express";
 
-import type {
-  AnswerSegment,
-  ChatCitation,
-  ChatRoute,
-  ChatStreamEvent,
-  ChatSuggestion,
-  ChatAnswerCoverageAssessment,
-  ChatAnswerCoverageInteractionTrace,
+import {
+  buildAgentReplyEnvelope,
+  type AnswerSegment,
+  type ChatCitation,
+  type ChatOwnershipAck,
+  type ChatRoute,
+  type ChatRoutineInvocationReport,
+  type ChatRoutineTurnState,
+  type ChatStreamEvent,
+  type ChatSuggestion,
+  type ChatAnswerCoverageAssessment,
+  type ChatAnswerCoverageInteractionTrace,
 } from "../../../modules/chat/contracts/index.js";
 import type { ActivitySummary, ActivityTrace } from "../../../modules/retrieval/public.js";
 import type { TurnTraceEnvelope } from "../../../modules/chat/contracts/index.js";
@@ -37,15 +41,29 @@ type ChatPayload = {
   suggestions?: ChatSuggestion[];
   activitySummary: ActivitySummary;
   activityTrace: ActivityTrace;
+  ownership?: ChatOwnershipAck;
   turnTrace?: TurnTraceEnvelope;
   answerCoverage?: ChatAnswerCoverageAssessment;
   interactionTrace?: ChatAnswerCoverageInteractionTrace;
+  /** Agent-facing routine state and invocation outcome; only the agent reply envelope publishes them. */
+  routine?: ChatRoutineTurnState;
+  invocation?: ChatRoutineInvocationReport;
 };
 
 type PresentedChatPayload =
-  Omit<ChatPayload, "route" | "activitySummary" | "activityTrace" | "turnTrace"> & {
+  Omit<ChatPayload, "route" | "activitySummary" | "activityTrace" | "turnTrace" | "routine" | "invocation"> & {
     debug?: ChatDiagnosticPayload;
   };
+
+interface ChatPresentationOptions {
+  includeDebug?: boolean;
+  /**
+   * Merge the agent reply envelope core into the terminal payload. Set by the
+   * REST agent channel so its SSE `done` frame matches its JSON body; the
+   * human-facing routes never set it.
+   */
+  agentEnvelope?: boolean;
+}
 
 export const presentChatPayload = (payload: ChatPayload, options: { includeDebug?: boolean } = {}): PresentedChatPayload => {
   const {
@@ -55,6 +73,9 @@ export const presentChatPayload = (payload: ChatPayload, options: { includeDebug
     turnTrace,
     answerCoverage,
     interactionTrace,
+    // Agent-facing only: the envelope re-adds them on the agent routes.
+    routine: _routine,
+    invocation: _invocation,
     ...publicPayload
   } = payload;
 
@@ -77,7 +98,7 @@ export const sendChatJson = (
 export const sendChatSse = (
   res: Response,
   events: AsyncIterable<ChatStreamEvent>,
-  options: { includeDebug?: boolean } = {},
+  options: ChatPresentationOptions = {},
 ): Promise<void> => {
   let closed = false;
   res.on("close", () => {
@@ -173,6 +194,7 @@ export const sendChatSse = (
       // non-streaming response. Absent on normal turns, so this is a no-op for them.
       ...(event.ownership ? { ownership: event.ownership } : {}),
       ...(options.includeDebug && event.skill ? { skill: event.skill } : {}),
+      ...(options.agentEnvelope ? { citations: event.citations ?? [], ...buildAgentReplyEnvelope(event) } : {}),
     })}\n\n`);
   };
 

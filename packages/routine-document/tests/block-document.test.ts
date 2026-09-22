@@ -176,6 +176,22 @@ describe('routine block document', () => {
     expect(restored).toEqual(withDocumentOrdinals(input))
   })
 
+  it('carries tool exposure through the document and back, and leaves an absent block absent', () => {
+    const exposure = { enabled: true, toolName: 'escalate_account', description: 'Escalate an account to a person.' }
+    const exposed = roundTrip(draft({ exposure }))
+    expect(exposed.projected.doc.exposure).toEqual(exposure)
+    expect(exposed.restored.exposure).toEqual(exposure)
+
+    const unexposed = roundTrip(draft())
+    expect(unexposed.projected.doc).not.toHaveProperty('exposure')
+    expect(unexposed.restored).not.toHaveProperty('exposure')
+  })
+
+  it('holds a half-typed tool name mid-edit', () => {
+    const projected = routineToBlockDoc(draft({ exposure: { enabled: true, toolName: 'Escalate Account', description: '' } }))
+    expect(projected).toMatchObject({ ok: true, doc: { exposure: { toolName: 'Escalate Account' } } })
+  })
+
   it.each(['chat', 'tool', 'action', 'approval'] as const)('round-trips %s steps and approval choices', (kind) => {
     const step = kind === 'approval'
       ? { stableStepId: 'decide', kind, instruction: 'Choose.', toolRef: null, actionType: null, captureKey: 'decision', options: [{ id: 'yes', label: 'Yes', description: 'Proceed' }, { id: 'no', label: 'No', description: null }], ordinal: 0, metadata: {} }

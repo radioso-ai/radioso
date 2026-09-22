@@ -381,6 +381,37 @@ export const copilotEvalCases: CopilotEvalCase[] = [
     ],
   },
   {
+    id: "routine-exposure-proposal",
+    name: "\"Let agents start returns directly\" becomes a tool exposure, not a wording edit",
+    description: "Tool selection among the routine write tools: offering a routine to calling AI agents as a named tool goes to propose_routine_exposure, never to a wording edit or a redraft (spec 1290 AS-10).",
+    tags: ["tool_selection", "proposal_quality"],
+    permissions: FULL_OPERATOR,
+    pageContext: page("agent", { agentId: COPILOT_EVAL_AGENT_ID }),
+    message: "Let AI agents start the Order status routine directly, as a tool they can call.",
+    requires: ["routine"],
+    plan: [
+      { tool: "routine_definition", input: { agentId: COPILOT_EVAL_AGENT_ID, routineId: COPILOT_EVAL_ROUTINE_ID } },
+      {
+        tool: "propose_routine_exposure",
+        input: {
+          agentId: COPILOT_EVAL_AGENT_ID,
+          routineId: COPILOT_EVAL_ROUTINE_ID,
+          enabled: true,
+          toolName: "order_status",
+          description: "Look up the status of an order by its order number.",
+        },
+      },
+    ],
+    finalMessage: "I drafted a tool exposure for the Order status routine, named order_status, for you to review.",
+    assertions: [
+      { type: "tool_call_order", tools: ["routine_definition", "propose_routine_exposure"] },
+      { type: "proposal_drafted", targetType: "routine" },
+      { type: "tool_not_called", tool: "propose_routine_edit" },
+      { type: "tool_not_called", tool: "propose_routine" },
+      { type: "turn_outcome", outcome: "completed" },
+    ],
+  },
+  {
     id: "routine-structural-change-handoff",
     name: "Adding a step is handed to the routine editor rather than approximated",
     description: "Ray edits by stable id, so it cannot add or remove a step. The failure to avoid is proposing something adjacent instead of saying so.",

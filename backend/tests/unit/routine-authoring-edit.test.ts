@@ -190,7 +190,19 @@ describe("routine authoring edits", () => {
       },
       terminals: { done: { kind: "complete", instruction: "Thank them.", ordinal: 0 } },
       completionExport: null,
+      exposure: null,
     });
+  });
+
+  it("applies and projects a tool exposure change, leaving everything else as stored", () => {
+    const exposure = { enabled: true, toolName: "start_return", description: "Start a return for an order." };
+    const patched = applyRoutineFieldPatch(routine(), routineFieldPatchSchema.parse({ exposure }));
+
+    expect(patched.exposure).toEqual(exposure);
+    expect(patched.name).toBe("support-intake");
+    expect(routineDefinitionDraftInputSchema.parse(patched).exposure).toEqual(exposure);
+    expect(projectRoutineForReview(patched)).toMatchObject({ exposure });
+    expect(projectRoutineForReview(routine({ exposure }))).toMatchObject({ exposure });
   });
 
   it("projects a stored routine and its authoring draft identically, so an untouched field never reads as changed", () => {
@@ -260,6 +272,16 @@ describe("routine edit descriptions", () => {
       name: "support-intake-v2",
       enabled: false,
     }))).toBe("name, disabled");
+  });
+
+  it("describes a tool exposure change by the tool name a calling agent would see", () => {
+    expect(describeRoutineFieldPatch(routineFieldPatchSchema.parse({
+      exposure: { enabled: true, toolName: "start_return", description: "Start a return." },
+    }))).toBe("exposed as tool start_return");
+    expect(describeRoutineFieldPatch(routineFieldPatchSchema.parse({
+      name: "support-intake-v2",
+      exposure: { enabled: false, toolName: "start_return", description: "" },
+    }))).toBe("name, tool exposure off");
   });
 
   it("describes a coverage-only condition and keeps mixed summaries free of empty segments", () => {

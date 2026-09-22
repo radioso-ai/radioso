@@ -44,9 +44,10 @@ import {
   type PreparedSession,
 } from "./chatSessionPreparer.js";
 import type { SkillEffectPolicy, TurnExecutionMode } from "../../../shared/domain/turnExecutionMode.js";
+import type { ChatRoutineProvider } from "../contracts/routineProvider.js";
+import type { RoutineInvocation } from "../contracts/routineInvocation.js";
 import {
   ChatTurnAssembly,
-  type ChatRoutineProvider,
   type ChatTurnAssemblyFactory,
   type ChatTurnAssemblyClarification,
   type ChatTurnAssemblyOptions,
@@ -216,7 +217,10 @@ export interface WorkbenchReplayInput {
   candidateRevision?: AgentRevision;
   baselineAgentConfig: InternalAgentConfig;
   agentConfigOverride?: Partial<InternalAgentConfig>;
+  /** The turn's text; for a `routineInvocation` this is its rendered form (`renderRoutineInvocation`). */
   query: string;
+  /** Drive the turn as a calling agent's tool call: the named routine is admitted directly with this input. */
+  routineInvocation?: RoutineInvocation | null;
   history: MessageRecord[];
   pageContext?: AssistantPageContext | null;
   clientContextCapabilities?: AssistantClientContextCapabilities;
@@ -279,6 +283,7 @@ export class WorkbenchReplayRunner {
       conversationDurability: "ephemeral",
       retrievalSettingsOverride: input.retrievalSettingsOverride,
       usageAttribution: input.usageAttribution,
+      ...(input.routineInvocation ? { routineInvocation: input.routineInvocation } : {}),
     };
     const session = await preparer.prepare(prepareInput, {
       skipRetrieval: true,

@@ -25,6 +25,7 @@ import type { AuditService } from "../../audit/contracts/index.js";
 import type { CapabilityPolicy } from "../../../shared/domain/capabilityPolicy.js";
 import type { ActionCapabilityMap } from "../../../shared/domain/actionCapabilities.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
+import type { RoutineInvocation } from "../contracts/routineInvocation.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import type { ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
 import type { MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
@@ -66,10 +67,10 @@ import {
   ChatTurnAssembly,
   type ChatTurnAssemblyFactory,
   buildChatTurnContext,
-  type ChatRoutineProvider,
   type ChatTurnAssemblyCoordinationHook,
   type ChatTurnAssemblyRoutineResult,
 } from "./chatTurnAssembly.js";
+import type { ChatRoutineProvider } from "../contracts/routineProvider.js";
 import type { RetrievalTurnPort } from "./retrievalTurnDispatch.js";
 import {
   noopRouteScopedDirectiveRuntime,
@@ -158,7 +159,7 @@ import { buildAgentChatWorkspaceContext } from "./agentChatWorkspaceContext.js";
 
 export type { ChatGateway } from "../contracts/chatGateway.js";
 export type { ChatStreamEvent } from "../contracts/streamEvents.js";
-export type { ChatRoutineProvider } from "./chatTurnAssembly.js";
+export type { ChatRoutineProvider } from "../contracts/routineProvider.js";
 export { buildRoutinePendingDecisionTransition } from "./chatTurnAssembly.js";
 export { BlankChatAnswerError } from "./chatAnswerErrors.js";
 export { ModelChatGateway } from "./chatGateways.js";
@@ -296,6 +297,7 @@ interface ChatAnswerInput {
   verifiedCustomerId?: string | null;
   verifiedIdentity?: Record<string, unknown> | null;
   previewRoutineIds?: string[];
+  routineInvocation?: RoutineInvocation;
   usageAttribution?: ModelCallUsageAttribution;
   executionMode?: TurnExecutionMode;
 }
@@ -586,6 +588,12 @@ export class ChatService {
       return {};
     }
     const store = new DeferredClarificationStore(this.clarificationStore);
+    // A tool call is not a reply to a pending question: mapping it would spend a model
+    // call and could hand the turn to the question's activator instead of the routine
+    // the call names. The question stays pending for the next message turn.
+    if (session.routineInvocation) {
+      return { store, resolution: { kind: "normal", resolvedPending: false }, clarifier };
+    }
     const resolution = await resolvePendingClarification({
       store,
       recentReader: typeof this.clarificationStore.loadRecent === "function"
@@ -918,6 +926,11 @@ export class ChatService {
       // turn, there is no retrieval — the routine renders its own reply.
       const routineStartedAt = Date.now();
       this.checkTurnCancellation(coordination, "routing");
+      // A suspended routine keeps the turn without running: it waits for an operator's
+      // decision, not for this input, so the attempt is bypassed and only described.
+      if (suspendedRoutine) {
+        await this.chatTurnAssembly.describeSuspendedRoutineTurn(session, suspendedRoutine);
+      }
       const routineTurn = suspendedRoutine
         ? null
         : await this.chatTurnAssembly.attemptRoutineTurn(session, {
@@ -950,6 +963,7 @@ export class ChatService {
           modelCallTrace,
           actions,
           routineStateTransition: routineTurn.routineStateTransition,
+          routineReporter: routineTurn.routineReporter,
           pendingDecisionTransition: routineTurn.pendingDecisionTransition,
           ownershipHandoff,
           suspended: routineTurn.suspended,
@@ -1060,6 +1074,7 @@ export class ChatService {
           actions: retrievalMissHandoff.actions,
           ownershipHandoff: coverageOwnershipHandoff ?? retrievalMissHandoff.ownershipHandoff,
           routineStateTransition: renderedTurn.routineStateTransition,
+          routineReporter: renderedTurn.routineReporter,
           pendingDecisionTransition: renderedTurn.pendingDecisionTransition,
           suspended: renderedTurn.suspended,
           commitRoutineState: renderedTurn.commitRoutineState,
@@ -1130,6 +1145,7 @@ export class ChatService {
         actions: retrievalMissHandoff.actions,
         ownershipHandoff: coverageOwnershipHandoff ?? retrievalMissHandoff.ownershipHandoff,
         routineStateTransition: renderedTurn.routineStateTransition,
+        routineReporter: renderedTurn.routineReporter,
         pendingDecisionTransition: renderedTurn.pendingDecisionTransition,
         suspended: renderedTurn.suspended,
         commitRoutineState: renderedTurn.commitRoutineState,
@@ -1214,6 +1230,7 @@ export class ChatService {
     verifiedCustomerId?: string | null;
     verifiedIdentity?: Record<string, unknown> | null;
     previewRoutineIds?: string[];
+    routineInvocation?: RoutineInvocation;
   }): AsyncIterable<ChatStreamEvent> {
     const streamStartedAt = Date.now();
     const coordination: TurnCoordinationState = {
@@ -1268,6 +1285,7 @@ export class ChatService {
     verifiedCustomerId?: string | null;
     verifiedIdentity?: Record<string, unknown> | null;
     previewRoutineIds?: string[];
+    routineInvocation?: RoutineInvocation;
   }, coordination: TurnCoordinationState, modelCallTrace: ModelCallTraceCollector, streamStartedAt: number): AsyncIterable<ChatStreamEvent> {
     let firstAnswerChunkObserved = false;
     const observeFirstAnswerChunk = (
@@ -1385,7 +1403,9 @@ export class ChatService {
       const routineStartedAt = Date.now();
       this.checkTurnCancellation(coordination, "routing");
       const routineResult: { value: Awaited<ReturnType<ChatTurnAssembly["attemptRoutineTurn"]>> } = { value: null };
-      if (!suspendedRoutine) {
+      if (suspendedRoutine) {
+        await this.chatTurnAssembly.describeSuspendedRoutineTurn(session, suspendedRoutine);
+      } else {
         // A routine attempt is speculative: it may yield back to interpretation and
         // retrieval. Keep its composing phase private until it claims the turn so the
         // public sequence never backtracks from composing to interpreting/searching.
@@ -1429,6 +1449,7 @@ export class ChatService {
           modelCallTrace,
           actions,
           routineStateTransition: routineTurn.routineStateTransition,
+          routineReporter: routineTurn.routineReporter,
           pendingDecisionTransition: routineTurn.pendingDecisionTransition,
           ownershipHandoff,
           suspended: routineTurn.suspended,
@@ -1689,6 +1710,7 @@ export class ChatService {
         actions: retrievalMissHandoff.actions,
         ownershipHandoff: coverageOwnershipHandoff ?? retrievalMissHandoff.ownershipHandoff,
         routineStateTransition: coverageRoutineEffects.routineStateTransition,
+        routineReporter: coverageRoutineEffects.routineReporter,
         pendingDecisionTransition: coverageRoutineEffects.pendingDecisionTransition,
         suspended: coverageRoutineEffects.suspended,
         commitRoutineState: coverageRoutineEffects.commitRoutineState,

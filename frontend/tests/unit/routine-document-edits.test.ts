@@ -26,6 +26,7 @@ import {
   updateBranch,
   updateBranchGuard,
   updateEnding,
+  updateExposure,
   updateSlot,
   updateStep,
 } from '@/lib/routine-document-edits'
@@ -512,3 +513,32 @@ describe('approval decision edges', () => {
     expect(guards.filter((kind) => kind === 'field')).toHaveLength(2)
   })
 })
+
+describe('tool exposure', () => {
+  it('turns exposure on with an empty name to fill in, keeps the name when turned off, and saves the block as authored', () => {
+    const doc = source()
+    expect(doc.exposure).toBeUndefined()
+
+    const enabled = updateExposure(doc, { enabled: true })
+    expect(enabled.exposure).toEqual({ enabled: true, toolName: '', description: '' })
+    // The source document is never mutated: the editor keeps immutable snapshots for undo.
+    expect(doc.exposure).toBeUndefined()
+
+    const named = updateExposure(enabled, { toolName: 'account_recovery', description: 'Recover access to an account.' })
+    expect(draftFromBlockDoc(named).exposure).toEqual({ enabled: true, toolName: 'account_recovery', description: 'Recover access to an account.' })
+
+    // A published tool name is frozen, so switching exposure off keeps the name rather than
+    // clearing the block; the validator treats a disabled block as inert.
+    const off = updateExposure(named, { enabled: false })
+    expect(off.exposure).toEqual({ enabled: false, toolName: 'account_recovery', description: 'Recover access to an account.' })
+    expect(draftFromBlockDoc(off).exposure).toEqual(off.exposure)
+  })
+
+  it('reads an exposed routine back into the document', () => {
+    const exposure = { enabled: true, toolName: 'account_recovery', description: 'Recover access to an account.' }
+    const result = routineToBlockDoc({ ...draftFromBlockDoc(source()), exposure })
+    if (!result.ok) throw new Error('expected the document to project')
+    expect(result.doc.exposure).toEqual(exposure)
+  })
+})
+

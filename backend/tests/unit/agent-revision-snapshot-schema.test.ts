@@ -115,3 +115,44 @@ describe("agent revision snapshot schema", () => {
     expect(() => assertCandidateSnapshotIsRunnable(parsed)).not.toThrow();
   });
 });
+
+describe("agent revision exposure gate", () => {
+  const exposed = (id: string, lineageId: string, toolName: string, enabled = true) => routineSnapshot({
+    id, lineageId, exposure: { enabled, toolName, description: "" },
+  });
+  const second = { id: "44444444-4444-4444-8444-444444444444", lineageId: "55555555-5555-4555-8555-555555555555" };
+
+  it("refuses a candidate whose serving routines share a tool name", () => {
+    const candidate = parseAgentRevisionSnapshot(snapshotWith([
+      exposed("11111111-1111-4111-8111-111111111111", "33333333-3333-4333-8333-333333333333", "start_return"),
+      exposed(second.id, second.lineageId, "start_return"),
+    ]));
+    let thrown: unknown;
+    try {
+      assertCandidateSnapshotIsRunnable(candidate, { agentDefaultLocale: "en" });
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toMatchObject({ statusCode: 422, code: "revision_invalid" });
+    expect((thrown as { details: { diagnostics: Array<{ code: string; routineId: string }> } }).details.diagnostics.map((diagnostic) => diagnostic.code))
+      .toEqual(["exposure_tool_name_duplicate", "exposure_tool_name_duplicate"]);
+  });
+
+  it("refuses a candidate that renames a tool the published revision carries, and accepts one that keeps it (AS-8)", () => {
+    const published = parseAgentRevisionSnapshot(snapshotWith([exposed("11111111-1111-4111-8111-111111111111", "33333333-3333-4333-8333-333333333333", "start_return")]));
+    const renamed = parseAgentRevisionSnapshot(snapshotWith([exposed(second.id, "33333333-3333-4333-8333-333333333333", "begin_return")]));
+    let thrown: unknown;
+    try {
+      assertCandidateSnapshotIsRunnable(renamed, { agentDefaultLocale: "en", publishedSnapshot: published });
+    } catch (error) {
+      thrown = error;
+    }
+    expect((thrown as { details: { diagnostics: Array<{ code: string; routineId: string }> } }).details.diagnostics)
+      .toEqual([expect.objectContaining({ code: "exposure_tool_name_changed", routineId: second.id })]);
+
+    const kept = parseAgentRevisionSnapshot(snapshotWith([exposed(second.id, "33333333-3333-4333-8333-333333333333", "start_return", false)]));
+    expect(() => assertCandidateSnapshotIsRunnable(kept, { agentDefaultLocale: "en", publishedSnapshot: published })).not.toThrow();
+    expect(() => assertCandidateSnapshotIsRunnable(renamed, { agentDefaultLocale: "en" })).not.toThrow();
+  });
+});
+

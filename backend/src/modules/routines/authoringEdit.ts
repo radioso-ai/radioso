@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import {
   ROUTINE_DEFINITION_LIMITS,
+  routineExposureSchema,
   routineReentryModes,
   type RoutineDefinition,
   type RoutineDefinitionDraftAuthoringInput,
@@ -60,11 +61,19 @@ export const routineFieldPatchSchema = z.object({
     // and a write that only moves the routine's version.
     message: "an information field edit must set a description or a required flag",
   })).min(1), (slot) => slot.key, "information field").optional(),
+  // How the routine is offered to a calling agent as a tool. The whole block is replaced: a
+  // tool name is frozen once published, so an edit that changes it is refused at publish, not
+  // here (routines/exposure/exposureSnapshotRules.ts). A blank or omitted name keeps the
+  // routine's stored one (`resolveRoutineFieldPatch`), so an edit that only switches the
+  // exposure or rewords its description need not repeat it.
+  exposure: routineExposureSchema.extend({ toolName: routineExposureSchema.shape.toolName.optional() }).optional(),
 }).strict().refine((patch) => Object.keys(patch).length > 0, {
   message: "a routine edit must change at least one field",
 });
 
 type RoutineFieldPatch = z.infer<typeof routineFieldPatchSchema>;
+/** A patch whose exposure edit, if any, names the tool it keeps (`resolveRoutineFieldPatch`). */
+type ResolvedRoutineFieldPatch = Omit<RoutineFieldPatch, "exposure"> & { exposure?: z.infer<typeof routineExposureSchema> };
 
 /** An edit that named an element the routine does not have. The message lists what it does have. */
 export class RoutineFieldPatchError extends Error {
@@ -106,10 +115,26 @@ export const draftInputFromRoutine = (routine: RoutineDefinition): RoutineDefini
 export const canonicalRoutineAuthoringDraft = (routine: RoutineDefinition): RoutineDefinitionDraftAuthoringInput =>
   draftInputFromRoutine(routine);
 
+/**
+ * The patch as it applies to this routine: an exposure edit that leaves the tool name blank
+ * takes the stored one. Callers that persist or describe the patch resolve it first, so the
+ * recorded change names the tool it keeps rather than relying on the routine at apply time.
+ */
+export const resolveRoutineFieldPatch = (
+  routine: Pick<RoutineDefinition, "exposure">,
+  patch: RoutineFieldPatch,
+): ResolvedRoutineFieldPatch => {
+  const { exposure, ...rest } = patch;
+  return exposure
+    ? { ...rest, exposure: { ...exposure, toolName: exposure.toolName || routine.exposure?.toolName || "" } }
+    : rest;
+};
+
 export const applyRoutineFieldPatch = (
   routine: RoutineDefinition,
-  patch: RoutineFieldPatch,
+  rawPatch: RoutineFieldPatch,
 ): RoutineDefinitionDraftAuthoringInput => {
+  const patch = resolveRoutineFieldPatch(routine, rawPatch);
   const draft = draftInputFromRoutine(routine);
   const stepEdits = new Map((patch.steps ?? []).map((step) => [step.stableStepId, step]));
   const terminalEdits = new Map((patch.terminals ?? []).map((terminal) => [terminal.stableStepId, terminal]));
@@ -123,6 +148,7 @@ export const applyRoutineFieldPatch = (
     ...draft,
     ...(patch.name ? { name: patch.name } : {}),
     ...(patch.enabled === undefined ? {} : { enabled: patch.enabled }),
+    ...(patch.exposure === undefined ? {} : { exposure: patch.exposure }),
     activation: { ...draft.activation, ...patch.activation },
     slots: draft.slots?.map((slot) => {
       const edit = slotEdits.get(slot.key);
@@ -162,6 +188,7 @@ export const describeRoutineFieldPatch = (patch: RoutineFieldPatch): string => {
   for (const step of patch.steps ?? []) parts.push(`step ${step.stableStepId}`);
   for (const terminal of patch.terminals ?? []) parts.push(`ending ${terminal.stableStepId}`);
   for (const slot of patch.slots ?? []) parts.push(`field ${slot.key}`);
+  if (patch.exposure) parts.push(patch.exposure.enabled ? `exposed as tool ${patch.exposure.toolName}` : "tool exposure off");
   return parts.join(", ");
 };
 
@@ -223,6 +250,7 @@ export const projectRoutineForReview = (routine: RoutineDefinitionDraftAuthoring
     ordinal: terminal.ordinal,
   }]))),
   completionExport: routine.completionExport ?? null,
+  exposure: routine.exposure ?? null,
 });
 
 // Two transitions may share a from/to pair with different guards; the ordinal disambiguates

@@ -2,10 +2,27 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createAuthService } from "../src/auth/authService.js";
 import { createInMemorySessionStore } from "../src/auth/sessionStore.js";
-import { RadiosoApiError, type ConverseApiAdapter } from "../src/converseApiAdapter.js";
+import { toToolCatalogKey } from "../src/auth/toolCatalogKey.js";
+import { RadiosoApiError, type AgentToolDescriptor, type ConverseApiAdapter } from "../src/converseApiAdapter.js";
+
+const startReturnDescriptor: AgentToolDescriptor = {
+  toolName: "start_return",
+  description: "Start a return for an order.",
+  inputSchema: {
+    type: "object",
+    properties: { orderId: { type: "string" } },
+    required: ["orderId"],
+    additionalProperties: false,
+  },
+  routineLineageId: "lineage-start-return",
+};
 
 const createConverseApi = (): ConverseApiAdapter => ({
   ask: vi.fn(),
+  tools: vi.fn().mockResolvedValue({
+    agent: { name: "Agent", description: null },
+    tools: [startReturnDescriptor],
+  }),
   exchange: vi.fn().mockResolvedValue({
     agent: { id: "agent-1", name: "Agent" },
     conversationId: "conversation-1",
@@ -44,6 +61,65 @@ describe("agent-channel MCP authentication", () => {
     await auth.resolveBearerSession("agent-channel-credential");
     expect(converseApi.exchange).toHaveBeenCalledTimes(1);
     expect(converseApi.validate).toHaveBeenCalledTimes(2);
+  });
+
+  it("reads the agent's tool catalog once at exchange and pins it to the session", async () => {
+    const converseApi = createConverseApi();
+    const store = createInMemorySessionStore();
+    const auth = createAuthService({
+      converseApi,
+      now: () => new Date("2026-04-21T12:00:00.000Z"),
+      sessionStore: store,
+    });
+
+    const session = await auth.resolveBearerSession("agent-channel-credential", "source-digest");
+
+    expect(converseApi.tools).toHaveBeenCalledWith("converse-session-token", { sourceDigest: "source-digest" });
+    expect(session?.toolCatalog).toEqual({
+      key: toToolCatalogKey([startReturnDescriptor]),
+      tools: [startReturnDescriptor],
+    });
+    const stored = await store.getByAccessToken("agent-channel-credential", new Date("2026-04-21T12:00:00.000Z"));
+    expect(stored?.toolCatalog).toEqual(session?.toolCatalog);
+
+    vi.mocked(converseApi.tools).mockResolvedValue({ agent: { name: "Agent", description: null }, tools: [] });
+    const again = await auth.resolveBearerSession("agent-channel-credential", "source-digest");
+    expect(converseApi.tools).toHaveBeenCalledTimes(1);
+    expect(again?.toolCatalog).toEqual(session?.toolCatalog);
+  });
+
+  it("serves the static catalog, with a warning, when the backend has no tools route", async () => {
+    const converseApi = createConverseApi();
+    vi.mocked(converseApi.tools).mockRejectedValueOnce(new RadiosoApiError("Not Found", 404, "not_found"));
+    const store = createInMemorySessionStore();
+    const warn = vi.fn();
+    const auth = createAuthService({ converseApi, sessionStore: store, warn });
+
+    const session = await auth.resolveBearerSession("agent-channel-credential");
+
+    expect(session?.toolCatalog).toEqual({ key: toToolCatalogKey([]), tools: [] });
+    expect(warn).toHaveBeenCalledOnce();
+    expect(warn.mock.calls[0][0]).toContain("tools");
+  });
+
+  it("fails the exchange when the catalog read fails for any other reason", async () => {
+    const converseApi = createConverseApi();
+    vi.mocked(converseApi.tools).mockRejectedValueOnce(new RadiosoApiError("Bad Gateway", 502, "upstream"));
+    const store = createInMemorySessionStore();
+    const auth = createAuthService({ converseApi, sessionStore: store });
+
+    await expect(auth.resolveBearerSession("agent-channel-credential")).rejects.toMatchObject({ status: 502 });
+    await expect(store.getByAccessToken("agent-channel-credential")).resolves.toBeNull();
+  });
+
+  it("treats a catalog read the backend refuses as an invalid credential", async () => {
+    const converseApi = createConverseApi();
+    vi.mocked(converseApi.tools).mockRejectedValueOnce(new RadiosoApiError("Forbidden", 403, "forbidden"));
+    const store = createInMemorySessionStore();
+    const auth = createAuthService({ converseApi, sessionStore: store });
+
+    await expect(auth.resolveBearerSession("agent-channel-credential")).resolves.toBeNull();
+    await expect(store.getByAccessToken("agent-channel-credential")).resolves.toBeNull();
   });
 
   it("coalesces concurrent cache misses for one agent credential into one backend exchange", async () => {

@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { scopeTag } from "@radioso/conversation-defaults";
 import { getEnv, type Env } from "../config/env.js";
+import { AgentRevisionRuntimeRepository } from "../../db/repositories/agentRevisionRuntimeRepository.js";
+import { createAgentToolCatalogComposition } from "../composition/agentToolCatalog.js";
 import { apiPrincipalRouteInventory } from "../http/apiPrincipalRoutePolicy.js";
 import {
   createDefaultAgentSkillSettingsRegistry,
@@ -1017,6 +1019,10 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     testExecutionService,
     chatBootstrapService: chat.chatBootstrapService,
     agentStarterPromptReader: chat.agentStarterPromptReader,
+    agentToolCatalog: createAgentToolCatalogComposition({
+      agentRepository: repositories.agentRepository,
+      agentRevisionReader: new AgentRevisionRuntimeRepository(infrastructure.database.kysely),
+    }),
     chatHistoryService: chat.chatHistoryService,
     assistantChatService: chat.assistantChatService,
     assistantHistoryService: chat.assistantHistoryService,

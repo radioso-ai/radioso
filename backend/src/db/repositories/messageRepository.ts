@@ -29,7 +29,7 @@ export interface MessageRecord {
   createdAt: Date;
 }
 
-export type UserMessageInputMethod = "typed" | "suggestion_click" | "intent_click";
+export type UserMessageInputMethod = "typed" | "suggestion_click" | "intent_click" | "routine_invocation";
 
 export interface UserMessageInputMetadata {
   method: UserMessageInputMethod;
@@ -38,7 +38,19 @@ export interface UserMessageInputMetadata {
     skillName: string;
     intentName?: string;
   };
+  /** The structured form of a calling agent's tool call (`method: "routine_invocation"`). */
+  routine?: {
+    toolName: string;
+    input: Record<string, unknown>;
+  };
 }
+
+const USER_MESSAGE_INPUT_METHODS: ReadonlySet<string> = new Set<UserMessageInputMethod>([
+  "typed",
+  "suggestion_click",
+  "intent_click",
+  "routine_invocation",
+]);
 
 export interface ConversationMessageSummary {
   messageCount: number;
@@ -121,16 +133,19 @@ const mapInputMetadata = (value: unknown): UserMessageInputMetadata | undefined 
     return undefined;
   }
 
-  const candidate = value as { method?: unknown; suggestionSourceMessageId?: unknown; intent?: unknown };
-  if (candidate.method !== "typed" && candidate.method !== "suggestion_click" && candidate.method !== "intent_click") {
+  const candidate = value as { method?: unknown; suggestionSourceMessageId?: unknown; intent?: unknown; routine?: unknown };
+  if (typeof candidate.method !== "string" || !USER_MESSAGE_INPUT_METHODS.has(candidate.method)) {
     return undefined;
   }
   const intent = candidate.intent && typeof candidate.intent === "object" && !Array.isArray(candidate.intent)
     ? candidate.intent as { skillName?: unknown; intentName?: unknown }
     : null;
+  const routine = candidate.routine && typeof candidate.routine === "object" && !Array.isArray(candidate.routine)
+    ? candidate.routine as { toolName?: unknown; input?: unknown }
+    : null;
 
   return {
-    method: candidate.method,
+    method: candidate.method as UserMessageInputMethod,
     suggestionSourceMessageId:
       typeof candidate.suggestionSourceMessageId === "string" && candidate.suggestionSourceMessageId.length > 0
         ? candidate.suggestionSourceMessageId
@@ -139,6 +154,14 @@ const mapInputMetadata = (value: unknown): UserMessageInputMetadata | undefined 
       ? {
           skillName: intent.skillName,
           intentName: typeof intent.intentName === "string" && intent.intentName.length > 0 ? intent.intentName : undefined,
+        }
+      : undefined,
+    routine: typeof routine?.toolName === "string" && routine.toolName.length > 0
+      ? {
+          toolName: routine.toolName,
+          input: routine.input && typeof routine.input === "object" && !Array.isArray(routine.input)
+            ? routine.input as Record<string, unknown>
+            : {},
         }
       : undefined,
   };

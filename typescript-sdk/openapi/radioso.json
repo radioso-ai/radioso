@@ -4450,6 +4450,25 @@
             "minLength": 1,
             "maxLength": 4000
           },
+          "routine": {
+            "type": "object",
+            "properties": {
+              "toolName": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 63
+              },
+              "input": {
+                "type": "object",
+                "additionalProperties": {}
+              }
+            },
+            "required": [
+              "toolName",
+              "input"
+            ],
+            "additionalProperties": false
+          },
           "startConversation": {
             "type": "boolean",
             "default": false
@@ -5757,6 +5776,28 @@
               }
             },
             "additionalProperties": false
+          },
+          "exposure": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "toolName": {
+                "type": "string",
+                "maxLength": 63
+              },
+              "description": {
+                "type": "string",
+                "maxLength": 500
+              }
+            },
+            "required": [
+              "enabled",
+              "toolName",
+              "description"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [
@@ -6328,6 +6369,28 @@
                   }
                 },
                 "additionalProperties": false
+              },
+              "exposure": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "toolName": {
+                    "type": "string",
+                    "maxLength": 63
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "enabled",
+                  "toolName",
+                  "description"
+                ],
+                "additionalProperties": false
               }
             },
             "required": [
@@ -6397,7 +6460,12 @@
                     "unknown_variable_ref",
                     "unknown_context_variable",
                     "variable_name_collision",
-                    "node_id_collision"
+                    "node_id_collision",
+                    "exposure_tool_name_invalid",
+                    "exposure_tool_name_reserved",
+                    "exposure_tool_name_duplicate",
+                    "exposure_tool_name_changed",
+                    "exposure_requires_ungated_activation"
                   ]
                 },
                 "location": {
@@ -6971,6 +7039,28 @@
                 "default": ""
               }
             },
+            "additionalProperties": false
+          },
+          "exposure": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "toolName": {
+                "type": "string",
+                "maxLength": 63
+              },
+              "description": {
+                "type": "string",
+                "maxLength": 500
+              }
+            },
+            "required": [
+              "enabled",
+              "toolName",
+              "description"
+            ],
             "additionalProperties": false
           },
           "id": {
@@ -7617,6 +7707,28 @@
                     "default": ""
                   }
                 },
+                "additionalProperties": false
+              },
+              "exposure": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "toolName": {
+                    "type": "string",
+                    "maxLength": 63
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "enabled",
+                  "toolName",
+                  "description"
+                ],
                 "additionalProperties": false
               }
             },
@@ -9274,6 +9386,28 @@
                     "default": ""
                   }
                 },
+                "additionalProperties": false
+              },
+              "exposure": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "toolName": {
+                    "type": "string",
+                    "maxLength": 63
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "enabled",
+                  "toolName",
+                  "description"
+                ],
                 "additionalProperties": false
               }
             },
@@ -15072,6 +15206,57 @@
           "cleared"
         ]
       },
+      "UserMessageInputMetadata": {
+        "type": "object",
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "typed",
+              "suggestion_click",
+              "intent_click",
+              "routine_invocation"
+            ]
+          },
+          "suggestionSourceMessageId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "intent": {
+            "type": "object",
+            "properties": {
+              "skillName": {
+                "type": "string"
+              },
+              "intentName": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "skillName"
+            ]
+          },
+          "routine": {
+            "type": "object",
+            "properties": {
+              "toolName": {
+                "type": "string"
+              },
+              "input": {
+                "type": "object",
+                "additionalProperties": {}
+              }
+            },
+            "required": [
+              "toolName",
+              "input"
+            ]
+          }
+        },
+        "required": [
+          "method"
+        ]
+      },
       "ChatConversationMessage": {
         "type": "object",
         "properties": {
@@ -15105,38 +15290,7 @@
             "format": "date-time"
           },
           "inputMetadata": {
-            "type": "object",
-            "properties": {
-              "method": {
-                "type": "string",
-                "enum": [
-                  "typed",
-                  "suggestion_click",
-                  "intent_click"
-                ]
-              },
-              "suggestionSourceMessageId": {
-                "type": "string",
-                "format": "uuid"
-              },
-              "intent": {
-                "type": "object",
-                "properties": {
-                  "skillName": {
-                    "type": "string"
-                  },
-                  "intentName": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "skillName"
-                ]
-              }
-            },
-            "required": [
-              "method"
-            ]
+            "$ref": "#/components/schemas/UserMessageInputMetadata"
           },
           "citations": {
             "type": "array",
@@ -15213,38 +15367,7 @@
             "format": "date-time"
           },
           "inputMetadata": {
-            "type": "object",
-            "properties": {
-              "method": {
-                "type": "string",
-                "enum": [
-                  "typed",
-                  "suggestion_click",
-                  "intent_click"
-                ]
-              },
-              "suggestionSourceMessageId": {
-                "type": "string",
-                "format": "uuid"
-              },
-              "intent": {
-                "type": "object",
-                "properties": {
-                  "skillName": {
-                    "type": "string"
-                  },
-                  "intentName": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "skillName"
-                ]
-              }
-            },
-            "required": [
-              "method"
-            ]
+            "$ref": "#/components/schemas/UserMessageInputMetadata"
           },
           "citations": {
             "type": "array",
@@ -15334,38 +15457,7 @@
             "additionalProperties": {}
           },
           "inputMetadata": {
-            "type": "object",
-            "properties": {
-              "method": {
-                "type": "string",
-                "enum": [
-                  "typed",
-                  "suggestion_click",
-                  "intent_click"
-                ]
-              },
-              "suggestionSourceMessageId": {
-                "type": "string",
-                "format": "uuid"
-              },
-              "intent": {
-                "type": "object",
-                "properties": {
-                  "skillName": {
-                    "type": "string"
-                  },
-                  "intentName": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "skillName"
-                ]
-              }
-            },
-            "required": [
-              "method"
-            ]
+            "$ref": "#/components/schemas/UserMessageInputMetadata"
           },
           "skillName": {
             "type": "string"
@@ -15892,6 +15984,377 @@
           "nextCursor",
           "hasMore"
         ]
+      },
+      "ChatOwnershipAck": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "ai_owned",
+              "human_owned"
+            ]
+          },
+          "suppressed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "state",
+          "suppressed"
+        ],
+        "description": "Who owns the conversation after this turn. `suppressed` is true when a human owns it and the agent generated nothing."
+      },
+      "RoutinePendingInput": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "text",
+              "number",
+              "boolean",
+              "email",
+              "date"
+            ]
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "description": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "type",
+          "required"
+        ]
+      },
+      "RoutineTurnState": {
+        "type": "object",
+        "properties": {
+          "toolName": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "waiting_for_input",
+              "waiting_for_approval",
+              "completed",
+              "abandoned"
+            ]
+          },
+          "pendingInput": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoutinePendingInput"
+            }
+          }
+        },
+        "required": [
+          "name",
+          "status",
+          "pendingInput"
+        ],
+        "description": "Where the turn left the routine it touched. `pendingInput` lists every unfilled required slot plus the current step's unfilled optional slots, so a caller can supply everything in one re-call."
+      },
+      "RoutineInvocationReport": {
+        "type": "object",
+        "properties": {
+          "toolName": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "started",
+              "reentered",
+              "declined",
+              "not_started",
+              "unknown_tool"
+            ]
+          }
+        },
+        "required": [
+          "toolName",
+          "outcome"
+        ],
+        "description": "What became of the tool call this turn carried. `not_started`: another routine was active or suspended and the existing interruption/approval rules kept the turn; `routine` then describes that routine. `declined`: the named routine already completed under `once_per_conversation`. `unknown_tool`: the release the conversation is pinned to carries no routine under that name."
+      },
+      "AgentReplyEnvelopeCore": {
+        "type": "object",
+        "properties": {
+          "conversationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "answerCoverage": {
+            "$ref": "#/components/schemas/AnswerCoverageAssessment"
+          },
+          "ownership": {
+            "$ref": "#/components/schemas/ChatOwnershipAck"
+          },
+          "routine": {
+            "$ref": "#/components/schemas/RoutineTurnState"
+          },
+          "invocation": {
+            "$ref": "#/components/schemas/RoutineInvocationReport"
+          },
+          "traceId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "conversationId",
+          "answerCoverage",
+          "ownership"
+        ],
+        "description": "The machine-readable part of an agent reply, identical on the MCP converse ask route and the REST agent chat route."
+      },
+      "McpConverseAskResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AgentReplyEnvelopeCore"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "answer": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  },
+                  "citations": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/Citation"
+                    }
+                  }
+                },
+                "required": [
+                  "text",
+                  "citations"
+                ]
+              }
+            },
+            "required": [
+              "answer"
+            ]
+          }
+        ],
+        "description": "The machine-readable part of an agent reply, identical on the MCP converse ask route and the REST agent chat route."
+      },
+      "AgentChannelChatTurnResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ChatResponse"
+          },
+          {
+            "$ref": "#/components/schemas/AgentReplyEnvelopeCore"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "citations": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Citation"
+                }
+              }
+            },
+            "required": [
+              "citations"
+            ]
+          }
+        ]
+      },
+      "AgentChannelChatResponse": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/AgentChannelChatTurnResponse"
+          },
+          {
+            "$ref": "#/components/schemas/ChatBootstrapResponse"
+          }
+        ],
+        "description": "A chat turn carries the agent reply envelope core beside the answer; a bootstrap greeting (`startConversation`) has no turn and carries none."
+      },
+      "AgentToolInputSchema": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "object"
+            ]
+          },
+          "properties": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "string",
+                    "number",
+                    "boolean"
+                  ]
+                },
+                "format": {
+                  "type": "string",
+                  "enum": [
+                    "email",
+                    "date"
+                  ]
+                },
+                "description": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type"
+              ]
+            }
+          },
+          "required": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": {
+            "type": "boolean",
+            "enum": [
+              false
+            ]
+          }
+        },
+        "required": [
+          "type",
+          "properties",
+          "required",
+          "additionalProperties"
+        ],
+        "description": "JSON Schema for the tool's input: one property per declared routine slot (`text`→string, `number`, `boolean`, `email`→string/format=email, `date`→string/format=date), `required` from the slot."
+      },
+      "AgentToolDescriptor": {
+        "type": "object",
+        "properties": {
+          "toolName": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "inputSchema": {
+            "$ref": "#/components/schemas/AgentToolInputSchema"
+          },
+          "routineLineageId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "toolName",
+          "description",
+          "inputSchema",
+          "routineLineageId"
+        ],
+        "description": "One exposed routine as a calling agent sees it: the name it invokes, the operator-authored description, and the input schema built from the routine's slots."
+      },
+      "McpConverseToolsResponse": {
+        "type": "object",
+        "properties": {
+          "agent": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "description": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "name",
+              "description"
+            ]
+          },
+          "tools": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentToolDescriptor"
+            }
+          }
+        },
+        "required": [
+          "agent",
+          "tools"
+        ],
+        "description": "The bound agent's tool catalog: exposed routines from its current published release."
+      },
+      "RoutineInvocationError": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "The slot key the problem is on."
+          },
+          "code": {
+            "type": "string",
+            "enum": [
+              "required",
+              "type",
+              "format",
+              "unknown_field",
+              "too_long"
+            ]
+          }
+        },
+        "required": [
+          "path",
+          "code"
+        ],
+        "description": "One field-level problem with a tool call's input. `too_long` is a string value over 2000 characters; `format` is an `email` or `date` slot whose value does not parse as one."
+      },
+      "RoutineInvocationInvalidDetails": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "routine_invocation_invalid"
+            ]
+          },
+          "toolName": {
+            "type": "string"
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoutineInvocationError"
+            }
+          }
+        },
+        "required": [
+          "code",
+          "toolName",
+          "errors"
+        ],
+        "description": "The `error.details` of a 400 that refused a tool call before any turn state was written: every problem at once, so a caller can fix the whole call in one retry. Values are never echoed back."
       },
       "ConnectorField": {
         "type": "object",
@@ -30949,6 +31412,7 @@
           "Agent Channels"
         ],
         "summary": "Run chat through a REST credential bound to this agent",
+        "description": "Send `message` or `routine` (a tool call to one exposed routine; validated against the catalog of the release the conversation is pinned to before any turn state is written, with the same `routine_tool_unknown` / `routine_invocation_invalid` errors as the MCP converse ask route), never both. `startConversation: true` requests the bootstrap greeting instead of a turn: it accepts a `message` (ignored) but not a `routine`.",
         "operationId": "createAgentChannelChatResponse",
         "security": [
           {
@@ -30978,11 +31442,11 @@
         },
         "responses": {
           "200": {
-            "description": "Agent chat response returned as JSON or SSE",
+            "description": "Agent chat response returned as JSON or SSE; the SSE `done` frame carries the same envelope core as the JSON body",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AssistantChatResponse"
+                  "$ref": "#/components/schemas/AgentChannelChatResponse"
                 }
               },
               "text/event-stream": {
@@ -30996,7 +31460,7 @@
             "description": "Conversation start completed without a greeting"
           },
           "400": {
-            "description": "Request validation failed",
+            "description": "Request validation failed, or routine invocation input did not match the tool's schema",
             "content": {
               "application/json": {
                 "schema": {
@@ -31007,6 +31471,16 @@
           },
           "401": {
             "description": "Invalid, inactive, cross-audience, or cross-agent credential",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Routine tool is not in the agent's catalog",
             "content": {
               "application/json": {
                 "schema": {
@@ -50790,12 +51264,70 @@
         }
       }
     },
+    "/api/v1/mcp/converse/tools": {
+      "get": {
+        "tags": [
+          "MCP Converse"
+        ],
+        "summary": "List the bound agent's exposed routines as tools",
+        "description": "Returns the agent's name and one descriptor per exposed routine in its current published release, on every call. The standalone MCP server reads this once at session exchange and pins the result, so an MCP client's `tools/list` is stable for a session; a direct caller sees the current catalog each time.",
+        "operationId": "getMcpConverseTools",
+        "security": [
+          {
+            "mcpConverseSessionBearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The bound agent's tool catalog",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpConverseToolsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid converse session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Converse session is no longer authorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "MCP converse rate limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/mcp/converse/ask": {
       "post": {
         "tags": [
           "MCP Converse"
         ],
-        "summary": "Run one MCP ask_agent turn through the bound agent",
+        "summary": "Run one turn through the bound agent: a message, or a tool call to an exposed routine",
+        "description": "Send exactly one of `message` or `routine`. A `routine` call is validated against the tool's `inputSchema` from the catalog before any turn state is written: an unknown tool returns 404 with `details.code` `routine_tool_unknown`; invalid input returns 400 whose `details` is `RoutineInvocationInvalidDetails` (`code` `routine_invocation_invalid`, field-level `errors`).",
         "operationId": "askMcpConverseAgent",
         "security": [
           {
@@ -50813,56 +51345,53 @@
                     "type": "string",
                     "minLength": 1
                   },
+                  "routine": {
+                    "type": "object",
+                    "properties": {
+                      "toolName": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 63
+                      },
+                      "input": {
+                        "type": "object",
+                        "additionalProperties": {}
+                      }
+                    },
+                    "required": [
+                      "toolName",
+                      "input"
+                    ],
+                    "additionalProperties": false
+                  },
                   "stream": {
                     "type": "boolean",
                     "enum": [
                       false
                     ]
                   }
-                },
-                "required": [
-                  "message"
-                ]
+                }
               }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "Agent answer",
+            "description": "Agent reply envelope with the answer text and citations",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "conversationId": {
-                      "type": "string",
-                      "format": "uuid"
-                    },
-                    "answer": {
-                      "type": "object",
-                      "properties": {
-                        "text": {
-                          "type": "string"
-                        },
-                        "citations": {
-                          "type": "array",
-                          "items": {}
-                        }
-                      },
-                      "required": [
-                        "text",
-                        "citations"
-                      ]
-                    },
-                    "traceId": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "conversationId",
-                    "answer"
-                  ]
+                  "$ref": "#/components/schemas/McpConverseAskResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Routine invocation input did not match the tool's schema (`details` is `RoutineInvocationInvalidDetails`), or the body failed validation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -50879,6 +51408,16 @@
           },
           "403": {
             "description": "Converse session is no longer authorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Routine tool is not in the agent's catalog",
             "content": {
               "application/json": {
                 "schema": {

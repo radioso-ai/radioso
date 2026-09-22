@@ -15,9 +15,9 @@ describe('agent channel catalog', () => {
       whatsappConfigured: false,
       whatsappError: false,
     })).toEqual([
-      { id: 'web-chat', status: 'enabled', statusLabel: 'On' },
-      { id: 'api-channel', status: 'active', statusLabel: 'Active' },
-      { id: 'slack-channel', status: 'attention', statusLabel: 'Needs setup' },
+      { id: 'web-chat', status: 'active' },
+      { id: 'api-channel', status: 'active' },
+      { id: 'slack-channel', status: 'attention' },
     ])
   })
 
@@ -32,7 +32,7 @@ describe('agent channel catalog', () => {
       whatsappAvailable: false,
       whatsappConfigured: false,
       whatsappError: false,
-    })).toEqual([{ id: 'web-chat', status: 'enabled', statusLabel: 'On' }])
+    })).toEqual([{ id: 'web-chat', status: 'active' }])
   })
 
   it('does not list MCP from runtime availability without an agent credential', () => {
@@ -60,7 +60,7 @@ describe('agent channel catalog', () => {
       whatsappAvailable: true,
       whatsappConfigured: false,
       whatsappError: false,
-    })).toEqual([{ id: 'whatsapp-channel', status: 'available', statusLabel: 'Available' }])
+    })).toEqual([{ id: 'whatsapp-channel', status: 'available' }])
 
     expect(resolveAgentChannelCatalog({
       webChatEnabled: false,
@@ -72,7 +72,7 @@ describe('agent channel catalog', () => {
       whatsappAvailable: true,
       whatsappConfigured: true,
       whatsappError: false,
-    })).toEqual([{ id: 'whatsapp-channel', status: 'active', statusLabel: 'Active' }])
+    })).toEqual([{ id: 'whatsapp-channel', status: 'active' }])
 
     expect(resolveAgentChannelCatalog({
       webChatEnabled: false,
@@ -84,6 +84,6 @@ describe('agent channel catalog', () => {
       whatsappAvailable: true,
       whatsappConfigured: true,
       whatsappError: true,
-    })).toEqual([{ id: 'whatsapp-channel', status: 'attention', statusLabel: 'Needs setup' }])
+    })).toEqual([{ id: 'whatsapp-channel', status: 'attention' }])
   })
 })

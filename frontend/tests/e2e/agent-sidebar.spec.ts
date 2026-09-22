@@ -68,6 +68,11 @@ test('agent sidebar keeps the selected hierarchy and configured channel catalog'
   await expect(sidebar.getByText('MCP', { exact: true })).toBeVisible()
   await expect(sidebar.getByText('Slack', { exact: true })).toBeVisible()
   await expect(sidebar.getByText('Needs setup', { exact: true })).toBeVisible()
+  await expect(sidebar.getByText('WhatsApp', { exact: true })).toBeVisible()
+  // The three serving channels share one word, and the offered-but-unconfigured
+  // connector must not borrow it.
+  await expect(sidebar.getByText('On', { exact: true })).toHaveCount(3)
+  await expect(sidebar.getByText('Available', { exact: true })).toBeVisible()
   await expect(sidebar.getByText('Manage channels', { exact: true })).toBeVisible()
 
   await sidebar.getByRole('button', { name: 'Channels', exact: true }).click()

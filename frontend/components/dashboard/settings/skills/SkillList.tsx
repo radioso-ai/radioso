@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Pencil, Trash2 } from 'lucide-react'
+import { Pencil, Server, Trash2 } from 'lucide-react'
 
 import { useRegisterAddSkillAction } from '@/components/dashboard/shared/skills-header-action'
 
@@ -15,6 +15,7 @@ import { routinesApi } from '@/lib/api-routines'
 import { agentSkillsApi, type AgentSkill, type AgentSkillCapabilityId, type AgentSkillCreateInput, type SkillCapabilityDescriptor } from '@/lib/api-skills'
 import { cn } from '@/lib/utils'
 import { CapabilityPicker } from './CapabilityPicker'
+import { McpServersPanel } from './McpServersPanel'
 import { SkillForm } from './SkillForm'
 import { formatCapabilityLabel, formatInvocationMode } from './skill-form-model'
 import { countSkillUsage, describeSkillUsage, NO_SKILL_USAGE, type SkillUsage } from './skill-usage'
@@ -39,6 +40,7 @@ export function SkillList({ agentId }: { agentId: string }) {
   const [error, setError] = useState<string | null>(null)
   const [formOpen, setFormOpen] = useState(false)
   const [pickerOpen, setPickerOpen] = useState(false)
+  const [serversOpen, setServersOpen] = useState(false)
   const [editingSkill, setEditingSkill] = useState<AgentSkill | null>(null)
   const [selectedCapabilityId, setSelectedCapabilityId] = useState<AgentSkillCapabilityId | null>(null)
   // Null while the referencing surfaces are unread or unreadable: a partial count would report a
@@ -161,6 +163,12 @@ export function SkillList({ agentId }: { agentId: string }) {
 
   return (
     <section id="assistant-skills-list" className="space-y-4 scroll-mt-24">
+      <div className="flex justify-end">
+        <Button type="button" variant="outline" size="sm" onClick={() => setServersOpen(true)}>
+          <Server className="h-4 w-4" />
+          Manage MCP connections
+        </Button>
+      </div>
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-muted/35 px-3 py-2 text-xs text-muted-foreground">
         <span>Skill changes apply live now and are outside the agent publication release.</span>
         <Badge variant="outline">Applies live now</Badge>
@@ -231,6 +239,15 @@ export function SkillList({ agentId }: { agentId: string }) {
         capabilities={capabilities}
         onOpenChange={setPickerOpen}
         onSelect={selectCapability}
+        onConnectionsChanged={() => void load()}
+      />
+      <McpServersPanel
+        agentId={agentId}
+        open={serversOpen}
+        onOpenChange={(open) => {
+          setServersOpen(open)
+          if (!open) void load()
+        }}
       />
       <SkillForm
         agentId={agentId}

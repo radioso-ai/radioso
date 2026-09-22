@@ -76,6 +76,12 @@ services.
   (`turn-flow-overlay.tsx`) is a modal Radix `Dialog` layer so the Turn debug sheet under
   it survives clicks on the graph.
 - Settings UI: `settings-view.tsx`, `settings/`, and settings docs sources.
+- Agent **Skills → Manage MCP connections** opens `settings/skills/McpServersPanel.tsx`,
+  which hosts outbound targets through `McpConnectionsSection.tsx`. The capability
+  picker opens the same panel and refreshes its caller's catalog on close.
+  **Channels → MCP** owns inbound
+  client access through `settings/mcp-channel-card.tsx`. The shared credential
+  list keeps revoked access in a collapsed history disclosure.
 - Documents UI: `documents-view.tsx`, `document-sources-view.tsx`, `documents/`.
 - Audience Pulse: `audience-pulse-view.tsx`, `frontend/lib/api-audience-pulse.ts`,
   `frontend/lib/audience-pulse-draft-seed.ts`,

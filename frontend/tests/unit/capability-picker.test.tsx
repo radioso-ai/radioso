@@ -14,6 +14,11 @@ vi.mock('@/lib/auth-context', () => ({
   useOptionalAuth: authMocks.useOptionalAuth,
 }))
 
+vi.mock('@/components/dashboard/settings/skills/McpServersPanel', () => ({
+  McpServersPanel: ({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) =>
+    open ? <button onClick={() => onOpenChange(false)}>Close server management</button> : null,
+}))
+
 import { CapabilityPicker } from '@/components/dashboard/settings/skills/CapabilityPicker'
 
 beforeAll(() => {
@@ -71,25 +76,36 @@ describe('CapabilityPicker connection affordance', () => {
     vi.clearAllMocks()
   })
 
-  it('renders a real link to the MCP connection setup instead of dead text', async () => {
+  it('opens server management and refreshes capabilities on return without cancelling the picker', async () => {
     const onSelect = vi.fn()
+    const onOpenChange = vi.fn()
+    const onConnectionsChanged = vi.fn()
     await act(async () => {
       root.render(
         <CapabilityPicker
           open
           agentId="agent-1"
           capabilities={[unavailableMcpCapability]}
-          onOpenChange={() => {}}
+          onOpenChange={onOpenChange}
           onSelect={onSelect}
+          onConnectionsChanged={onConnectionsChanged}
         />,
       )
     })
 
-    const link = [...document.querySelectorAll('a')].find((anchor) => anchor.textContent === 'Connections')
-    expect(link).toBeTruthy()
-    expect(link?.getAttribute('href')).toBe(
-      '/account/account-1/agents/agent-1?tab=channels&anchor=mcp-channel',
-    )
+    const manageButton = [...document.querySelectorAll('button')].find((button) => button.textContent === 'Manage MCP connections')
+    expect(manageButton).toBeTruthy()
+    await act(async () => manageButton?.click())
+    expect(document.body.textContent).toContain('Close server management')
+    expect(document.body.textContent).not.toContain('Add new skill')
+    expect(onSelect).not.toHaveBeenCalled()
+    expect(onOpenChange).not.toHaveBeenCalled()
+
+    const closeButton = [...document.querySelectorAll('button')].find((button) => button.textContent === 'Close server management')
+    await act(async () => closeButton?.click())
+    expect(onConnectionsChanged).toHaveBeenCalledOnce()
+    expect(document.body.textContent).toContain('Add new skill')
+    expect(onOpenChange).not.toHaveBeenCalled()
   })
 
   it('does not wrap an unavailable capability card in a disabled button', async () => {

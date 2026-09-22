@@ -234,8 +234,10 @@ describe('AuthProvider bootstrap effect', () => {
     expect(window.localStorage.getItem('radioso.lastAccountId')).toBe(sessionFixture.accountId)
     // Seeded via `seedWorkspaceSession`, the real implementation from `@/lib/api` — this is the
     // step that used to be missing, which is why a provider OAuth return looked signed out.
-    expect(window.localStorage.getItem('radioso.activeWorkspaceId')).toBe(sessionFixture.workspaceId)
-    expect(window.localStorage.getItem('radioso.activeWorkspacePublicRouteKey')).toBe(sessionFixture.workspacePublicRouteKey)
+    expect(JSON.parse(window.localStorage.getItem('radioso.activeWorkspaceSelection') ?? 'null')).toEqual({
+      workspaceId: sessionFixture.workspaceId,
+      workspacePublicRouteKey: sessionFixture.workspacePublicRouteKey,
+    })
   })
 
   it('stays signed out when local storage is empty and there is no live session', async () => {

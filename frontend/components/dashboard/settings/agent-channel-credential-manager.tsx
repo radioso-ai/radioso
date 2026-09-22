@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Info, KeyRound, MoreHorizontal, RefreshCw, Trash2 } from 'lucide-react'
+import { ChevronDown, Info, KeyRound, MoreHorizontal, RefreshCw, Trash2 } from 'lucide-react'
 
 import { CREDENTIAL_EXPIRY_HINT, defaultExpiryDate, expiryInputToIso } from '@/components/dashboard/settings/api-access-dialogs'
 import {
@@ -90,6 +90,53 @@ export function AgentChannelCredentialList({
     if (!open && !busyCredentialId) setAction(null)
   }
 
+  const currentCredentials = credentials.filter((credential) => credential.status !== 'revoked')
+  const revokedCredentials = credentials.filter((credential) => credential.status === 'revoked')
+
+  const renderCredential = (credential: AgentChannelCredential) => {
+    const active = credential.status === 'active'
+    const busy = busyCredentialId === credential.id
+    return (
+      <div key={credential.id} className="flex items-center justify-between gap-3 rounded-md border border-border bg-background p-3">
+        <div className="min-w-0 space-y-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="truncate text-sm font-medium text-foreground">{credential.label}</p>
+            {active ? null : <Badge variant="secondary">{statusBadgeLabel(credential.status)}</Badge>}
+          </div>
+          <p className="truncate text-xs text-muted-foreground">{credentialMeta(credential)}</p>
+        </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="shrink-0"
+              disabled={busy}
+              aria-label={`Actions for ${credential.label}`}
+            >
+              {busy ? <Spinner className="h-4 w-4" /> : <MoreHorizontal className="h-4 w-4" />}
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onSelect={() => setAction({ type: 'details', credential })}>
+              <Info className="mr-2 h-4 w-4" />
+              Details
+            </DropdownMenuItem>
+            <DropdownMenuItem disabled={!active} onSelect={() => setAction({ type: 'rotate', credential })}>
+              <RefreshCw className="mr-2 h-4 w-4" />
+              Rotate
+            </DropdownMenuItem>
+            <DropdownMenuItem variant="destructive" disabled={!active} onSelect={() => setAction({ type: 'revoke', credential })}>
+              <Trash2 className="mr-2 h-4 w-4" />
+              Revoke
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-3">
       {heading || isLoading ? (
@@ -108,50 +155,20 @@ export function AgentChannelCredentialList({
       ) : null}
 
       <div className="space-y-2">
-        {credentials.map((credential) => {
-          const active = credential.status === 'active'
-          const busy = busyCredentialId === credential.id
-          return (
-            <div key={credential.id} className="flex items-center justify-between gap-3 rounded-md border border-border bg-background p-3">
-              <div className="min-w-0 space-y-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="truncate text-sm font-medium text-foreground">{credential.label}</p>
-                  {active ? null : <Badge variant="secondary">{statusBadgeLabel(credential.status)}</Badge>}
-                </div>
-                <p className="truncate text-xs text-muted-foreground">{credentialMeta(credential)}</p>
-              </div>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="shrink-0"
-                    disabled={busy}
-                    aria-label={`Actions for ${credential.label}`}
-                  >
-                    {busy ? <Spinner className="h-4 w-4" /> : <MoreHorizontal className="h-4 w-4" />}
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onSelect={() => setAction({ type: 'details', credential })}>
-                    <Info className="mr-2 h-4 w-4" />
-                    Details
-                  </DropdownMenuItem>
-                  <DropdownMenuItem disabled={!active} onSelect={() => setAction({ type: 'rotate', credential })}>
-                    <RefreshCw className="mr-2 h-4 w-4" />
-                    Rotate
-                  </DropdownMenuItem>
-                  <DropdownMenuItem variant="destructive" disabled={!active} onSelect={() => setAction({ type: 'revoke', credential })}>
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    Revoke
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-          )
-        })}
+        {currentCredentials.map(renderCredential)}
       </div>
+
+      {revokedCredentials.length > 0 ? (
+        <details className="group rounded-md border border-border">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-md px-3 py-2 text-sm text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+            <span>Revoked access ({revokedCredentials.length}{hasMore ? ' loaded' : ''})</span>
+            <ChevronDown aria-hidden="true" className="h-4 w-4 transition-transform group-open:rotate-180" />
+          </summary>
+          <div className="space-y-2 border-t border-border p-3">
+            {revokedCredentials.map(renderCredential)}
+          </div>
+        </details>
+      ) : null}
 
       {hasMore ? (
         <Button type="button" variant="outline" size="sm" onClick={onLoadMore} loading={isLoadingMore}>

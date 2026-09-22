@@ -1,7 +1,7 @@
 ---
 title: "External Skills via MCP"
 description: "Configuration of external MCP server connections and unified named skill definitions for agent routines with encrypted credential storage."
-last_updated: 2026-09-17
+last_updated: 2026-09-22
 ---
 
 # External Skills via MCP
@@ -20,10 +20,12 @@ managed separately from skill authoring.
 
 ## 1. Connect an MCP server
 
-Open the agent's **Skills** settings, then use **Connections** to add an MCP
-server:
+Open the agent's **Skills** tab and choose **Manage MCP connections** to add a connection
+in the side panel. You can also open the panel when adding an MCP skill.
+This connects the agent to external tools. **Channels → MCP** manages clients
+that talk to this agent.
 
-- **Name** — a label for the connection.
+- **Display name** — a label for the connection.
 - **Server URL** — the MCP server's HTTPS endpoint. It must be `https://`, must
   not embed credentials in the URL, and must resolve to a public host. Loopback,
   private, and internal addresses are rejected, both when you save and again
@@ -35,6 +37,11 @@ server:
 
 The access token is **write-only**. It is encrypted at rest and never returned by
 the API or shown again. To replace it, edit the connection and enter a new token.
+
+Choose **Test connection** on a saved connection to authenticate with the server
+and list its available tools. The result shows a tool count or an error beside
+that connection. The test does not invoke any tools. **Credentials saved** means
+the credential is stored; use the test to check that the connection works.
 
 Connecting requires the `CONNECTOR_ENCRYPTION_KEY` environment variable to be set,
 since credentials are encrypted with it. Without it, creating a connection that

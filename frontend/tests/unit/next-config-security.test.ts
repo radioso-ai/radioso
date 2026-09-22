@@ -95,4 +95,16 @@ describe('next security headers', () => {
       destination: '/backend/api/v1/operator-mcp/oauth/:path*',
     })
   })
+
+  // Google redirects the browser to <APP_BASE_URL>/api/v1/ee/auth/google/callback.
+  // The state cookie was set through the /backend proxy, so the callback must
+  // land on the same origin and reach the backend through the same proxy.
+  it('proxies the Google login callback path to the backend API', async () => {
+    const routes = await getRewriteRoutes()
+
+    expect(routes).toContainEqual({
+      source: '/api/v1/ee/auth/google/:path*',
+      destination: '/backend/api/v1/ee/auth/google/:path*',
+    })
+  })
 })

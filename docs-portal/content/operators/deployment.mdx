@@ -104,6 +104,8 @@ Set `MAIL_FROM_EMAIL` to a verified sender address. `MAIL_FROM_NAME` is optional
 
 The included staging and live Terraform environments enable PostHog error reporting with `ERROR_SINKS=audit,posthog`. Staging also sends product analytics to PostHog with `PRODUCT_ANALYTICS_SINKS=audit,posthog`. Set `POSTHOG_API_KEY` for each environment. `POSTHOG_HOST` defaults to the US ingestion host and can be overridden for another PostHog region or a self-hosted instance.
 
+"Sign in with Google" on the Enterprise login page is optional and off until the environment carries `GOOGLE_LOGIN_CLIENT_ID` and `GOOGLE_LOGIN_CLIENT_SECRET`. The workflow stores both in Secret Manager and injects them into the backend. Register `<APP_BASE_URL>/api/v1/ee/auth/google/callback` as the redirect URI on the Google OAuth client; one client can list the callback for every region you deploy. The Enterprise readme covers the account-linking rules.
+
 ## Alerting
 
 Cloud Monitoring alerting is off until an environment asks for it. Set these on the GitHub environment and the next Terraform apply builds an uptime check on the backend `/health` route, a log-based error metric, and alert policies for Cloud Run 5xx rate, backend p95 latency, error-log volume, Cloud SQL saturation, Cloud Tasks backlog, and Cloud Scheduler failures.

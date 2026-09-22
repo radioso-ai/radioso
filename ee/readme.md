@@ -251,6 +251,18 @@ The redirect URI is derived from `APP_BASE_URL` by default. Override it with
 reverse proxy). After a successful sign-in the browser returns to `APP_BASE_URL`;
 override the landing page with `GOOGLE_LOGIN_SUCCESS_REDIRECT`.
 
+The callback lands on the dashboard origin on purpose. The sign-in starts through
+the dashboard's `/backend` proxy, which sets the CSRF state cookie on that
+origin; the frontend forwards `/api/v1/ee/auth/google/*` through the same proxy
+so the callback can read the state and set the session cookie where the app
+reads it. Pointing the redirect URI straight at the API host breaks both.
+
+On the bundled Cloud Run stack, set `GOOGLE_LOGIN_CLIENT_ID` and
+`GOOGLE_LOGIN_CLIENT_SECRET` as GitHub environment secrets; the Terraform
+workflow stores them in Secret Manager and injects them into the backend
+service. Each region has its own `APP_BASE_URL`, so add every region's callback
+URL to the OAuth client.
+
 These variables are distinct from `GOOGLE_MAIL_OAUTH_*`, which configures the
 Gmail document connector, not user sign-in.
 

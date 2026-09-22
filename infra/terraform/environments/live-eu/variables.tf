@@ -444,3 +444,17 @@ variable "ops_event_webhook_queue_limit" {
   type        = number
   default     = 500
 }
+
+variable "google_login_client_id" {
+  description = "Google OAuth web client ID for Enterprise 'Sign in with Google' in live-eu."
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "google_login_client_secret" {
+  description = "Google OAuth web client secret for Enterprise 'Sign in with Google' in live-eu."
+  type        = string
+  sensitive   = true
+  default     = null
+}

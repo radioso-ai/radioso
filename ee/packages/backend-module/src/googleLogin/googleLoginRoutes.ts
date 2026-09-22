@@ -96,6 +96,19 @@ const withErrorParam = (target: string): string => {
   return `${target}${separator}error=google_login_failed`;
 };
 
+// `federatedLogin` decides some rejections itself -- an unverified provider
+// email (401), a closed signup (403), a rate-limited one (429) -- and records
+// its own `auth.federated_login` failure for each. Recording again here would
+// double-count the attempt and relabel a policy decision as a transport fault.
+// Anything else that escapes it carries no audit of its own.
+const isRejectedByAuthService = (error: unknown): boolean => {
+  if (typeof error !== "object" || error === null) {
+    return false;
+  }
+  const { statusCode } = error as { statusCode?: unknown };
+  return statusCode === 401 || statusCode === 403 || statusCode === 429;
+};
+
 // Stands in for the app origin when `successRedirect` is relative, so the same
 // origin comparison decides both cases.
 const RELATIVE_RESOLUTION_BASE = "https://return-to.invalid";
@@ -246,8 +259,16 @@ export const createGoogleLoginRouter = (options: GoogleLoginRouterOptions): Rout
 
     clearHandshakeCookies();
 
+    let identity: Awaited<ReturnType<typeof resolveGoogleIdentity>>;
     try {
-      const identity = await resolveGoogleIdentity({ config, code, fetchImpl });
+      identity = await resolveGoogleIdentity({ config, code, fetchImpl });
+    } catch {
+      await recordFailure("oauth_exchange_failed");
+      res.redirect(failureTarget);
+      return;
+    }
+
+    try {
       const result = await authService.federatedLogin({
         provider: PROVIDER,
         subject: identity.subject,
@@ -256,10 +277,10 @@ export const createGoogleLoginRouter = (options: GoogleLoginRouterOptions): Rout
       });
       res.append("Set-Cookie", result.sessionCookie);
       res.redirect(successTarget);
-    } catch {
-      // federatedLogin records its own audit for verified-but-rejected cases;
-      // this covers OAuth exchange / userinfo failures.
-      await recordFailure("oauth_exchange_failed");
+    } catch (error) {
+      if (!isRejectedByAuthService(error)) {
+        await recordFailure("login_completion_failed");
+      }
       res.redirect(failureTarget);
     }
   });

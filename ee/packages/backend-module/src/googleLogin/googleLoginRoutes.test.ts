@@ -406,4 +406,71 @@ describe("google login routes", () => {
       .set("Cookie", `${STATE_COOKIE_NAME}=fixed-state`);
     expectBothCookiesCleared(exchangeFailureResponse.headers["set-cookie"] as unknown as string[]);
   });
+  it("labels a failed code exchange as the OAuth exchange step", async () => {
+    const record = vi.fn(async () => {});
+    const fetchImpl = vi.fn(async () => ({ ok: false, status: 400, json: async () => ({}) }) as unknown as Response) as unknown as typeof fetch;
+    const { app } = createApp({ fetchImpl, auditService: { record } });
+
+    await request(app)
+      .get("/api/v1/ee/auth/google/callback?code=auth-code&state=fixed-state")
+      .set("Cookie", `${STATE_COOKIE_NAME}=fixed-state`);
+
+    expect(record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: "auth.federated_login",
+        eventStatus: "failure",
+        metadata: expect.objectContaining({ reason: "oauth_exchange_failed" }),
+      }),
+    );
+  });
+
+  // `federatedLogin` decides these rejections and records its own audit for
+  // them. A second event here would double-count the sign-in and describe a
+  // transport failure that never happened.
+  it.each([401, 403, 429])(
+    "leaves the audit to federatedLogin when it rejects the identity with %i",
+    async (statusCode) => {
+      const record = vi.fn(async () => {});
+      const federatedLogin = vi.fn(async () => {
+        throw Object.assign(new Error("rejected"), { statusCode });
+      });
+      const { app } = createApp({
+        fetchImpl: createSuccessfulFetch(),
+        authService: { federatedLogin },
+        auditService: { record },
+      });
+
+      const response = await request(app)
+        .get("/api/v1/ee/auth/google/callback?code=auth-code&state=fixed-state")
+        .set("Cookie", `${STATE_COOKIE_NAME}=fixed-state`);
+
+      expect(response.headers.location).toContain("error=google_login_failed");
+      expect(record).not.toHaveBeenCalled();
+    },
+  );
+
+  it("records an unexpected sign-in failure under its own reason", async () => {
+    const record = vi.fn(async () => {});
+    const federatedLogin = vi.fn(async () => {
+      throw new Error("database unavailable");
+    });
+    const { app } = createApp({
+      fetchImpl: createSuccessfulFetch(),
+      authService: { federatedLogin },
+      auditService: { record },
+    });
+
+    const response = await request(app)
+      .get("/api/v1/ee/auth/google/callback?code=auth-code&state=fixed-state")
+      .set("Cookie", `${STATE_COOKIE_NAME}=fixed-state`);
+
+    expect(response.headers.location).toContain("error=google_login_failed");
+    expect(record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: "auth.federated_login",
+        eventStatus: "failure",
+        metadata: expect.objectContaining({ reason: "login_completion_failed" }),
+      }),
+    );
+  });
 });

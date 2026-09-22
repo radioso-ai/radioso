@@ -1,12 +1,14 @@
 'use client'
 
 import Image from 'next/image'
+import { useSearchParams } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { authApi } from '@/lib/api'
 import { LoginForm } from './login-form'
 import { RegisterForm } from './register-form'
 
 export function AuthPage({ returnTo }: { returnTo?: string }) {
+  const searchParams = useSearchParams()
   const [mode, setMode] = useState<'login' | 'register'>('login')
   const [registrationAvailable, setRegistrationAvailable] = useState<boolean | null>(null)
   const [registrationAvailabilityFailed, setRegistrationAvailabilityFailed] = useState(false)
@@ -72,6 +74,11 @@ export function AuthPage({ returnTo }: { returnTo?: string }) {
           <h2 className="text-lg font-medium text-card-foreground mb-4">
             {mode === 'login' ? 'Welcome back' : 'Create your account'}
           </h2>
+          {/* A failed Google sign-in lands back here with the error in the
+              query string and no other trace of what happened. */}
+          {searchParams?.get('error') === 'google_login_failed' ? (
+            <p className="mb-4 text-sm text-destructive">Google sign-in did not complete. Try again.</p>
+          ) : null}
           {mode === 'login' ? (
             <LoginForm
               returnTo={returnTo}

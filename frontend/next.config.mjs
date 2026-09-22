@@ -88,8 +88,9 @@ const nextConfig = {
         destination: "/backend/api/v1/operator-mcp/oauth/:path*",
       },
       // Google login (EE) redirects the browser back to
-      // <APP_BASE_URL>/api/v1/ee/auth/google/callback. The state cookie was set
-      // through /backend, so the callback must reach the backend via the same proxy.
+      // <APP_BASE_URL>/api/v1/ee/auth/google/callback. The OAuth state cookie
+      // and the session cookie are both host-only, so the callback has to land
+      // on the dashboard origin; this carries it to the backend from there.
       {
         source: "/api/v1/ee/auth/google/:path*",
         destination: "/backend/api/v1/ee/auth/google/:path*",

@@ -93,6 +93,20 @@ jobs:
             fi
           done
 
+          # The backend turns "Sign in with Google" on only when both credentials
+          # resolve, so half a pair plans clean, applies clean, and leaves the
+          # login page exactly as it was. Stop the run instead.
+          if [ -n "${TF_VAR_google_login_client_id}${TF_VAR_google_login_client_secret}" ]; then
+            if [ -z "${TF_VAR_google_login_client_id}" ]; then
+              echo "Missing required GitHub environment value: GOOGLE_LOGIN_CLIENT_ID because GOOGLE_LOGIN_CLIENT_SECRET is set" >&2
+              exit 1
+            fi
+            if [ -z "${TF_VAR_google_login_client_secret}" ]; then
+              echo "Missing required GitHub environment value: GOOGLE_LOGIN_CLIENT_SECRET because GOOGLE_LOGIN_CLIENT_ID is set" >&2
+              exit 1
+            fi
+          fi
+
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - id: auth

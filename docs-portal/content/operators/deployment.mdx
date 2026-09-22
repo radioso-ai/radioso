@@ -1,7 +1,7 @@
 ---
 title: "Deployment"
 description: "Production deployment expectations for Radioso and the standalone docs portal."
-last_updated: 2026-09-17
+last_updated: 2026-09-22
 ---
 
 import { Callout } from 'nextra/components'
@@ -104,7 +104,9 @@ Set `MAIL_FROM_EMAIL` to a verified sender address. `MAIL_FROM_NAME` is optional
 
 The included staging and live Terraform environments enable PostHog error reporting with `ERROR_SINKS=audit,posthog`. Staging also sends product analytics to PostHog with `PRODUCT_ANALYTICS_SINKS=audit,posthog`. Set `POSTHOG_API_KEY` for each environment. `POSTHOG_HOST` defaults to the US ingestion host and can be overridden for another PostHog region or a self-hosted instance.
 
-"Sign in with Google" on the Enterprise login page is optional and off until the environment carries `GOOGLE_LOGIN_CLIENT_ID` and `GOOGLE_LOGIN_CLIENT_SECRET`. The workflow stores both in Secret Manager and injects them into the backend. Register `<APP_BASE_URL>/api/v1/ee/auth/google/callback` as the redirect URI on the Google OAuth client; one client can list the callback for every region you deploy. The Enterprise readme covers the account-linking rules.
+"Sign in with Google" on the Enterprise login page is optional and off until the environment carries `GOOGLE_LOGIN_CLIENT_ID` and `GOOGLE_LOGIN_CLIENT_SECRET`. The workflow stores both in Secret Manager and injects them into the backend. Register `<APP_BASE_URL>/api/v1/ee/auth/google/callback` as the redirect URI on the Google OAuth client; one client can list the callback for every region you deploy. A first Google sign-in joins the account that already holds the same email address and marks that address verified, so someone who registered with a password keeps the one account.
+
+Deploy the frontend release carrying the callback route before you apply the credentials. Terraform reads `TF_VAR_frontend_image` from the frontend service already running and never advances it, so credentials applied first flip `/api/v1/ee/auth/google/status` to enabled and show the button while the browser still lands on a 404 on the way back from Google.
 
 ## Alerting
 

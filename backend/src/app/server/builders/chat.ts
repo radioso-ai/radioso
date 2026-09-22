@@ -160,8 +160,11 @@ export const buildMcpConverseServices = (
   const converseService = new AgentConverseService({
     assistantChatService: dependencies.assistantChatService,
     conversationRepository: dependencies.conversationRepository,
+    agentToolCatalog: dependencies.agentToolCatalog,
     audit,
     publisher: dependencies.workspaceInvalidationPublisher,
+    metrics: dependencies.metricsRegistry,
+    logger: dependencies.logger,
   });
   return { audit, sessionService, converseService };
 };

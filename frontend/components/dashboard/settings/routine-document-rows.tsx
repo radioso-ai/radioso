@@ -77,7 +77,8 @@ export function RoutineDocumentHeader({ doc, editable = false, onEdit, editor }:
   editor?: ReactNode
 }) {
   const trigger = doc.activation.triggerDescription || 'an activation trigger is met'
-  return editor ? <div className="rounded-md border border-border bg-muted/30 p-3">{editor}</div> : <button type="button" aria-label="Starts when" onClick={onEdit} disabled={!editable} className="group block text-left disabled:cursor-default"><span className="block text-xs font-semibold text-foreground">Starts when</span><span className="mt-1 block text-sm text-muted-foreground">{trigger}</span><EditHint editable={editable} /></button>
+  const toolName = doc.exposure?.enabled ? doc.exposure.toolName || 'unnamed' : null
+  return editor ? <div className="rounded-md border border-border bg-muted/30 p-3">{editor}</div> : <button type="button" aria-label="Starts when" onClick={onEdit} disabled={!editable} className="group block text-left disabled:cursor-default"><span className="block text-xs font-semibold text-foreground">Starts when</span><span className="mt-1 block text-sm text-muted-foreground">{trigger}</span>{toolName ? <span className="mt-1 block text-xs text-muted-foreground">Also a tool for calling agents: <code className="font-mono">{toolName}</code></span> : null}<EditHint editable={editable} /></button>
 }
 
 export function RoutineInformationSection({ slots, editable = false, editingSlotId, onEditSlot, renderEditor, notesFor }: {

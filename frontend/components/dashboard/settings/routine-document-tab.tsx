@@ -5,6 +5,7 @@ import { ChevronDown, Plus, Trash2 } from 'lucide-react'
 
 import { RoutineInstructionEditor, type RoutineEditorVariable } from '@/components/dashboard/settings/routine-chip-editor'
 import { buildDocumentIndex, instructionIsEmpty, RoutineDocumentHeader, RoutineEndingsSection, RoutineInformationSection, RoutineStepRow, type RoutineDocumentIndex } from '@/components/dashboard/settings/routine-document-rows'
+import { RoutineExposureEditor } from '@/components/dashboard/settings/routine-exposure-editor'
 import { findRoutineSkillDescriptor, RoutineSkillCatalogContext, RoutineSkillCatalogPopover } from '@/components/dashboard/settings/routine-skill-catalog-popover'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
@@ -108,6 +109,7 @@ function RoutineActivationEditor({ doc, apply, onDone }: {
       <label className="min-w-56 flex-1 text-xs">Reentry<select aria-label="Reentry" value={doc.activation.reentryMode ?? 'once_per_conversation'} onChange={(event) => apply((current) => updateActivation(current, { reentryMode: event.target.value as RoutineReentryMode }))} className="mt-1 h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm"><option value="once_per_conversation">Once per conversation</option><option value="always">Every time it matches</option><option value="semantic">Let the assistant decide</option></select></label>
       <label className="min-w-32 flex-1 text-xs">Priority<Input aria-label="Priority" type="number" value={doc.activation.priority} onChange={(event) => apply((current) => updateActivation(current, { priority: Number(event.target.value) || 0 }))} /></label>
     </div>
+    <RoutineExposureEditor doc={doc} apply={apply} />
     {showingCoverageCondition ? <div className="space-y-2 rounded-md border border-border bg-muted/20 p-3" aria-label="Answer coverage condition">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div><Label>Only if</Label><p className="mt-1 text-xs text-muted-foreground">Starts when matches and the recorded answer coverage matches these values.</p></div>

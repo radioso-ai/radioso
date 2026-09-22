@@ -1,8 +1,8 @@
 import { Router } from "express";
 
 import type { AppDependencies } from "../../server/types.js";
-// Type-only imports keep these module-owned services out of the route's runtime dependency graph;
-// the instances are built in app composition (mcpConverseModule) and injected.
+// The services are type-only imports: their instances are built in app composition
+// (mcpConverseModule) and injected.
 import type { AgentConverseAudit, AgentConverseService } from "../../../modules/chat/contracts/index.js";
 import type { AgentConverseSessionPort } from "../../../modules/settings/contracts/agentConverseSession.js";
 import { requirePublicChatPermission } from "../middleware/requirePermission.js";
@@ -31,6 +31,8 @@ export type McpConverseRouteDependencies = Pick<
   | "metricsRegistry"
   | "workspaceInvalidationPublisher"
   | "abuseControlService"
+  | "agentToolCatalog"
+  | "logger"
 >;
 
 export interface McpConverseRouteServices {
@@ -105,6 +107,25 @@ export const createMcpConverseRoutes = (
     },
   );
 
+  router.get(
+    "/tools",
+    rateLimitMcpSource,
+    requireMcpConverseSession(sessionService),
+    async (_req, res, next) => {
+      try {
+        const { mcpConversePrincipal } = res.locals as typeof res.locals & McpConverseLocals;
+        const catalog = await dependencies.agentToolCatalog.load({
+          workspaceId: mcpConversePrincipal.workspaceId,
+          agentId: mcpConversePrincipal.agentId,
+        });
+        onSuccessfulHttpResponse(res, () => sessionService.recordSuccessfulUse(mcpConversePrincipal));
+        res.status(200).json(catalog);
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
   router.post(
     "/ask",
     rateLimitMcpSource,
@@ -115,6 +136,8 @@ export const createMcpConverseRoutes = (
     async (req, res, next) => {
       try {
         const { mcpConversePrincipal } = res.locals as typeof res.locals & McpConverseLocals;
+        // The converse service binds the session's conversation and validates a tool
+        // call against the release it is pinned to before any turn state is written.
         const result = await converseService.askAgent(mcpConversePrincipal, req.body);
         onSuccessfulHttpResponse(res, () => sessionService.recordSuccessfulUse(mcpConversePrincipal));
         res.status(200).json(result);

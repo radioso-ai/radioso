@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { routineInvocationRequestSchema } from "./routineInvocationSchemas.js";
+
 const controlCharacter = /[\u0000-\u001F\u007F-\u009F]/u;
 const boundedClientValue = (max: number) => z.string()
   .min(1)
@@ -8,7 +10,7 @@ const boundedClientValue = (max: number) => z.string()
   .refine((value) => value.trim().length > 0, "Client metadata must not be blank")
   .transform((value) => value.trim());
 
-export const mcpConverseClientSchema = z.object({
+const mcpConverseClientSchema = z.object({
   name: boundedClientValue(128).optional(),
   version: boundedClientValue(64).optional(),
 }).optional();
@@ -23,8 +25,19 @@ export const mcpConverseSessionValidateRequestSchema = z.object({
 });
 
 export const mcpConverseAskRequestSchema = z.object({
-  message: z.string().trim().min(1),
+  message: z.string().trim().min(1).optional(),
+  routine: routineInvocationRequestSchema.optional(),
   stream: z.literal(false).optional(),
+}).superRefine((value, ctx) => {
+  // An object with a refine, not a union: a union would silently match the first
+  // branch when both keys are present.
+  if (Boolean(value.message) === Boolean(value.routine)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "exactly one of message or routine is required",
+      path: [value.routine ? "routine" : "message"],
+    });
+  }
 });
 
 export const mcpConverseSessionResponseSchema = z.object({
@@ -44,13 +57,4 @@ export const mcpConverseSessionValidateResponseSchema = z.object({
   agentId: z.string().uuid(),
   conversationId: z.string().uuid(),
   permissions: z.array(z.string()),
-});
-
-export const mcpConverseAskResponseSchema = z.object({
-  conversationId: z.string().uuid(),
-  answer: z.object({
-    text: z.string(),
-    citations: z.array(z.unknown()),
-  }),
-  traceId: z.string().optional(),
 });

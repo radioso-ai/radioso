@@ -1,9 +1,11 @@
 export {
+  ROUTINE_DEFINITION_LIMITS,
   routineDefinitionDraftInputSchema,
   routineDefinitionDraftUpdateInputSchema,
   routineDefinitionSchema,
   routineGuardProvenance,
   routineReentryModes,
+  routineSlotTypes,
   routineStepSchema,
   routineSlotSchema,
   routineTerminalSchema,
@@ -24,6 +26,7 @@ export { compileRoutineDefinition, legacyCompiledRoutineId, routineCanActivate }
 export { selectCanonicalRoutineDefinitions } from "./draftProjection.js";
 export {
   applyRoutineFieldPatch,
+  resolveRoutineFieldPatch,
   canonicalRoutineAuthoringDraft,
   describeRoutineFieldPatch,
   projectRoutineForReview,
@@ -33,11 +36,24 @@ export { RoutineTriggerEmbeddingService } from "./routineTriggerEmbeddingService
 export { ProbeRoutineReader, type ProbeRoutineReadPort } from "./probeRoutineReader.js";
 export { createRoutineActivationPrefilter } from "./routineActivationPrefilter.js";
 export { createRoutineTurnProvider } from "./turnProvider.js";
+export { createRoutineTurnReporter } from "./routineTurnReporter.js";
+export type { RoutineInvocationReport, RoutineTurnReporter, RoutineTurnState } from "./turnReport.js";
 export {
   RoutineSkillExecutorDispatcher,
   type RoutineSkillResolver,
 } from "./skillDispatcher.js";
 export { createRoutineSkillResolverChain } from "./routineSkillResolverChain.js";
+export { validateExposureAcrossSnapshot } from "./exposure/exposureSnapshotRules.js";
+export { type AgentToolDescriptor } from "./exposure/agentToolDescriptor.js";
+export { createAgentToolCatalog, type AgentToolCatalogPort } from "./exposure/agentToolCatalog.js";
+export {
+  ROUTINE_INVOCATION_MAX_STRING_LENGTH,
+  routineInvocationErrorCodes,
+  validateRoutineInvocation,
+  type RoutineInvocation,
+} from "./exposure/routineInvocationValidator.js";
+export { renderRoutineInvocation } from "./exposure/renderRoutineInvocation.js";
+export { createDirectInvocationTurnPorts } from "./exposure/directInvocationTurn.js";
 export {
   routineValidationCodes,
   validateRoutineDefinition,

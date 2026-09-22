@@ -55,9 +55,9 @@ import {
 } from "../../src/modules/agents/public.js";
 import type { TestExecutionService } from "../../src/modules/test-execution/testExecution.js";
 import type { RevisionEvalRunService } from "../../src/modules/eval/services/revisionEvalRun.js";
-import { ProbeRoutineReader, RoutineDefinitionService, RoutineDraftAssistService, selectCanonicalRoutineDefinitions } from "../../src/modules/routines/public.js";
+import { createAgentToolCatalog, createDirectInvocationTurnPorts, createRoutineTurnReporter, ProbeRoutineReader, RoutineDefinitionService, RoutineDraftAssistService, selectCanonicalRoutineDefinitions, type AgentToolCatalogPort } from "../../src/modules/routines/public.js";
 import { InMemoryAgentRevisionRepository } from "./agentRevisionFakes.js";
-import { toDefaultRetrieveSkillConfig } from "../../src/db/repositories/agentRepository.js";
+import { toDefaultRetrieveSkillConfig, type AgentRepositoryPort } from "../../src/db/repositories/agentRepository.js";
 import {
   type ComposedDecline,
   type FallbackReplyComposer,
@@ -454,40 +454,45 @@ const appRevisionFixtures = new WeakMap<object, PublishedTestAgentRevisionReader
  * selected-release reads without making chat fall back to mutable authoring rows.
  */
 class PublishedTestAgentRevisionReader implements AgentRevisionRuntimeReaderPort {
-  private readonly revisions = new Map<string, AgentRevision>();
+  /** The current release per agent; every earlier release stays readable by id, as in Postgres. */
+  private readonly current = new Map<string, AgentRevision>();
+  private readonly revisionsById = new Map<string, { agentKey: string; revision: AgentRevision }>();
 
   constructor(
     private readonly contextVariables?: Pick<ContextVariableRepositoryPort, "listByAgent">,
   ) {}
 
-  async publish(agent: AgentRecord): Promise<AgentRevision> {
+  async publish(agent: AgentRecord, snapshot: { routines?: AgentRevision["snapshot"]["routines"] } = {}): Promise<AgentRevision> {
+    const agentKey = this.key(agent.workspaceId, agent.id);
+    const previous = this.current.get(agentKey) ?? null;
     const revision: AgentRevision = {
       id: randomUUID(),
       snapshot: {
         customInstruction: agent.customInstruction,
         directives: agent.authoredDirectives ?? [],
-        routines: [],
+        routines: snapshot.routines ?? [],
         contextVariableEnablements: this.contextVariables
           ? await this.contextVariables.listByAgent(agent.workspaceId, agent.id)
           : [],
       },
-      sourceDraftGeneration: 1,
-      sourceBasePublishedRevisionId: null,
+      sourceDraftGeneration: (previous?.sourceDraftGeneration ?? 0) + 1,
+      sourceBasePublishedRevisionId: previous?.id ?? null,
       createdAt: new Date(),
       publishedAt: new Date(),
-      publishedVersion: 1,
+      publishedVersion: (previous?.publishedVersion ?? 0) + 1,
     };
-    this.revisions.set(this.key(agent.workspaceId, agent.id), revision);
+    this.current.set(agentKey, revision);
+    this.revisionsById.set(revision.id, { agentKey, revision });
     return revision;
   }
 
   async findCurrentPublished(input: { workspaceId: string; agentId: string }): Promise<AgentRevision | null> {
-    return this.revisions.get(this.key(input.workspaceId, input.agentId)) ?? null;
+    return this.current.get(this.key(input.workspaceId, input.agentId)) ?? null;
   }
 
   async findRevision(input: { workspaceId: string; agentId: string; revisionId: string }): Promise<AgentRevision | null> {
-    const revision = this.revisions.get(this.key(input.workspaceId, input.agentId));
-    return revision?.id === input.revisionId ? revision : null;
+    const stored = this.revisionsById.get(input.revisionId);
+    return stored?.agentKey === this.key(input.workspaceId, input.agentId) ? stored.revision : null;
   }
 
   private key(workspaceId: string, agentId: string): string {
@@ -507,8 +512,23 @@ class TestFallbackReplyComposer implements FallbackReplyComposer {
 class InMemoryRoutineStateStore implements ConversationRoutineStore {
   readonly states = new Map<string, RoutineState>();
 
+  // Mirrors the Postgres store (routineStateRepository.ts): an active lookup never
+  // returns a suspended instance, which only the suspended reader sees.
   async loadActive({ sessionId }: { sessionId: string }): Promise<RoutineState | null> {
-    return this.states.get(sessionId) ?? null;
+    const state = this.states.get(sessionId);
+    return state?.status === "active" ? state : null;
+  }
+
+  async loadSuspended({ sessionId }: { sessionId: string }): Promise<RoutineState | null> {
+    const state = this.states.get(sessionId);
+    return state?.status === "suspended" ? state : null;
+  }
+
+  // Mirrors the Postgres store: a completed instance is what reentry and the
+  // activator's suppression list see on the next turn (one row per session).
+  async loadCompleted({ sessionId }: { sessionId: string }): Promise<RoutineState[]> {
+    const state = this.states.get(sessionId);
+    return state?.status === "completed" ? [state] : [];
   }
 
   async save(state: RoutineState): Promise<void> {
@@ -783,6 +803,11 @@ export const createTestDependencies = (overrides: {
   agentSkillTurnSkillProvider?: AgentSkillTurnSkillProvider;
   realtimeRolloutPolicy?: RealtimeRolloutPolicy;
   testExecutionService?: TestExecutionService;
+  /** Composes the agent tool catalog over the test app's agent row and published-revision readers. */
+  agentToolCatalog?: (readers: {
+    agentRepository: Pick<AgentRepositoryPort, "findByIdAndWorkspaceId">;
+    agentRevisionReader: AgentRevisionRuntimeReaderPort;
+  }) => AgentToolCatalogPort;
 } = {}): { dependencies: AppDependencies; repositories: TestRepositories; routineStateStore: InMemoryRoutineStateStore; directiveStateStore: InMemoryDirectiveStateStore; publishedAgentRevisions: PublishedTestAgentRevisionReader } => {
   const env = {
     ...createTestEnv(),
@@ -1772,35 +1797,51 @@ export const createTestDependencies = (overrides: {
     },
   });
   const staticRoutineRegistrations: RoutineRegistration[] = [];
+  const loadTurnRoutineRegistrations = async (agentId: string, pinnedRoutineIds: string[]) => {
+    let publishedRegistrations: RoutineRegistration[];
+    try {
+      publishedRegistrations = await publishedRoutineSource.load({ agentId });
+    } catch (error) {
+      logger.warn(
+        {
+          agentId,
+          err: error instanceof Error ? error.message : String(error),
+        },
+        "Published routine definitions failed to load; continuing without DB-backed routines",
+      );
+      publishedRegistrations = [];
+    }
+    let pinnedRegistrations: RoutineRegistration[];
+    try {
+      pinnedRegistrations = await publishedRoutineSource.loadPinned({ agentId, routineIds: pinnedRoutineIds });
+    } catch (error) {
+      logger.warn(
+        {
+          agentId,
+          routineIds: pinnedRoutineIds,
+          err: error instanceof Error ? error.message : String(error),
+        },
+        "Pinned routine definitions failed to load; continuing without resume-only DB-backed routines",
+      );
+      pinnedRegistrations = [];
+    }
+    return { publishedRegistrations, pinnedRegistrations };
+  };
   const routineProvider: ChatRoutineProvider = {
-    async forTurn({ modelGateway, agentId, pinnedRoutineIds = [], responseLanguage, groundedAnswerRenderer }) {
-      let publishedRegistrations: RoutineRegistration[];
-      try {
-        publishedRegistrations = await publishedRoutineSource.load({ agentId });
-      } catch (error) {
-        logger.warn(
-          {
-            agentId,
-            err: error instanceof Error ? error.message : String(error),
-          },
-          "Published routine definitions failed to load; continuing without DB-backed routines",
-        );
-        publishedRegistrations = [];
+    async reporterFor({ agentId, pinnedRoutineIds = [], routineInvocation }) {
+      const { publishedRegistrations, pinnedRegistrations } = await loadTurnRoutineRegistrations(agentId, pinnedRoutineIds);
+      const routinesById = new Map([...staticRoutineRegistrations, ...publishedRegistrations, ...pinnedRegistrations]
+        .map((registration) => [registration.routine.id, registration.routine]));
+      if (routinesById.size === 0) {
+        return null;
       }
-      let pinnedRegistrations: RoutineRegistration[];
-      try {
-        pinnedRegistrations = await publishedRoutineSource.loadPinned({ agentId, routineIds: pinnedRoutineIds });
-      } catch (error) {
-        logger.warn(
-          {
-            agentId,
-            routineIds: pinnedRoutineIds,
-            err: error instanceof Error ? error.message : String(error),
-          },
-          "Pinned routine definitions failed to load; continuing without resume-only DB-backed routines",
-        );
-        pinnedRegistrations = [];
-      }
+      // Mirrors the production provider: a bypassed turn's activator never runs, so a tool call started nothing.
+      return createRoutineTurnReporter([...routinesById.values()], routineInvocation
+        ? { invocation: { toolName: routineInvocation.toolName, outcome: () => null } }
+        : {});
+    },
+    async forTurn({ modelGateway, agentId, pinnedRoutineIds = [], routineInvocation, responseLanguage, groundedAnswerRenderer }) {
+      const { publishedRegistrations, pinnedRegistrations } = await loadTurnRoutineRegistrations(agentId, pinnedRoutineIds);
       const routineRegistry = new RoutineRegistry([
         ...staticRoutineRegistrations,
         ...publishedRegistrations,
@@ -1813,21 +1854,38 @@ export const createTestDependencies = (overrides: {
       if (routineRegistry.isEmpty && routines.length === 0) {
         return null;
       }
+      const runner = new DefaultRoutineRunner(
+        routines,
+        new RoutineNextStepSelector(modelGateway, {
+          promptTemplate: loadPromptTemplate("chat/routine-next-step.md"),
+        }),
+        new RoutineStepRenderer(modelGateway, {
+          promptTemplate: loadPromptTemplate("chat/routine-step-reply.md"),
+          responseLanguage,
+          groundedAnswerRenderer,
+        }),
+      );
+      if (routineInvocation) {
+        // Same port pairing production uses (routines/exposure/directInvocationTurn.ts).
+        const direct = createDirectInvocationTurnPorts({
+          registrations: [...staticRoutineRegistrations, ...publishedRegistrations, ...pinnedRegistrations],
+          routines,
+          invocation: routineInvocation,
+        });
+        return {
+          reporter: direct.reporter,
+          activator: direct.activator,
+          reentryGate: direct.reentryGate,
+          slotCorrection: direct.slotCorrection,
+          runner,
+        };
+      }
       return {
+        reporter: createRoutineTurnReporter(routines),
         activator: routineRegistry.isEmpty
           ? { activate: async () => null }
           : routineRegistry.activator(modelGateway),
-        runner: new DefaultRoutineRunner(
-          routines,
-          new RoutineNextStepSelector(modelGateway, {
-            promptTemplate: loadPromptTemplate("chat/routine-next-step.md"),
-          }),
-          new RoutineStepRenderer(modelGateway, {
-            promptTemplate: loadPromptTemplate("chat/routine-step-reply.md"),
-            responseLanguage,
-            groundedAnswerRenderer,
-          }),
-        ),
+        runner,
       };
     },
   };
@@ -1841,6 +1899,7 @@ export const createTestDependencies = (overrides: {
       chatGateway,
       fallbackReplyComposer,
       skillOutcomeCapabilities: createSkillOutcomeCapabilityProvider(skillCatalogRegistry),
+      metrics: metricsRegistry,
     }),
     productAnalyticsService,
     workspaceRepository,
@@ -1852,6 +1911,8 @@ export const createTestDependencies = (overrides: {
     turnRouter,
     conversationEngine: createConversationEngine(),
     routineStore: routineStateStore,
+    // Mirror production wiring: a suspended routine bypasses the routine attempt.
+    suspendedRoutineReader: routineStateStore,
     routineProvider,
     // Mirror production wiring (dependencyBuilders): a real route-scoped directive
     // runtime so authored directives are matchable in integration tests. Built-in
@@ -1872,6 +1933,8 @@ export const createTestDependencies = (overrides: {
     conversationTurnRegistry: new InMemoryConversationTurnRegistry(
       new LoggingConversationTurnInterruptionObserver(logger, metricsRegistry),
     ),
+    // Mirror production wiring: a human-owned conversation suppresses the agent's turn.
+    conversationOwnershipReader: conversationOwnershipRepository,
     logger,
   });
   const chatBootstrapService = new ChatBootstrapService(
@@ -2456,6 +2519,21 @@ export const createTestDependencies = (overrides: {
     }),
     chatBootstrapService,
     agentStarterPromptReader,
+    // By default the same live definitions the test routine provider activates from, so
+    // the catalog a calling agent reads matches what a tool call can admit; a test may
+    // compose the production reader over the published-revision fixture instead.
+    agentToolCatalog: overrides.agentToolCatalog?.({ agentRepository, agentRevisionReader: publishedAgentRevisions })
+      ?? createAgentToolCatalog({
+        agents: {
+          find: async ({ workspaceId, agentId }) => {
+            const agent = await agentRepository.findByIdAndWorkspaceId(agentId, workspaceId);
+            return agent ? { name: agent.name, description: null } : null;
+          },
+        },
+        publishedRoutines: {
+          listPublished: ({ agentId }) => routineDefinitionRepository.listActiveByAgent(agentId),
+        },
+      }),
     chatHistoryService,
     assistantChatService,
     assistantHistoryService,
@@ -2570,6 +2648,7 @@ export const createTestApp = (overrides: {
   agentSkillTurnSkillProvider?: AgentSkillTurnSkillProvider;
   realtimeRolloutPolicy?: RealtimeRolloutPolicy;
   testExecutionService?: TestExecutionService;
+  agentToolCatalog?: NonNullable<Parameters<typeof createTestDependencies>[0]>["agentToolCatalog"];
 } = {}) => {
   const {
     dependencies,
@@ -2667,13 +2746,16 @@ export const issueTestSession = async (
 /** Explicitly publishes the current immutable baseline for a contract-test agent. */
 export const publishTestAgentBaseline = async (
   app: ReturnType<typeof createTestApp>["app"],
-  input: { workspaceId: string; agentId?: string },
+  input: { workspaceId: string; agentId?: string; routines?: AgentRevision["snapshot"]["routines"] },
 ): Promise<AgentRevision> => {
   const [dependencies, revisions] = [appDependencyMap.get(app), appRevisionFixtures.get(app)];
   if (!dependencies || !revisions) {
     throw new Error("Test app revision fixture was not registered");
   }
-  return revisions.publish(await dependencies.agentService.resolve(input.workspaceId, input.agentId));
+  return revisions.publish(
+    await dependencies.agentService.resolve(input.workspaceId, input.agentId),
+    { routines: input.routines },
+  );
 };
 
 export const adminSessionHeaders = (session: { cookie: string; workspaceId: string }) => ({

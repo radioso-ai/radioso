@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { routineInvocationRequestSchema } from "./routineInvocationSchemas.js";
 import { chatMessageSchema } from "./textInputLimits.js";
 
 const labelControlCharacter = /[\u0000-\u001F\u007F-\u009F]/u;
@@ -42,15 +43,33 @@ export const agentChannelCredentialParamsSchema = z.object({
 export const agentChannelChatSchema = z.object({
   conversationId: z.string().uuid().optional(),
   message: chatMessageSchema.optional(),
+  routine: routineInvocationRequestSchema.optional(),
   startConversation: z.boolean().optional().default(false),
   stream: z.boolean().optional().default(false),
   userExpectedLocale: z.string().trim().max(35).optional(),
 }).strict().superRefine((value, ctx) => {
-  if (!value.message && !value.startConversation) {
+  // One turn input per request: a message or a tool call. A bootstrap greeting needs neither;
+  // it tolerates a message (ignored, as before the routine body existed) but not a tool call,
+  // which would be silently dropped.
+  if (value.message !== undefined && value.routine !== undefined) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: "message is required unless startConversation is true",
+      message: "message and routine are mutually exclusive",
+      path: ["routine"],
+    });
+  }
+  if (value.message === undefined && value.routine === undefined && !value.startConversation) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "message or routine is required unless startConversation is true",
       path: ["message"],
+    });
+  }
+  if (value.startConversation && value.routine !== undefined) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "startConversation cannot invoke a routine",
+      path: ["routine"],
     });
   }
   if (value.startConversation && value.conversationId) {

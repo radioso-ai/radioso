@@ -15,7 +15,8 @@ import type { ChatGateway } from "../contracts/chatGateway.js";
 import type { ChatAnswerPresenter } from "./chatAnswerPresenter.js";
 import { ChatAnswerSupport } from "./chatAnswerSupport.js";
 import type { ChatTurnLifecycle } from "./chatTurnLifecycle.js";
-import { buildChatTurnContext, type ChatRoutineProvider } from "./chatTurnAssembly.js";
+import { buildChatTurnContext } from "./chatTurnAssembly.js";
+import type { ChatRoutineProvider } from "../contracts/routineProvider.js";
 import type { PreparedSession } from "./chatSessionPreparer.js";
 import { RoutineChatModelGateway } from "./routines/routineChatModelGateway.js";
 import {

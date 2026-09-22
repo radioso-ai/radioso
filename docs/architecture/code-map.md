@@ -426,7 +426,7 @@ Public and tool surfaces:
 - `backend/src/modules/operatorCopilot/contracts.ts`, `catalog.ts`, `service.ts`, and `routes.ts`
 - `backend/src/modules/operatorCopilot/tools/index.ts` (catalog contributions)
 - `backend/src/modules/operatorCopilot/tools/agentTurnProbe.ts` (`test_agent_turn` contract and projection)
-- `backend/src/modules/operatorCopilot/tools/routines.ts` (`routine_definition`, `validate_routine`, `propose_routine`, `propose_routine_edit`)
+- `backend/src/modules/operatorCopilot/tools/routines.ts` (`routine_definition`, `validate_routine`, `propose_routine`, `propose_routine_edit`, `propose_routine_exposure`)
 - `backend/src/app/composition/copilotProposalAdapters.ts` (proposal adapters: directive, agent setting, and the routine edit apply rules)
 - `backend/src/app/composition/copilotToolCatalog.ts` (default wiring and contributed-tool assembly)
 - `backend/src/modules/operatorCopilot/contribution.ts` (what a contributing module declares)
@@ -894,11 +894,43 @@ Primary internals:
   and answer prompts; state in `conversation_summaries`. The same regeneration call
   also produces a short conversation title #1114, written to `conversations.title`
   — a separate, non-expiring column — via `ConversationRepositoryPort.setTitle`)
+- `backend/src/modules/chat/services/agentReplyEnvelope.ts` (the agent reply
+  envelope core — `conversationId`, `answerCoverage`, `ownership`, `routine?`,
+  `traceId?` — built from a `ChatResponse` or the stream's `done` event; the MCP
+  converse `ask` route, the REST agent chat route, and its SSE `done` frame all
+  return it, #1290)
+- `backend/src/modules/routines/turnReport.ts` (`RoutineTurnState` and the
+  `RoutineTurnReporter` port, implemented by `routines/routineTurnReporter.ts`;
+  `chat/contracts/routineTurnState.ts` re-exports them under chat-side names, and
+  `chat/contracts/routineProvider.ts` is the `ChatRoutineProvider` port)
+- `backend/src/app/http/routes/agentChannelChatRoute.ts` (`POST /agents/:agentId/chat`)
+  and `backend/src/app/http/openapi/schemas/agentReplyEnvelopeSchemas.ts` (the
+  envelope's OpenAPI components, shared by both operations)
+- `backend/src/modules/chat/services/agentTurnInput.ts` (`resolveAgentTurnInput`: the
+  one place both agent-facing doors — MCP converse `ask` via `agentConverseService.ts`,
+  after it binds the session's conversation, and the REST agent chat route — turn a
+  body into a message or a validated routine invocation against the release the
+  conversation is pinned to, before any turn state exists;
+  `chat/contracts/routineInvocation.ts` re-exports the routines module's
+  `RoutineInvocation`, `AgentToolDescriptor`, and `AgentToolCatalogPort`.
+  The invocation rides `AssistantChatRequest` → `ChatService` → `PrepareChatSessionInput`
+  → `PreparedSession.routineInvocation` → `ChatRoutineProvider.forTurn`; the preparer
+  records the user message as `toolName {json}` with
+  `inputMetadata.method = "routine_invocation"`; the reporter's `describeInvocation()`
+  lands on `PreparedSession.routineInvocationReport` (`invocation` in the envelope),
+  a declined invocation on `PreparedSession.declinedRoutine`, and a turn a suspended
+  routine keeps on `PreparedSession.suspendedRoutine` via the provider's `reporterFor`
+  (`chatTurnAssembly.describeSuspendedRoutineTurn`), #1290)
+- `backend/src/app/composition/agentToolCatalog.ts` (wires the routines module's
+  catalog over the live agent row and the immutable release store: the pinned
+  revision when a conversation names one, otherwise the current published one)
 - `backend/prompts/`
 
 Useful searches:
 
 - `rg "AssistantChat|chatService|chatTurn" backend/src backend/tests`
+- `rg "AgentReplyEnvelope|ChatRoutineTurnState|routineTurnReporter" backend/src backend/tests packages/radioso-mcp-server/src`
+- `rg "resolveAgentTurnInput|routineInvocation|routine_invocation" backend/src backend/tests frontend`
 - `rg "clarification|pending clarification|clarification_decisions_total" backend/src backend/tests`
 - `rg "citation|suggestion|skill intake|stream" backend/src/modules/chat frontend`
 - `rg "backend/prompts|prompt" backend/src/modules/chat backend/src/modules/retrieval`
@@ -907,6 +939,8 @@ Focused checks:
 
 - `cd backend && pnpm test -- tests/unit/chat-service-streaming.test.ts tests/unit/chat-history-service.test.ts tests/unit/chat-presenter.test.ts`
 - `cd backend && pnpm exec vitest run tests/unit/grounded-answer-head-reader.test.ts tests/unit/retrieval-answer-coverage-verdict.test.ts tests/unit/chat/answerCoverageHeadRecorder.test.ts tests/unit/chat/answerCoverageShadowAssessor.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/chat/agentReplyEnvelope.test.ts tests/unit/routines/routineTurnReporter.test.ts tests/contract/agent-reply-envelope.contract.test.ts tests/integration/agent-reply-envelope.integration.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/chat/agentTurnInput.test.ts tests/contract/mcp-converse.contract.test.ts tests/integration/routine-invocation.integration.test.ts` (tool catalog route and routine invocation turns on both doors)
 - `cd frontend && pnpm test -- tests/unit/chat-message-thread.test.tsx tests/unit/chat-citations.test.tsx`
 - `cd frontend && pnpm run test:e2e -- assistant-history.spec.ts assistant-retrieval-settings.spec.ts`
 
@@ -921,6 +955,7 @@ Related docs and specs:
 - `specs/050-social-turn-intent/`
 - `specs/1149-answer-coverage-signals/`
 - `specs/1260-coverage-verdict-in-answer-head/`
+- `specs/1290-agent-consumable-service-surface/`
 
 ## Directives
 
@@ -985,7 +1020,8 @@ Public surfaces and contracts:
 
 - `backend/src/modules/routines/public.ts` (definition types, compiler, validator)
 - `backend/src/modules/routines/authoringEdit.ts` (stable-id field patch and the keyed projection an external authoring surface reviews a routine through)
-- `packages/routine-definition` (shared definition schemas and types)
+- `backend/src/modules/routines/exposure/` (how a routine is offered to a calling agent as a named tool: `reservedToolNames.ts` holds the names the agent surface keeps for itself; `exposureSnapshotRules.ts` is the cross-routine publish gate — duplicate names among serving routines, and a tool name frozen for its lineage from the revision that first published it — called from `agents/agentRevision.ts` with the currently published snapshot; per-routine rules — name grammar, reserved name, gated activation — live in `validator.ts`. `agentToolDescriptor.ts` derives the `AgentToolDescriptor` — JSON Schema from declared slots — a caller lists; `agentToolCatalog.ts` is the `AgentToolCatalogPort` over a narrow `PublishedRoutineReader` composition implements; `routineInvocationValidator.ts` checks a call's input against the descriptor with field-level errors; `renderRoutineInvocation.ts` is the recorded text of a call; `directInvocationActivator.ts` admits the named routine with the input as variables, deciding reentry without a model call; `directInvocationTurn.ts` pairs it with silenced reentry/slot-correction gates and a reporter whose `describeInvocation()` reports the activator's outcome (`not_started` when the activator never ran) and can still describe a declined completed routine — `turnProvider.ts` substitutes this pairing for the ranked match on an invocation turn, and its `reporterFor` serves the same reporter for a turn the attempt is bypassed on)
+- `packages/routine-definition` (shared definition schemas and types, including `routineExposureSchema` and `routineExposureToolNamePattern`)
 - `packages/routine-document` (routine block-document projection and shared guard/condition labeling, including `branchDecisionLabel` — the one place a branch's decision is named for the Document editor and the map)
 - `packages/routine-definition` also owns the shared slot-collection rule (`collectedSlotsByStep`, `SLOT_REFERENCE_PATTERN`) so the compiler, the population analysis, and the authoring surfaces agree on which step captures a slot
 - `backend/src/app/http/routes/agentRoutes.ts` (`/api/v1/agents/:agentId/routines` CRUD and validate)
@@ -997,7 +1033,7 @@ Public surfaces and contracts:
 Primary internals:
 
 - `backend/src/modules/routines/compiler.ts`, `validator.ts`, `domain.ts`, `service.ts`
-- `backend/src/db/repositories/routineDefinitionRepository.ts`, migrations `084`–`090`
+- `backend/src/db/repositories/routineDefinitionRepository.ts`, migrations `084`–`090` and `194` (exposure columns)
 - `backend/src/app/composition/routineDefinitionSource.ts` (loads + compiles the agent's enabled routines for activation and pinned routines for resume)
 - `packages/conversation-engine/src/routineRunner.ts` (runtime: activation, resume, guards, fast-forward)
 - `backend/prompts/chat/routine-next-step.md`, `routine-step-reply.md`, `routine-ranked-activation.md`
@@ -1009,6 +1045,8 @@ Primary internals:
 Focused checks:
 
 - `cd backend && pnpm test -- tests/unit/routine-definition-domain.test.ts tests/unit/routine-definition-service.test.ts tests/integration/chat.integration.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/routines/exposureSnapshotRules.test.ts tests/unit/agent-revision-snapshot-schema.test.ts tests/integration/agent-revision-publication.integration.test.ts` (tool exposure rules and the publish gate)
+- `cd backend && pnpm exec vitest run tests/unit/routines/agentToolDescriptor.test.ts tests/unit/routines/routineInvocationValidator.test.ts tests/unit/routines/agentToolCatalog.test.ts tests/unit/routines/directInvocationActivator.test.ts tests/unit/routines/turnProviderDirectInvocation.test.ts tests/unit/eval-suite/suite-runner.test.ts` (descriptor, catalog, direct invocation, and the SC-002 parity cases)
 - `cd frontend && pnpm exec vitest run tests/unit/routine-flow.test.ts`
 - `cd frontend && pnpm exec playwright test tests/e2e/routine-canvas.spec.ts`
 - `cd packages/conversation-engine && pnpm test`
@@ -1406,6 +1444,7 @@ Primary paths:
 - `packages/radioso-mcp-server/testing/`
 - `packages/radioso-mcp-server/tests/`
 - `packages/radioso-mcp-server/src/tools/productDocsTools.ts` (`radioso_docs`, `radioso_doc_page`)
+- `packages/radioso-mcp-server/src/tools/routineTools.ts` (one tool per exposed routine descriptor; `routineToolSchema.ts` hands the descriptor's JSON Schema to the SDK) and `src/http/sessionServerManager.ts` (servers cached per session catalog key, read once at exchange in `src/auth/authService.ts`)
 - `packages/product-docs/` (the documentation corpus both surfaces read; `scripts/buildCorpus.ts` compiles `docs-portal/content` into the committed `src/generated/corpus.json` through `@radioso/docs-importer`'s MDX converter, and `pnpm --filter @radioso/product-docs run sync` refreshes it — the CI docs job and `backend`'s contract suite both fail on drift)
 - `packages/mcp-source-proof/src/index.ts`
 - `packages/mcp-source-proof/tests/`

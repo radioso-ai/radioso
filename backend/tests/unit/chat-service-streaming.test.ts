@@ -2435,6 +2435,113 @@ describe("chat service streaming", () => {
     expect(routineProvider.forTurn).toHaveBeenCalledOnce();
   });
 
+  it("never maps a tool call to a pending clarification: the named routine starts and the question stays pending", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const existingConversation = await conversationRepository.create({ workspaceId: "workspace-1" });
+    const routineStore: NonNullable<ChatServiceOptions["routineStore"]> = {
+      loadActive: vi.fn(async () => null),
+      save: vi.fn(async () => {}),
+      clear: vi.fn(async () => {}),
+    };
+    // The activator the provider hands an invocation turn admits the named routine; a pending
+    // routine-activation clarification would otherwise substitute its own forced activator.
+    const activate = vi.fn(async () => ({ kind: "activate" as const, routineId: "start_return", variables: { orderId: "A-1" } }));
+    const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+      forTurn: vi.fn(async () => ({
+        activator: { activate },
+        runner: {
+          resume: async () => ({
+            response: { answer: "Why is it coming back?" },
+            nextState: {
+              sessionId: existingConversation.id,
+              routineId: "start_return",
+              path: ["ask_reason"],
+              variables: { orderId: "A-1" },
+              status: "active" as const,
+            },
+          }),
+        },
+      })),
+    };
+    const pendingClarification = {
+      sessionId: existingConversation.id,
+      source: "routine_activation",
+      candidates: [{ id: "book_demo", label: "Book a demo", confidence: 0.8, payload: { routineId: "book_demo" } }],
+      askedEventId: "assistant-1",
+      status: "pending" as const,
+      expiresAt: new Date("2099-01-01T00:00:00.000Z"),
+    };
+    const clarification = {
+      clarifier: {
+        phraseQuestion: vi.fn(async () => "unused"),
+        mapReply: vi.fn(async () => ({ kind: "chosen" as const, id: "book_demo" })),
+      },
+      clarificationStore: {
+        loadPending: vi.fn(async () => pendingClarification),
+        save: vi.fn(async () => {}),
+        clear: vi.fn(async () => {}),
+      },
+    };
+    const service = makeChatService(
+      conversationRepository,
+      messageRepository,
+      new RetrievalTurnController(asChatActivityPipeline({
+        async interpret() {
+          throw new Error("retrieval should not run when the invoked routine claims the turn");
+        },
+        async runInterpreted() {
+          throw new Error("retrieval should not run when the invoked routine claims the turn");
+        },
+        async runWithoutRetrieval() {
+          throw new Error("direct answer should not run when the invoked routine claims the turn");
+        },
+      }) as never),
+      {
+        async answer() {
+          return "Normal answer.";
+        },
+        async *streamAnswer() {
+          yield "Normal answer.";
+        },
+      },
+      auditService,
+      fallbackReplyComposer,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      createConversationEngine(),
+      { routineStore, routineProvider },
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      clarification,
+    );
+
+    const response = await service.answer({
+      workspaceId: "workspace-1",
+      conversationId: existingConversation.id,
+      query: 'start_return {"orderId":"A-1"}',
+      routineInvocation: { toolName: "start_return", input: { orderId: "A-1" } },
+      stream: false,
+    });
+
+    expect(response.answer).toContain("Why is it coming back?");
+    expect(clarification.clarifier.mapReply).not.toHaveBeenCalled();
+    expect(clarification.clarificationStore.clear).not.toHaveBeenCalled();
+    expect(activate).toHaveBeenCalledOnce();
+  });
+
   // A routine that emits an action and reaches a terminal step (clears its state).
   const emittingRoutine = (order: string[]) => {
     const routineStore: NonNullable<ChatServiceOptions["routineStore"]> = {
@@ -3962,6 +4069,12 @@ describe("chat service streaming", () => {
       citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Intro" }],
       answerSegments: [{ text: "full answer", citationIndices: [0] }],
       suggestions: undefined,
+      // Every completed turn carries the coverage slot; this fixture records no head verdict.
+      answerCoverage: {
+        availability: "not_recorded",
+        originatingTurnId: expect.any(String),
+        originatingRequestId: expect.any(String),
+      },
       activitySummary: expect.objectContaining({
         parsedQuery: expect.objectContaining({
           originalQuery: "page do",

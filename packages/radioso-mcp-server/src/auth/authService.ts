@@ -5,6 +5,7 @@ import { RadiosoApiError } from "../converseApiAdapter.js";
 import { toMcpRequestAuthInfo, type McpRequestAuthInfo } from "./authInfo.js";
 import type { AccessSessionRecord, SessionStore } from "./sessionStore.js";
 import { hashToken } from "./token.js";
+import { toToolCatalogKey } from "./toolCatalogKey.js";
 
 export class AuthServiceError extends Error {
   constructor(
@@ -17,10 +18,12 @@ export class AuthServiceError extends Error {
   }
 }
 
-export interface AuthServiceDependencies {
+interface AuthServiceDependencies {
   converseApi: ConverseApiAdapter;
   now?: () => Date;
   sessionStore: SessionStore;
+  /** Operator-facing warnings about a degraded exchange; defaults to `console.warn`. */
+  warn?: (message: string) => void;
 }
 
 export interface AuthService {
@@ -36,8 +39,12 @@ const SUCCESSFUL_USE_REFRESH_MS = 5 * 60_000;
 const isAuthenticationFailure = (error: unknown): boolean =>
   error instanceof RadiosoApiError && (error.status === 401 || error.status === 403);
 
+const isMissingRoute = (error: unknown): boolean =>
+  error instanceof RadiosoApiError && error.status === 404;
+
 export const createAuthService = (dependencies: AuthServiceDependencies): AuthService => {
   const now = dependencies.now ?? defaultNow;
+  const warn = dependencies.warn ?? console.warn;
   const pendingBearerResolutions = new Map<string, Promise<AccessSessionRecord | null>>();
   const pendingUseNotifications = new Set<string>();
   const lastSuccessfulUseNotifications = new Map<string, number>();
@@ -64,6 +71,23 @@ export const createAuthService = (dependencies: AuthServiceDependencies): AuthSe
     }
   };
 
+  /**
+   * A backend without the tools route answers 404; the session then carries the static
+   * catalog (`ask_agent` and the documentation tools) rather than failing every exchange.
+   * Any other failure is the exchange's own.
+   */
+  const readToolCatalog = async (sessionToken: string, sourceDigest?: string) => {
+    try {
+      return (await dependencies.converseApi.tools(sessionToken, { sourceDigest })).tools;
+    } catch (error) {
+      if (!isMissingRoute(error)) {
+        throw error;
+      }
+      warn("The Radioso backend has no agent tool catalog route (GET /api/v1/mcp/converse/tools answered 404); serving the static tools only.");
+      return [];
+    }
+  };
+
   const resolveAgentChannelCredential = async (
     accessToken: string,
     sourceDigest?: string,
@@ -75,6 +99,10 @@ export const createAuthService = (dependencies: AuthServiceDependencies): AuthSe
         client: { name: "radioso-mcp-server" },
       }, { sourceDigest });
       await dependencies.converseApi.validate(exchange.sessionToken, { sourceDigest });
+      // The catalog is read once here and pinned to the session: every MCP instance that
+      // later serves this session renders the same tools, and a routine exposed after this
+      // point appears when the client opens its next session.
+      const tools = await readToolCatalog(exchange.sessionToken, sourceDigest);
 
       return dependencies.sessionStore.save({
         accessToken,
@@ -84,6 +112,7 @@ export const createAuthService = (dependencies: AuthServiceDependencies): AuthSe
         issuedAt,
         conversationId: exchange.conversationId,
         sessionId: `converse_${randomUUID()}`,
+        toolCatalog: { key: toToolCatalogKey(tools), tools },
       });
     } catch (error) {
       if (isAuthenticationFailure(error)) {

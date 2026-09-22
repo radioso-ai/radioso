@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import {
   collectContextVariableRefs,
+  ROUTINE_DEFINITION_LIMITS,
   routineDefinitionDraftEditingInputSchema,
+  routineDefinitionDraftUpdateInputSchema,
+  routineDefinitionSchema,
+  routineExposureSchema,
+  routineExposureToolNamePattern,
   routineIdentifierPattern,
   routineDefinitionDraftInputSchema,
   routineGuardProvenance,
@@ -278,3 +283,78 @@ describe("collectContextVariableRefs", () => {
     expect(collectContextVariableRefs("Ask for {{slot.name}}.")).toEqual([]);
   });
 });
+
+describe("routine exposure", () => {
+  const draft = {
+    name: "Start a return",
+    activation: { triggerDescription: "A customer wants to return an order", gateRef: null, priority: 0 },
+    slots: [],
+    steps: [{ stableStepId: "ask", kind: "chat", instruction: "Ask for the order number.", toolRef: null, actionType: null, captureKey: null, ordinal: 0, metadata: {} }],
+    transitions: [],
+    terminals: [validTerminal],
+  };
+
+  it("names the tool-name grammar every exposure host validates against", () => {
+    for (const accepted of ["start_return", "a1", "request_callback", `a${"b".repeat(62)}`]) {
+      expect(routineExposureToolNamePattern.test(accepted), accepted).toBe(true);
+    }
+    for (const rejected of ["", "a", "Start_return", "1start", "start-return", "start return", "_start", `a${"b".repeat(63)}`]) {
+      expect(routineExposureToolNamePattern.test(rejected), rejected).toBe(false);
+    }
+  });
+
+  it("is optional on every routine schema: an absent block reads back absent", () => {
+    expect(routineDefinitionDraftInputSchema.parse(draft).exposure).toBeUndefined();
+    expect(routineDefinitionDraftEditingInputSchema.parse(draft).exposure).toBeUndefined();
+    expect(routineDefinitionDraftUpdateInputSchema.parse(draft).exposure).toBeUndefined();
+    expect(routineDefinitionSchema.parse({
+      ...draft, id: "r1", agentId: "a1", lineageId: "l1", version: 1, createdAt: new Date(), updatedAt: new Date(),
+    }).exposure).toBeUndefined();
+  });
+
+  it("carries the block through the draft, editing, and definition schemas", () => {
+    const exposure = { enabled: true, toolName: "start_return", description: "Start a return for an order." };
+    expect(routineDefinitionDraftInputSchema.parse({ ...draft, exposure }).exposure).toEqual(exposure);
+    expect(routineDefinitionDraftEditingInputSchema.parse({ ...draft, exposure }).exposure).toEqual(exposure);
+    expect(routineDefinitionSchema.parse({
+      ...draft, exposure, id: "r1", agentId: "a1", lineageId: "l1", version: 1, createdAt: new Date(), updatedAt: new Date(),
+    }).exposure).toEqual(exposure);
+  });
+
+  it("holds a half-typed name in every schema so the validator can diagnose it rather than the request failing", () => {
+    // A draft may carry an invalid tool name the same way it may carry an unreachable step: the
+    // routine validator reports it as a diagnostic and publish refuses it. The schema only
+    // bounds the shape.
+    const exposure = { enabled: true, toolName: "Start return", description: "" };
+    expect(routineExposureSchema.parse(exposure)).toEqual(exposure);
+    expect(routineDefinitionDraftInputSchema.parse({ ...draft, exposure }).exposure).toEqual(exposure);
+  });
+
+  it("trims and bounds the tool name and description", () => {
+    expect(routineExposureSchema.parse({ enabled: false, toolName: "  start_return ", description: "  Start a return.  " }))
+      .toEqual({ enabled: false, toolName: "start_return", description: "Start a return." });
+    expect(routineExposureSchema.safeParse({ enabled: true, toolName: "a".repeat(ROUTINE_DEFINITION_LIMITS.exposureToolName + 1), description: "" }).success).toBe(false);
+    expect(routineExposureSchema.safeParse({ enabled: true, toolName: "start_return", description: "d".repeat(ROUTINE_DEFINITION_LIMITS.exposureDescription + 1) }).success).toBe(false);
+    expect(routineExposureSchema.safeParse({ enabled: true, toolName: "start_return" }).success).toBe(false);
+    expect(routineExposureSchema.safeParse({ toolName: "start_return", description: "" }).success).toBe(false);
+    expect(routineExposureSchema.safeParse({ enabled: true, toolName: "start_return", description: "", extra: 1 }).success).toBe(false);
+  });
+
+  it("keeps the update schema free of exposure defaults so an omitted block carries the stored one forward", () => {
+    const parsed = routineDefinitionDraftUpdateInputSchema.parse({ ...draft, name: "Renamed" });
+    expect("exposure" in parsed && parsed.exposure !== undefined).toBe(false);
+  });
+
+  it("exports the exposure validation codes routine hosts report", () => {
+    for (const code of [
+      "exposure_tool_name_invalid",
+      "exposure_tool_name_reserved",
+      "exposure_tool_name_duplicate",
+      "exposure_tool_name_changed",
+      "exposure_requires_ungated_activation",
+    ]) {
+      expect(routineValidationCodes).toContain(code);
+    }
+  });
+});
+

@@ -1,7 +1,7 @@
 ---
 title: "Radioso TypeScript SDK: Basic Usage"
 description: "SDK tutorial covering documents, settings, skills, agents, authoring, chat, streaming, history, and error handling patterns."
-last_updated: 2026-09-10
+last_updated: 2026-09-22
 ---
 
 # Radioso TypeScript SDK: Basic Usage
@@ -385,6 +385,23 @@ const response = await client.chat.create({
 
 console.log(response.answer);
 ```
+
+The agent channel route answers with the same `answer` string and `citations` array plus the **agent reply envelope**: `answerCoverage` (the turn's coverage verdict, `availability: "not_recorded"` when none ran), `ownership` (`{ state, suppressed }`, where `human_owned` with `suppressed: true` means a person has the conversation and nothing was generated), `routine` when the turn touched one (`toolName` when the routine is exposed as a tool, `name`, `status`, and the `pendingInput` slots it still needs), `invocation` when the body was a routine tool call (`toolName` and an `outcome` of `started`, `reentered`, `declined`, `not_started`, or `unknown_tool`), and `traceId`. The generated `AgentChannelChatTurnResponse` and `AgentReplyEnvelopeCore` types describe it; a streamed turn carries the same fields in its `done` frame. [MCP Client Setup](./mcp-client-setup.md#converse-calls) walks through each field with an example.
+
+The same route accepts a tool call in place of a message. Send `routine` with the `toolName` of an exposed routine and its slot values, and the routine starts with those values filled in; the response is the same envelope. The generated `AgentChannelChatRequest` type carries the `routine` field, and `AgentToolDescriptor` describes a tool's `inputSchema`.
+
+```ts
+const response = await fetch(`${baseUrl}/api/v1/agents/${agentId}/chat`, {
+  method: "POST",
+  headers: { Authorization: `Bearer ${restCredential}`, "Content-Type": "application/json" },
+  body: JSON.stringify({
+    routine: { toolName: "start_return", input: { orderId: "A-1001", reason: "Arrived damaged" } },
+    stream: false,
+  }),
+});
+```
+
+Input is validated against the tool's schema before the turn is recorded: an unknown tool returns `404` with `error.details.code` `routine_tool_unknown`, and mismatched input returns `400` with `routine_invocation_invalid` and per-field `error.details.errors`. [Routines as tools](./mcp-client-setup.md#routines-as-tools) lists the catalog shape and the error codes.
 
 ## Streaming Chat
 

@@ -2,6 +2,7 @@ import type { ChatStreamEvent } from "../contracts/streamEvents.js";
 import type { ChatBootstrapResponse, ChatResponse } from "./chatResponses.js";
 import type { ConversationChannelContext, ConversationRequestContext } from "@radioso/conversation-contract";
 import type { PageReadCapability } from "../services/pageRead/pageReadDecision.js";
+import type { RoutineInvocation } from "../contracts/routineInvocation.js";
 
 export type AssistantRouteType = "direct" | "retrieval";
 export type AssistantRouteReason =
@@ -77,6 +78,12 @@ export interface AssistantChatRequest {
    * author can test-run an unpublished routine; never present on public-chat requests.
    */
   previewRoutineIds?: string[];
+  /**
+   * A calling agent's tool call, already resolved and validated against the
+   * release's catalog (`resolveAgentTurnInput`). When present, `message` is
+   * derived from it and the turn admits the named routine directly.
+   */
+  routineInvocation?: RoutineInvocation;
 }
 
 export type AssistantChatResponse = ChatResponse | ChatBootstrapResponse;

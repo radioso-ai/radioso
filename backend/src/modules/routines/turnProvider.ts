@@ -33,7 +33,12 @@ import type { ConversationDurability, SkillEffectPolicy } from "../../shared/dom
 import { createRoutineSkillResolverChain } from "./routineSkillResolverChain.js";
 import type { RoutineTriggerEmbeddingService } from "./routineTriggerEmbeddingService.js";
 import { createRoutineActivationPrefilter } from "./routineActivationPrefilter.js";
+import { createRoutineTurnReporter } from "./routineTurnReporter.js";
 import { loadPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
+import { setTraceAttributes } from "../../shared/observability/tracing/operations.js";
+import type { RoutineTurnReporter } from "./turnReport.js";
+import { createDirectInvocationTurnPorts } from "./exposure/directInvocationTurn.js";
+import type { RoutineInvocation } from "./exposure/routineInvocationValidator.js";
 
 interface RoutineRegistrationSource {
   load(input: { agentId: string; workspaceId?: string; agentRevisionId?: string }): Promise<RoutineRegistration[]>;
@@ -73,7 +78,22 @@ interface RoutineTurnProviderDependencies {
   turnPlanAdapters: RoutineTurnPlanAdapters;
 }
 
+interface RoutineTurnScope {
+  agentId: string;
+  agentRevisionId?: string;
+  workspaceId?: string;
+  pinnedRoutineIds?: string[];
+  previewRoutineIds?: string[];
+}
+
 interface RoutineTurnProvider {
+  /**
+   * The reporter `forTurn` would return, over the same routines, for a turn the
+   * routine attempt is bypassed on (a routine suspended awaiting a decision keeps
+   * the turn without running). Nothing is activated or resumed; null when the
+   * agent has no routine at all.
+   */
+  reporterFor(input: RoutineTurnScope & { routineInvocation?: RoutineInvocation }): Promise<RoutineTurnReporter | null>;
   forTurn(input: {
     modelGateway: ConversationModelGateway;
     agentId: string;
@@ -82,6 +102,12 @@ interface RoutineTurnProvider {
     accountId?: string;
     pinnedRoutineIds?: string[];
     previewRoutineIds?: string[];
+    /**
+     * A tool call naming one exposed routine. When present the turn admits that
+     * routine directly (no prefilter, ranked match, coverage activation, reentry
+     * gate, or slot correction) with the input as its initial variables.
+     */
+    routineInvocation?: RoutineInvocation;
     responseLanguage?: string | Promise<string | undefined>;
     groundedAnswerRenderer?: RoutineGroundedAnswerRenderer;
     throwIfCancelled?: () => void;
@@ -96,6 +122,8 @@ interface RoutineTurnProvider {
     runner: ConversationRoutineRunner;
     slotCorrection?: ConversationRoutineSlotCorrection;
     reentryGate?: ConversationRoutineReentryGate;
+    /** Describes this turn's routine state for the reply envelope over the same routines. */
+    reporter?: RoutineTurnReporter;
   } | null>;
 }
 
@@ -117,9 +145,109 @@ const coverageCriteriaMatches = (criteria: AnswerCoverageCriteria, turn: TurnCon
     && (criteria.reasons === undefined || criteria.reasons.includes(reason as NonNullable<AnswerCoverageCriteria["reasons"]>[number]));
 };
 
+/**
+ * The routines one turn can see: the release's published definitions (gated by
+ * workspace capability), with pinned and preview definitions replacing the same
+ * routine id for every runtime path. Precedence is resolved here, once, so a
+ * turn's activator, runner, and reporter all read one list.
+ */
+const loadEffectiveRegistrations = async (
+  dependencies: Pick<RoutineTurnProviderDependencies, "capabilityPolicy" | "logger" | "publishedRoutineSource" | "routineRegistrations">,
+  { agentId, agentRevisionId, workspaceId, pinnedRoutineIds = [], previewRoutineIds = [] }: RoutineTurnScope,
+): Promise<RoutineRegistration[]> => {
+  let publishedRegistrations: RoutineRegistration[];
+  try {
+    publishedRegistrations = await dependencies.publishedRoutineSource.load({ agentId, workspaceId, agentRevisionId });
+  } catch (error) {
+    if (agentRevisionId) throw error;
+    dependencies.logger.warn(
+      { agentId, err: error instanceof Error ? error.message : String(error) },
+      "Published routine definitions failed to load; continuing without DB-backed routines",
+    );
+    publishedRegistrations = [];
+  }
+
+  // Operator-only workbench test override: make specific draft (or any-status)
+  // definitions eligible this turn so an author can test-run an unpublished routine.
+  let previewRegistrations: RoutineRegistration[] = [];
+  if (previewRoutineIds.length > 0) {
+    try {
+      previewRegistrations = await dependencies.publishedRoutineSource.loadPreview({
+        agentId,
+        routineIds: previewRoutineIds,
+      });
+    } catch (error) {
+      dependencies.logger.warn(
+        { agentId, routineIds: previewRoutineIds, err: error instanceof Error ? error.message : String(error) },
+        "Preview routine definitions failed to load; continuing without workbench draft routines",
+      );
+    }
+  }
+
+  let pinnedRegistrations: RoutineRegistration[];
+  try {
+    pinnedRegistrations = await dependencies.publishedRoutineSource.loadPinned({
+      agentId,
+      workspaceId,
+      agentRevisionId,
+      routineIds: pinnedRoutineIds,
+    });
+  } catch (error) {
+    if (agentRevisionId) throw error;
+    dependencies.logger.warn(
+      { agentId, routineIds: pinnedRoutineIds, err: error instanceof Error ? error.message : String(error) },
+      "Pinned routine definitions failed to load; continuing without resume-only DB-backed routines",
+    );
+    pinnedRegistrations = [];
+  }
+
+  const registrations = [
+    ...dependencies.routineRegistrations,
+    ...publishedRegistrations,
+    ...previewRegistrations,
+  ];
+  const gatedRegistrations: RoutineRegistration[] = [];
+  for (const registration of registrations) {
+    const gateRef = registration.trigger.gateRef;
+    if (!gateRef || !registeredCapabilityNames.has(gateRef)) {
+      gatedRegistrations.push(registration);
+      continue;
+    }
+    const decision = await dependencies.capabilityPolicy.can({ capability: gateRef, workspaceId });
+    if (decision.allowed) {
+      gatedRegistrations.push(registration);
+    }
+  }
+
+  // Pinned and preview definitions replace the same routine ID for every
+  // runtime path. Partition only after this precedence is resolved, otherwise
+  // a coverage rule from an older version can leak into pre-evidence reentry.
+  const effectiveRegistrationsById = new Map(
+    gatedRegistrations.map((registration) => [registration.routine.id, registration] as const),
+  );
+  for (const registration of pinnedRegistrations) {
+    effectiveRegistrationsById.set(registration.routine.id, registration);
+  }
+  for (const registration of previewRegistrations) {
+    effectiveRegistrationsById.set(registration.routine.id, registration);
+  }
+  return [...effectiveRegistrationsById.values()];
+};
+
 export const createRoutineTurnProvider = (
   dependencies: RoutineTurnProviderDependencies,
 ): RoutineTurnProvider => ({
+  async reporterFor({ routineInvocation, ...scope }) {
+    const effectiveRegistrations = await loadEffectiveRegistrations(dependencies, scope);
+    if (effectiveRegistrations.length === 0) {
+      return null;
+    }
+    const routines = effectiveRegistrations.map((registration) => registration.routine);
+    // The activator never runs on a bypassed turn, so a tool call it carried started nothing.
+    return createRoutineTurnReporter(routines, routineInvocation
+      ? { invocation: { toolName: routineInvocation.toolName, outcome: () => null } }
+      : {});
+  },
   async forTurn({
     modelGateway,
     agentId,
@@ -128,6 +256,7 @@ export const createRoutineTurnProvider = (
     accountId,
     pinnedRoutineIds = [],
     previewRoutineIds = [],
+    routineInvocation,
     responseLanguage,
     groundedAnswerRenderer,
     throwIfCancelled,
@@ -135,69 +264,13 @@ export const createRoutineTurnProvider = (
     skillEffects,
     conversationDurability,
   }) {
-    let publishedRegistrations: RoutineRegistration[];
-    try {
-      publishedRegistrations = await dependencies.publishedRoutineSource.load({ agentId, workspaceId, agentRevisionId });
-    } catch (error) {
-      if (agentRevisionId) throw error;
-      dependencies.logger.warn(
-        { agentId, err: error instanceof Error ? error.message : String(error) },
-        "Published routine definitions failed to load; continuing without DB-backed routines",
-      );
-      publishedRegistrations = [];
-    }
-
-    // Operator-only workbench test override: make specific draft (or any-status)
-    // definitions eligible this turn so an author can test-run an unpublished routine.
-    let previewRegistrations: RoutineRegistration[] = [];
-    if (previewRoutineIds.length > 0) {
-      try {
-        previewRegistrations = await dependencies.publishedRoutineSource.loadPreview({
-          agentId,
-          routineIds: previewRoutineIds,
-        });
-      } catch (error) {
-        dependencies.logger.warn(
-          { agentId, routineIds: previewRoutineIds, err: error instanceof Error ? error.message : String(error) },
-          "Preview routine definitions failed to load; continuing without workbench draft routines",
-        );
-      }
-    }
-
-    let pinnedRegistrations: RoutineRegistration[];
-    try {
-      pinnedRegistrations = await dependencies.publishedRoutineSource.loadPinned({
-        agentId,
-        workspaceId,
-        agentRevisionId,
-        routineIds: pinnedRoutineIds,
-      });
-    } catch (error) {
-      if (agentRevisionId) throw error;
-      dependencies.logger.warn(
-        { agentId, routineIds: pinnedRoutineIds, err: error instanceof Error ? error.message : String(error) },
-        "Pinned routine definitions failed to load; continuing without resume-only DB-backed routines",
-      );
-      pinnedRegistrations = [];
-    }
-
-    const registrations = [
-      ...dependencies.routineRegistrations,
-      ...publishedRegistrations,
-      ...previewRegistrations,
-    ];
-    const gatedRegistrations: RoutineRegistration[] = [];
-    for (const registration of registrations) {
-      const gateRef = registration.trigger.gateRef;
-      if (!gateRef || !registeredCapabilityNames.has(gateRef)) {
-        gatedRegistrations.push(registration);
-        continue;
-      }
-      const decision = await dependencies.capabilityPolicy.can({ capability: gateRef, workspaceId });
-      if (decision.allowed) {
-        gatedRegistrations.push(registration);
-      }
-    }
+    const effectiveRegistrations = await loadEffectiveRegistrations(dependencies, {
+      agentId,
+      agentRevisionId,
+      workspaceId,
+      pinnedRoutineIds,
+      previewRoutineIds,
+    });
 
     const activationPrefilter = workspaceId
       ? createRoutineActivationPrefilter({
@@ -238,19 +311,6 @@ export const createRoutineTurnProvider = (
       policy: routineActivationPolicy,
       promptTemplate: loadPromptTemplate("chat/routine-coverage-ranked-activation.md"),
     };
-    // Pinned and preview definitions replace the same routine ID for every
-    // runtime path. Partition only after this precedence is resolved, otherwise
-    // a coverage rule from an older version can leak into pre-evidence reentry.
-    const effectiveRegistrationsById = new Map(
-      gatedRegistrations.map((registration) => [registration.routine.id, registration] as const),
-    );
-    for (const registration of pinnedRegistrations) {
-      effectiveRegistrationsById.set(registration.routine.id, registration);
-    }
-    for (const registration of previewRegistrations) {
-      effectiveRegistrationsById.set(registration.routine.id, registration);
-    }
-    const effectiveRegistrations = [...effectiveRegistrationsById.values()];
     // A coverage-gated routine is deliberately absent from the historical
     // pre-retrieval registry. Its activation decision is made only after the
     // engine attaches the assessed signal to a turn with admitted evidence.
@@ -341,8 +401,77 @@ export const createRoutineTurnProvider = (
       },
     };
 
+    const runner = new DefaultRoutineRunner(
+      routines,
+      new RoutineNextStepSelector(modelGateway, {
+        promptTemplate: loadPromptTemplate("chat/routine-next-step.md"),
+      }),
+      new RoutineStepRenderer(modelGateway, {
+        promptTemplate: loadPromptTemplate("chat/routine-step-reply.md"),
+        terminalHandoffWithMessagePromptTemplate: loadPromptTemplate("chat/routine-step-terminal-handoff-with-message.md"),
+        terminalHandoffDefaultPromptTemplate: loadPromptTemplate("chat/routine-step-terminal-handoff-default.md"),
+        responseLanguage,
+        groundedAnswerRenderer,
+      }),
+      new RoutineSkillExecutorDispatcher(
+        createRoutineSkillResolverChain({
+          webhookSkillNames,
+          emailSkillNames,
+          slackSkillNames,
+          retrieveSkills,
+          notifySkills,
+        }),
+        dependencies.skillExecutorRegistry,
+        {
+          workspaceId,
+          ...(accountId ? { accountId } : {}),
+          capabilityGate: (capability) => dependencies.capabilityPolicy.can({ capability, workspaceId }),
+          metricsRegistry: dependencies.metricsRegistry ?? null,
+          throwIfCancelled,
+          skillEffects,
+          conversationDurability,
+        },
+      ),
+      // `{{context.<name>}}` in a step instruction reads staged visitor context through
+      // the context-variables module, which owns what each variable may show.
+      { contextRenderer: routineContextRenderer },
+    );
+
+    if (routineInvocation) {
+      const direct = createDirectInvocationTurnPorts({
+        registrations: effectiveRegistrations,
+        routines,
+        invocation: routineInvocation,
+        // Outcomes are counted where the reply reports them (the chat turn
+        // lifecycle), so a call another routine kept from starting counts too.
+        onOutcome: (outcome) => {
+          if (outcome.kind === "unknown_tool") {
+            dependencies.logger.warn(
+              { agentId, agentRevisionId, toolName: routineInvocation.toolName },
+              "Routine invocation named a tool no routine of this turn's release carries; answering normally",
+            );
+          }
+        },
+      });
+      // Attributes on the turn spine (the active span), never a new span; counts only.
+      setTraceAttributes({
+        "routine.invocation.tool_name": routineInvocation.toolName,
+        "routine.invocation.slot_count": direct.routine?.slots?.length ?? 0,
+        "routine.invocation.prefilled_count": Object.keys(routineInvocation.input).length,
+      });
+      return {
+        routines,
+        reporter: direct.reporter,
+        activator: direct.activator,
+        slotCorrection: direct.slotCorrection,
+        reentryGate: direct.reentryGate,
+        runner,
+      };
+    }
+
     return {
       routines,
+      reporter: createRoutineTurnReporter(routines),
       activator: routineRegistry.isEmpty
         ? { activate: async () => null }
         : dependencies.turnPlanAdapters.activator({
@@ -391,41 +520,7 @@ export const createRoutineTurnProvider = (
         }),
       }),
       reentryGate: preEvidenceReentryGate,
-      runner: new DefaultRoutineRunner(
-        routines,
-        new RoutineNextStepSelector(modelGateway, {
-          promptTemplate: loadPromptTemplate("chat/routine-next-step.md"),
-        }),
-        new RoutineStepRenderer(modelGateway, {
-          promptTemplate: loadPromptTemplate("chat/routine-step-reply.md"),
-          terminalHandoffWithMessagePromptTemplate: loadPromptTemplate("chat/routine-step-terminal-handoff-with-message.md"),
-          terminalHandoffDefaultPromptTemplate: loadPromptTemplate("chat/routine-step-terminal-handoff-default.md"),
-          responseLanguage,
-          groundedAnswerRenderer,
-        }),
-        new RoutineSkillExecutorDispatcher(
-          createRoutineSkillResolverChain({
-            webhookSkillNames,
-            emailSkillNames,
-            slackSkillNames,
-            retrieveSkills,
-            notifySkills,
-          }),
-          dependencies.skillExecutorRegistry,
-          {
-            workspaceId,
-            ...(accountId ? { accountId } : {}),
-            capabilityGate: (capability) => dependencies.capabilityPolicy.can({ capability, workspaceId }),
-            metricsRegistry: dependencies.metricsRegistry ?? null,
-            throwIfCancelled,
-            skillEffects,
-            conversationDurability,
-          },
-        ),
-        // `{{context.<name>}}` in a step instruction reads staged visitor context through
-        // the context-variables module, which owns what each variable may show.
-        { contextRenderer: routineContextRenderer },
-      ),
+      runner,
     };
   },
 });

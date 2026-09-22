@@ -5,7 +5,7 @@ import {
   exactContentItemSchema,
   validateExactContentItem,
 } from "../../shared/domain/exactContent.js";
-import { routineDefinitionSchema, validateRoutineDefinition, type RoutineDefinition, type RoutineValidationResult } from "../routines/public.js";
+import { routineDefinitionSchema, validateExposureAcrossSnapshot, validateRoutineDefinition, type RoutineDefinition, type RoutineValidationResult } from "../routines/public.js";
 import { authoredDirectiveInputSchema } from "./authoredDirectives.js";
 import { describeCandidateReleaseDiff, type CandidateReleaseChange } from "./candidateReleaseReview.js";
 
@@ -127,10 +127,15 @@ export const equalScopedAuthoringSnapshots = (
  * of pre-existing unit tests that call this without the option keep compiling; both real
  * callers (`AgentRevisionRepository#createCandidate`/`#publish`) always pass the agent's
  * live `assistantDefaultLocale`, because FR-005 requires re-checking against the *current*
- * default locale, not one frozen at authoring time. */
+ * default locale, not one frozen at authoring time.
+ *
+ * `publishedSnapshot` is the agent's currently published revision, when it has one: the
+ * routines module's cross-snapshot exposure rules freeze a routine's tool name from the
+ * revision that first published it, so the candidate is checked against what calling agents
+ * already see. Both real callers pass it; a unit test of the other rules may leave it out. */
 export const assertCandidateSnapshotIsRunnable = (
   snapshot: AgentRevisionSnapshot,
-  options: { agentDefaultLocale?: string } = {},
+  options: { agentDefaultLocale?: string; publishedSnapshot?: AgentRevisionSnapshot | null } = {},
 ): void => {
   // A disabled routine cannot activate, so it cannot break a conversation: parking a
   // half-finished flow must not block the agent's release. Directive scope closure below
@@ -140,6 +145,7 @@ export const assertCandidateSnapshotIsRunnable = (
       ? validateRoutineDefinition(routine).diagnostics.map((diagnostic) => ({ routineId: routine.id, ...diagnostic }))
       : []
   );
+  diagnostics.push(...validateExposureAcrossSnapshot(snapshot.routines, options.publishedSnapshot?.routines ?? []));
   const routines = new Map(snapshot.routines.map((routine) => [routine.id, routine]));
   for (const directive of snapshot.directives) {
     for (const tag of directive.tags) {

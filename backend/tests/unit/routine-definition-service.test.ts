@@ -687,6 +687,43 @@ describe("RoutineDefinitionService", () => {
     }));
   });
 
+  it("persists tool exposure through create and a full-body edit, and carries it forward when the edit omits it", async () => {
+    const { auditService, service } = createService();
+    const exposure = { enabled: true, toolName: "start_return", description: "Start a return for an order." };
+    const created = await service.createDraft(workspaceId, agentId, { ...validDraft(), exposure });
+    expect(created.routine.exposure).toEqual(exposure);
+    expect(created.validation.ok).toBe(true);
+
+    const disabled = { ...exposure, enabled: false };
+    const updated = await service.updateDraft(workspaceId, agentId, created.routine.id, { ...validDraft(), exposure: disabled });
+    expect(updated.routine.exposure).toEqual(disabled);
+
+    // A plain update payload that never mentions exposure leaves the stored block alone, the
+    // same omission-preserving merge `enabled` and `completionExport` get.
+    const renamed = await service.updateDraft(workspaceId, agentId, created.routine.id, { ...validDraft(), name: "support-intake-v2" });
+    expect(renamed.routine.exposure).toEqual(disabled);
+
+    // The audit trail names the tool but never carries the operator-authored description.
+    expect(auditService.record).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: "routine_definition.create",
+      metadata: expect.objectContaining({ exposureEnabled: true, exposureToolName: "start_return" }),
+    }));
+    const calls = (auditService.record as ReturnType<typeof vi.fn>).mock.calls as Array<[{ metadata: Record<string, unknown> }]>;
+    expect(calls.every(([event]) => !("exposureDescription" in event.metadata))).toBe(true);
+    expect(calls.at(-1)?.[0].metadata).toMatchObject({ exposureEnabled: false, exposureToolName: "start_return" });
+  });
+
+  it("reports an invalid tool name as a diagnostic on a saved draft rather than refusing the save", async () => {
+    const { service } = createService();
+    const created = await service.createDraft(workspaceId, agentId, {
+      ...validDraft(),
+      exposure: { enabled: true, toolName: "Start return", description: "" },
+    });
+    expect(created.validation.diagnostics).toEqual([expect.objectContaining({ code: "exposure_tool_name_invalid", location: "exposure.toolName" })]);
+    const validation = await service.validate(workspaceId, agentId, { id: created.routine.id });
+    expect(validation.diagnostics.map((diagnostic) => diagnostic.code)).toEqual(["exposure_tool_name_invalid"]);
+  });
+
   it("reports a save as successful even when audit recording fails, logging it instead", async () => {
     // The routine's own content already committed by the time the audit write runs — a
     // transient audit-sink failure must not turn an already-saved edit into a reported error

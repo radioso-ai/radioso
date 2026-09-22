@@ -1,12 +1,12 @@
 ---
 title: "MCP Client Setup"
 description: "Connect an MCP client either to one Radioso agent or to Ray's governed operator tools."
-last_updated: 2026-09-04
+last_updated: 2026-09-22
 ---
 
 # MCP Client Setup
 
-Radioso exposes an MCP surface for clients that need to talk to one configured agent. It publishes one tool, `ask_agent`, which runs the same persona, directives, routines, and retrieval behavior as the agent's other chat channels.
+Radioso exposes an MCP surface for clients that need to talk to one configured agent. Its `ask_agent` tool runs the same persona, directives, routines, and retrieval behavior as the agent's other chat channels, and every routine the operator has exposed on the agent is listed beside it as a typed tool of its own.
 
 For Ray's workspace-level read, probe, and proposal tools, use the separate [Operator MCP OAuth flow](./operator-mcp.md) under **Settings → API access**. Its `/operator/mcp` resource uses browser consent and never accepts an agent-channel credential.
 
@@ -98,6 +98,133 @@ Authorization: Bearer <session token>
 { "message": "What is your refund window?" }
 ```
 
+The reply is an **agent reply envelope**: the answer text plus the facts a calling agent needs to decide what to do next. Whether the answer is grounded, whether a person has taken the conversation over, and what a running routine still needs are all fields, so a client does not have to guess from prose.
+
+```json
+{
+  "conversationId": "5f3c…",
+  "answer": {
+    "text": "You can return an order within 30 days of delivery.",
+    "citations": [
+      { "documentId": "a1…", "chunkId": "b2…", "title": "Refund policy", "sourceUrl": "https://example.com/refunds" }
+    ]
+  },
+  "answerCoverage": {
+    "availability": "assessed",
+    "coverage": "answered",
+    "reason": "sufficient_evidence",
+    "originatingTurnId": "c3…",
+    "originatingRequestId": "c3…"
+  },
+  "ownership": { "state": "ai_owned", "suppressed": false },
+  "traceId": "d4…"
+}
+```
+
+Read it field by field:
+
+- `answerCoverage` is the same coverage verdict the dashboard trace shows for the turn. `coverage` is `answered`, `partial`, `unanswered`, or `unclear`, and `reason` says why; `intentional_scope_boundary` with `unanswered` means the agent declined on purpose. When no assessment ran for the turn (a direct reply, a routine step), `availability` is `not_recorded` and the verdict fields are absent.
+- `ownership` tells you who owns the conversation after this turn. `{ "state": "human_owned", "suppressed": true }` means a person has taken over and the agent generated nothing; keep the `conversationId` and come back for the reply.
+- `routine` appears when the turn touched a routine: the one it ran, or the one that kept the turn while it waits for an operator's approval. `status` is one of `active`, `waiting_for_input`, `waiting_for_approval`, `completed`, or `abandoned`, and `pendingInput` lists every required slot the routine still needs plus the current step's optional ones, each with its `key`, `type` (`text`, `number`, `boolean`, `email`, `date`), `required` flag, and `description` — so you can supply all of them in one follow-up message.
+- `invocation` appears only when you called a routine tool (next section) and says what became of the call: `toolName` and an `outcome` of `started`, `reentered`, `declined`, `not_started`, or `unknown_tool`.
+- `traceId` is the turn's trace id, the one an operator sees in Activity; quote it when you report a problem.
+
+The standalone MCP server forwards this envelope unchanged as the `ask_agent` tool's `structuredContent`; the tool's text content is `answer.text` followed by a blank line and the same envelope as pretty-printed JSON, so a client that only reads text still sees every field. The REST agent channel (`POST /api/v1/agents/{agentId}/chat`) returns the same `answerCoverage`, `ownership`, `routine`, `invocation`, and `traceId` fields beside its own `answer` string and `citations` array, and its SSE `done` frame carries them too.
+
+### Routines as tools
+
+An operator can expose a routine as a named tool (see [Authoring Routines](./authoring-routines.md#expose-a-routine-as-a-tool)). Read the catalog to see what the agent can do beyond answering:
+
+```http
+GET /api/v1/mcp/converse/tools
+Authorization: Bearer <session token>
+```
+
+```json
+{
+  "agent": { "name": "Acme Support", "description": null },
+  "tools": [
+    {
+      "toolName": "start_return",
+      "description": "Start a return for an order the customer already has.",
+      "routineLineageId": "7c1e…",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "orderId": { "type": "string", "description": "The order number on the confirmation email." },
+          "reason": { "type": "string", "description": "Why the order is coming back." }
+        },
+        "required": ["orderId"],
+        "additionalProperties": false
+      }
+    }
+  ]
+}
+```
+
+Each descriptor's `inputSchema` is JSON Schema built from the routine's declared slots: `text` becomes `string`, `number` and `boolean` keep their types, `email` is `string` with `format: "email"`, `date` is `string` with `format: "date"` (an ISO calendar day such as `2026-09-01`), and `required` follows the slot. A routine with no slots is a tool with an empty object schema.
+
+Call a tool by sending `routine` instead of `message` on the same ask route. The routine starts at once with those slots filled, skips the steps that would have asked for them, and then behaves exactly as it would for a person: confirmation steps, approvals, and handoff all apply.
+
+```http
+POST /api/v1/mcp/converse/ask
+Authorization: Bearer <session token>
+
+{ "routine": { "toolName": "start_return", "input": { "orderId": "A-1001" } } }
+```
+
+The reply is the same envelope, and `routine` tells you where the call landed:
+
+```json
+{
+  "conversationId": "5f3c…",
+  "answer": { "text": "Got it — order A-1001. Why is it coming back?", "citations": [] },
+  "answerCoverage": { "availability": "not_recorded", "originatingTurnId": "c3…", "originatingRequestId": "c3…" },
+  "ownership": { "state": "ai_owned", "suppressed": false },
+  "routine": {
+    "toolName": "start_return",
+    "name": "Start a return",
+    "status": "waiting_for_input",
+    "pendingInput": [
+      { "key": "reason", "type": "text", "required": false, "description": "Why the order is coming back." }
+    ]
+  },
+  "invocation": { "toolName": "start_return", "outcome": "started" }
+}
+```
+
+Supply the pending slots in a follow-up `message`; the routine reads them the way it reads any reply. A call with every slot the routine collects runs straight through to its skill steps and reports `status: "completed"`, or `waiting_for_approval` when a step needs a person's decision.
+
+Input is checked against the descriptor before anything is recorded, so a bad call leaves the conversation untouched:
+
+- An unknown tool name returns `404` with `error.details.code` `routine_tool_unknown`.
+- Input that does not match the schema returns `400` with `error.details.code` `routine_invocation_invalid` and `error.details.errors`, one entry per field: `{ "path": "orderId", "code": "required" }`, with `code` one of `required`, `type`, `format`, `unknown_field`, or `too_long` (a string value over 2000 characters). String values are trimmed first, and a blank string counts as missing: it fails a required slot and is dropped from an optional one. Fix every listed field in one retry; values are never echoed back.
+- A body with both `message` and `routine`, or neither, returns `400`.
+
+`invocation.outcome` tells you what the accepted call did, so you never have to infer it from the answer text:
+
+- `started` — the routine began with your input.
+- `reentered` — the routine had already completed in this conversation and started again with the new input, because its reentry setting allows it (**Every time it matches**, or the semantic setting — an explicit call already answers the question that setting asks of a message).
+- `declined` — the routine had already completed and **Once per conversation** keeps it closed. The turn answers normally, and `routine` still carries `{ "toolName", "name", "status": "completed", "pendingInput": [] }` so you learn why nothing started.
+- `not_started` — a different routine was mid-flight or waiting for an operator's approval, so the existing interruption and approval rules kept the turn: an active routine reads your call like any other message, a suspended one holds it. `routine` describes that routine, so you can see what it still needs.
+- `unknown_tool` — the release this conversation runs on carries no routine under that name. The pre-check below normally refuses such a call with `404` before the turn; this outcome covers a release that changed between the check and the turn.
+
+The tool name is checked against the release the conversation is pinned to, on both the MCP ask route and the REST agent channel, before any message is recorded. The conversation behind a session stays on the release it started on, while `GET /api/v1/mcp/converse/tools` returns the agent's current published catalog on every call (the session token only says which agent), so a routine exposed or renamed after the conversation began can appear in `tools` yet return `routine_tool_unknown` when called; rotating the credential starts a fresh conversation on the current release. Draft routines are never listed — the operator's Test Chat is the place to try one.
+
+### Routine tools over standalone MCP
+
+An MCP client sees the same catalog without calling the REST route itself. The standalone server reads `GET /api/v1/mcp/converse/tools` once, at the moment it exchanges the credential for a session, and pins the result to that session, so `tools/list` is stable for the session's lifetime. It is then:
+
+- `ask_agent`
+- `radioso_docs` and `radioso_doc_page`, Radioso's own documentation
+- one tool per descriptor, named by its `toolName`, carrying the operator's description and the descriptor's `inputSchema` verbatim
+
+So the `start_return` example above appears to the client as a tool `start_return(orderId, reason?)`. Calling it is the routine invocation from the previous section: the server checks the arguments against the schema before the backend sees them (a call missing `orderId` fails at the MCP layer as a tool error, and the server's audit log records the refusal with the tool name only), then sends `{ "routine": { "toolName": "start_return", "input": { … } } }` on the ask route. The result's `structuredContent` is the full agent reply envelope, and its text content is `answer.text` followed by the same envelope as JSON — the same shape `ask_agent` returns, so a client reads `routine.status`, `pendingInput`, and `invocation.outcome` the same way whichever tool it called.
+
+A routine exposed, renamed, or withdrawn after the session opened is picked up when the client's next session is established (after the current one expires, or after the credential is exchanged again); the server sends no `notifications/tools/list_changed`. The backend checks every call against the release the session's conversation is pinned to, so when the pinned catalog and that release disagree the client sees a tool error whose `details.code` is `routine_tool_unknown` and nothing is recorded.
+
+Operators who expose a routine under a name the server reserves for a static tool cannot publish it — the backend refuses reserved names. If a deployment ever presents one anyway, the server keeps the static tool, leaves that routine out of the session's list, and logs a warning.
+
 If another ask arrives for the same conversation before the first reply starts,
 the first request returns HTTP `409` with error code `chat_turn_superseded`. The
 newer ask waits for cleanup and answers from the latest conversation history. If
@@ -153,7 +280,7 @@ MCP credentials are secret bearers bound to one agent. Public chat and website e
 
 ## Endpoint Model
 
-The standalone `/mcp` endpoint serves the agent-converse surface. `ask_agent` runs the bound agent's turn loop. The original MCP credential fixes the agent and its authorization boundary; standalone performs the credential-to-session exchange.
+The standalone `/mcp` endpoint serves the agent-converse surface. `ask_agent` runs the bound agent's turn loop, and each exposed routine is a tool that starts that routine directly. The original MCP credential fixes the agent and its authorization boundary; standalone performs the credential-to-session exchange and reads the agent's tool catalog at that moment.
 
 Workspace retrieval and document operations remain REST surfaces. Personal and service-account REST credentials do not become MCP tool credentials.
 
@@ -242,4 +369,4 @@ const response = await client.responses.create({
 
 `authorization` is the Responses API MCP tool's bearer credential field. Read the value from your secret manager (the example uses `RADIOSO_MCP_ACCESS_TOKEN`); do not commit the credential to source.
 
-`require_approval: "never"` skips the host-side prompt. The MCP surface contains `ask_agent`; it does not expose Ray or a skill catalogue.
+`require_approval: "never"` skips the host-side prompt. The MCP surface contains `ask_agent`, the documentation tools, and the agent's exposed routines; it does not expose Ray or a skill catalogue.

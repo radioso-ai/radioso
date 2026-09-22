@@ -4,7 +4,13 @@ import {
   REFUND_POLICY_DOC_ID,
   SECURITY_DOC_ID,
 } from "./corpus.js";
-import { BOOK_DEMO_ROUTINE_ID, CONTACT_SUPPORT_ROUTINE_ID } from "./routines.js";
+import {
+  BOOK_DEMO_ROUTINE_ID,
+  CONTACT_SUPPORT_ROUTINE_ID,
+  CREATE_RETURN_TICKET_SKILL,
+  START_RETURN_ROUTINE_ID,
+  START_RETURN_TOOL_NAME,
+} from "./routines.js";
 
 const contentPageReadCapabilities: ConversationQualityCase["clientContextCapabilities"] = {
   "page.read": {
@@ -184,6 +190,53 @@ export const conversationQualityCases: ConversationQualityCase[] = [
     assertions: [
       { type: "turn_activates_routine", routineId: BOOK_DEMO_ROUTINE_ID },
       { type: "routine_step_reached", routineId: BOOK_DEMO_ROUTINE_ID, stepId: "ask_name" },
+    ],
+  },
+  // SC-002: the same routine driven by a human transcript and by one tool call reaches
+  // the same step and the same skill effect; a slot-missing call stops short of the skill.
+  {
+    id: "routine-return-transcript",
+    name: "Return routine driven by transcript reaches the ticket step and opens the ticket",
+    tags: ["routine", "multiturn", "invocation-parity"],
+    history: [
+      { role: "user", content: "I want to send back an order." },
+      { role: "assistant", content: "Sure — what is the order number?" },
+      { role: "user", content: "A-1001" },
+      { role: "assistant", content: "Thanks. Why is it coming back?" },
+    ],
+    routineStartState: {
+      routineId: START_RETURN_ROUTINE_ID,
+      path: ["ask_order", "ask_reason"],
+      variables: { orderId: "A-1001" },
+      status: "active",
+    },
+    query: "It arrived damaged.",
+    assertions: [
+      { type: "turn_activates_routine", routineId: START_RETURN_ROUTINE_ID },
+      { type: "routine_step_reached", routineId: START_RETURN_ROUTINE_ID, stepId: "create_return" },
+      { type: "turn_uses_skill", skillName: CREATE_RETURN_TICKET_SKILL },
+    ],
+  },
+  {
+    id: "routine-return-invocation",
+    name: "Return routine invoked as a tool with every slot reaches the ticket step and opens the ticket",
+    tags: ["routine", "invocation-parity"],
+    routineInvocation: { toolName: START_RETURN_TOOL_NAME, input: { orderId: "A-1001", reason: "It arrived damaged." } },
+    assertions: [
+      { type: "turn_activates_routine", routineId: START_RETURN_ROUTINE_ID },
+      { type: "routine_step_reached", routineId: START_RETURN_ROUTINE_ID, stepId: "create_return" },
+      { type: "turn_uses_skill", skillName: CREATE_RETURN_TICKET_SKILL },
+    ],
+  },
+  {
+    id: "routine-return-invocation-partial",
+    name: "Return routine invoked with only the order id asks for the reason and opens no ticket",
+    tags: ["routine", "invocation-parity"],
+    routineInvocation: { toolName: START_RETURN_TOOL_NAME, input: { orderId: "A-1001" } },
+    assertions: [
+      { type: "turn_activates_routine", routineId: START_RETURN_ROUTINE_ID },
+      { type: "routine_step_reached", routineId: START_RETURN_ROUTINE_ID, stepId: "ask_reason" },
+      { type: "turn_skips_skill", skillName: CREATE_RETURN_TICKET_SKILL },
     ],
   },
   {

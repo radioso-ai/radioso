@@ -3,7 +3,6 @@ import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 import type { OpenApiSchemas, OpenApiSecurity } from "../openApiRegistry.js";
 import {
   mcpConverseAskRequestSchema,
-  mcpConverseAskResponseSchema,
   mcpConverseSessionRequestSchema,
   mcpConverseSessionResponseSchema,
   mcpConverseSessionValidateRequestSchema,
@@ -72,10 +71,30 @@ export const registerMcpConversePaths = (
   });
 
   registry.registerPath({
+    method: "get",
+    path: "/api/v1/mcp/converse/tools",
+    tags: ["MCP Converse"],
+    summary: "List the bound agent's exposed routines as tools",
+    description: "Returns the agent's name and one descriptor per exposed routine in its current published release, on every call. The standalone MCP server reads this once at session exchange and pins the result, so an MCP client's `tools/list` is stable for a session; a direct caller sees the current catalog each time.",
+    operationId: "getMcpConverseTools",
+    security: [{ [security.mcpConverseSessionBearerAuthScheme.name]: [] }],
+    responses: {
+      200: {
+        description: "The bound agent's tool catalog",
+        content: json(schemas.McpConverseToolsResponseSchema),
+      },
+      401: errorResponse("Invalid converse session"),
+      403: errorResponse("Converse session is no longer authorized"),
+      429: errorResponse("MCP converse rate limit exceeded"),
+    },
+  });
+
+  registry.registerPath({
     method: "post",
     path: "/api/v1/mcp/converse/ask",
     tags: ["MCP Converse"],
-    summary: "Run one MCP ask_agent turn through the bound agent",
+    summary: "Run one turn through the bound agent: a message, or a tool call to an exposed routine",
+    description: "Send exactly one of `message` or `routine`. A `routine` call is validated against the tool's `inputSchema` from the catalog before any turn state is written: an unknown tool returns 404 with `details.code` `routine_tool_unknown`; invalid input returns 400 whose `details` is `RoutineInvocationInvalidDetails` (`code` `routine_invocation_invalid`, field-level `errors`).",
     operationId: "askMcpConverseAgent",
     security: [{ [security.mcpConverseSessionBearerAuthScheme.name]: [] }],
     request: {
@@ -86,9 +105,11 @@ export const registerMcpConversePaths = (
     },
     responses: {
       200: {
-        description: "Agent answer",
-        content: json(mcpConverseAskResponseSchema),
+        description: "Agent reply envelope with the answer text and citations",
+        content: json(schemas.McpConverseAskResponseSchema),
       },
+      400: errorResponse("Routine invocation input did not match the tool's schema (`details` is `RoutineInvocationInvalidDetails`), or the body failed validation"),
+      404: errorResponse("Routine tool is not in the agent's catalog"),
       409: errorResponse("Turn superseded by a newer message in the same conversation"),
       401: errorResponse("Invalid converse session"),
       403: errorResponse("Converse session is no longer authorized"),

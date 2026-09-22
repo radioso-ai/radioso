@@ -8,18 +8,13 @@ import {
   type AgentRevisionRouteDependencies,
 } from "./agentRevisionRoutes.js";
 import { presentRevisionState } from "./agentRevisionPresenters.js";
+import { registerAgentChannelChatRoute } from "./agentChannelChatRoute.js";
 import { requireWorkspaceSession, WORKSPACE_HEADER } from "../middleware/requireWorkspaceSession.js";
 import { requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { requireSurfaceExtension } from "../shared/requireSurfaceExtension.js";
 import { validateBody } from "../middleware/validate.js";
 import { requireApiAccessCsrf } from "../middleware/requireApiAccessCsrf.js";
-import { requireRestAgentChannelCredential, type AgentChannelCredentialLocals } from "../middleware/requireAgentChannelCredential.js";
-import { agentChannelChatRateLimiters, createAgentChannelSourceRateLimiter } from "../middleware/agentChannelRateLimiter.js";
-import { onSuccessfulHttpResponse } from "../middleware/httpResponseCompletion.js";
-import { recordEdgeFactsProofRejected, resolveConversationRequestContext } from "../shared/conversationRequestContext.js";
-import { sendChatJson, sendChatSse } from "../presenters/chatPresenter.js";
 import {
-  agentChannelChatSchema,
   agentChannelCredentialIssueSchema,
   agentChannelCredentialListQuerySchema,
   agentChannelCredentialParamsSchema,
@@ -108,7 +103,7 @@ export const agentBodySchema = z.object({
   surfaceSettings: agentInputFieldSchemas.surfaceSettings.omit({ extensions: true }).optional(),
 });
 
-type AgentRouteDependencies = AgentRevisionRouteDependencies & Pick<AppDependencies, "accessGrantService" | "agentRepository" | "agentService" | "assistantChatService" | "authoredDirectiveService" | "directiveAuthorService" | "skillAuthoringCatalog" | "routineDefinitionService" | "routineDraftAssistService" | "agentSurfaceExtensions" | "documentStorage" | "logger" | "metricsRegistry" | "visitorGeoResolver" | "abuseControlService" | "auditService">;
+type AgentRouteDependencies = AgentRevisionRouteDependencies & Pick<AppDependencies, "accessGrantService" | "agentRepository" | "agentService" | "agentToolCatalog" | "assistantChatService" | "conversationRepository" | "authoredDirectiveService" | "directiveAuthorService" | "skillAuthoringCatalog" | "routineDefinitionService" | "routineDraftAssistService" | "agentSurfaceExtensions" | "documentStorage" | "logger" | "metricsRegistry" | "visitorGeoResolver" | "abuseControlService" | "auditService">;
 
 const channelForAudience = (audience: "mcp" | "rest") =>
   audience === "mcp" ? "mcp-converse" as const : "agent-api" as const;
@@ -248,8 +243,6 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
   const agentRead = requireWorkspacePermission(dependencies, "workspace.agents.read");
   const agentManage = requireWorkspacePermission(dependencies, "workspace.agents.manage");
   const runUploadSingle = createAssistantLogoUploadHandler();
-  const rateLimitRestAgentChat = agentChannelChatRateLimiters(dependencies, "rest");
-  const rateLimitRestAgentSource = createAgentChannelSourceRateLimiter(dependencies);
   router.use(createAgentRevisionRoutes(dependencies));
 
   router.get("/", workspaceSession, agentRead, async (_req, res, next) => {
@@ -275,53 +268,7 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
     }
   });
 
-  router.post(
-    "/:agentId/chat",
-    rateLimitRestAgentSource,
-    validateBody(agentChannelChatSchema),
-    requireRestAgentChannelCredential(dependencies),
-    ...rateLimitRestAgentChat,
-    async (req, res, next) => {
-      try {
-        const { agentChannelGrant } = res.locals as typeof res.locals & AgentChannelCredentialLocals;
-        const { context: requestContext, rejection } = resolveConversationRequestContext(dependencies, req);
-        if (rejection) {
-          recordEdgeFactsProofRejected(dependencies, rejection, req);
-        }
-        const chatInput = {
-          workspaceId: agentChannelGrant.workspaceId,
-          agentId: agentChannelGrant.agentId,
-          accountId: undefined,
-          conversationId: req.body.conversationId,
-          message: req.body.message,
-          startConversation: req.body.startConversation,
-          stream: req.body.stream,
-          userExpectedLocale: req.body.userExpectedLocale,
-          sourceChannel: "agent_api",
-          sourceOrigin: null,
-          requestContext,
-        };
-        if (req.body.stream) {
-          onSuccessfulHttpResponse(res, () => dependencies.accessGrantService.recordAgentChannelChatSucceeded({
-            grant: agentChannelGrant,
-          }));
-          await sendChatSse(res, dependencies.assistantChatService.streamAnswer(chatInput));
-          return;
-        }
-        const response = await dependencies.assistantChatService.answer(chatInput);
-        onSuccessfulHttpResponse(res, () => dependencies.accessGrantService.recordAgentChannelChatSucceeded({
-          grant: agentChannelGrant,
-        }));
-        if (!response) {
-          res.status(204).end();
-          return;
-        }
-        sendChatJson(res, response);
-      } catch (error) {
-        next(error);
-      }
-    },
-  );
+  registerAgentChannelChatRoute(router, dependencies);
 
   router.get("/:agentId", workspaceSession, agentRead, async (req, res, next) => {
     try {

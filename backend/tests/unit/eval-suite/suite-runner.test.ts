@@ -20,7 +20,20 @@ import type {
 } from "../../../src/modules/chat/services/turnPlanCoordinator.js";
 import type { RetrievalPipelineRequest, RetrievalPipelineResult } from "../../../src/modules/retrieval/public.js";
 import { runConversationQualitySuite, type ConversationQualityCase } from "../../../src/modules/eval/suite/index.js";
-import { conversationQualityAgentConfig, CQ_AGENT_ID, CQ_WORKSPACE_ID } from "../../fixtures/conversation-quality/index.js";
+import { DefaultRoutineRunner } from "@radioso/conversation-engine";
+import { RoutineNextStepSelector, RoutineStepRenderer } from "@radioso/conversation-defaults";
+import type { ConversationRoutineSkillDispatcher, RoutineSkillResult } from "@radioso/conversation-contract";
+import type { ChatRoutineProvider } from "../../../src/modules/chat/contracts/routineProvider.js";
+import { compileRoutineDefinition, createDirectInvocationTurnPorts, createRoutineTurnReporter } from "../../../src/modules/routines/public.js";
+import { loadPromptTemplate } from "../../../src/shared/infra/prompts/promptLoader.js";
+import {
+  conversationQualityAgentConfig,
+  conversationQualityCases,
+  conversationQualityRoutines,
+  CQ_AGENT_ID,
+  CQ_WORKSPACE_ID,
+  CREATE_RETURN_TICKET_SKILL,
+} from "../../fixtures/conversation-quality/index.js";
 import { REFUND_POLICY_DOC_ID } from "../../fixtures/conversation-quality/corpus.js";
 import { buildReplayInput, createWorkbenchReplayRunnerPort } from "../../../scripts/evalRunnerAdapter.js";
 import { createAuditService } from "../../support/fakes.js";
@@ -125,6 +138,22 @@ const stubTurnRouter = (): TurnRouter => ({
 });
 
 describe("buildReplayInput", () => {
+  it("renders a routine invocation as the turn text and passes the invocation through", () => {
+    const input = buildReplayInput({
+      id: "invoke",
+      name: "invoke",
+      routineInvocation: { toolName: "start_return", input: { orderId: "A-1001", reason: "Damaged" } },
+      assertions: [],
+    }, {
+      workspaceId: CQ_WORKSPACE_ID,
+      agentId: CQ_AGENT_ID,
+      baselineAgentConfig: conversationQualityAgentConfig,
+    });
+
+    expect(input.query).toBe('start_return {"orderId":"A-1001","reason":"Damaged"}');
+    expect(input.routineInvocation).toEqual({ toolName: "start_return", input: { orderId: "A-1001", reason: "Damaged" } });
+  });
+
   it("maps history and passes through turn context and the routine start state", () => {
     const evalCase: ConversationQualityCase = {
       id: "c",
@@ -159,6 +188,93 @@ describe("buildReplayInput", () => {
     expect(input.pageContext).toEqual(evalCase.pageContext);
     expect(input.clientContextCapabilities).toEqual(evalCase.clientContextCapabilities);
     expect(input.routineStartState).toEqual({ routineId: "r", path: ["s1"], variables: { email: "a@b.c" }, status: "active" });
+  });
+});
+
+/**
+ * The fixture routines over the real runner, with a deterministic model: the next-step
+ * selector always finds its first condition satisfied (capturing the slot the step asked
+ * for), every step reply is a fixed line, and the skill dispatcher records what ran.
+ */
+const routineStack = () => {
+  const dispatched: string[] = [];
+  const routines = conversationQualityRoutines.map((definition) => compileRoutineDefinition(definition));
+  const registrations = routines.map((routine) => ({
+    routine,
+    trigger: { description: String(routine.activation?.triggerDescription ?? routine.id), priority: routine.activation?.priority ?? 0 },
+  }));
+  const dispatcher: ConversationRoutineSkillDispatcher = {
+    async dispatch({ skillName }): Promise<RoutineSkillResult> {
+      dispatched.push(skillName);
+      return { status: "completed", outputs: { ticketId: "RT-1" } };
+    },
+  };
+  const chatGateway: ChatGateway = {
+    async answer(input) {
+      const asksForCondition = input.systemPrompt?.includes("1. The user provided");
+      if (asksForCondition) {
+        const slot = input.systemPrompt?.match(/1\. The user provided \{\{slot\.(\w+)\}\}/u)?.[1];
+        return JSON.stringify({ condition: 1, variables: slot ? { [slot]: input.query } : {} });
+      }
+      return "Noted.";
+    },
+    async *streamAnswer() {
+      throw new Error("routine turns render through the non-streaming path");
+    },
+  };
+  const routineProvider: ChatRoutineProvider = {
+    async forTurn({ modelGateway, routineInvocation, responseLanguage }) {
+      const runner = new DefaultRoutineRunner(
+        routines,
+        new RoutineNextStepSelector(modelGateway, { promptTemplate: loadPromptTemplate("chat/routine-next-step.md") }),
+        new RoutineStepRenderer(modelGateway, { promptTemplate: loadPromptTemplate("chat/routine-step-reply.md"), responseLanguage }),
+        dispatcher,
+      );
+      if (routineInvocation) {
+        const direct = createDirectInvocationTurnPorts({ registrations, routines, invocation: routineInvocation });
+        return { routines, runner, activator: direct.activator, reentryGate: direct.reentryGate, slotCorrection: direct.slotCorrection, reporter: direct.reporter };
+      }
+      return { routines, runner, activator: { activate: async () => null }, reporter: createRoutineTurnReporter(routines) };
+    },
+  };
+  return { dispatched, chatGateway, routineProvider };
+};
+
+describe("conversation-quality suite drives a routine by transcript and by tool call alike (SC-002)", () => {
+  const parityCases = conversationQualityCases.filter((evalCase) => evalCase.tags?.includes("invocation-parity"));
+
+  it("ships the three parity cases", () => {
+    expect(parityCases.map((evalCase) => evalCase.id)).toEqual([
+      "routine-return-transcript",
+      "routine-return-invocation",
+      "routine-return-invocation-partial",
+    ]);
+  });
+
+  it.each(parityCases.map((evalCase) => [evalCase.id, evalCase] as const))("passes %s through the fake stack", async (_id, evalCase) => {
+    const stack = routineStack();
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn(),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: new DefaultConversationEngine(),
+      turnRouter: stubTurnRouter(),
+      routineProvider: stack.routineProvider,
+      chatGateway: stack.chatGateway,
+      chatAnswerPresenter: new ChatAnswerPresenter(new AssistantSuggestionExpansionService(), undefined, { supportsGroundedAnswer: () => true }),
+    });
+    const port = createWorkbenchReplayRunnerPort(runner, {
+      workspaceId: CQ_WORKSPACE_ID,
+      agentId: CQ_AGENT_ID,
+      baselineAgentConfig: conversationQualityAgentConfig,
+    });
+
+    const { reports } = await runConversationQualitySuite([evalCase], port, { workspaceId: CQ_WORKSPACE_ID });
+
+    if (reports[0]?.status !== "pass") {
+      throw new Error(`expected pass, got ${reports[0]?.status}: ${JSON.stringify(reports[0]?.verdicts, null, 2)}`);
+    }
+    expect(stack.dispatched).toEqual(evalCase.id === "routine-return-invocation-partial" ? [] : [CREATE_RETURN_TICKET_SKILL]);
   });
 });
 

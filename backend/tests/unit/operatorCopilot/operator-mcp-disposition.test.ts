@@ -46,6 +46,7 @@ describe("operator MCP descriptor disposition", () => {
       "propose_ingestion_settings",
       "propose_routine",
       "propose_routine_edit",
+      "propose_routine_exposure",
       "propose_skill_config",
       "quality_signals",
       "retrieval_probe",

@@ -2,6 +2,7 @@ import * as React from 'react'
 import { Slot } from '@radix-ui/react-slot'
 import { cva, type VariantProps } from 'class-variance-authority'
 
+import { Spinner } from './spinner'
 import { cn } from './utils'
 
 const buttonVariants = cva(
@@ -41,12 +42,25 @@ function Button({
   variant,
   size,
   asChild = false,
+  loading,
+  icon,
+  disabled,
+  children,
   ...props
 }: React.ComponentProps<'button'> &
   VariantProps<typeof buttonVariants> & {
     asChild?: boolean
+    /**
+     * Pending state owned by the button: shows a spinner in the leading slot,
+     * disables the button, and sets `aria-busy`. Not supported with `asChild`.
+     */
+    loading?: boolean
+    /** Leading icon; the spinner takes its place while `loading`. */
+    icon?: React.ReactNode
   }) {
   const Comp = asChild ? Slot : 'button'
+  const ownsPendingState = typeof loading === 'boolean' && !asChild
+  const ownsLeadingSlot = (ownsPendingState || icon !== undefined) && !asChild
 
   return (
     <Comp
@@ -54,8 +68,22 @@ function Button({
       data-variant={variant ?? 'default'}
       data-size={size ?? 'default'}
       className={cn(buttonVariants({ variant, size, className }))}
+      disabled={ownsPendingState ? disabled || loading : disabled}
+      aria-busy={ownsPendingState && loading ? true : undefined}
       {...props}
-    />
+    >
+      {ownsLeadingSlot ? (
+        <>
+          {ownsPendingState && loading ? <Spinner /> : icon}
+          {/* The label must be an element, not a bare text node: page translation,
+              extensions, and password managers swap text nodes out from under
+              React, and inserting the spinner before a detached node throws. */}
+          <span>{children}</span>
+        </>
+      ) : (
+        children
+      )}
+    </Comp>
   )
 }
 

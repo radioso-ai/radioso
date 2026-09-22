@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { Loader2, Plus, Trash2, ArrowUp, ArrowDown } from 'lucide-react'
+import { Plus, Trash2, ArrowUp, ArrowDown } from 'lucide-react'
 
 import { AssistantLocaleCombobox } from '@/components/dashboard/settings/assistant-locale-combobox'
 import { getAssistantLocaleLabel, resolveAssistantLocaleInput } from '@/components/dashboard/settings/assistant-locale-options'
@@ -350,8 +350,7 @@ export function ExactGreetingEditor({
         </div>
       )}
       <div className="flex items-center gap-3">
-        <Button type="button" size="sm" onClick={() => void handleSave()} disabled={saveState === 'saving'}>
-          {saveState === 'saving' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+        <Button type="button" size="sm" onClick={() => void handleSave()} loading={saveState === 'saving'}>
           Save greeting
         </Button>
         {saveState === 'saved' ? <span className="text-xs text-muted-foreground">Saved to draft</span> : null}

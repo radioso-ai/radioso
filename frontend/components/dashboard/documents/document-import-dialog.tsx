@@ -9,7 +9,6 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Spinner } from '@/components/ui/spinner'
 
 export type DocumentDialogEnrichmentChoice = 'inherit' | 'on' | 'off'
 
@@ -116,8 +115,7 @@ export function DocumentImportDialog({
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isImporting}>
               Cancel
             </Button>
-            <Button type="submit" disabled={isImporting || !hasFile || !isMetadataValid}>
-              {isImporting ? <Spinner className="mr-2" /> : null}
+            <Button type="submit" disabled={!hasFile || !isMetadataValid} loading={isImporting}>
               Import Document
             </Button>
           </div>

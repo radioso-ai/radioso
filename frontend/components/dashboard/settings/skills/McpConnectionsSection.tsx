@@ -195,9 +195,8 @@ export function McpConnectionsSection({ agentId }: { agentId: string }) {
                       variant="outline"
                       size="sm"
                       onClick={() => void authorizeConnection(connection.id)}
-                      disabled={busyAction === `authorize:${connection.id}`}
+                      loading={busyAction === `authorize:${connection.id}`} icon={<KeyRound />}
                     >
-                      {busyAction === `authorize:${connection.id}` ? <Spinner className="h-4 w-4" /> : <KeyRound className="h-4 w-4" />}
                       {connection.status === 'needs_reauth' ? 'Re-authorize' : 'Authorize'}
                     </Button>
                   ) : null}
@@ -281,8 +280,7 @@ export function McpConnectionsSection({ agentId }: { agentId: string }) {
               </div>
             ) : null}
 
-            <Button type="button" onClick={() => void createConnection()} disabled={busyAction === 'create' || !canSaveConnection}>
-              {busyAction === 'create' ? <Spinner className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
+            <Button type="button" onClick={() => void createConnection()} disabled={!canSaveConnection} loading={busyAction === 'create'} icon={<CheckCircle2 />}>
               Save connection
             </Button>
           </div>

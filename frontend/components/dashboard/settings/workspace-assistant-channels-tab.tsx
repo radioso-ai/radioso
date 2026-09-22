@@ -43,7 +43,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { LogoSpinner, Spinner } from '@/components/ui/spinner'
+import { LogoSpinner } from '@/components/ui/spinner'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { storeAccountOrganizationName } from '@/lib/auth-context'
 import {
@@ -1164,9 +1164,9 @@ export function WorkspaceAssistantChannelsTab({
                     <Button
                       variant="destructive"
                       onClick={handleDelete}
-                      disabled={!deleteConfirmValid || isDeleting || !canManageWorkspaceLifecycle}
+                      disabled={!deleteConfirmValid || !canManageWorkspaceLifecycle}
+                      loading={isDeleting} icon={<Trash2 />}
                     >
-                      {isDeleting ? <Spinner className="mr-2" /> : <Trash2 className="w-4 h-4 mr-2" />}
                       Delete workspace
                     </Button>
                   </DialogFooter>
@@ -1238,9 +1238,9 @@ export function WorkspaceAssistantChannelsTab({
                     <Button
                       variant="destructive"
                       onClick={handleDeleteOrganization}
-                      disabled={!deleteOrgConfirmValid || isDeletingOrg || !canDeleteOrganization}
+                      disabled={!deleteOrgConfirmValid || !canDeleteOrganization}
+                      loading={isDeletingOrg} icon={<Trash2 />}
                     >
-                      {isDeletingOrg ? <Spinner className="mr-2" /> : <Trash2 className="w-4 h-4 mr-2" />}
                       Delete organization
                     </Button>
                   </DialogFooter>
@@ -1335,9 +1335,9 @@ export function WorkspaceAssistantChannelsTab({
                       <Button
                         variant="destructive"
                         onClick={handleDeleteAgent}
-                        disabled={!deleteAgentConfirmValid || isDeletingAgent || !canDeleteAgent || isLastAgent}
+                        disabled={!deleteAgentConfirmValid || !canDeleteAgent || isLastAgent}
+                        loading={isDeletingAgent} icon={<Trash2 />}
                       >
-                        {isDeletingAgent ? <Spinner className="mr-2" /> : <Trash2 className="w-4 h-4 mr-2" />}
                         Delete agent
                       </Button>
                     </DialogFooter>

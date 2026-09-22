@@ -997,9 +997,9 @@ function EmbeddingModelRow({
               size="sm"
               variant="ghost"
               onClick={handleCancelPendingModel}
-              disabled={canceling || busy}
+              disabled={busy}
+              loading={canceling}
             >
-              {canceling ? <Spinner className="mr-2" /> : null}
               Cancel
             </Button>
           ) : (
@@ -1045,7 +1045,7 @@ function EmbeddingModelRow({
               }}
             >
               {busy ? <Spinner className="mr-2" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-              Change model and re-index
+              <span>Change model and re-index</span>
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

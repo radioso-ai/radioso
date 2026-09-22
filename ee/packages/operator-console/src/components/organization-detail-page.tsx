@@ -21,6 +21,13 @@ type ResourceKey = keyof typeof resourceLabels;
 
 const resourceKeys: ResourceKey[] = ["monthlyAnswers", "storedDocuments", "storedIndexedBytes", "monthlyIndexedBytes"];
 
+const tierLimitKeys: Record<ResourceKey, keyof UsageLimitProfile> = {
+  monthlyAnswers: "monthlyAnswerLimit",
+  storedDocuments: "storedDocumentLimit",
+  storedIndexedBytes: "storedIndexedByteLimit",
+  monthlyIndexedBytes: "monthlyIndexedByteLimit",
+};
+
 const resourceLimitText = (key: ResourceKey, limit: number | null) =>
   key.includes("IndexedBytes") ? formatHumanBytes(limit) : limitText(limit);
 
@@ -69,16 +76,22 @@ export function OrganizationDetailPage({ accountId }: { accountId: string }) {
     if (!usage || !selectedTier) {
       return [];
     }
-    return resourceKeys.filter((key) => {
-      const limit = selectedTier[key === "monthlyAnswers"
-        ? "monthlyAnswerLimit"
-        : key === "storedDocuments"
-          ? "storedDocumentLimit"
-          : key === "storedIndexedBytes"
-            ? "storedIndexedByteLimit"
-            : "monthlyIndexedByteLimit"];
-      return limit !== null && usage[key].used > limit;
-    });
+    const labels: string[] = resourceKeys
+      .filter((key) => key !== "monthlyAnswers" || !usage.monthlyConversations)
+      .filter((key) => {
+        const limit = selectedTier[tierLimitKeys[key]];
+        return typeof limit === "number" && usage[key].used > limit;
+      })
+      .map((key) => resourceLabels[key]);
+    // A catalog tier bills conversations and leaves its answer cap dormant, so the
+    // headline breach lives on a meter the resource keys above never reach.
+    const conversationLimit = selectedTier.monthlyConversationLimit;
+    if (usage.monthlyConversations
+      && conversationLimit !== null
+      && usage.monthlyConversations.used > conversationLimit) {
+      labels.unshift("Monthly conversations");
+    }
+    return labels;
   }, [selectedTier, usage]);
 
   const changeTier = async () => {
@@ -175,7 +188,7 @@ export function OrganizationDetailPage({ accountId }: { accountId: string }) {
                 </label>
                 {overLimitResources.length > 0 ? (
                   <div className="rounded-md border border-amber-500/30 bg-amber-950/30 px-3 py-2 text-sm text-amber-100">
-                    Warn only: selected tier is below current usage for {overLimitResources.map((key) => resourceLabels[key]).join(", ")}.
+                    Warn only: selected tier is below current usage for {overLimitResources.join(", ")}.
                   </div>
                 ) : null}
                 <Button onClick={() => { void changeTier(); }} disabled={saving || targetTier === (usage.profile?.key ?? "")}>

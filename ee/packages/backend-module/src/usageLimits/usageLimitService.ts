@@ -138,7 +138,9 @@ const STORAGE_RESERVATION_TTL_MS = 10 * 60 * 1000;
 
 const toIsoDate = (date: Date): string => date.toISOString().slice(0, 10);
 
-const currentPeriodStart = (date = new Date()): string =>
+/** The UTC month the meters are scoped to. Exported so every surface that reports
+ *  a counter reads the same period the charge was written under. */
+export const currentPeriodStart = (date = new Date()): string =>
   `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-01`;
 
 const nextPeriodStart = (periodStart: string): string => {

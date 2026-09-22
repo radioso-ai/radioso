@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import pg from "pg";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { PLAN_CATALOG } from "@radioso/plan-catalog";
 
@@ -119,6 +119,12 @@ describeIfDatabase("organization directory service", () => {
     await usageLimitMigrator.migrate(database);
   });
 
+  // `count(*) OVER ()` counts every account in the schema, so accounts must not
+  // survive between tests. Profiles are left alone: the migrator seeds them once.
+  beforeEach(async () => {
+    await database.query("TRUNCATE accounts, users CASCADE");
+  });
+
   afterAll(async () => {
     await pool.end();
     const admin = new pg.Pool({ connectionString: integrationDatabaseUrl! });
@@ -225,9 +231,14 @@ describeIfDatabase("organization directory service", () => {
        VALUES ($1, $2, 'owner', 'active')`,
       [cometAccountId, ownerId],
     );
-    // No profile insert: the migrator already seeds one per @radioso/plan-catalog plan.
+    // The migrator already seeds one profile per @radioso/plan-catalog plan. Giving it a
+    // stray answer cap proves the directory masks what the backend refuses to enforce.
     await database.query(
-      `INSERT INTO ee_usage_limit_account_assignments (account_id, profile_key) VALUES ($1, ${'$'}2)`,
+      `UPDATE ee_usage_limit_profiles SET monthly_answer_limit = 100 WHERE key = $1`,
+      [cometPlan.id],
+    );
+    await database.query(
+      `INSERT INTO ee_usage_limit_account_assignments (account_id, profile_key) VALUES ($1, $2)`,
       [cometAccountId, cometPlan.id],
     );
     // 125 tenths is 12.5 conversations: ten test runs count as one.

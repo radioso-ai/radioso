@@ -2,7 +2,7 @@ import { sql } from "kysely";
 
 import { createEeKysely, type EeDb } from "../db/eeSchema.js";
 import type { UsageLimitDatabasePort } from "../radiosoModuleTypes.js";
-import { TENTHS_PER_CONVERSATION } from "../usageLimits/usageLimitService.js";
+import { TENTHS_PER_CONVERSATION, currentPeriodStart } from "../usageLimits/usageLimitService.js";
 
 export interface OrganizationDirectoryRow {
   accountId: string;
@@ -62,9 +62,6 @@ interface OrganizationDirectoryQueryRow {
 
 const defaultLimit = 25;
 const maxLimit = 100;
-
-const currentPeriodStart = (date: Date): string =>
-  `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-01`;
 
 const toNumber = (value: number | string | bigint | null | undefined): number => {
   if (value === null || value === undefined) {
@@ -168,22 +165,27 @@ export class OrganizationDirectoryService {
     `.execute(this.db);
 
     const fetchedRows = result.rows;
-    const rows = fetchedRows.slice(0, limit).map((row) => ({
-      accountId: row.account_id,
-      name: row.name,
-      ownerEmail: row.owner_email,
-      ownerCount: toNumber(row.owner_count),
-      profileKey: row.profile_key,
-      profileDisplayName: row.profile_display_name,
-      monthlyAnswers: {
-        used: toNumber(row.monthly_answer_used),
-        limit: toNullableNumber(row.monthly_answer_limit),
-      },
-      monthlyConversations: conversationMeter(
+    const rows = fetchedRows.slice(0, limit).map((row): OrganizationDirectoryRow => {
+      const monthlyConversations = conversationMeter(
         row.monthly_conversation_used_tenths,
         row.monthly_conversation_limit,
-      ),
-    }));
+      );
+      return {
+        accountId: row.account_id,
+        name: row.name,
+        ownerEmail: row.owner_email,
+        ownerCount: toNumber(row.owner_count),
+        profileKey: row.profile_key,
+        profileDisplayName: row.profile_display_name,
+        monthlyAnswers: {
+          used: toNumber(row.monthly_answer_used),
+          // A conversation-metered profile ignores monthly_answer_limit, so that cap
+          // is not enforced and must not be reported; getAccountUsage masks it too.
+          limit: monthlyConversations ? null : toNullableNumber(row.monthly_answer_limit),
+        },
+        monthlyConversations,
+      };
+    });
     const hasMore = fetchedRows.length > limit;
     const total = fetchedRows.length > 0 ? toNumber(fetchedRows[0].total_count) : 0;
 

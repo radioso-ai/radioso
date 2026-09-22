@@ -126,6 +126,8 @@ export {
   InMemoryPublicConversationEventBus,
   type PublicConversationEventBus,
 } from "./services/publicConversationEventBus.js";
+export { createConversationUpdateReader } from "./services/conversationUpdateReader.js";
+export { createConversationUpdateWaiter } from "./services/conversationUpdateWaiter.js";
 export {
   NoopAnswerFeedbackHistoryProvider,
   type AnswerFeedbackHistoryProviderPort,

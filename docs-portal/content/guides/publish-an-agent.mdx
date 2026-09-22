@@ -1,0 +1,160 @@
+---
+title: "Publish and open an agent"
+description: "Give an agent a public id, publish its agent card, MCP server card, and catalog entry, and let a visiting agent connect with no credential at all."
+last_updated: 2026-09-22
+---
+
+# Publish and open an agent
+
+A calling agent has to find yours before it can talk to it, and somebody has to decide whether it needs a credential first. This page covers both: the public id an agent is known by, the three documents that describe it to a visiting agent, and the credential-free door you can open for callers you have never met.
+
+Everything here is off until an operator turns it on, agent by agent, under **Channels → MCP**.
+
+## The agent's public id
+
+A credential names a client you approved. An agent's **public id** names the agent itself, and it is the one identifier you can hand out freely:
+
+```
+ag_7Qb3nT1xK9wZs2Pv0Lm4Rd
+```
+
+An operator mints it from **Channels → MCP** by turning on **Publish the agent card** or **Allow connecting without a credential**. The id is an address, not a secret — it belongs in a page, a card, or an email, and it authorizes nothing on its own. What it is *not* is the embed token: that one is a secret, it sits in the page HTML of every site running the widget, and it is rotated on its own schedule. Keeping them separate is what lets you publish one and protect the other.
+
+Beside the switches an operator writes a **Description** — the line a calling agent reads before deciding to ask — and, for credential-free access, a per-hour cap on new conversations.
+
+Rotating the public id revokes it: every agent connected without a credential is dropped on its next request, and anything published carrying the old id stops resolving. Clients holding a credential keep working.
+
+## Where an agent publishes itself
+
+An agent that has a public id publishes three documents, all public, all readable without a credential:
+
+```
+https://api.radioso.ai/.well-known/agent-card/ag_7Qb3nT1xK9wZs2Pv0Lm4Rd.json
+https://api.radioso.ai/.well-known/mcp/server-card/ag_7Qb3nT1xK9wZs2Pv0Lm4Rd.json
+https://api.radioso.ai/.well-known/ai-catalog/ag_7Qb3nT1xK9wZs2Pv0Lm4Rd.json
+```
+
+The first is an [A2A Agent Card](https://a2a-protocol.org): the agent's name, the operator's description, the MCP endpoint to connect to, how to authenticate, and one entry in `skills[]` per exposed routine, keyed by the tool name a caller invokes.
+
+```json
+{
+  "protocolVersion": "0.3.0",
+  "name": "Ananda support",
+  "description": "Answers questions about bookings, rooms, and retreats.",
+  "url": "https://mcp.radioso.ai/mcp/a/ag_7Qb3nT1xK9wZs2Pv0Lm4Rd",
+  "preferredTransport": "MCP",
+  "version": "7",
+  "documentationUrl": "https://docs.radioso.ai/guides/agent-converse",
+  "securitySchemes": { "bearer": { "type": "http", "scheme": "bearer" } },
+  "security": [{}, { "bearer": [] }],
+  "skills": [{ "id": "book_table", "name": "book_table", "description": "Book a table for a date and party size.", "tags": [] }]
+}
+```
+
+`security` is where a caller reads what it needs to bring. The empty requirement `{}` is there when credential-free access is on, and it means exactly that: connect with no `Authorization` header. With credential-free access off the list is `[{ "bearer": [] }]` alone, and the card is still worth publishing — "this agent exists, here is its endpoint, ask the operator for a credential" is useful to the agent reading it.
+
+The second document is the same agent in MCP's server shape, with the endpoint under `remotes`. An MCP client that already has the endpoint URL finds it one segment away, at `https://mcp.radioso.ai/mcp/a/ag_7Qb3nT1xK9wZs2Pv0Lm4Rd/server-card`, without knowing anything about Radioso's hostnames. The third is the catalog entry: the agent, its endpoint, how to authenticate, and its tools in one object, for an index that lists several agents.
+
+All three carry `Cache-Control: max-age=300` and an `ETag`, so a caller that sends `If-None-Match` gets a `304` and no body. An id that is unknown, switched off, unpublished, or deleted answers `404` with the same body in every case, so a fetch tells a stranger nothing beyond "no document here".
+
+### Point your own domain at them
+
+A visiting agent usually starts from a hostname — `acme.com` — not from a Radioso URL. Three paths on your own origin are where it looks, and your site answers them with a redirect to the documents above:
+
+| Path on your site | Redirects to |
+|---|---|
+| `/.well-known/agent-card.json` | `/.well-known/agent-card/{publicId}.json` |
+| `/.well-known/mcp/server-card.json` | `/.well-known/mcp/server-card/{publicId}.json` |
+| `/.well-known/ai-catalog.json` | `/.well-known/ai-catalog/{publicId}.json` |
+
+On WordPress the [Radioso Sync plugin](/operators/wordpress-connector) does it: paste the API URL and the public id under **Settings → Radioso Agent Card**, and the three paths start answering.
+
+On nginx:
+
+```nginx
+location = /.well-known/agent-card.json {
+    return 302 https://api.radioso.ai/.well-known/agent-card/ag_7Qb3nT1xK9wZs2Pv0Lm4Rd.json;
+}
+location = /.well-known/mcp/server-card.json {
+    return 302 https://api.radioso.ai/.well-known/mcp/server-card/ag_7Qb3nT1xK9wZs2Pv0Lm4Rd.json;
+}
+location = /.well-known/ai-catalog.json {
+    return 302 https://api.radioso.ai/.well-known/ai-catalog/ag_7Qb3nT1xK9wZs2Pv0Lm4Rd.json;
+}
+```
+
+On Cloudflare, three Bulk Redirects with the same source and target URLs and a 302 status do the same thing without touching your origin.
+
+If the website embed is installed, the launcher also adds a hint to the page during bootstrap, so an agent that reads the HTML finds the card without running the widget:
+
+```html
+<link rel="agent-card" type="application/json"
+      href="https://api.radioso.ai/.well-known/agent-card/ag_7Qb3nT1xK9wZs2Pv0Lm4Rd.json">
+```
+
+The `<link>` appears once the agent publishes a card. The `/.well-known` paths are the authoritative ones; the link is a convenience for whatever is already parsing the page.
+
+## Connect without a credential
+
+**Allow connecting without a credential**, on the same **Channels → MCP** card, opens the agent's own endpoint to a caller that brings nothing:
+
+```
+https://mcp.radioso.ai/mcp/a/ag_7Qb3nT1xK9wZs2Pv0Lm4Rd
+```
+
+That is the `url` the agent card already publishes. A client points at it, sends no `Authorization` header, and gets the same session a credential buys: `ask_agent`, the documentation tools, and one tool per exposed routine.
+
+```json
+{
+  "mcpServers": {
+    "ananda-support": {
+      "url": "https://mcp.radioso.ai/mcp/a/ag_7Qb3nT1xK9wZs2Pv0Lm4Rd"
+    }
+  }
+}
+```
+
+Each connection opens its own conversation. The server names it in the `Mcp-Session-Id` header of the first reply, and a client that sends that header back continues the same conversation; one that drops it starts a fresh conversation on every call, which is fine for a single question and wrong for a booking.
+
+The shared `/mcp` endpoint is unaffected — it takes a credential and reaches whichever agent that credential is bound to.
+
+### What the public id does and does not carry
+
+The public id is an address. Publishing it costs you nothing beyond what the agent card already says out loud: this agent exists, here is its endpoint, here is what it can do.
+
+What it authorizes is one thing: a conversation with that one agent, through the same turn loop, persona, directives, routines, and retrieval scope every other channel runs. It reaches no other agent, no workspace settings, no documents, no Ray, and no connector or provider secret. It is also not the embed token — that one is a secret in page HTML, on its own rotation schedule.
+
+Rotating the id, or switching walk-in access off, refuses the **next** request on every connection opened against it. A caller mid-conversation gets a refusal on its following message rather than finishing the flow; that is the intended shape of a revocation, and it is why the two switches are the control to reach for when a caller misbehaves. Credential-bound clients are untouched by either.
+
+### The budget
+
+Walk-in traffic is spent against two hourly budgets before anything about the agent is resolved:
+
+| Budget | Default | Where it is set |
+|---|---|---|
+| New conversations per calling source | 20 an hour | `MCP_WALK_IN_SOURCE_RATE_LIMIT_MAX_ATTEMPTS` |
+| New conversations per agent | 60 an hour | **Channels → MCP**, or `MCP_WALK_IN_AGENT_RATE_LIMIT_MAX_ATTEMPTS` |
+
+The per-agent budget is the one that matters in practice: it is what stops a single looping caller from consuming the workspace's conversation allowance. Set it to the traffic you actually expect.
+
+A caller over either budget gets `429` with `Retry-After` and the `RateLimit-*` headers from [draft-ietf-httpapi-ratelimit-headers](https://datatracker.ietf.org/doc/draft-ietf-httpapi-ratelimit-headers/) — the signal to wait and retry, not to reconnect. Turns inside an open conversation are budgeted separately, per session and per workspace, exactly as they are for a credential-bound client.
+
+A refusal reads the same whether the agent has walk-in switched off, the public id has rotated, or no agent has that id. A caller probing for agents learns nothing from the difference.
+
+Walk-in conversations count on the workspace's conversation quota like conversations from any other channel. There is no separate allowance for agent callers; the per-agent budget above is the protection against a runaway one.
+
+### Identify the visitor behind the caller
+
+A caller that already knows who its user is can say so, with the same HMAC visitor token the website embed uses. Sign it with the workspace token secret, bind `sessionId` to the `conversationId` the exchange returned, and send it beside the message:
+
+```json
+{ "message": "Where is my order?", "signedIdentity": "eyJjdXN0b21lcklkIjoi…" }
+```
+
+The turn becomes a verified turn: `verifiedCustomerId` is set on the conversation and the operator sees the visitor's identity in Activity, exactly as for the embed. An MCP session has no browser origin, so the session binding, the five-minute issuance window, and the single-use nonce are what the verification rests on; the token's `origin` field is recorded as the caller declared it and trusted for nothing. A token that does not match leaves the turn anonymous and answers normally, with no error.
+
+## Read next
+
+- [Connect a calling agent](/guides/agent-converse) — `ask_agent`, the reply envelope, routines as typed tools, and coming back after a handoff.
+- [MCP server](/guides/mcp-server) — issue an agent credential and run the standalone server.
+- [WordPress connector](/operators/wordpress-connector) — answer the `.well-known` paths from your own WordPress site.

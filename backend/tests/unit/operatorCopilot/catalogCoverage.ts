@@ -438,6 +438,9 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "askMcpConverseAgent",
     // Agent-audience read of the exposed-routine catalog, not an operator-facing surface.
     "getMcpConverseTools",
+    // Agent-audience read of its own conversation after a handoff; the operator reads
+    // the same conversation in the Inbox.
+    "getMcpConverseMessages",
     "createPublicChatResponse",
     "listPublicChatHistory",
     "getPublicChatHistoryConversation",

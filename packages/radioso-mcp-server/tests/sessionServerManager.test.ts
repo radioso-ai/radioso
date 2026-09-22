@@ -108,8 +108,8 @@ describe("session MCP server manager catalogs", () => {
 
     await initialize(manager, withReturn);
     await initialize(manager, withCallback);
-    expect(await listToolNames(manager, withReturn)).toEqual(["ask_agent", "radioso_docs", "radioso_doc_page", "start_return"]);
-    expect(await listToolNames(manager, withCallback)).toEqual(["ask_agent", "radioso_docs", "radioso_doc_page", "request_callback"]);
+    expect(await listToolNames(manager, withReturn)).toEqual(["ask_agent", "get_conversation_updates", "radioso_docs", "radioso_doc_page", "start_return"]);
+    expect(await listToolNames(manager, withCallback)).toEqual(["ask_agent", "get_conversation_updates", "radioso_docs", "radioso_doc_page", "request_callback"]);
   });
 
   it("serves the static catalog to a session record without a catalog and to one with an empty catalog", async () => {
@@ -117,8 +117,8 @@ describe("session MCP server manager catalogs", () => {
     const legacy = makeSession("legacy");
     const empty = makeSession("empty", catalogOf([]));
 
-    expect(await listToolNames(manager, legacy)).toEqual(["ask_agent", "radioso_docs", "radioso_doc_page"]);
-    expect(await listToolNames(manager, empty)).toEqual(["ask_agent", "radioso_docs", "radioso_doc_page"]);
+    expect(await listToolNames(manager, legacy)).toEqual(["ask_agent", "get_conversation_updates", "radioso_docs", "radioso_doc_page"]);
+    expect(await listToolNames(manager, empty)).toEqual(["ask_agent", "get_conversation_updates", "radioso_docs", "radioso_doc_page"]);
   });
 
   it("answers a request without a prior initialize on the same connection, since every request gets its own", async () => {

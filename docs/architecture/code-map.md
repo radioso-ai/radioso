@@ -747,7 +747,34 @@ Public surfaces and key files:
 Related docs:
 
 - [MCP Client Setup](../mcp-client-setup.md)
-- `docs-portal/content/guides/agent-converse.mdx`
+- `docs-portal/content/guides/publish-an-agent.mdx`
+
+## Conversation Updates (agent resumption)
+
+Owns how a caller that cannot sit in a chat reads a conversation forward after a
+handoff. Two narrow ports: a **reader** that adapts the existing conversation tail
+into `{ id, author, createdAt, text }` — `author` comes from the message's `source`,
+because an operator's reply is stored with `role: "assistant"` — and a **waiter**
+that resolves when there is a reason to re-query. The waiter is a race, not a
+subscription: the conversation event bus is per-process, so it is raced against a
+jittered re-poll and the deadline, which is what makes a reply handled by another
+API instance reach a parked caller. The wait holds no database connection.
+
+Public entry points:
+
+- `backend/src/modules/chat/contracts/conversationUpdates.ts` (both ports)
+- `backend/src/modules/chat/services/conversationUpdateReader.ts` (adapts `chatHistoryService.tailConversation`)
+- `backend/src/modules/chat/services/conversationUpdateWaiter.ts`
+- `backend/src/app/composition/conversationUpdates.ts` (default wiring over `publicConversationEventBus`)
+- `backend/src/app/http/routes/mcpConverseMessagesRoute.ts` (`GET /api/v1/mcp/converse/messages`)
+- `packages/radioso-mcp-server/src/tools/conversationUpdatesTools.ts` (`get_conversation_updates`)
+- `backend/tests/unit/chat/conversationUpdateReader.test.ts`, `conversationUpdateWaiter.test.ts`
+- `backend/tests/integration/converse-messages.integration.test.ts`
+
+Related docs:
+
+- [Human Takeover](../human-takeover.md)
+- [MCP Client Setup](../mcp-client-setup.md)
 
 ## Conversation Engine Contracts
 

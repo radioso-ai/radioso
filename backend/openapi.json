@@ -16404,6 +16404,77 @@
         ],
         "description": "The `error.details` of a 400 that refused a tool call before any turn state was written: every problem at once, so a caller can fix the whole call in one retry. Values are never echoed back."
       },
+      "ConverseMessage": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "author": {
+            "type": "string",
+            "enum": [
+              "agent",
+              "human"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "author",
+          "createdAt",
+          "text"
+        ],
+        "description": "One message in the conversation. `author` is provenance, not role: an operator's reply is stored as an assistant message, so `human` is the only thing that tells a person's turn from the agent's."
+      },
+      "ConverseOwnershipState": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "ai_owned",
+              "human_owned"
+            ]
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "description": "Who owns the conversation right now. `human_owned` means a person has taken it over and the agent is not answering, so keep reading rather than asking again."
+      },
+      "ConverseMessagesResponse": {
+        "type": "object",
+        "properties": {
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConverseMessage"
+            }
+          },
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ownership": {
+            "$ref": "#/components/schemas/ConverseOwnershipState"
+          }
+        },
+        "required": [
+          "messages",
+          "cursor",
+          "ownership"
+        ],
+        "description": "Messages after the request's cursor, the cursor to resume from, and who owns the conversation now. `cursor` is null only while the conversation holds no messages."
+      },
       "A2aAgentCard": {
         "type": "object",
         "properties": {
@@ -51764,6 +51835,100 @@
           },
           "429": {
             "description": "MCP converse rate limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/mcp/converse/messages": {
+      "get": {
+        "tags": [
+          "MCP Converse"
+        ],
+        "summary": "Read what happened in this session's conversation since a cursor, optionally waiting for it",
+        "description": "Returns messages after `cursor` with the author kind and the conversation's current ownership, plus the `cursor` to resume from. The cursor is opaque and comes from a previous response; without one the call returns the conversation's most recent page. With `waitMs` the call parks until a message lands or the deadline passes, and returns an empty list at the deadline rather than an error — so a calling agent that handed off to a person can come back for the reply. One call spends one unit of the session's read budget no matter how long it waits.",
+        "operationId": "getMcpConverseMessages",
+        "security": [
+          {
+            "mcpConverseSessionBearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 25000,
+              "default": 0
+            },
+            "required": false,
+            "name": "waitMs",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Messages after the cursor, the next cursor, and current ownership",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConverseMessagesResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid cursor or `waitMs` outside 0..25000",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid converse session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Converse session is no longer authorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "MCP converse read rate limit exceeded",
             "content": {
               "application/json": {
                 "schema": {

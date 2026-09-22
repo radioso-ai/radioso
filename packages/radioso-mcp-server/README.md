@@ -12,7 +12,7 @@ The package connects to an existing Radioso deployment over its public HTTP API 
 - `radioso_docs` and `radioso_doc_page` for Radioso's own documentation
 - one typed tool per routine the operator has exposed on that agent, named by the operator (`start_return`, for example) with a JSON Schema input built from the routine's slots
 
-The routine tools come from the backend's catalog route (`GET /api/v1/mcp/converse/tools`, which returns the agent's current published catalog on every call); the server reads it once at session exchange and pins the result, so `tools/list` is stable for the session. Every call to a routine tool runs that routine directly with the arguments as its slot values and returns the same agent reply envelope `ask_agent` returns.
+The routine tools come from the backend's catalog route (`GET /api/v1/mcp/converse/tools`, which returns the agent's current published catalog on every call); the server reads it once at session exchange and pins the result to the session record, so `tools/list` is stable for the session and identical on every instance that serves it. A backend that answers that route with 404 leaves the session on the static tools, with a warning in the server log. Every call to a routine tool runs that routine directly with the arguments as its slot values and returns the same agent reply envelope `ask_agent` returns; the backend checks the tool name against the release the session's conversation is pinned to, so a tool the pinned catalog lists but that release lacks comes back as a tool error with `details.code` `routine_tool_unknown`.
 
 **Operator surface (`/operator/mcp`).** An OAuth-capable remote client acts as the signed-in person who granted access. Its fresh catalog exposes the reviewed subset of Ray's reads, probes, proposals, and acts that current scopes and permissions allow. Agent revision publication, private candidate testing, and frozen revision evals remain REST/dashboard operations and are not MCP tools. See [Operator MCP OAuth access](../../docs/operator-mcp.md) for the current tool boundary, consent, grant management, and compatibility status.
 
@@ -183,7 +183,7 @@ curl -s http://127.0.0.1:8787/mcp \
   }'
 ```
 
-Call an exposed routine by its tool name with its slots as arguments. The server validates the arguments against the descriptor's schema before anything reaches the backend; a valid call starts the routine with those slots filled and returns the agent reply envelope as `structuredContent`, with `answer.text` as the text content and `routine` reporting where the routine landed.
+Call an exposed routine by its tool name with its slots as arguments. The server validates the arguments against the descriptor's schema before anything reaches the backend (a refused call is a tool error, and the audit log records it as `tool.denied` with the tool name only); a valid call starts the routine with those slots filled and returns the agent reply envelope as `structuredContent`, with `routine` reporting where the routine landed and `invocation.outcome` what the call did. The text content of every converse tool result — `ask_agent` and routine tools alike — is `answer.text` followed by a blank line and the same envelope as pretty-printed JSON, so a client that only reads text still sees every field.
 
 ```bash
 curl -s http://127.0.0.1:8787/mcp \
@@ -204,7 +204,7 @@ curl -s http://127.0.0.1:8787/mcp \
   }'
 ```
 
-Sessions whose catalogs are identical share one in-process MCP server; the server cache is bounded (64 distinct catalogs, rebuilt after 15 idle minutes). Per-call state — the session token, conversation, and source digest — comes from the request, never from the shared server.
+Each request is answered on an MCP server built from the session's pinned catalog and connected to a transport of its own, both discarded with the response. Per-call state — the session token, conversation, and source digest — comes from the request, and no transport is ever shared between clients, so two clients that reuse the same JSON-RPC id can never receive each other's replies.
 
 ## Scope
 

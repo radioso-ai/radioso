@@ -8,7 +8,7 @@ import { toToolCatalogKey } from "../auth/toolCatalogKey.js";
 import type { RadiosoMcpConfig } from "../config.js";
 import { createConverseApiAdapter } from "../converseApiAdapter.js";
 import { createRadiosoMcpServer, getRemoteToolAuthInfo } from "../server.js";
-import type { InternalMcpRequestAuthInfo, SessionMcpServerHandle, SessionMcpServerManager } from "./types.js";
+import type { InternalMcpRequestAuthInfo, SessionMcpServerManager } from "./types.js";
 
 const toInternalAuthInfo = (
   session: AccessSessionRecord,
@@ -26,53 +26,34 @@ const toInternalAuthInfo = (
 /** A session persisted before catalogs were pinned sees the static tools only. */
 const STATIC_TOOL_CATALOG: SessionToolCatalog = { key: toToolCatalogKey([]), tools: [] };
 
-const DEFAULT_SERVER_CACHE_MAX_ENTRIES = 64;
-const DEFAULT_SERVER_CACHE_IDLE_TTL_MS = 15 * 60_000;
-
-export interface SessionServerCacheOptions {
-  /** Distinct tool sets kept warm at once; the least recently used one goes first. */
-  maxEntries?: number;
-  /** A server nobody has used for this long is rebuilt on its next request. */
-  idleTtlMs?: number;
-  now?: () => number;
-}
-
 export interface SessionServerManagerDependencies {
   auditLogger?: AuditLogger;
   config: RadiosoMcpConfig;
   entryPoint?: "merged" | "standalone";
-  serverCache?: SessionServerCacheOptions;
 }
 
-interface CachedServer {
-  handle: SessionMcpServerHandle;
-  lastUsedAt: number;
-}
-
+/**
+ * Answers each MCP request on a server built for that request from the session's
+ * pinned catalog, connected to a transport of its own. The streamable transport maps
+ * responses to requests by raw JSON-RPC id, so two clients sharing one transport and
+ * both sending `id: 1` would receive each other's replies; one transport per request
+ * makes that impossible, and building the server from the descriptors stored on the
+ * session record costs a few schema compilations per request — no cache to evict
+ * mid-flight, and nothing that outlives the response.
+ */
 export const createSessionMcpServerManager = ({
   auditLogger,
   config,
   entryPoint = "standalone",
-  serverCache = {},
 }: SessionServerManagerDependencies): SessionMcpServerManager => {
-  const maxEntries = serverCache.maxEntries ?? DEFAULT_SERVER_CACHE_MAX_ENTRIES;
-  const idleTtlMs = serverCache.idleTtlMs ?? DEFAULT_SERVER_CACHE_IDLE_TTL_MS;
-  const now = serverCache.now ?? Date.now;
-  // Insertion order doubles as recency: a hit re-inserts its entry at the end. An evicted
-  // server is simply dropped; a request still using it keeps its own reference, and the
-  // JSON-response transport holds no timers or sockets that need closing.
-  const servers = new Map<string, CachedServer>();
-  const pendingServers = new Map<string, Promise<SessionMcpServerHandle>>();
   const converseAdapter = createConverseApiAdapter({
     baseUrl: config.baseUrl,
     requestTimeoutMs: config.requestTimeoutMs,
     signingSecret: config.signingSecret,
   });
 
-  const createSessionHandle = async (
-    toolCatalog: SessionToolCatalog,
-  ): Promise<SessionMcpServerHandle> => {
-    const serverHandle = createRadiosoMcpServer({
+  const createServer = (session: AccessSessionRecord, toolCatalog: SessionToolCatalog) =>
+    createRadiosoMcpServer({
       onToolError: async (tool, context, error) => {
         if (!auditLogger) {
           return;
@@ -92,6 +73,27 @@ export const createSessionMcpServerManager = ({
           },
           outcome: error.code.includes("invalid") ? "denied" : "error",
           sessionId: context?.authInfo?.sessionId,
+          toolName: tool.name,
+        });
+      },
+      // The SDK refuses arguments that miss the tool's schema before the handler runs,
+      // so this is the only place such a call can be audited. The server is built for
+      // this session, so the event still names the session and conversation; the
+      // arguments themselves are never recorded.
+      onToolInputRejected: async (tool) => {
+        if (!auditLogger) {
+          return;
+        }
+
+        await auditLogger.emit({
+          eventType: "tool.denied",
+          metadata: {
+            code: "invalid_arguments",
+            entryPoint,
+            conversationId: session.conversationId,
+          },
+          outcome: "denied",
+          sessionId: session.sessionId,
           toolName: tool.name,
         });
       },
@@ -129,76 +131,26 @@ export const createSessionMcpServerManager = ({
       routineTools: toolCatalog.tools,
       serverName: config.serverName,
     });
-    const transport = new WebStandardStreamableHTTPServerTransport({
-      enableJsonResponse: true,
-      // Stateless transport lets Cloud Run replace an idle instance without leaving
-      // clients with an MCP protocol session identifier tied to that process.
-      sessionIdGenerator: undefined,
-    });
-
-    await serverHandle.server.connect(transport);
-
-    return {
-      serverHandle,
-      toolCatalogKey: toolCatalog.key,
-      transport,
-    };
-  };
-
-  const touch = (toolCatalogKey: string, cached: CachedServer): void => {
-    servers.delete(toolCatalogKey);
-    servers.set(toolCatalogKey, { ...cached, lastUsedAt: now() });
-  };
-
-  const readCached = (toolCatalogKey: string): SessionMcpServerHandle | null => {
-    const cached = servers.get(toolCatalogKey);
-    if (!cached) {
-      return null;
-    }
-    if (now() - cached.lastUsedAt > idleTtlMs) {
-      servers.delete(toolCatalogKey);
-      return null;
-    }
-    touch(toolCatalogKey, cached);
-    return cached.handle;
-  };
-
-  const store = (toolCatalogKey: string, handle: SessionMcpServerHandle): void => {
-    servers.delete(toolCatalogKey);
-    servers.set(toolCatalogKey, { handle, lastUsedAt: now() });
-    while (servers.size > maxEntries) {
-      const oldest = servers.keys().next().value;
-      if (oldest === undefined) {
-        break;
-      }
-      servers.delete(oldest);
-    }
-  };
 
   return {
-    async evict(toolCatalogKey) {
-      servers.delete(toolCatalogKey);
-    },
-    async getOrCreate(session) {
-      const toolCatalog = session.toolCatalog ?? STATIC_TOOL_CATALOG;
-      const existing = readCached(toolCatalog.key);
-      if (existing) {
-        return existing;
-      }
-
-      const pending = pendingServers.get(toolCatalog.key);
-      if (pending) {
-        return pending;
-      }
-
-      const creation = createSessionHandle(toolCatalog).then((handle) => {
-        store(toolCatalog.key, handle);
-        return handle;
-      }).finally(() => {
-        pendingServers.delete(toolCatalog.key);
+    async handleRequest(session, request, { authInfo }) {
+      const serverHandle = createServer(session, session.toolCatalog ?? STATIC_TOOL_CATALOG);
+      const transport = new WebStandardStreamableHTTPServerTransport({
+        enableJsonResponse: true,
+        // Stateless transport lets Cloud Run replace an idle instance without leaving
+        // clients with an MCP protocol session identifier tied to that process.
+        sessionIdGenerator: undefined,
       });
-      pendingServers.set(toolCatalog.key, creation);
-      return creation;
+
+      await serverHandle.server.connect(transport);
+      try {
+        return await transport.handleRequest(request, { authInfo });
+      } finally {
+        // The JSON response is complete once `handleRequest` resolves; closing releases
+        // the transport's stream bookkeeping (and the keep-alive timer a GET stream would
+        // hold) so nothing about this request outlives its response.
+        await serverHandle.server.close();
+      }
     },
   };
 };

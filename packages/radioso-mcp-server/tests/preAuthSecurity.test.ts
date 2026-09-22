@@ -91,7 +91,7 @@ describe("standalone MCP pre-authentication controls", () => {
 
   it("rejects oversized bearer and client metadata before auth or server allocation", async () => {
     const verifyBearerToken = vi.fn();
-    const serverManager = { evict: vi.fn(), getOrCreate: vi.fn() };
+    const serverManager = { handleRequest: vi.fn() };
     const handler = createMcpRequestHandler({ config, serverManager, verifyBearerToken });
 
     const oversizedBearer = await handler(new Request("http://localhost/mcp", {
@@ -124,7 +124,7 @@ describe("standalone MCP pre-authentication controls", () => {
     expect(invalidClient.response.status).toBe(400);
     expect(invalidBatchClient.response.status).toBe(400);
     expect(verifyBearerToken).not.toHaveBeenCalled();
-    expect(serverManager.getOrCreate).not.toHaveBeenCalled();
+    expect(serverManager.handleRequest).not.toHaveBeenCalled();
   });
 
   it("does not record a cold-cache credential when its first MCP request is unsupported", async () => {

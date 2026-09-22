@@ -14,15 +14,18 @@ export type AgentTurnInput =
   | { kind: "message"; message: string }
   | { kind: "routine_invocation"; invocation: RoutineInvocation; descriptor: AgentToolDescriptor };
 
+/** The turn half of an agent-facing request body: a message or a tool call, as validated at the edge. */
+export interface AgentTurnInputBody {
+  message?: string;
+  routine?: { toolName: string; input: unknown };
+}
+
 interface AgentTurnInputRequest {
   workspaceId: string;
   agentId: string;
   /** The release the conversation is pinned to; absent resolves against the current published one. */
   agentRevisionId?: string;
-  body: {
-    message?: string;
-    routine?: { toolName: string; input: unknown };
-  };
+  body: AgentTurnInputBody;
 }
 
 interface AgentTurnInputObservability {

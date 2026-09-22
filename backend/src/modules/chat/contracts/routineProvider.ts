@@ -24,6 +24,20 @@ import type { ChatRoutineTurnReporter } from "./routineTurnState.js";
  * about routine identity, slots, or exposure beyond what comes back here.
  */
 export interface ChatRoutineProvider {
+  /**
+   * Describes a turn the routine attempt is bypassed on (a routine suspended
+   * awaiting a decision keeps the turn without running) over the same routines
+   * `forTurn` would see, without activating or resuming anything. A provider
+   * without it leaves such a turn undescribed in the reply.
+   */
+  reporterFor?(input: {
+    agentId: string;
+    agentRevisionId?: string;
+    workspaceId?: string;
+    pinnedRoutineIds?: string[];
+    previewRoutineIds?: string[];
+    routineInvocation?: RoutineInvocation;
+  }): Promise<ChatRoutineTurnReporter | null>;
   forTurn(input: {
     modelGateway: ConversationModelGateway;
     agentId: string;

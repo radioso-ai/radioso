@@ -30,33 +30,46 @@ rows. Start at `test-execution/README.md` and
   `contracts/routineProvider.ts` is the `ChatRoutineProvider` port the routines
   module implements (`modules/routines/turnProvider.ts`); chat never names a routine.
   `contracts/routineTurnState.ts` re-exports the routines module's
-  `RoutineTurnReporter` (returned beside the activator) and the `RoutineTurnState`
-  it yields (`name`, `status`, `pendingInput`) under chat-side names; routines
-  owns those shapes in `modules/routines/turnReport.ts`.
+  `RoutineTurnReporter` (returned beside the activator, or alone from the provider's
+  `reporterFor` for a turn a suspended routine keeps), the `RoutineTurnState` it
+  yields (`name`, `status`, `pendingInput`), and the `RoutineInvocationReport`
+  (`toolName`, `outcome`) under chat-side names; routines owns those shapes in
+  `modules/routines/turnReport.ts`.
 - `services/agentReplyEnvelope.ts` (exported through `contracts/`): the agent reply
   envelope core — `conversationId`, `answerCoverage`, `ownership`, `routine?`,
-  `traceId?` — that the MCP converse `ask` route and the REST agent chat route
-  return beside their own answer layouts. `chatTurnLifecycle.ts` always records
-  `answerCoverage` (`not_recorded` when no assessment ran), marks `ownership`
-  human-owned on a handoff turn, and asks the reporter to describe the routine
-  state the turn saved. `presentChatPayload` strips `routine` from the human-facing
-  routes; only `sendChatSse(..., { agentEnvelope: true })` and the agent channel
-  route publish it.
+  `invocation?`, `traceId?` — that the MCP converse `ask` route and the REST agent
+  chat route return beside their own answer layouts. `chatTurnLifecycle.ts` always
+  records `answerCoverage` (`not_recorded` when no assessment ran), marks `ownership`
+  human-owned on a handoff turn, asks the reporter to describe the routine state the
+  turn saved (falling back to `PreparedSession.declinedRoutine` / `suspendedRoutine`
+  when it saved none), forwards `PreparedSession.routineInvocationReport` as
+  `invocation`, and counts it as `routine_invocations_total{outcome}` — the one place
+  turn-time outcomes (`started`, `reentered`, `declined`, `not_started`,
+  `unknown_tool`) are counted. `presentChatPayload` strips `routine` and `invocation`
+  from the human-facing routes; only `sendChatSse(..., { agentEnvelope: true })` and
+  the agent channel route publish them.
 - `services/agentTurnInput.ts` (exported through `contracts/`): `resolveAgentTurnInput`
   turns an agent-facing body into `{ kind: "message" }` or `{ kind: "routine_invocation" }`
-  once, before any turn state exists — both the MCP converse `ask` route and the REST
-  agent chat route call it, so neither transport validates a tool call on its own. It
-  loads the release's catalog (`AgentToolCatalogPort`, composed in
-  `app/composition/agentToolCatalog.ts`), validates the input with the routines
+  once, before any turn state exists. The REST agent chat route calls it with the
+  revision the named conversation is pinned to; `agentConverseService.ts` calls it after
+  binding the session's conversation, with that conversation's pinned revision — so
+  neither transport validates a tool call on its own and both check the release the
+  turn will run on. It loads that release's catalog (`AgentToolCatalogPort`, composed
+  in `app/composition/agentToolCatalog.ts`), validates the input with the routines
   module's validator, and throws `routine_tool_unknown` (404) or
-  `routine_invocation_invalid` (400, field-level `details.errors`). The validated
-  `RoutineInvocation` (`contracts/routineInvocation.ts`) rides `AssistantChatRequest`
-  → `ChatService` → `PrepareChatSessionInput` → `PreparedSession` → the routine
-  provider unread; `assistantChatService.ts` renders it as the turn's query text and
-  the preparer records the user message with `inputMetadata.method =
-  "routine_invocation"`. When the provider's activator declines the call (the routine
-  completed under `once_per_conversation`), `chatTurnAssembly.ts` sets
-  `PreparedSession.declinedRoutine` and the lifecycle reports it in the envelope.
+  `routine_invocation_invalid` (400, field-level `details.errors`); both ride
+  `error.details.code`, with `error.code` staying `not_found` / `bad_request`. The
+  validated `RoutineInvocation` (`contracts/routineInvocation.ts`) rides
+  `AssistantChatRequest` → `ChatService` → `PrepareChatSessionInput` →
+  `PreparedSession` → the routine provider unread; `assistantChatService.ts` renders
+  it as the turn's query text and the preparer records the user message with
+  `inputMetadata.method = "routine_invocation"`. On an invocation turn `ChatService`
+  skips pending-clarification resolution (the call is not a reply to the question, and
+  a mapped answer would substitute the question's activator). When the provider's
+  activator declines the call (the routine completed under `once_per_conversation`),
+  `chatTurnAssembly.ts` sets `PreparedSession.declinedRoutine`; when a suspended routine
+  bypasses the attempt, `describeSuspendedRoutineTurn` sets `suspendedRoutine` and an
+  `invocation` of `not_started`.
 - `composition.ts`: chat module wiring used by application composition.
 - `llmAdapters.ts`: LLM-provider registration for chat.
 - `retrievalSupport.ts`: narrow helpers used by retrieval answer assembly.

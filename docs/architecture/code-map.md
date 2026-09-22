@@ -907,15 +907,20 @@ Primary internals:
   and `backend/src/app/http/openapi/schemas/agentReplyEnvelopeSchemas.ts` (the
   envelope's OpenAPI components, shared by both operations)
 - `backend/src/modules/chat/services/agentTurnInput.ts` (`resolveAgentTurnInput`: the
-  one place both agent-facing doors — MCP converse `ask` and the REST agent chat
-  route — turn a body into a message or a validated routine invocation, before any
-  turn state exists; `chat/contracts/routineInvocation.ts` re-exports the routines
-  module's `RoutineInvocation`, `AgentToolDescriptor`, and `AgentToolCatalogPort`.
+  one place both agent-facing doors — MCP converse `ask` via `agentConverseService.ts`,
+  after it binds the session's conversation, and the REST agent chat route — turn a
+  body into a message or a validated routine invocation against the release the
+  conversation is pinned to, before any turn state exists;
+  `chat/contracts/routineInvocation.ts` re-exports the routines module's
+  `RoutineInvocation`, `AgentToolDescriptor`, and `AgentToolCatalogPort`.
   The invocation rides `AssistantChatRequest` → `ChatService` → `PrepareChatSessionInput`
   → `PreparedSession.routineInvocation` → `ChatRoutineProvider.forTurn`; the preparer
   records the user message as `toolName {json}` with
-  `inputMetadata.method = "routine_invocation"`, and a declined invocation lands on
-  `PreparedSession.declinedRoutine` for the lifecycle's envelope, #1290)
+  `inputMetadata.method = "routine_invocation"`; the reporter's `describeInvocation()`
+  lands on `PreparedSession.routineInvocationReport` (`invocation` in the envelope),
+  a declined invocation on `PreparedSession.declinedRoutine`, and a turn a suspended
+  routine keeps on `PreparedSession.suspendedRoutine` via the provider's `reporterFor`
+  (`chatTurnAssembly.describeSuspendedRoutineTurn`), #1290)
 - `backend/src/app/composition/agentToolCatalog.ts` (wires the routines module's
   catalog over the live agent row and the immutable release store: the pinned
   revision when a conversation names one, otherwise the current published one)
@@ -1015,7 +1020,7 @@ Public surfaces and contracts:
 
 - `backend/src/modules/routines/public.ts` (definition types, compiler, validator)
 - `backend/src/modules/routines/authoringEdit.ts` (stable-id field patch and the keyed projection an external authoring surface reviews a routine through)
-- `backend/src/modules/routines/exposure/` (how a routine is offered to a calling agent as a named tool: `reservedToolNames.ts` holds the names the agent surface keeps for itself; `exposureSnapshotRules.ts` is the cross-routine publish gate — duplicate names among serving routines, and a tool name frozen for its lineage from the revision that first published it — called from `agents/agentRevision.ts` with the currently published snapshot; per-routine rules — name grammar, reserved name, gated activation — live in `validator.ts`. `agentToolDescriptor.ts` derives the `AgentToolDescriptor` — JSON Schema from declared slots — a caller lists; `agentToolCatalog.ts` is the `AgentToolCatalogPort` over a narrow `PublishedRoutineReader` composition implements; `routineInvocationValidator.ts` checks a call's input against the descriptor with field-level errors; `renderRoutineInvocation.ts` is the recorded text of a call; `directInvocationActivator.ts` admits the named routine with the input as variables, deciding reentry without a model call; `directInvocationTurn.ts` pairs it with silenced reentry/slot-correction gates and a reporter that can still describe a declined completed routine — `turnProvider.ts` substitutes this pairing for the ranked match on an invocation turn)
+- `backend/src/modules/routines/exposure/` (how a routine is offered to a calling agent as a named tool: `reservedToolNames.ts` holds the names the agent surface keeps for itself; `exposureSnapshotRules.ts` is the cross-routine publish gate — duplicate names among serving routines, and a tool name frozen for its lineage from the revision that first published it — called from `agents/agentRevision.ts` with the currently published snapshot; per-routine rules — name grammar, reserved name, gated activation — live in `validator.ts`. `agentToolDescriptor.ts` derives the `AgentToolDescriptor` — JSON Schema from declared slots — a caller lists; `agentToolCatalog.ts` is the `AgentToolCatalogPort` over a narrow `PublishedRoutineReader` composition implements; `routineInvocationValidator.ts` checks a call's input against the descriptor with field-level errors; `renderRoutineInvocation.ts` is the recorded text of a call; `directInvocationActivator.ts` admits the named routine with the input as variables, deciding reentry without a model call; `directInvocationTurn.ts` pairs it with silenced reentry/slot-correction gates and a reporter whose `describeInvocation()` reports the activator's outcome (`not_started` when the activator never ran) and can still describe a declined completed routine — `turnProvider.ts` substitutes this pairing for the ranked match on an invocation turn, and its `reporterFor` serves the same reporter for a turn the attempt is bypassed on)
 - `packages/routine-definition` (shared definition schemas and types, including `routineExposureSchema` and `routineExposureToolNamePattern`)
 - `packages/routine-document` (routine block-document projection and shared guard/condition labeling, including `branchDecisionLabel` — the one place a branch's decision is named for the Document editor and the map)
 - `packages/routine-definition` also owns the shared slot-collection rule (`collectedSlotsByStep`, `SLOT_REFERENCE_PATTERN`) so the compiler, the population analysis, and the authoring surfaces agree on which step captures a slot

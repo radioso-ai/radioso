@@ -97,7 +97,8 @@ describe("routine turn provider on a direct invocation turn", () => {
       variables: { orderId: "A-1001" },
     });
     expect(modelGateway.complete).not.toHaveBeenCalled();
-    expect(metrics.renderPrometheus()).toContain('radioso_routine_invocations_total{outcome="started"} 1');
+    expect(ports!.reporter!.describeInvocation()).toEqual({ toolName: "start_return", outcome: "started" });
+    expect(metrics.renderPrometheus()).not.toContain("radioso_routine_invocations_total");
   });
 
   it("silences reentry and slot correction for every completed routine so none can capture the synthetic text", async () => {
@@ -129,10 +130,11 @@ describe("routine turn provider on a direct invocation turn", () => {
       status: "completed",
       pendingInput: [],
     });
-    expect(metrics.renderPrometheus()).toContain('radioso_routine_invocations_total{outcome="reentry"} 1');
+    expect(ports!.reporter!.describeInvocation()).toEqual({ toolName: "start_return", outcome: "declined" });
+    expect(metrics.renderPrometheus()).not.toContain("radioso_routine_invocations_total");
   });
 
-  it("logs and counts a tool name no registration carries, then yields the turn", async () => {
+  it("logs a tool name no registration carries, reports it, and yields the turn", async () => {
     const metrics = new MetricsRegistry();
     const deps = dependencies([registration(routine("r-other", "other_tool", "once_per_conversation"))], metrics);
     const provider = createRoutineTurnProvider(deps as never);
@@ -144,6 +146,39 @@ describe("routine turn provider on a direct invocation turn", () => {
       expect.objectContaining({ agentId: "agent-1", toolName: "start_return" }),
       expect.any(String),
     );
-    expect(metrics.renderPrometheus()).toContain('radioso_routine_invocations_total{outcome="unknown_tool"} 1');
+    expect(ports!.reporter!.describeInvocation()).toEqual({ toolName: "start_return", outcome: "unknown_tool" });
+    expect(metrics.renderPrometheus()).not.toContain("radioso_routine_invocations_total");
+  });
+
+  it("describes a turn the routine attempt bypassed over the same pinned routines, reporting the call as not started", async () => {
+    const pinned = registration(routine("r-suspended", "request_callback", "once_per_conversation"));
+    const deps = dependencies([registration(routine("r-return", "start_return", "once_per_conversation"))]);
+    deps.publishedRoutineSource.loadPinned.mockResolvedValue([pinned]);
+    const provider = createRoutineTurnProvider(deps as never);
+
+    const reporter = await provider.reporterFor({
+      agentId: "agent-1",
+      pinnedRoutineIds: ["r-suspended"],
+      routineInvocation: invocation,
+    });
+
+    expect(deps.publishedRoutineSource.loadPinned).toHaveBeenCalledWith(expect.objectContaining({ routineIds: ["r-suspended"] }));
+    expect(reporter!.describe({
+      state: { sessionId: "conversation-1", routineId: "r-suspended", path: ["ask"], variables: { orderId: "A-1" }, status: "suspended" },
+      awaitingDecision: true,
+    })).toEqual({ toolName: "request_callback", name: "Routine r-suspended", status: "waiting_for_approval", pendingInput: [] });
+    expect(reporter!.describeInvocation()).toEqual({ toolName: "start_return", outcome: "not_started" });
+    expect(reporter!.describeDeclined()).toBeNull();
+    expect(modelGateway.complete).not.toHaveBeenCalled();
+  });
+
+  it("describes nothing when no routine is registered, and no invocation on a message turn", async () => {
+    const provider = createRoutineTurnProvider(dependencies([]) as never);
+
+    expect(await provider.reporterFor({ agentId: "agent-1" })).toBeNull();
+    const reporter = await createRoutineTurnProvider(dependencies([
+      registration(routine("r-return", "start_return", "once_per_conversation")),
+    ]) as never).reporterFor({ agentId: "agent-1" });
+    expect(reporter!.describeInvocation()).toBeNull();
   });
 });

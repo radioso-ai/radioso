@@ -497,3 +497,46 @@ Where the code differed from the file-level plan above:
   tool name but no slot value; the Redis smoke asserts the second node lists the pinned catalog.
 - **Observability**: routine tool calls ride the existing `tool.executed`/`tool.failed`/`tool.denied`
   audit events with `toolName` only; nothing else new.
+
+## Implementation notes (second review pass, 2026-09-22)
+
+- **Pinned-revision resolution on MCP.** `AgentConverseService.askAgent` takes the raw body, binds
+  the session's conversation first (`getOrCreateByAnonymousSession`), and only then calls
+  `resolveAgentTurnInput` with `conversation.record.agentRevisionId` — so both doors validate a
+  tool call against the release the turn will run on, before any message is written. A rejected
+  call can leave the session's (empty) conversation row bound; that is the session binding, not
+  turn state. The REST route keeps its own lookup (`pinnedRevisionIdFor`): the two doors bind
+  conversations differently and share only the resolver call, so no service-level path was worth
+  extracting.
+- **`invocation` in the envelope.** `RoutineTurnReporter.describeInvocation()` reports the tool
+  call's outcome (`started | reentered | declined | not_started | unknown_tool`); the reporter takes
+  `{ invocation: { toolName, outcome() } }` and derives `describeDeclined()` from the same source.
+  `not_started` is the activator never having run: another routine resumed (the engine skips the
+  activator while one is active) or a suspended routine bypassed the attempt. For the latter the
+  provider port gained `reporterFor` (registrations only, nothing activated), called from
+  `ChatTurnAssembly.describeSuspendedRoutineTurn`, which also describes the suspended routine —
+  on message turns too, so a caller always learns which routine is waiting. The report rides
+  `PreparedSession.routineInvocationReport` to the lifecycle, alongside `declinedRoutine` /
+  `suspendedRoutine`.
+- **Metric moved.** `routine_invocations_total{outcome}` for turn-time outcomes is counted in
+  `ChatTurnLifecycle.completeAssistantTurn` where the reply reports it — labels now equal the
+  envelope's outcomes (`reentry` split into `reentered` / `declined`, plus `not_started`); the
+  provider's `onOutcome` keeps only the `unknown_tool` warn log. Pre-turn `validation_failed` /
+  `unknown_tool` stay in `resolveAgentTurnInput`.
+- **Pending clarification on an invocation turn** is left pending (`resolvePendingForTurn` returns
+  `normal` without a `mapReply` call); the direct activator is never displaced.
+- **Validator** trims strings; a blank required value is `required`, a blank optional one is
+  dropped (mirrors `slotCorrection.ts` `coerceValue`).
+- **REST body**: `message + startConversation` is valid again (message ignored, as before);
+  `routine + startConversation` and `message + routine` are refused.
+- **Reserved names** now include `radioso_docs` and `radioso_doc_page`; the list is hand-kept with
+  the package named as source of truth (the backend cannot import the package).
+- **Ray `propose_routine_exposure`**: `toolName` is optional; a blank/omitted name keeps the stored
+  one (`resolveRoutineFieldPatch`, applied at draft and apply time). Frozen-name and duplicate
+  diagnostics are *not* surfaced in the draft-edit path: neither the routine service nor the
+  copilot adapter has the published snapshot (they would need an agent-revision reader port), so
+  those still surface at candidate creation / publish only.
+- **Test app** now models suspension (`loadActive` returns active states only, `loadSuspended`
+  wired as the suspended reader), keeps every published revision readable by id, accepts routines
+  on `publishTestAgentBaseline`, and can compose the production catalog reader
+  (`createTestApp({ agentToolCatalog: createAgentToolCatalogComposition })`).

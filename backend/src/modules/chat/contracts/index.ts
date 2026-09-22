@@ -42,7 +42,7 @@ export { buildAgentReplyEnvelope, isChatTurnResponse } from "../services/agentRe
 // Both agent-facing doors resolve a turn's input (message or tool call) through
 // this before any turn state is written; neither transport validates on its own.
 export { chatRequestInputFor, resolveAgentTurnInput, type AgentTurnInput } from "../services/agentTurnInput.js";
-export type { ChatRoutineTurnState } from "./routineTurnState.js";
+export type { ChatRoutineInvocationReport, ChatRoutineTurnState } from "./routineTurnState.js";
 export type { ChatStreamEvent } from "./streamEvents.js";
 export type {
   ActionHandler,

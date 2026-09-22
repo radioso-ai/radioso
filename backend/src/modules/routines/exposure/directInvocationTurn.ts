@@ -63,10 +63,7 @@ export const createDirectInvocationTurnPorts = (input: {
     reentryGate: inertReentryGate,
     slotCorrection: inertSlotCorrection,
     reporter: createRoutineTurnReporter(input.routines, {
-      declinedRoutineId: () => {
-        const outcome = directActivator.outcome();
-        return outcome?.kind === "declined" ? outcome.routineId : null;
-      },
+      invocation: { toolName: input.invocation.toolName, outcome: () => directActivator.outcome() },
     }),
   };
 };

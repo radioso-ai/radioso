@@ -17,6 +17,7 @@ import { exactContentItemSchema, validateExactContentItem } from "../../shared/d
 import {
   applyRoutineFieldPatch,
   describeRoutineFieldPatch,
+  resolveRoutineFieldPatch,
   projectRoutineForReview,
   routineDefinitionDraftInputSchema,
   routineDefinitionDraftUpdateInputSchema,
@@ -902,8 +903,8 @@ export const createRoutineCopilotProposalAdapter = (deps: {
     },
     async draftEdit(workspaceId, rawTargetRef, rawChanges, rationale) {
       const targetRef = routineTargetRefSchema.parse(rawTargetRef);
-      const changes = routineFieldPatchSchema.parse(rawChanges);
       const routine = await routineFor(workspaceId, targetRef);
+      const changes = resolveRoutineFieldPatch(routine, routineFieldPatchSchema.parse(rawChanges));
       const patched = applyRoutineFieldPatch(routine, changes);
       const before = await deps.routineDefinitionService.validate(workspaceId, targetRef.agentId, { id: routine.id });
       const after = await deps.routineDefinitionService.validate(workspaceId, targetRef.agentId, { input: patched });

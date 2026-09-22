@@ -48,20 +48,28 @@ export const agentChannelChatSchema = z.object({
   stream: z.boolean().optional().default(false),
   userExpectedLocale: z.string().trim().max(35).optional(),
 }).strict().superRefine((value, ctx) => {
-  // Exactly one turn kind per request: a message, a tool call, or a bootstrap greeting.
-  const turnKinds = [value.message, value.routine, value.startConversation || undefined].filter((kind) => kind !== undefined);
-  if (turnKinds.length === 0) {
+  // One turn input per request: a message or a tool call. A bootstrap greeting needs neither;
+  // it tolerates a message (ignored, as before the routine body existed) but not a tool call,
+  // which would be silently dropped.
+  if (value.message !== undefined && value.routine !== undefined) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "message and routine are mutually exclusive",
+      path: ["routine"],
+    });
+  }
+  if (value.message === undefined && value.routine === undefined && !value.startConversation) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: "message or routine is required unless startConversation is true",
       path: ["message"],
     });
   }
-  if (turnKinds.length > 1) {
+  if (value.startConversation && value.routine !== undefined) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: "message, routine, and startConversation are mutually exclusive",
-      path: [value.routine ? "routine" : "message"],
+      message: "startConversation cannot invoke a routine",
+      path: ["routine"],
     });
   }
   if (value.startConversation && value.conversationId) {

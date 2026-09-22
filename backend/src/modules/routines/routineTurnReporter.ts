@@ -1,12 +1,23 @@
 import type { Routine, RoutineState, RoutineStep } from "@radioso/conversation-contract";
 
-import { compiledRoutineToolName } from "./exposure/directInvocationActivator.js";
+import { compiledRoutineToolName, type DirectInvocationOutcome } from "./exposure/directInvocationActivator.js";
 import type {
+  RoutineInvocationReport,
   RoutinePendingInput,
   RoutineTurnReporter,
   RoutineTurnState,
   RoutineTurnStatus,
 } from "./turnReport.js";
+
+/**
+ * The tool call a turn carries, read lazily: the activator decides during the
+ * engine run, and a turn another routine keeps never runs it at all — which is
+ * exactly the `not_started` outcome a caller needs to hear about.
+ */
+interface RoutineTurnInvocationSource {
+  toolName: string;
+  outcome: () => DirectInvocationOutcome | null;
+}
 
 const hasVariable = (variables: Record<string, unknown>, key: string): boolean =>
   Object.prototype.hasOwnProperty.call(variables, key);
@@ -81,13 +92,14 @@ const identityOf = (routine: Routine): Pick<RoutineTurnState, "toolName" | "name
  * Reports a routine state in envelope terms over the routines this turn could
  * see. Exposure only adds the tool name: any admitted routine is described the
  * same way, and an unknown routine id (a state from a routine no longer
- * registered) reports nothing rather than guessing. `declinedRoutineId` names
- * the routine a direct invocation asked for when this turn's activator refused
- * it, so the reply can still say the routine is completed (Decision 9).
+ * registered) reports nothing rather than guessing. `invocation` is the tool
+ * call this turn carried, when it carried one: its outcome is what the reply
+ * reports, and a declined outcome names the completed routine the call asked
+ * for so the reply can still describe it (Decision 9).
  */
 export const createRoutineTurnReporter = (
   routines: readonly Routine[],
-  options: { declinedRoutineId?: () => string | null } = {},
+  options: { invocation?: RoutineTurnInvocationSource } = {},
 ): RoutineTurnReporter => {
   const routinesById = new Map(routines.map((routine) => [routine.id, routine]));
   return {
@@ -108,9 +120,16 @@ export const createRoutineTurnReporter = (
       };
     },
     describeDeclined: (): RoutineTurnState | null => {
-      const declinedRoutineId = options.declinedRoutineId?.() ?? null;
-      const routine = declinedRoutineId ? routinesById.get(declinedRoutineId) : undefined;
+      const outcome = options.invocation?.outcome() ?? null;
+      const routine = outcome?.kind === "declined" ? routinesById.get(outcome.routineId) : undefined;
       return routine ? { ...identityOf(routine), status: "completed", pendingInput: [] } : null;
+    },
+    describeInvocation: (): RoutineInvocationReport | null => {
+      if (!options.invocation) {
+        return null;
+      }
+      const outcome = options.invocation.outcome();
+      return { toolName: options.invocation.toolName, outcome: outcome?.kind ?? "not_started" };
     },
   };
 };

@@ -588,6 +588,12 @@ export class ChatService {
       return {};
     }
     const store = new DeferredClarificationStore(this.clarificationStore);
+    // A tool call is not a reply to a pending question: mapping it would spend a model
+    // call and could hand the turn to the question's activator instead of the routine
+    // the call names. The question stays pending for the next message turn.
+    if (session.routineInvocation) {
+      return { store, resolution: { kind: "normal", resolvedPending: false }, clarifier };
+    }
     const resolution = await resolvePendingClarification({
       store,
       recentReader: typeof this.clarificationStore.loadRecent === "function"
@@ -920,6 +926,11 @@ export class ChatService {
       // turn, there is no retrieval — the routine renders its own reply.
       const routineStartedAt = Date.now();
       this.checkTurnCancellation(coordination, "routing");
+      // A suspended routine keeps the turn without running: it waits for an operator's
+      // decision, not for this input, so the attempt is bypassed and only described.
+      if (suspendedRoutine) {
+        await this.chatTurnAssembly.describeSuspendedRoutineTurn(session, suspendedRoutine);
+      }
       const routineTurn = suspendedRoutine
         ? null
         : await this.chatTurnAssembly.attemptRoutineTurn(session, {
@@ -1392,7 +1403,9 @@ export class ChatService {
       const routineStartedAt = Date.now();
       this.checkTurnCancellation(coordination, "routing");
       const routineResult: { value: Awaited<ReturnType<ChatTurnAssembly["attemptRoutineTurn"]>> } = { value: null };
-      if (!suspendedRoutine) {
+      if (suspendedRoutine) {
+        await this.chatTurnAssembly.describeSuspendedRoutineTurn(session, suspendedRoutine);
+      } else {
         // A routine attempt is speculative: it may yield back to interpretation and
         // retrieval. Keep its composing phase private until it claims the turn so the
         // public sequence never backtracks from composing to interpreting/searching.

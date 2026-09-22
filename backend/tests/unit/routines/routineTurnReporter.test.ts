@@ -141,7 +141,9 @@ describe("createRoutineTurnReporter with exposed routines", () => {
   });
 
   it("describes a routine an invocation named but the turn declined as completed, so the caller learns why nothing started", () => {
-    const reporter = createRoutineTurnReporter([exposed], { declinedRoutineId: () => exposed.id });
+    const reporter = createRoutineTurnReporter([exposed], {
+      invocation: { toolName: "book_demo", outcome: () => ({ kind: "declined", routineId: exposed.id }) },
+    });
 
     expect(reporter.describeDeclined()).toEqual({
       toolName: "book_demo",
@@ -149,11 +151,37 @@ describe("createRoutineTurnReporter with exposed routines", () => {
       status: "completed",
       pendingInput: [],
     });
+    expect(reporter.describeInvocation()).toEqual({ toolName: "book_demo", outcome: "declined" });
   });
 
-  it("describes nothing declined on an ordinary turn", () => {
+  it("describes nothing declined and no invocation on an ordinary turn", () => {
     expect(createRoutineTurnReporter([exposed]).describeDeclined()).toBeNull();
-    expect(createRoutineTurnReporter([exposed], { declinedRoutineId: () => null }).describeDeclined()).toBeNull();
-    expect(createRoutineTurnReporter([exposed], { declinedRoutineId: () => "routine-unknown" }).describeDeclined()).toBeNull();
+    expect(createRoutineTurnReporter([exposed]).describeInvocation()).toBeNull();
+    const started = createRoutineTurnReporter([exposed], {
+      invocation: { toolName: "book_demo", outcome: () => ({ kind: "started", routineId: exposed.id }) },
+    });
+    expect(started.describeDeclined()).toBeNull();
+    const declinedUnknown = createRoutineTurnReporter([exposed], {
+      invocation: { toolName: "book_demo", outcome: () => ({ kind: "declined", routineId: "routine-unknown" }) },
+    });
+    expect(declinedUnknown.describeDeclined()).toBeNull();
+  });
+
+  it.each([
+    [{ kind: "started", routineId: exposed.id }, "started"],
+    [{ kind: "reentered", routineId: exposed.id }, "reentered"],
+    [{ kind: "declined", routineId: exposed.id }, "declined"],
+    [{ kind: "unknown_tool" }, "unknown_tool"],
+  ] as const)("reports the activator's %o as the invocation outcome %s", (outcome, expected) => {
+    const reporter = createRoutineTurnReporter([exposed], { invocation: { toolName: "book_demo", outcome: () => outcome } });
+
+    expect(reporter.describeInvocation()).toEqual({ toolName: "book_demo", outcome: expected });
+  });
+
+  it("reports not_started when the invocation turn never reached the activator (another routine kept the turn)", () => {
+    const reporter = createRoutineTurnReporter([exposed], { invocation: { toolName: "book_demo", outcome: () => null } });
+
+    expect(reporter.describeInvocation()).toEqual({ toolName: "book_demo", outcome: "not_started" });
+    expect(reporter.describeDeclined()).toBeNull();
   });
 });

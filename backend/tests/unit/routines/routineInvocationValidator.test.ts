@@ -122,6 +122,26 @@ describe("validateRoutineInvocation", () => {
     });
   });
 
+  it("trims string values and refuses a blank required one as missing", () => {
+    expect(validateRoutineInvocation(descriptor, { orderId: "  A-1001  " })).toEqual({
+      ok: true,
+      invocation: { toolName: "start_return", input: { orderId: "A-1001" } },
+    });
+    expect(validateRoutineInvocation(descriptor, { orderId: "   " })).toEqual({
+      ok: false,
+      errors: [{ path: "orderId", code: "required" }],
+    });
+  });
+
+  it("drops a blank optional string instead of prefilling the slot with nothing", () => {
+    const result = validateRoutineInvocation(descriptor, { orderId: "A-1001", contact: " " });
+
+    expect(result).toEqual({
+      ok: true,
+      invocation: { toolName: "start_return", input: { orderId: "A-1001" } },
+    });
+  });
+
   it("accepts an empty object for a descriptor with no slots", () => {
     const empty: AgentToolDescriptor = {
       ...descriptor,

@@ -126,6 +126,7 @@ export interface OpenApiSchemaCatalog {
   RoutineInvocationInvalidDetailsSchema: z.ZodTypeAny;
   RoutinePendingInputSchema: z.ZodTypeAny;
   RoutineTurnStateSchema: z.ZodTypeAny;
+  RoutineInvocationReportSchema: z.ZodTypeAny;
   AssistantLogoUploadRequestSchema: z.ZodTypeAny;
   AssistantRouteDiagnosticsSchema: z.ZodTypeAny;
   AssistantRouteSchema: z.ZodTypeAny;

@@ -14,7 +14,7 @@ const assessed: ChatAnswerCoverageAssessment = {
 };
 
 describe("buildAgentReplyEnvelope", () => {
-  it("forwards the recorded coverage, ownership, routine state, and trace id", () => {
+  it("forwards the recorded coverage, ownership, routine state, invocation outcome, and trace id", () => {
     const routine: ChatRoutineTurnState = {
       name: "Book a demo",
       status: "waiting_for_input",
@@ -25,6 +25,7 @@ describe("buildAgentReplyEnvelope", () => {
       answerCoverage: assessed,
       ownership: { state: "human_owned", suppressed: true },
       routine,
+      invocation: { toolName: "book_demo", outcome: "started" },
       turnTrace: { spine: { traceId: "trace-1" } } as TurnTraceEnvelope,
     });
 
@@ -33,6 +34,7 @@ describe("buildAgentReplyEnvelope", () => {
       answerCoverage: assessed,
       ownership: { state: "human_owned", suppressed: true },
       routine,
+      invocation: { toolName: "book_demo", outcome: "started" },
       traceId: "trace-1",
     });
   });

@@ -21,6 +21,7 @@ import {
 } from "@radioso/conversation-defaults";
 
 import type { AgentSkillRepositoryPort } from "../agentSkills/public.js";
+import { routineContextRenderer } from "../context-variables/public.js";
 import type { ClusteringEmbeddingPort } from "../embeddingProfiles/contracts/embeddingConsumers.js";
 import type { CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
 import { registeredCapabilityNames } from "../../shared/domain/capabilityPolicy.js";
@@ -421,6 +422,9 @@ export const createRoutineTurnProvider = (
             conversationDurability,
           },
         ),
+        // `{{context.<name>}}` in a step instruction reads staged visitor context through
+        // the context-variables module, which owns what each variable may show.
+        { contextRenderer: routineContextRenderer },
       ),
     };
   },

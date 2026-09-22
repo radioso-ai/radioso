@@ -1,8 +1,9 @@
 import type { AgentContactWebhook } from "../../../agents/public.js";
-import type {
-  OperatorNotification,
-  OperatorNotificationContext,
-  OperatorNotificationSink,
+import {
+  formatHandoffNotification,
+  type OperatorNotification,
+  type OperatorNotificationContext,
+  type OperatorNotificationSink,
 } from "../../../operatorNotifications/public.js";
 import {
   resolveConversationLink,
@@ -99,26 +100,7 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
             requestId: context.requestId,
           },
         }
-      : {
-          subject: "Conversation needs a human",
-          text: [
-            "A conversation needs a human operator.",
-            "",
-            `Conversation: ${notification.conversationId}`,
-            `Workspace: ${notification.workspaceId}`,
-            `Agent: ${notification.agentId}`,
-            `Reason: ${notification.reason}`,
-            ...openLine,
-          ].join("\n"),
-          webhookPayload: {
-            workspaceId: notification.workspaceId,
-            agentId: notification.agentId,
-            conversationId: notification.conversationId,
-            reason: notification.reason,
-            ...links,
-            requestId: context.requestId,
-          },
-        };
+      : this.handoffDelivery(notification, context, openLine, links);
 
     await Promise.all([
       ...target.emails.map((to) =>
@@ -137,6 +119,29 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
           : "Handoff webhook delivery is not configured",
       }) : Promise.resolve(),
     ]);
+  }
+
+  private handoffDelivery(
+    notification: Extract<OperatorNotification, { kind: "handoff" }>,
+    context: OperatorNotificationContext,
+    openLine: string[],
+    links: { dashboardUrl: string | null; dashboardPath: string | null },
+  ): { subject: string; text: string; webhookPayload: Record<string, unknown> } {
+    const formatted = formatHandoffNotification(notification);
+    return {
+      subject: formatted.subject,
+      text: [...formatted.lines, ...openLine].join("\n"),
+      webhookPayload: {
+        workspaceId: notification.workspaceId,
+        agentId: notification.agentId,
+        conversationId: notification.conversationId,
+        reason: notification.reason,
+        routine: notification.routine ?? null,
+        collected: notification.collected ?? {},
+        ...links,
+        requestId: context.requestId,
+      },
+    };
   }
 
   private async postWebhook(input: {

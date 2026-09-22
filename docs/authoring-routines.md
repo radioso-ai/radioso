@@ -1,7 +1,7 @@
 ---
 title: "Authoring Routines"
 description: "Create and edit dashboard routines in the Document view, read the Map, connect skills, and try a change in a test chat before it ships."
-last_updated: 2026-09-21
+last_updated: 2026-09-22
 ---
 
 # Authoring Routines
@@ -110,6 +110,21 @@ on a later branch. In **Information**, you can also mark a value:
 
 An `@` reference uses the same stored value throughout the routine. A skill
 output can also supply a value that later steps and branches read.
+
+#### Read the visitor's context
+
+The same `@` menu lists what the agent already knows about the visitor under
+**Visitor context**. Choose **Current page** to place it in a step, and the
+step reads the page's URL, title, and language when it runs — enough to write
+"If the visitor is on a program page, confirm that is the program they want to
+book; otherwise ask which program @program". A host-defined context variable
+the agent has enabled, such as `cart`, appears in the same list.
+
+This is a value the step reads, not one it stores: nothing is added to
+**Information**, and later steps see nothing unless they place the same chip.
+To keep a value, ask for it with an `@` slot. The visible page text stays out
+of the step; the step sees the page's identity, and the page still counts as
+untrusted data the agent reasons about rather than instructions it follows.
 
 ### Add steps and connect skills
 
@@ -280,9 +295,16 @@ secret, and delivers it through the action outbox.
 When a routine reaches a `handoff` terminal, the chat turn sends the routine's
 reply, requests human ownership of the conversation, and queues a
 `handoff.notify` action. The notice reaches the agent's contact recipients by
-email and, when one is configured, the contact webhook. Both carry the
-conversation, workspace, agent, and reason, plus a `dashboardUrl` that opens the
-conversation in the dashboard; the webhook body is documented under
+email and, when one is configured, the contact webhook, and the Slack
+escalation channel when the workspace has one. Each carries the routine's name,
+the agent's name, the reason, the conversation and workspace ids, and every
+value the routine collected — its declared slots, keyed by slot key, in the
+order the routine declares them. A booking desk that receives a "Book
+accommodation" handoff reads the program, dates, and guest name in the notice
+itself instead of opening the transcript first. Slot values that are text,
+numbers, or yes/no appear in the notice; a slot holding a structured value is
+left out of it. The email adds a `dashboardUrl` line that opens the conversation
+in the dashboard; the webhook body is documented under
 [Handoff and approval notifications](../docs-portal/content/api/agents-and-skills.mdx).
 
 ## How a routine goes live

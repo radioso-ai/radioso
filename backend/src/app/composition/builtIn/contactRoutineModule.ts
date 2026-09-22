@@ -10,6 +10,7 @@ import {
   EmailWebhookOperatorNotificationSink,
   FetchContactWebhookHttpClient,
   HandoffNotifyActionHandler,
+  RepositoryHandoffNotificationSubjectResolver,
   ApprovalRequestActionHandler,
   APPROVAL_REQUEST_ACTION_TYPE,
   WorkspaceOwnerContactRecipientResolver,
@@ -24,6 +25,7 @@ import { AgentRepository } from "../../../db/repositories/agentRepository.js";
 import { ConversationRepository } from "../../../db/repositories/conversationRepository.js";
 import { ActionRequestRepository } from "../../../db/repositories/actionRequestRepository.js";
 import { PendingDecisionRepository } from "../../../db/repositories/pendingDecisionRepository.js";
+import { RoutineDefinitionRepository } from "../../../db/repositories/routineDefinitionRepository.js";
 import { AgentSkillRepository } from "../../../modules/agentSkills/repository.js";
 import { OperatorNotificationDispatcher } from "../../../modules/operatorNotifications/public.js";
 import {
@@ -170,6 +172,10 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
       handler: ({ database, env, logger, mailService, assertPublicWebsiteUrl }) => {
         return new HandoffNotifyActionHandler(
           buildOperatorNotificationDispatcher({ database, env, logger, mailService, assertPublicWebsiteUrl }),
+          new RepositoryHandoffNotificationSubjectResolver(
+            new AgentRepository(database.kysely),
+            new RoutineDefinitionRepository(database.kysely),
+          ),
         );
       },
     });

@@ -258,6 +258,73 @@ describe("EmailWebhookOperatorNotificationSink", () => {
       workspaceId: "ws_1",
       agentId: "agent_1",
       reason: "routine_handoff",
+      routine: null,
+      collected: {},
+      dashboardUrl: null,
+      dashboardPath: null,
+      requestId: "request_1",
+    });
+  });
+
+  it("names the routine and lists the collected values in the handoff email", async () => {
+    const { mailer, sent } = recordingMailer();
+    const sink = new EmailWebhookOperatorNotificationSink(
+      mailer,
+      { resolve: async () => ({ emails: ["desk@business.example"], webhook: null }) },
+      undefined,
+      undefined,
+      { resolve: async () => "https://app.radioso.ai/w/support-abc/activity?itemId=conv_1" },
+    );
+
+    await sink.deliver({
+      ...handoffNotification,
+      agentName: "Retreat desk",
+      routine: { id: "routine_1", name: "Book accommodation" },
+      collected: { program: "Yoga retreat", arrival_date: "2026-10-12", guests: 2 },
+    }, { ...context, idempotencyKey: "routine-action:conv_1:handoff.notify" });
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0].subject).toBe("Book accommodation: needs a human");
+    expect(sent[0].text).toBe([
+      "A conversation needs a human operator.",
+      "",
+      "Agent: Retreat desk (agent_1)",
+      "Routine: Book accommodation",
+      "Reason: routine_handoff",
+      "Conversation: conv_1",
+      "Workspace: ws_1",
+      "",
+      "Collected:",
+      "  Program: Yoga retreat",
+      "  Arrival date: 2026-10-12",
+      "  Guests: 2",
+      "Open: https://app.radioso.ai/w/support-abc/activity?itemId=conv_1",
+    ].join("\n"));
+  });
+
+  it("posts the routine and collected values on the handoff webhook", async () => {
+    const { mailer } = recordingMailer();
+    const { httpClient, requests } = recordingWebhookClient();
+    const sink = new EmailWebhookOperatorNotificationSink(
+      mailer,
+      { resolve: async () => ({ emails: [], webhook: { url: "https://hooks.example.com/handoff" } }) },
+      undefined,
+      httpClient,
+    );
+
+    await sink.deliver({
+      ...handoffNotification,
+      routine: { id: "routine_1", name: "Book accommodation" },
+      collected: { program: "Yoga retreat", arrival_date: "2026-10-12" },
+    }, { ...context, idempotencyKey: "routine-action:conv_1:handoff.notify" });
+
+    expect(JSON.parse(requests[0].rawBody)).toEqual({
+      conversationId: "conv_1",
+      workspaceId: "ws_1",
+      agentId: "agent_1",
+      reason: "routine_handoff",
+      routine: { id: "routine_1", name: "Book accommodation" },
+      collected: { program: "Yoga retreat", arrival_date: "2026-10-12" },
       dashboardUrl: null,
       dashboardPath: null,
       requestId: "request_1",

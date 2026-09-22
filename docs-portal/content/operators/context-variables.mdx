@@ -1,7 +1,7 @@
 ---
 title: Context variables
 description: How operators configure page, identity, and host-defined context for agent turns.
-last_updated: 2026-09-18
+last_updated: 2026-09-22
 ---
 
 # Context variables
@@ -32,9 +32,13 @@ there. They are code-owned platform context, available on every agent.
 The embed captures page context with each message, but the agent does not see it
 on every turn. Each turn is classified first. Page data — including the
 URL, title, and locale — reaches the model only when the turn actually asks
-about the current page, or when an active routine declares a `page_context`
-dependency. Unrelated turns contribute no page data to model input or stored
-message metadata.
+about the current page, or when an active routine reads the page. A routine
+reads the page when a skill input is bound to `page_context` or a step
+instruction references it (the **Current page** chip in the routine editor, or
+`{{context.page_context}}` in the stored instruction). A step reference renders
+the page's URL, title, and locale into the step; the page excerpt stays out.
+Unrelated turns contribute no page data to model input or stored message
+metadata.
 
 In practice this means answers to general questions are not influenced by
 whatever page the visitor happens to be on, and page content cannot inject
@@ -256,7 +260,8 @@ the prompt context.
 - `on_reference` keeps the value available for turn logic and includes it only
   when the turn needs it.
 - `operator_only` stores it for operator inspection and logic, but does not
-  surface it into the answer prompt.
+  surface it into the answer prompt; a routine step that references it reads
+  nothing.
 
 Sensitive variables should use the narrowest surfacing that works. Redacted
 values may still appear in the Inbox so operators can debug what happened

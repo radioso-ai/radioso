@@ -59,8 +59,10 @@ import { useRoutineVariables } from '@/components/dashboard/settings/routine-var
 // elsewhere (compiles to a tool step the runner dispatches through the skill port); a
 // `condition` chip is a structured comparison ("decided in code"); the others are
 // references/targets. An `end` chip is a branch target that completes the routine (the
-// counterpart to a `handoff` chip, which escalates).
-export type RoutineChipKind = 'variable' | 'skill' | 'action' | 'handoff' | 'step' | 'condition' | 'end' | 'approval' | 'decision'
+// counterpart to a `handoff` chip, which escalates). A `context` chip reads a context
+// variable the agent has (the visitor's current page, a host-pushed value) — read, never
+// collected, so it is not a slot.
+export type RoutineChipKind = 'variable' | 'context' | 'skill' | 'action' | 'handoff' | 'step' | 'condition' | 'end' | 'approval' | 'decision'
 
 type RoutineFieldGuardValue = string | number | boolean
 
@@ -1246,6 +1248,7 @@ export class ChipNode extends DecoratorNode<JSX.Element> {
   // through here; it serializes the tree to canonical tokens in the editor's copy handler.
   getTextContent(): string {
     if (this.__chipKind === 'variable') return `{{slot.${this.__refId}}}`
+    if (this.__chipKind === 'context') return `{{context.${this.__refId}}}`
     return ''
   }
 

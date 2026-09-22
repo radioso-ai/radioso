@@ -331,6 +331,45 @@ describe("routine definition compiler and validator", () => {
     });
   });
 
+  it("stamps the distinct context variables a step instruction references as contextRefs metadata", () => {
+    // A `{{context.<name>}}` reference lets a step read staged visitor context (the current
+    // page, a host-pushed value). The compiled step carries the names so the page-read gate
+    // can see that the routine wants the page, without re-parsing instructions at runtime.
+    const definition: RoutineDefinition = {
+      ...baseDefinition(),
+      slots: [
+        { stableSlotId: "slot_program", key: "program", type: "text", required: true, description: null, ordinal: 0 },
+      ],
+      steps: [
+        {
+          stableStepId: "confirm_program",
+          kind: "chat",
+          instruction: "{{context.page_context}} If this is a program page, confirm it; otherwise ask which program {{slot.program}}. {{context.page_context}} {{context.cart}}",
+          toolRef: null,
+          ordinal: 0,
+          metadata: {},
+        },
+        { stableStepId: "wrap_up", kind: "chat", instruction: "Thank them for choosing {{slot.program}}.", toolRef: null, ordinal: 1, metadata: {} },
+      ],
+      transitions: [
+        { fromStep: "confirm_program", toRef: "wrap_up", guardKind: "default", guardText: null, ordinal: 0 },
+        { fromStep: "wrap_up", toRef: "done", guardKind: "default", guardText: null, ordinal: 1 },
+      ],
+      terminals: [
+        { stableStepId: "done", kind: "complete", instruction: "Done.", ordinal: 0 },
+      ],
+    };
+
+    const routine = compileRoutineDefinition(definition);
+
+    const confirm = routine.steps.find((step) => step.id === "confirm_program");
+    expect(confirm?.metadata?.contextRefs).toEqual(["page_context", "cart"]);
+    expect(confirm?.metadata?.collectsSlots).toEqual(["program"]);
+    // A step with no reference carries no key at all, so existing metadata shapes are untouched.
+    const wrapUp = routine.steps.find((step) => step.id === "wrap_up");
+    expect(wrapUp?.metadata).not.toHaveProperty("contextRefs");
+  });
+
   it("does not let a lower-ordinal tool step steal slot ownership from the chat step that asks it", () => {
     // Only a chat step asks the user for a slot. A tool/action step that interpolates
     // {{slot.x}} at a lower ordinal must NOT be treated as the collector — otherwise the

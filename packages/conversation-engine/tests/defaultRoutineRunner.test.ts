@@ -6,6 +6,7 @@ import type {
   ConversationRoutineSkillDispatcher,
   ConversationRoutineStepRenderer,
   Routine,
+  RoutineContextRenderer,
   RoutineState,
   TurnContext,
 } from "@radioso/conversation-contract";
@@ -101,6 +102,105 @@ describe("DefaultRoutineRunner", () => {
     // The captured value is filled into the instruction; the raw token is never shown.
     expect(result.response.answer).toBe("Confirm we will call you at 555-1234.");
     expect(result.response.answer).not.toContain("{{slot.phone}}");
+  });
+
+  describe("context variable references in a step instruction", () => {
+    const pageRoutine: Routine = {
+      id: "contact",
+      rootStepId: "confirm_program",
+      steps: [{
+        id: "confirm_program",
+        kind: "chat",
+        action: "{{context.page_context}} If it is a program page, confirm it; otherwise ask which program {{slot.program}}.",
+      }],
+      transitions: [],
+    };
+    const stagedPage: TurnContext["stagedContext"][number] = {
+      kind: "context_variable",
+      id: "page_context",
+      data: { kind: "page_context", pageUrl: "https://example.com/programs/yoga" },
+    };
+    const echoInstruction: ConversationRoutineStepRenderer = {
+      render: vi.fn(async ({ steering }) => ({ answer: steering[0]?.action ?? "", metadata: {} })),
+    };
+    const contextRenderer: RoutineContextRenderer = {
+      render: vi.fn(({ name, stagedContext }) => {
+        const staged = stagedContext.find((entry) => entry.id === name);
+        return staged ? `<page>${String((staged.data as { pageUrl: string }).pageUrl)}</page>` : null;
+      }),
+    };
+
+    it("replaces the token with the context renderer's text and leaves slot tokens to slot interpolation", async () => {
+      const runner = new DefaultRoutineRunner(
+        [pageRoutine],
+        { select: vi.fn(async () => ({ nextStepId: "confirm_program" })) },
+        { render: vi.fn(echoInstruction.render) },
+        undefined,
+        { contextRenderer },
+      );
+
+      const result = await runner.resume({
+        turn: { ...turn, stagedContext: [stagedPage] },
+        state: state(["confirm_program"], { program: "Yoga" }),
+      });
+
+      expect(contextRenderer.render).toHaveBeenCalledWith({ name: "page_context", stagedContext: [stagedPage] });
+      expect(result.response.answer).toBe(
+        "<page>https://example.com/programs/yoga</page> If it is a program page, confirm it; otherwise ask which program Yoga.",
+      );
+    });
+
+    it("replaces the token with an empty string when the renderer returns null", async () => {
+      const runner = new DefaultRoutineRunner(
+        [pageRoutine],
+        { select: vi.fn(async () => ({ nextStepId: "confirm_program" })) },
+        { render: vi.fn(echoInstruction.render) },
+        undefined,
+        { contextRenderer: { render: () => null } },
+      );
+
+      const result = await runner.resume({ turn, state: state(["confirm_program"]) });
+
+      expect(result.response.answer).toBe(" If it is a program page, confirm it; otherwise ask which program .");
+    });
+
+    it("replaces the token with an empty string when no context renderer is configured", async () => {
+      const runner = new DefaultRoutineRunner(
+        [pageRoutine],
+        { select: vi.fn(async () => ({ nextStepId: "confirm_program" })) },
+        { render: vi.fn(echoInstruction.render) },
+      );
+
+      const result = await runner.resume({ turn: { ...turn, stagedContext: [stagedPage] }, state: state(["confirm_program"]) });
+
+      expect(result.response.answer).not.toContain("{{context.page_context}}");
+      expect(result.response.answer).toBe(" If it is a program page, confirm it; otherwise ask which program .");
+    });
+
+    it("resolves the token in an await step's instruction too", async () => {
+      const awaitRoutine: Routine = {
+        id: "contact",
+        rootStepId: "approve",
+        steps: [{
+          id: "approve",
+          kind: "await",
+          action: "Confirm booking for {{context.page_context}}?",
+          decision: { captureKey: "decision", options: [{ id: "yes", label: "Yes" }, { id: "no", label: "No" }] },
+        }],
+        transitions: [],
+      };
+      const runner = new DefaultRoutineRunner(
+        [awaitRoutine],
+        { select: vi.fn(async () => ({ nextStepId: "approve" })) },
+        { render: vi.fn(echoInstruction.render) },
+        undefined,
+        { contextRenderer },
+      );
+
+      const result = await runner.resume({ turn: { ...turn, stagedContext: [stagedPage] }, state: state([]) });
+
+      expect(result.response.answer).toBe("Confirm booking for <page>https://example.com/programs/yoga</page>?");
+    });
   });
 
   it("dispatches a root skill step and passes its outputs as staged context to the rendered chat step", async () => {
@@ -325,6 +425,62 @@ describe("DefaultRoutineRunner", () => {
     expect(result.actions?.[0]?.payload).toEqual(expect.objectContaining({
       data: { email: "a@b.c" },
     }));
+  });
+
+  it("carries the declared slot values on a handoff terminal, without undeclared variables", async () => {
+    const bookingRoutine: Routine = {
+      id: "booking",
+      rootStepId: "ask_program",
+      slots: [
+        { id: "slot_program", key: "program", type: "text", required: true },
+        { id: "slot_arrival", key: "arrival_date", type: "text", required: true },
+        { id: "slot_guests", key: "guests", type: "number", required: false },
+      ],
+      steps: [
+        { id: "ask_program", kind: "chat", action: "Ask which program." },
+        { id: "handoff", kind: "terminal", action: "Hand off to the booking desk.", metadata: { terminalKind: "handoff" } },
+      ],
+      transitions: [{ from: "ask_program", to: "handoff", condition: "program known" }],
+    };
+    const runner = new DefaultRoutineRunner(
+      [bookingRoutine],
+      { select: vi.fn(async () => ({ nextStepId: "handoff", variables: { arrival_date: "2026-10-12" } })) },
+      { render: vi.fn(echoRenderer.render) },
+    );
+
+    const result = await runner.resume({
+      turn,
+      state: {
+        ...state(["ask_program"], { program: "Yoga retreat", scratch: "not a slot" }),
+        routineId: bookingRoutine.id,
+      },
+    });
+
+    expect(result.nextState).toBeNull();
+    expect(result.terminal).toEqual({
+      kind: "handoff",
+      stepId: "handoff",
+      collected: { program: "Yoga retreat", arrival_date: "2026-10-12" },
+    });
+  });
+
+  it("carries the declared slot values on a complete terminal too", async () => {
+    const slotRoutine: Routine = {
+      ...routine,
+      slots: [{ id: "slot_email", key: "email", type: "email", required: true }],
+    };
+    const runner = new DefaultRoutineRunner(
+      [slotRoutine],
+      { select: vi.fn(async () => ({ nextStepId: "done" })) },
+      { render: vi.fn(echoRenderer.render) },
+    );
+
+    const result = await runner.resume({
+      turn,
+      state: state(["ask_email", "ask_message"], { email: "a@b.c", message: "hi" }),
+    });
+
+    expect(result.terminal).toEqual({ kind: "complete", stepId: "done", collected: { email: "a@b.c" } });
   });
 
   it("does not emit completion export when the terminal kind is not configured", async () => {
@@ -892,7 +1048,7 @@ describe("DefaultRoutineRunner skill (tool) steps", () => {
     expect(dispatch).toHaveBeenCalledTimes(2);
     expect(second.response.answer).toContain("handoff");
     expect(second.nextState).toBeNull();
-    expect(second.terminal).toEqual({ kind: "handoff", stepId: "handoff" });
+    expect(second.terminal).toEqual({ kind: "handoff", stepId: "handoff", collected: {} });
     expect(second.actions).toBeUndefined();
   });
 
@@ -931,7 +1087,7 @@ describe("DefaultRoutineRunner skill (tool) steps", () => {
     expect(dispatch).toHaveBeenCalledTimes(1);
     expect(result.response.answer).toContain("handoff");
     expect(result.nextState).toBeNull();
-    expect(result.terminal).toEqual({ kind: "handoff", stepId: "handoff" });
+    expect(result.terminal).toEqual({ kind: "handoff", stepId: "handoff", collected: {} });
   });
 
   it("uses a slot_filled guard purely before falling back to the selector", async () => {
@@ -1250,7 +1406,7 @@ describe("DefaultRoutineRunner field guards (deterministic branch-on-value)", ()
 
   it("takes the older_than branch for a date more than 6 months before now", async () => {
     const select = vi.fn<ConversationRoutineNextStepSelector["select"]>(async () => ({ nextStepId: "check" }));
-    const runner = new DefaultRoutineRunner([dateEligibility()], { select }, { render: vi.fn(echoRenderer.render) }, undefined, fixedNow);
+    const runner = new DefaultRoutineRunner([dateEligibility()], { select }, { render: vi.fn(echoRenderer.render) }, undefined, { clock: fixedNow });
 
     const result = await runner.resume({ turn, state: atCheck({ order_date: "2025-10-01" }) });
 
@@ -1260,7 +1416,7 @@ describe("DefaultRoutineRunner field guards (deterministic branch-on-value)", ()
 
   it("falls through for a recent date (not older than 6 months)", async () => {
     const select = vi.fn<ConversationRoutineNextStepSelector["select"]>(async () => ({ nextStepId: "check" }));
-    const runner = new DefaultRoutineRunner([dateEligibility()], { select }, { render: vi.fn(echoRenderer.render) }, undefined, fixedNow);
+    const runner = new DefaultRoutineRunner([dateEligibility()], { select }, { render: vi.fn(echoRenderer.render) }, undefined, { clock: fixedNow });
 
     const result = await runner.resume({ turn, state: atCheck({ order_date: "2026-05-01" }) });
 

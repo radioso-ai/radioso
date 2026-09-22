@@ -14,6 +14,7 @@
 import type { RoutineContextRenderer, StagedContext } from "@radioso/conversation-contract";
 
 import { CONTEXT_VARIABLES_BEHAVIOR } from "../../shared/domain/behaviorConfig.js";
+import { escapeXmlText } from "../../shared/domain/escapeXmlText.js";
 import { boundContextVariableFragments } from "./contextVariablesBound.js";
 import { REDACTED_VALUE } from "./redaction.js";
 import { PAGE_CONTEXT_VARIABLE_NAME } from "./contextResolutionService.js";
@@ -29,6 +30,11 @@ const usableString = (value: unknown): string | null => {
   return trimmed.length > 0 ? trimmed : null;
 };
 
+const escapedString = (value: unknown): string | null => {
+  const usable = usableString(value);
+  return usable === null ? null : escapeXmlText(usable);
+};
+
 const stagedVariableName = (staged: StagedContext): string | null =>
   (isRecord(staged.metadata) ? usableString(staged.metadata.variableName) : null) ?? usableString(staged.id);
 
@@ -37,14 +43,15 @@ const findStagedVariable = (name: string, stagedContext: readonly StagedContext[
 
 // Only the page's identity reaches a step instruction: URL, title, and language. The visible
 // page excerpt stays out — it is the injection surface, and the page-read pipeline already
-// hands the model the excerpt as evidence where a turn needs it.
+// hands the model the excerpt as evidence where a turn needs it. The fields that do reach it
+// are visitor-browser-supplied, so they are escaped: a title cannot close the framing tag.
 const renderPageContext = (data: unknown): string | null => {
   if (!isRecord(data)) {
     return null;
   }
-  const pageUrl = usableString(data.pageUrl);
-  const pageTitle = usableString(data.pageTitle);
-  const pageLocale = usableString(data.pageLocale);
+  const pageUrl = escapedString(data.pageUrl);
+  const pageTitle = escapedString(data.pageTitle);
+  const pageLocale = escapedString(data.pageLocale);
   if (!pageUrl && !pageTitle && !pageLocale) {
     return null;
   }
@@ -67,7 +74,8 @@ const renderVariable = (name: string, staged: StagedContext): string | null => {
   const text = metadata.sensitive === true
     ? REDACTED_VALUE
     : boundedValueText(name, stagedValue(staged.data));
-  return text === null ? null : `<context_variable name="${name}">${text}</context_variable>`;
+  // Host-pushed values are data too; escape after bounding so the clamp sees the raw length.
+  return text === null ? null : `<context_variable name="${name}">${escapeXmlText(text)}</context_variable>`;
 };
 
 // Strings read as-is; anything structured reads as JSON, clamped by the same per-value bound

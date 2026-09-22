@@ -44,9 +44,12 @@ describe('routineContextVariablesFromEnablements', () => {
     ])
   })
 
-  it('lets a host-defined variable named after a built-in take the built-in place once', () => {
-    const names = routineContextVariablesFromEnablements([enablement({ name: 'page_context' })]).map((variable) => variable.name)
-    expect(names).toEqual(['page_context', 'visitor_request'])
+  it('lets a host-defined variable named after a built-in take the built-in place once, under its own name', () => {
+    const variables = routineContextVariablesFromEnablements([enablement({ name: 'page_context' })])
+    expect(variables).toEqual([
+      { name: 'page_context', label: 'page_context' },
+      { name: 'visitor_request', label: 'Visitor request' },
+    ])
   })
 })
 

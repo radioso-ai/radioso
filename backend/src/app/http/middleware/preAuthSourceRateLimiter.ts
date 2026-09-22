@@ -52,6 +52,29 @@ const verifiedMcpSourceDigest = (
   });
 };
 
+interface PreAuthSourceLocals {
+  /**
+   * The calling source's opaque digest, resolved once per request by the first source
+   * limiter on the route. Later middleware budgets and audits by it rather than
+   * recomputing — two resolutions of the same request must never disagree.
+   */
+  preAuthSourceDigest: string;
+}
+
+/** Publishes the digest for later middleware on the same request. */
+export const publishPreAuthSourceDigest = (
+  res: Parameters<RequestHandler>[1],
+  sourceDigest: string,
+): string => {
+  (res.locals as typeof res.locals & PreAuthSourceLocals).preAuthSourceDigest = sourceDigest;
+  return sourceDigest;
+};
+
+export const readPreAuthSourceDigest = (
+  res: Parameters<RequestHandler>[1],
+): string | null =>
+  (res.locals as typeof res.locals & Partial<PreAuthSourceLocals>).preAuthSourceDigest ?? null;
+
 export const resolvedPreAuthSourceDigest = (
   req: Parameters<RequestHandler>[0],
   signingSecret?: string,
@@ -76,11 +99,15 @@ export const createPreAuthSourceRateLimiter = (input: {
   trustedProxyHops?: number;
   windowMs: number;
   onFailure?: (input: { outcome: "limited" | "unavailable" }) => void;
-}): RequestHandler => async (req, _res, next) => {
+}): RequestHandler => async (req, res, next) => {
   try {
+    const sourceDigest = publishPreAuthSourceDigest(
+      res,
+      resolvedPreAuthSourceDigest(req, input.signingSecret, input.trustedProxyHops),
+    );
     await input.service.enforce({
       scope: input.scope,
-      subjectKey: `source:${resolvedPreAuthSourceDigest(req, input.signingSecret, input.trustedProxyHops)}`,
+      subjectKey: `source:${sourceDigest}`,
       limit: input.limit,
       windowMs: input.windowMs,
     });

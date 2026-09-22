@@ -6,13 +6,12 @@ import type {
   ConversationUpdateWaiter,
 } from "../../../modules/chat/contracts/index.js";
 import type { AgentConverseSessionPort } from "../../../modules/settings/contracts/agentConverseSession.js";
-import { badRequest } from "../../../shared/domain/errors.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import { onSuccessfulHttpResponse } from "../middleware/httpResponseCompletion.js";
 import type { McpConverseLocals } from "../middleware/requireMcpConverseSession.js";
 import {
   MCP_CONVERSE_MESSAGES_PAGE_LIMIT,
-  mcpConverseMessagesQuerySchema,
+  type McpConverseMessagesQuery,
 } from "../schemas/mcpConverseSchemas.js";
 
 /** Outcome label of one call, for `mcp_converse_update_polls_total`. */
@@ -53,17 +52,20 @@ const emptyPage = (): ConversationUpdatePage => ({
  * never per poll tick: a caller that parks for 25 s costs at most ⌈25/2⌉ trivial keyset
  * reads and no held database connection, so a parked caller consumes a socket rather
  * than one of the pool's connections.
+ *
+ * Sockets are the resource this route actually spends, and they are per process: a parked
+ * read holds a client connection for its whole deadline, and one served through the
+ * standalone MCP server holds an upstream connection too. The route's own source budget
+ * (`mcp.converse.messages.source`) is what bounds that — an arrival rate times the 25 s
+ * ceiling is a concurrency ceiling — so it is deliberately not shared with the session
+ * exchange's budget, whose calls return immediately.
  */
 export const createMcpConverseMessagesHandler = (
   dependencies: McpConverseMessagesHandlerDependencies,
 ): RequestHandler => async (req, res, next) => {
   try {
-    const parsedQuery = mcpConverseMessagesQuerySchema.safeParse(req.query);
-    if (!parsedQuery.success) {
-      next(badRequest("Invalid request query", parsedQuery.error.flatten()));
-      return;
-    }
-    const { cursor, waitMs } = parsedQuery.data;
+    // `validateQuery` in front of this handler has already parsed and bounded the query.
+    const { cursor, waitMs } = req.query as unknown as McpConverseMessagesQuery;
     const { mcpConversePrincipal: principal } = res.locals as typeof res.locals & McpConverseLocals;
 
     const conversationId = await resolveConversationId(dependencies.conversations, principal);

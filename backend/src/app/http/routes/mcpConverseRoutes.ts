@@ -18,16 +18,18 @@ import { requireMcpConverseSession, type McpConverseLocals } from "../middleware
 import { agentChannelChatRateLimiters } from "../middleware/agentChannelRateLimiter.js";
 import {
   createMcpConverseMessagesRateLimiter,
+  createMcpConverseMessagesSourceRateLimiter,
   createMcpConverseSourceRateLimiter,
   createMcpConverseTokenRateLimiter,
 } from "../middleware/mcpConverseSessionRateLimiter.js";
 import { createMcpConverseWalkInRateLimiter, type McpConverseWalkInLocals } from "../middleware/mcpConverseWalkInRateLimiter.js";
-import { validateBody } from "../middleware/validate.js";
+import { validateBody, validateQuery } from "../middleware/validate.js";
 import { onSuccessfulHttpResponse } from "../middleware/httpResponseCompletion.js";
 import { requireValidMcpSourceProof } from "../middleware/preAuthSourceRateLimiter.js";
 import { createMcpConverseMessagesHandler } from "./mcpConverseMessagesRoute.js";
 import {
   mcpConverseAskRequestSchema,
+  mcpConverseMessagesQuerySchema,
   mcpConverseSessionRequestSchema,
   mcpConverseSessionValidateRequestSchema,
 } from "../schemas/mcpConverseSchemas.js";
@@ -72,6 +74,7 @@ export const createMcpConverseRoutes = (
   const rateLimitMcpToken = createMcpConverseTokenRateLimiter(dependencies);
   const rateLimitMcpWalkIn = createMcpConverseWalkInRateLimiter(dependencies, services.walkInObserver);
   const rateLimitMcpMessages = createMcpConverseMessagesRateLimiter(dependencies);
+  const rateLimitMcpMessagesSource = createMcpConverseMessagesSourceRateLimiter(dependencies);
 
   router.post(
     "/session",
@@ -158,7 +161,8 @@ export const createMcpConverseRoutes = (
   // since its cursor, optionally parking until something does.
   router.get(
     "/messages",
-    rateLimitMcpSource,
+    rateLimitMcpMessagesSource,
+    validateQuery(mcpConverseMessagesQuerySchema),
     requireMcpConverseSession(sessionService),
     rateLimitMcpMessages,
     requirePublicChatPermission(dependencies, "public_chat.history.read.own"),

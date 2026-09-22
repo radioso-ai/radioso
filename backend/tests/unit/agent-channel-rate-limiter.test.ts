@@ -55,7 +55,7 @@ describe("agent channel chat rate limiter", () => {
     ]);
   });
 
-  it("charges a walk-in turn to its own session, so a credential-free caller is still budgeted", async () => {
+  it("charges a walk-in turn to the agent and the calling source, which a caller cannot reset", async () => {
     const { enforceBatch } = await run("mcp", {
       mcpConversePrincipal: {
         origin: { kind: "walk_in", publicId: "ag_0123456789abcdefghijkl" },
@@ -63,11 +63,41 @@ describe("agent channel chat rate limiter", () => {
         workspaceId: "workspace-1",
         agentId: "agent-1",
       },
+      preAuthSourceDigest: "digest-1",
     });
 
     expect(enforceBatch).toHaveBeenCalledWith([
-      expect.objectContaining({ scope: "agent.channel.chat.grant", subjectKey: "walkin:session-1" }),
+      expect.objectContaining({
+        scope: "agent.channel.chat.grant",
+        subjectKey: "walkin:ag_0123456789abcdefghijkl:digest-1",
+      }),
       expect.objectContaining({ scope: "agent.channel.chat.workspace", subjectKey: "workspace:workspace-1:global" }),
     ]);
+  });
+
+  it("keeps charging the same key after the caller exchanges a fresh walk-in session", async () => {
+    // Exchanging again is free, so a session-keyed budget would have been free to reset.
+    const first = await run("mcp", {
+      mcpConversePrincipal: {
+        origin: { kind: "walk_in", publicId: "ag_0123456789abcdefghijkl" },
+        publicSessionId: "session-1",
+        workspaceId: "workspace-1",
+        agentId: "agent-1",
+      },
+      preAuthSourceDigest: "digest-1",
+    });
+    const second = await run("mcp", {
+      mcpConversePrincipal: {
+        origin: { kind: "walk_in", publicId: "ag_0123456789abcdefghijkl" },
+        publicSessionId: "session-2",
+        workspaceId: "workspace-1",
+        agentId: "agent-1",
+      },
+      preAuthSourceDigest: "digest-1",
+    });
+
+    const subjectKeyOf = (enforceBatch: ReturnType<typeof vi.fn>) =>
+      (enforceBatch.mock.calls[0]?.[0] as { subjectKey: string }[])[0]?.subjectKey;
+    expect(subjectKeyOf(second.enforceBatch)).toBe(subjectKeyOf(first.enforceBatch));
   });
 });

@@ -58,6 +58,7 @@ export const createRemoteHttpRuntime = async ({
   resolvedRuntimeStores.readiness.start();
   const authService = createAuthService({
     sessionStore: resolvedRuntimeStores.sessionStore,
+    signingSecret: config.signingSecret,
     converseApi: createConverseApiAdapter({
       baseUrl: config.baseUrl,
       requestTimeoutMs: config.requestTimeoutMs,

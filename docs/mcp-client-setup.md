@@ -182,7 +182,7 @@ Authorization: Bearer <session token>
 - `cursor` is opaque. Send back the one the previous reply gave you; the response's `cursor` is where to resume next time. Called with no cursor, the route returns the conversation's most recent page, so a client that has lost its place can pick the conversation up again.
 - `ownership` is the conversation's state alone, `ai_owned` or `human_owned`. The `suppressed` flag on an `ask_agent` reply says whether the agent generated anything on that turn; a read runs no turn, so it carries no such flag.
 - `waitMs` (0–25000) holds the request open until a message lands. At the deadline the route answers `200` with an empty `messages` list — nothing new yet, not a failure — so a client loops on the same cursor. The wait is raced against a short re-query, so a reply written by another API instance still wakes the call.
-- One call spends one unit of the session's read budget no matter how long it waits. `MCP_CONVERSE_MESSAGES_RATE_LIMIT_MAX_ATTEMPTS` (default 60) sets that budget per session per window.
+- One call spends one unit of the session's read budget no matter how long it waits. `MCP_CONVERSE_MESSAGES_RATE_LIMIT_MAX_ATTEMPTS` (default 60) sets that budget per session per window, and `MCP_CONVERSE_MESSAGES_SOURCE_RATE_LIMIT_MAX_ATTEMPTS` (default 60) sets it per calling source. The second is also what bounds how many reads one source can have parked at once: at 60 a minute against a 25-second ceiling, about 25 of them overlap.
 
 Over standalone MCP this is the `get_conversation_updates` tool, taking the same `cursor` and `waitMs`. The session's conversation is keyed by the `Mcp-Session-Id` header the server returns on first contact: echo it on every later request to stay in the same conversation. A client that drops the header gets a fresh conversation on each call, so the reply it is waiting for never arrives.
 
@@ -372,7 +372,7 @@ Point an MCP client at that URL and send no `Authorization` header. The server e
 }
 ```
 
-Each connection gets its own conversation. The server names it in the `Mcp-Session-Id` response header on the first reply; a client that echoes that header on later requests continues the same conversation, and one that drops it starts a new one each call. Most MCP clients handle this for you.
+Each connection gets its own conversation. The server names it in the `Mcp-Session-Id` response header on the first reply; a client that echoes that header on later requests continues the same conversation, and one that drops it starts a new one each call. Most MCP clients handle this for you. The handle is signed and bound to the agent and to the calling source, so one a client invents, or one replayed from somewhere else, names nothing and opens a fresh conversation instead. Self-hosted deployments set `RADIOSO_MCP_SIGNING_SECRET` for this; without it every walk-in call gets a new conversation.
 
 The public id is a routing key, not a secret — it appears in the agent card, in the embed's page markup, and in whatever config the caller saves. It grants exactly what the operator has published: a conversation with that one agent. Rotating it from the dashboard, or turning walk-in access off, refuses the next request on every connection opened against it.
 

@@ -288,6 +288,15 @@ Observability: `mcp_converse_update_polls_total{outcome}` where `outcome ∈ imm
 - **`boundOrigin` is `string | null | undefined` on `VerifySignedIdentityInput`** and the origin comparison runs only when one is supplied. Public chat still passes `sourceOrigin` and returns early when it has none, so its behaviour is unchanged.
 - **No new `operationId`**: `createMcpConverseSession` and `askMcpConverseAgent` are already `endUserSurface` entries in `catalogCoverage.ts`, and `fieldParity.ts` only covers operations a copilot tool backs, so neither gate needed an entry.
 
+## Implementation notes (review fixes, as built)
+
+- **A walk-in continuity handle is `{id}.{hmac}`, minted server-side.** The first cut accepted any `Mcp-Session-Id` matching `/^[A-Za-z0-9_-]{8,128}$/` as the store key, which made the session identity client-chosen: two callers presenting `default` shared one conversation, and the key doubled as the access token, so `Authorization: Bearer radioso-walk-in:{publicId}:{handle}` resolved that session through the credential door. The handle is now signed under `RADIOSO_MCP_SIGNING_SECRET` over `(publicId, sourceDigest, id)`, the store key is namespaced by the source digest as well, and `resolveBearerSession` refuses the whole `radioso-walk-in:` keyspace before it looks anything up. With no signing secret configured nothing is trusted and every call opens a fresh conversation.
+- **The per-agent walk-in budget is subdivided by source.** A bare per-agent counter let three abusive sources spend a published agent's whole hourly allowance. The operator's number is now the per-source allowance; the bare agent counter stays as a backstop at `MCP_WALK_IN_AGENT_BACKSTOP_MULTIPLIER` (default 10) times that, for the many-sources case.
+- **The walk-in limiter writes its own audit.** It calls `abuseControlService.enforce` directly rather than going through `createRateLimitMiddleware`, which is where the `security.rate_limit_enforced` write lives — so US4 AS-3's "visible in the security event feed" was unimplemented. The digest names the caller; the public id stays out of the record.
+- **The walk-in turn budget keys on `walkin:{publicId}:{sourceDigest}`.** Keying on `publicSessionId` made it free to reset, because exchanging another walk-in session costs nothing.
+- **The conversation-update read has its own source scope.** Sharing the exchange's bucket let ~25 concurrent parked long-polls per source hold a client and an upstream socket with no separate cap. Rate times the 25 s ceiling is the concurrency ceiling, so the rate is the lever.
+- **One digest per request.** `createPreAuthSourceRateLimiter` publishes the source digest it resolved into `res.locals`; later middleware budgets and audits by it instead of resolving it a second time.
+
 ## Implementation notes (slice 5, as built)
 
 - **`ConversationUpdateWaiter.wait` returns `"woken" | "deadline"`, not `void`.** The handler needs the reason twice over: to stop its loop without comparing clocks, and to label `mcp_converse_update_polls_total` truthfully. A `void` waiter would have forced the route to guess which of the three outcomes it just saw.

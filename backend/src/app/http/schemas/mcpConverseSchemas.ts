@@ -54,6 +54,8 @@ export const mcpConverseMessagesQuerySchema = z.object({
   waitMs: z.coerce.number().int().min(0).max(MCP_CONVERSE_MESSAGES_MAX_WAIT_MS).default(0),
 });
 
+export type McpConverseMessagesQuery = z.output<typeof mcpConverseMessagesQuerySchema>;
+
 export const mcpConverseAskRequestSchema = z.object({
   message: z.string().trim().min(1).optional(),
   routine: routineInvocationRequestSchema.optional(),

@@ -52,6 +52,26 @@ export const createMcpConverseSourceRateLimiter = (
   ),
 });
 
+/**
+ * The conversation-update read has its own source budget rather than sharing the session
+ * exchange's, because a read may park for up to 25 s: on one process each parked read
+ * holds a client socket and, through the standalone MCP server, an upstream one. Bounding
+ * the arrival rate is what bounds that concurrency — at the default 60 per minute, one
+ * source can have at most ~25 reads overlapping.
+ */
+export const createMcpConverseMessagesSourceRateLimiter = (
+  dependencies: McpConverseSessionRateLimiterDependencies & {
+    env: Pick<Env, "MCP_CONVERSE_MESSAGES_SOURCE_RATE_LIMIT_MAX_ATTEMPTS">;
+  },
+): RequestHandler => createPreAuthSourceRateLimiter({
+  service: dependencies.abuseControlService,
+  scope: "mcp.converse.messages.source",
+  limit: dependencies.env.MCP_CONVERSE_MESSAGES_SOURCE_RATE_LIMIT_MAX_ATTEMPTS,
+  signingSecret: dependencies.env.RADIOSO_MCP_SIGNING_SECRET,
+  trustedProxyHops: dependencies.env.RADIOSO_TRUSTED_PROXY_HOPS,
+  windowMs: dependencies.env.MCP_CONVERSE_SESSION_RATE_LIMIT_WINDOW_MS,
+});
+
 interface McpConverseMessagesRateLimiterDependencies {
   env: Pick<Env,
     | "MCP_CONVERSE_SESSION_RATE_LIMIT_WINDOW_MS"

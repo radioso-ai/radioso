@@ -9,6 +9,7 @@ import {
 } from "./rateLimit.js";
 import {
   createPreAuthSourceRateLimiter,
+  readPreAuthSourceDigest,
   type PreAuthSourceAbuseControlPort,
 } from "./preAuthSourceRateLimiter.js";
 
@@ -46,11 +47,14 @@ const identityForAudience = (res: Response, audience: AgentChannelAudience): Cha
 
   const principal = res.locals.mcpConversePrincipal as AgentConversePrincipal | undefined;
   if (!principal?.origin || !principal.workspaceId || !principal.agentId) return null;
-  // A walk-in caller has no credential to charge, so its own session is the subject —
-  // turns stay budgeted per caller, as FR-032 requires, without a grant to name.
+  // A walk-in caller has no credential to charge. Keying on its session id would have made
+  // the budget free to reset — a caller simply exchanges a new session — so the subject is
+  // the agent's public id and the calling source, which is the same pair the walk-in
+  // exchange budgets. Callers sharing one egress address share one turn budget, as they
+  // already share the exchange budget.
   const callerKey = principal.origin.kind === "grant"
     ? `grant:${principal.origin.grantId}`
-    : `walkin:${principal.publicSessionId}`;
+    : `walkin:${principal.origin.publicId}:${readPreAuthSourceDigest(res) ?? principal.publicSessionId}`;
   return { callerKey, workspaceId: principal.workspaceId, agentId: principal.agentId };
 };
 

@@ -6,6 +6,7 @@ import { toMcpRequestAuthInfo, type McpRequestAuthInfo } from "./authInfo.js";
 import type { AccessSessionRecord, SessionStore } from "./sessionStore.js";
 import { hashToken } from "./token.js";
 import { toToolCatalogKey } from "./toolCatalogKey.js";
+import { isWalkInStoreKey, mintWalkInHandle, verifyWalkInHandle, walkInStoreKey } from "./walkInHandle.js";
 
 export class AuthServiceError extends Error {
   constructor(
@@ -22,6 +23,12 @@ interface AuthServiceDependencies {
   converseApi: ConverseApiAdapter;
   now?: () => Date;
   sessionStore: SessionStore;
+  /**
+   * Signs walk-in continuity handles. Without it no echoed handle is trusted and every
+   * walk-in call opens a fresh conversation — degraded continuity rather than a handle
+   * a caller could choose.
+   */
+  signingSecret?: string;
   /** Operator-facing warnings about a degraded exchange; defaults to `console.warn`. */
   warn?: (message: string) => void;
 }
@@ -32,26 +39,20 @@ export interface AuthService {
   resolveBearerSession(accessToken: string, sourceDigest?: string): Promise<AccessSessionRecord | null>;
   /**
    * Opens or reuses a credential-free session on a public agent. `walkInKey` is the
-   * caller's own handle for the conversation, carried in `Mcp-Session-Id`; the server
-   * mints one on first contact and the client echoes it, which is how a walk-in caller
-   * keeps one conversation without holding a credential.
+   * handle this server minted and the client echoed in `Mcp-Session-Id`. The handle is
+   * signed and bound to the agent and the calling source, so a caller cannot name a
+   * session it was not given: anything that does not verify opens a new conversation.
    */
   resolveWalkInSession(input: {
     publicId: string;
     walkInKey?: string | null;
-    sourceDigest?: string;
+    sourceDigest: string;
   }): Promise<{ session: AccessSessionRecord; walkInKey: string } | null>;
   recordSuccessfulUse(session: AccessSessionRecord, sourceDigest?: string): void;
 }
 
 const defaultNow = () => new Date();
 const SUCCESSFUL_USE_REFRESH_MS = 5 * 60_000;
-/**
- * A walk-in handle is opaque and caller-echoed, so it is bounded structurally and
- * namespaced by public id — one caller's handle can never name another agent's session.
- */
-const WALK_IN_KEY_PATTERN = /^[A-Za-z0-9_-]{8,128}$/u;
-const WALK_IN_STORE_PREFIX = "radioso-walk-in:";
 
 const isAuthenticationFailure = (error: unknown): boolean =>
   error instanceof RadiosoApiError && (error.status === 401 || error.status === 403);
@@ -64,6 +65,12 @@ export const createAuthService = (dependencies: AuthServiceDependencies): AuthSe
   const warn = dependencies.warn ?? console.warn;
   const pendingBearerResolutions = new Map<string, Promise<AccessSessionRecord | null>>();
   const pendingUseNotifications = new Set<string>();
+  const warnedOnce = new Set<string>();
+  const warnOnce = (key: string, message: string): void => {
+    if (warnedOnce.has(key)) return;
+    warnedOnce.add(key);
+    warn(message);
+  };
   const lastSuccessfulUseNotifications = new Map<string, number>();
 
   const validateConverseSession = async (
@@ -159,6 +166,13 @@ export const createAuthService = (dependencies: AuthServiceDependencies): AuthSe
   };
 
   const resolveBearerSession = (accessToken: string, sourceDigest?: string): Promise<AccessSessionRecord | null> => {
+    // The walk-in keyspace is reachable only through `/mcp/a/{publicId}`, which proves
+    // the caller's source before it names a session. A bearer token that spells a walk-in
+    // store key is refused here rather than resolved, so the credential door can never
+    // hand out a walk-in caller's conversation.
+    if (isWalkInStoreKey(accessToken)) {
+      return Promise.resolve(null);
+    }
     const resolutionKey = `${hashToken(accessToken)}:${sourceDigest ?? "unknown"}`;
     const pending = pendingBearerResolutions.get(resolutionKey);
     if (pending) {
@@ -181,19 +195,34 @@ export const createAuthService = (dependencies: AuthServiceDependencies): AuthSe
 
   return {
     async resolveWalkInSession({ publicId, walkInKey, sourceDigest }) {
-      const key = WALK_IN_KEY_PATTERN.test(walkInKey ?? "") ? walkInKey as string : randomUUID();
-      const storeKey = `${WALK_IN_STORE_PREFIX}${publicId}:${key}`;
-      const existing = await getValidatedSession(storeKey, sourceDigest);
-      if (existing) {
-        return { session: existing, walkInKey: key };
+      const secret = dependencies.signingSecret;
+      if (!secret) {
+        warnOnce(
+          "unsigned-walk-in-handles",
+          "RADIOSO_MCP_SIGNING_SECRET is not set; walk-in callers get a fresh conversation on every request because no continuity handle can be signed.",
+        );
       }
+      const echoedId = secret ? verifyWalkInHandle({ secret, publicId, sourceDigest, handle: walkInKey }) : null;
+      if (echoedId) {
+        const existing = await getValidatedSession(
+          walkInStoreKey({ publicId, sourceDigest, id: echoedId }),
+          sourceDigest,
+        );
+        if (existing && walkInKey) {
+          return { session: existing, walkInKey };
+        }
+      }
+
+      // Anything that did not verify — forged, replayed from another source, or simply
+      // absent — opens a new conversation under a handle this server mints.
+      const handle = secret ? mintWalkInHandle({ secret, publicId, sourceDigest }) : randomUUID();
       const session = await openConverseSession({
         body: { publicId, client: { name: "radioso-mcp-server" } },
-        storeKey,
+        storeKey: walkInStoreKey({ publicId, sourceDigest, id: handle.split(".")[0] ?? handle }),
         sessionIdPrefix: "walkin",
         sourceDigest,
       });
-      return session ? { session, walkInKey: key } : null;
+      return session ? { session, walkInKey: handle } : null;
     },
     async getRequestAuthInfo(accessToken) {
       const session = await getValidatedSession(accessToken);

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { admittedAbuseControlDecision } from "../../support/fakes.js";
 import type { ConversationRecord } from "../../../src/db/repositories/conversationRepository.js";
 import {
   AgentTurnProbeService,
@@ -64,6 +65,7 @@ const harness = (options: { existingConversation?: ConversationRecord | null } =
   const abuseControl = {
     enforce: vi.fn(async () => {
       calls.push("abuse");
+      return admittedAbuseControlDecision();
     }),
   };
   const audit = { record: vi.fn(async () => {}) };
@@ -177,7 +179,7 @@ describe("AgentTurnProbeService", () => {
   it("fails closed on repeated direct-service probes and preserves rate-limit audit semantics", async () => {
     const { service, abuseControl, audit, runTurn } = harness();
     abuseControl.enforce
-      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(admittedAbuseControlDecision())
       .mockRejectedValueOnce(Object.assign(new Error("Rate limit exceeded"), { statusCode: 429 }));
 
     await service.testTurn(input());

@@ -3,6 +3,7 @@ import multer from "multer";
 
 import type { ErrorReportingService } from "../../../shared/errors/errorReportingService.js";
 import { AppError } from "../../../shared/domain/errors.js";
+import { applyRetryAfterFromError } from "../rateLimitHeaders.js";
 import { markHttpResponseFailed } from "./httpResponseCompletion.js";
 
 const isPayloadTooLargeError = (error: unknown): error is { status?: number; type?: string } =>
@@ -53,6 +54,12 @@ export const createErrorHandler = (errorReportingService?: ErrorReportingService
         },
       });
       return;
+    }
+
+    // Both branches below answer a 429, whoever raised it, so the retry hint is set once here
+    // rather than at every limiter.
+    if (isStructuredAppError(error)) {
+      applyRetryAfterFromError(res, error);
     }
 
     if (error instanceof AppError) {
@@ -118,5 +125,3 @@ export const createErrorHandler = (errorReportingService?: ErrorReportingService
       },
     });
   };
-
-export const errorHandler = createErrorHandler();

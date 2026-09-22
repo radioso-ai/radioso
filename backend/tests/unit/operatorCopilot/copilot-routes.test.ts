@@ -4,6 +4,7 @@ import request from "supertest";
 import { forbidden } from "../../../src/shared/domain/errors.js";
 import { describe, expect, it, vi } from "vitest";
 
+import { admittedAbuseControlDecision } from "../../support/fakes.js";
 import { createCopilotRoutes } from "../../../src/modules/operatorCopilot/routes.js";
 import { CopilotConflictError } from "../../../src/modules/operatorCopilot/public.js";
 
@@ -22,7 +23,7 @@ describe("createCopilotRoutes", () => {
       llmCapabilityResolver: {},
       operatorCopilotService: {},
       copilotToolCatalog: [],
-      abuseControlService: { enforce: vi.fn(async () => {}) },
+      abuseControlService: { enforce: vi.fn(async () => admittedAbuseControlDecision()) },
       auditService: { record: vi.fn(async () => {}) },
     } as never);
 
@@ -60,7 +61,7 @@ describe("createCopilotRoutes", () => {
       },
       operatorCopilotService: {},
       copilotToolCatalog: [],
-      abuseControlService: { enforce: vi.fn(async () => {}) },
+      abuseControlService: { enforce: vi.fn(async () => admittedAbuseControlDecision()) },
       auditService: { record: vi.fn(async () => {}) },
     } as never));
 
@@ -120,7 +121,7 @@ describe("createCopilotRoutes", () => {
       llmCapabilityResolver: { async resolve() { return {}; } },
       operatorCopilotService: { resolveProposalWorkspace, getProposal },
       copilotToolCatalog: [],
-      abuseControlService: { enforce: vi.fn(async () => {}) },
+      abuseControlService: { enforce: vi.fn(async () => admittedAbuseControlDecision()) },
       auditService: { record: vi.fn(async () => {}) },
     } as never));
 
@@ -221,7 +222,7 @@ describe("createCopilotRoutes", () => {
         runTurn: async function* () { throw new CopilotConflictError(); },
       },
       copilotToolCatalog: [],
-      abuseControlService: { enforce: vi.fn(async () => {}) },
+      abuseControlService: { enforce: vi.fn(async () => admittedAbuseControlDecision()) },
       auditService: { record: vi.fn(async () => {}) },
     } as never));
     app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
@@ -274,7 +275,7 @@ describe("createCopilotRoutes", () => {
       llmCapabilityResolver: { async resolve() { return {}; } },
       operatorCopilotService: { runTurn },
       copilotToolCatalog: [{ requiredPermissions: ["workspace.token.read"] }],
-      abuseControlService: { enforce: vi.fn(async () => {}) },
+      abuseControlService: { enforce: vi.fn(async () => admittedAbuseControlDecision()) },
       auditService: { record: vi.fn(async () => {}) },
     } as never));
     app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
@@ -347,7 +348,7 @@ describe("copilot turn rate limit", () => {
     });
 
   it("spends the operator's own budget, so one operator's loop cannot exhaust a colleague's", async () => {
-    const enforce = vi.fn(async () => {});
+    const enforce = vi.fn(async () => admittedAbuseControlDecision());
     const app = buildApp({ enforce });
 
     await postTurn(app);

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { AbuseControlPolicy } from "../../../src/modules/security/contracts/abuseControl.js";
+import { admittedAbuseControlDecision } from "../../support/fakes.js";
 import {
   AudiencePulseRefreshRateLimiter,
   type AudiencePulseRefreshRateLimiterDependencies,
@@ -13,6 +14,7 @@ describe("Audience Pulse refresh rate limiter", () => {
       abuseControlService: {
         async enforce(input: AbuseControlPolicy) {
           enforced.push(input);
+          return admittedAbuseControlDecision();
         },
       },
       auditService: { async record() {} },

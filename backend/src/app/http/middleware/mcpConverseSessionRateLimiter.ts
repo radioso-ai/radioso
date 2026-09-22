@@ -3,7 +3,10 @@ import type { RequestHandler } from "express";
 
 import type { Env } from "../../config/env.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
-import { createPreAuthSourceRateLimiter } from "./preAuthSourceRateLimiter.js";
+import {
+  createPreAuthSourceRateLimiter,
+  type PreAuthSourceAbuseControlPort,
+} from "./preAuthSourceRateLimiter.js";
 
 interface McpConverseSessionRateLimiterDependencies {
   env: Pick<Env,
@@ -13,14 +16,7 @@ interface McpConverseSessionRateLimiterDependencies {
     | "RADIOSO_MCP_SIGNING_SECRET"
     | "RADIOSO_TRUSTED_PROXY_HOPS"
   >;
-  abuseControlService: {
-    enforce(input: {
-      scope: string;
-      subjectKey: string;
-      limit: number;
-      windowMs: number;
-    }): Promise<unknown>;
-  };
+  abuseControlService: PreAuthSourceAbuseControlPort;
   metricsRegistry?: Pick<MetricsRegistry, "incrementCounter"> | null;
 }
 

@@ -3,26 +3,20 @@ import type {
   AbuseControlBatchConsumption,
   AbuseControlConsumption,
   AbuseControlConsumptionInput,
-  AbuseControlEntry,
+  AbuseControlDecision,
   AbuseControlRepositoryPort,
 } from "../contracts/abuseControl.js";
 import type { AbuseControlBatchPort, AbuseControlPolicy, AbuseControlPort } from "../contracts/abuseControl.js";
 
-export interface AbuseControlResult {
-  enforced: boolean;
-  retryAfterSeconds?: number;
-  entry: AbuseControlEntry;
-}
-
 export class AbuseControlService implements AbuseControlPort, AbuseControlBatchPort {
   constructor(private readonly repository: AbuseControlRepositoryPort) {}
 
-  async enforce(policy: AbuseControlPolicy): Promise<AbuseControlResult> {
+  async enforce(policy: AbuseControlPolicy): Promise<AbuseControlDecision> {
     try {
       const input = this.toConsumptionInput(policy, policy.now ?? new Date());
       const result = await this.repository.consume(input);
       void this.repository.deleteExpired(input.now).catch(() => undefined);
-      return this.presentConsumption(result, input.now);
+      return this.decide(result, input);
     } catch (error) {
       if (error instanceof AppError) {
         throw error;
@@ -31,7 +25,7 @@ export class AbuseControlService implements AbuseControlPort, AbuseControlBatchP
     }
   }
 
-  async enforceBatch(policies: readonly AbuseControlPolicy[]): Promise<AbuseControlResult[]> {
+  async enforceBatch(policies: readonly AbuseControlPolicy[]): Promise<AbuseControlDecision[]> {
     if (policies.length === 0) {
       return [];
     }
@@ -42,7 +36,7 @@ export class AbuseControlService implements AbuseControlPort, AbuseControlBatchP
       const batch = await this.repository.consumeBatch(inputs);
       this.throwIfRejected(batch, inputs);
       void this.repository.deleteExpired(now).catch(() => undefined);
-      return batch.entries.map((entry, index) => this.presentConsumption(entry, inputs[index].now));
+      return batch.entries.map((entry, index) => this.decide(entry, inputs[index]));
     } catch (error) {
       if (error instanceof AppError) {
         throw error;
@@ -66,19 +60,33 @@ export class AbuseControlService implements AbuseControlPort, AbuseControlBatchP
     if (!batch.rejected) {
       return;
     }
+    const rejected = batch.rejected;
     const rejectedInput = inputs.find((input) =>
-      input.scope === batch.rejected!.entry.scope && input.subjectKey === batch.rejected!.entry.subjectKey,
+      input.scope === rejected.entry.scope && input.subjectKey === rejected.entry.subjectKey,
     );
-    this.presentConsumption(batch.rejected, rejectedInput?.now ?? new Date());
+    this.decide(rejected, rejectedInput ?? inputs[0]);
   }
 
-  private presentConsumption(consumption: AbuseControlConsumption, now: Date): AbuseControlResult {
-    if (consumption.blocked && consumption.entry.blockedUntil) {
+  /**
+   * The same decision on both paths, so an admitted caller learns what is left and a rejected one
+   * learns when to return. The rejected decision rides in the 429 body, which is where the HTTP
+   * layer picks it up again.
+   */
+  private decide(consumption: AbuseControlConsumption, input: AbuseControlConsumptionInput): AbuseControlDecision {
+    const { blockedUntil, windowStartedAt } = consumption.entry;
+    if (consumption.blocked && blockedUntil) {
       throw tooManyRequests("Rate limit exceeded. Please wait before trying again.", {
-        retryAfterSeconds: this.retryAfterSeconds(consumption.entry.blockedUntil, now),
-      });
+        limit: input.limit,
+        remaining: 0,
+        resetAtMs: blockedUntil.getTime(),
+        retryAfterSeconds: this.retryAfterSeconds(blockedUntil, input.now),
+      } satisfies AbuseControlDecision);
     }
-    return { enforced: false, entry: consumption.entry };
+    return {
+      limit: input.limit,
+      remaining: Math.max(0, Math.floor(input.limit - consumption.weightedAttemptCount)),
+      resetAtMs: windowStartedAt.getTime() + input.windowMs,
+    };
   }
 
   private retryAfterSeconds(blockedUntil: Date, now: Date): number {

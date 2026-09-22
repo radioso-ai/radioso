@@ -7,7 +7,8 @@ import { useEffect, useMemo, useState } from "react";
 
 import { formatHumanBytes } from "../lib/byte-units";
 import { canWriteTiers, staffAuthApi, type AccountUsageSummary, type UsageLimitProfile, type StaffUser } from "../lib/staff-auth-api";
-import { ErrorBanner, limitText, StaffLayout } from "./staff-layout";
+import { limitText } from "../lib/meter-text";
+import { ErrorBanner, StaffLayout } from "./staff-layout";
 
 const resourceLabels = {
   monthlyAnswers: "Monthly answers",

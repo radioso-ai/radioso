@@ -3,6 +3,8 @@ import { randomUUID } from "node:crypto";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { PLAN_CATALOG } from "@radioso/plan-catalog";
+
 import type { UsageLimitDatabasePort } from "../radiosoModuleTypes.js";
 import { usageLimitMigrator } from "../usageLimits/usageLimitMigrator.js";
 import { OrganizationDirectoryService } from "./organizationDirectoryService.js";
@@ -199,10 +201,55 @@ describeIfDatabase("organization directory service", () => {
       profileKey: "starter",
       profileDisplayName: "Starter",
       monthlyAnswers: { used: 7, limit: 10 },
+      monthlyConversations: null,
     });
     expect(firstPage.rows.map((row) => row.ownerEmail)).not.toContain("legacy-alpha@example.com");
 
     const searched = await service.listOrganizations({ limit: 10, search: "second-owner@example.com" });
     expect(searched.rows.map((row) => row.accountId)).toEqual([alphaAccountId]);
+  });
+
+  it("reads the conversation meter for catalog-plan accounts, whose answer limit is dormant", async () => {
+    const cometPlan = PLAN_CATALOG.plans.find((plan) => plan.id === PLAN_CATALOG.defaultPlanId)!;
+    const ownerId = randomUUID();
+    const cometAccountId = randomUUID();
+
+    await database.query(`INSERT INTO users (id, email) VALUES ($1, 'comet-owner@example.com')`, [ownerId]);
+    await database.query(
+      `INSERT INTO accounts (id, name, email, created_at)
+       VALUES ($1, 'Comet Customer', 'legacy-comet@example.com', '2026-02-01T00:00:00.000Z')`,
+      [cometAccountId],
+    );
+    await database.query(
+      `INSERT INTO account_memberships (account_id, user_id, role, status)
+       VALUES ($1, $2, 'owner', 'active')`,
+      [cometAccountId, ownerId],
+    );
+    // No profile insert: the migrator already seeds one per @radioso/plan-catalog plan.
+    await database.query(
+      `INSERT INTO ee_usage_limit_account_assignments (account_id, profile_key) VALUES ($1, ${'$'}2)`,
+      [cometAccountId, cometPlan.id],
+    );
+    // 125 tenths is 12.5 conversations: ten test runs count as one.
+    await database.query(
+      `INSERT INTO ee_usage_limit_unit_counters (account_id, period_start, used_tenths)
+       VALUES ($1, '2026-06-01', 125)`,
+      [cometAccountId],
+    );
+
+    const service = new OrganizationDirectoryService(database, {
+      now: () => new Date("2026-06-29T12:00:00.000Z"),
+    });
+
+    const page = await service.listOrganizations({ limit: 10, search: "Comet Customer" });
+
+    expect(page.rows).toHaveLength(1);
+    expect(page.rows[0]).toMatchObject({
+      accountId: cometAccountId,
+      profileKey: cometPlan.id,
+      profileDisplayName: cometPlan.name,
+      monthlyAnswers: { used: 0, limit: null },
+      monthlyConversations: { used: 12.5, limit: cometPlan.monthlyConversations },
+    });
   });
 });

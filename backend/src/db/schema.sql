@@ -462,7 +462,8 @@ CREATE TABLE public.abuse_control_entries (
     window_started_at timestamp with time zone NOT NULL,
     blocked_until timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    previous_attempt_count integer DEFAULT 0 NOT NULL
 );
 
 

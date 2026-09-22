@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { admittedAbuseControlDecision } from "../../support/fakes.js";
 import type { AbuseControlPort } from "../../../src/modules/security/contracts/abuseControl.js";
 import { MAX_COPILOT_EVAL_SUITE_CASES } from "../../../src/modules/operatorCopilot/contracts/evalCases.js";
 import { EvalCaseCaptureService } from "../../../src/modules/operatorCopilot/services/evalCaseCaptureService.js";
@@ -108,7 +109,7 @@ describe("copilot eval suite probe", () => {
     const order: string[] = [];
     const enforce = options.enforce ?? vi.fn(async () => {
       order.push("enforce");
-      return undefined;
+      return admittedAbuseControlDecision();
     });
     const run = (options.run ?? vi.fn(async () => {
       order.push("run");
@@ -227,7 +228,7 @@ describe("copilot eval case replay", () => {
     const order: string[] = [];
     const enforce = options.enforce ?? vi.fn(async () => {
       order.push("enforce");
-      return undefined;
+      return admittedAbuseControlDecision();
     });
     const findCase = (options.findCase ?? vi.fn(async () => evalCase({ status: "failing", assertions: [{ type: "answer_contains" }] }))) as never;
     const execute = (options.execute ?? vi.fn(async () => {
@@ -364,7 +365,7 @@ describe("copilot eval case replay verdict projection", () => {
       runs: { execute },
       evidence: { record: vi.fn(async () => ({ id: "evidence-1" })), findMany: vi.fn() } as never,
       agentDirectives: { listDirectives: vi.fn(async () => []) },
-      abuseControl: { enforce: vi.fn(async () => undefined) },
+      abuseControl: { enforce: vi.fn(async () => admittedAbuseControlDecision()) },
       audit: { record: vi.fn(async () => undefined) },
       abusePolicy: { limit: 30, windowMs: 3_600_000 },
     });
@@ -390,7 +391,7 @@ describe("copilot eval case replay verdict projection", () => {
       runs: { execute },
       evidence: { record: vi.fn(async () => ({ id: "evidence-1" })), findMany: vi.fn() } as never,
       agentDirectives: { listDirectives: vi.fn(async () => []) },
-      abuseControl: { enforce: vi.fn(async () => undefined) },
+      abuseControl: { enforce: vi.fn(async () => admittedAbuseControlDecision()) },
       audit: { record: vi.fn(async () => undefined) },
       abusePolicy: { limit: 30, windowMs: 3_600_000 },
     });
@@ -436,7 +437,7 @@ describe("copilot eval case replay evidence", () => {
       runs: { execute },
       evidence: { record, findMany: vi.fn() } as never,
       agentDirectives: { listDirectives },
-      abuseControl: { enforce: vi.fn(async () => undefined) },
+      abuseControl: { enforce: vi.fn(async () => admittedAbuseControlDecision()) },
       audit: { record: vi.fn(async () => undefined) },
       abusePolicy: { limit: 30, windowMs: 3_600_000 },
     });

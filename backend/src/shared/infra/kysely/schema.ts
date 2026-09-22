@@ -31,6 +31,7 @@ export interface AbuseControlEntries {
   attempt_count: Generated<number>;
   blocked_until: Timestamp | null;
   created_at: Generated<Timestamp>;
+  previous_attempt_count: Generated<number>;
   scope: string;
   subject_key: string;
   updated_at: Generated<Timestamp>;

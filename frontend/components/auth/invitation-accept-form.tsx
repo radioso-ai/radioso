@@ -153,7 +153,7 @@ export function InvitationAcceptForm({
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
       <Button type="submit" className="w-full" disabled={isSubmitting}>
         {isSubmitting ? <Spinner className="mr-2 h-4 w-4" /> : null}
-        Join account
+        <span>Join account</span>
       </Button>
       {requiresExistingPassword ? (
         <p className="text-center text-sm">

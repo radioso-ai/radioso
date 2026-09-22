@@ -78,7 +78,7 @@ export function InvitationSessionJoin({
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
       <Button type="button" className="w-full" onClick={handleJoin} disabled={isSubmitting}>
         {isSubmitting ? <Spinner className="mr-2 h-4 w-4" /> : null}
-        Join account
+        <span>Join account</span>
       </Button>
       <p className="text-center text-sm">
         <button

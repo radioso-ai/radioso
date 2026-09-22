@@ -121,7 +121,7 @@ export function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
           onClick={handleResendVerification}
         >
           {isResendingVerification ? <Spinner className="mr-2" /> : null}
-          Resend verification email
+          <span>Resend verification email</span>
         </Button>
         <Button type="button" className="w-full" onClick={onSwitchToLogin}>
           Back to Sign In
@@ -188,7 +188,7 @@ export function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
       )}
       <Button type="submit" className="w-full" disabled={isLoading}>
         {isLoading ? <Spinner className="mr-2" /> : null}
-        Create account
+        <span>Create account</span>
       </Button>
       <p className="text-center text-sm text-muted-foreground">
         Already have an account?{' '}

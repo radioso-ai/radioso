@@ -123,7 +123,7 @@ export function LoginForm({
       )}
       <Button type="submit" className="w-full" disabled={isLoading}>
         {isLoading ? <Spinner className="mr-2" /> : null}
-        Sign In
+        <span>Sign In</span>
       </Button>
       {googleEnabled && (
         <>

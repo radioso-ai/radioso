@@ -1,6 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
+import type { McpConnection } from '@/lib/api-external-skills';
 
 import {
+  baseSkillCapabilities,
   defaultAgentId,
   installDashboardApiMocks,
   seedDashboardStorage,
@@ -46,8 +48,7 @@ test("the MCP card offers only the deployment guide when no MCP server is config
   await expect(card.getByRole("link", { name: /Deployment setup guide/ })).toBeVisible();
 
   await expect(card.getByRole("button", { name: "Connect a client" })).toHaveCount(0);
-  // The neighbouring skill-target Connections card legitimately says "MCP server",
-  // so assert on this card's own copy-field control instead of the text.
+  await expect(page.locator('#mcp-skill-connections')).toHaveCount(0);
   await expect(card.getByRole("button", { name: "Copy MCP server URL" })).toHaveCount(0);
   await expect(card.getByText("Connected clients")).toHaveCount(0);
 });
@@ -134,7 +135,165 @@ test("operator connects an MCP client, rotates it, and revokes it", async ({ pag
   await expect.poll(() => credentialRequests.some((request) =>
     request.method === "POST" && request.path === `/agents/${defaultAgentId}/channel-credentials/existing-grant/revoke`,
   )).toBe(true);
+  await expect(card.getByText("Revoked", { exact: true })).toBeHidden();
+  await card.locator('summary').filter({ hasText: 'Revoked access' }).click();
   await expect(card.getByText("Revoked", { exact: true })).toBeVisible();
+  await openRowMenu(page, 'Acme pilot');
+  await expect(page.getByRole('menuitem', { name: 'Rotate', exact: true })).toBeDisabled();
+  await page.getByRole('menuitem', { name: 'Details', exact: true }).click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+});
+
+test('Skills manages MCP connections in a panel without leaving the page', async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {});
+  await stubRuntimeConfig(page, { mcpUrl: MCP_SERVER_URL });
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-skills`);
+  await expect(page.getByRole('tab', { name: 'Connections', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Manage MCP connections', exact: true }).click();
+  const panel = page.getByRole('dialog', { name: 'MCP connections', exact: true });
+  await expect(panel.getByLabel('Server URL', { exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/anchor=assistant-skills/);
+  await expect(page.locator('#mcp-channel')).toHaveCount(0);
+  await panel.getByLabel('Display name', { exact: true }).fill('Support tools');
+  await panel.getByLabel('Server URL', { exact: true }).fill(MCP_SERVER_URL);
+  await panel.getByLabel('Access token', { exact: true }).fill('test-token');
+  await panel.getByRole('button', { name: 'Save connection', exact: true }).click();
+  await expect(panel.getByText('Support tools', { exact: true })).toBeVisible();
+  await expect(panel).toBeInViewport({ ratio: 1 });
+  await page.screenshot({ path: '../.context/mcp-servers-panel.png', fullPage: true });
+  await panel.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(panel).toBeHidden();
+  await expect(page.getByRole('tab', { name: 'Skills', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole('button', { name: 'Manage MCP connections', exact: true }).click();
+  await expect(panel.getByText('Support tools', { exact: true })).toBeVisible();
+  await expect(panel).toBeInViewport({ ratio: 1 });
+  await page.screenshot({ path: '../.context/mcp-servers-panel-mobile.png', fullPage: true });
+  await page.keyboard.press('Escape');
+  await expect(panel).toBeHidden();
+});
+
+test('adding an MCP skill opens server setup and returns with refreshed targets', async ({ page }) => {
+  const capabilities = baseSkillCapabilities();
+  const mcp = capabilities.find((capability) => capability.id === 'mcp_tool')!;
+  mcp.available = false;
+  mcp.targets = [];
+  mcp.unavailableReason = 'no_connection';
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { skillCapabilities: capabilities });
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-skills`);
+  await page.getByRole('button', { name: 'Add new skill', exact: true }).click();
+  const picker = page.getByRole('dialog', { name: 'Add new skill', exact: true });
+  await picker.getByRole('button', { name: 'Manage MCP connections', exact: true }).click();
+  const panel = page.getByRole('dialog', { name: 'MCP connections', exact: true });
+  await expect(picker).toBeHidden();
+  await panel.getByLabel('Display name', { exact: true }).fill('Support tools');
+  await panel.getByLabel('Server URL', { exact: true }).fill(MCP_SERVER_URL);
+  await panel.getByLabel('Access token', { exact: true }).fill('test-token');
+  await panel.getByRole('button', { name: 'Save connection', exact: true }).click();
+  await expect(panel.getByText('Support tools', { exact: true })).toBeVisible();
+  mcp.available = true;
+  mcp.unavailableReason = null;
+  mcp.targets = [{ id: 'new-server', label: 'Support tools', status: 'authorized' }];
+  await panel.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(picker).toBeVisible();
+  await expect(picker.getByRole('button', { name: /MCP Tool/ })).toBeEnabled();
+  await expect(page).toHaveURL(/anchor=assistant-skills/);
+});
+
+test('Test connection discovers tools, reports failures, and supports retry without invoking tools', async ({ page }) => {
+  await seedDashboardStorage(page);
+  const connection: McpConnection = {
+    id: 'support-server', displayName: 'Support tools', serverUrl: MCP_SERVER_URL,
+    authMethod: 'oauth', status: 'authorized', hasCredential: true,
+    createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z',
+  };
+  await installDashboardApiMocks(page, {
+    mcpConnections: [connection],
+  });
+  let releaseFirstRequest!: () => void;
+  const firstRequest = new Promise<void>((resolve) => { releaseFirstRequest = resolve; });
+  let attempts = 0;
+  const posts: string[] = [];
+  page.on('request', (request) => {
+    const path = new URL(request.url()).pathname;
+    if (request.method() === 'POST' && path.startsWith('/backend/api/v1/agents/')) posts.push(path);
+  });
+  await page.route('**/mcp-connections/support-server/discover', async (route) => {
+    attempts += 1;
+    if (attempts === 1) {
+      await firstRequest;
+      await route.fulfill({ json: { tools: [{ name: 'search' }, { name: 'ask_agent' }] } });
+    } else if (attempts === 2) {
+      await route.fulfill({ status: 500, json: { error: { code: 'internal_error', message: 'Internal server error' } } });
+    } else if (attempts === 3) {
+      connection.status = 'needs_reauth';
+      await route.fulfill({ status: 409, json: { error: { code: 'conflict', message: 'This connection needs re-authorization before tools can be discovered.' } } });
+    } else {
+      connection.status = 'authorized';
+      await route.fulfill({ json: { tools: [] } });
+    }
+  });
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-skills`);
+  await page.getByRole('button', { name: 'Manage MCP connections', exact: true }).click();
+  const panel = page.getByRole('dialog', { name: 'MCP connections', exact: true });
+  const testButton = panel.getByRole('button', { name: 'Test connection to Support tools', exact: true });
+  await expect(panel.getByText('Credentials saved', { exact: true })).toBeVisible();
+  await testButton.click();
+  await expect(testButton).toBeDisabled();
+  await expect(testButton).toHaveText('Testing…');
+  releaseFirstRequest();
+  await expect(panel.getByRole('status')).toHaveText('Connected · 2 tools found');
+  await testButton.click();
+  await expect(panel.getByRole('alert')).toContainText('Check the server URL and credentials');
+  await expect(panel.getByRole('status')).toHaveCount(0);
+  await testButton.click();
+  await expect(panel.getByRole('alert')).toContainText('needs re-authorization');
+  await expect(panel.getByRole('button', { name: 'Re-authorize', exact: true })).toBeVisible();
+  await testButton.click();
+  await expect(panel.getByRole('status')).toHaveText('Connected · 0 tools found');
+  await expect(panel.getByRole('alert')).toHaveCount(0);
+  await expect(panel.getByRole('button', { name: 'Re-authorize', exact: true })).toHaveCount(0);
+  expect(posts).toEqual(Array(4).fill(`/backend/api/v1/agents/${defaultAgentId}/mcp-connections/support-server/discover`));
+  await page.screenshot({ path: '../.context/mcp-test-connection.png', fullPage: true });
+});
+
+test('revoked history stays collapsed while older active access remains reachable', async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {});
+  await stubRuntimeConfig(page, { mcpUrl: MCP_SERVER_URL });
+  const revoked: AgentChannelCredentialFixture = {
+    id: 'revoked', audience: 'mcp', label: 'Old client', prefix: 'rd_old', status: 'revoked',
+    createdAt: '2026-01-01T00:00:00Z', expiresAt: '2030-01-01T00:00:00Z',
+    lastUsedAt: null, revokedAt: '2026-09-01T00:00:00Z',
+  };
+  await page.route('**/backend/api/v1/agents/*/channel-credentials?*', async (route) => {
+    const nextPage = new URL(route.request().url()).searchParams.has('cursor');
+    await route.fulfill({ json: {
+      credentials: nextPage ? [
+        { ...revoked, id: 'active', label: 'Working client', status: 'active', revokedAt: null },
+        { ...revoked, id: 'expired', label: 'Expired client', status: 'expired', expiresAt: '2026-01-02T00:00:00Z', revokedAt: null },
+      ] : [revoked],
+      nextCursor: nextPage ? null : 'older',
+    } });
+  });
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=channels&anchor=mcp-channel`);
+  const card = page.locator('#mcp-channel');
+  const history = card.locator('summary').filter({ hasText: 'Revoked access' });
+  await expect(history).toHaveText('Revoked access (1 loaded)');
+  await expect(card.getByText('Old client', { exact: true })).toBeHidden();
+  await expect(card.getByText('No clients connected yet.')).toHaveCount(0);
+  await card.getByRole('button', { name: 'Load more', exact: true }).click();
+  await expect(card.getByText('Working client', { exact: true })).toBeVisible();
+  await expect(card.getByText('Expired client', { exact: true })).toBeVisible();
+  await expect(history).toHaveText('Revoked access (1)');
+  await expect(card.getByRole('button', { name: 'Load more', exact: true })).toHaveCount(0);
+  await history.click();
+  await expect(card.getByText('Old client', { exact: true })).toBeVisible();
+  await history.click();
+  await expect(card.getByText('Old client', { exact: true })).toBeHidden();
+  await page.screenshot({ path: '../.context/mcp-channel-ux.png', fullPage: true });
 });
 
 test("operator creates a role-free Agent API credential against the canonical endpoint", async ({ context, page }) => {

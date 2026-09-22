@@ -19,11 +19,11 @@ import { GENERIC_MCP_CLIENT_ID, getMcpClientSetup, type McpClientSetup } from '@
 const DOCS_URL = process.env.NEXT_PUBLIC_DOCS_URL ?? 'https://docs.radioso.ai'
 const MCP_GUIDE_URL = `${DOCS_URL}/guides/mcp-server`
 
-const CARD_DESCRIPTION = 'This agent as a chat tool for MCP clients.'
+const CARD_DESCRIPTION = 'Let other apps and agents talk to this agent through MCP.'
 
-export type McpChannelSetupMode = 'disabled' | 'enabled' | 'failed' | 'resolving'
+type McpChannelSetupMode = 'disabled' | 'enabled' | 'failed' | 'resolving'
 
-export interface McpChannelSetup {
+interface McpChannelSetup {
   mcpUrl: string
   mode: McpChannelSetupMode
   retry?: () => void
@@ -59,7 +59,7 @@ export const resolveMcpChannelSetup = ({
   return { mcpUrl: resolvedUrl.toString(), mode: 'enabled' }
 }
 
-export const useMcpChannelSetup = (): McpChannelSetup => {
+const useMcpChannelSetup = (): McpChannelSetup => {
   const dashboardOrigin = useDashboardOrigin()
   const runtimeConfig = useRuntimeConfig()
   // Runtime config is authoritative for MCP availability. Keep destructive one-time-secret

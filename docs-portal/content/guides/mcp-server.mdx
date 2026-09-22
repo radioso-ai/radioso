@@ -60,6 +60,8 @@ Sign in to the dashboard, open the agent's **Channels → MCP** card, and choose
 
 Each client gets its own credential, so rotating or revoking one connection leaves the others working. The examples below use `https://mcp.example.com/mcp` as the server URL and `radioso_mcp_v1_example` as the secret.
 
+Revoked credentials are kept under **Revoked access**. Expand it to inspect their details. To let this agent call tools or other agents, open **Skills → Manage MCP connections** and add a connection in the side panel.
+
 ### Claude Desktop
 
 Open Claude Desktop → Settings → Developer → Edit config, merge this block into `claude_desktop_config.json`, and restart Claude Desktop.

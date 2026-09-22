@@ -1398,6 +1398,7 @@ export function AssistantDirectivesSection({
         agentId={agentId}
         capabilities={directiveCapabilities}
         description={DIRECTIVE_CAPABILITY_PICKER_DESCRIPTION}
+        onConnectionsChanged={() => setSkillCapabilities(null)}
         onOpenChange={(open) => !open && cancelSkillCreation()}
         onSelect={setCreationCapabilityId}
       />

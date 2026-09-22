@@ -3,7 +3,12 @@ import { Router } from "express";
 import type { AppDependencies } from "../../server/types.js";
 // The services are type-only imports: their instances are built in app composition
 // (mcpConverseModule) and injected.
-import type { AgentConverseAudit, AgentConverseService } from "../../../modules/chat/contracts/index.js";
+import type {
+  AgentConverseAudit,
+  AgentConverseService,
+  ConversationUpdateReader,
+  ConversationUpdateWaiter,
+} from "../../../modules/chat/contracts/index.js";
 import type {
   AgentConverseSessionPort,
   AgentConverseWalkInObserver,
@@ -11,11 +16,16 @@ import type {
 import { requirePublicChatPermission } from "../middleware/requirePermission.js";
 import { requireMcpConverseSession, type McpConverseLocals } from "../middleware/requireMcpConverseSession.js";
 import { agentChannelChatRateLimiters } from "../middleware/agentChannelRateLimiter.js";
-import { createMcpConverseSourceRateLimiter, createMcpConverseTokenRateLimiter } from "../middleware/mcpConverseSessionRateLimiter.js";
+import {
+  createMcpConverseMessagesRateLimiter,
+  createMcpConverseSourceRateLimiter,
+  createMcpConverseTokenRateLimiter,
+} from "../middleware/mcpConverseSessionRateLimiter.js";
 import { createMcpConverseWalkInRateLimiter, type McpConverseWalkInLocals } from "../middleware/mcpConverseWalkInRateLimiter.js";
 import { validateBody } from "../middleware/validate.js";
 import { onSuccessfulHttpResponse } from "../middleware/httpResponseCompletion.js";
 import { requireValidMcpSourceProof } from "../middleware/preAuthSourceRateLimiter.js";
+import { createMcpConverseMessagesHandler } from "./mcpConverseMessagesRoute.js";
 import {
   mcpConverseAskRequestSchema,
   mcpConverseSessionRequestSchema,
@@ -30,7 +40,9 @@ export type McpConverseRouteDependencies = Pick<
   | "agentConverseSessionMappingRepository"
   | "assistantChatService"
   | "auditService"
+  | "chatHistoryService"
   | "conversationRepository"
+  | "publicConversationEventBus"
   | "env"
   | "metricsRegistry"
   | "workspaceInvalidationPublisher"
@@ -45,6 +57,8 @@ export interface McpConverseRouteServices {
   sessionService: AgentConverseSessionPort;
   converseService: AgentConverseService;
   walkInObserver: AgentConverseWalkInObserver;
+  conversationUpdateReader: ConversationUpdateReader;
+  conversationUpdateWaiter: ConversationUpdateWaiter;
 }
 
 export const createMcpConverseRoutes = (
@@ -57,6 +71,7 @@ export const createMcpConverseRoutes = (
   const rateLimitMcpSource = createMcpConverseSourceRateLimiter(dependencies);
   const rateLimitMcpToken = createMcpConverseTokenRateLimiter(dependencies);
   const rateLimitMcpWalkIn = createMcpConverseWalkInRateLimiter(dependencies, services.walkInObserver);
+  const rateLimitMcpMessages = createMcpConverseMessagesRateLimiter(dependencies);
 
   router.post(
     "/session",
@@ -137,6 +152,23 @@ export const createMcpConverseRoutes = (
         next(error);
       }
     },
+  );
+
+  // Resumption: the caller that cannot sit in a chat comes back for what happened
+  // since its cursor, optionally parking until something does.
+  router.get(
+    "/messages",
+    rateLimitMcpSource,
+    requireMcpConverseSession(sessionService),
+    rateLimitMcpMessages,
+    requirePublicChatPermission(dependencies, "public_chat.history.read.own"),
+    createMcpConverseMessagesHandler({
+      conversationUpdateReader: services.conversationUpdateReader,
+      conversationUpdateWaiter: services.conversationUpdateWaiter,
+      conversations: dependencies.conversationRepository,
+      sessionService,
+      metrics: dependencies.metricsRegistry,
+    }),
   );
 
   router.post(

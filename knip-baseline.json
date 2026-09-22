@@ -332,7 +332,6 @@
   "types|backend/src/modules/chat/services/directiveBindingResolution.ts|ResolveDirectiveBindingInput",
   "types|backend/src/modules/chat/services/groundingAssertions.ts|ParsedInlineAssertions",
   "types|backend/src/modules/chat/services/pageRead/pageReadSessionOutcome.ts|PageReadOutcomeCarrier",
-  "types|backend/src/modules/chat/services/publicConversationEventBus.ts|PublicConversationMessageCreatedEvent",
   "types|backend/src/modules/chat/services/replyDraftRunner.ts|ChatReplyDraftInput",
   "types|backend/src/modules/chat/services/replyDraftRunner.ts|ChatReplyDraftResult",
   "types|backend/src/modules/chat/services/retrievalTurnDispatch.ts|RetrievalTurnDispatchPort",

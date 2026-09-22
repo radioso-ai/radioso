@@ -128,11 +128,11 @@ A routine escalates to a person. The calling agent, which cannot sit in a chat, 
 
 **Why this priority**: Handoff is the third leg of "answer, act, hand off"; without resumption it is a dead end for agent callers.
 
-**Independent Test**: Start a conversation via MCP, force a handoff, post a human reply from the Inbox, call `get_conversation_updates` with the last seen message id — the human message is returned with `author = "human"`.
+**Independent Test**: Start a conversation via MCP, force a handoff, post a human reply from the Inbox, call `get_conversation_updates` with the cursor from the previous read — the human message is returned with `author = "human"`.
 
 **Acceptance Scenarios**:
 
-1. **Given** a converse session, **When** the caller invokes `get_conversation_updates({ sinceMessageId?, waitMs? })`, **Then** it receives messages after that id with author kind (`agent` | `human`), ids, timestamps, and the current `ownership.state`.
+1. **Given** a converse session, **When** the caller invokes `get_conversation_updates({ cursor?, waitMs? })`, **Then** it receives messages after that cursor with author kind (`agent` | `human`), ids, timestamps, the current `ownership.state`, and the next cursor.
 2. **Given** `waitMs` up to 25 000, **When** no message exists yet, **Then** the call long-polls on the conversation event bus and returns on the first new message or at the deadline with an empty list — never a hard error.
 3. **Given** a credential-bound session whose credential is revoked, **When** updates are requested, **Then** the request is refused as any converse call would be.
 
@@ -221,7 +221,7 @@ The operator copies a ready-made "connect your agent" snippet (endpoint, card UR
 
 ### Resumption
 
-- **FR-040** `GET /api/v1/mcp/converse/messages?cursor=<opaque>&waitMs=<0..25000>` (session-bound) MUST return messages after the cursor with `id`, `author` (`agent` | `human`), `createdAt`, `text`, the current `ownership.state`, and the next cursor. The cursor is opaque and comes from a prior response (history already pages by keyset, which a bare message id cannot seek against); an absent cursor means "from the start of this conversation". With `waitMs` it MUST wait for a new message, and MUST NOT rely on the in-process event bus alone — the API runs multiple instances, so a bus subscription is raced against a bounded re-poll.
+- **FR-040** `GET /api/v1/mcp/converse/messages?cursor=<opaque>&waitMs=<0..25000>` (session-bound) MUST return messages after the cursor with `id`, `author` (`agent` | `human`), `createdAt`, `text`, the current `ownership.state`, and the next cursor. The cursor is opaque and comes from a prior response (history already pages by keyset, which a bare message id cannot seek against); an absent cursor returns the conversation's most recent page, which is the whole conversation whenever it is shorter than one page. With `waitMs` it MUST wait for a new message, and MUST NOT rely on the in-process event bus alone — the API runs multiple instances, so a bus subscription is raced against a bounded re-poll.
 - **FR-041** The MCP surface MUST expose it as `get_conversation_updates`.
 
 ### Caller kind and catalog description

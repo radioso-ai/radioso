@@ -2,11 +2,17 @@ import { createHash } from "node:crypto";
 import type { RequestHandler } from "express";
 
 import type { Env } from "../../config/env.js";
+import type { AgentConversePrincipal } from "../../../modules/settings/contracts/agentConverseSession.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import {
   createPreAuthSourceRateLimiter,
   type PreAuthSourceAbuseControlPort,
 } from "./preAuthSourceRateLimiter.js";
+import {
+  createRateLimitMiddleware,
+  type RateLimitAbuseControlPort,
+  type RateLimitAuditPort,
+} from "./rateLimit.js";
 
 interface McpConverseSessionRateLimiterDependencies {
   env: Pick<Env,
@@ -44,6 +50,39 @@ export const createMcpConverseSourceRateLimiter = (
       labels: { stage: "source", outcome },
     },
   ),
+});
+
+interface McpConverseMessagesRateLimiterDependencies {
+  env: Pick<Env,
+    | "MCP_CONVERSE_SESSION_RATE_LIMIT_WINDOW_MS"
+    | "MCP_CONVERSE_MESSAGES_RATE_LIMIT_MAX_ATTEMPTS"
+  >;
+  abuseControlService: RateLimitAbuseControlPort;
+  auditService: RateLimitAuditPort;
+}
+
+/**
+ * The read budget for resumption, charged once per call rather than per poll tick: a
+ * caller that parks for 25 s spends one unit, the same as one that reads and leaves.
+ * The session is the subject, so a credential-bound and a walk-in caller are budgeted
+ * the same way without the limiter learning which is which.
+ */
+export const createMcpConverseMessagesRateLimiter = (
+  dependencies: McpConverseMessagesRateLimiterDependencies,
+): RequestHandler => createRateLimitMiddleware({
+  service: dependencies.abuseControlService,
+  auditService: dependencies.auditService,
+  scope: "mcp.converse.messages.session",
+  limit: dependencies.env.MCP_CONVERSE_MESSAGES_RATE_LIMIT_MAX_ATTEMPTS,
+  windowMs: dependencies.env.MCP_CONVERSE_SESSION_RATE_LIMIT_WINDOW_MS,
+  resolveSubjectKey: (_req, res) => {
+    const principal = res.locals.mcpConversePrincipal as AgentConversePrincipal | undefined;
+    return principal ? `session:${principal.publicSessionId}` : null;
+  },
+  resolveAuditContext: (_req, res) => {
+    const principal = res.locals.mcpConversePrincipal as AgentConversePrincipal | undefined;
+    return principal ? { workspaceId: principal.workspaceId, metadata: { agentId: principal.agentId } } : {};
+  },
 });
 
 export const createMcpConverseTokenRateLimiter = (

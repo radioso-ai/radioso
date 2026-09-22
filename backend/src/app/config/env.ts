@@ -183,6 +183,9 @@ const envSchema = z.object({
   MCP_CONVERSE_SESSION_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
   MCP_CONVERSE_SESSION_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(60),
   MCP_CONVERSE_SESSION_TOKEN_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(10),
+  // Conversation-update reads per session per window. A long poll spends one unit no
+  // matter how long it parks, so this is a call budget, not a time budget.
+  MCP_CONVERSE_MESSAGES_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(60),
   // Walk-in exchanges carry no credential, so the budget is what bounds them: per calling
   // source, and per agent, because a new walk-in conversation spends the workspace's
   // conversation allowance. An agent's own `walkInConversationsPerHour` overrides the

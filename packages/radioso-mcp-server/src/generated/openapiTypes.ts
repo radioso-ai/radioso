@@ -3736,6 +3736,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/mcp/converse/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read what happened in this session's conversation since a cursor, optionally waiting for it
+         * @description Returns messages after `cursor` with the author kind and the conversation's current ownership, plus the `cursor` to resume from. The cursor is opaque and comes from a previous response; without one the call returns the conversation's most recent page. With `waitMs` the call parks until a message lands or the deadline passes, and returns an empty list at the deadline rather than an error — so a calling agent that handed off to a person can come back for the reply. One call spends one unit of the session's read budget no matter how long it waits.
+         */
+        get: operations["getMcpConverseMessages"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/mcp/converse/ask": {
         parameters: {
             query?: never;
@@ -7857,6 +7877,26 @@ export interface components {
             code: "routine_invocation_invalid";
             toolName: string;
             errors: components["schemas"]["RoutineInvocationError"][];
+        };
+        /** @description One message in the conversation. `author` is provenance, not role: an operator's reply is stored as an assistant message, so `human` is the only thing that tells a person's turn from the agent's. */
+        ConverseMessage: {
+            id: string;
+            /** @enum {string} */
+            author: "agent" | "human";
+            /** Format: date-time */
+            createdAt: string;
+            text: string;
+        };
+        /** @description Who owns the conversation right now. `human_owned` means a person has taken it over and the agent is not answering, so keep reading rather than asking again. */
+        ConverseOwnershipState: {
+            /** @enum {string} */
+            state: "ai_owned" | "human_owned";
+        };
+        /** @description Messages after the request's cursor, the cursor to resume from, and who owns the conversation now. `cursor` is null only while the conversation holds no messages. */
+        ConverseMessagesResponse: {
+            messages: components["schemas"]["ConverseMessage"][];
+            cursor: string | null;
+            ownership: components["schemas"]["ConverseOwnershipState"];
         };
         /** @description An A2A Agent Card for one agent: who it is, where its MCP endpoint is, how a caller authenticates, and one skill per exposed routine. */
         A2aAgentCard: {
@@ -25506,6 +25546,65 @@ export interface operations {
                 };
             };
             /** @description MCP converse rate limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getMcpConverseMessages: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                waitMs?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Messages after the cursor, the next cursor, and current ownership */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConverseMessagesResponse"];
+                };
+            };
+            /** @description Invalid cursor or `waitMs` outside 0..25000 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Invalid converse session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Converse session is no longer authorized */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description MCP converse read rate limit exceeded */
             429: {
                 headers: {
                     [name: string]: unknown;

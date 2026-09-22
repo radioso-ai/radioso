@@ -3,6 +3,7 @@ import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 import type { OpenApiSchemas, OpenApiSecurity } from "../openApiRegistry.js";
 import {
   mcpConverseAskRequestSchema,
+  mcpConverseMessagesQuerySchema,
   mcpConverseSessionRequestSchema,
   mcpConverseSessionResponseSchema,
   mcpConverseSessionValidateRequestSchema,
@@ -87,6 +88,29 @@ export const registerMcpConversePaths = (
       401: errorResponse("Invalid converse session"),
       403: errorResponse("Converse session is no longer authorized"),
       429: errorResponse("MCP converse rate limit exceeded"),
+    },
+  });
+
+  registry.registerPath({
+    method: "get",
+    path: "/api/v1/mcp/converse/messages",
+    tags: ["MCP Converse"],
+    summary: "Read what happened in this session's conversation since a cursor, optionally waiting for it",
+    description: "Returns messages after `cursor` with the author kind and the conversation's current ownership, plus the `cursor` to resume from. The cursor is opaque and comes from a previous response; without one the call returns the conversation's most recent page. With `waitMs` the call parks until a message lands or the deadline passes, and returns an empty list at the deadline rather than an error — so a calling agent that handed off to a person can come back for the reply. One call spends one unit of the session's read budget no matter how long it waits.",
+    operationId: "getMcpConverseMessages",
+    security: [{ [security.mcpConverseSessionBearerAuthScheme.name]: [] }],
+    request: {
+      query: mcpConverseMessagesQuerySchema,
+    },
+    responses: {
+      200: {
+        description: "Messages after the cursor, the next cursor, and current ownership",
+        content: json(schemas.ConverseMessagesResponseSchema),
+      },
+      400: errorResponse("Invalid cursor or `waitMs` outside 0..25000"),
+      401: errorResponse("Invalid converse session"),
+      403: errorResponse("Converse session is no longer authorized"),
+      429: errorResponse("MCP converse read rate limit exceeded"),
     },
   });
 

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { createConversationUpdatesToolDefinitions } from "../src/tools/conversationUpdatesTools.js";
 import { createConverseToolDefinitions } from "../src/tools/converseTools.js";
 import { createRoutineToolDefinitions } from "../src/tools/routineTools.js";
 import { createRadiosoMcpServer } from "../src/server.js";
@@ -51,12 +52,21 @@ const envelope: ConverseAskResponse = {
   traceId: "trace-1",
 };
 
+const updates = {
+  messages: [
+    { id: "m-1", author: "human" as const, createdAt: "2026-09-22T10:00:00.000Z", text: "I have refunded the order." },
+  ],
+  cursor: "cursor-2",
+  ownership: { state: "human_owned" as const },
+};
+
 const createConverseAdapter = (): ConverseApiAdapter => ({
   ask: vi.fn().mockResolvedValue(envelope),
   exchange: vi.fn(),
   validate: vi.fn(),
   recordUse: vi.fn(),
   tools: vi.fn(),
+  messages: vi.fn().mockResolvedValue(updates),
 });
 
 const executionContext = (converseAdapter: ConverseApiAdapter): ToolExecutionContext => ({
@@ -69,6 +79,7 @@ const executionContext = (converseAdapter: ConverseApiAdapter): ToolExecutionCon
 describe("converse MCP tools", () => {
   it("exposes ask_agent and the documentation tools when the session's catalog has no routines", () => {
     expect(createConverseToolDefinitions().map((tool) => tool.name)).toEqual(["ask_agent"]);
+    expect(createConversationUpdatesToolDefinitions().map((tool) => tool.name)).toEqual(["get_conversation_updates"]);
 
     const server = createRadiosoMcpServer({
       resolveExecutionContext: async () => executionContext(createConverseAdapter()),
@@ -79,6 +90,7 @@ describe("converse MCP tools", () => {
     // documents stay behind ask_agent.
     expect(server.toolDefinitions.map((tool) => tool.name)).toEqual([
       "ask_agent",
+      "get_conversation_updates",
       "radioso_docs",
       "radioso_doc_page",
     ]);
@@ -99,6 +111,7 @@ describe("converse MCP tools", () => {
 
     expect(server.toolDefinitions.map((tool) => tool.name)).toEqual([
       "ask_agent",
+      "get_conversation_updates",
       "radioso_docs",
       "radioso_doc_page",
       "start_return",
@@ -123,6 +136,7 @@ describe("converse MCP tools", () => {
 
     expect(server.toolDefinitions.map((tool) => tool.name)).toEqual([
       "ask_agent",
+      "get_conversation_updates",
       "radioso_docs",
       "radioso_doc_page",
       "start_return",
@@ -164,6 +178,51 @@ describe("converse MCP tools", () => {
     expect(result.data).toEqual(envelope);
     expect(result.summary).toBe("Hello");
     expect(toCallToolResult(result).structuredContent).toEqual(envelope);
+  });
+
+  it("reads conversation updates from the bound session and forwards the page as structuredContent", async () => {
+    const converseAdapter = createConverseAdapter();
+    const [getUpdates] = createConversationUpdatesToolDefinitions();
+
+    const result = await getUpdates.execute(
+      { cursor: "cursor-1", waitMs: 25_000 },
+      { ...executionContext(converseAdapter), authInfo: { sessionId: "session-1", sourceDigest: "digest-1" } },
+    );
+
+    expect(converseAdapter.messages).toHaveBeenCalledWith(
+      "session-token",
+      { cursor: "cursor-1", waitMs: 25_000 },
+      { sourceDigest: "digest-1" },
+    );
+    expect(result.data).toEqual(updates);
+    expect(result.summary).toContain("human_owned");
+    expect(toCallToolResult(result).structuredContent).toEqual(updates);
+  });
+
+  it("omits an absent cursor and wait rather than sending empty values", async () => {
+    const converseAdapter = createConverseAdapter();
+    const [getUpdates] = createConversationUpdatesToolDefinitions();
+
+    await getUpdates.execute({}, executionContext(converseAdapter));
+
+    expect(converseAdapter.messages).toHaveBeenCalledWith("session-token", {}, { sourceDigest: undefined });
+  });
+
+  it("refuses a wait beyond the backend's ceiling before it reaches the network", async () => {
+    const converseAdapter = createConverseAdapter();
+    const [getUpdates] = createConversationUpdatesToolDefinitions();
+
+    await expect(getUpdates.execute({ waitMs: 25_001 }, executionContext(converseAdapter))).rejects.toThrow();
+    expect(converseAdapter.messages).not.toHaveBeenCalled();
+  });
+
+  it("refuses to read updates without a bound converse session", async () => {
+    const [getUpdates] = createConversationUpdatesToolDefinitions();
+
+    await expect(getUpdates.execute({}, {
+      authInfo: null,
+      serverContext: {} as ToolExecutionContext["serverContext"],
+    })).rejects.toThrow(/converse session/i);
   });
 
   it("refuses to run a routine tool without a bound converse session", async () => {

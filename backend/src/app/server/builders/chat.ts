@@ -150,6 +150,7 @@ import {
   createAgentConverseWalkInObserver,
 } from "../../composition/agentConverseOrigins.js";
 import { createConverseVisitorIdentityVerifier } from "../../composition/converseVisitorIdentity.js";
+import { createConversationUpdatesComposition } from "../../composition/conversationUpdates.js";
 
 
 export const buildMcpConverseServices = (
@@ -184,7 +185,15 @@ export const buildMcpConverseServices = (
     metrics: dependencies.metricsRegistry,
     logger: dependencies.logger,
   });
-  return { audit, sessionService, converseService, walkInObserver };
+  const conversationUpdates = createConversationUpdatesComposition(dependencies);
+  return {
+    audit,
+    sessionService,
+    converseService,
+    walkInObserver,
+    conversationUpdateReader: conversationUpdates.reader,
+    conversationUpdateWaiter: conversationUpdates.waiter,
+  };
 };
 
 export const buildChatServices = (input: {

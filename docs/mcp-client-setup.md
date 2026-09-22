@@ -152,12 +152,39 @@ The reply is an **agent reply envelope**: the answer text plus the facts a calli
 Read it field by field:
 
 - `answerCoverage` is the same coverage verdict the dashboard trace shows for the turn. `coverage` is `answered`, `partial`, `unanswered`, or `unclear`, and `reason` says why; `intentional_scope_boundary` with `unanswered` means the agent declined on purpose. When no assessment ran for the turn (a direct reply, a routine step), `availability` is `not_recorded` and the verdict fields are absent.
-- `ownership` tells you who owns the conversation after this turn. `{ "state": "human_owned", "suppressed": true }` means a person has taken over and the agent generated nothing; keep the `conversationId` and come back for the reply.
+- `ownership` tells you who owns the conversation after this turn. `{ "state": "human_owned", "suppressed": true }` means a person has taken over and the agent generated nothing; keep the session and [come back for the reply](#come-back-after-a-handoff).
 - `routine` appears when the turn touched a routine: the one it ran, or the one that kept the turn while it waits for an operator's approval. `status` is one of `active`, `waiting_for_input`, `waiting_for_approval`, `completed`, or `abandoned`, and `pendingInput` lists every required slot the routine still needs plus the current step's optional ones, each with its `key`, `type` (`text`, `number`, `boolean`, `email`, `date`), `required` flag, and `description` — so you can supply all of them in one follow-up message.
 - `invocation` appears only when you called a routine tool (next section) and says what became of the call: `toolName` and an `outcome` of `started`, `reentered`, `declined`, `not_started`, or `unknown_tool`.
 - `traceId` is the turn's trace id, the one an operator sees in Activity; quote it when you report a problem.
 
 The standalone MCP server forwards this envelope unchanged as the `ask_agent` tool's `structuredContent`; the tool's text content is `answer.text` followed by a blank line and the same envelope as pretty-printed JSON, so a client that only reads text still sees every field. The REST agent channel (`POST /api/v1/agents/{agentId}/chat`) returns the same `answerCoverage`, `ownership`, `routine`, `invocation`, and `traceId` fields beside its own `answer` string and `citations` array, and its SSE `done` frame carries them too.
+
+### Come back after a handoff
+
+A calling agent cannot sit in a chat window waiting for a person to answer. When `ownership.state` turns `human_owned`, read the conversation back instead:
+
+```http
+GET /api/v1/mcp/converse/messages?cursor=eyJ2ZXJza…&waitMs=25000
+Authorization: Bearer <session token>
+```
+
+```json
+{
+  "messages": [
+    { "id": "9a…", "author": "human", "createdAt": "2026-09-22T10:14:02.117Z", "text": "I have refunded the order." }
+  ],
+  "cursor": "eyJ2ZXJza…",
+  "ownership": { "state": "human_owned" }
+}
+```
+
+- `author` is `human` for an operator's reply and `agent` for everything else. An operator's message is stored as an assistant message, so the author kind is the only thing that tells a person's turn from the agent's.
+- `cursor` is opaque. Send back the one the previous reply gave you; the response's `cursor` is where to resume next time. Called with no cursor, the route returns the conversation's most recent page, so a client that has lost its place can pick the conversation up again.
+- `ownership` is the conversation's state alone, `ai_owned` or `human_owned`. The `suppressed` flag on an `ask_agent` reply says whether the agent generated anything on that turn; a read runs no turn, so it carries no such flag.
+- `waitMs` (0–25000) holds the request open until a message lands. At the deadline the route answers `200` with an empty `messages` list — nothing new yet, not a failure — so a client loops on the same cursor. The wait is raced against a short re-query, so a reply written by another API instance still wakes the call.
+- One call spends one unit of the session's read budget no matter how long it waits. `MCP_CONVERSE_MESSAGES_RATE_LIMIT_MAX_ATTEMPTS` (default 60) sets that budget per session per window.
+
+Over standalone MCP this is the `get_conversation_updates` tool, taking the same `cursor` and `waitMs`. The session's conversation is keyed by the `Mcp-Session-Id` header the server returns on first contact: echo it on every later request to stay in the same conversation. A client that drops the header gets a fresh conversation on each call, so the reply it is waiting for never arrives.
 
 ### Routines as tools
 

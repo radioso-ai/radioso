@@ -23,6 +23,7 @@ const session = (): AgentRevisionTestChatSession => ({
   execution: null,
   evalRun: null,
   error: null,
+  degradedNotice: null,
   cases: [],
   selectedCaseIds: [],
   restartNotice: null,

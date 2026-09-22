@@ -86,6 +86,7 @@ import {
   assembleTestableRevisions,
   candidateIsTestable,
   compareSelectionRepeatsRevision,
+  describeCandidateRefusal,
 } from "@/lib/agent-revision-testable-revisions";
 import { isAgentDraftDirty, saveAgentDraft } from "@/lib/agent-draft-save-port";
 import { DEFAULT_WEBSITE_EMBED_COPY } from "@/lib/embed-widget";
@@ -239,6 +240,9 @@ export function AgentRevisionTestChat({
   const [execution, setExecution] = useState<TestExecutionState | null>(cachedSession?.execution ?? null);
   const [evalRun, setEvalRun] = useState<RevisionEvalRun | null>(cachedSession?.evalRun ?? null);
   const [error, setError] = useState<string | null>(cachedSession?.error ?? null);
+  // Set only by `load()`; a candidate refusal or degraded eval-case/value-catalog fetch
+  // stays legible even once `start()`/`submit` clear the transient `error` above.
+  const [degradedNotice, setDegradedNotice] = useState<string | null>(cachedSession?.degradedNotice ?? null);
   const [loading, setLoading] = useState(!cachedSession?.state);
   const [cases, setCases] = useState<EvalCaseListItem[]>(cachedSession?.cases ?? []);
   const [selectedCaseIds, setSelectedCaseIds] = useState<string[]>(cachedSession?.selectedCaseIds ?? []);
@@ -382,6 +386,7 @@ export function AgentRevisionTestChat({
       execution,
       evalRun,
       error,
+      degradedNotice,
       cases,
       selectedCaseIds,
       restartNotice,
@@ -401,6 +406,7 @@ export function AgentRevisionTestChat({
   }, [
     cases,
     contextVariables,
+    degradedNotice,
     error,
     evalRun,
     execution,
@@ -516,7 +522,7 @@ export function AgentRevisionTestChat({
           : new Error("No revision is available to test.");
       const degraded = [
         candidateResult.status === "rejected"
-          ? errorMessage(candidateResult.reason, "The draft candidate is unavailable.")
+          ? describeCandidateRefusal(candidateResult.reason)
           : null,
         casesResult.status === "rejected"
           ? errorMessage(casesResult.reason, "Eval cases are unavailable.")
@@ -532,7 +538,7 @@ export function AgentRevisionTestChat({
       setContextVariables(
         catalogResult.status === "fulfilled" ? catalogResult.value.contextVariables : [],
       );
-      setError(degraded.length ? degraded.join("; ") : null);
+      setDegradedNotice(degraded.length ? degraded.join("; ") : null);
     } catch (cause) {
       if (loadRequestGeneration.current === requestGeneration) {
         // Do not clear `state` here. This catch fires for the first, explicit load same as
@@ -1498,6 +1504,14 @@ export function AgentRevisionTestChat({
           </div>
         ) : (
           <>
+            {degradedNotice ? (
+              <p
+                role="alert"
+                className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+              >
+                {degradedNotice}
+              </p>
+            ) : null}
             {error ? (
               <p
                 role="alert"

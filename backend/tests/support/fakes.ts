@@ -78,6 +78,7 @@ import type {
   AbuseControlBatchConsumption,
   AbuseControlConsumption,
   AbuseControlConsumptionInput,
+  AbuseControlDecision,
   AbuseControlEntry,
   AbuseControlRepositoryPort,
 } from "../../src/modules/security/contracts/abuseControl.js";
@@ -1561,6 +1562,16 @@ export class InMemoryBootstrapGreetingCacheRepository implements BootstrapGreeti
   }
 }
 
+/** What an admitted attempt reports back, for tests that stub the limiter instead of running it. */
+export const admittedAbuseControlDecision = (
+  overrides: Partial<AbuseControlDecision> = {},
+): AbuseControlDecision => ({
+  limit: 100,
+  remaining: 99,
+  resetAtMs: Date.now() + 60_000,
+  ...overrides,
+});
+
 export class InMemoryAbuseControlRepository implements AbuseControlRepositoryPort {
   private readonly items = new Map<string, AbuseControlEntry>();
 
@@ -1575,39 +1586,62 @@ export class InMemoryAbuseControlRepository implements AbuseControlRepositoryPor
     windowStartedAt: Date;
     blockedUntil: Date | null;
   }): Promise<AbuseControlEntry> {
+    const existing = this.items.get(`${input.scope}:${input.subjectKey}`);
+    return this.store({ ...input, previousAttemptCount: existing?.previousAttemptCount ?? 0 });
+  }
+
+  /**
+   * Mirrors the sliding window `consumeAbuseControlEntry` runs in Postgres: the expiring window's
+   * count is carried while it still overlaps, and admission weighs it against the running window.
+   */
+  async consume(input: AbuseControlConsumptionInput): Promise<AbuseControlConsumption> {
+    const existing = await this.find(input.scope, input.subjectKey);
+    const elapsedMs = existing ? input.now.getTime() - existing.windowStartedAt.getTime() : 0;
+    const activeBlock = Boolean(existing?.blockedUntil && existing.blockedUntil > input.now);
+    const activeWindow = Boolean(existing && elapsedMs < input.windowMs);
+    const held = activeBlock || activeWindow;
+    const attemptCount = activeBlock ? existing!.attemptCount : activeWindow ? existing!.attemptCount + 1 : 1;
+    const previousAttemptCount = held
+      ? existing?.previousAttemptCount ?? 0
+      : existing && elapsedMs < 2 * input.windowMs
+        ? existing.attemptCount
+        : 0;
+    const windowStartedAt = held ? existing!.windowStartedAt : input.now;
+    const overlap = Math.max(0, 1 - (input.now.getTime() - windowStartedAt.getTime()) / input.windowMs);
+    const weightedAttemptCount = previousAttemptCount * overlap + attemptCount;
+    const blockedUntil = activeBlock
+      ? existing!.blockedUntil
+      : weightedAttemptCount > input.limit
+        ? new Date(input.now.getTime() + input.blockMs)
+        : null;
+    const entry = this.store({
+      scope: input.scope,
+      subjectKey: input.subjectKey,
+      attemptCount,
+      previousAttemptCount,
+      windowStartedAt,
+      blockedUntil,
+    });
+    return { entry, blocked: Boolean(blockedUntil && blockedUntil > input.now), weightedAttemptCount };
+  }
+
+  private store(input: {
+    scope: string;
+    subjectKey: string;
+    attemptCount: number;
+    previousAttemptCount: number;
+    windowStartedAt: Date;
+    blockedUntil: Date | null;
+  }): AbuseControlEntry {
     const key = `${input.scope}:${input.subjectKey}`;
     const existing = this.items.get(key);
     const record: AbuseControlEntry = {
-      scope: input.scope,
-      subjectKey: input.subjectKey,
-      attemptCount: input.attemptCount,
-      windowStartedAt: input.windowStartedAt,
-      blockedUntil: input.blockedUntil,
+      ...input,
       createdAt: existing?.createdAt ?? new Date(),
       updatedAt: new Date(),
     };
     this.items.set(key, record);
     return record;
-  }
-
-  async consume(input: AbuseControlConsumptionInput): Promise<AbuseControlConsumption> {
-    const existing = await this.find(input.scope, input.subjectKey);
-    const activeBlock = Boolean(existing?.blockedUntil && existing.blockedUntil > input.now);
-    const activeWindow = Boolean(existing && input.now.getTime() - existing.windowStartedAt.getTime() < input.windowMs);
-    const attemptCount = activeBlock ? existing!.attemptCount : activeWindow ? existing!.attemptCount + 1 : 1;
-    const blockedUntil = activeBlock
-      ? existing!.blockedUntil
-      : attemptCount > input.limit
-        ? new Date(input.now.getTime() + input.blockMs)
-        : null;
-    const entry = await this.save({
-      scope: input.scope,
-      subjectKey: input.subjectKey,
-      attemptCount,
-      windowStartedAt: activeBlock || activeWindow ? existing!.windowStartedAt : input.now,
-      blockedUntil,
-    });
-    return { entry, blocked: Boolean(blockedUntil && blockedUntil > input.now) };
   }
 
   async consumeBatch(inputs: readonly AbuseControlConsumptionInput[]): Promise<AbuseControlBatchConsumption> {

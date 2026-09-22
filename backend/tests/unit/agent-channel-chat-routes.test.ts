@@ -2,6 +2,7 @@ import express from "express";
 import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
 
+import { admittedAbuseControlDecision } from "../support/fakes.js";
 import { createAgentRoutes } from "../../src/app/http/routes/agentRoutes.js";
 import type { AppDependencies } from "../../src/app/server/types.js";
 import type { AccessGrant } from "../../src/modules/accessGrants/domain.js";
@@ -56,7 +57,10 @@ const createDependencies = (overrides: Partial<AppDependencies> = {}): AppDepend
     recordAuthFailure: vi.fn().mockResolvedValue(undefined),
     recordAgentChannelChatSucceeded: vi.fn().mockResolvedValue(undefined),
   },
-  abuseControlService: { enforce: vi.fn().mockResolvedValue(undefined), enforceBatch: vi.fn().mockResolvedValue(undefined) },
+  abuseControlService: {
+    enforce: vi.fn().mockResolvedValue(admittedAbuseControlDecision()),
+    enforceBatch: vi.fn().mockResolvedValue([admittedAbuseControlDecision()]),
+  },
   auditService: { record: vi.fn().mockResolvedValue(undefined) },
   visitorGeoResolver: { resolve: vi.fn().mockReturnValue({ country: null, region: null, city: null }) },
   agentRepository: {
@@ -270,7 +274,7 @@ describe("REST agent channel chat", () => {
   it("stops REST chat before provider work when the grant budget is exhausted", async () => {
     const dependencies = createDependencies({
       abuseControlService: {
-        enforce: vi.fn().mockResolvedValue(undefined),
+        enforce: vi.fn().mockResolvedValue(admittedAbuseControlDecision()),
         enforceBatch: vi.fn().mockRejectedValue({ statusCode: 429, code: "rate_limit_exceeded" }),
       } as unknown as AppDependencies["abuseControlService"],
     });

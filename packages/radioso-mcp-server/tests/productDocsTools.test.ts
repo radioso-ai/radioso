@@ -39,6 +39,16 @@ describe("product documentation MCP tools", () => {
     expect(data.page.sections.length).toBeGreaterThan(0);
   });
 
+  it("returns the MCP server and calling-agent guides in full, because a connection procedure is only useful whole", async () => {
+    for (const slug of ["guides/mcp-server", "guides/agent-converse"]) {
+      const data = asRecord((await page.execute({ slug }, context)).data);
+
+      expect(data.found).toBe(true);
+      expect(data.page.sections.length).toBeGreaterThan(0);
+      expect(data.page.sectionsOmitted).toBeUndefined();
+    }
+  });
+
   it("answers an unknown slug with the available slugs rather than an error", async () => {
     const result = await page.execute({ slug: "guides/not-a-page" }, context);
     const data = asRecord(result.data);

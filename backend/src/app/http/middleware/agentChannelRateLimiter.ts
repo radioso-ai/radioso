@@ -6,7 +6,10 @@ import {
   type RateLimitAuditPort,
   type RateLimitBatchAbuseControlPort,
 } from "./rateLimit.js";
-import { createPreAuthSourceRateLimiter } from "./preAuthSourceRateLimiter.js";
+import {
+  createPreAuthSourceRateLimiter,
+  type PreAuthSourceAbuseControlPort,
+} from "./preAuthSourceRateLimiter.js";
 
 export interface AgentChannelRateLimiterDependencies {
   env: Pick<Env,
@@ -16,9 +19,7 @@ export interface AgentChannelRateLimiterDependencies {
     | "AGENT_CHANNEL_CHAT_WORKSPACE_RATE_LIMIT_MAX_ATTEMPTS"
     | "RADIOSO_TRUSTED_PROXY_HOPS"
   >;
-  abuseControlService: RateLimitBatchAbuseControlPort & {
-    enforce(input: { scope: string; subjectKey: string; limit: number; windowMs: number }): Promise<unknown>;
-  };
+  abuseControlService: RateLimitBatchAbuseControlPort & PreAuthSourceAbuseControlPort;
   auditService: RateLimitAuditPort;
 }
 

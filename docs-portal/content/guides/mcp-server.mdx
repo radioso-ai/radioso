@@ -113,51 +113,6 @@ The create request sets `audience` to `mcp` and includes `label` and `expiresAt`
   Personal and service-account credentials authorize role-aware workspace APIs. They do not authorize MCP or agent chat.
 </Callout>
 
-## Agent converse setup
-
-The dashboard credential is bound to one agent and the MCP audience. Send its original secret to standalone `/mcp`; the server exchanges it for a short-lived session token. If a process restarts or its cache expires, it exchanges the original credential again and the backend resumes the conversation mapped to that credential version in PostgreSQL. A session token returned by the internal converse endpoint is for direct calls to that endpoint, not for `/mcp`. Revoke the credential from the dashboard when the client should lose access; the server re-checks credential state for every request.
-
-The converse surface provides **`ask_agent`**, which sends a message through the agent's full turn loop and continues its conversation. Retrieval can participate in that turn when the agent's configuration calls for it. Direct document search and grounded-answer generation remain REST API workflows.
-
-### What `ask_agent` returns
-
-The tool's text content is the agent's answer followed by the reply envelope as JSON; its `structuredContent` is that **agent reply envelope** alone, so a calling model can act on the outcome instead of guessing from prose:
-
-```json
-{
-  "conversationId": "5f3c…",
-  "answer": { "text": "You can return an order within 30 days of delivery.", "citations": [] },
-  "answerCoverage": { "availability": "assessed", "coverage": "answered", "reason": "sufficient_evidence", "originatingTurnId": "c3…", "originatingRequestId": "c3…" },
-  "ownership": { "state": "ai_owned", "suppressed": false },
-  "routine": { "name": "Book a demo", "status": "waiting_for_input", "pendingInput": [{ "key": "email", "type": "email", "required": true }] },
-  "traceId": "d4…"
-}
-```
-
-- `answerCoverage` is the same coverage verdict the dashboard trace shows: `coverage` is `answered`, `partial`, `unanswered`, or `unclear`, and `reason` explains it. `availability: "not_recorded"` means no assessment ran for that turn.
-- `ownership` says who owns the conversation. `human_owned` with `suppressed: true` means a person has taken over and the agent generated nothing; keep the conversation and come back for the reply.
-- `routine` is present when the turn touched a routine: the one it ran, or one waiting for an operator's approval. `status` is `active`, `waiting_for_input`, `waiting_for_approval`, `completed`, or `abandoned`; `pendingInput` lists every required slot still open plus the current step's optional ones, each with `key`, `type`, `required`, and `description`, so the client can supply all of them in one message.
-- `invocation` is present only on a routine tool call (next section): `toolName` plus an `outcome`.
-- `traceId` is the turn's trace id, the one an operator sees in Activity.
-
-The REST agent channel, `POST /api/v1/agents/{agentId}/chat`, returns the same `answerCoverage`, `ownership`, `routine`, `invocation`, and `traceId` fields beside its `answer` string and `citations` array. Both routes publish the envelope as `AgentReplyEnvelopeCore` in the OpenAPI document.
-
-### Routines as tools
-
-A routine an operator has [exposed as a tool](/guides/authoring-routines#expose-a-routine-as-a-tool) is listed for the session by `GET /api/v1/mcp/converse/tools`, one `AgentToolDescriptor` per routine with a JSON Schema `inputSchema` built from the routine's declared slots. A direct converse client invokes it by sending `routine` instead of `message` on the ask route:
-
-```json
-{ "routine": { "toolName": "start_return", "input": { "orderId": "A-1001" } } }
-```
-
-The routine starts with those slots filled, skips the steps that would have asked for them, and reports where it landed in `routine` (`toolName` names the tool) and what the call did in `invocation.outcome`: `started`; `reentered` (a completed routine started again, as its reentry setting allows); `declined` (completed under **Once per conversation** — the turn answers normally and `routine` still reports `status: "completed"`); `not_started` (another routine was mid-flight or awaiting approval and kept the turn — `routine` describes it); or `unknown_tool`. Input is validated before anything is recorded: an unknown tool returns `404` with `error.details.code` `routine_tool_unknown`; mismatched input returns `400` with `error.details.code` `routine_invocation_invalid` and one `{ path, code }` entry per field in `error.details.errors` (`required`, `type`, `format`, `unknown_field`, `too_long` over 2000 characters; a blank string counts as missing). Both routes check the tool name against the release the conversation is pinned to, while `GET /api/v1/mcp/converse/tools` lists the current published catalog, so a routine exposed after the conversation began can be listed yet answer `routine_tool_unknown`.
-
-An MCP client gets the same catalog as tools. The standalone server reads it once, when it exchanges the credential for a session, and pins the result, so the session's `tools/list` is stable for its lifetime: `ask_agent`, the two documentation tools, and one tool per exposed routine — `start_return(orderId, reason?)` above — each carrying the operator's description and the descriptor's JSON Schema. Calling a routine tool checks the arguments against that schema first (a miss is a tool error before the backend is involved, audited with the tool name only), then runs the invocation above. The result's `structuredContent` is the full envelope and its text content is `answer.text` followed by that envelope as JSON, exactly as for `ask_agent`.
-
-A routine exposed, renamed, or withdrawn after the session opened appears when the client's next session is established; the server sends no `notifications/tools/list_changed`.
-
-The converse session does not grant access to other agents, workspace administration, account management, API-access settings, Ray, the skill catalogue, connector secrets, or provider keys.
-
 ## Radioso documentation tools
 
 A client wired to this server is usually being used to build something against Radioso, so the questions it gets asked are as often "how does this work" as "what does my agent say". Two tools answer the first kind from Radioso's own manual:
@@ -196,6 +151,7 @@ An existing document's body, its upload, its reprocessing, and its removal stay 
 
 ## Read next
 
+- [Connect a calling agent](/guides/agent-converse) — `ask_agent`, the reply envelope, and calling an exposed routine as a typed tool.
 - [Authentication](/guides/authentication) — sessions, personal tokens, service credentials, and public launch flows.
 - [Personal tokens and service accounts](/api/workspaces-and-tokens) — issue REST credentials and store their one-time secrets.
 - [Agents and skills](/api/agents-and-skills) — configure the agent and its external MCP skills.

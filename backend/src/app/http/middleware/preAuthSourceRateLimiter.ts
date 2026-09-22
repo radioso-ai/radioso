@@ -6,9 +6,21 @@ import {
 } from "@radioso/mcp-source-proof";
 
 import { forbidden } from "../../../shared/domain/errors.js";
-import type { RateLimitAbuseControlPort } from "./rateLimit.js";
 
-export const preAuthSourceDigest = (
+/**
+ * Pre-authentication limiters spend budget and answer with a bare rejection, so they never read
+ * the decision back and never advertise a budget to an unauthenticated caller.
+ */
+export interface PreAuthSourceAbuseControlPort {
+  enforce(input: {
+    scope: string;
+    subjectKey: string;
+    limit: number;
+    windowMs: number;
+  }): Promise<unknown>;
+}
+
+const preAuthSourceDigest = (
   req: Parameters<RequestHandler>[0],
   trustedProxyHops = 0,
 ): string => resolveSourceDigest({
@@ -20,7 +32,7 @@ export const preAuthSourceDigest = (
 const singleHeader = (value: string | string[] | undefined): string | null =>
   typeof value === "string" ? value : null;
 
-export const verifiedMcpSourceDigest = (
+const verifiedMcpSourceDigest = (
   req: Parameters<RequestHandler>[0],
   signingSecret?: string,
 ): string | null => {
@@ -40,7 +52,7 @@ export const verifiedMcpSourceDigest = (
   });
 };
 
-export const resolvedPreAuthSourceDigest = (
+const resolvedPreAuthSourceDigest = (
   req: Parameters<RequestHandler>[0],
   signingSecret?: string,
   trustedProxyHops = 0,
@@ -57,7 +69,7 @@ export const requireValidMcpSourceProof = (signingSecret?: string): RequestHandl
 };
 
 export const createPreAuthSourceRateLimiter = (input: {
-  service: RateLimitAbuseControlPort;
+  service: PreAuthSourceAbuseControlPort;
   scope: string;
   limit: number;
   signingSecret?: string;

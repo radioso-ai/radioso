@@ -3,6 +3,7 @@ import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
 import { createMcpSourceProof, MCP_SOURCE_PROOF_HEADERS } from "@radioso/mcp-source-proof";
 
+import { admittedAbuseControlDecision } from "../support/fakes.js";
 import { createMcpConverseRoutes } from "../../src/app/http/routes/mcpConverseRoutes.js";
 import type { AppDependencies } from "../../src/app/server/types.js";
 
@@ -36,8 +37,8 @@ const createDependencies = (overrides: Partial<AppDependencies> = {}): AppDepend
     RADIOSO_TRUSTED_PROXY_HOPS: 0,
   },
   abuseControlService: {
-    enforce: vi.fn().mockResolvedValue(undefined),
-    enforceBatch: vi.fn().mockResolvedValue(undefined),
+    enforce: vi.fn().mockResolvedValue(admittedAbuseControlDecision()),
+    enforceBatch: vi.fn().mockResolvedValue([admittedAbuseControlDecision()]),
   },
   auditService: { record: vi.fn().mockResolvedValue(undefined) },
   accountAccessService: { requirePermission: vi.fn().mockResolvedValue(undefined) },
@@ -104,7 +105,7 @@ describe("MCP converse ask rate limiting", () => {
     const dependencies = createDependencies({
       abuseControlService: {
         enforce: vi.fn().mockRejectedValue({ statusCode: 429, code: "rate_limit_exceeded" }),
-        enforceBatch: vi.fn().mockResolvedValue(undefined),
+        enforceBatch: vi.fn().mockResolvedValue([admittedAbuseControlDecision()]),
       } as never,
       metricsRegistry: metricsRegistry as never,
     });

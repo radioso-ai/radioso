@@ -74,9 +74,14 @@ export const jsonbConcat = (
 export const currentTimestamp = (): RawBuilder<Date> => sql`now()`;
 
 /**
- * Atomically consumes one abuse-control entry. The `ON CONFLICT` update takes
- * the row lock before it decides whether an active window can accept another
- * attempt, so concurrent callers cannot each observe the same remaining slot.
+ * Atomically consumes one abuse-control entry against a sliding window. The `ON CONFLICT`
+ * update takes the row lock before it decides whether the window can accept another attempt,
+ * so concurrent callers cannot each observe the same remaining slot.
+ *
+ * Admission weighs the expiring window against the running one: `previous * overlap + current`,
+ * where `overlap` falls from 1 to 0 as the current window advances. A caller that spends the
+ * whole budget at the end of one window is therefore still over the limit at the start of the
+ * next, which a plain per-window counter would admit.
  */
 export const consumeAbuseControlEntry = (input: {
   scope: string;
@@ -89,42 +94,69 @@ export const consumeAbuseControlEntry = (input: {
   scope: string;
   subject_key: string;
   attempt_count: number;
+  previous_attempt_count: number;
   window_started_at: Date;
   blocked_until: Date | null;
   created_at: Date;
   updated_at: Date;
+  weighted_attempt_count: number;
 }> => {
   const now = sql`${input.now}::timestamptz`;
   const windowCutoff = new Date(input.now.getTime() - input.windowMs);
+  const previousWindowCutoff = new Date(input.now.getTime() - 2 * input.windowMs);
   const blockedUntil = sql`${now} + (${input.blockMs} * interval '1 millisecond')`;
   const nextAttemptCount = sql`case
     when abuse_control_entries.blocked_until > ${now} then abuse_control_entries.attempt_count
     when abuse_control_entries.window_started_at > ${windowCutoff} then abuse_control_entries.attempt_count + 1
     else 1
   end`;
+  const nextPreviousAttemptCount = sql`case
+    when abuse_control_entries.blocked_until > ${now} then abuse_control_entries.previous_attempt_count
+    when abuse_control_entries.window_started_at > ${windowCutoff} then abuse_control_entries.previous_attempt_count
+    when abuse_control_entries.window_started_at > ${previousWindowCutoff} then abuse_control_entries.attempt_count
+    else 0
+  end`;
   const nextWindowStartedAt = sql`case
     when abuse_control_entries.blocked_until > ${now} then abuse_control_entries.window_started_at
     when abuse_control_entries.window_started_at > ${windowCutoff} then abuse_control_entries.window_started_at
     else ${now}
   end`;
+  const weightedAttemptCount = (
+    attemptCount: RawBuilder<unknown>,
+    previousAttemptCount: RawBuilder<unknown>,
+    windowStartedAt: RawBuilder<unknown>,
+  ): RawBuilder<number> => sql`(
+    (${previousAttemptCount}) * greatest(
+      0,
+      1 - (extract(epoch from (${now} - (${windowStartedAt}))) * 1000) / ${input.windowMs}::double precision
+    ) + (${attemptCount})
+  )`;
   const nextBlockedUntil = sql`case
     when abuse_control_entries.blocked_until > ${now} then abuse_control_entries.blocked_until
-    when (${nextAttemptCount}) > ${input.limit} then ${blockedUntil}
+    when ${weightedAttemptCount(nextAttemptCount, nextPreviousAttemptCount, nextWindowStartedAt)} > ${input.limit}
+      then ${blockedUntil}
     else null
   end`;
+  const consumedWeight = weightedAttemptCount(
+    sql`abuse_control_entries.attempt_count`,
+    sql`abuse_control_entries.previous_attempt_count`,
+    sql`abuse_control_entries.window_started_at`,
+  );
 
   return sql`insert into abuse_control_entries as abuse_control_entries (
-      scope, subject_key, attempt_count, window_started_at, blocked_until
+      scope, subject_key, attempt_count, previous_attempt_count, window_started_at, blocked_until
     ) values (
-      ${input.scope}, ${input.subjectKey}, 1, ${now},
+      ${input.scope}, ${input.subjectKey}, 1, 0, ${now},
       case when ${input.limit} < 1 then ${blockedUntil} else null end
     )
     on conflict (scope, subject_key) do update set
       attempt_count = ${nextAttemptCount},
+      previous_attempt_count = ${nextPreviousAttemptCount},
       window_started_at = ${nextWindowStartedAt},
       blocked_until = ${nextBlockedUntil},
       updated_at = now()
-    returning scope, subject_key, attempt_count, window_started_at, blocked_until, created_at, updated_at`;
+    returning scope, subject_key, attempt_count, previous_attempt_count, window_started_at, blocked_until,
+      created_at, updated_at, ${consumedWeight} as weighted_attempt_count`;
 };
 
 /**

@@ -1,5 +1,8 @@
 import type { NextFunction, Request, RequestHandler, Response } from "express";
 
+import type { AbuseControlDecision } from "../../../modules/security/contracts/abuseControl.js";
+import { applyRateLimitHeaders, applyRetryAfterFromError } from "../rateLimitHeaders.js";
+
 export interface RateLimitAbuseControlPort {
   enforce(input: {
     scope: string;
@@ -7,7 +10,7 @@ export interface RateLimitAbuseControlPort {
     limit: number;
     windowMs: number;
     blockMs?: number;
-  }): Promise<unknown>;
+  }): Promise<AbuseControlDecision>;
 }
 
 export interface RateLimitBatchAbuseControlPort {
@@ -17,8 +20,22 @@ export interface RateLimitBatchAbuseControlPort {
     limit: number;
     windowMs: number;
     blockMs?: number;
-  }[]): Promise<unknown>;
+  }[]): Promise<AbuseControlDecision[]>;
 }
+
+/** The budget the caller is closest to spending is the one worth advertising. */
+const tightest = (decisions: readonly AbuseControlDecision[]): AbuseControlDecision | null =>
+  decisions.reduce<AbuseControlDecision | null>(
+    (tightestSoFar, decision) =>
+      tightestSoFar === null || decision.remaining < tightestSoFar.remaining ? decision : tightestSoFar,
+    null,
+  );
+
+const applyBlockedHeaders = (res: Response, error: unknown): void => {
+  if (error && typeof error === "object" && "statusCode" in error && typeof error.statusCode === "number") {
+    applyRetryAfterFromError(res, error as { statusCode: number; details?: unknown });
+  }
+};
 
 interface CreateRateLimitBatchMiddlewareInput {
   service: RateLimitBatchAbuseControlPort;
@@ -46,7 +63,10 @@ export const createRateLimitBatchMiddleware = (input: CreateRateLimitBatchMiddle
       return;
     }
     try {
-      await input.service.enforceBatch(policies);
+      const decision = tightest(await input.service.enforceBatch(policies));
+      if (decision) {
+        applyRateLimitHeaders(res, decision);
+      }
       next();
     } catch (error) {
       const statusCode = error && typeof error === "object" && "statusCode" in error
@@ -65,6 +85,7 @@ export const createRateLimitBatchMiddleware = (input: CreateRateLimitBatchMiddle
           },
         }).catch(() => undefined);
       }
+      applyBlockedHeaders(res, error);
       next(error);
     }
   };
@@ -104,13 +125,13 @@ export const createRateLimitMiddleware = (input: CreateRateLimitMiddlewareInput)
     }
 
     try {
-      await input.service.enforce({
+      applyRateLimitHeaders(res, await input.service.enforce({
         scope: input.scope,
         subjectKey,
         limit: typeof input.limit === "function" ? input.limit(req, res) : input.limit,
         windowMs: input.windowMs,
         blockMs: input.blockMs,
-      });
+      }));
       next();
     } catch (error) {
       if (error && typeof error === "object" && "statusCode" in error && (error as { statusCode?: number }).statusCode === 429) {
@@ -141,6 +162,7 @@ export const createRateLimitMiddleware = (input: CreateRateLimitMiddlewareInput)
           },
         }).catch(() => undefined);
       }
+      applyBlockedHeaders(res, error);
       next(error);
     }
   };

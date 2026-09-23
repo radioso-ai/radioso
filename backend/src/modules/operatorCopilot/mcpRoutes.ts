@@ -71,8 +71,10 @@ const UNAVAILABLE = { code: "unavailable", message: "Operator capability is unav
 const invocationIdOf = (body: unknown): string | undefined => {
   if (!body || typeof body !== "object") return undefined;
   const candidate = body as { invocationId?: unknown; proof?: { invocationId?: unknown } | null };
-  const value = candidate.invocationId ?? (candidate.proof && typeof candidate.proof === "object" ? candidate.proof.invocationId : undefined);
-  return typeof value === "string" ? value : undefined;
+  const proof = candidate.proof && typeof candidate.proof === "object" ? candidate.proof : undefined;
+  // First usable value, not first present one: a junk field at either position must not shadow a
+  // usable id at the other.
+  return [candidate.invocationId, proof?.invocationId].find((value): value is string => typeof value === "string");
 };
 
 type Failure = {

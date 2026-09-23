@@ -10,9 +10,8 @@ import type { AppDependencies } from "../../src/app/server/types.js";
 const principal = {
   workspaceId: "workspace-1",
   agentId: "agent-1",
-  grantId: "grant-mcp",
+  origin: { kind: "grant", grantId: "grant-mcp", grantVersion: "version-1" },
   publicSessionId: "session-1",
-  grantVersion: "version-1",
   sourceChannel: "mcp",
   sourceOrigin: null,
   authPrincipal: {
@@ -41,6 +40,14 @@ const createDependencies = (overrides: Partial<AppDependencies> = {}): AppDepend
     enforceBatch: vi.fn().mockResolvedValue([admittedAbuseControlDecision()]),
   },
   auditService: { record: vi.fn().mockResolvedValue(undefined) },
+  agentRepository: {
+    findByPublicId: vi.fn().mockResolvedValue({
+      id: "agent-1",
+      workspaceId: "workspace-1",
+      walkInConversationsPerHour: null,
+    }),
+  },
+  conversationRepository: { listPageByAnonymousSession: vi.fn().mockResolvedValue({ conversations: [] }) },
   accountAccessService: { requirePermission: vi.fn().mockResolvedValue(undefined) },
   ...overrides,
 } as unknown as AppDependencies);
@@ -54,8 +61,7 @@ const createApp = (dependencies = createDependencies()) => {
       workspaceId: "workspace-1",
       agentId: "agent-1",
       publicSessionId: "public-session-1",
-      grantId: "grant-mcp",
-      grantVersion: "version-1",
+      origin: { kind: "grant", grantId: "grant-mcp", grantVersion: "version-1" },
       sourceChannel: "mcp",
       sourceOrigin: null,
       authPrincipal: principal.authPrincipal,
@@ -65,17 +71,25 @@ const createApp = (dependencies = createDependencies()) => {
     permissions: vi.fn().mockReturnValue([]),
   };
   const converseService = { askAgent: vi.fn().mockResolvedValue({ answer: "Hello" }) };
+  const walkInObserver = { record: vi.fn() };
+  const conversationUpdateReader = {
+    read: vi.fn().mockResolvedValue({ messages: [], cursor: null, ownership: { state: "ai_owned" } }),
+  };
+  const conversationUpdateWaiter = { wait: vi.fn().mockResolvedValue("deadline" as const) };
   const app = express();
   app.use(express.json());
   app.use("/api/v1/mcp/converse", createMcpConverseRoutes(dependencies, {
     audit: {} as never,
     sessionService: sessionService,
     converseService: converseService as never,
+    walkInObserver,
+    conversationUpdateReader,
+    conversationUpdateWaiter,
   }));
   app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     res.status((error as { statusCode?: number }).statusCode ?? 500).json({ code: (error as { code?: string }).code });
   });
-  return { app, converseService, sessionService };
+  return { app, converseService, conversationUpdateReader, sessionService };
 };
 
 describe("MCP converse ask rate limiting", () => {
@@ -192,6 +206,96 @@ describe("MCP converse ask rate limiting", () => {
     const sourceKeys = (dependencies.abuseControlService.enforce as ReturnType<typeof vi.fn>).mock.calls
       .map(([input]) => (input as { subjectKey: string }).subjectKey);
     expect(new Set(sourceKeys).size).toBe(2);
+  });
+
+  it("subdivides an agent's walk-in budget by source, and keeps the bare agent counter as a backstop", async () => {
+    // Without the subdivision a handful of abusive sources spend the whole per-agent
+    // window and lock every other caller out of a published agent (US4 AS-3).
+    const dependencies = createDependencies();
+    const { app } = createApp(dependencies);
+
+    await request(app)
+      .post("/api/v1/mcp/converse/session")
+      .send({ publicId: "ag_0123456789abcdefghijkl" })
+      .expect(201);
+
+    const spent = (dependencies.abuseControlService.enforce as ReturnType<typeof vi.fn>).mock.calls
+      .map(([input]) => input as { scope: string; subjectKey: string; limit: number })
+      .filter((policy) => policy.scope.startsWith("mcp.converse.walkin"));
+    expect(spent.map((policy) => policy.scope)).toEqual([
+      "mcp.converse.walkin.source",
+      "mcp.converse.walkin.agent.source",
+      "mcp.converse.walkin.agent",
+    ]);
+    expect(spent[1]).toMatchObject({
+      subjectKey: expect.stringMatching(/^agent:agent-1:source:[A-Za-z0-9_-]+$/),
+      limit: 60,
+    });
+    expect(spent[2]).toMatchObject({ subjectKey: "agent:agent-1", limit: 600 });
+  });
+
+  it("records a throttled walk-in exchange in the security event feed", async () => {
+    const dependencies = createDependencies({
+      abuseControlService: {
+        // Only the per-agent-per-source bucket is exhausted, which is the case the
+        // subdivision exists for: this caller is refused and others are not.
+        enforce: vi.fn().mockImplementation(async (policy: { scope: string }) => {
+          if (policy.scope === "mcp.converse.walkin.agent.source") {
+            throw Object.assign(new Error("Too many requests"), { statusCode: 429, code: "rate_limit_exceeded" });
+          }
+          return admittedAbuseControlDecision();
+        }),
+        enforceBatch: vi.fn().mockResolvedValue([admittedAbuseControlDecision()]),
+      } as never,
+    });
+    const { app } = createApp(dependencies);
+
+    await request(app)
+      .post("/api/v1/mcp/converse/session")
+      .send({ publicId: "ag_0123456789abcdefghijkl" })
+      .expect(429);
+
+    expect(dependencies.auditService.record).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: "security.rate_limit_enforced",
+      eventStatus: "success",
+      workspaceId: "workspace-1",
+      metadata: expect.objectContaining({
+        scope: "mcp.converse.walkin.agent.source",
+        surface: "mcp_converse_walk_in",
+        agentId: "agent-1",
+        sourceDigest: expect.any(String),
+      }),
+    }));
+    // The public id names a reachable agent and stays out of the record, as it does
+    // everywhere else.
+    expect(JSON.stringify((dependencies.auditService.record as ReturnType<typeof vi.fn>).mock.calls))
+      .not.toContain("ag_0123456789abcdefghijkl");
+  });
+
+  it("gives the conversation-update read its own source budget, not the exchange's", async () => {
+    const dependencies = createDependencies();
+    const { app } = createApp(dependencies);
+
+    await request(app)
+      .get("/api/v1/mcp/converse/messages")
+      .set("Authorization", "Bearer session-token")
+      .expect(200);
+
+    const scopes = (dependencies.abuseControlService.enforce as ReturnType<typeof vi.fn>).mock.calls
+      .map(([input]) => (input as { scope: string }).scope);
+    expect(scopes).toEqual(["mcp.converse.messages.source", "mcp.converse.messages.session"]);
+  });
+
+  it("refuses a conversation-update read whose wait exceeds the ceiling before any budget is spent", async () => {
+    const dependencies = createDependencies();
+    const { app, conversationUpdateReader } = createApp(dependencies);
+
+    await request(app)
+      .get("/api/v1/mcp/converse/messages?waitMs=25001")
+      .set("Authorization", "Bearer session-token")
+      .expect(400);
+
+    expect(conversationUpdateReader.read).not.toHaveBeenCalled();
   });
 
   it("does not run MCP ask when a channel budget is exhausted", async () => {

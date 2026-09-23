@@ -180,6 +180,7 @@ const identityAdministration = permanent("Permanent exclusion: Ray does not admi
 const accountScope = permanent("Permanent exclusion: this is account-scoped rather than workspace-scoped, and Ray operates on one workspace.");
 const endUserSurface = permanent("Permanent exclusion: this is an end-user or inbound integration surface, not an operator-copilot tool.");
 const authOrRegistration = permanent("Permanent exclusion: authentication and registration are not an operator-copilot surface.");
+const agentDiscoveryDocument = permanent("Permanent exclusion: the public discovery documents are read by a visiting agent, not by an operator. They render what the operator already controls through the agent's card and walk-in settings, which `propose_agent_setting` covers.");
 const copilotUiOnly = permanent("Permanent exclusion: this endpoint is the operator copilot UI/control surface, not a tool Ray may call.");
 const ambientOperatorRuntime = permanent("Permanent exclusion: this is ambient operator-dashboard runtime transport, not an action Ray may call.");
 // A context variable *value* is data written for one session, customer, agent, or workspace scope
@@ -243,6 +244,11 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "getCurrentSession",
   ], authOrRegistration),
   ...coverage([
+    "getAgentCard",
+    "getAgentMcpServerCard",
+    "getAgentAiCatalog",
+  ], agentDiscoveryDocument),
+  ...coverage([
     "getAgentContextVariableSigningKey",
   ], secretBearingRead),
   ...coverage([
@@ -293,6 +299,7 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "rotateAnonymousChatToken",
     "rotateWebsiteEmbedToken",
     "rotateAgentChannelCredential",
+    "rotateAgentPublicId",
   ], neverListExclusion("secret_rotation")),
   ...coverage([
     "setWorkspaceProviderCredential",
@@ -431,6 +438,9 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "askMcpConverseAgent",
     // Agent-audience read of the exposed-routine catalog, not an operator-facing surface.
     "getMcpConverseTools",
+    // Agent-audience read of its own conversation after a handoff; the operator reads
+    // the same conversation in the Inbox.
+    "getMcpConverseMessages",
     "createPublicChatResponse",
     "listPublicChatHistory",
     "getPublicChatHistoryConversation",

@@ -2263,6 +2263,24 @@ components:
               type: boolean
             assistantBootstrapActive:
               type: boolean
+            publicId:
+              type:
+                - string
+                - "null"
+              description: Identifier other agents address this agent by. Null until the agent card is published; rotate it to drop every connected caller.
+            publicDescription:
+              type: string
+              description: Operator-authored sentence the agent's public cards carry.
+            agentCardEnabled:
+              type: boolean
+            publicAgentAccessEnabled:
+              type: boolean
+              description: Whether a calling agent may connect with the public id and no credential. Requires agentCardEnabled.
+            walkInConversationsPerHour:
+              type:
+                - integer
+                - "null"
+              description: Per-agent walk-in conversation budget. Null leaves the deployment default in charge.
             chatModelOverride:
               type:
                 - object
@@ -2304,6 +2322,11 @@ components:
             - assistantDefaultLocale
             - proactiveGreetingEnabled
             - assistantBootstrapActive
+            - publicId
+            - publicDescription
+            - agentCardEnabled
+            - publicAgentAccessEnabled
+            - walkInConversationsPerHour
             - chatModelOverride
             - skillSettings
             - surfaceSettings
@@ -2400,6 +2423,19 @@ components:
           maxLength: 35
         proactiveGreetingEnabled:
           type: boolean
+        publicDescription:
+          type: string
+          maxLength: 500
+        agentCardEnabled:
+          type: boolean
+        publicAgentAccessEnabled:
+          type: boolean
+        walkInConversationsPerHour:
+          type:
+            - integer
+            - "null"
+          minimum: 1
+          maximum: 100000
         chatModelOverride:
           anyOf:
             - type: "null"
@@ -11061,6 +11097,289 @@ components:
         - toolName
         - errors
       description: "The `error.details` of a 400 that refused a tool call before any turn state was written: every problem at once, so a caller can fix the whole call in one retry. Values are never echoed back."
+    ConverseMessage:
+      type: object
+      properties:
+        id:
+          type: string
+        author:
+          type: string
+          enum:
+            - agent
+            - human
+        createdAt:
+          type: string
+          format: date-time
+        text:
+          type: string
+      required:
+        - id
+        - author
+        - createdAt
+        - text
+      description: "One message in the conversation. `author` is provenance, not role: an operator's reply is stored as an assistant message, so `human` is the only thing that tells a person's turn from the agent's."
+    ConverseOwnershipState:
+      type: object
+      properties:
+        state:
+          type: string
+          enum:
+            - ai_owned
+            - human_owned
+      required:
+        - state
+      description: Who owns the conversation right now. `human_owned` means a person has taken it over and the agent is not answering, so keep reading rather than asking again.
+    ConverseMessagesResponse:
+      type: object
+      properties:
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConverseMessage"
+        cursor:
+          type:
+            - string
+            - "null"
+        ownership:
+          $ref: "#/components/schemas/ConverseOwnershipState"
+      required:
+        - messages
+        - cursor
+        - ownership
+      description: Messages after the request's cursor, the cursor to resume from, and who owns the conversation now. `cursor` is null only while the conversation holds no messages.
+    A2aAgentCard:
+      type: object
+      properties:
+        protocolVersion:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        url:
+          type: string
+        preferredTransport:
+          type: string
+        version:
+          type: string
+        documentationUrl:
+          type: string
+        capabilities:
+          type: object
+          properties:
+            streaming:
+              type: boolean
+            pushNotifications:
+              type: boolean
+            stateTransitionHistory:
+              type: boolean
+          required:
+            - streaming
+            - pushNotifications
+            - stateTransitionHistory
+        defaultInputModes:
+          type: array
+          items:
+            type: string
+        defaultOutputModes:
+          type: array
+          items:
+            type: string
+        securitySchemes:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              type:
+                type: string
+                enum:
+                  - http
+              scheme:
+                type: string
+              description:
+                type: string
+            required:
+              - type
+              - scheme
+        security:
+          type: array
+          items:
+            type: object
+            additionalProperties:
+              type: array
+              items:
+                type: string
+        skills:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+              description:
+                type: string
+              tags:
+                type: array
+                items:
+                  type: string
+              inputModes:
+                type: array
+                items:
+                  type: string
+              outputModes:
+                type: array
+                items:
+                  type: string
+            required:
+              - id
+              - name
+              - description
+              - tags
+              - inputModes
+              - outputModes
+      required:
+        - protocolVersion
+        - name
+        - description
+        - url
+        - preferredTransport
+        - version
+        - capabilities
+        - defaultInputModes
+        - defaultOutputModes
+        - securitySchemes
+        - security
+        - skills
+      description: "An A2A Agent Card for one agent: who it is, where its MCP endpoint is, how a caller authenticates, and one skill per exposed routine."
+    McpServerCard:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        version:
+          type: string
+        websiteUrl:
+          type: string
+        remotes:
+          type: array
+          items:
+            type: object
+            properties:
+              type:
+                type: string
+                enum:
+                  - streamable-http
+              url:
+                type: string
+            required:
+              - type
+              - url
+        _meta:
+          type: object
+          properties:
+            ai.radioso/agent:
+              type: object
+              properties:
+                title:
+                  type: string
+                publicId:
+                  type: string
+                authentication:
+                  type: string
+                  enum:
+                    - none
+                    - bearer
+                tools:
+                  type: array
+                  items:
+                    type: string
+                publishedAt:
+                  type: string
+              required:
+                - title
+                - publicId
+                - authentication
+                - tools
+                - publishedAt
+          required:
+            - ai.radioso/agent
+      required:
+        - name
+        - description
+        - version
+        - remotes
+        - _meta
+      description: The MCP server card for one agent, in the published MCP server document shape. `$schema` is omitted until the server-card extension publishes one.
+    AiCatalog:
+      type: object
+      properties:
+        agents:
+          type: array
+          items:
+            type: object
+            properties:
+              publicId:
+                type: string
+              name:
+                type: string
+              description:
+                type:
+                  - string
+                  - "null"
+              documentationUrl:
+                type:
+                  - string
+                  - "null"
+              authentication:
+                type: string
+                enum:
+                  - none
+                  - bearer
+              mcp:
+                type: object
+                properties:
+                  url:
+                    type: string
+                  transport:
+                    type: string
+                    enum:
+                      - streamable-http
+                  serverCardUrl:
+                    type: string
+                required:
+                  - url
+                  - transport
+                  - serverCardUrl
+              tools:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                    description:
+                      type: string
+                  required:
+                    - name
+                    - description
+              publishedAt:
+                type: string
+            required:
+              - publicId
+              - name
+              - description
+              - documentationUrl
+              - authentication
+              - mcp
+              - tools
+              - publishedAt
+      required:
+        - agents
+      description: "The catalog entry for one agent: the index a customer's own origin points at."
     ConnectorField:
       type: object
       properties:
@@ -21265,6 +21584,47 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
           description: Agent or channel credential not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/agents/{agentId}/public-id/rotate:
+    post:
+      tags:
+        - Agents
+      summary: Rotate the agent's public id
+      description: Replaces the identifier callers reach this agent by. Every agent connected without a credential is dropped on its next request. The agent must already have a public id, which publishing its agent card mints.
+      operationId: rotateAgentPublicId
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: agentId
+          in: path
+      responses:
+        "200":
+          description: Agent with its replacement public id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConversationAgent"
+        "400":
+          description: The agent has no public id to rotate
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Agent not found
           content:
             application/json:
               schema:
@@ -32918,7 +33278,8 @@ paths:
     post:
       tags:
         - MCP Converse
-      summary: Exchange an MCP converse launch token for a signed session
+      summary: Exchange a launch token or an agent's public id for a signed converse session
+      description: "Send exactly one of `launchToken` or `publicId`. A `launchToken` is the credential an operator minted for this agent. A `publicId` is the agent's public identifier and carries no secret: it works only while the agent accepts walk-in connections, and it opens a fresh conversation each time. Rotating the public id or closing walk-in access refuses the next request on every session issued against it."
       operationId: createMcpConverseSession
       requestBody:
         required: true
@@ -32931,6 +33292,11 @@ paths:
                   type: string
                   minLength: 1
                   maxLength: 2048
+                publicId:
+                  type: string
+                  minLength: 1
+                  maxLength: 128
+                  pattern: ^[A-Za-z0-9_-]+$
                 client:
                   type: object
                   properties:
@@ -32942,8 +33308,6 @@ paths:
                       type: string
                       minLength: 1
                       maxLength: 64
-              required:
-                - launchToken
       responses:
         "201":
           description: MCP converse session issued
@@ -32985,7 +33349,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "403":
-          description: Grant channel or bound agent is not allowed
+          description: Grant channel or bound agent is not allowed, or the agent does not accept walk-in connections
           content:
             application/json:
               schema:
@@ -33098,12 +33462,71 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/mcp/converse/messages:
+    get:
+      tags:
+        - MCP Converse
+      summary: Read what happened in this session's conversation since a cursor, optionally waiting for it
+      description: Returns messages after `cursor` with the author kind and the conversation's current ownership, plus the `cursor` to resume from. The cursor is opaque and comes from a previous response; without one the call returns the conversation's most recent page. With `waitMs` the call parks until a message lands or the deadline passes, and returns an empty list at the deadline rather than an error — so a calling agent that handed off to a person can come back for the reply. One call spends one unit of the session's read budget no matter how long it waits.
+      operationId: getMcpConverseMessages
+      security:
+        - mcpConverseSessionBearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            minLength: 1
+            maxLength: 1024
+            pattern: ^[A-Za-z0-9_-]+$
+          required: false
+          name: cursor
+          in: query
+        - schema:
+            type:
+              - integer
+              - "null"
+            minimum: 0
+            maximum: 25000
+            default: 0
+          required: false
+          name: waitMs
+          in: query
+      responses:
+        "200":
+          description: Messages after the cursor, the next cursor, and current ownership
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConverseMessagesResponse"
+        "400":
+          description: Invalid cursor or `waitMs` outside 0..25000
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Invalid converse session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Converse session is no longer authorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: MCP converse read rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/mcp/converse/ask:
     post:
       tags:
         - MCP Converse
       summary: "Run one turn through the bound agent: a message, or a tool call to an exposed routine"
-      description: "Send exactly one of `message` or `routine`. A `routine` call is validated against the tool's `inputSchema` from the catalog before any turn state is written: an unknown tool returns 404 with `details.code` `routine_tool_unknown`; invalid input returns 400 whose `details` is `RoutineInvocationInvalidDetails` (`code` `routine_invocation_invalid`, field-level `errors`)."
+      description: "Send exactly one of `message` or `routine`. An optional `signedIdentity` is the same HMAC visitor token the website embed sends, bound to this session's `conversationId` rather than a browser origin; one that does not verify leaves the turn anonymous. A `routine` call is validated against the tool's `inputSchema` from the catalog before any turn state is written: an unknown tool returns 404 with `details.code` `routine_tool_unknown`; invalid input returns 400 whose `details` is `RoutineInvocationInvalidDetails` (`code` `routine_invocation_invalid`, field-level `errors`)."
       operationId: askMcpConverseAgent
       security:
         - mcpConverseSessionBearerAuth: []
@@ -33131,6 +33554,9 @@ paths:
                     - toolName
                     - input
                   additionalProperties: false
+                signedIdentity:
+                  type: string
+                  maxLength: 8192
                 stream:
                   type: boolean
                   enum:
@@ -33174,6 +33600,111 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "429":
           description: MCP converse ask rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /.well-known/agent-card/{publicId}.json:
+    get:
+      tags:
+        - Agent discovery
+      summary: Read an agent's A2A Agent Card
+      operationId: getAgentCard
+      parameters:
+        - schema:
+            type: string
+            minLength: 1
+            maxLength: 64
+          required: true
+          name: publicId
+          in: path
+      responses:
+        "200":
+          description: Public document served
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/A2aAgentCard"
+        "304":
+          description: Document unchanged since the caller's ETag
+        "404":
+          description: No public document for this id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Discovery read rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /.well-known/mcp/server-card/{publicId}.json:
+    get:
+      tags:
+        - Agent discovery
+      summary: Read an agent's MCP server card
+      operationId: getAgentMcpServerCard
+      parameters:
+        - schema:
+            type: string
+            minLength: 1
+            maxLength: 64
+          required: true
+          name: publicId
+          in: path
+      responses:
+        "200":
+          description: Public document served
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/McpServerCard"
+        "304":
+          description: Document unchanged since the caller's ETag
+        "404":
+          description: No public document for this id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Discovery read rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /.well-known/ai-catalog/{publicId}.json:
+    get:
+      tags:
+        - Agent discovery
+      summary: Read an agent's catalog entry
+      operationId: getAgentAiCatalog
+      parameters:
+        - schema:
+            type: string
+            minLength: 1
+            maxLength: 64
+          required: true
+          name: publicId
+          in: path
+      responses:
+        "200":
+          description: Public document served
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiCatalog"
+        "304":
+          description: Document unchanged since the caller's ETag
+        "404":
+          description: No public document for this id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Discovery read rate limit exceeded
           content:
             application/json:
               schema:

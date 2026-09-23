@@ -507,6 +507,15 @@ resource "google_cloud_run_v2_service" "backend" {
           value = env.value
         }
       }
+      # Public agent discovery. Without the endpoint, the discovery documents refuse to
+      # render rather than publish a card a caller cannot connect through.
+      dynamic "env" {
+        for_each = var.mcp_public_origin == null ? [] : ["${var.mcp_public_origin}/mcp"]
+        content {
+          name  = "PUBLIC_MCP_CONVERSE_URL"
+          value = env.value
+        }
+      }
       dynamic "env" {
         for_each = local.operator_mcp_configured ? [var.operator_mcp_credential_epoch] : []
         content {
@@ -669,6 +678,15 @@ resource "google_cloud_run_v2_service" "mcp" {
         for_each = local.operator_mcp_configured ? [local.app_base_url] : []
         content {
           name  = "OPERATOR_MCP_ISSUER_URL"
+          value = env.value
+        }
+      }
+      # Public agent discovery. Without the endpoint, the discovery documents refuse to
+      # render rather than publish a card a caller cannot connect through.
+      dynamic "env" {
+        for_each = var.mcp_public_origin == null ? [] : ["${var.mcp_public_origin}/mcp"]
+        content {
+          name  = "PUBLIC_MCP_CONVERSE_URL"
           value = env.value
         }
       }

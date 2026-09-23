@@ -2,11 +2,17 @@ import { createHash } from "node:crypto";
 import type { RequestHandler } from "express";
 
 import type { Env } from "../../config/env.js";
+import type { AgentConversePrincipal } from "../../../modules/settings/contracts/agentConverseSession.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import {
   createPreAuthSourceRateLimiter,
   type PreAuthSourceAbuseControlPort,
 } from "./preAuthSourceRateLimiter.js";
+import {
+  createRateLimitMiddleware,
+  type RateLimitAbuseControlPort,
+  type RateLimitAuditPort,
+} from "./rateLimit.js";
 
 interface McpConverseSessionRateLimiterDependencies {
   env: Pick<Env,
@@ -21,6 +27,20 @@ interface McpConverseSessionRateLimiterDependencies {
 }
 
 const digest = (value: string): string => createHash("sha256").update(value).digest("base64url");
+
+/**
+ * Conversation-update reads one session may make per window. A long poll spends one unit
+ * however long it parks, so this is a call budget rather than a time budget: a caller that
+ * polls once a second is over it, and one that parks for the full 25 s is not.
+ */
+const MESSAGES_SESSION_LIMIT = 60;
+
+/**
+ * Conversation-update reads one calling source may make per window. Because a read parks
+ * for up to 25 s, this rate is also the concurrency ceiling — at 60 a minute, about 25 of
+ * one source's reads overlap, each holding a client socket and an upstream one.
+ */
+const MESSAGES_SOURCE_LIMIT = 60;
 
 /**
  * Limits the unauthenticated exchange before it can perform a grant lookup.
@@ -46,10 +66,64 @@ export const createMcpConverseSourceRateLimiter = (
   ),
 });
 
+/**
+ * The conversation-update read has its own source budget rather than sharing the session
+ * exchange's, because a read may park for up to 25 s: on one process each parked read
+ * holds a client socket and, through the standalone MCP server, an upstream one. Bounding
+ * the arrival rate is what bounds that concurrency — at the default 60 per minute, one
+ * source can have at most ~25 reads overlapping.
+ */
+export const createMcpConverseMessagesSourceRateLimiter = (
+  dependencies: McpConverseSessionRateLimiterDependencies,
+): RequestHandler => createPreAuthSourceRateLimiter({
+  service: dependencies.abuseControlService,
+  scope: "mcp.converse.messages.source",
+  limit: MESSAGES_SOURCE_LIMIT,
+  signingSecret: dependencies.env.RADIOSO_MCP_SIGNING_SECRET,
+  trustedProxyHops: dependencies.env.RADIOSO_TRUSTED_PROXY_HOPS,
+  windowMs: dependencies.env.MCP_CONVERSE_SESSION_RATE_LIMIT_WINDOW_MS,
+});
+
+interface McpConverseMessagesRateLimiterDependencies {
+  env: Pick<Env, "MCP_CONVERSE_SESSION_RATE_LIMIT_WINDOW_MS">;
+  abuseControlService: RateLimitAbuseControlPort;
+  auditService: RateLimitAuditPort;
+}
+
+/**
+ * The read budget for resumption, charged once per call rather than per poll tick: a
+ * caller that parks for 25 s spends one unit, the same as one that reads and leaves.
+ * The session is the subject, so a credential-bound and a walk-in caller are budgeted
+ * the same way without the limiter learning which is which.
+ */
+export const createMcpConverseMessagesRateLimiter = (
+  dependencies: McpConverseMessagesRateLimiterDependencies,
+): RequestHandler => createRateLimitMiddleware({
+  service: dependencies.abuseControlService,
+  auditService: dependencies.auditService,
+  scope: "mcp.converse.messages.session",
+  limit: MESSAGES_SESSION_LIMIT,
+  windowMs: dependencies.env.MCP_CONVERSE_SESSION_RATE_LIMIT_WINDOW_MS,
+  resolveSubjectKey: (_req, res) => {
+    const principal = res.locals.mcpConversePrincipal as AgentConversePrincipal | undefined;
+    return principal ? `session:${principal.publicSessionId}` : null;
+  },
+  resolveAuditContext: (_req, res) => {
+    const principal = res.locals.mcpConversePrincipal as AgentConversePrincipal | undefined;
+    return principal ? { workspaceId: principal.workspaceId, metadata: { agentId: principal.agentId } } : {};
+  },
+});
+
 export const createMcpConverseTokenRateLimiter = (
   dependencies: McpConverseSessionRateLimiterDependencies,
 ): RequestHandler => async (req, _res, next) => {
   const launchToken = typeof req.body?.launchToken === "string" ? req.body.launchToken : "";
+  if (!launchToken) {
+    // A walk-in exchange presents no token; its own per-source and per-agent budgets
+    // bound it, and spending this bucket would key every walk-in caller alike.
+    next();
+    return;
+  }
   try {
     await dependencies.abuseControlService.enforce({
       scope: "mcp.converse.session.token",

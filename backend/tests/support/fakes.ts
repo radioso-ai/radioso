@@ -1177,6 +1177,10 @@ export class InMemoryAgentRepository implements AgentRepositoryPort {
     return [...this.items.values()].find((item) => item.surfaceSettings.websiteEmbed.token === token) ?? null;
   }
 
+  async findByPublicId(publicId: string): Promise<AgentRecord | null> {
+    return [...this.items.values()].find((item) => item.publicId === publicId) ?? null;
+  }
+
   async listByWorkspaceId(workspaceId: string): Promise<AgentRecord[]> {
     return [...this.items.values()]
       .filter((item) => item.workspaceId === workspaceId)

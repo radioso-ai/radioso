@@ -19,6 +19,14 @@ export type { ChatGateway } from "./chatGateway.js";
 export type { AgentStarterPromptReader } from "./agentStarterPrompts.js";
 export type { WorkbenchReplayResult } from "../services/workbenchReplayRunner.js";
 export type { PublicConversationEventBus } from "../services/publicConversationEventBus.js";
+// The resumption read surface: a calling agent comes back to a conversation it cannot
+// sit in. Composition builds both; the converse route consumes them.
+export type {
+  ConversationTailReaderPort,
+  ConversationUpdatePage,
+  ConversationUpdateReader,
+  ConversationUpdateWaiter,
+} from "./conversationUpdates.js";
 export { SKILL_TURN_OUTCOME } from "../services/assistantTurnOutcomeTypes.js";
 // The contact.send action type is a chat contract shared with the notify capability; exposed
 // here (not via chat/composition) so cross-module consumers stay off the app-wiring entrypoint.
@@ -35,6 +43,7 @@ export type { AgentConverseAudit } from "../services/agentConverseAudit.js";
 export type {
   AgentConverseAskResult,
   AgentConverseService,
+  ConverseVisitorIdentityVerifier,
 } from "../services/agentConverseService.js";
 // The agent reply envelope is shared by the MCP converse route, the REST agent
 // chat route, and the SSE presenter; composition never builds it.

@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
 
-import type { ConverseApiAdapter } from "../converseApiAdapter.js";
+import type { ConverseApiAdapter, ConverseSessionExchangeRequest } from "../converseApiAdapter.js";
 import { RadiosoApiError } from "../converseApiAdapter.js";
 import { toMcpRequestAuthInfo, type McpRequestAuthInfo } from "./authInfo.js";
 import type { AccessSessionRecord, SessionStore } from "./sessionStore.js";
 import { hashToken } from "./token.js";
 import { toToolCatalogKey } from "./toolCatalogKey.js";
+import { isWalkInStoreKey, mintWalkInHandle, verifyWalkInHandle, walkInStoreKey } from "./walkInHandle.js";
 
 export class AuthServiceError extends Error {
   constructor(
@@ -22,6 +23,12 @@ interface AuthServiceDependencies {
   converseApi: ConverseApiAdapter;
   now?: () => Date;
   sessionStore: SessionStore;
+  /**
+   * Signs walk-in continuity handles. Without it no echoed handle is trusted and every
+   * walk-in call opens a fresh conversation — degraded continuity rather than a handle
+   * a caller could choose.
+   */
+  signingSecret?: string;
   /** Operator-facing warnings about a degraded exchange; defaults to `console.warn`. */
   warn?: (message: string) => void;
 }
@@ -30,6 +37,17 @@ export interface AuthService {
   getRequestAuthInfo(accessToken: string): Promise<McpRequestAuthInfo | null>;
   getSession(accessToken: string): Promise<AccessSessionRecord | null>;
   resolveBearerSession(accessToken: string, sourceDigest?: string): Promise<AccessSessionRecord | null>;
+  /**
+   * Opens or reuses a credential-free session on a public agent. `walkInKey` is the
+   * handle this server minted and the client echoed in `Mcp-Session-Id`. The handle is
+   * signed and bound to the agent and the calling source, so a caller cannot name a
+   * session it was not given: anything that does not verify opens a new conversation.
+   */
+  resolveWalkInSession(input: {
+    publicId: string;
+    walkInKey?: string | null;
+    sourceDigest: string;
+  }): Promise<{ session: AccessSessionRecord; walkInKey: string } | null>;
   recordSuccessfulUse(session: AccessSessionRecord, sourceDigest?: string): void;
 }
 
@@ -47,6 +65,12 @@ export const createAuthService = (dependencies: AuthServiceDependencies): AuthSe
   const warn = dependencies.warn ?? console.warn;
   const pendingBearerResolutions = new Map<string, Promise<AccessSessionRecord | null>>();
   const pendingUseNotifications = new Set<string>();
+  const warnedOnce = new Set<string>();
+  const warnOnce = (key: string, message: string): void => {
+    if (warnedOnce.has(key)) return;
+    warnedOnce.add(key);
+    warn(message);
+  };
   const lastSuccessfulUseNotifications = new Map<string, number>();
 
   const validateConverseSession = async (
@@ -88,30 +112,30 @@ export const createAuthService = (dependencies: AuthServiceDependencies): AuthSe
     }
   };
 
-  const resolveAgentChannelCredential = async (
-    accessToken: string,
-    sourceDigest?: string,
-  ): Promise<AccessSessionRecord | null> => {
+  const openConverseSession = async (input: {
+    body: ConverseSessionExchangeRequest;
+    /** The store key this session is reachable by on later requests. */
+    storeKey: string;
+    sessionIdPrefix: string;
+    sourceDigest?: string;
+  }): Promise<AccessSessionRecord | null> => {
     try {
       const issuedAt = now();
-      const exchange = await dependencies.converseApi.exchange({
-        launchToken: accessToken,
-        client: { name: "radioso-mcp-server" },
-      }, { sourceDigest });
-      await dependencies.converseApi.validate(exchange.sessionToken, { sourceDigest });
+      const exchange = await dependencies.converseApi.exchange(input.body, { sourceDigest: input.sourceDigest });
+      await dependencies.converseApi.validate(exchange.sessionToken, { sourceDigest: input.sourceDigest });
       // The catalog is read once here and pinned to the session: every MCP instance that
       // later serves this session renders the same tools, and a routine exposed after this
       // point appears when the client opens its next session.
-      const tools = await readToolCatalog(exchange.sessionToken, sourceDigest);
+      const tools = await readToolCatalog(exchange.sessionToken, input.sourceDigest);
 
       return dependencies.sessionStore.save({
-        accessToken,
+        accessToken: input.storeKey,
         clientName: "radioso-mcp-converse",
         converseSessionToken: exchange.sessionToken,
         expiresAt: new Date(exchange.expiresAt),
         issuedAt,
         conversationId: exchange.conversationId,
-        sessionId: `converse_${randomUUID()}`,
+        sessionId: `${input.sessionIdPrefix}_${randomUUID()}`,
         toolCatalog: { key: toToolCatalogKey(tools), tools },
       });
     } catch (error) {
@@ -123,6 +147,16 @@ export const createAuthService = (dependencies: AuthServiceDependencies): AuthSe
     }
   };
 
+  const resolveAgentChannelCredential = (
+    accessToken: string,
+    sourceDigest?: string,
+  ): Promise<AccessSessionRecord | null> => openConverseSession({
+    body: { launchToken: accessToken, client: { name: "radioso-mcp-server" } },
+    storeKey: accessToken,
+    sessionIdPrefix: "converse",
+    sourceDigest,
+  });
+
   const getValidatedSession = async (
     accessToken: string,
     sourceDigest?: string,
@@ -132,6 +166,13 @@ export const createAuthService = (dependencies: AuthServiceDependencies): AuthSe
   };
 
   const resolveBearerSession = (accessToken: string, sourceDigest?: string): Promise<AccessSessionRecord | null> => {
+    // The walk-in keyspace is reachable only through `/mcp/a/{publicId}`, which proves
+    // the caller's source before it names a session. A bearer token that spells a walk-in
+    // store key is refused here rather than resolved, so the credential door can never
+    // hand out a walk-in caller's conversation.
+    if (isWalkInStoreKey(accessToken)) {
+      return Promise.resolve(null);
+    }
     const resolutionKey = `${hashToken(accessToken)}:${sourceDigest ?? "unknown"}`;
     const pending = pendingBearerResolutions.get(resolutionKey);
     if (pending) {
@@ -153,6 +194,36 @@ export const createAuthService = (dependencies: AuthServiceDependencies): AuthSe
   };
 
   return {
+    async resolveWalkInSession({ publicId, walkInKey, sourceDigest }) {
+      const secret = dependencies.signingSecret;
+      if (!secret) {
+        warnOnce(
+          "unsigned-walk-in-handles",
+          "RADIOSO_MCP_SIGNING_SECRET is not set; walk-in callers get a fresh conversation on every request because no continuity handle can be signed.",
+        );
+      }
+      const echoedId = secret ? verifyWalkInHandle({ secret, publicId, sourceDigest, handle: walkInKey }) : null;
+      if (echoedId) {
+        const existing = await getValidatedSession(
+          walkInStoreKey({ publicId, sourceDigest, id: echoedId }),
+          sourceDigest,
+        );
+        if (existing && walkInKey) {
+          return { session: existing, walkInKey };
+        }
+      }
+
+      // Anything that did not verify — forged, replayed from another source, or simply
+      // absent — opens a new conversation under a handle this server mints.
+      const handle = secret ? mintWalkInHandle({ secret, publicId, sourceDigest }) : randomUUID();
+      const session = await openConverseSession({
+        body: { publicId, client: { name: "radioso-mcp-server" } },
+        storeKey: walkInStoreKey({ publicId, sourceDigest, id: handle.split(".")[0] ?? handle }),
+        sessionIdPrefix: "walkin",
+        sourceDigest,
+      });
+      return session ? { session, walkInKey: handle } : null;
+    },
     async getRequestAuthInfo(accessToken) {
       const session = await getValidatedSession(accessToken);
       return session ? toMcpRequestAuthInfo(session) : null;

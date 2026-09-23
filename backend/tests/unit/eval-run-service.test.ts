@@ -25,6 +25,7 @@ import type { WorkbenchReplayResult } from "../../src/modules/chat/composition.j
 import type { EvalRetrievalRunnerPort } from "../../src/modules/eval/services/evalRunner.js";
 import type { EvalLlmJudgePort } from "../../src/modules/eval/services/evalJudge.js";
 import type { RetrievalSettingsSnapshot } from "../../src/modules/settings/contracts/retrieval.js";
+import { unpublishedAgentPublicIdentity } from "../../src/modules/agents/public.js";
 
 const fixedDate = "2026-05-23T12:00:00.000Z";
 
@@ -103,6 +104,7 @@ const retrievalSettingsSnapshot = (
 });
 
 const configuredAgent = (): ConversationAgent => ({
+  ...unpublishedAgentPublicIdentity(),
   id: "agent-full",
   workspaceId: "ws-1",
   name: "Full Config Bot",

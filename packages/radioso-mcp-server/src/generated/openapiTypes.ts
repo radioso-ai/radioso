@@ -1374,6 +1374,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agents/{agentId}/public-id/rotate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rotate the agent's public id
+         * @description Replaces the identifier callers reach this agent by. Every agent connected without a credential is dropped on its next request. The agent must already have a public id, which publishing its agent card mints.
+         */
+        post: operations["rotateAgentPublicId"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agents/{agentId}/directives": {
         parameters: {
             query?: never;
@@ -3668,7 +3688,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Exchange an MCP converse launch token for a signed session */
+        /**
+         * Exchange a launch token or an agent's public id for a signed converse session
+         * @description Send exactly one of `launchToken` or `publicId`. A `launchToken` is the credential an operator minted for this agent. A `publicId` is the agent's public identifier and carries no secret: it works only while the agent accepts walk-in connections, and it opens a fresh conversation each time. Rotating the public id or closing walk-in access refuses the next request on every session issued against it.
+         */
         post: operations["createMcpConverseSession"];
         delete?: never;
         options?: never;
@@ -3713,6 +3736,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/mcp/converse/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read what happened in this session's conversation since a cursor, optionally waiting for it
+         * @description Returns messages after `cursor` with the author kind and the conversation's current ownership, plus the `cursor` to resume from. The cursor is opaque and comes from a previous response; without one the call returns the conversation's most recent page. With `waitMs` the call parks until a message lands or the deadline passes, and returns an empty list at the deadline rather than an error — so a calling agent that handed off to a person can come back for the reply. One call spends one unit of the session's read budget no matter how long it waits.
+         */
+        get: operations["getMcpConverseMessages"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/mcp/converse/ask": {
         parameters: {
             query?: never;
@@ -3724,9 +3767,60 @@ export interface paths {
         put?: never;
         /**
          * Run one turn through the bound agent: a message, or a tool call to an exposed routine
-         * @description Send exactly one of `message` or `routine`. A `routine` call is validated against the tool's `inputSchema` from the catalog before any turn state is written: an unknown tool returns 404 with `details.code` `routine_tool_unknown`; invalid input returns 400 whose `details` is `RoutineInvocationInvalidDetails` (`code` `routine_invocation_invalid`, field-level `errors`).
+         * @description Send exactly one of `message` or `routine`. An optional `signedIdentity` is the same HMAC visitor token the website embed sends, bound to this session's `conversationId` rather than a browser origin; one that does not verify leaves the turn anonymous. A `routine` call is validated against the tool's `inputSchema` from the catalog before any turn state is written: an unknown tool returns 404 with `details.code` `routine_tool_unknown`; invalid input returns 400 whose `details` is `RoutineInvocationInvalidDetails` (`code` `routine_invocation_invalid`, field-level `errors`).
          */
         post: operations["askMcpConverseAgent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/.well-known/agent-card/{publicId}.json": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read an agent's A2A Agent Card */
+        get: operations["getAgentCard"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/.well-known/mcp/server-card/{publicId}.json": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read an agent's MCP server card */
+        get: operations["getAgentMcpServerCard"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/.well-known/ai-catalog/{publicId}.json": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read an agent's catalog entry */
+        get: operations["getAgentAiCatalog"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -4706,6 +4800,15 @@ export interface components {
             assistantDefaultLocale: string | null;
             proactiveGreetingEnabled: boolean;
             assistantBootstrapActive: boolean;
+            /** @description Identifier other agents address this agent by. Null until the agent card is published; rotate it to drop every connected caller. */
+            publicId: string | null;
+            /** @description Operator-authored sentence the agent's public cards carry. */
+            publicDescription: string;
+            agentCardEnabled: boolean;
+            /** @description Whether a calling agent may connect with the public id and no credential. Requires agentCardEnabled. */
+            publicAgentAccessEnabled: boolean;
+            /** @description Per-agent walk-in conversation budget. Null leaves the deployment default in charge. */
+            walkInConversationsPerHour: number | null;
             chatModelOverride: {
                 /** @enum {string} */
                 provider: "openai" | "openai-compatible" | "gemini" | "claude";
@@ -4752,6 +4855,10 @@ export interface components {
             greetingInstruction?: string;
             assistantDefaultLocale?: string | null;
             proactiveGreetingEnabled?: boolean;
+            publicDescription?: string;
+            agentCardEnabled?: boolean;
+            publicAgentAccessEnabled?: boolean;
+            walkInConversationsPerHour?: number | null;
             chatModelOverride?: null | {
                 /** @enum {string} */
                 provider: "openai" | "openai-compatible" | "gemini" | "claude";
@@ -7770,6 +7877,106 @@ export interface components {
             code: "routine_invocation_invalid";
             toolName: string;
             errors: components["schemas"]["RoutineInvocationError"][];
+        };
+        /** @description One message in the conversation. `author` is provenance, not role: an operator's reply is stored as an assistant message, so `human` is the only thing that tells a person's turn from the agent's. */
+        ConverseMessage: {
+            id: string;
+            /** @enum {string} */
+            author: "agent" | "human";
+            /** Format: date-time */
+            createdAt: string;
+            text: string;
+        };
+        /** @description Who owns the conversation right now. `human_owned` means a person has taken it over and the agent is not answering, so keep reading rather than asking again. */
+        ConverseOwnershipState: {
+            /** @enum {string} */
+            state: "ai_owned" | "human_owned";
+        };
+        /** @description Messages after the request's cursor, the cursor to resume from, and who owns the conversation now. `cursor` is null only while the conversation holds no messages. */
+        ConverseMessagesResponse: {
+            messages: components["schemas"]["ConverseMessage"][];
+            cursor: string | null;
+            ownership: components["schemas"]["ConverseOwnershipState"];
+        };
+        /** @description An A2A Agent Card for one agent: who it is, where its MCP endpoint is, how a caller authenticates, and one skill per exposed routine. */
+        A2aAgentCard: {
+            protocolVersion: string;
+            name: string;
+            description: string;
+            url: string;
+            preferredTransport: string;
+            version: string;
+            documentationUrl?: string;
+            capabilities: {
+                streaming: boolean;
+                pushNotifications: boolean;
+                stateTransitionHistory: boolean;
+            };
+            defaultInputModes: string[];
+            defaultOutputModes: string[];
+            securitySchemes: {
+                [key: string]: {
+                    /** @enum {string} */
+                    type: "http";
+                    scheme: string;
+                    description?: string;
+                };
+            };
+            security: {
+                [key: string]: string[];
+            }[];
+            skills: {
+                id: string;
+                name: string;
+                description: string;
+                tags: string[];
+                inputModes: string[];
+                outputModes: string[];
+            }[];
+        };
+        /** @description The MCP server card for one agent, in the published MCP server document shape. `$schema` is omitted until the server-card extension publishes one. */
+        McpServerCard: {
+            name: string;
+            description: string;
+            version: string;
+            websiteUrl?: string;
+            remotes: {
+                /** @enum {string} */
+                type: "streamable-http";
+                url: string;
+            }[];
+            _meta: {
+                "ai.radioso/agent": {
+                    title: string;
+                    publicId: string;
+                    /** @enum {string} */
+                    authentication: "none" | "bearer";
+                    tools: string[];
+                    publishedAt: string;
+                };
+            };
+        };
+        /** @description The catalog entry for one agent: the index a customer's own origin points at. */
+        AiCatalog: {
+            agents: {
+                publicId: string;
+                name: string;
+                description: string | null;
+                documentationUrl: string | null;
+                /** @enum {string} */
+                authentication: "none" | "bearer";
+                mcp: {
+                    url: string;
+                    /** @enum {string} */
+                    transport: "streamable-http";
+                    serverCardUrl: string;
+                };
+                tools: {
+                    name: string;
+                    description: string;
+                }[];
+                publishedAt: string;
+            }[];
         };
         ConnectorField: {
             key: string;
@@ -14634,6 +14841,55 @@ export interface operations {
                 };
             };
             /** @description Agent or channel credential not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    rotateAgentPublicId: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Agent with its replacement public id */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationAgent"];
+                };
+            };
+            /** @description The agent has no public id to rotate */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -25130,7 +25386,8 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    launchToken: string;
+                    launchToken?: string;
+                    publicId?: string;
                     client?: {
                         name?: string;
                         version?: string;
@@ -25169,7 +25426,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Grant channel or bound agent is not allowed */
+            /** @description Grant channel or bound agent is not allowed, or the agent does not accept walk-in connections */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -25299,6 +25556,65 @@ export interface operations {
             };
         };
     };
+    getMcpConverseMessages: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                waitMs?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Messages after the cursor, the next cursor, and current ownership */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConverseMessagesResponse"];
+                };
+            };
+            /** @description Invalid cursor or `waitMs` outside 0..25000 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Invalid converse session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Converse session is no longer authorized */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description MCP converse read rate limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     askMcpConverseAgent: {
         parameters: {
             query?: never;
@@ -25316,6 +25632,7 @@ export interface operations {
                             [key: string]: unknown;
                         };
                     };
+                    signedIdentity?: string;
                     /** @enum {boolean} */
                     stream?: false;
                 };
@@ -25377,6 +25694,147 @@ export interface operations {
                 };
             };
             /** @description MCP converse ask rate limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAgentCard: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                publicId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Public document served */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["A2aAgentCard"];
+                };
+            };
+            /** @description Document unchanged since the caller's ETag */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No public document for this id */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Discovery read rate limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAgentMcpServerCard: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                publicId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Public document served */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpServerCard"];
+                };
+            };
+            /** @description Document unchanged since the caller's ETag */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No public document for this id */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Discovery read rate limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAgentAiCatalog: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                publicId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Public document served */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiCatalog"];
+                };
+            };
+            /** @description Document unchanged since the caller's ETag */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No public document for this id */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Discovery read rate limit exceeded */
             429: {
                 headers: {
                     [name: string]: unknown;

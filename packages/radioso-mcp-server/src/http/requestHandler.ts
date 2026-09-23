@@ -80,7 +80,7 @@ const hasBoundedClientMetadata = async (request: Request): Promise<boolean> => {
   });
 };
 
-const jsonRpcError = (status: number, code: number, message: string, data?: unknown): Response =>
+export const jsonRpcError = (status: number, code: number, message: string, data?: unknown): Response =>
   Response.json(
     {
       error: {
@@ -94,7 +94,7 @@ const jsonRpcError = (status: number, code: number, message: string, data?: unkn
     { status },
   );
 
-const withMcpAcceptHeader = (request: Request): Request => {
+export const withMcpAcceptHeader = (request: Request): Request => {
   const acceptHeader = request.headers.get("accept");
   if (
     typeof acceptHeader === "string"
@@ -112,26 +112,32 @@ const withMcpAcceptHeader = (request: Request): Request => {
   });
 };
 
+/**
+ * The checks every MCP door runs before it looks at who is calling: the runtime is up,
+ * and the client metadata is bounded. Returns the refusal, or `null` to continue.
+ */
+export const refuseUnservableMcpRequest = async (
+  request: Request,
+  readiness?: RuntimeStoreReadiness,
+): Promise<Response | null> => {
+  if (readiness && !readiness.isReady()) {
+    return jsonRpcError(503, -32002, "MCP runtime is unavailable.", { code: "mcp_runtime_unavailable" });
+  }
+  if (!await hasBoundedClientMetadata(request)) {
+    return jsonRpcError(400, -32600, "Invalid MCP request metadata.", { code: "invalid_request" });
+  }
+  return null;
+};
+
 export const createMcpRequestHandler = ({
   readiness,
   serverManager,
   verifyBearerToken,
 }: McpRequestHandlerDependencies): McpRequestHandler => {
   return async (request: Request, sourceDigest?: string): Promise<McpHandledResponse> => {
-    if (readiness && !readiness.isReady()) {
-      return {
-        response: jsonRpcError(503, -32002, "MCP runtime is unavailable.", {
-          code: "mcp_runtime_unavailable",
-        }),
-      };
-    }
-
-    if (!await hasBoundedClientMetadata(request)) {
-      return {
-        response: jsonRpcError(400, -32600, "Invalid MCP request metadata.", {
-          code: "invalid_request",
-        }),
-      };
+    const unservable = await refuseUnservableMcpRequest(request, readiness);
+    if (unservable) {
+      return { response: unservable };
     }
 
     const accessToken = readBearerToken(request);

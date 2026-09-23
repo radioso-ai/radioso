@@ -3,6 +3,20 @@ import type { ZodTypeAny } from "zod";
 
 import { badRequest } from "../../../shared/domain/errors.js";
 
+export const validateQuery = <T extends ZodTypeAny>(schema: T): RequestHandler => {
+  return (req: Request, _res: Response, next: NextFunction) => {
+    const parsed = schema.safeParse(req.query);
+
+    if (!parsed.success) {
+      next(badRequest("Invalid request query", parsed.error.flatten()));
+      return;
+    }
+
+    req.query = parsed.data as Request["query"];
+    next();
+  };
+};
+
 export const validateBody = <T extends ZodTypeAny>(schema: T): RequestHandler => {
   return (req: Request, _res: Response, next: NextFunction) => {
     const parsed = schema.safeParse(req.body);

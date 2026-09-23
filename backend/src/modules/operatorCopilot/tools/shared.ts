@@ -105,6 +105,13 @@ export const requiredCopilotConversation = (context: { copilotConversationId?: s
   if (!conversationId) throw new Error("Copilot proposal drafting requires a persisted conversation");
   return conversationId;
 };
+/**
+ * `agentCardEnabled` and `publicAgentAccessEnabled` change who can reach the agent rather than how
+ * it answers, and the proposal card shows a setting key and a value. Naming the consequence here
+ * is what makes the operator's review of those two an informed one.
+ */
+export const agentSettingReachNote = "Two settings change who can reach the agent rather than how it answers: agentCardEnabled publishes its public cards, and publicAgentAccessEnabled lets any AI agent connect with no credential (it needs agentCardEnabled on too). When proposing either, say in the rationale what it opens or closes.";
+
 export const scopedAgentDraftPublicationNote = "It drafts a proposal for operator review and changes nothing until the operator applies it. Applying a scoped authoring change saves a private agent draft. The current published revision and ongoing conversations are retained; use Review & Publish before new customer conversations use the change. Unversioned/live fields remain live.";
 export const copilotProposalOrigin = (context: { copilotConversationId?: string; operatorMcpInvocationId?: string }) => {
   if (context.operatorMcpInvocationId && !context.copilotConversationId) {

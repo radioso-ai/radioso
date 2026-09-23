@@ -30,6 +30,7 @@ import { DefaultAllowCapabilityPolicy } from "../../src/shared/domain/capability
 import type { ResponseLanguageDetectorInput } from "../../src/shared/services/responseLanguageDetector.js";
 import type { RetrievalPipelineRequest, RetrievalPipelineResult } from "../../src/modules/retrieval/public.js";
 import { createAuditService } from "../support/fakes.js";
+import { unpublishedAgentPublicIdentity } from "../../src/modules/agents/public.js";
 
 const emptyTrace = () => {
   const now = new Date().toISOString();
@@ -58,6 +59,7 @@ const presenterStub = (): ChatAnswerPresenter => {
 };
 
 const agent = (): ConversationAgent => ({
+  ...unpublishedAgentPublicIdentity(),
   id: "agent-1",
   workspaceId: "ws-1",
   name: "Support",

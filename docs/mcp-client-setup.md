@@ -63,6 +63,34 @@ Manage existing credentials with the same path:
 
 Credential changes take effect on the next request. Revoking, expiring, or rotating a credential stops its existing sessions, because every converse request re-checks the credential.
 
+### The agent's public id
+
+A credential is how a client you approved reaches the agent. A **public id** is how anything else identifies it. The same **Channels → MCP** card carries an **Open access** block with two switches and the id they mint:
+
+- **Publish the agent card** describes the agent to whoever asks: what it does, what it can run, and where its MCP endpoint is.
+- **Allow connecting without a credential** lets any AI agent holding the public id start a conversation. It needs the card published, because the card is what tells a caller how to connect.
+
+Turning on either switch mints the id, once, and the card shows it:
+
+```
+ag_7Qb3nT1xK9wZs2Pv0Lm4Rd
+```
+
+Treat it as an address rather than a secret. It is meant to appear in a page, a card, or a support email, and holding it grants nothing on its own — with **Allow connecting without a credential** off, a caller with the id still needs a credential. The id is separate from the embed token for exactly this reason: the embed token *is* a secret, and it sits in the page HTML.
+
+Alongside the switches, **Description** is the one line a calling agent reads before deciding to ask — write what the agent helps with, in the visitor's terms. **New conversations per hour** caps what one looping caller can spend from the workspace's conversation allowance; leave it empty to use the deployment's own budget.
+
+Rotating replaces the id:
+
+```http
+POST /api/v1/agents/{agentId}/public-id/rotate
+Cookie: <signed-in dashboard session>
+X-Radioso-CSRF: 1
+X-Workspace-Id: <workspace UUID>
+```
+
+Rotation is a revocation. Every agent connected without a credential is dropped on its next request, and anything published carrying the old id stops resolving, so rotate when an id needs to stop working — not as routine hygiene. Credential-bound clients are unaffected; rotating their credentials is a separate action on the same card. The rotation is recorded as an `agent.public_id.rotated` audit event, and changes to the two switches as `agent.public_access.changed`; neither event records the id itself.
+
 ### Use the credential with standalone MCP
 
 For the standalone MCP server, send the original credential secret as the bearer on `/mcp`. The standalone server exchanges it with the backend internally and keeps the resulting short-lived session in its runtime store. Do not send the backend session token to `/mcp`.
@@ -124,12 +152,39 @@ The reply is an **agent reply envelope**: the answer text plus the facts a calli
 Read it field by field:
 
 - `answerCoverage` is the same coverage verdict the dashboard trace shows for the turn. `coverage` is `answered`, `partial`, `unanswered`, or `unclear`, and `reason` says why; `intentional_scope_boundary` with `unanswered` means the agent declined on purpose. When no assessment ran for the turn (a direct reply, a routine step), `availability` is `not_recorded` and the verdict fields are absent.
-- `ownership` tells you who owns the conversation after this turn. `{ "state": "human_owned", "suppressed": true }` means a person has taken over and the agent generated nothing; keep the `conversationId` and come back for the reply.
+- `ownership` tells you who owns the conversation after this turn. `{ "state": "human_owned", "suppressed": true }` means a person has taken over and the agent generated nothing; keep the session and [come back for the reply](#come-back-after-a-handoff).
 - `routine` appears when the turn touched a routine: the one it ran, or the one that kept the turn while it waits for an operator's approval. `status` is one of `active`, `waiting_for_input`, `waiting_for_approval`, `completed`, or `abandoned`, and `pendingInput` lists every required slot the routine still needs plus the current step's optional ones, each with its `key`, `type` (`text`, `number`, `boolean`, `email`, `date`), `required` flag, and `description` — so you can supply all of them in one follow-up message.
 - `invocation` appears only when you called a routine tool (next section) and says what became of the call: `toolName` and an `outcome` of `started`, `reentered`, `declined`, `not_started`, or `unknown_tool`.
 - `traceId` is the turn's trace id, the one an operator sees in Activity; quote it when you report a problem.
 
 The standalone MCP server forwards this envelope unchanged as the `ask_agent` tool's `structuredContent`; the tool's text content is `answer.text` followed by a blank line and the same envelope as pretty-printed JSON, so a client that only reads text still sees every field. The REST agent channel (`POST /api/v1/agents/{agentId}/chat`) returns the same `answerCoverage`, `ownership`, `routine`, `invocation`, and `traceId` fields beside its own `answer` string and `citations` array, and its SSE `done` frame carries them too.
+
+### Come back after a handoff
+
+A calling agent cannot sit in a chat window waiting for a person to answer. When `ownership.state` turns `human_owned`, read the conversation back instead:
+
+```http
+GET /api/v1/mcp/converse/messages?cursor=eyJ2ZXJza…&waitMs=25000
+Authorization: Bearer <session token>
+```
+
+```json
+{
+  "messages": [
+    { "id": "9a…", "author": "human", "createdAt": "2026-09-22T10:14:02.117Z", "text": "I have refunded the order." }
+  ],
+  "cursor": "eyJ2ZXJza…",
+  "ownership": { "state": "human_owned" }
+}
+```
+
+- `author` is `human` for an operator's reply and `agent` for everything else. An operator's message is stored as an assistant message, so the author kind is the only thing that tells a person's turn from the agent's.
+- `cursor` is opaque. Send back the one the previous reply gave you; the response's `cursor` is where to resume next time. Called with no cursor, the route returns the conversation's most recent page, so a client that has lost its place can pick the conversation up again.
+- `ownership` is the conversation's state alone, `ai_owned` or `human_owned`. The `suppressed` flag on an `ask_agent` reply says whether the agent generated anything on that turn; a read runs no turn, so it carries no such flag.
+- `waitMs` (0–25000) holds the request open until a message lands. At the deadline the route answers `200` with an empty `messages` list — nothing new yet, not a failure — so a client loops on the same cursor. The wait is raced against a short re-query, so a reply written by another API instance still wakes the call.
+- One call spends one unit of the read budget no matter how long it waits: 60 a minute per session, and 60 a minute per calling source. The per-source number is also what bounds how many reads one source can have parked at once — at 60 a minute against a 25-second ceiling, about 25 of them overlap.
+
+Over standalone MCP this is the `get_conversation_updates` tool, taking the same `cursor` and `waitMs`. The session's conversation is keyed by the `Mcp-Session-Id` header the server returns on first contact: echo it on every later request to stay in the same conversation. A client that drops the header gets a fresh conversation on each call, so the reply it is waiting for never arrives.
 
 ### Routines as tools
 
@@ -240,6 +295,7 @@ clients do not need to serialize the first ask.
 - The converse surface accepts only MCP-audience agent credentials and sessions created from them.
 - Each credential is bound to the `mcp` audience and exactly one agent. A credential issued with the `rest` audience is rejected even when it belongs to the same agent.
 - The plaintext credential is shown once. Inventory and detail responses expose only a safe prefix and lifecycle metadata.
+- An agent's public id is not a credential and authorizes nothing by itself.
 
 ### Authentication limits
 
@@ -277,6 +333,52 @@ To reconnect after a session expires, send the original MCP credential to `/mcp`
 Standalone mode keeps a separate public surface. In Terraform-managed Cloud Run, backend public invocation remains enabled so that service can call the agent-converse API.
 
 MCP credentials are secret bearers bound to one agent. Public chat and website embed launch credentials are separate credential types and are not accepted by the converse MCP surface. Personal, service-account, and REST-audience agent credentials do not authorize MCP.
+
+## Discovery Documents
+
+An agent whose operator has published its card is described by three public documents on the API host, scoped to the agent's public id:
+
+```
+GET https://api.radioso.ai/.well-known/agent-card/{publicId}.json
+GET https://api.radioso.ai/.well-known/mcp/server-card/{publicId}.json
+GET https://api.radioso.ai/.well-known/ai-catalog/{publicId}.json
+```
+
+The agent card is an A2A Agent Card. It names the agent, the MCP endpoint to connect to, the security schemes that endpoint accepts, and one `skills[]` entry per exposed routine. The server card is the same agent in MCP's server document shape, with the endpoint under `remotes`; the standalone server also answers it one segment past the endpoint, at `GET /mcp/a/{publicId}/server-card`, which is the path an MCP client dereferences when it starts from an endpoint URL rather than a hostname. The catalog entry carries the agent, its endpoint, its authentication, and its tools in one object.
+
+A caller reads `security` on the agent card to learn what it must bring. An empty requirement object means the endpoint accepts a caller with no `Authorization` header; `{ "bearer": [] }` means an operator-minted credential is required. Both are listed when credential-free access is on.
+
+Every document is served with `Cache-Control: max-age=300` and an `ETag`; send `If-None-Match` to revalidate. A public id that is unknown, has its card switched off, belongs to an unpublished agent, or belongs to a deleted one answers `404` with an identical body.
+
+A deployment serves these documents once `PUBLIC_MCP_CONVERSE_URL` names the MCP endpoint, without the per-agent suffix — one agent's endpoint is that value plus `/a/{publicId}`. Until it is set, the card routes answer `500` rather than publish a card whose endpoint is missing or guessed. The link to this guide comes from the documentation corpus the build ships, so there is nothing to configure for it.
+
+## Connect Without a Credential
+
+An operator who turns on **Allow AI agents to connect without a credential** on the agent's **Channels → MCP** card opens a second door: the agent's own endpoint, one segment past the shared one.
+
+```
+https://mcp.radioso.ai/mcp/a/{publicId}
+```
+
+Point an MCP client at that URL and send no `Authorization` header. The server exchanges a session for you on the first request and answers `tools/list` and `tools/call` exactly as it does for a credential-bound client — `ask_agent` plus one tool per exposed routine.
+
+```json
+{
+  "mcpServers": {
+    "radioso-returns-desk": {
+      "url": "https://mcp.radioso.ai/mcp/a/ag_S7Qw2ZmKp1Rr4Yt8Nv6Lbc"
+    }
+  }
+}
+```
+
+Each connection gets its own conversation. The server names it in the `Mcp-Session-Id` response header on the first reply; a client that echoes that header on later requests continues the same conversation, and one that drops it starts a new one each call. Most MCP clients handle this for you. The handle is signed and bound to the agent and to the calling source, so one a client invents, or one replayed from somewhere else, names nothing and opens a fresh conversation instead. Self-hosted deployments set `RADIOSO_MCP_SIGNING_SECRET` for this; without it every walk-in call gets a new conversation.
+
+The public id is a routing key, not a secret — it appears in the agent card, in the embed's page markup, and in whatever config the caller saves. It grants exactly what the operator has published: a conversation with that one agent. Rotating it from the dashboard, or turning walk-in access off, refuses the next request on every connection opened against it.
+
+Walk-in traffic is budgeted twice: per calling source, and per agent. The per-agent budget defaults to 60 new conversations an hour and is adjustable on the same card. A caller over either budget gets `429` with `Retry-After` and the `RateLimit-*` headers, which is the signal to back off and retry rather than reconnect. Walk-in conversations are metered on the workspace's conversation quota like every other channel.
+
+The shared `/mcp` endpoint is unchanged and still requires an MCP credential.
 
 ## Endpoint Model
 

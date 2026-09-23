@@ -14,7 +14,7 @@ work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
 mkdir -p "$work/radioso-sync"
-cp "$here/radioso-sync.php" "$here/README.md" "$work/radioso-sync/"
+cp "$here"/*.php "$here/README.md" "$work/radioso-sync/"
 
 rm -f "$out"
 (cd "$work" && zip -qr "$out" radioso-sync)

@@ -9,6 +9,7 @@ import {
   AgentSurfaceExtensionRegistry,
   defaultAgentEmbedTheme,
   getWebsiteEmbedSurfaceSettings,
+  mintPublicId,
   type WebsiteEmbedSurfaceSettings,
 } from "../../src/modules/agents/public.js";
 import { Database } from "../../src/shared/infra/database.js";
@@ -169,6 +170,36 @@ describeIntegration("AgentRepository (Postgres)", () => {
     expect(byEmbed?.id).toBe(created.id);
 
     expect(await repository.findByAnonymousChatToken("missing")).toBeNull();
+  });
+
+  it("finds an agent by public id and keeps every minted id distinct", async () => {
+    const publicId = mintPublicId();
+    const created = await repository.create(workspaceId, {
+      name: "Discoverable",
+      publicId,
+      agentCardEnabled: true,
+      publicDescription: "Answers questions about returns.",
+      walkInConversationsPerHour: 40,
+    });
+
+    const found = await repository.findByPublicId(publicId);
+    expect(found?.id).toBe(created.id);
+    expect(found?.publicDescription).toBe("Answers questions about returns.");
+    expect(found?.agentCardEnabled).toBe(true);
+    expect(found?.walkInConversationsPerHour).toBe(40);
+
+    await expect(repository.create(workspaceId, { name: "Collides", publicId }))
+      .rejects.toThrow(/agents_public_id_key/);
+
+    expect(await repository.findByPublicId(mintPublicId())).toBeNull();
+  });
+
+  it("leaves many unpublished agents without a public id at all", async () => {
+    const first = await repository.create(workspaceId, { name: "Private one" });
+    const second = await repository.create(workspaceId, { name: "Private two" });
+
+    expect(first.publicId).toBeNull();
+    expect(second.publicId).toBeNull();
   });
 
   it("setDefault marks an agent as the workspace default and findDefaultByWorkspaceId returns it", async () => {

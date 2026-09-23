@@ -1141,6 +1141,230 @@ describe("AuthService rollback", () => {
   });
 });
 
+describe("AuthService federated login failure auditing", () => {
+  // Every assertion counts the events rather than reading the last one: the
+  // point of the single owner is that one failed sign-in leaves exactly one
+  // trail, so a duplicate has to fail the test.
+  const federatedFailures = (auditService: ReturnType<typeof createAuthService>["auditService"]) =>
+    auditService.events.filter(
+      (event) => event.eventType === "auth.federated_login" && event.eventStatus === "failure",
+    );
+
+  const registerVerifiedUser = async (
+    context: ReturnType<typeof createAuthService>,
+    email: string,
+  ): Promise<{ userId: string; accountId: string }> => {
+    const registered = await context.authService.register({ email, password: "verysecurepassword" });
+    await context.userRepository.markEmailVerified(registered.userId, new Date());
+    return { userId: registered.userId, accountId: registered.accountId };
+  };
+
+  it("names the missing membership when a signed-up user no longer belongs to an account", async () => {
+    const context = createAuthService({ sessionRepository: new WorkingSessionRepository() });
+    const { userId, accountId } = await registerVerifiedUser(context, "deactivated@example.com");
+    const membership = await context.accountMembershipRepository.findActiveByAccountAndUser(accountId, userId);
+    await context.accountMembershipRepository.deleteById(membership!.id);
+
+    await expect(
+      context.authService.federatedLogin({
+        provider: "google",
+        subject: "sub-deactivated",
+        email: "deactivated@example.com",
+        emailVerified: true,
+      }),
+    ).rejects.toMatchObject({ statusCode: 401 });
+
+    expect(federatedFailures(context.auditService)).toEqual([
+      {
+        eventType: "auth.federated_login",
+        eventStatus: "failure",
+        metadata: {
+          email: "deactivated@example.com",
+          provider: "google",
+          subject: "sub-deactivated",
+          reason: "no_active_membership",
+        },
+      },
+    ]);
+  });
+
+  it("names the session write when the session store rejects", async () => {
+    const context = createAuthService({});
+    await registerVerifiedUser(context, "session-fault@example.com");
+
+    await expect(
+      context.authService.federatedLogin({
+        provider: "google",
+        subject: "sub-session-fault",
+        email: "session-fault@example.com",
+        emailVerified: true,
+      }),
+    ).rejects.toThrow("session create failed");
+
+    expect(federatedFailures(context.auditService)).toEqual([
+      expect.objectContaining({
+        metadata: expect.objectContaining({ reason: "session_write_failed" }),
+      }),
+    ]);
+  });
+
+  it("names the identity link write once when the link store rejects", async () => {
+    const federatedIdentityRepository = new InMemoryFederatedIdentityRepository();
+    federatedIdentityRepository.link = async () => {
+      throw new Error("link write failed");
+    };
+    const context = createAuthService({
+      federatedIdentityRepository,
+      sessionRepository: new WorkingSessionRepository(),
+    });
+    await registerVerifiedUser(context, "link-fault@example.com");
+
+    await expect(
+      context.authService.federatedLogin({
+        provider: "google",
+        subject: "sub-link-fault",
+        email: "link-fault@example.com",
+        emailVerified: true,
+      }),
+    ).rejects.toThrow("link write failed");
+
+    expect(federatedFailures(context.auditService)).toEqual([
+      expect.objectContaining({
+        metadata: expect.objectContaining({ reason: "identity_link_write_failed" }),
+      }),
+    ]);
+  });
+
+  it("names the identity lookup when the user store faults", async () => {
+    const userRepository = new InMemoryUserRepository();
+    userRepository.findByEmail = async () => {
+      throw new Error("user store unavailable");
+    };
+    const context = createAuthService({
+      userRepository,
+      sessionRepository: new WorkingSessionRepository(),
+    });
+
+    await expect(
+      context.authService.federatedLogin({
+        provider: "google",
+        subject: "sub-lookup-fault",
+        email: "lookup-fault@example.com",
+        emailVerified: true,
+      }),
+    ).rejects.toThrow("user store unavailable");
+
+    expect(federatedFailures(context.auditService)).toEqual([
+      expect.objectContaining({
+        metadata: expect.objectContaining({ reason: "identity_lookup_failed" }),
+      }),
+    ]);
+  });
+
+  it("names the unverified provider email and rejects with the original error", async () => {
+    const context = createAuthService({ sessionRepository: new WorkingSessionRepository() });
+
+    await expect(
+      context.authService.federatedLogin({
+        provider: "google",
+        subject: "sub-unverified",
+        email: "Unverified@Example.com",
+        emailVerified: false,
+      }),
+    ).rejects.toMatchObject({ statusCode: 401, code: "unauthorized" });
+
+    expect(federatedFailures(context.auditService)).toEqual([
+      {
+        eventType: "auth.federated_login",
+        eventStatus: "failure",
+        metadata: {
+          email: "unverified@example.com",
+          provider: "google",
+          subject: "sub-unverified",
+          reason: "email_unverified",
+        },
+      },
+    ]);
+  });
+
+  it("names closed registration without carrying the denial's payload into the audit", async () => {
+    const guard = new RecordingOrganizationCreationGuard();
+    guard.shouldReject = Object.assign(new Error("Registration is closed"), {
+      statusCode: 403,
+      code: "forbidden",
+      details: { organizationName: "Sensitive Org", email: "owner@example.com" },
+    });
+    const context = createAuthService({
+      organizationCreationGuard: guard,
+      sessionRepository: new WorkingSessionRepository(),
+    });
+
+    await expect(
+      context.authService.federatedLogin({
+        provider: "google",
+        subject: "sub-closed",
+        email: "closed@example.com",
+        emailVerified: true,
+      }),
+    ).rejects.toMatchObject({ statusCode: 403, code: "forbidden" });
+
+    expect(federatedFailures(context.auditService)).toEqual([
+      {
+        eventType: "auth.federated_login",
+        eventStatus: "failure",
+        metadata: {
+          email: "closed@example.com",
+          provider: "google",
+          subject: "sub-closed",
+          reason: "registration_closed",
+        },
+      },
+    ]);
+  });
+
+  it("names provisioning when a first sign-in fails after the account is created", async () => {
+    const context = createAuthService({
+      sessionRepository: new WorkingSessionRepository(),
+      onAccountCreated: async () => {
+        throw new Error("provisioning hook failed");
+      },
+    });
+
+    await expect(
+      context.authService.federatedLogin({
+        provider: "google",
+        subject: "sub-provisioning",
+        email: "provisioning@example.com",
+        emailVerified: true,
+      }),
+    ).rejects.toThrow("provisioning hook failed");
+
+    expect(federatedFailures(context.auditService)).toEqual([
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          email: "provisioning@example.com",
+          provider: "google",
+          subject: "sub-provisioning",
+          reason: "account_provisioning_failed",
+        }),
+      }),
+    ]);
+  });
+
+  it("records no failure for a sign-in that succeeds", async () => {
+    const context = createAuthService({ sessionRepository: new WorkingSessionRepository() });
+
+    await context.authService.federatedLogin({
+      provider: "google",
+      subject: "sub-clean",
+      email: "clean@example.com",
+      emailVerified: true,
+    });
+
+    expect(federatedFailures(context.auditService)).toEqual([]);
+  });
+});
+
 describe("AuthService describeSession", () => {
   it("returns the account named by the session when that membership is active", async () => {
     const { authService } = createAuthService({});

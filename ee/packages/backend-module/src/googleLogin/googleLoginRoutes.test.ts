@@ -424,35 +424,16 @@ describe("google login routes", () => {
     );
   });
 
-  // `federatedLogin` decides these rejections and records its own audit for
-  // them. A second event here would double-count the sign-in and describe a
-  // transport failure that never happened.
-  it.each([401, 403, 429])(
-    "leaves the audit to federatedLogin when it rejects the identity with %i",
-    async (statusCode) => {
-      const record = vi.fn(async () => {});
-      const federatedLogin = vi.fn(async () => {
-        throw Object.assign(new Error("rejected"), { statusCode });
-      });
-      const { app } = createApp({
-        fetchImpl: createSuccessfulFetch(),
-        authService: { federatedLogin },
-        auditService: { record },
-      });
-
-      const response = await request(app)
-        .get("/api/v1/ee/auth/google/callback?code=auth-code&state=fixed-state")
-        .set("Cookie", `${STATE_COOKIE_NAME}=fixed-state`);
-
-      expect(response.headers.location).toContain("error=google_login_failed");
-      expect(record).not.toHaveBeenCalled();
-    },
-  );
-
-  it("records an unexpected sign-in failure under its own reason", async () => {
+  // `federatedLogin` names which of its own steps refused and records that
+  // once. Out here every one of them is the same opaque throw, so a second
+  // event could only invent a reason and double-count the sign-in.
+  it.each([
+    ["a rejected identity", Object.assign(new Error("rejected"), { statusCode: 401 })],
+    ["a repository fault carrying no status", new Error("database unavailable")],
+  ])("leaves the sign-in audit to federatedLogin after %s", async (_case, thrown) => {
     const record = vi.fn(async () => {});
     const federatedLogin = vi.fn(async () => {
-      throw new Error("database unavailable");
+      throw thrown;
     });
     const { app } = createApp({
       fetchImpl: createSuccessfulFetch(),
@@ -465,12 +446,6 @@ describe("google login routes", () => {
       .set("Cookie", `${STATE_COOKIE_NAME}=fixed-state`);
 
     expect(response.headers.location).toContain("error=google_login_failed");
-    expect(record).toHaveBeenCalledWith(
-      expect.objectContaining({
-        eventType: "auth.federated_login",
-        eventStatus: "failure",
-        metadata: expect.objectContaining({ reason: "login_completion_failed" }),
-      }),
-    );
+    expect(record).not.toHaveBeenCalled();
   });
 });

@@ -1033,7 +1033,6 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       agentRevisionReader: agentDiscoveryRevisionReader,
       agentToolCatalog,
       mcpBaseUrl: env.PUBLIC_MCP_CONVERSE_URL,
-      documentationUrl: env.PUBLIC_AGENT_DOCS_URL,
     }),
     chatHistoryService: chat.chatHistoryService,
     assistantChatService: chat.assistantChatService,

@@ -1,3 +1,5 @@
+import { readProductDoc } from "@radioso/product-docs";
+
 import type { AgentRepositoryPort } from "../../db/repositories/agentRepository.js";
 import type { AgentPublicProfile, AgentPublicProfilePort } from "../../modules/agentDiscovery/public.js";
 import { agentMcpEndpointUrl } from "../../modules/agentDiscovery/public.js";
@@ -5,9 +7,18 @@ import type { AgentRevisionRuntimeReaderPort } from "../../modules/agents/public
 import type { AgentToolCatalogPort } from "../../modules/routines/public.js";
 
 /**
+ * The guide a discovery document sends a calling agent to read. Its published URL comes
+ * from the documentation corpus this build ships, the same place every other product-docs
+ * link is resolved from, so the link follows the docs rather than a deployment setting. A
+ * corpus without the page leaves the link off the card rather than guessing one.
+ */
+const CONNECT_GUIDE_SLUG = "guides/agent-converse";
+const connectGuideUrl = (): string | null => readProductDoc(CONNECT_GUIDE_SLUG)?.url ?? null;
+
+/**
  * The profile a public document renders from: the live agent row decides whether there is
- * anything to publish, the current published release decides what it says, and the two
- * public URLs are deployment configuration. The discovery module owns the document shapes
+ * anything to publish, the current published release decides what it says, and the public
+ * MCP endpoint is deployment configuration. The discovery module owns the document shapes
  * and learns none of this.
  */
 export const createAgentPublicProfileComposition = (input: {
@@ -16,8 +27,6 @@ export const createAgentPublicProfileComposition = (input: {
   agentToolCatalog: AgentToolCatalogPort;
   /** Public base URL of the MCP endpoint, e.g. `https://mcp.example.com/mcp`. */
   mcpBaseUrl?: string;
-  /** Public URL of the connect guide. */
-  documentationUrl?: string;
 }): AgentPublicProfilePort => ({
   async load(publicId: string): Promise<AgentPublicProfile | null> {
     if (!input.mcpBaseUrl) {
@@ -48,7 +57,7 @@ export const createAgentPublicProfileComposition = (input: {
       name: agent.name,
       description: description.length > 0 ? description : null,
       mcpEndpointUrl: agentMcpEndpointUrl(input.mcpBaseUrl, publicId),
-      documentationUrl: input.documentationUrl ?? null,
+      documentationUrl: connectGuideUrl(),
       walkInEnabled: agent.publicAgentAccessEnabled,
       tools: catalog.tools,
       revisionVersion: String(revision.publishedVersion ?? 1),

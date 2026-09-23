@@ -16,12 +16,35 @@ export interface McpConverseWalkInLocals {
   mcpConverseSourceDigest: string;
 }
 
+/**
+ * An hour. Opening a conversation is the expensive act here, and an hour is the span an
+ * operator reasons about when they set an agent's own `walkInConversationsPerHour`.
+ */
+const WALK_IN_WINDOW_MS = 60 * 60 * 1000;
+
+/**
+ * New conversations one calling source may open across every agent in the window. A
+ * legitimate client opens one conversation and keeps talking in it, so twenty an hour is
+ * generous for real use and cheap to exhaust by looping.
+ */
+const WALK_IN_SOURCE_LIMIT = 20;
+
+/**
+ * New conversations one calling source may open on one agent, when the operator has not
+ * set the agent's own `walkInConversationsPerHour`. That column is the tuning lever; this
+ * is the number an agent gets until someone moves it.
+ */
+const WALK_IN_AGENT_SOURCE_LIMIT = 60;
+
+/**
+ * How far the bare per-agent counter sits above the per-source allowance. It is a backstop
+ * for many sources at once rather than the everyday budget, so it has to be high enough
+ * that a handful of abusive callers cannot reach it and lock everyone else out.
+ */
+const WALK_IN_AGENT_BACKSTOP_MULTIPLIER = 10;
+
 interface McpConverseWalkInRateLimiterDependencies {
   env: Pick<Env,
-    | "MCP_WALK_IN_RATE_LIMIT_WINDOW_MS"
-    | "MCP_WALK_IN_SOURCE_RATE_LIMIT_MAX_ATTEMPTS"
-    | "MCP_WALK_IN_AGENT_RATE_LIMIT_MAX_ATTEMPTS"
-    | "MCP_WALK_IN_AGENT_BACKSTOP_MULTIPLIER"
     | "RADIOSO_MCP_SIGNING_SECRET"
     | "RADIOSO_TRUSTED_PROXY_HOPS"
   >;
@@ -63,7 +86,6 @@ export const createMcpConverseWalkInRateLimiter = (
     return;
   }
 
-  const windowMs = dependencies.env.MCP_WALK_IN_RATE_LIMIT_WINDOW_MS;
   const sourceDigest = publishPreAuthSourceDigest(res, readPreAuthSourceDigest(res) ?? resolvedPreAuthSourceDigest(
     req,
     dependencies.env.RADIOSO_MCP_SIGNING_SECRET,
@@ -78,8 +100,8 @@ export const createMcpConverseWalkInRateLimiter = (
     await dependencies.abuseControlService.enforce({
       scope: spentScope,
       subjectKey: `source:${sourceDigest}`,
-      limit: dependencies.env.MCP_WALK_IN_SOURCE_RATE_LIMIT_MAX_ATTEMPTS,
-      windowMs,
+      limit: WALK_IN_SOURCE_LIMIT,
+      windowMs: WALK_IN_WINDOW_MS,
     });
 
     // An unknown id has no agent budget to spend; the source bucket above already bounds
@@ -88,21 +110,20 @@ export const createMcpConverseWalkInRateLimiter = (
     if (agent) {
       throttledAgentId = agent.id;
       throttledWorkspaceId = agent.workspaceId;
-      const perSourceLimit = agent.walkInConversationsPerHour
-        ?? dependencies.env.MCP_WALK_IN_AGENT_RATE_LIMIT_MAX_ATTEMPTS;
+      const perSourceLimit = agent.walkInConversationsPerHour ?? WALK_IN_AGENT_SOURCE_LIMIT;
       spentScope = "mcp.converse.walkin.agent.source";
       await dependencies.abuseControlService.enforce({
         scope: spentScope,
         subjectKey: `agent:${agent.id}:source:${sourceDigest}`,
         limit: perSourceLimit,
-        windowMs,
+        windowMs: WALK_IN_WINDOW_MS,
       });
       spentScope = "mcp.converse.walkin.agent";
       await dependencies.abuseControlService.enforce({
         scope: spentScope,
         subjectKey: `agent:${agent.id}`,
-        limit: perSourceLimit * dependencies.env.MCP_WALK_IN_AGENT_BACKSTOP_MULTIPLIER,
-        windowMs,
+        limit: perSourceLimit * WALK_IN_AGENT_BACKSTOP_MULTIPLIER,
+        windowMs: WALK_IN_WINDOW_MS,
       });
     }
     next();

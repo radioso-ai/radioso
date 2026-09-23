@@ -62,8 +62,10 @@ const handleError = (error: unknown, res: { status(code: number): { json(value: 
   if (error instanceof OperatorMcpApplicationError) {
     const status = statusFor(error);
     if (error.code === "insufficient_scope" && error.requiredScope) res.setHeader("x-radioso-required-scope", error.requiredScope);
-    // Details name rejected argument paths, never their values; they exist so a caller can correct
-    // the call. An authorization failure says nothing beyond that it failed.
+    // Details exist so a caller can correct the call: a schema rejection names argument paths and
+    // never the values at them, while a tool's own refusal states its reason, which can name a
+    // workspace object this credential already reads. An authorization failure says nothing
+    // beyond that it failed.
     const details = status === 401 ? undefined : error.details;
     res.status(status).json({ code: error.code, message: status === 401 ? "Unauthorized" : error.code, ...(details?.length ? { details } : {}) });
     return;

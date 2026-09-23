@@ -315,7 +315,7 @@ describe("OperatorMcpApplicationService", () => {
       createTool: () => ({
         name: "workspace_settings", description: "Read settings",
         inputSchema: z.object({ section: z.string() }), outputSchema: z.object({ section: z.string() }),
-        invoke: vi.fn(async () => { throw badRequest("Citing replay evidence requires a Ray conversation, which this transport does not have."); }),
+        invoke: vi.fn(async () => { throw badRequest(`Citing replay evidence requires a Ray conversation, which this transport does not have. ${"detail ".repeat(100)}`); }),
       }),
     };
     const { service, invocations, audit } = build(rejectingDescriptor);
@@ -323,10 +323,14 @@ describe("OperatorMcpApplicationService", () => {
     const bodyDigest = callDigest(argumentsValue);
     const admitted = await service.admit({ accessToken: "operator-access", invocationId: uuid("12"), method: "tools/call", descriptorName: rejectingDescriptor.name, resource: principal.resource, timestamp: "1788480000", nonce: "edge", bodyDigest });
 
-    await expect(service.invoke({ proof: admitted.proof, name: rejectingDescriptor.name, arguments: argumentsValue, bodyDigest }))
-      // The tool's own sentence is the only account of what was wrong; without it the caller reads
-      // the bare code and guesses again.
-      .rejects.toMatchObject({ code: "invalid_arguments", details: ["Citing replay evidence requires a Ray conversation, which this transport does not have."] });
+    const rejection = await service.invoke({ proof: admitted.proof, name: rejectingDescriptor.name, arguments: argumentsValue, bodyDigest })
+      .then(() => null, (error: OperatorMcpApplicationError) => error);
+
+    // The tool's own sentence is the only account of what was wrong; without it the caller reads
+    // the bare code and guesses again. It is bounded where it is written, not only in transit.
+    expect(rejection).toMatchObject({ code: "invalid_arguments" });
+    expect(rejection?.details?.[0]).toHaveLength(300);
+    expect(rejection?.details?.[0]).toMatch(/^Citing replay evidence requires a Ray conversation/);
     expect(invocations.recordOutcome).toHaveBeenCalledWith(expect.objectContaining({ status: "refused", safeOutcomeCode: "invalid_arguments" }));
     expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
       eventStatus: "failure",

@@ -24,7 +24,7 @@ import type { CopilotCurrentAuthorizationPort, CopilotToolInvocationContext } fr
 import { OperatorMcpCatalogError, OperatorMcpCatalogService } from "./mcpCatalog.js";
 import type { OperatorMcpInvocationRecord, OperatorMcpInvocationRepositoryPort } from "./mcpContracts.js";
 import { AppError } from "../../shared/domain/errors.js";
-import { invalidArgumentDetails } from "./invalidArgumentDetails.js";
+import { invalidArgumentDetails, toolRejectionDetail } from "./invalidArgumentDetails.js";
 
 const MAX_RESULT_BYTES = 256 * 1024;
 const PROOF_TTL_MS = 15_000;
@@ -481,7 +481,7 @@ export class OperatorMcpApplicationService {
           : rawError.statusCode === 400
             // The tool's own rejection sentence is the only account of what was wrong with the
             // call; without it the caller reads the bare code and has to guess again.
-            ? new OperatorMcpApplicationError("invalid_arguments", undefined, [rawError.message])
+            ? new OperatorMcpApplicationError("invalid_arguments", undefined, toolRejectionDetail(rawError.message))
             : rawError
         : rawError;
       const reason = error instanceof OperatorMcpApplicationError

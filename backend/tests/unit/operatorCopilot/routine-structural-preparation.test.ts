@@ -46,9 +46,11 @@ describe("routine structural preparation", () => {
   it("parses its own parsed output, because the catalog re-parses what the application service already parsed", () => {
     const { inputSchema } = anyDescriptor();
     const agentId = "11111111-1111-4111-8111-111111111111";
+    const draft = { name: "Created", enabled: true, activation: { triggerDescription: "Handle returns", gateRef: null, priority: 0, reentryMode: "once_per_conversation" }, slots: [], steps: [{ stableStepId: "start", kind: "chat", instruction: "Start", toolRef: null, ordinal: 0, metadata: {} }], transitions: [{ fromStep: "start", toRef: "done", guardKind: "default", ordinal: 0 }], terminals: [{ stableStepId: "done", kind: "complete", instruction: "Done", ordinal: 0 }] };
     const calls = [
       { kind: "edit", agentId, routineId: agentId, operations: [{ kind: "set_enabled", enabled: false }] },
       { kind: "delete", agentId, routineId: agentId },
+      { kind: "create", agentId, draft },
     ];
 
     // `mcpApplicationService` hands `parsed.data` to `mcpCatalog`, which parses again, and the tool

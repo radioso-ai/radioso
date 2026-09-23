@@ -138,6 +138,19 @@ describe("copilot catalog contributions through the real factory", () => {
     })).toThrow("weakens permission parity");
   });
 
+  it("refuses a contributed tool it would advertise over MCP with a schema no client can read", () => {
+    // `tools/list` is all-or-nothing, so an MCP-eligible contribution with a non-object schema
+    // would hide every first-party tool with it rather than only itself.
+    expect(() => assemble({
+      moduleId: "extension",
+      descriptors: [contributedDescriptor({
+        inputSchema: z.union([z.object({ kind: z.literal("a") }), z.string()]),
+        mcpDisposition: { status: "eligible", inputStrategy: "explicit", scope: "operator:read", retry: { effect: "none", idempotent: true, requiresOperationId: false } },
+      })],
+      operationPermissions: { getExtensionUsage: ["workspace.settings.read"] },
+    })).toThrow("extension_usage");
+  });
+
   it("leaves the first-party provenance registry a bijection when a contribution is present", () => {
     // Running the registry check over the merged catalog would report every contributed descriptor
     // as ungoverned, which is the failure that would push EE identities into a first-party map.

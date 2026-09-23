@@ -339,6 +339,14 @@ export interface ApplicationRouteMount {
   path: string;
   createRouter(dependencies: {
     connectorDb: UsageLimitDatabasePort;
+    // OSS passes its application logger to every route mount. Declared as the
+    // narrow shape EE reads so a module can report its boot-time configuration
+    // state, and refuse an unusable request out loud, without importing the
+    // host's logger type.
+    logger?: {
+      info(entry: unknown, message?: string): void;
+      warn(entry: unknown, message?: string): void;
+    };
     env: {
       SESSION_COOKIE_NAME: string;
       STAFF_SESSION_COOKIE_NAME?: string;
@@ -378,7 +386,11 @@ export interface ApplicationRouteMount {
       // Provider-agnostic federated sign-in. EE modules translate their
       // provider response (e.g. Google OAuth) into this verified-identity
       // assertion; OSS owns account provisioning + session issuance and never
-      // learns about the specific provider.
+      // learns about the specific provider. The result mirrors OSS's
+      // `AuthenticatedAccountSession` (in
+      // `backend/src/modules/auth/services/authService.ts`), structurally like
+      // every other host contract in this file: `radioso-backend` is a private
+      // application, not an importable package.
       federatedLogin(input: {
         provider: string;
         subject: string;

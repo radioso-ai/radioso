@@ -95,4 +95,16 @@ describe('next security headers', () => {
       destination: '/backend/api/v1/operator-mcp/oauth/:path*',
     })
   })
+
+  // Google redirects the browser to <APP_BASE_URL>/api/v1/ee/auth/google/callback.
+  // The OAuth state cookie and the session cookie are both host-only, so the
+  // callback has to land on the dashboard origin and reach the backend from there.
+  it('proxies the Google login callback path to the backend API', async () => {
+    const routes = await getRewriteRoutes()
+
+    expect(routes).toContainEqual({
+      source: '/api/v1/ee/auth/google/:path*',
+      destination: '/backend/api/v1/ee/auth/google/:path*',
+    })
+  })
 })

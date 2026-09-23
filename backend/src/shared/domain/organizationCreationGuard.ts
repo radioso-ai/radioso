@@ -46,6 +46,50 @@ export interface OrganizationCreationGuard {
   isSignupAvailable(): Promise<boolean>;
 }
 
+/** Counters only: a denial's payload can carry customer content, an audit event must not. */
+interface OrganizationCreationRateLimit {
+  limit?: number;
+  used?: number;
+  periodStart?: string;
+  resetAt?: string;
+}
+
+interface OrganizationCreationDenial {
+  rateLimited: boolean;
+  rateLimit: OrganizationCreationRateLimit | null;
+}
+
+/**
+ * Reads a refusal thrown by a guard or by the provisioner it hands back. Both
+ * answer the same question — may this organization be created — so the shape of
+ * a "no" belongs to the contract rather than to each caller that has to name it.
+ *
+ * Returns null when the error is not a refusal at all but a fault, which the
+ * caller names differently: "we said no" and "we could not tell" send an
+ * operator to different places.
+ */
+export const describeOrganizationCreationDenial = (error: unknown): OrganizationCreationDenial | null => {
+  const candidate = error as { statusCode?: number; code?: string; details?: unknown } | null | undefined;
+  const rateLimited = candidate?.statusCode === 429 || candidate?.code === "rate_limit_exceeded";
+  const refused = candidate?.statusCode === 403 || candidate?.code === "forbidden";
+  if (!rateLimited && !refused) {
+    return null;
+  }
+
+  const details = candidate?.details as Partial<OrganizationCreationRateLimit> | undefined;
+  return {
+    rateLimited,
+    rateLimit: rateLimited && details
+      ? {
+          limit: details.limit,
+          used: details.used,
+          periodStart: details.periodStart,
+          resetAt: details.resetAt,
+        }
+      : null,
+  };
+};
+
 const noopReservation: OrganizationCreationReservation = {
   async commit() {},
   async release() {},

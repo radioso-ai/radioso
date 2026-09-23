@@ -244,6 +244,8 @@ module "radioso" {
   operator_mcp_credential_epoch             = var.operator_mcp_credential_epoch
   frontend_backend_internal_url_override    = var.frontend_backend_internal_url_override
   app_base_url_override                     = var.app_base_url_override
+  google_login_client_id                    = var.google_login_client_id
+  google_login_client_secret                = var.google_login_client_secret
   public_chat_base_url_override             = var.public_chat_base_url_override
   worker_tasks_service_url_override         = var.worker_tasks_service_url_override
   monitoring_enabled                        = var.monitoring_enabled

@@ -1,9 +1,8 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { CheckCircle2, KeyRound, Plus, RefreshCw, Server, Trash2, X } from 'lucide-react'
+import { CheckCircle2, KeyRound, Plus, Trash2, X } from 'lucide-react'
 
-import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -15,7 +14,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
-import { getApiErrorMessage } from '@/lib/api-error'
+import { getApiErrorMessage, getApiErrorStatus } from '@/lib/api-error'
 import { externalSkillsApi, type McpConnection } from '@/lib/api-external-skills'
 import {
   buildOauthConfigPayload,
@@ -34,12 +33,17 @@ const statusTone = (status: string) => {
 }
 
 const statusLabel = (status: string) => {
-  if (status === 'authorized') return 'Connected'
+  if (status === 'authorized') return 'Credentials saved'
   if (status === 'needs_reauth') return 'Needs re-auth'
   if (status === 'error') return 'Error'
   if (status === 'unconfigured') return 'Not verified'
   return status
 }
+
+type ConnectionTestResult =
+  | { status: 'testing' }
+  | { status: 'success'; toolCount: number }
+  | { status: 'error'; message: string }
 
 export function McpConnectionsSection({ agentId }: { agentId: string }) {
   const [connections, setConnections] = useState<McpConnection[]>([])
@@ -53,6 +57,8 @@ export function McpConnectionsSection({ agentId }: { agentId: string }) {
   const [accessToken, setAccessToken] = useState('')
   const [oauthDraft, setOauthDraft] = useState<OauthConnectionDraft>(emptyOauthDraft)
   const loadVersion = useRef(0)
+  const scopeVersion = useRef(0)
+  const [testResults, setTestResults] = useState<Record<string, ConnectionTestResult>>({})
 
   const load = useCallback(async () => {
     const version = ++loadVersion.current
@@ -73,9 +79,12 @@ export function McpConnectionsSection({ agentId }: { agentId: string }) {
   }, [agentId])
 
   useEffect(() => {
+    scopeVersion.current += 1
     queueMicrotask(() => {
+      setTestResults({})
       void load()
     })
+    return () => { scopeVersion.current += 1 }
   }, [load])
 
   useEffect(() => {
@@ -131,6 +140,26 @@ export function McpConnectionsSection({ agentId }: { agentId: string }) {
     }
   }
 
+  const testConnection = async (connectionId: string) => {
+    const scope = scopeVersion.current
+    setTestResults((current) => ({ ...current, [connectionId]: { status: 'testing' } }))
+    try {
+      const { tools } = await externalSkillsApi.discoverTools(agentId, connectionId)
+      if (scope !== scopeVersion.current) return
+      setTestResults((current) => ({ ...current, [connectionId]: { status: 'success', toolCount: tools.length } }))
+    } catch (testError) {
+      if (scope !== scopeVersion.current) return
+      const fallback = 'Could not connect to the MCP server. Check the server URL and credentials, then try again.'
+      setTestResults((current) => ({
+        ...current,
+        [connectionId]: { status: 'error', message: getApiErrorStatus(testError) === 500 ? fallback : getApiErrorMessage(testError, fallback) },
+      }))
+    } finally {
+      // OAuth discovery can refresh credentials or mark them as needing authorization.
+      if (scope === scopeVersion.current) await load()
+    }
+  }
+
   const deleteConnection = async (connectionId: string) => {
     setBusyAction(`delete:${connectionId}`)
     setError(null)
@@ -154,18 +183,7 @@ export function McpConnectionsSection({ agentId }: { agentId: string }) {
   })
 
   return (
-    <SettingsCard
-      id="mcp-skill-connections"
-      icon={<Server className="h-5 w-5 text-primary" />}
-      title="Connections"
-      description="Manage integration targets separately from skill authoring. Skills bind to connected targets but never edit credentials."
-      headerEnd={(
-        <Button type="button" variant="outline" size="sm" onClick={() => void load()} disabled={isLoading}>
-          <RefreshCw className="h-4 w-4" />
-          Refresh
-        </Button>
-      )}
-    >
+    <section id="mcp-skill-connections" className="space-y-4">
       <div className="space-y-5">
         {error ? <p className="text-sm text-destructive" role="alert">{error}</p> : null}
         {isLoading ? (
@@ -177,8 +195,12 @@ export function McpConnectionsSection({ agentId }: { agentId: string }) {
 
         {connections.length > 0 ? (
           <div className="divide-y divide-border overflow-hidden rounded-md border border-border">
-            {connections.map((connection) => (
-              <div key={connection.id} className="flex items-center justify-between gap-3 p-3">
+            {connections.map((connection) => {
+              const result = testResults[connection.id]
+              const testing = result?.status === 'testing'
+              return (
+              <div key={connection.id} className="space-y-2 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="truncate text-sm font-medium text-foreground">{connection.displayName}</p>
@@ -189,6 +211,17 @@ export function McpConnectionsSection({ agentId }: { agentId: string }) {
                   <p className="truncate text-xs text-muted-foreground">{connection.serverUrl}</p>
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    aria-label={`Test connection to ${connection.displayName}`}
+                    loading={testing}
+                    disabled={isLoading || busyAction !== null}
+                    onClick={() => void testConnection(connection.id)}
+                  >
+                    {testing ? 'Testing…' : 'Test connection'}
+                  </Button>
                   {connection.authMethod === 'oauth' && connection.status !== 'authorized' ? (
                     <Button
                       type="button"
@@ -196,6 +229,7 @@ export function McpConnectionsSection({ agentId }: { agentId: string }) {
                       size="sm"
                       onClick={() => void authorizeConnection(connection.id)}
                       loading={busyAction === `authorize:${connection.id}`} icon={<KeyRound />}
+                      disabled={testing}
                     >
                       {connection.status === 'needs_reauth' ? 'Re-authorize' : 'Authorize'}
                     </Button>
@@ -206,20 +240,29 @@ export function McpConnectionsSection({ agentId }: { agentId: string }) {
                     size="icon"
                     aria-label={`Delete ${connection.displayName}`}
                     onClick={() => void deleteConnection(connection.id)}
-                    disabled={busyAction === `delete:${connection.id}`}
+                    disabled={testing || busyAction === `delete:${connection.id}`}
                   >
                     {busyAction === `delete:${connection.id}` ? <Spinner className="h-4 w-4" /> : <Trash2 className="h-4 w-4" />}
                   </Button>
                 </div>
               </div>
-            ))}
+              {result?.status === 'success' ? (
+                <p role="status" className="text-sm text-emerald-600 dark:text-emerald-400">
+                  Connected · {result.toolCount} {result.toolCount === 1 ? 'tool' : 'tools'} found
+                </p>
+              ) : result?.status === 'error' ? (
+                <p role="alert" className="text-sm text-destructive">{result.message}</p>
+              ) : null}
+              </div>
+              )
+            })}
           </div>
         ) : null}
 
         {showConnectionForm ? (
           <div className="space-y-3 rounded-md border border-border bg-muted/20 p-3">
             <div className="flex items-center justify-between gap-3">
-              <h4 className="text-sm font-medium text-foreground">MCP server</h4>
+              <h4 className="text-sm font-medium text-foreground">Add connection</h4>
               {connections.length > 0 ? (
                 <Button type="button" variant="ghost" size="icon" aria-label="Cancel" onClick={() => setIsAddingConnection(false)}>
                   <X className="h-4 w-4" />
@@ -287,10 +330,10 @@ export function McpConnectionsSection({ agentId }: { agentId: string }) {
         ) : (
           <Button type="button" variant="outline" size="sm" onClick={() => setIsAddingConnection(true)}>
             <Plus className="h-4 w-4" />
-            Add MCP server
+            Add connection
           </Button>
         )}
       </div>
-    </SettingsCard>
+    </section>
   )
 }

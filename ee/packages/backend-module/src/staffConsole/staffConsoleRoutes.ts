@@ -150,15 +150,11 @@ const publicStaff = (staff: StaffUser) => ({
   lastLoginAt: staff.lastLoginAt ? staff.lastLoginAt.toISOString() : null,
 });
 
-type StaffConsoleLogger = {
-  info?(entry: Record<string, unknown>, message?: string): void;
-  warn?(entry: Record<string, unknown>, message?: string): void;
-};
+// A route mount standing alone in a test gets no logger, so each method is
+// optional at the call site; the shape itself is the host's, declared once.
+type StaffConsoleLogger = Partial<NonNullable<RouteDependencies["logger"]>>;
 
-const resolveLogger = (dependencies: RouteDependencies): StaffConsoleLogger => {
-  const logger = (dependencies as RouteDependencies & { logger?: StaffConsoleLogger }).logger;
-  return logger ?? {};
-};
+const resolveLogger = (dependencies: RouteDependencies): StaffConsoleLogger => dependencies.logger ?? {};
 
 interface StaffConsoleRouteRepositories {
   users?: StaffUserRepository;

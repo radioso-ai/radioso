@@ -95,13 +95,18 @@ jobs:
 
           # The backend turns "Sign in with Google" on only when both credentials
           # resolve, so half a pair plans clean, applies clean, and leaves the
-          # login page exactly as it was. Stop the run instead.
-          if [ -n "${TF_VAR_google_login_client_id}${TF_VAR_google_login_client_secret}" ]; then
-            if [ -z "${TF_VAR_google_login_client_id}" ]; then
+          # login page exactly as it was. Stop the run instead. Terraform reads a
+          # whitespace-only value as unset, so the emptiness test has to strip
+          # whitespace the same way -- a secret pasted with a stray space is half
+          # a pair. Only the test is stripped; Terraform still gets the value.
+          GOOGLE_LOGIN_CLIENT_ID_SET="${TF_VAR_google_login_client_id//[[:space:]]/}"
+          GOOGLE_LOGIN_CLIENT_SECRET_SET="${TF_VAR_google_login_client_secret//[[:space:]]/}"
+          if [ -n "${GOOGLE_LOGIN_CLIENT_ID_SET}${GOOGLE_LOGIN_CLIENT_SECRET_SET}" ]; then
+            if [ -z "${GOOGLE_LOGIN_CLIENT_ID_SET}" ]; then
               echo "Missing required GitHub environment value: GOOGLE_LOGIN_CLIENT_ID because GOOGLE_LOGIN_CLIENT_SECRET is set" >&2
               exit 1
             fi
-            if [ -z "${TF_VAR_google_login_client_secret}" ]; then
+            if [ -z "${GOOGLE_LOGIN_CLIENT_SECRET_SET}" ]; then
               echo "Missing required GitHub environment value: GOOGLE_LOGIN_CLIENT_SECRET because GOOGLE_LOGIN_CLIENT_ID is set" >&2
               exit 1
             fi

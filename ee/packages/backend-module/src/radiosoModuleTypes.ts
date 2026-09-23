@@ -341,9 +341,11 @@ export interface ApplicationRouteMount {
     connectorDb: UsageLimitDatabasePort;
     // OSS passes its application logger to every route mount. Declared as the
     // narrow shape EE reads so a module can report its boot-time configuration
-    // state without importing the host's logger type.
+    // state, and refuse an unusable request out loud, without importing the
+    // host's logger type.
     logger?: {
       info(entry: unknown, message?: string): void;
+      warn(entry: unknown, message?: string): void;
     };
     env: {
       SESSION_COOKIE_NAME: string;

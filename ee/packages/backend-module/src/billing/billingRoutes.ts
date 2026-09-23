@@ -23,15 +23,11 @@ export interface BillingConfig {
 
 type RouteDependencies = Parameters<ApplicationRouteMount["createRouter"]>[0];
 
-type BillingLogger = {
-  info?(entry: Record<string, unknown>, message?: string): void;
-  warn?(entry: Record<string, unknown>, message?: string): void;
-};
+// A route mount standing alone in a test gets no logger, so each method is
+// optional at the call site; the shape itself is the host's, declared once.
+type BillingLogger = Partial<NonNullable<RouteDependencies["logger"]>>;
 
-const resolveLogger = (dependencies: RouteDependencies): BillingLogger => {
-  const logger = (dependencies as RouteDependencies & { logger?: BillingLogger }).logger;
-  return logger ?? {};
-};
+const resolveLogger = (dependencies: RouteDependencies): BillingLogger => dependencies.logger ?? {};
 
 // Every catalog plan id, not just self-serve ones: a request naming a real but non-self-serve
 // plan (the free plan, or a future hand-sold tier) must reach the handler's 409 check below

@@ -296,7 +296,6 @@
   "types|backend/src/modules/approvals/service.ts|ResolveApprovalDecisionInput",
   "types|backend/src/modules/approvals/service.ts|ResolveApprovalDecisionResult",
   "types|backend/src/modules/audit/requestAuditContext.ts|RequestAuditPrincipal",
-  "types|backend/src/modules/auth/services/authService.ts|AuthenticatedAccountSession",
   "types|backend/src/modules/chat/infra/cloudTasksActionDrainDispatcher.ts|CloudTasksActionDrainDispatcherOptions",
   "types|backend/src/modules/chat/retrievalSupport.ts|GroundingSummary",
   "types|backend/src/modules/chat/retrievalSupport.ts|GroundingVerdict",

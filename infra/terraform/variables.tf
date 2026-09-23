@@ -553,38 +553,6 @@ variable "mcp_public_origin" {
   }
 }
 
-variable "public_agent_docs_url" {
-  description = "Optional public URL of the connect guide an agent discovery document points a calling agent at. Unset omits the link; the documents stay valid."
-  type        = string
-  default     = null
-
-  validation {
-    condition = (
-      var.public_agent_docs_url == null ||
-      can(regex("^https://[^?#]+$", var.public_agent_docs_url))
-    )
-    error_message = "public_agent_docs_url must be an HTTPS URL without a query or fragment."
-  }
-}
-
-variable "mcp_walk_in_source_rate_limit_max_attempts" {
-  description = "Walk-in converse exchanges one calling source may make per window. Walk-in carries no credential, so this budget is what bounds an anonymous caller."
-  type        = number
-  default     = 20
-}
-
-variable "mcp_walk_in_agent_rate_limit_max_attempts" {
-  description = "Default walk-in conversations one agent accepts per window, before an agent's own walkInConversationsPerHour override. Stops one looping caller from spending a workspace's conversation allowance."
-  type        = number
-  default     = 60
-}
-
-variable "mcp_walk_in_rate_limit_window_ms" {
-  description = "Window both walk-in budgets are measured over, in milliseconds."
-  type        = number
-  default     = 3600000
-}
-
 variable "operator_mcp_credential_epoch" {
   description = "Externally monotonic Operator MCP credential/key generation. Increase this explicitly during rotation or restore; every enabled replica must use the same value."
   type        = string

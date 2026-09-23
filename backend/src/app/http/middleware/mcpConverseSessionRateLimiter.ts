@@ -29,6 +29,20 @@ interface McpConverseSessionRateLimiterDependencies {
 const digest = (value: string): string => createHash("sha256").update(value).digest("base64url");
 
 /**
+ * Conversation-update reads one session may make per window. A long poll spends one unit
+ * however long it parks, so this is a call budget rather than a time budget: a caller that
+ * polls once a second is over it, and one that parks for the full 25 s is not.
+ */
+const MESSAGES_SESSION_LIMIT = 60;
+
+/**
+ * Conversation-update reads one calling source may make per window. Because a read parks
+ * for up to 25 s, this rate is also the concurrency ceiling — at 60 a minute, about 25 of
+ * one source's reads overlap, each holding a client socket and an upstream one.
+ */
+const MESSAGES_SOURCE_LIMIT = 60;
+
+/**
  * Limits the unauthenticated exchange before it can perform a grant lookup.
  * The source bucket is deliberately consumed first: a flood of distinct bogus
  * tokens can create at most the source bucket's bounded number of token keys.
@@ -60,23 +74,18 @@ export const createMcpConverseSourceRateLimiter = (
  * source can have at most ~25 reads overlapping.
  */
 export const createMcpConverseMessagesSourceRateLimiter = (
-  dependencies: McpConverseSessionRateLimiterDependencies & {
-    env: Pick<Env, "MCP_CONVERSE_MESSAGES_SOURCE_RATE_LIMIT_MAX_ATTEMPTS">;
-  },
+  dependencies: McpConverseSessionRateLimiterDependencies,
 ): RequestHandler => createPreAuthSourceRateLimiter({
   service: dependencies.abuseControlService,
   scope: "mcp.converse.messages.source",
-  limit: dependencies.env.MCP_CONVERSE_MESSAGES_SOURCE_RATE_LIMIT_MAX_ATTEMPTS,
+  limit: MESSAGES_SOURCE_LIMIT,
   signingSecret: dependencies.env.RADIOSO_MCP_SIGNING_SECRET,
   trustedProxyHops: dependencies.env.RADIOSO_TRUSTED_PROXY_HOPS,
   windowMs: dependencies.env.MCP_CONVERSE_SESSION_RATE_LIMIT_WINDOW_MS,
 });
 
 interface McpConverseMessagesRateLimiterDependencies {
-  env: Pick<Env,
-    | "MCP_CONVERSE_SESSION_RATE_LIMIT_WINDOW_MS"
-    | "MCP_CONVERSE_MESSAGES_RATE_LIMIT_MAX_ATTEMPTS"
-  >;
+  env: Pick<Env, "MCP_CONVERSE_SESSION_RATE_LIMIT_WINDOW_MS">;
   abuseControlService: RateLimitAbuseControlPort;
   auditService: RateLimitAuditPort;
 }
@@ -93,7 +102,7 @@ export const createMcpConverseMessagesRateLimiter = (
   service: dependencies.abuseControlService,
   auditService: dependencies.auditService,
   scope: "mcp.converse.messages.session",
-  limit: dependencies.env.MCP_CONVERSE_MESSAGES_RATE_LIMIT_MAX_ATTEMPTS,
+  limit: MESSAGES_SESSION_LIMIT,
   windowMs: dependencies.env.MCP_CONVERSE_SESSION_RATE_LIMIT_WINDOW_MS,
   resolveSubjectKey: (_req, res) => {
     const principal = res.locals.mcpConversePrincipal as AgentConversePrincipal | undefined;

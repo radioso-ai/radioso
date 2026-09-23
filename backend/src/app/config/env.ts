@@ -183,24 +183,6 @@ const envSchema = z.object({
   MCP_CONVERSE_SESSION_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
   MCP_CONVERSE_SESSION_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(60),
   MCP_CONVERSE_SESSION_TOKEN_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(10),
-  // Conversation-update reads per session per window. A long poll spends one unit no
-  // matter how long it parks, so this is a call budget, not a time budget.
-  MCP_CONVERSE_MESSAGES_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(60),
-  // Conversation-update reads per calling source. A read may park for up to 25 s, so this
-  // rate is also what bounds how many sockets one source can hold open at once on a
-  // process: at 60 per minute, at most ~25 of its reads overlap.
-  MCP_CONVERSE_MESSAGES_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(60),
-  // Walk-in exchanges carry no credential, so the budget is what bounds them: per calling
-  // source, and per agent, because a new walk-in conversation spends the workspace's
-  // conversation allowance. An agent's own `walkInConversationsPerHour` overrides the
-  // per-agent default.
-  MCP_WALK_IN_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(3_600_000),
-  MCP_WALK_IN_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(20),
-  MCP_WALK_IN_AGENT_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(60),
-  // The bare per-agent counter is a backstop for many sources at once, not the everyday
-  // budget: it sits this many times above the per-source allowance so that a few abusive
-  // callers cannot spend an agent's whole window.
-  MCP_WALK_IN_AGENT_BACKSTOP_MULTIPLIER: z.coerce.number().int().min(2).default(10),
   // A skill-invoked external MCP tool call can be a full remote turn (e.g. a
   // Radioso-to-Radioso `converse` call), not just a round trip — this bounds only
   // `callTool`, separate from the shorter connect/discovery timeout.
@@ -276,8 +258,6 @@ const envSchema = z.object({
    * this plus `/a/{publicId}`. Discovery documents refuse to render without it.
    */
   PUBLIC_MCP_CONVERSE_URL: emptyStringToUndefined(z.string().url()),
-  /** Connect guide a discovery document points a calling agent at. */
-  PUBLIC_AGENT_DOCS_URL: emptyStringToUndefined(z.string().url()),
   RADIOSO_WIDGET_ORIGIN: emptyStringToUndefined(z.string().min(1)),
   RADIOSO_APPLICATION_MODULES: emptyStringToUndefined(z.string().min(1)),
 }).superRefine((value, ctx) => {

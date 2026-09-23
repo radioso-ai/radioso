@@ -182,7 +182,7 @@ Authorization: Bearer <session token>
 - `cursor` is opaque. Send back the one the previous reply gave you; the response's `cursor` is where to resume next time. Called with no cursor, the route returns the conversation's most recent page, so a client that has lost its place can pick the conversation up again.
 - `ownership` is the conversation's state alone, `ai_owned` or `human_owned`. The `suppressed` flag on an `ask_agent` reply says whether the agent generated anything on that turn; a read runs no turn, so it carries no such flag.
 - `waitMs` (0–25000) holds the request open until a message lands. At the deadline the route answers `200` with an empty `messages` list — nothing new yet, not a failure — so a client loops on the same cursor. The wait is raced against a short re-query, so a reply written by another API instance still wakes the call.
-- One call spends one unit of the session's read budget no matter how long it waits. `MCP_CONVERSE_MESSAGES_RATE_LIMIT_MAX_ATTEMPTS` (default 60) sets that budget per session per window, and `MCP_CONVERSE_MESSAGES_SOURCE_RATE_LIMIT_MAX_ATTEMPTS` (default 60) sets it per calling source. The second is also what bounds how many reads one source can have parked at once: at 60 a minute against a 25-second ceiling, about 25 of them overlap.
+- One call spends one unit of the read budget no matter how long it waits: 60 a minute per session, and 60 a minute per calling source. The per-source number is also what bounds how many reads one source can have parked at once — at 60 a minute against a 25-second ceiling, about 25 of them overlap.
 
 Over standalone MCP this is the `get_conversation_updates` tool, taking the same `cursor` and `waitMs`. The session's conversation is keyed by the `Mcp-Session-Id` header the server returns on first contact: echo it on every later request to stay in the same conversation. A client that drops the header gets a fresh conversation on each call, so the reply it is waiting for never arrives.
 
@@ -350,7 +350,7 @@ A caller reads `security` on the agent card to learn what it must bring. An empt
 
 Every document is served with `Cache-Control: max-age=300` and an `ETag`; send `If-None-Match` to revalidate. A public id that is unknown, has its card switched off, belongs to an unpublished agent, or belongs to a deleted one answers `404` with an identical body.
 
-A deployment serves these documents once `PUBLIC_MCP_CONVERSE_URL` names the MCP endpoint, without the per-agent suffix — one agent's endpoint is that value plus `/a/{publicId}`. Until it is set, the card routes answer `500` rather than publish a card whose endpoint is missing or guessed. `PUBLIC_AGENT_DOCS_URL` is optional and adds the connect guide link.
+A deployment serves these documents once `PUBLIC_MCP_CONVERSE_URL` names the MCP endpoint, without the per-agent suffix — one agent's endpoint is that value plus `/a/{publicId}`. Until it is set, the card routes answer `500` rather than publish a card whose endpoint is missing or guessed. The link to this guide comes from the documentation corpus the build ships, so there is nothing to configure for it.
 
 ## Connect Without a Credential
 

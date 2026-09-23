@@ -130,13 +130,13 @@ Rotating the id, or switching walk-in access off, refuses the **next** request o
 
 Walk-in traffic is spent against three hourly budgets before anything about the agent is resolved:
 
-| Budget | Default | Where it is set |
-|---|---|---|
-| New conversations per calling source, across every agent | 20 an hour | `MCP_WALK_IN_SOURCE_RATE_LIMIT_MAX_ATTEMPTS` |
-| New conversations per calling source, on one agent | 60 an hour | **Channels → MCP**, or `MCP_WALK_IN_AGENT_RATE_LIMIT_MAX_ATTEMPTS` |
-| New conversations on one agent, from everyone | 10× the number above | `MCP_WALK_IN_AGENT_BACKSTOP_MULTIPLIER` |
+| Budget | Limit |
+|---|---|
+| New conversations per calling source, across every agent | 20 an hour |
+| New conversations per calling source, on one agent | 60 an hour, or the number you set |
+| New conversations on one agent, from everyone | 10× the row above |
 
-The middle one is the number to tune: it is how many conversations one caller may open on your agent in an hour, and it is what stops a single looping caller from consuming the workspace's conversation allowance. Set it to the traffic you expect from one client.
+The middle one is yours to tune, in **Channels → MCP**: it is how many conversations one caller may open on your agent in an hour, and it is what stops a single looping caller from consuming the workspace's conversation allowance. Set it to the traffic you expect from one client. The other two are fixed.
 
 Because that budget is per caller, an abusive one exhausts its own allowance rather than the agent's. The third budget is the backstop for the other case — many callers at once — which is why it sits an order of magnitude higher; a published agent stays reachable while one client is being refused.
 

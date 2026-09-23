@@ -1,3 +1,4 @@
+import { readProductDoc } from "@radioso/product-docs";
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 
@@ -80,8 +81,11 @@ describe("agent discovery documents", () => {
       name: agent.name,
       description: "Answers questions about bookings and retreats.",
       url: `https://mcp.radioso.test/mcp/a/${publicId}`,
-      documentationUrl: "https://docs.radioso.test/guides/agent-converse",
+      // Resolved from the shipped documentation corpus, so a renamed or removed guide
+      // fails here rather than quietly dropping the link off every published card.
+      documentationUrl: readProductDoc("guides/agent-converse")?.url,
     });
+    expect(card.body.documentationUrl).toBe("https://docs.radioso.ai/guides/agent-converse");
     expect(card.body.skills.map((skill: { id: string }) => skill.id)).toEqual(["book_table"]);
     expect(card.body.security).toEqual([{}, { bearer: [] }]);
 

@@ -48,6 +48,7 @@ import type { CopilotRepositoryPort } from "../../modules/operatorCopilot/public
 import type { CopilotAuditPort } from "../../modules/operatorCopilot/public.js";
 import { enrichCopilotToolCatalog } from "../../modules/operatorCopilot/catalog.js";
 import { assertCopilotCapabilityProvenance, assertCopilotCapabilityProvenanceRegistry } from "../../modules/operatorCopilot/capabilityProvenance.js";
+import { assertOperatorMcpToolSchemas } from "../../modules/operatorCopilot/mcpToolSchema.js";
 import { createOpenApiDocument } from "../http/openapi/openApiDocument.js";
 import { operationPermissionRequirements } from "../http/openapi/operationPermissionRequirements.js";
 import { agentCopilotPrimitives } from "../../modules/agents/public.js";
@@ -260,5 +261,8 @@ export const createCopilotToolCatalog = (deps: {
     ownerExportedPrimitiveIds: new Set([...ownerExportedPrimitiveIds, ...contributed.applicationPrimitiveIds]),
     applicationPrimitiveIds: new Set([...Object.keys(copilotApplicationPrimitiveRegistry), ...contributed.applicationPrimitiveIds]),
   });
+  // Over the merged catalog, not the first-party half: a contributed descriptor is served through
+  // the same `tools/list`, and one schema a client cannot read hides every other tool with it.
+  assertOperatorMcpToolSchemas(descriptors);
   return enrichCopilotToolCatalog(descriptors, deps.workspaceRouteKeyResolver);
 };

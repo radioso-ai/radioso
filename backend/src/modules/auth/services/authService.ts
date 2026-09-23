@@ -24,6 +24,7 @@ import {
   failFederatedLoginStage,
   runFederatedLoginStage,
   unwrapFederatedLoginFailure,
+  withFederatedLoginFailureDetail,
   type FederatedLoginFailureLabel,
 } from "./federatedLoginFailure.js";
 import type { WorkspaceService } from "../../workspace/public.js";
@@ -131,20 +132,23 @@ type LoginMembership = Awaited<ReturnType<AccountAccessService["resolveLoginAcco
 
 /**
  * Names a refusal to create the organization a first-time federated sign-in
- * needs, so a closed signup or an exhausted quota reads as the policy decision
- * it is instead of as a provisioning fault.
+ * needs, so a closed signup reads as the policy decision it is instead of as a
+ * provisioning fault. "We will not" and "we could not tell" send an operator to
+ * different places.
+ *
+ * Closed signup is the only refusal a federated first sign-in can meet: no
+ * shipped guard applies a quota to `intent: "signup"`, so a quota reason here
+ * would name a case nothing produces. A guard that starts refusing signups on
+ * a quota needs its own reason, added with the test that reaches it.
+ *
+ * The denial's payload stays out: it can carry another customer's organization
+ * name, and an audit record must not.
  */
-const federatedSignupRefusal = (error: unknown): FederatedLoginFailureLabel => {
-  const denial = describeOrganizationCreationDenial(error);
-  if (!denial) {
-    return { reason: "account_provisioning_failed" };
-  }
-
-  return {
-    reason: denial.rateLimited ? "rate_limited" : "registration_closed",
-    ...(denial.rateLimit ? { detail: { rateLimit: denial.rateLimit } } : {}),
-  };
-};
+const federatedSignupRefusal = (error: unknown): FederatedLoginFailureLabel => (
+  describeOrganizationCreationDenial(error)
+    ? { reason: "registration_closed" }
+    : { reason: "account_provisioning_failed" }
+);
 
 export class AuthService {
   constructor(private readonly dependencies: AuthServiceDependencies) {}
@@ -481,7 +485,7 @@ export class AuthService {
       await this.dependencies.auditService.record({
         eventType: "auth.federated_login",
         eventStatus: "failure",
-        metadata: { ...identity, reason, ...detail },
+        metadata: { ...identity, reason, ...(detail ? { detail } : {}) },
       });
     } catch {
       // A sink that cannot take the record must not replace the sign-in failure
@@ -553,7 +557,8 @@ export class AuthService {
       this.dependencies.accountRepository.findById(membership.accountId));
 
     // Recorded last, once the attempt can no longer fail, so one sign-in never
-    // leaves both a success and a failure behind.
+    // leaves both a success and a failure behind. Nothing that can throw may
+    // follow it.
     await this.dependencies.auditService.record({
       accountId: membership.accountId,
       eventType: "auth.federated_login",
@@ -631,13 +636,14 @@ export class AuthService {
     // verified.
     const passwordHash = await hashPassword(generateSessionToken());
     const organizationName = deriveOrganizationName(input.email);
-    let organizationCreationReservation: OrganizationCreationReservation;
-    try {
-      organizationCreationReservation = await (this.dependencies.organizationCreationGuard ?? noopOrganizationCreationGuard)
-        .reserve({ intent: "signup" });
-    } catch (error) {
-      throw failFederatedLoginStage(federatedSignupRefusal(error), error);
-    }
+    // Unguarded on purpose: neither shipped guard can answer a signup
+    // reservation with anything but a reservation -- OSS refuses only
+    // `intent: "additional"`, and Enterprise returns an inert reservation
+    // before it touches a counter. A guard that later says no here would reach
+    // the top-level catch unnamed, which is what `unexpected_error` reports;
+    // naming it now would mean shipping a reason no code can produce.
+    const organizationCreationReservation = await (this.dependencies.organizationCreationGuard ?? noopOrganizationCreationGuard)
+      .reserve({ intent: "signup" });
 
     let core: OrganizationCoreProvisioningResult | null = null;
     try {
@@ -660,19 +666,20 @@ export class AuthService {
       const sessionCookie = await runFederatedLoginStage({ reason: "session_write_failed" }, () =>
         this.createSessionCookie(provisioned.userId, provisioned.account.id));
       await organizationCreationReservation.commit({ accountId: provisioned.account.id });
+      await this.trackRegistration({
+        accountId: provisioned.account.id,
+        workspaceId: provisioned.workspace.id,
+        requiresEmailVerification: false,
+      });
 
       // Recorded last, once the attempt can no longer fail, so one sign-in never
-      // leaves both a success and a failure behind.
+      // leaves both a success and a failure behind. Nothing that can throw may
+      // follow it -- `trackRegistration` swallows its own faults and runs above.
       await this.dependencies.auditService.record({
         accountId: provisioned.account.id,
         eventType: "auth.federated_login",
         eventStatus: "success",
         metadata: { email: input.email, provider: input.provider, subject: input.subject, provisioned: true },
-      });
-      await this.trackRegistration({
-        accountId: provisioned.account.id,
-        workspaceId: provisioned.workspace.id,
-        requiresEmailVerification: false,
       });
 
       return {
@@ -685,17 +692,48 @@ export class AuthService {
         sessionCookie,
       };
     } catch (error) {
-      try {
-        if (core) {
-          await this.rollbackCreatedAccount(core.account.id, core.userId);
-        }
-      } finally {
-        await organizationCreationReservation.release();
-      }
+      const cleanup = await this.unwindFailedFederatedProvisioning(organizationCreationReservation, core);
       // OSS answers a closed signup from the provisioner rather than the
-      // reservation, so a refusal reaches here too and keeps its own name.
-      throw failFederatedLoginStage(federatedSignupRefusal(error), error);
+      // reservation, so a refusal reaches here and keeps its own name.
+      const named = failFederatedLoginStage(federatedSignupRefusal(error), error);
+      throw cleanup ? withFederatedLoginFailureDetail(named, cleanup) : named;
     }
+  }
+
+  /**
+   * Undoes a first sign-in that failed partway through provisioning.
+   *
+   * Both steps are best-effort. A failed provisioning step and a failed
+   * rollback usually share one cause -- the database that would not take the
+   * write will not take the delete either -- so letting cleanup throw would
+   * hand the caller the delete's error and audit the attempt under a stage
+   * that never ran.
+   *
+   * An account that outlives its signup is not silent, though: in OSS one is
+   * what closes registration for everyone afterwards, so it is named on the
+   * attempt's own failure record. Releasing a reservation only returns unused
+   * quota, which the next attempt re-reserves, so that one just fails quietly.
+   */
+  private async unwindFailedFederatedProvisioning(
+    reservation: OrganizationCreationReservation,
+    core: OrganizationCoreProvisioningResult | null,
+  ): Promise<Record<string, unknown> | undefined> {
+    let orphaned: Record<string, unknown> | undefined;
+    if (core) {
+      try {
+        await this.rollbackCreatedAccount(core.account.id, core.userId);
+      } catch {
+        orphaned = { orphanedAccountId: core.account.id };
+      }
+    }
+
+    try {
+      await reservation.release();
+    } catch {
+      // Deliberately swallowed: see above.
+    }
+
+    return orphaned;
   }
 
   /**

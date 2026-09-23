@@ -1,3 +1,5 @@
+import express from "express";
+import request from "supertest";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ApplicationModuleRegistrationContext, ApplicationRouteMount } from "../radiosoModuleTypes.js";
@@ -71,11 +73,17 @@ describe("resolveGoogleLoginSuccessRedirect", () => {
 describe("createGoogleLoginApplicationModule", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
   });
 
   // Mounts the module the way the host does at boot: register, then build the
   // router with the dependencies OSS hands every route mount.
-  const mountRouter = (dependencies: { APP_BASE_URL?: string; info: () => void }) => {
+  const mountRouter = (dependencies: {
+    APP_BASE_URL?: string;
+    info: () => void;
+    warn?: () => void;
+    federatedLogin?: () => Promise<unknown>;
+  }) => {
     let mount: ApplicationRouteMount | undefined;
     createGoogleLoginApplicationModule().register?.({
       registerRouteMount: (registered: ApplicationRouteMount) => {
@@ -85,13 +93,16 @@ describe("createGoogleLoginApplicationModule", () => {
     if (!mount) {
       throw new Error("Expected the module to register a route mount");
     }
-    mount.createRouter({
+    const router = mount.createRouter({
       env: { APP_BASE_URL: dependencies.APP_BASE_URL },
-      logger: { info: dependencies.info },
-      authService: { federatedLogin: vi.fn() },
+      logger: { info: dependencies.info, warn: dependencies.warn ?? vi.fn() },
+      authService: { federatedLogin: dependencies.federatedLogin ?? vi.fn() },
       auditService: { record: vi.fn() },
       abuseControlService: { enforce: vi.fn() },
     } as unknown as Parameters<ApplicationRouteMount["createRouter"]>[0]);
+    const app = express();
+    app.use(mount.path, router);
+    return app;
   };
 
   it("names the missing credentials at boot when the sign-in stays disabled", () => {
@@ -118,6 +129,43 @@ describe("createGoogleLoginApplicationModule", () => {
 
     expect(info).toHaveBeenCalledWith(
       expect.objectContaining({ missing: ["GOOGLE_LOGIN_REDIRECT_URI or APP_BASE_URL"] }),
+      expect.any(String),
+    );
+  });
+
+  // The boot line proves the logger arrives; this proves it is handed to the
+  // router, which is where a failed sign-in's error would otherwise vanish.
+  it("hands the host logger to the router so a failed sign-in is reported", async () => {
+    vi.stubEnv("GOOGLE_LOGIN_CLIENT_ID", "client");
+    vi.stubEnv("GOOGLE_LOGIN_CLIENT_SECRET", "secret");
+    vi.stubEnv("GOOGLE_LOGIN_REDIRECT_URI", "https://app.example.com/api/v1/ee/auth/google/callback");
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => (url.includes("token")
+          ? { access_token: "access-token" }
+          : { sub: "google-sub", email: "person@example.com", email_verified: true }),
+      } as unknown as Response;
+    }));
+    const warn = vi.fn();
+
+    const app = mountRouter({
+      APP_BASE_URL: "https://app.example.com",
+      info: vi.fn(),
+      warn,
+      federatedLogin: async () => {
+        throw new Error("database unavailable");
+      },
+    });
+
+    await request(app)
+      .get("/api/v1/ee/auth/google/callback?code=auth-code&state=fixed-state")
+      .set("Cookie", "radioso_google_login_state=fixed-state");
+
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.objectContaining({ message: "database unavailable" }) }),
       expect.any(String),
     );
   });

@@ -84,6 +84,7 @@ export const createGoogleLoginApplicationModule = (): ApplicationModule => ({
           authService: dependencies.authService,
           auditService: dependencies.auditService,
           abuseControlService: dependencies.abuseControlService,
+          logger: dependencies.logger,
         });
       },
     });

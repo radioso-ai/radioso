@@ -28,8 +28,6 @@ export type FederatedLoginFailureReason =
   | "session_write_failed"
   /** Signup is closed, so a first-time sign-in has nowhere to land. */
   | "registration_closed"
-  /** An organization-creation quota refused the signup. */
-  | "rate_limited"
   /** Provisioning a first-time account and workspace failed. */
   | "account_provisioning_failed"
   /** Nothing named the stage, so the failure escaped an unlabelled path. */
@@ -82,3 +80,20 @@ export const describeFederatedLoginFailure = (failure: unknown): FederatedLoginF
 export const unwrapFederatedLoginFailure = (failure: unknown): unknown => (
   failure instanceof LabelledFederatedLoginFailure ? failure.failure : failure
 );
+
+/**
+ * Adds audit detail to an already-named failure without renaming it, so a
+ * consequence discovered after the fact -- cleanup that could not run, say --
+ * rides along on the one record the attempt produces instead of needing a
+ * record of its own.
+ */
+export const withFederatedLoginFailureDetail = (
+  failure: unknown,
+  detail: Record<string, unknown>,
+): unknown => {
+  const label = describeFederatedLoginFailure(failure);
+  return new LabelledFederatedLoginFailure(
+    { ...label, detail: { ...label.detail, ...detail } },
+    unwrapFederatedLoginFailure(failure),
+  );
+};

@@ -19,6 +19,7 @@ import {
   type SessionRepositoryPort,
 } from "../../src/modules/auth/services/authService.js";
 import { sha256 } from "../../src/modules/auth/domain/authPrimitives.js";
+import { registrationClosed } from "../../src/modules/auth/services/ossOrganizationCreationGuard.js";
 import { WorkspaceService } from "../../src/modules/workspace/services/workspaceService.js";
 import type {
   OrganizationCoreProvisioner,
@@ -150,13 +151,15 @@ class RecordingOrganizationCreationGuard implements OrganizationCreationGuard {
   readonly reservations: RecordingOrganizationCreationReservation[] = [];
   readonly requests: OrganizationCreationRequest[] = [];
   shouldReject: Error | null = null;
+  /** Makes every reservation this guard hands out fail when it is released. */
+  releaseError: Error | null = null;
 
   async reserve(input: OrganizationCreationRequest): Promise<OrganizationCreationReservation> {
     this.requests.push(input);
     if (this.shouldReject) {
       throw this.shouldReject;
     }
-    const reservation = new RecordingOrganizationCreationReservation();
+    const reservation = new RecordingOrganizationCreationReservation(this.releaseError);
     this.reservations.push(reservation);
     return reservation;
   }
@@ -171,6 +174,8 @@ class RecordingOrganizationCreationReservation implements OrganizationCreationRe
   released = false;
   accountId: string | null = null;
 
+  constructor(private readonly releaseError: Error | null = null) {}
+
   async commit(input: { accountId: string }): Promise<void> {
     this.committed = true;
     this.accountId = input.accountId;
@@ -178,6 +183,9 @@ class RecordingOrganizationCreationReservation implements OrganizationCreationRe
 
   async release(): Promise<void> {
     this.released = true;
+    if (this.releaseError) {
+      throw this.releaseError;
+    }
   }
 }
 
@@ -1287,15 +1295,17 @@ describe("AuthService federated login failure auditing", () => {
     ]);
   });
 
-  it("names closed registration without carrying the denial's payload into the audit", async () => {
-    const guard = new RecordingOrganizationCreationGuard();
-    guard.shouldReject = Object.assign(new Error("Registration is closed"), {
-      statusCode: 403,
-      code: "forbidden",
-      details: { organizationName: "Sensitive Org", email: "owner@example.com" },
-    });
+  // The refusal a closed OSS install actually produces. No guard refuses the
+  // signup reservation -- OSS only refuses `intent: "additional"`, and
+  // Enterprise hands back an inert reservation before it touches a counter --
+  // so the provisioner is the only thing on this path that can say no.
+  it("names closed registration when the provisioner refuses a first sign-in", async () => {
     const context = createAuthService({
-      organizationCreationGuard: guard,
+      organizationProvisioner: {
+        provision: async () => {
+          throw registrationClosed();
+        },
+      },
       sessionRepository: new WorkingSessionRepository(),
     });
 
@@ -1308,6 +1318,9 @@ describe("AuthService federated login failure auditing", () => {
       }),
     ).rejects.toMatchObject({ statusCode: 403, code: "forbidden" });
 
+    // Exact, not partial: a refusal's payload can name other customers'
+    // organizations, so nothing beyond the identity and the reason may ride
+    // into the audit record.
     expect(federatedFailures(context.auditService)).toEqual([
       {
         eventType: "auth.federated_login",
@@ -1319,6 +1332,180 @@ describe("AuthService federated login failure auditing", () => {
           reason: "registration_closed",
         },
       },
+    ]);
+  });
+
+  it("separates a membership store fault from a membership that is gone", async () => {
+    const context = createAuthService({ sessionRepository: new WorkingSessionRepository() });
+    await registerVerifiedUser(context, "membership-fault@example.com");
+    // The same call that answers "no active membership" with a domain error,
+    // faulting instead. Only the error's type tells the two apart, so both
+    // sides of that predicate are pinned.
+    context.accountMembershipRepository.listActiveByUser = async () => {
+      throw new Error("membership store unavailable");
+    };
+
+    await expect(
+      context.authService.federatedLogin({
+        provider: "google",
+        subject: "sub-membership-fault",
+        email: "membership-fault@example.com",
+        emailVerified: true,
+      }),
+    ).rejects.toThrow("membership store unavailable");
+
+    expect(federatedFailures(context.auditService)).toEqual([
+      expect.objectContaining({
+        metadata: expect.objectContaining({ reason: "membership_lookup_failed" }),
+      }),
+    ]);
+  });
+
+  it("names the reverification step when a never-verified account cannot be marked verified", async () => {
+    const context = createAuthService({
+      userRepository: new MarkEmailVerifiedFailingUserRepository(),
+      sessionRepository: new WorkingSessionRepository(),
+    });
+    await context.authService.register({
+      email: "reverify-fault@example.com",
+      password: "verysecurepassword",
+    });
+
+    await expect(
+      context.authService.federatedLogin({
+        provider: "google",
+        subject: "sub-reverify-fault",
+        email: "reverify-fault@example.com",
+        emailVerified: true,
+      }),
+    ).rejects.toThrow("mark email verified failed");
+
+    expect(federatedFailures(context.auditService)).toEqual([
+      expect.objectContaining({
+        metadata: expect.objectContaining({ reason: "account_reverification_failed" }),
+      }),
+    ]);
+  });
+
+  it("names the workspace step when the login workspace cannot be resolved", async () => {
+    const workspaceService = new WorkspaceService(new InMemoryWorkspaceRepository(), createAuditService());
+    const context = createAuthService({
+      workspaceService,
+      sessionRepository: new WorkingSessionRepository(),
+    });
+    await registerVerifiedUser(context, "workspace-fault@example.com");
+    workspaceService.resolveLoginWorkspace = async () => {
+      throw new Error("workspace store unavailable");
+    };
+
+    await expect(
+      context.authService.federatedLogin({
+        provider: "google",
+        subject: "sub-workspace-fault",
+        email: "workspace-fault@example.com",
+        emailVerified: true,
+      }),
+    ).rejects.toThrow("workspace store unavailable");
+
+    expect(federatedFailures(context.auditService)).toEqual([
+      expect.objectContaining({
+        metadata: expect.objectContaining({ reason: "workspace_unavailable" }),
+      }),
+    ]);
+  });
+
+  it("names the account read when the account store faults after the session is issued", async () => {
+    const accountRepository = new TrackingAccountRepository();
+    const context = createAuthService({
+      accountRepository,
+      sessionRepository: new WorkingSessionRepository(),
+    });
+    await registerVerifiedUser(context, "account-fault@example.com");
+    accountRepository.findById = async () => {
+      throw new Error("account store unavailable");
+    };
+
+    await expect(
+      context.authService.federatedLogin({
+        provider: "google",
+        subject: "sub-account-fault",
+        email: "account-fault@example.com",
+        emailVerified: true,
+      }),
+    ).rejects.toThrow("account store unavailable");
+
+    expect(federatedFailures(context.auditService)).toEqual([
+      expect.objectContaining({
+        metadata: expect.objectContaining({ reason: "account_lookup_failed" }),
+      }),
+    ]);
+  });
+
+  // A first sign-in that fails mid-provisioning usually fails because the
+  // database is down, which is also what makes the rollback fail. Cleanup must
+  // not overwrite the failure it is cleaning up after.
+  it("keeps the failing step's name and error when the rollback fails too", async () => {
+    const accountRepository = new TrackingAccountRepository();
+    accountRepository.deleteById = async () => {
+      throw new Error("account delete failed");
+    };
+    const federatedIdentityRepository = new InMemoryFederatedIdentityRepository();
+    federatedIdentityRepository.link = async () => {
+      throw new Error("link write failed");
+    };
+    const context = createAuthService({
+      accountRepository,
+      federatedIdentityRepository,
+      sessionRepository: new WorkingSessionRepository(),
+    });
+
+    await expect(
+      context.authService.federatedLogin({
+        provider: "google",
+        subject: "sub-rollback-fault",
+        email: "rollback-fault@example.com",
+        emailVerified: true,
+      }),
+    ).rejects.toThrow("link write failed");
+
+    expect(federatedFailures(context.auditService)).toEqual([
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          reason: "identity_link_write_failed",
+          // The account row that outlived its signup. In OSS an orphan here is
+          // what closes registration for everyone, so it is named rather than
+          // swallowed.
+          detail: { orphanedAccountId: "account-1" },
+        }),
+      }),
+    ]);
+  });
+
+  it("keeps the failing step's name and error when releasing the reservation fails too", async () => {
+    const guard = new RecordingOrganizationCreationGuard();
+    guard.releaseError = new Error("reservation release failed");
+    const context = createAuthService({
+      organizationCreationGuard: guard,
+      sessionRepository: new WorkingSessionRepository(),
+      onAccountCreated: async () => {
+        throw new Error("provisioning hook failed");
+      },
+    });
+
+    await expect(
+      context.authService.federatedLogin({
+        provider: "google",
+        subject: "sub-release-fault",
+        email: "release-fault@example.com",
+        emailVerified: true,
+      }),
+    ).rejects.toThrow("provisioning hook failed");
+
+    expect(guard.reservations[0]?.released).toBe(true);
+    expect(federatedFailures(context.auditService)).toEqual([
+      expect.objectContaining({
+        metadata: expect.objectContaining({ reason: "account_provisioning_failed" }),
+      }),
     ]);
   });
 
@@ -1349,6 +1536,33 @@ describe("AuthService federated login failure auditing", () => {
         }),
       }),
     ]);
+  });
+
+  // The success record is written once nothing that can throw is left, so a
+  // sign-in cannot leave both a success and a failure behind. This pins the
+  // step that used to follow it.
+  it("reports a first-time registration before recording the sign-in as successful", async () => {
+    let successAlreadyRecorded: boolean | null = null;
+    const context: ReturnType<typeof createAuthService> = createAuthService({
+      sessionRepository: new WorkingSessionRepository(),
+      productAnalytics: {
+        async track() {
+          successAlreadyRecorded = context.auditService.events.some(
+            (event) => event.eventType === "auth.federated_login" && event.eventStatus === "success",
+          );
+          return null;
+        },
+      },
+    });
+
+    await context.authService.federatedLogin({
+      provider: "google",
+      subject: "sub-order",
+      email: "order@example.com",
+      emailVerified: true,
+    });
+
+    expect(successAlreadyRecorded).toBe(false);
   });
 
   it("records no failure for a sign-in that succeeds", async () => {

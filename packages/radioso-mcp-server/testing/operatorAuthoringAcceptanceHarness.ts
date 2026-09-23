@@ -214,7 +214,7 @@ try {
   } while (offset >= 0);
   const canonicalStep = (JSON.parse(canonicalJson) as { steps?: Array<Record<string, unknown>> }).steps?.[0];
   assert.ok(canonicalStep, "routine_definition must expose a canonical editable step");
-  const routineUpdate = await mcpCall("mcp1150-routine-update", "prepare_routine_structure", { agentId: agent.id, routineId, operations: [{ kind: "replace_step", previous: canonicalStep, next: { ...canonicalStep, instruction: "Collect the return order number." } }] });
+  const routineUpdate = await mcpCall("mcp1150-routine-update", "prepare_routine_structure", { kind: "edit", agentId: agent.id, routineId, operations: [{ kind: "replace_step", previous: canonicalStep, next: { ...canonicalStep, instruction: "Collect the return order number." } }] });
   const routineUpdateReview = routineUpdate.result?.structuredContent;
   const routineUpdated = await mcpCall("mcp1150-routine-update-execute", "execute_reviewed_proposal", { proposalId: routineUpdateReview!.proposalId, reviewDigest: routineUpdateReview!.reviewDigest });
   assert.equal(routineUpdated.result?.structuredContent?.status, "applied");

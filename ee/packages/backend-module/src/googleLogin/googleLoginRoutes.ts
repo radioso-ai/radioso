@@ -27,6 +27,12 @@ export interface GoogleLoginRouterOptions {
   auditService?: Pick<RouteDependencies["auditService"], "record">;
   /** Required (not best-effort like `auditService`): without it neither OAuth entry route is throttled. */
   abuseControlService: RateLimitAbuseControlPort;
+  /**
+   * Narrow sink for the one line a failed sign-in writes. `federatedLogin`
+   * records *which* of its steps refused; the error itself only exists out
+   * here, so nothing else can report it.
+   */
+  logger?: { warn(entry: unknown, message?: string): void };
   fetchImpl?: FetchLike;
   generateState?: () => string;
 }
@@ -246,8 +252,16 @@ export const createGoogleLoginRouter = (options: GoogleLoginRouterOptions): Rout
 
     clearHandshakeCookies();
 
+    let identity: Awaited<ReturnType<typeof resolveGoogleIdentity>>;
     try {
-      const identity = await resolveGoogleIdentity({ config, code, fetchImpl });
+      identity = await resolveGoogleIdentity({ config, code, fetchImpl });
+    } catch {
+      await recordFailure("oauth_exchange_failed");
+      res.redirect(failureTarget);
+      return;
+    }
+
+    try {
       const result = await authService.federatedLogin({
         provider: PROVIDER,
         subject: identity.subject,
@@ -256,10 +270,19 @@ export const createGoogleLoginRouter = (options: GoogleLoginRouterOptions): Rout
       });
       res.append("Set-Cookie", result.sessionCookie);
       res.redirect(successTarget);
-    } catch {
-      // federatedLogin records its own audit for verified-but-rejected cases;
-      // this covers OAuth exchange / userinfo failures.
-      await recordFailure("oauth_exchange_failed");
+    } catch (error) {
+      // `federatedLogin` audits its own stage, naming which of its steps said
+      // no. From out here a rejected identity, a deactivated membership and a
+      // failed write all look the same, so a record written here could only
+      // guess -- and would double-count the attempt. The error object is
+      // another matter: it exists nowhere else, so it is logged once per
+      // failed attempt. The fields set here name no one; the error itself is
+      // whatever the failing step raised, and the same attempt's audit record
+      // already carries the address, so it reveals no more than that.
+      options.logger?.warn(
+        { event: "ee.google_login.callback", provider: PROVIDER, outcome: "failure", err: error },
+        "Google sign-in did not complete",
+      );
       res.redirect(failureTarget);
     }
   });

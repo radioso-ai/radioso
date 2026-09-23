@@ -1,10 +1,12 @@
 locals {
-  posthog_api_key_configured           = nonsensitive(try(length(trimspace(var.posthog_api_key)) > 0, false))
-  slack_oauth_client_id_configured     = nonsensitive(try(length(trimspace(var.slack_oauth_client_id)) > 0, false))
-  slack_oauth_client_secret_configured = nonsensitive(try(length(trimspace(var.slack_oauth_client_secret)) > 0, false))
-  slack_signing_secret_configured      = nonsensitive(try(length(trimspace(var.slack_signing_secret)) > 0, false))
-  ee_usage_admin_token_configured      = nonsensitive(try(length(trimspace(var.ee_usage_admin_token)) > 0, false))
-  ops_event_webhook_secret_configured  = nonsensitive(try(length(trimspace(var.ops_event_webhook_secret)) > 0, false))
+  posthog_api_key_configured            = nonsensitive(try(length(trimspace(var.posthog_api_key)) > 0, false))
+  slack_oauth_client_id_configured      = nonsensitive(try(length(trimspace(var.slack_oauth_client_id)) > 0, false))
+  slack_oauth_client_secret_configured  = nonsensitive(try(length(trimspace(var.slack_oauth_client_secret)) > 0, false))
+  slack_signing_secret_configured       = nonsensitive(try(length(trimspace(var.slack_signing_secret)) > 0, false))
+  google_login_client_id_configured     = nonsensitive(try(length(trimspace(var.google_login_client_id)) > 0, false))
+  google_login_client_secret_configured = nonsensitive(try(length(trimspace(var.google_login_client_secret)) > 0, false))
+  ee_usage_admin_token_configured       = nonsensitive(try(length(trimspace(var.ee_usage_admin_token)) > 0, false))
+  ops_event_webhook_secret_configured   = nonsensitive(try(length(trimspace(var.ops_event_webhook_secret)) > 0, false))
 
   secret_values = merge(
     {
@@ -37,6 +39,12 @@ locals {
     } : {},
     local.slack_signing_secret_configured ? {
       "slack-signing-secret" = var.slack_signing_secret
+    } : {},
+    local.google_login_client_id_configured ? {
+      "google-login-client-id" = var.google_login_client_id
+    } : {},
+    local.google_login_client_secret_configured ? {
+      "google-login-client-secret" = var.google_login_client_secret
     } : {},
     local.ee_usage_admin_token_configured ? {
       "ee-usage-admin-token" = var.ee_usage_admin_token
@@ -77,6 +85,12 @@ locals {
     } : {},
     local.slack_signing_secret_configured ? {
       "slack-signing-secret" = true
+    } : {},
+    local.google_login_client_id_configured ? {
+      "google-login-client-id" = true
+    } : {},
+    local.google_login_client_secret_configured ? {
+      "google-login-client-secret" = true
     } : {},
     local.ee_usage_admin_token_configured ? {
       "ee-usage-admin-token" = true

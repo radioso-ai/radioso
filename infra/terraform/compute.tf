@@ -399,6 +399,30 @@ resource "google_cloud_run_v2_service" "backend" {
         }
       }
       dynamic "env" {
+        for_each = local.google_login_client_id_configured ? [google_secret_manager_secret.secrets["google-login-client-id"].secret_id] : []
+        content {
+          name = "GOOGLE_LOGIN_CLIENT_ID"
+          value_source {
+            secret_key_ref {
+              secret  = env.value
+              version = "latest"
+            }
+          }
+        }
+      }
+      dynamic "env" {
+        for_each = local.google_login_client_secret_configured ? [google_secret_manager_secret.secrets["google-login-client-secret"].secret_id] : []
+        content {
+          name = "GOOGLE_LOGIN_CLIENT_SECRET"
+          value_source {
+            secret_key_ref {
+              secret  = env.value
+              version = "latest"
+            }
+          }
+        }
+      }
+      dynamic "env" {
         for_each = var.resend_mail_api_key != null ? [google_secret_manager_secret.secrets["resend-mail-api-key"].secret_id] : []
         content {
           name = "RESEND_MAIL_API_KEY"

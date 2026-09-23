@@ -448,4 +448,43 @@ describe("google login routes", () => {
     expect(response.headers.location).toContain("error=google_login_failed");
     expect(record).not.toHaveBeenCalled();
   });
+
+  // The audit row names the step that refused; the error object exists only
+  // here, so without this line an operator debugging a sign-in has a reason
+  // and no stack.
+  it("logs the sign-in error once, without the identity or the token", async () => {
+    const warn = vi.fn();
+    const federatedLogin = vi.fn(async () => {
+      throw new Error("database unavailable");
+    });
+    const { app } = createApp({
+      fetchImpl: createSuccessfulFetch(),
+      authService: { federatedLogin },
+      logger: { warn },
+    });
+
+    await request(app)
+      .get("/api/v1/ee/auth/google/callback?code=auth-code&state=fixed-state")
+      .set("Cookie", `${STATE_COOKIE_NAME}=fixed-state`);
+
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.objectContaining({ message: "database unavailable" }) }),
+      expect.any(String),
+    );
+    const logged = JSON.stringify(warn.mock.calls);
+    expect(logged).not.toContain("person@example.com");
+    expect(logged).not.toContain("access-token");
+  });
+
+  it("completes a sign-in without logging a failure", async () => {
+    const warn = vi.fn();
+    const { app } = createApp({ fetchImpl: createSuccessfulFetch(), logger: { warn } });
+
+    await request(app)
+      .get("/api/v1/ee/auth/google/callback?code=auth-code&state=fixed-state")
+      .set("Cookie", `${STATE_COOKIE_NAME}=fixed-state`);
+
+    expect(warn).not.toHaveBeenCalled();
+  });
 });

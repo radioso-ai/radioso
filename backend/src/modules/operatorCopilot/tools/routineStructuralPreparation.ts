@@ -22,31 +22,67 @@ import { canonicalReviewedOperationDigest } from "../reviewedOperation.js";
 import { badRequest } from "../../../shared/domain/errors.js";
 import { copilotProposalOrigin } from "./shared.js";
 
-const structuralInputSchema = z.object({
-  agentId: z.string().uuid(),
-  routineId: z.string().uuid(),
-  operations: z.array(z.discriminatedUnion("kind", [
-    z.object({ kind: z.literal("set_enabled"), enabled: z.boolean() }).strict(),
-    z.object({ kind: z.literal("reorder_steps"), stableStepIds: z.array(z.string().min(1)).min(1) }).strict(),
-    z.object({ kind: z.literal("insert_step"), step: routineStepSchema }).strict(),
-    z.object({ kind: z.literal("replace_step"), previous: routineStepSchema, next: routineStepSchema }).strict(),
-    z.object({ kind: z.literal("remove_step"), stableStepId: z.string().min(1) }).strict(),
-    z.object({ kind: z.literal("insert_slot"), slot: routineSlotSchema }).strict(),
-    z.object({ kind: z.literal("replace_slot"), previous: routineSlotSchema, next: routineSlotSchema }).strict(),
-    z.object({ kind: z.literal("remove_slot"), stableSlotId: z.string().min(1) }).strict(),
-    z.object({ kind: z.literal("insert_terminal"), terminal: routineTerminalSchema }).strict(),
-    z.object({ kind: z.literal("replace_terminal"), previous: routineTerminalSchema, next: routineTerminalSchema }).strict(),
-    z.object({ kind: z.literal("remove_terminal"), stableStepId: z.string().min(1) }).strict(),
-    z.object({ kind: z.literal("insert_transition"), transition: routineTransitionSchema }).strict(),
-    z.object({ kind: z.literal("replace_transition"), previous: routineTransitionSchema, next: routineTransitionSchema }).strict(),
-    z.object({ kind: z.literal("remove_transition"), transition: routineTransitionSchema }).strict(),
-  ])).min(1).max(100),
-}).strict();
-const inputSchema = z.union([
-  structuralInputSchema,
-  z.object({ kind: z.literal("create"), agentId: z.string().uuid(), draft: routineDefinitionDraftInputSchema }).strict(),
-  z.object({ kind: z.literal("delete"), agentId: z.string().uuid(), routineId: z.string().uuid() }).strict(),
+const structuralOperationSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("set_enabled"), enabled: z.boolean() }).strict(),
+  z.object({ kind: z.literal("reorder_steps"), stableStepIds: z.array(z.string().min(1)).min(1) }).strict(),
+  z.object({ kind: z.literal("insert_step"), step: routineStepSchema }).strict(),
+  z.object({ kind: z.literal("replace_step"), previous: routineStepSchema, next: routineStepSchema }).strict(),
+  z.object({ kind: z.literal("remove_step"), stableStepId: z.string().min(1) }).strict(),
+  z.object({ kind: z.literal("insert_slot"), slot: routineSlotSchema }).strict(),
+  z.object({ kind: z.literal("replace_slot"), previous: routineSlotSchema, next: routineSlotSchema }).strict(),
+  z.object({ kind: z.literal("remove_slot"), stableSlotId: z.string().min(1) }).strict(),
+  z.object({ kind: z.literal("insert_terminal"), terminal: routineTerminalSchema }).strict(),
+  z.object({ kind: z.literal("replace_terminal"), previous: routineTerminalSchema, next: routineTerminalSchema }).strict(),
+  z.object({ kind: z.literal("remove_terminal"), stableStepId: z.string().min(1) }).strict(),
+  z.object({ kind: z.literal("insert_transition"), transition: routineTransitionSchema }).strict(),
+  z.object({ kind: z.literal("replace_transition"), previous: routineTransitionSchema, next: routineTransitionSchema }).strict(),
+  z.object({ kind: z.literal("remove_transition"), transition: routineTransitionSchema }).strict(),
 ]);
+
+/** The fields each `kind` carries; everything else on that call is a mistake worth naming. */
+const fieldsPerKind = {
+  edit: ["routineId", "operations"],
+  create: ["draft"],
+  delete: ["routineId"],
+} as const satisfies Record<string, ReadonlyArray<"routineId" | "operations" | "draft">>;
+const conditionalFields = ["routineId", "operations", "draft"] as const;
+const conditionalFieldTypes = { routineId: "string", operations: "array", draft: "object" } as const satisfies Record<typeof conditionalFields[number], z.ZodParsedType>;
+
+/**
+ * One tagged object rather than a union of three untagged object shapes. A `z.union` serializes to
+ * a root-level `anyOf` with no `properties`: an MCP client that builds a signature from
+ * `properties` advertises a tool that takes no arguments, strict-mode function calling refuses a
+ * root-level `anyOf` outright, and the text-routed gateway renders the whole tool as `(unknown)`.
+ * `kind` states which of the three calls this is; the refinement below keeps the per-kind
+ * requirements the branches used to carry.
+ */
+const inputSchema = z.object({
+  kind: z.enum(["edit", "create", "delete"]),
+  agentId: z.string().uuid(),
+  /** Required for `edit` and `delete`; the routine being changed. */
+  routineId: z.string().uuid().optional(),
+  /** Required for `edit`; the explicit graph commands to apply. */
+  operations: z.array(structuralOperationSchema).min(1).max(100).optional(),
+  /** Required for `create`; the whole routine to draft. */
+  draft: routineDefinitionDraftInputSchema.optional(),
+}).strict().superRefine((input, ctx) => {
+  const carried: ReadonlyArray<string> = fieldsPerKind[input.kind];
+  for (const field of conditionalFields) {
+    const present = input[field] !== undefined;
+    if (carried.includes(field) === present) continue;
+    // The same issue codes a plain required/strict object would raise, so a caller reading the
+    // rejected path reads one vocabulary rather than a per-field custom message.
+    if (present) ctx.addIssue({ code: z.ZodIssueCode.unrecognized_keys, keys: [field], path: [], message: `\`${field}\` does not belong to kind "${input.kind}".` });
+    else ctx.addIssue({ code: z.ZodIssueCode.invalid_type, expected: conditionalFieldTypes[field], received: "undefined", path: [field], message: `\`${field}\` is required when kind is "${input.kind}".` });
+  }
+}).transform((input) => (
+  // The refinement above aborts the chain before this runs, so each kind's fields are present.
+  input.kind === "create"
+    ? { kind: "create" as const, agentId: input.agentId, draft: input.draft as NonNullable<typeof input.draft> }
+    : input.kind === "delete"
+      ? { kind: "delete" as const, agentId: input.agentId, routineId: input.routineId as string }
+      : { kind: "edit" as const, agentId: input.agentId, routineId: input.routineId as string, operations: input.operations as NonNullable<typeof input.operations> }
+));
 
 const outputSchema = z.object({
   proposalId: z.string(),
@@ -131,7 +167,7 @@ export const createRoutineStructuralPreparationTool = (
   shape: "propose",
   verificationCost: () => 0,
   uiLabel: "Preparing routine structure",
-  description: "Prepare explicit routine graph commands for review; this does not change the routine.",
+  description: "Prepare a routine change for review; this does not change the routine. Set kind to \"edit\" to apply explicit graph commands to an existing routine, \"create\" to draft a new one, or \"delete\" to retire one.",
   contributingModule: "routines",
   dashboardSubject: { type: "proposal" },
   requiredPermissions: ["workspace.agents.manage"],
@@ -147,13 +183,13 @@ export const createRoutineStructuralPreparationTool = (
   },
   createTool: (context) => ({
     name: "prepare_routine_structure",
-    description: "Prepare explicit routine graph commands for review; this does not change the routine.",
+    description: "Prepare a routine change for review; this does not change the routine. Set kind to \"edit\" to apply explicit graph commands to an existing routine, \"create\" to draft a new one, or \"delete\" to retire one.",
     inputSchema,
     outputSchema,
     invoke: async (rawInput) => {
       const input = inputSchema.parse(rawInput);
       await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
-      if ("kind" in input && input.kind === "create") {
+      if (input.kind === "create") {
         await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
         const validation = await deps.routines.validate(context.workspaceId, input.agentId, { input: input.draft });
         if (!validation.ok) throw new Error(validation.diagnostics.map((diagnostic) => diagnostic.message).join(" ") || "Routine validation failed");
@@ -171,7 +207,7 @@ export const createRoutineStructuralPreparationTool = (
         return reviewOutput({ proposalId: proposal.id, reviewDigest, expiresAt, snapshot: reviewSnapshot });
       }
       const current = await deps.routines.get(context.workspaceId, input.agentId, input.routineId);
-      if ("kind" in input && input.kind === "delete") {
+      if (input.kind === "delete") {
         await deps.scopedReferences.assertNoScopedReferences({ workspaceId: context.workspaceId, agentId: input.agentId, routineId: input.routineId, removedNodeIds: [...current.steps, ...current.terminals].map((node) => node.stableStepId), removedSlotIds: (current.slots ?? []).map((slot) => slot.stableSlotId) });
         const targetRef = { agentId: input.agentId, routineId: input.routineId };
         const payload = { kind: "delete" as const };

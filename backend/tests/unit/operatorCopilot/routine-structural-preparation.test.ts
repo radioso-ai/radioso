@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { createRoutineStructuralPreparationTool } from "../../../src/modules/operatorCopilot/tools/routineStructuralPreparation.js";
+import { operatorMcpToolSchemas } from "../../../src/modules/operatorCopilot/mcpToolSchema.js";
 
 const context = {
   workspaceId: "workspace-1", accountId: "account-1", operatorUserId: "operator-1", surface: "mcp" as const,
@@ -18,6 +19,36 @@ const routine = {
 };
 
 describe("routine structural preparation", () => {
+  const anyDescriptor = () => createRoutineStructuralPreparationTool({
+    routines: { get: vi.fn(), validate: vi.fn() },
+    proposalRepository: { createProposal: vi.fn() }, proposalRecovery: { recoverOperatorMcpProposal: vi.fn() },
+    auditService: { record: vi.fn() }, scopedReferences: { assertNoScopedReferences: vi.fn() },
+  });
+
+  it("advertises one object schema whose kind says which of the three calls this is", () => {
+    const { inputSchema } = operatorMcpToolSchemas(anyDescriptor());
+
+    // An untagged union serializes to a root-level `anyOf` with no `properties`: a client builds an
+    // argument-less signature from it and strict-mode function calling refuses it outright.
+    expect(inputSchema.anyOf).toBeUndefined();
+    expect(inputSchema.type).toBe("object");
+    expect(Object.keys(inputSchema.properties as object).sort()).toEqual(["agentId", "draft", "kind", "operations", "routineId"]);
+    expect(inputSchema.required).toEqual(expect.arrayContaining(["kind", "agentId"]));
+    expect((inputSchema.properties as { kind: { enum: string[] } }).kind.enum).toEqual(["edit", "create", "delete"]);
+  });
+
+  it("names the field a call got wrong rather than refusing it wholesale", () => {
+    const { inputSchema } = anyDescriptor();
+    const agentId = "11111111-1111-4111-8111-111111111111";
+
+    const missing = inputSchema.safeParse({ kind: "edit", agentId });
+    expect(missing.success).toBe(false);
+    expect(!missing.success && missing.error.issues.map((issue) => [issue.path.join("."), issue.code])).toEqual([["routineId", "invalid_type"], ["operations", "invalid_type"]]);
+
+    const misplaced = inputSchema.safeParse({ kind: "delete", agentId, routineId: agentId, operations: [{ kind: "set_enabled", enabled: false }] });
+    expect(!misplaced.success && misplaced.error.issues.map((issue) => [issue.path.join("."), issue.code])).toEqual([["", "unrecognized_keys"]]);
+  });
+
   it("prepares create and delete as digest-bound routine operations without mutating the owner", async () => {
     const createProposal = vi.fn(async () => ({ id: "proposal-1" }));
     const get = vi.fn(async () => routine);
@@ -63,7 +94,7 @@ describe("routine structural preparation", () => {
       now: () => new Date("2026-09-13T00:00:00Z"),
     });
     const output = await descriptor.createTool(context).invoke({
-      agentId: "11111111-1111-4111-8111-111111111111", routineId: routine.id,
+      kind: "edit", agentId: "11111111-1111-4111-8111-111111111111", routineId: routine.id,
       operations: [{ kind: "remove_transition", transition: routine.transitions[0] }],
     }, {} as never);
 
@@ -82,7 +113,7 @@ describe("routine structural preparation", () => {
       routines: { get: vi.fn(async () => routine), validate: vi.fn(async () => ({ ok: false, diagnostics: [{ code: "dangling", location: "step_collect", message: "Dangling" }] })) },
       proposalRepository: { createProposal }, proposalRecovery: { recoverOperatorMcpProposal: vi.fn() }, auditService: { record: vi.fn() }, scopedReferences: { assertNoScopedReferences: vi.fn() },
     });
-    await expect(descriptor.createTool(context).invoke({ agentId: "11111111-1111-4111-8111-111111111111", routineId: routine.id, operations: [{ kind: "set_enabled", enabled: false }] }, {} as never)).rejects.toThrow(/Dangling/);
+    await expect(descriptor.createTool(context).invoke({ kind: "edit", agentId: "11111111-1111-4111-8111-111111111111", routineId: routine.id, operations: [{ kind: "set_enabled", enabled: false }] }, {} as never)).rejects.toThrow(/Dangling/);
     expect(createProposal).not.toHaveBeenCalled();
   });
 
@@ -91,7 +122,7 @@ describe("routine structural preparation", () => {
     const descriptor = createRoutineStructuralPreparationTool({
       routines: { get, validate: vi.fn() }, proposalRepository: { createProposal: vi.fn() }, proposalRecovery: { recoverOperatorMcpProposal: vi.fn() }, auditService: { record: vi.fn() }, scopedReferences: { assertNoScopedReferences: vi.fn() },
     });
-    await expect(descriptor.createTool(context).invoke({ agentId: "11111111-1111-4111-8111-111111111111", routineId: routine.id, operations: [{ kind: "remove_everything" }] }, {} as never)).rejects.toThrow();
+    await expect(descriptor.createTool(context).invoke({ kind: "edit", agentId: "11111111-1111-4111-8111-111111111111", routineId: routine.id, operations: [{ kind: "remove_everything" }] }, {} as never)).rejects.toThrow();
     expect(get).not.toHaveBeenCalled();
   });
 
@@ -101,7 +132,7 @@ describe("routine structural preparation", () => {
       routines: { get: vi.fn(async () => ({ ...routine, createdAt: new Date("2026-01-01T00:00:00Z"), updatedAt: new Date("2026-09-01T00:00:00Z") })), validate: vi.fn(async () => ({ ok: true, diagnostics: [] })) },
       proposalRepository: { createProposal }, proposalRecovery: { recoverOperatorMcpProposal: vi.fn() }, auditService: { record: vi.fn() }, scopedReferences: { assertNoScopedReferences: vi.fn() },
     });
-    await expect(descriptor.createTool(context).invoke({ agentId: "11111111-1111-4111-8111-111111111111", routineId: routine.id, operations: [{ kind: "set_enabled", enabled: false }] }, {} as never)).resolves.toMatchObject({ proposalId: "proposal-1" });
+    await expect(descriptor.createTool(context).invoke({ kind: "edit", agentId: "11111111-1111-4111-8111-111111111111", routineId: routine.id, operations: [{ kind: "set_enabled", enabled: false }] }, {} as never)).resolves.toMatchObject({ proposalId: "proposal-1" });
     const payload = createProposal.mock.calls[0][0].payload;
     expect(payload.draft).not.toHaveProperty("createdAt");
     expect(payload.draft).not.toHaveProperty("updatedAt");

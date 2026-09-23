@@ -3,10 +3,15 @@ import type { OperatorMcpScope, OperatorToolDescriptor } from "@radioso/operator
 import type { CopilotMcpInvocationReconciliation, CopilotToolDescriptor, CopilotToolInvocationContext } from "./contracts.js";
 import type { OperatorMcpInvocationRecord } from "./mcpContracts.js";
 import { hasCurrentCopilotToolPermissions } from "./catalog.js";
+import { invalidArgumentDetails } from "./invalidArgumentDetails.js";
 import { operatorMcpToolSchemas } from "./mcpToolSchema.js";
 
 export class OperatorMcpCatalogError extends Error {
-  constructor(readonly code: "unknown_tool" | "forbidden" | "invalid_arguments" | "invalid_result") {
+  constructor(
+    readonly code: "unknown_tool" | "forbidden" | "invalid_arguments" | "invalid_result",
+    /** Rejected argument paths, so a caller can correct the call instead of guessing. */
+    readonly details?: readonly string[],
+  ) {
     super(code);
   }
 }
@@ -60,7 +65,7 @@ export class OperatorMcpCatalogService {
     if (!disposition || !input.scopes.has(disposition.scope)) throw new OperatorMcpCatalogError("forbidden");
     if (!(await hasCurrentCopilotToolPermissions(descriptor, input.context))) throw new OperatorMcpCatalogError("forbidden");
     const parsedInput = descriptor.inputSchema.safeParse(input.arguments);
-    if (!parsedInput.success) throw new OperatorMcpCatalogError("invalid_arguments");
+    if (!parsedInput.success) throw new OperatorMcpCatalogError("invalid_arguments", invalidArgumentDetails(parsedInput.error));
     const tool = descriptor.createTool(input.context);
     const output = await tool.invoke(parsedInput.data, { signal: input.signal, callId: input.context.operatorMcpInvocationId ?? "operator-mcp", stepIndex: 0 });
     if (!(await hasCurrentCopilotToolPermissions(descriptor, input.context))) throw new OperatorMcpCatalogError("forbidden");
@@ -88,7 +93,7 @@ export class OperatorMcpCatalogService {
       throw new OperatorMcpCatalogError("forbidden");
     }
     const parsedInput = descriptor.inputSchema.safeParse(input.arguments);
-    if (!parsedInput.success) throw new OperatorMcpCatalogError("invalid_arguments");
+    if (!parsedInput.success) throw new OperatorMcpCatalogError("invalid_arguments", invalidArgumentDetails(parsedInput.error));
     if (!descriptor.reconcileMcpInvocation) return { status: "conflict" };
     const reconciliation = await descriptor.reconcileMcpInvocation({
       invocation: input.invocation,

@@ -217,7 +217,8 @@ describe("OperatorMcpApplicationService", () => {
     const bodyDigest = callDigest(argumentsValue);
     const admitted = await service.admit({ accessToken: "operator-access", invocationId: uuid("12"), method: "tools/call", descriptorName: descriptor.name, resource: principal.resource, timestamp: "1788480000", nonce: "edge", bodyDigest });
     await expect(service.invoke({ proof: admitted.proof, name: descriptor.name, arguments: argumentsValue, bodyDigest }))
-      .rejects.toMatchObject({ code: "invalid_arguments" });
+      // The rejected field names travel back so the caller can fix the call; the values at them do not.
+      .rejects.toMatchObject({ code: "invalid_arguments", details: ["secret: unrecognized_keys"] });
     expect(invocations.recordOutcome).toHaveBeenCalledWith(expect.objectContaining({ status: "refused", safeOutcomeCode: "invalid_arguments" }));
     expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
       eventType: "operator_mcp.invocation", eventStatus: "failure",
@@ -323,7 +324,9 @@ describe("OperatorMcpApplicationService", () => {
     const admitted = await service.admit({ accessToken: "operator-access", invocationId: uuid("12"), method: "tools/call", descriptorName: rejectingDescriptor.name, resource: principal.resource, timestamp: "1788480000", nonce: "edge", bodyDigest });
 
     await expect(service.invoke({ proof: admitted.proof, name: rejectingDescriptor.name, arguments: argumentsValue, bodyDigest }))
-      .rejects.toMatchObject({ code: "invalid_arguments" });
+      // The tool's own sentence is the only account of what was wrong; without it the caller reads
+      // the bare code and guesses again.
+      .rejects.toMatchObject({ code: "invalid_arguments", details: ["Citing replay evidence requires a Ray conversation, which this transport does not have."] });
     expect(invocations.recordOutcome).toHaveBeenCalledWith(expect.objectContaining({ status: "refused", safeOutcomeCode: "invalid_arguments" }));
     expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
       eventStatus: "failure",

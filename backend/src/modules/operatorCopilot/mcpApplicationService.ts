@@ -24,6 +24,7 @@ import type { CopilotCurrentAuthorizationPort, CopilotToolInvocationContext } fr
 import { OperatorMcpCatalogError, OperatorMcpCatalogService } from "./mcpCatalog.js";
 import type { OperatorMcpInvocationRecord, OperatorMcpInvocationRepositoryPort } from "./mcpContracts.js";
 import { AppError } from "../../shared/domain/errors.js";
+import { invalidArgumentDetails } from "./invalidArgumentDetails.js";
 
 const MAX_RESULT_BYTES = 256 * 1024;
 const PROOF_TTL_MS = 15_000;
@@ -36,7 +37,9 @@ export class OperatorMcpApplicationError extends Error {
   constructor(readonly code:
     | "invalid_admission" | "insufficient_scope" | "invalid_proof" | "proof_replay"
     | "unknown_tool" | "invalid_arguments" | "missing_configuration" | "operation_required" | "operation_conflict" | "budget_exhausted" | "result_too_large" | "invalid_result",
-  readonly requiredScope?: OperatorMcpScope) {
+  readonly requiredScope?: OperatorMcpScope,
+  /** Rejected argument paths, so a caller can correct the call instead of guessing. */
+  readonly details?: readonly string[]) {
     super(code);
   }
 }
@@ -321,7 +324,7 @@ export class OperatorMcpApplicationService {
       capabilityShape = descriptor.shape;
       if (disposition.retry.requiresOperationId && !input.operationId) throw new OperatorMcpApplicationError("operation_required");
       const parsed = descriptor.inputSchema.safeParse(input.arguments);
-      if (!parsed.success) throw new OperatorMcpApplicationError("invalid_arguments");
+      if (!parsed.success) throw new OperatorMcpApplicationError("invalid_arguments", undefined, invalidArgumentDetails(parsed.error));
       const verificationCost = descriptor.verificationCost(parsed.data);
       const inputDigest = digestOperatorMcpInput({
         secret: this.dependencies.secret,
@@ -476,7 +479,9 @@ export class OperatorMcpApplicationService {
         ? rawError.code === "retrieval_not_configured"
           ? new OperatorMcpApplicationError("missing_configuration")
           : rawError.statusCode === 400
-            ? new OperatorMcpApplicationError("invalid_arguments")
+            // The tool's own rejection sentence is the only account of what was wrong with the
+            // call; without it the caller reads the bare code and has to guess again.
+            ? new OperatorMcpApplicationError("invalid_arguments", undefined, [rawError.message])
             : rawError
         : rawError;
       const reason = error instanceof OperatorMcpApplicationError

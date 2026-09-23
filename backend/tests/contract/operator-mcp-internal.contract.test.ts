@@ -77,4 +77,16 @@ describe("operator MCP internal service contract", () => {
 
     expect(response.body).toEqual({ code: "missing_configuration", message: "missing_configuration" });
   });
+
+  it("carries rejected argument paths on a refusal, and says nothing beyond the failure on an authorization error", async () => {
+    const { app, service } = harness();
+    service.admit.mockRejectedValueOnce(new OperatorMcpApplicationError("invalid_arguments", undefined, ["kind: invalid_enum_value"]));
+
+    const rejected = await request(app).post(path).set(signedHeaders(body)).send(body).expect(400);
+    expect(rejected.body).toEqual({ code: "invalid_arguments", message: "invalid_arguments", details: ["kind: invalid_enum_value"] });
+
+    service.admit.mockRejectedValueOnce(new OperatorMcpApplicationError("invalid_proof", undefined, ["kind: invalid_enum_value"]));
+    const unauthorized = await request(app).post(path).set(signedHeaders(body)).send(body).expect(401);
+    expect(unauthorized.body).toEqual({ code: "invalid_proof", message: "Unauthorized" });
+  });
 });

@@ -62,6 +62,14 @@ describe("OperatorMcpCatalogService", () => {
     await expect(call({ kind: "delete", id: "routine-1", extra: true })).rejects.toMatchObject({ code: "invalid_arguments" });
   });
 
+  it("names the rejected argument paths so a caller can correct the call", async () => {
+    const service = new OperatorMcpCatalogService([descriptor("workspace_settings", "operator:read")]);
+
+    // Paths and zod codes only: the path names a field and its position, never the value at it.
+    await expect(service.invoke({ name: "workspace_settings", arguments: { key: 7, extra: true }, context, scopes: new Set(["operator:read"]), signal: AbortSignal.timeout(1_000) }))
+      .rejects.toMatchObject({ code: "invalid_arguments", details: ["key: invalid_type", "extra: unrecognized_keys"] });
+  });
+
   it("refuses to project a schema that describes something other than an object", async () => {
     const service = new OperatorMcpCatalogService([{ ...descriptor("workspace_settings", "operator:read"), inputSchema: z.string() }]);
 

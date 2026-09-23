@@ -369,6 +369,28 @@ describe("operator MCP stateless request handler", () => {
     await expect(response.json()).resolves.toMatchObject({ error: { code: -32602, message: "operation_required" } });
   });
 
+  it("carries the rejected argument paths back to the caller as JSON-RPC error data", async () => {
+    const handler = createOperatorMcpRequestHandler({
+      ...dependencies,
+      call: vi.fn<OperatorMcpRequestHandlerDependencies["call"]>(async () => {
+        throw new OperatorBackendAdapterError("Operator request was rejected.", 400, "invalid_arguments", undefined, ["kind: invalid_enum_value", "operations: invalid_type"]);
+      }),
+    });
+    dependencies.admit.mockResolvedValue({ proof: { ...proof, method: "tools/call" } });
+
+    const response = await handler(operatorRequest({
+      id: "validation-detail",
+      jsonrpc: "2.0",
+      method: "tools/call",
+      params: { name: "prepare_routine_structure" },
+    }));
+
+    // Without this the caller reads the bare code and has to spend a turn guessing which field.
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: -32602, message: "invalid_arguments", data: ["kind: invalid_enum_value", "operations: invalid_type"] },
+    });
+  });
+
   it("returns a tool removed after admission as a safe invalid-params response", async () => {
     const handler = createOperatorMcpRequestHandler({
       ...dependencies,

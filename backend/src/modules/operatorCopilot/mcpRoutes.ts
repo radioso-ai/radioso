@@ -11,9 +11,12 @@ import {
 import { Router, type Request, type RequestHandler } from "express";
 
 import type { AppDependencies } from "../../app/server/types.js";
+import { asError } from "../../shared/errors/asError.js";
 import { OperatorMcpApplicationError } from "./mcpApplicationService.js";
 
-type Dependencies = Pick<AppDependencies, "env" | "operatorMcpApplicationService" | "operatorMcpReadiness">;
+type Dependencies = Pick<AppDependencies, "env" | "logger" | "operatorMcpApplicationService" | "operatorMcpReadiness">;
+type OperatorMcpApplication = NonNullable<AppDependencies["operatorMcpApplicationService"]>;
+type RouteName = "admissions" | "catalog" | "invocations";
 const SERVICE_ID = "radioso-mcp-operator";
 const CLOCK_SKEW_SECONDS = 30;
 
@@ -58,7 +61,31 @@ const statusFor = (error: OperatorMcpApplicationError): number => {
   return 500;
 };
 
-const handleError = (error: unknown, res: { status(code: number): { json(value: unknown): void }; setHeader(name: string, value: string): void }): void => {
+const UNAVAILABLE = { code: "unavailable", message: "Operator capability is unavailable" };
+
+/**
+ * The edge mints the invocation id, and both the invocation receipt and the audit record are keyed
+ * by it, so it is the field that joins a log line to the rest of the trail. Read it defensively:
+ * the body may be exactly the value whose schema rejection is being reported.
+ */
+const invocationIdOf = (body: unknown): string | undefined => {
+  if (!body || typeof body !== "object") return undefined;
+  const candidate = body as { invocationId?: unknown; proof?: { invocationId?: unknown } | null };
+  const value = candidate.invocationId ?? (candidate.proof && typeof candidate.proof === "object" ? candidate.proof.invocationId : undefined);
+  return typeof value === "string" ? value : undefined;
+};
+
+type Failure = {
+  readonly logger: Dependencies["logger"];
+  readonly route: RouteName;
+  readonly invocationId?: string;
+};
+
+const handleError = (
+  error: unknown,
+  res: { status(code: number): { json(value: unknown): void }; setHeader(name: string, value: string): void },
+  failure: Failure,
+): void => {
   if (error instanceof OperatorMcpApplicationError) {
     const status = statusFor(error);
     if (error.code === "insufficient_scope" && error.requiredScope) res.setHeader("x-radioso-required-scope", error.requiredScope);
@@ -70,31 +97,45 @@ const handleError = (error: unknown, res: { status(code: number): { json(value: 
     res.status(status).json({ code: error.code, message: status === 401 ? "Unauthorized" : error.code, ...(details?.length ? { details } : {}) });
     return;
   }
-  res.status(503).json({ code: "unavailable", message: "Operator capability is unavailable" });
+  // The edge reports this 503 as an unavailable runtime and the audit record reasons it
+  // `dependency_error`; both are safe summaries that name no cause. This handler is the last place
+  // the error object exists, so the cause is logged once here and nowhere else.
+  failure.logger.error({
+    route: failure.route,
+    ...(failure.invocationId ? { invocationId: failure.invocationId } : {}),
+    err: asError(error),
+  }, "operator_mcp_route_failed");
+  res.status(503).json(UNAVAILABLE);
+};
+
+const serve = <T>(
+  dependencies: Dependencies,
+  route: RouteName,
+  parse: (body: unknown) => T,
+  call: (service: OperatorMcpApplication, input: T) => Promise<unknown>,
+): RequestHandler => async (req, res) => {
+  const invocationId = invocationIdOf(req.body);
+  try {
+    const service = dependencies.operatorMcpApplicationService;
+    if (!service || !await dependencies.operatorMcpReadiness) {
+      // Answers exactly as a thrown failure does, so without this line nothing distinguishes a
+      // deployment that never became ready from one that broke mid-call.
+      dependencies.logger.warn({ route, ...(invocationId ? { invocationId } : {}) }, "operator_mcp_route_not_ready");
+      res.status(503).json(UNAVAILABLE);
+      return;
+    }
+    res.status(200).json(await call(service, parse(req.body)));
+  } catch (error) {
+    handleError(error, res, { logger: dependencies.logger, route, invocationId });
+  }
 };
 
 export const createOperatorMcpInternalRoutes = (dependencies: Dependencies): Router => {
   const router = Router();
   router.use(requireServiceAuthentication(dependencies));
-  const ready = async () => dependencies.operatorMcpApplicationService && await dependencies.operatorMcpReadiness;
 
-  router.post("/admissions", async (req, res) => {
-    try {
-      if (!await ready()) { res.status(503).json({ code: "unavailable", message: "Operator capability is unavailable" }); return; }
-      res.status(200).json(await dependencies.operatorMcpApplicationService!.admit(OperatorAdmissionRequestSchema.parse(req.body)));
-    } catch (error) { handleError(error, res); }
-  });
-  router.post("/catalog", async (req, res) => {
-    try {
-      if (!await ready()) { res.status(503).json({ code: "unavailable", message: "Operator capability is unavailable" }); return; }
-      res.status(200).json(await dependencies.operatorMcpApplicationService!.list(OperatorCatalogRequestSchema.parse(req.body)));
-    } catch (error) { handleError(error, res); }
-  });
-  router.post("/invocations", async (req, res) => {
-    try {
-      if (!await ready()) { res.status(503).json({ code: "unavailable", message: "Operator capability is unavailable" }); return; }
-      res.status(200).json(await dependencies.operatorMcpApplicationService!.invoke(OperatorInvocationRequestSchema.parse(req.body)));
-    } catch (error) { handleError(error, res); }
-  });
+  router.post("/admissions", serve(dependencies, "admissions", (body) => OperatorAdmissionRequestSchema.parse(body), (service, input) => service.admit(input)));
+  router.post("/catalog", serve(dependencies, "catalog", (body) => OperatorCatalogRequestSchema.parse(body), (service, input) => service.list(input)));
+  router.post("/invocations", serve(dependencies, "invocations", (body) => OperatorInvocationRequestSchema.parse(body), (service, input) => service.invoke(input)));
   return router;
 };

@@ -38,6 +38,8 @@ export class OperatorBackendAdapterError extends Error {
     readonly status: number,
     readonly code: OperatorBackendAdapterErrorCode,
     readonly requiredScope?: string,
+    /** Backend-reported argument paths for a rejected call, so the caller can correct it. */
+    readonly details?: readonly string[],
   ) {
     super(message);
     this.name = "OperatorBackendAdapterError";
@@ -89,15 +91,33 @@ const SAFE_BACKEND_ERROR_CODES = new Set<OperatorBackendAdapterErrorCode>([
   "rate_limit_exceeded",
 ]);
 
-const readSafeBackendErrorCode = async (response: Response): Promise<OperatorBackendAdapterErrorCode | null> => {
+const MAX_FORWARDED_DETAILS = 12;
+const MAX_FORWARDED_DETAIL_LENGTH = 300;
+
+/** Only bounded strings travel: the backend states what was rejected, this relays it verbatim. */
+const safeBackendErrorDetails = (payload: object): readonly string[] | undefined => {
+  const details = "details" in payload ? payload.details : undefined;
+  if (!Array.isArray(details)) return undefined;
+  const bounded = details
+    .filter((entry): entry is string => typeof entry === "string")
+    .slice(0, MAX_FORWARDED_DETAILS)
+    .map((entry) => entry.slice(0, MAX_FORWARDED_DETAIL_LENGTH));
+  return bounded.length > 0 ? bounded : undefined;
+};
+
+interface SafeBackendError {
+  readonly code: OperatorBackendAdapterErrorCode | null;
+  readonly details?: readonly string[];
+}
+
+const readSafeBackendError = async (response: Response): Promise<SafeBackendError> => {
   try {
     const payload = await response.json() as unknown;
-    if (!payload || typeof payload !== "object" || !("code" in payload) || typeof payload.code !== "string") return null;
-    return SAFE_BACKEND_ERROR_CODES.has(payload.code as OperatorBackendAdapterErrorCode)
-      ? payload.code as OperatorBackendAdapterErrorCode
-      : null;
+    if (!payload || typeof payload !== "object" || !("code" in payload) || typeof payload.code !== "string") return { code: null };
+    if (!SAFE_BACKEND_ERROR_CODES.has(payload.code as OperatorBackendAdapterErrorCode)) return { code: null };
+    return { code: payload.code as OperatorBackendAdapterErrorCode, details: safeBackendErrorDetails(payload) };
   } catch {
-    return null;
+    return { code: null };
   }
 };
 
@@ -152,12 +172,13 @@ export const createOperatorBackendAdapter = ({
       clearTimeout(timer);
     }
     if (!response.ok) {
-      const code = await readSafeBackendErrorCode(response);
+      const safe = await readSafeBackendError(response);
       throw new OperatorBackendAdapterError(
         response.status === 403 ? "Operator capability scope is insufficient." : response.status >= 500 ? "Operator backend is unavailable." : "Operator authorization failed.",
         response.status,
-        responseErrorCode(response.status, code),
+        responseErrorCode(response.status, safe.code),
         response.headers.get("x-radioso-required-scope") ?? undefined,
+        safe.details,
       );
     }
     try {

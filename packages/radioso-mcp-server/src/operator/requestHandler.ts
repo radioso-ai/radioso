@@ -48,9 +48,9 @@ const rpcError = (
   id: string | number | null,
   code: number,
   message: string,
-  options: { status?: number } = {},
+  options: { status?: number; data?: unknown } = {},
 ): Response => Response.json({
-  error: { code, message },
+  error: { code, message, ...(options.data === undefined ? {} : { data: options.data }) },
   id,
   jsonrpc: "2.0",
 }, { status: options.status ?? 200 });
@@ -299,7 +299,9 @@ const createModernOperatorMcpRequestHandler = (dependencies: OperatorMcpRequestH
     }
     if (error instanceof OperatorBackendAdapterError && isBackendInvalidParams(error)) {
       reportOutcome(dependencies, { method, outcome: "error", descriptorName, reason: "invalid_request" });
-      return rpcError(id, -32602, error.code);
+      // The rejected argument paths are the only way a caller can correct the call without
+      // guessing another turn away; JSON-RPC carries them in `error.data`.
+      return rpcError(id, -32602, error.code, { data: error.details });
     }
     if (error instanceof OperatorBackendAdapterError && isBackendRateLimit(error)) {
       reportOutcome(dependencies, { method, outcome: "denied", descriptorName, shape: shapeForScope(error.requiredScope), reason: "rate_limit_exceeded" });

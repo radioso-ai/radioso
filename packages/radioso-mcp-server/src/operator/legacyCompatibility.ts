@@ -61,6 +61,11 @@ const translateResponse = async (
 ): Promise<Response> => {
   if (!response.ok) return response;
   const payload = asRecord(await response.json());
+  // A JSON-RPC error is a complete response, not a failed one, and the modern handler returns its
+  // refusals at HTTP 200. Rewriting them as a blanket internal error strips the code and the
+  // rejected argument paths a caller needs to correct the call.
+  const error = asRecord(payload?.error);
+  if (error) return Response.json({ error, id, jsonrpc: "2.0" }, { status: response.status });
   const result = asRecord(payload?.result);
   if (!payload || !result) return rpcError(id, -32603, "Internal error", 500);
 

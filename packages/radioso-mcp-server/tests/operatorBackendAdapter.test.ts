@@ -50,7 +50,24 @@ describe("operator backend adapter", () => {
       name: "workspace_settings",
       arguments: {},
       bodyDigest: sha256Digest("{}"),
-    })).rejects.toMatchObject({ code: "operation_required", status: 400 });
+    })).rejects.toMatchObject({ code: "operation_required", status: 400, details: undefined });
+  });
+
+  it("forwards the backend's rejected argument paths, bounded, and nothing else from the body", async () => {
+    const body = { code: "invalid_arguments", message: "invalid_arguments", details: ["kind: invalid_enum_value", { leaked: true }, "x".repeat(400)] };
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify(body), { status: 400 }));
+
+    await expect(createOperatorBackendAdapter({
+      baseUrl: "https://app.example",
+      fetchImpl,
+      internalSecret: "adapter-secret-key-12345678901234567890",
+      requestTimeoutMs: 1_000,
+    }).invoke({
+      proof,
+      name: "prepare_routine_structure",
+      arguments: {},
+      bodyDigest: sha256Digest("{}"),
+    })).rejects.toMatchObject({ code: "invalid_arguments", status: 400, details: ["kind: invalid_enum_value", "x".repeat(300)] });
   });
 
   it("preserves an unknown tool as a safe client error", async () => {

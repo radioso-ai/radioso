@@ -85,6 +85,7 @@ import type { AgentBundleExportService, AgentBundleImportCleanupWorker, AgentBun
 import type { SkillCapabilityRegistry } from "../../modules/skills/public.js";
 import type { AgentService, AgentSurfaceExtensionRegistry, AuthoredDirectiveService, DirectiveAuthorService } from "../../modules/agents/public.js";
 import type { AgentToolCatalogPort, RoutineDefinitionService, RoutineDraftAssistService } from "../../modules/routines/public.js";
+import type { AgentPublicProfilePort } from "../../modules/agentDiscovery/public.js";
 import type { AgentRepositoryPort } from "../../db/repositories/agentRepository.js";
 import type {
   ContextVariableResolutionReaderPort,
@@ -249,6 +250,8 @@ export interface AppDependencies {
   agentStarterPromptReader: AgentStarterPromptReader;
   /** Exposed-routine descriptors a calling agent lists and both agent-facing doors validate tool calls against. */
   agentToolCatalog: AgentToolCatalogPort;
+  /** Public id to published profile, for the unauthenticated discovery documents. */
+  agentPublicProfile: AgentPublicProfilePort;
   chatHistoryService: ChatHistoryService;
   assistantChatService: AssistantChatService;
   assistantHistoryService: AssistantHistoryService;

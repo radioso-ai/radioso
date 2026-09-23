@@ -253,6 +253,11 @@ const envSchema = z.object({
   SLACK_OAUTH_CLIENT_SECRET: emptyStringToUndefined(z.string().min(1)),
   SLACK_SIGNING_SECRET: emptyStringToUndefined(z.string().min(1)),
   PUBLIC_CHAT_BASE_URL: emptyStringToUndefined(z.string().min(1)),
+  /**
+   * Public MCP endpoint base, e.g. `https://mcp.example.com/mcp`. One agent's endpoint is
+   * this plus `/a/{publicId}`. Discovery documents refuse to render without it.
+   */
+  PUBLIC_MCP_CONVERSE_URL: emptyStringToUndefined(z.string().url()),
   RADIOSO_WIDGET_ORIGIN: emptyStringToUndefined(z.string().min(1)),
   RADIOSO_APPLICATION_MODULES: emptyStringToUndefined(z.string().min(1)),
 }).superRefine((value, ctx) => {

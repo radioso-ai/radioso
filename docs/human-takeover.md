@@ -1,7 +1,7 @@
 ---
 title: "Human Takeover"
 description: "Operator API and contract for taking over conversations and suppressing AI while handling manual responses."
-last_updated: 2026-09-21
+last_updated: 2026-09-22
 ---
 
 # Human Takeover
@@ -183,6 +183,7 @@ transcript. The public visitor surface can also subscribe to push notifications.
 - Operator: `GET /api/v1/history/chat/{conversationId}/tail?cursor=...`
 - Visitor: `GET /api/v1/public/chat/{token}/tail/{conversationId}?cursor=...`
 - Visitor push: `GET /api/v1/public/chat/{token}/events/{conversationId}`
+- Calling agent: `GET /api/v1/mcp/converse/messages?cursor=...&waitMs=...`
 
 Each tail call returns messages created after the cursor plus an advanced cursor.
 Conversation detail responses include `tailCursor`, which clients should use for
@@ -192,6 +193,17 @@ sees a human reply distinctly, plus `operatorDisplayName` on a human-agent reply
 so the visitor can see who is answering (rendered as "👤 <name>"); only the name
 is exposed, never the operator's account id. The operator tail also includes
 `ownership`; the visitor tail never does.
+
+The third caller is an AI agent on the other side of the MCP converse surface. It
+holds a conversation with the agent but cannot watch a chat window, so it reads
+the same messages forward through `GET /api/v1/mcp/converse/messages` — the
+`get_conversation_updates` tool over standalone MCP — and can hold that call open
+for up to 25 seconds while it waits for your reply. Each message it reads carries
+`author`, `human` for your reply and `agent` for everything else, and every page
+carries the conversation's current ownership, so the caller knows a person is
+handling the conversation. Answering from the Inbox is all it takes for that
+reply to reach the caller: nothing about takeover or reply changes for the
+operator. See [MCP Client Setup](./mcp-client-setup.md#come-back-after-a-handoff).
 
 ## Operator console
 

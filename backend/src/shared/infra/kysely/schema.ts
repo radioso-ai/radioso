@@ -206,6 +206,7 @@ export interface AgentRevisions {
 }
 
 export interface Agents {
+  agent_card_enabled: Generated<boolean>;
   behavior_settings: Generated<Json>;
   chat_model: string | null;
   chat_provider: string | null;
@@ -215,11 +216,15 @@ export interface Agents {
   internal_name: Generated<string>;
   name: Generated<string>;
   output_modes: Generated<Json>;
+  public_agent_access_enabled: Generated<boolean>;
+  public_description: Generated<string>;
+  public_id: string | null;
   published_revision_id: string | null;
   retrieval_enabled: Generated<boolean>;
   skill_settings: Generated<Json>;
   source_scope_mode: Generated<string>;
   updated_at: Generated<Timestamp>;
+  walk_in_conversations_per_hour: number | null;
   workspace_id: string;
 }
 

@@ -30,6 +30,7 @@ import { registerDecisionPaths } from "./paths/decisionPaths.js";
 import { registerConnectorsPaths } from "./paths/connectorsPaths.js";
 import { registerQualityPaths } from "./paths/qualityPaths.js";
 import { registerEvalPaths } from "./paths/evalPaths.js";
+import { registerAgentDiscoveryPaths } from "./paths/agentDiscoveryPaths.js";
 import { registerMcpConversePaths } from "./paths/mcpConversePaths.js";
 import { registerContextVariablePaths } from "./paths/contextVariablePaths.js";
 import { registerAudiencePulsePaths } from "./paths/audiencePulsePaths.js";
@@ -79,6 +80,7 @@ export const registerOpenApiPaths = (
   const evalSchemas = registerEvalPaths(registry, schemas, security);
   registerTestExecutionPaths(registry, security, evalSchemas.EvalSnapshotSchema);
   registerMcpConversePaths(registry, schemas, security);
+  registerAgentDiscoveryPaths(registry, schemas);
   registerAssistantPublicChatPaths(registry, schemas, security);
   registerWorkspaceEventsPaths(registry, schemas, security);
 };

@@ -37,6 +37,7 @@ services:
       INTEGRATION_DATABASE_URL: ""
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3000}
       PUBLIC_CHAT_BASE_URL: ${PUBLIC_CHAT_BASE_URL:-http://localhost:3000/chat}
+      PUBLIC_MCP_CONVERSE_URL: ${PUBLIC_MCP_CONVERSE_URL:-http://localhost:8787/mcp}
       SESSION_TTL_HOURS: 168
       # Spec 1277: shared with the frontend proxy below so the local stack exercises
       # the edge-facts proof path end to end. Dev-only value; never reuse in a deploy.
@@ -82,6 +83,7 @@ services:
       INTEGRATION_DATABASE_URL: ""
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3000}
       PUBLIC_CHAT_BASE_URL: ${PUBLIC_CHAT_BASE_URL:-http://localhost:3000/chat}
+      PUBLIC_MCP_CONVERSE_URL: ${PUBLIC_MCP_CONVERSE_URL:-http://localhost:8787/mcp}
       SESSION_TTL_HOURS: 168
     volumes:
       - radioso_document_storage:/app/.context/document-storage
@@ -105,6 +107,7 @@ services:
       INTEGRATION_DATABASE_URL: ""
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3000}
       PUBLIC_CHAT_BASE_URL: ${PUBLIC_CHAT_BASE_URL:-http://localhost:3000/chat}
+      PUBLIC_MCP_CONVERSE_URL: ${PUBLIC_MCP_CONVERSE_URL:-http://localhost:8787/mcp}
       SESSION_TTL_HOURS: 168
     volumes:
       - radioso_document_storage:/app/.context/document-storage

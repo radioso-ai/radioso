@@ -6,6 +6,7 @@ export {
   isAgentBootstrapActive,
   isAgentRetrievalEnabled,
   resolveAgentDisplayName,
+  unpublishedAgentPublicIdentity,
   validateAgentInput,
   type AgentBrandingSettings,
   type AgentChatModelOverride,
@@ -27,6 +28,11 @@ export {
   agentInputFieldSchemas,
   agentInputThemeSchema,
 } from "./agentInputSchema.js";
+export {
+  describePublicAccessChange,
+  mintPublicId,
+  rotatedPublicIdInput,
+} from "./services/agentPublicIdentity.js";
 export {
   DEFAULT_CONTACT_REQUEST_DELIVERY,
   hasConfiguredContactDestination,

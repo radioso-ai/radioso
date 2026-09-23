@@ -4,6 +4,7 @@ import type { AuditLogger } from "../audit/auditLogger.js";
 import type { AccessSessionRecord } from "../auth/sessionStore.js";
 import type { RadiosoMcpConfig } from "../config.js";
 import type { RuntimeStoreReadiness } from "../state/runtimeStores.js";
+import type { AgentServerCardReader } from "./agentServerCard.js";
 import type { PreAuthSourceBudget } from "./preAuthSourceBudget.js";
 import type { OperatorHttpDependencies } from "../operator/types.js";
 
@@ -30,5 +31,7 @@ export interface RemoteHttpDependencies {
   config: RadiosoMcpConfig;
   readiness?: RuntimeStoreReadiness;
   preAuthSourceBudget?: PreAuthSourceBudget;
+  /** Reads an agent's server card from the backend; defaults to an HTTP reader over `config.baseUrl`. */
+  agentServerCard?: AgentServerCardReader;
   operatorMcp?: OperatorHttpDependencies;
 }

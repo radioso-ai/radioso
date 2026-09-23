@@ -439,6 +439,11 @@ const buildDefaultAgentSettings = (settings: PlatformSettingsFixture): ApiSchema
   name: settings.assistant.assistantName,
   internalName: "",
   isDefault: true,
+  publicId: null,
+  publicDescription: "",
+  agentCardEnabled: false,
+  publicAgentAccessEnabled: false,
+  walkInConversationsPerHour: null,
   customInstruction: settings.assistant.customInstruction,
   suggestedQuestionsEnabled: settings.assistant.suggestedQuestionsEnabled,
   assistantLinkUtmEnabled: true,
@@ -1045,6 +1050,11 @@ export const installDashboardApiMocks = async (
   let documentTypeCatalog = options.documentTypeCatalog ?? baseDocumentTypeCatalog();
   const documentTypeCatalogUpdates = options.documentTypeCatalogUpdates;
   let documentTypeCatalogStaleRevisionPending = options.documentTypeCatalogStaleRevision ?? false;
+  let agentPublicIdCounter = 0;
+  const nextAgentPublicId = (): string => {
+    agentPublicIdCounter += 1;
+    return `ag_${String(agentPublicIdCounter).padStart(22, "m")}`;
+  };
   let agentSettings = buildDefaultAgentSettings(platformSettings);
   let agentRevisionState = baseAgentRevisionState();
   let nextTestExecutionIndex = 1;
@@ -2040,9 +2050,24 @@ export const installDashboardApiMocks = async (
           },
           updatedAt: nowIso,
         };
+        // Mirrors the backend minting a public id on the write that first makes the agent
+        // reachable (modules/agents/services/agentPublicIdentity.ts).
+        if (!agentSettings.publicId && (agentSettings.agentCardEnabled || agentSettings.publicAgentAccessEnabled)) {
+          agentSettings = { ...agentSettings, publicId: nextAgentPublicId() };
+        }
         await json(route, agentSettings);
         return;
       }
+    }
+
+    if (request.method() === "POST" && path === `/agents/${defaultAgentId}/public-id/rotate`) {
+      if (!agentSettings.publicId) {
+        await json(route, { error: { code: "bad_request", message: "This agent has no public id yet" } }, 400);
+        return;
+      }
+      agentSettings = { ...agentSettings, publicId: nextAgentPublicId(), updatedAt: nowIso };
+      await json(route, agentSettings);
+      return;
     }
 
     if (path === `/agents/${defaultAgentId}/skill-capabilities` && request.method() === "GET") {

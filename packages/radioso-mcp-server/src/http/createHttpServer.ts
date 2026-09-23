@@ -6,6 +6,9 @@ import { createMcpRouteHandler } from "./mcpRoutes.js";
 import { createSessionMcpServerManager } from "./sessionServerManager.js";
 import { isRequestBodyTooLargeError, toWebRequest, writeJson, writeJsonRpcError, writeWebResponse } from "./nodeHttp.js";
 import { createFixedWindowPreAuthSourceBudget, digestPeerSource } from "./preAuthSourceBudget.js";
+import { createAgentServerCardReader } from "./agentServerCard.js";
+import { resolveMcpRoute } from "./resolveMcpRoute.js";
+import { createWalkInRouteHandler } from "./walkInRoutes.js";
 import { createOperatorMcpRequestHandler } from "../operator/requestHandler.js";
 import { createOperatorProtectedResourceMetadata } from "../operator/protectedResource.js";
 import { createOperatorAuditObserver } from "../operator/observability.js";
@@ -16,7 +19,9 @@ export interface RadiosoRemoteHttpServer {
   server: Server;
 }
 
-export const createHttpServer = ({ authService, auditLogger, config, operatorMcp, readiness, preAuthSourceBudget }: RemoteHttpDependencies): RadiosoRemoteHttpServer => {
+export const createHttpServer = ({ authService, auditLogger, config, operatorMcp, readiness, preAuthSourceBudget, agentServerCard }: RemoteHttpDependencies): RadiosoRemoteHttpServer => {
+  const serverCardReader = agentServerCard ?? createAgentServerCardReader(config);
+  const operatorResourceMetadataPath = operatorMcp?.resource.metadataUrl.replace(/^https?:\/\/[^/]+/u, "") ?? null;
   const sourceBudget = preAuthSourceBudget ?? createFixedWindowPreAuthSourceBudget({
     maxAttempts: 60,
     windowMs: 60_000,
@@ -27,6 +32,12 @@ export const createHttpServer = ({ authService, auditLogger, config, operatorMcp
     entryPoint: "standalone",
   });
   const handleMcp = createMcpRouteHandler({
+    authService,
+    config,
+    readiness,
+    serverManager: sessionServerManager,
+  });
+  const handleWalkIn = createWalkInRouteHandler({
     authService,
     config,
     readiness,
@@ -93,43 +104,74 @@ export const createHttpServer = ({ authService, auditLogger, config, operatorMcp
     try {
       const url = new URL(req.url ?? "/", `http://${req.headers.host ?? `${config.bindHost}:${config.bindPort}`}`);
 
-      if (req.method === "GET" && url.pathname === "/healthz") {
-        res.setHeader("Access-Control-Allow-Origin", "*");
-        writeJson(res, 200, {
-          serverName: config.serverName,
-          status: "ok",
-        });
-        return;
-      }
+      const route = resolveMcpRoute({
+        method: req.method ?? "GET",
+        pathname: url.pathname,
+        operatorResourceMetadataPath: operatorMcp ? operatorResourceMetadataPath : null,
+      });
 
-      if (url.pathname === "/mcp") {
-        if (!await sourceBudget.consume({ sourceDigest: digestPeerSource(req, config.trustedProxyHops) })) {
-          writeJsonRpcError(res, 429, -32003, "Too many requests.", { code: "rate_limit_exceeded" });
+      switch (route.kind) {
+        case "health": {
+          res.setHeader("Access-Control-Allow-Origin", "*");
+          writeJson(res, 200, {
+            serverName: config.serverName,
+            status: "ok",
+          });
           return;
         }
-        await handleMcp(req, res);
-        return;
-      }
-
-      if (operatorMcp && req.method === "GET" && url.pathname === operatorMcp.resource.metadataUrl.replace(/^https?:\/\/[^/]+/u, "")) {
-        writeJson(res, 200, createOperatorProtectedResourceMetadata(operatorMcp.resource));
-        return;
-      }
-
-      if (url.pathname === "/operator/mcp") {
-        if (!operatorMcp || !operatorHandler) {
-          writeJson(res, 404, { error: { code: "not_found", message: "Route not found." } });
+        case "agent_mcp": {
+          if (!await sourceBudget.consume({ sourceDigest: digestPeerSource(req, config.trustedProxyHops) })) {
+            writeJsonRpcError(res, 429, -32003, "Too many requests.", { code: "rate_limit_exceeded" });
+            return;
+          }
+          await handleMcp(req, res);
           return;
         }
-        const sourceDigest = digestPeerSource(req, config.trustedProxyHops);
-        if (operatorMcp.rateLimit && !await operatorMcp.rateLimit.consume({ sourceDigest })) {
-          writeJson(res, 429, { error: { code: "rate_limit_exceeded", message: "Too many requests." } });
+        case "operator_resource_metadata": {
+          if (operatorMcp) {
+            writeJson(res, 200, createOperatorProtectedResourceMetadata(operatorMcp.resource));
+            return;
+          }
+          break;
+        }
+        case "operator_mcp": {
+          if (!operatorMcp || !operatorHandler) {
+            writeJson(res, 404, { error: { code: "not_found", message: "Route not found." } });
+            return;
+          }
+          const sourceDigest = digestPeerSource(req, config.trustedProxyHops);
+          if (operatorMcp.rateLimit && !await operatorMcp.rateLimit.consume({ sourceDigest })) {
+            writeJson(res, 429, { error: { code: "rate_limit_exceeded", message: "Too many requests." } });
+            return;
+          }
+          const request = await toWebRequest(req, `${config.bindHost}:${config.bindPort}`, { maxBytes: 256 * 1024 });
+          const response = await operatorHandler(request);
+          await writeWebResponse(res, response);
           return;
         }
-        const request = await toWebRequest(req, `${config.bindHost}:${config.bindPort}`, { maxBytes: 256 * 1024 });
-        const response = await operatorHandler(request);
-        await writeWebResponse(res, response);
-        return;
+        case "agent_walk_in_mcp": {
+          if (!await sourceBudget.consume({ sourceDigest: digestPeerSource(req, config.trustedProxyHops) })) {
+            writeJsonRpcError(res, 429, -32003, "Too many requests.", { code: "rate_limit_exceeded" });
+            return;
+          }
+          await handleWalkIn(req, res, route.publicId);
+          return;
+        }
+        case "agent_server_card": {
+          if (!await sourceBudget.consume({ sourceDigest: digestPeerSource(req, config.trustedProxyHops) })) {
+            writeJson(res, 429, { error: { code: "rate_limit_exceeded", message: "Too many requests." } });
+            return;
+          }
+          const card = await serverCardReader.read(route.publicId);
+          if (card.status === 200) {
+            res.setHeader("Cache-Control", "public, max-age=300");
+          }
+          writeJson(res, card.status, card.body);
+          return;
+        }
+        case "not_found": {
+          break;
+        }
       }
 
       writeJson(res, 404, {

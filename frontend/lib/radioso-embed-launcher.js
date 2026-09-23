@@ -16,6 +16,7 @@
   const RESET_SESSION_MESSAGE = 'radioso:embed:reset-session'
   const TYPING_MESSAGE = 'radioso:embed:typing'
   const STYLE_ELEMENT_ID = 'radioso-embed-style'
+  const AGENT_CARD_LINK_ID = 'radioso-agent-card-link'
   const ATTENTION_PRESETS = new Set(['none', 'breathe', 'pulse', 'nudge', 'bounce-in'])
   const DEFAULT_TEASER_DELAY_MS = 4000
   // Hysteresis band: collapse past 20% scroll progress, only expand again once
@@ -542,6 +543,24 @@
     }
     const parsed = parseInt(value.trim(), 10)
     return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback
+  }
+
+  // A crawler-style agent reads the page, not the widget. The link points at the agent's
+  // card so it can find the door without executing anything. `rel` is unregistered, so this
+  // is an advisory hint; /.well-known is the authoritative path.
+  const ensureAgentCardLinkInjected = (agentCardUrl) => {
+    if (typeof agentCardUrl !== 'string' || !agentCardUrl) {
+      return
+    }
+    if (document.getElementById(AGENT_CARD_LINK_ID)) {
+      return
+    }
+    const link = document.createElement('link')
+    link.id = AGENT_CARD_LINK_ID
+    link.rel = 'agent-card'
+    link.type = 'application/json'
+    link.href = agentCardUrl
+    document.head.appendChild(link)
   }
 
   const ensureStylesInjected = () => {
@@ -1487,6 +1506,7 @@
     const hasBeenOpened = safeStorage.get(openedStorageKey) === '1'
     const teaserPreviouslyDismissed = safeStorage.get(teaserStorageKey) === '1'
     ensureStylesInjected()
+    ensureAgentCardLinkInjected(config.agentCardUrl)
 
     const host = document.createElement('div')
     host.style.position = 'fixed'

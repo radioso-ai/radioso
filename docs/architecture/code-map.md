@@ -646,6 +646,136 @@ Public surfaces and key files:
 Private Test Chat and revision evals consume the agents module's narrow
 revision-reader ports. They do not read mutable authoring rows directly.
 
+## Agent Public Identity
+
+Owns how an agent is named and reached from outside the workspace: the minted
+`publicId`, the operator-authored `publicDescription`, the two switches that
+publish the agent card and open credential-free access, and the per-agent walk-in
+budget. Minting is lazy and idempotent — the id appears on the write that first
+makes the agent reachable — and rotation is a revocation rather than a settings
+save, which is why it has its own route and its own audit event.
+
+The invariant that credential-free access requires a published card lives in
+`validateAgentInput`, so every writer carries it. `publicId` is deliberately
+absent from `agentInputFieldSchemas`, which is the allowed-field list for both
+the PUT body and Ray's `propose_agent_setting`: the id is minted, never authored.
+
+Public surfaces and key files:
+
+- `backend/src/modules/agents/domain.ts` (`AgentPublicIdentity`, the invariant, `unpublishedAgentPublicIdentity`)
+- `backend/src/modules/agents/services/agentPublicIdentity.ts` (`mintPublicId`, `ensurePublicIdMintedForInput`, `describePublicAccessChange`)
+- `backend/src/app/http/routes/agentPublicIdentityRoutes.ts` (`POST /api/v1/agents/:agentId/public-id/rotate`)
+- `backend/src/db/repositories/agentRepository.ts` (`findByPublicId`, the `agents.public_id` partial unique index)
+- `frontend/components/dashboard/settings/walk-in-access-section.tsx` (Channels -> MCP, Open access)
+- `backend/tests/unit/agents/agentPublicIdentity.test.ts`
+- `backend/tests/integration/agent-public-identity.integration.test.ts`
+- `frontend/tests/e2e/mcp-converse-channel.spec.ts`
+
+Related docs:
+
+- [MCP Client Setup](../mcp-client-setup.md)
+
+## Agent Discovery Documents
+
+Owns the three public documents a visiting agent reads before it connects: an
+A2A Agent Card, an MCP server card, and a catalog entry. Each renderer is a pure
+function of one `AgentPublicProfile` and carries the Zod schema that types it;
+the OpenAPI layer registers those schemas rather than restating them, so the
+published contract and the served document cannot drift. Tool descriptors arrive
+through the routines module's published port as a type, so the module renders
+what a descriptor says while routines, slots, and exposure rules stay behind it.
+
+`AgentPublicProfilePort.load` answers null for every reason a caller is not
+entitled to a document — unknown id, card switched off, agent unpublished, agent
+deleted — which is how all four end in the same 404. It throws when
+`PUBLIC_MCP_CONVERSE_URL` is unset, so a misconfigured deployment refuses to
+publish a card instead of naming an endpoint that does not answer. An agent's
+endpoint is that value plus `/a/{publicId}`, and the standalone MCP server
+proxies the server card one segment past it.
+
+Public surfaces and key files:
+
+- `backend/src/modules/agentDiscovery/routes.ts` (`GET /.well-known/agent-card/{publicId}.json`, `/mcp/server-card/`, `/ai-catalog/`)
+- `backend/src/modules/agentDiscovery/contracts/agentPublicProfile.ts` (`AgentPublicProfile`, `AgentPublicProfilePort`)
+- `backend/src/modules/agentDiscovery/domain/` (`renderA2aAgentCard`, `renderMcpServerCard`, `renderAiCatalog`, `discoveryDocumentUrls`)
+- `backend/src/app/composition/agentDiscovery.ts` (profile from the agent row, its published release, and `AgentToolCatalogPort`)
+- `packages/radioso-mcp-server/src/http/resolveMcpRoute.ts` and `agentServerCard.ts` (`GET /mcp/a/{publicId}/server-card`)
+- `packages/wordpress-companion/radioso-agent-card.php` (the site-level `.well-known` redirects)
+- `frontend/lib/radioso-embed-launcher.js` (`<link rel="agent-card">` during bootstrap)
+- `backend/tests/unit/agentDiscovery/`, `backend/tests/contract/agent-discovery.contract.test.ts`, `backend/tests/integration/agent-discovery.integration.test.ts`
+
+Related docs:
+
+- [MCP Client Setup](../mcp-client-setup.md)
+- `docs-portal/content/guides/agent-converse.mdx`
+
+## MCP Converse Sessions
+
+Owns who is allowed to hold a converse session and for how long. A session names
+its **origin** — a minted credential, or an agent's public id — and every request
+re-checks that origin through one `AgentConverseOriginVerifier`. The HTTP
+middleware and `AgentConverseSessionService.validate` never branch on which kind
+it is; the two adapters in composition do, and each owns its own refusal codes
+and its own audit trail.
+
+Comparing the session's public id against the agent's current one is the whole
+walk-in invalidation mechanism: rotating the id or closing the door refuses the
+next request, with no session table to sweep. A credential-bound session resolves
+its conversation through `agent_converse_session_mappings`, which keeps one
+conversation across exchanges; a walk-in session mints a public session id and
+persists nothing, because each walk-in exchange opens a fresh conversation.
+
+Walk-in exchanges spend a per-source and a per-agent budget before the exchange
+resolves anything about the agent, so a throttled caller and an agent that does
+not exist are indistinguishable. Turns inside an open session spend the shared
+agent-channel budgets, keyed by grant for a credential and by session for a
+walk-in caller.
+
+Public surfaces and key files:
+
+- `backend/src/modules/settings/contracts/agentConverseSession.ts` (`AgentConverseOrigin`, `AgentConversePrincipal`, `AgentConverseOriginVerifier`, `AgentConverseWalkInIssuerPort`)
+- `backend/src/modules/settings/services/agentConverseSessionService.ts` and `converseExchangeOrigins.ts` (the two issue paths)
+- `backend/src/modules/settings/domain/publicChatSession.ts` (`issueConverseChatSession`, `verifyConverseChatSession`) and `converseGrantVersion.ts`
+- `backend/src/app/composition/agentConverseOrigins.ts` (both verifier adapters, the walk-in issuer, the outcome observer)
+- `backend/src/app/composition/converseVisitorIdentity.ts` (`signedIdentity` bound to the session rather than an origin)
+- `backend/src/app/http/middleware/mcpConverseWalkInRateLimiter.ts` and `requireMcpConverseSession.ts`
+- `backend/src/app/http/routes/mcpConverseRoutes.ts` (`POST /api/v1/mcp/converse/session` takes `launchToken` or `publicId`)
+- `packages/radioso-mcp-server/src/http/walkInRoutes.ts` and `auth/authService.ts` (`/mcp/a/{publicId}`)
+- `backend/tests/unit/settings/agentConverseOriginVerifier.test.ts`, `converseSessionPayload.test.ts`
+- `backend/tests/integration/walk-in-converse.integration.test.ts`, `mcp-converse-session-revalidation.integration.test.ts`
+
+Related docs:
+
+- [MCP Client Setup](../mcp-client-setup.md)
+- `docs-portal/content/guides/publish-an-agent.mdx`
+
+## Conversation Updates (agent resumption)
+
+Owns how a caller that cannot sit in a chat reads a conversation forward after a
+handoff. Two narrow ports: a **reader** that adapts the existing conversation tail
+into `{ id, author, createdAt, text }` — `author` comes from the message's `source`,
+because an operator's reply is stored with `role: "assistant"` — and a **waiter**
+that resolves when there is a reason to re-query. The waiter is a race, not a
+subscription: the conversation event bus is per-process, so it is raced against a
+jittered re-poll and the deadline, which is what makes a reply handled by another
+API instance reach a parked caller. The wait holds no database connection.
+
+Public entry points:
+
+- `backend/src/modules/chat/contracts/conversationUpdates.ts` (both ports)
+- `backend/src/modules/chat/services/conversationUpdateReader.ts` (adapts `chatHistoryService.tailConversation`)
+- `backend/src/modules/chat/services/conversationUpdateWaiter.ts`
+- `backend/src/app/composition/conversationUpdates.ts` (default wiring over `publicConversationEventBus`)
+- `backend/src/app/http/routes/mcpConverseMessagesRoute.ts` (`GET /api/v1/mcp/converse/messages`)
+- `packages/radioso-mcp-server/src/tools/conversationUpdatesTools.ts` (`get_conversation_updates`)
+- `backend/tests/unit/chat/conversationUpdateReader.test.ts`, `conversationUpdateWaiter.test.ts`
+- `backend/tests/integration/converse-messages.integration.test.ts`
+
+Related docs:
+
+- [Human Takeover](../human-takeover.md)
+- [MCP Client Setup](../mcp-client-setup.md)
+
 ## Conversation Engine Contracts
 
 Owns product-independent conversation runtime contracts: agents, input events,

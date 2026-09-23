@@ -246,6 +246,23 @@ export const registerAgentsPaths = (
   });
 
   registry.registerPath({
+    method: "post",
+    path: "/api/v1/agents/{agentId}/public-id/rotate",
+    tags: ["Agents"],
+    summary: "Rotate the agent's public id",
+    description: "Replaces the identifier callers reach this agent by. Every agent connected without a credential is dropped on its next request. The agent must already have a public id, which publishing its agent card mints.",
+    operationId: "rotateAgentPublicId",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: { params: schemas.AgentParamsSchema },
+    responses: {
+      200: { description: "Agent with its replacement public id", content: { "application/json": { schema: schemas.ConversationAgentSchema } } },
+      400: { description: "The agent has no public id to rotate", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Agent not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    },
+  });
+
+  registry.registerPath({
     method: "get",
     path: "/api/v1/agents/{agentId}/directives",
     tags: ["Agents"],

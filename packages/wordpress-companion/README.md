@@ -221,6 +221,38 @@ If nothing arrives:
 - Check the WordPress host's PHP error log when the activity log reports a
   fatal error or a batch remains stalled.
 
+## Agent discovery paths
+
+A visiting AI agent given only your domain looks for discovery documents on your
+own origin. Radioso hosts the canonical documents per agent; this plugin answers
+the three site-level paths with a redirect to them.
+
+Under **Settings → Radioso Agent Card**, fill in:
+
+- **Radioso API URL** — where your Radioso backend answers, e.g.
+  `https://api.radioso.ai`.
+- **Public agent id** — the `ag_…` id from **Channels → MCP** in Radioso, shown
+  once the agent publishes its card.
+
+The plugin then answers:
+
+| Path on your site | Redirects to |
+|---|---|
+| `/.well-known/agent-card.json` | `{API}/.well-known/agent-card/{publicId}.json` |
+| `/.well-known/mcp/server-card.json` | `{API}/.well-known/mcp/server-card/{publicId}.json` |
+| `/.well-known/ai-catalog.json` | `{API}/.well-known/ai-catalog/{publicId}.json` |
+
+Each redirect is a 302, so the canonical document stays the one Radioso serves
+and caches. Leave either field blank and the three paths answer 404.
+
+The paths go live when WordPress rebuilds its rewrite rules, which happens when
+you save either setting. If a path still 404s, open **Settings → Permalinks**
+and save once to force a rebuild.
+
+The public agent id is an address, not a secret: it authorizes nothing on its
+own, and it is not the website embed token. Rotating it in Radioso stops the old
+id resolving, so paste the new one here after a rotation.
+
 ## Security
 
 - Payloads are signed with HMAC-SHA256 over the raw JSON body and sent in the

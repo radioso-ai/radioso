@@ -2,6 +2,7 @@ import type { ConversationAgent } from "../../../src/modules/agents/domain.js";
 import { projectInternalAgentConfig } from "../../../src/modules/agents/agentConfig.js";
 import { conversationQualityDirectives } from "./directives.js";
 import { CQ_AGENT_ID } from "./routines.js";
+import { unpublishedAgentPublicIdentity } from "../../../src/modules/agents/public.js";
 
 export const CQ_WORKSPACE_ID = "cq-workspace";
 
@@ -12,6 +13,7 @@ export const CQ_WORKSPACE_ID = "cq-workspace";
  * which is what the cases are measuring.
  */
 export const conversationQualityAgent: ConversationAgent = {
+  ...unpublishedAgentPublicIdentity(),
   id: CQ_AGENT_ID,
   workspaceId: CQ_WORKSPACE_ID,
   name: "Acme Support",

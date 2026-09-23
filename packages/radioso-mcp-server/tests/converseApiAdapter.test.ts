@@ -3,6 +3,60 @@ import { describe, expect, it, vi } from "vitest";
 import { createConverseApiAdapter } from "../src/converseApiAdapter.js";
 
 describe("converse backend API adapter", () => {
+  it("reads conversation updates with the cursor and wait on the query string", async () => {
+    const fetchImpl = vi.fn(async () =>
+      new Response(JSON.stringify({ messages: [], cursor: null, ownership: { state: "ai_owned" } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    const adapter = createConverseApiAdapter({
+      baseUrl: "https://radioso.example",
+      signingSecret: "0123456789abcdef0123456789abcdef",
+      requestTimeoutMs: 1000,
+    }, fetchImpl);
+
+    await adapter.messages("session", { cursor: "opaque-1", waitMs: 25_000 }, { sourceDigest: "D0GJ62ZQvM0QF23UXwB8Y6v6nTS26zrXbA_oYopE07g" });
+    await adapter.messages("session", {});
+
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      1,
+      "https://radioso.example/api/v1/mcp/converse/messages?cursor=opaque-1&waitMs=25000",
+      expect.objectContaining({
+        method: "GET",
+        headers: expect.objectContaining({
+          authorization: "Bearer session",
+          // The proof signs the route, not the query, so a long poll presents the same proof.
+          "x-radioso-mcp-source-digest": "D0GJ62ZQvM0QF23UXwB8Y6v6nTS26zrXbA_oYopE07g",
+        }),
+      }),
+    );
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      2,
+      "https://radioso.example/api/v1/mcp/converse/messages",
+      expect.objectContaining({ method: "GET" }),
+    );
+  });
+
+  it("does not time a long poll out at the plain request timeout", async () => {
+    // The wait is a deliberate deadline the caller asked for, not a slow backend.
+    const fetchImpl = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      if (init?.signal?.aborted) throw Object.assign(new Error("aborted"), { name: "AbortError" });
+      return new Response(JSON.stringify({ messages: [], cursor: null, ownership: { state: "ai_owned" } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    const adapter = createConverseApiAdapter({
+      baseUrl: "https://radioso.example",
+      requestTimeoutMs: 20,
+    }, fetchImpl);
+
+    await expect(adapter.messages("session", { waitMs: 500 })).resolves.toMatchObject({ messages: [] });
+    await expect(adapter.ask("session", { message: "Hello" })).rejects.toThrow(/timed out after 20ms/);
+  });
+
   it("calls exchange, validate, ask, and internal use endpoints without a workspace API bearer", async () => {
     const fetchImpl = vi.fn(async (_input: string | URL | Request, _init?: RequestInit) =>
       new Response(JSON.stringify({ ok: true }), {

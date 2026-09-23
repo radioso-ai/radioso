@@ -343,7 +343,7 @@ export const runConverseGrantSmoke = async (logger: SmokeLogger): Promise<Conver
     const tools = await listTools(remote.baseUrl, grant.token);
     assert.deepEqual(
       tools.result.tools.map((tool) => tool.name).sort(),
-      ["ask_agent", "radioso_doc_page", "radioso_docs", "start_return"],
+      ["ask_agent", "get_conversation_updates", "radioso_doc_page", "radioso_docs", "start_return"],
     );
     const listedStartReturn = tools.result.tools.find((tool) => tool.name === "start_return");
     assert.equal(listedStartReturn?.description, startReturn.description);
@@ -361,6 +361,18 @@ export const runConverseGrantSmoke = async (logger: SmokeLogger): Promise<Conver
     const askAnswer = asAskAgentAnswer(ask.structuredContent).answer;
     assert.equal(typeof askAnswer.text, "string");
     assert.ok(askAnswer.text.length > 0);
+
+    logger.step("reading the conversation back through get_conversation_updates");
+    const updates = await callTool(remote.baseUrl, grant.token, "get_conversation_updates", { waitMs: 0 });
+    assert.equal(updates.response.status, 200, `Expected get_conversation_updates to succeed: ${JSON.stringify(updates.payload)}`);
+    const updatePage = updates.structuredContent as {
+      messages?: { author?: string; text?: string }[];
+      cursor?: string | null;
+      ownership?: { state?: string };
+    };
+    assert.ok((updatePage.messages?.length ?? 0) >= 2, "Expected the ask_agent turn to be readable as conversation updates");
+    assert.equal(typeof updatePage.cursor, "string");
+    assert.equal(updatePage.ownership?.state, "ai_owned");
 
     logger.step("calling the start_return routine tool with its required slot");
     const invocation = await callTool(remote.baseUrl, grant.token, "start_return", { orderId: "A-1001" });
@@ -449,7 +461,7 @@ export const runSharedStoreConverseSmoke = async (
     const toolsOnB = await listTools(runtimeB.baseUrl, grant.token);
     assert.deepEqual(
       toolsOnB.result.tools.map((tool) => tool.name).sort(),
-      ["ask_agent", "radioso_doc_page", "radioso_docs", "start_return"],
+      ["ask_agent", "get_conversation_updates", "radioso_doc_page", "radioso_docs", "start_return"],
     );
 
     return {

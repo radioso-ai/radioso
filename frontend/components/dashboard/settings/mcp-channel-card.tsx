@@ -7,6 +7,7 @@ import { AgentChannelCredentialList } from '@/components/dashboard/settings/agen
 import { CredentialIssuedDialog } from '@/components/dashboard/settings/credential-dialogs'
 import { McpConnectClientDialog } from '@/components/dashboard/settings/mcp-connect-client-dialog'
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
+import { WalkInAccessSection } from '@/components/dashboard/settings/walk-in-access-section'
 import { CodeSnippet } from '@/components/shared/api-snippets'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -150,6 +151,8 @@ function McpConnectedClients({ agentId, mcpUrl }: { agentId: string; mcpUrl: str
         onRevoke={engine.revoke}
         onRotate={rotate}
       />
+
+      <WalkInAccessSection agentId={agentId} />
 
       <div className="flex justify-end">
         <McpGuideLink>MCP setup guide</McpGuideLink>

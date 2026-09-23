@@ -35,7 +35,7 @@ import {
   routineDefinitionDraftUpdateInputSchema,
   routineDraftAssistRequestSchema,
 } from "../../../modules/routines/public.js";
-import type { AgentSettingsResource } from "../../../modules/agents/public.js";
+import { describePublicAccessChange, type AgentSettingsResource } from "../../../modules/agents/public.js";
 import { answerCoverageCriteriaSchema } from "../../../modules/answerCoverage/public.js";
 import { builtInAnswerDirectiveViews } from "../../../modules/directives/public.js";
 import {
@@ -95,6 +95,10 @@ export const agentBodySchema = z.object({
   branding: agentInputFieldSchemas.branding.optional(),
   retrievalEnabled: agentInputFieldSchemas.retrievalEnabled.optional(),
   sourceScope: agentInputFieldSchemas.sourceScope.optional(),
+  publicDescription: agentInputFieldSchemas.publicDescription.optional(),
+  agentCardEnabled: agentInputFieldSchemas.agentCardEnabled.optional(),
+  publicAgentAccessEnabled: agentInputFieldSchemas.publicAgentAccessEnabled.optional(),
+  walkInConversationsPerHour: agentInputFieldSchemas.walkInConversationsPerHour.optional(),
   greetingInstruction: agentInputFieldSchemas.greetingInstruction.optional(),
   assistantDefaultLocale: agentInputFieldSchemas.assistantDefaultLocale.optional(),
   proactiveGreetingEnabled: agentInputFieldSchemas.proactiveGreetingEnabled.optional(),
@@ -603,7 +607,7 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
 
   router.put("/:agentId", workspaceSession, agentManage, validateBody(agentBodySchema), async (req, res, next) => {
     try {
-      const { workspaceId } = res.locals as { workspaceId: string };
+      const { workspaceId, accountId } = res.locals as { workspaceId: string; accountId?: string };
       const { authPrincipal } = res.locals as { authPrincipal?: AgentRoutePrincipal };
       const parsed = agentParamsSchema.parse(req.params);
       const current = await dependencies.agentService.resolve(workspaceId, parsed.agentId);
@@ -616,6 +620,16 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
           parsed.agentId,
           dependencies.agentService.withRotatedTokens(current, liveChanges),
         );
+        const publicAccessChange = describePublicAccessChange(current, agent);
+        if (publicAccessChange) {
+          await dependencies.auditService.record({
+            accountId: accountId ?? null,
+            workspaceId,
+            eventType: "agent.public_access.changed",
+            eventStatus: "success",
+            metadata: { agentId: parsed.agentId, ...publicAccessChange },
+          });
+        }
       }
       if (customInstruction !== undefined) {
         agent = await dependencies.agentService.update(workspaceId, parsed.agentId, { customInstruction });

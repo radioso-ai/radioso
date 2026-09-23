@@ -51,6 +51,11 @@ interface AgentRow {
   skill_settings: unknown;
   chat_provider: LlmProviderName | null;
   chat_model: string | null;
+  public_id: string | null;
+  public_description: string;
+  agent_card_enabled: boolean;
+  public_agent_access_enabled: boolean;
+  walk_in_conversations_per_hour: number | null;
   authored_directives: unknown;
   created_at: Date;
   updated_at: Date;
@@ -210,6 +215,11 @@ const agentColumns = sql`
     ),
     '[]'::json
   ) AS authored_directives,
+  public_id,
+  public_description,
+  agent_card_enabled,
+  public_agent_access_enabled,
+  walk_in_conversations_per_hour,
   created_at,
   updated_at
 `;
@@ -535,6 +545,11 @@ const mapAgent = (
     assistantDefaultLocale: readString(greeting, "assistantDefaultLocale") ?? null,
     proactiveGreetingEnabled: readBoolean(greeting, "proactiveGreetingEnabled"),
     chatModelOverride: chatOverride,
+    publicId: row.public_id,
+    publicDescription: row.public_description,
+    agentCardEnabled: row.agent_card_enabled,
+    publicAgentAccessEnabled: row.public_agent_access_enabled,
+    walkInConversationsPerHour: row.walk_in_conversations_per_hour,
     surfaceSettings: {
       authenticatedChat: {
         enabled: readBoolean(authenticatedChat, "enabled"),
@@ -590,6 +605,8 @@ export interface AgentRepositoryPort {
   findDefaultByWorkspaceId(workspaceId: string): Promise<AgentRecord | null>;
   findByAnonymousChatToken(token: string): Promise<AgentRecord | null>;
   findByWebsiteEmbedToken(token: string): Promise<AgentRecord | null>;
+  /** Workspace-free by design: the caller on this path holds a public id and nothing else. */
+  findByPublicId(publicId: string): Promise<AgentRecord | null>;
   listByWorkspaceId(workspaceId: string): Promise<AgentRecord[]>;
   update(agentId: string, workspaceId: string, input: AgentInput, options?: AgentUpdateOptions): Promise<AgentRecord>;
   /** Draft-only: unlike `update`, this never touches the live `agents` row (spec 1150 F3 —
@@ -632,7 +649,12 @@ export class AgentRepository implements AgentRepositoryPort {
           output_modes,
           skill_settings,
           chat_provider,
-          chat_model
+          chat_model,
+          public_id,
+          public_description,
+          agent_card_enabled,
+          public_agent_access_enabled,
+          walk_in_conversations_per_hour
         )
         VALUES (
           ${agentId},
@@ -646,7 +668,12 @@ export class AgentRepository implements AgentRepositoryPort {
           ${toJsonb(toOutputModes(normalized))},
           ${toJsonb(toSkillSettings(normalized))},
           ${normalized.chatModelOverride?.provider ?? null},
-          ${normalized.chatModelOverride?.model ?? null}
+          ${normalized.chatModelOverride?.model ?? null},
+          ${normalized.publicId},
+          ${normalized.publicDescription},
+          ${normalized.agentCardEnabled},
+          ${normalized.publicAgentAccessEnabled},
+          ${normalized.walkInConversationsPerHour}
         )
         RETURNING ${agentColumns}
       `.execute(trx);
@@ -714,6 +741,16 @@ export class AgentRepository implements AgentRepositoryPort {
     return row ? mapAgent(row, this.surfaceExtensions, this.skillSettings) : null;
   }
 
+  async findByPublicId(publicId: string): Promise<AgentRecord | null> {
+    const result = await sql<AgentRow>`
+      SELECT ${agentColumns}
+      FROM agents
+      WHERE public_id = ${publicId}
+    `.execute(this.db);
+    const row = result.rows[0];
+    return row ? mapAgent(row, this.surfaceExtensions, this.skillSettings) : null;
+  }
+
   async listByWorkspaceId(workspaceId: string): Promise<AgentRecord[]> {
     const result = await sql<AgentRow>`
       SELECT ${agentColumns}
@@ -773,6 +810,11 @@ export class AgentRepository implements AgentRepositoryPort {
           skill_settings = ${toJsonb(toSkillSettings(normalized))},
           chat_provider = ${normalized.chatModelOverride?.provider ?? null},
           chat_model = ${normalized.chatModelOverride?.model ?? null},
+          public_id = ${normalized.publicId},
+          public_description = ${normalized.publicDescription},
+          agent_card_enabled = ${normalized.agentCardEnabled},
+          public_agent_access_enabled = ${normalized.publicAgentAccessEnabled},
+          walk_in_conversations_per_hour = ${normalized.walkInConversationsPerHour},
           updated_at = ${currentTimestamp()}
       WHERE id = ${agentId}
         AND workspace_id = ${workspaceId}

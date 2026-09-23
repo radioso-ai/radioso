@@ -13,6 +13,7 @@ import { createAssistantRoutes } from "./assistantRoutes.js";
 import { createAgentRoutes } from "./agentRoutes.js";
 import { createAgentExternalSkillsRoutes } from "./agentExternalSkillsRoutes.js";
 import { createAgentBundleRoutes } from "./agentBundleRoutes.js";
+import { createAgentPublicIdentityRoutes } from "./agentPublicIdentityRoutes.js";
 import { createDocumentRoutes } from "./documentRoutes.js";
 import { createHistoryRoutes } from "./historyRoutes.js";
 import { createMetricsRoutes } from "./metricsRoutes.js";
@@ -39,6 +40,7 @@ import { createCopilotRoutes } from "../../../modules/operatorCopilot/routes.js"
 import { createApiAccessRoutes } from "./apiAccessRoutes.js";
 import { createOperatorMcpSetupRoutes } from "../../../modules/operatorMcpSetup/routes.js";
 import { createOperatorMcpDashboardRoutes } from "../../../modules/operatorMcpAuthorization/dashboardRoutes.js";
+import { createAgentDiscoveryRoutes } from "../../../modules/agentDiscovery/public.js";
 import { createOperatorMcpDiscoveryRoutes, createOperatorMcpOauthRoutes } from "../../../modules/operatorMcpAuthorization/routes.js";
 import { createOperatorMcpInternalRoutes } from "../../../modules/operatorCopilot/mcpRoutes.js";
 import { createTestExecutionRoutes } from "./testExecutionRoutes.js";
@@ -54,6 +56,7 @@ type ApiRouteMount = {
  */
 export const createApiRouteMounts = (_dependencies: AppDependencies): readonly ApiRouteMount[] => [
   { path: "/.well-known", createRouter: createOperatorMcpDiscoveryRoutes },
+  { path: "/.well-known", createRouter: createAgentDiscoveryRoutes },
   { path: "/api/v1/auth", createRouter: createAuthRoutes },
   { path: "/api/v1/account", createRouter: createAccountRoutes },
   { path: "/api/v1/account", createRouter: createAccountUserRoutes },
@@ -79,6 +82,7 @@ export const createApiRouteMounts = (_dependencies: AppDependencies): readonly A
   { path: "/api/v1/agents", createRouter: createDecisionRoutes },
   { path: "/api/v1/decisions", createRouter: createDecisionsQueryRoutes },
   { path: "/api/v1/agents", createRouter: createAgentBundleRoutes },
+  { path: "/api/v1/agents", createRouter: createAgentPublicIdentityRoutes },
   { path: "/api/v1/agents", createRouter: createAgentExternalSkillsRoutes },
   { path: "/api/v1/agents", createRouter: createEmailSkillRoutes },
   { path: "/api/v1/agents", createRouter: createWebhookSkillRoutes },

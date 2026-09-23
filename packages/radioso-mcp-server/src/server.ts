@@ -4,6 +4,7 @@ import { McpServer } from "@modelcontextprotocol/server";
 import type { AgentToolDescriptor } from "./converseApiAdapter.js";
 import { toStructuredToolError } from "./errors.js";
 import { toCallToolResult, toErrorCallToolResult } from "./toolResult.js";
+import { createConversationUpdatesToolDefinitions } from "./tools/conversationUpdatesTools.js";
 import { createConverseToolDefinitions } from "./tools/converseTools.js";
 import { createProductDocsToolDefinitions } from "./tools/productDocsTools.js";
 import { createRoutineToolDefinitions } from "./tools/routineTools.js";
@@ -80,7 +81,11 @@ export const createRadiosoMcpServer = ({
     version: "0.1.0",
   });
 
-  const converseToolDefinitions = createConverseToolDefinitions();
+  const converseToolDefinitions = [
+    ...createConverseToolDefinitions(),
+    // Resumption sits beside ask_agent: the same session, read instead of written.
+    ...createConversationUpdatesToolDefinitions(),
+  ];
   // Documentation tools sit beside the converse tool rather than behind a flag: a client that
   // can reach this server is already authorized for the workspace, and the corpus is the same
   // public documentation for every one of them.

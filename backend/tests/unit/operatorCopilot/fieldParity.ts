@@ -145,6 +145,7 @@ export const fieldExclusions: Record<string, Record<string, FieldParityExclusion
       "citationDisplayEnabled", "contactRequestsEnabled", "webhookExportsEnabled", "handoffOnRetrievalMiss",
       "contactRequestDelivery", "theme", "branding", "retrievalEnabled", "sourceScope", "greetingInstruction",
       "assistantDefaultLocale", "proactiveGreetingEnabled", "chatModelOverride", "skillSettings", "surfaceSettings",
+      "publicDescription", "agentCardEnabled", "publicAgentAccessEnabled", "walkInConversationsPerHour",
     ], agentSettingGenericKeyValue),
   },
   propose_context_variable: {

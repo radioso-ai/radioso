@@ -161,6 +161,30 @@ describe("operator MCP stateless request handler", () => {
     }));
   });
 
+  it("gives a 2025-06-18 client the same refusal code and rejected paths as a self-describing one", async () => {
+    const handler = createOperatorMcpRequestHandler({
+      ...dependencies,
+      call: vi.fn<OperatorMcpRequestHandlerDependencies["call"]>(async () => {
+        throw new OperatorBackendAdapterError("Operator request was rejected.", 400, "invalid_arguments", undefined, ["kind: invalid_enum_value"]);
+      }),
+    });
+    dependencies.admit.mockResolvedValue({ proof: { ...proof, method: "tools/call" } });
+
+    const response = await handler(standardRequest(
+      { id: 3, method: "tools/call", params: { arguments: {}, name: "prepare_routine_structure" } },
+      "2025-06-18",
+    ));
+
+    // A JSON-RPC error is a complete response. Rewriting it as an internal error would leave every
+    // standard client — which is to say most of them — unable to correct a rejected call.
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: -32602, data: ["kind: invalid_enum_value"], message: "invalid_arguments" },
+      id: 3,
+      jsonrpc: "2.0",
+    });
+  });
+
   it("dispatches a self-describing 2026-07-28 ping without initialization or session state", async () => {
     const handler = createOperatorMcpRequestHandler(dependencies);
     const response = await handler(operatorRequest({ id: "1", jsonrpc: "2.0", method: "ping" }));

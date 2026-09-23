@@ -57,14 +57,13 @@ const conditionalFieldTypes = { routineId: "string", operations: "array", draft:
  * requirements the branches used to carry.
  */
 const inputSchema = z.object({
-  kind: z.enum(["edit", "create", "delete"]),
+  kind: z.enum(["edit", "create", "delete"]).describe("edit applies explicit graph commands to an existing routine, create drafts a new one, delete retires one."),
   agentId: z.string().uuid(),
-  /** Required for `edit` and `delete`; the routine being changed. */
-  routineId: z.string().uuid().optional(),
-  /** Required for `edit`; the explicit graph commands to apply. */
-  operations: z.array(structuralOperationSchema).min(1).max(100).optional(),
-  /** Required for `create`; the whole routine to draft. */
-  draft: routineDefinitionDraftInputSchema.optional(),
+  // The per-kind requirements belong in the advertised schema, not only in the refinement: a
+  // caller reading three bare optionals still has to guess which of them its kind needs.
+  routineId: z.string().uuid().optional().describe("The routine being changed. Required for kind edit and kind delete; omit for create."),
+  operations: z.array(structuralOperationSchema).min(1).max(100).optional().describe("The explicit graph commands to apply. Required for kind edit; omit for create and delete."),
+  draft: routineDefinitionDraftInputSchema.optional().describe("The whole routine to draft. Required for kind create; omit for edit and delete."),
 }).strict().superRefine((input, ctx) => {
   const carried: ReadonlyArray<string> = fieldsPerKind[input.kind];
   for (const field of conditionalFields) {

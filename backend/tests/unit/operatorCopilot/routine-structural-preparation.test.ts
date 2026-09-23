@@ -34,7 +34,30 @@ describe("routine structural preparation", () => {
     expect(inputSchema.type).toBe("object");
     expect(Object.keys(inputSchema.properties as object).sort()).toEqual(["agentId", "draft", "kind", "operations", "routineId"]);
     expect(inputSchema.required).toEqual(expect.arrayContaining(["kind", "agentId"]));
-    expect((inputSchema.properties as { kind: { enum: string[] } }).kind.enum).toEqual(["edit", "create", "delete"]);
+    const properties = inputSchema.properties as Record<string, { enum?: string[]; description?: string }>;
+    expect(properties.kind?.enum).toEqual(["edit", "create", "delete"]);
+    // The per-kind requirement has to be readable from the schema itself, not only enforced by the
+    // refinement: three bare optionals leave the caller guessing which of them its kind needs.
+    expect(properties.routineId?.description).toMatch(/edit and kind delete/);
+    expect(properties.operations?.description).toMatch(/kind edit/);
+    expect(properties.draft?.description).toMatch(/kind create/);
+  });
+
+  it("parses its own parsed output, because the catalog re-parses what the application service already parsed", () => {
+    const { inputSchema } = anyDescriptor();
+    const agentId = "11111111-1111-4111-8111-111111111111";
+    const calls = [
+      { kind: "edit", agentId, routineId: agentId, operations: [{ kind: "set_enabled", enabled: false }] },
+      { kind: "delete", agentId, routineId: agentId },
+    ];
+
+    // `mcpApplicationService` hands `parsed.data` to `mcpCatalog`, which parses again, and the tool
+    // parses a third time. A transform whose output is not valid input would turn a good call into
+    // an unattributable 503.
+    for (const call of calls) {
+      const once = inputSchema.parse(call);
+      expect(inputSchema.parse(once)).toEqual(once);
+    }
   });
 
   it("names the field a call got wrong rather than refusing it wholesale", () => {

@@ -9,6 +9,14 @@ Cut a release with the **Cut Release** workflow. It reads the commits since the 
 tag, writes the entry above this line, tags the commit, and publishes a GitHub Release. A
 deploy then ships a release that already exists; it never mints one.
 
+## [1.4.1] - 2026-09-24
+
+### Fixed
+
+- **mcp:** advertise operator tool schemas in the dialect clients read ([#1317](https://github.com/radioso-ai/radioso/pull/1317))
+
+[1.4.1]: https://github.com/radioso-ai/radioso/compare/v1.4.0...v1.4.1
+
 ## [1.4.0] - 2026-09-24
 
 ### Added

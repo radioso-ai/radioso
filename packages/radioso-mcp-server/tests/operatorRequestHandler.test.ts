@@ -345,6 +345,26 @@ describe("operator MCP stateless request handler", () => {
     expect(dependencies.admit.mock.calls.length).toBe(before);
   });
 
+  it("names the request field a rejected envelope got wrong before admission", async () => {
+    const response = await createOperatorMcpRequestHandler(dependencies)(operatorRequest({
+      id: "no-capabilities",
+      jsonrpc: "2.0",
+      method: "ping",
+      params: { _meta: { "io.modelcontextprotocol/protocolVersion": "2026-07-28" } },
+    }));
+
+    await expect(response.json()).resolves.toEqual({
+      error: {
+        code: -32600,
+        data: ["params._meta.io.modelcontextprotocol/clientCapabilities: invalid_type"],
+        message: "Invalid Request",
+      },
+      id: "no-capabilities",
+      jsonrpc: "2.0",
+    });
+    expect(dependencies.admit).not.toHaveBeenCalled();
+  });
+
   it("returns safe 401/403 challenges and rejects oversized calls", async () => {
     const handler = createOperatorMcpRequestHandler({
       ...dependencies,

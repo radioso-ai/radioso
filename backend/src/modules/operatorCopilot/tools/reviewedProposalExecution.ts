@@ -49,10 +49,9 @@ export const createReviewedProposalExecutionTool = (
   reconcileMcpInvocation: async ({ invocation, arguments: rawInput, context, staleBefore }) => {
     const input = inputSchema.parse(rawInput);
     if (!context.operatorMcpGrantId || !context.operatorMcpClientId) return { status: "conflict" };
-    const receiptOpen = invocation.status === "admitted" || invocation.status === "running";
     // An open receipt whose proof is inside the recovery lease belongs to its first runner: a
     // retry that reached the owner first could claim under that receipt before the runner does.
-    if (receiptOpen) {
+    if (invocation.status === "admitted" || invocation.status === "running") {
       if (!invocation.proofConsumedAt) return { status: "conflict" };
       if (invocation.proofConsumedAt.getTime() > staleBefore.getTime()) return { status: "in_progress" };
     }
@@ -69,9 +68,10 @@ export const createReviewedProposalExecutionTool = (
       clientId: context.operatorMcpClientId,
       currentAuthorization: context.currentAuthorization,
     });
-    // Settling a still-open receipt from this retry would fence the owner's atomic owner+receipt
-    // settlement, so an unconfirmed outcome leaves it open until the owner reaches a durable one.
-    if (result.status === "uncertain" && receiptOpen) return { status: "in_progress" };
+    // `recovered` settles the original receipt, so only a durable outcome may take that path. The
+    // snapshot above can be stale: a concurrent retry's claim may have reopened the receipt, and
+    // settling it from here would fence that retry's atomic owner+receipt settlement.
+    if (result.status === "uncertain") return { status: "in_progress" };
     return { status: "recovered", output: { proposalId: input.proposalId, ...result } };
   },
   createTool: (context) => ({

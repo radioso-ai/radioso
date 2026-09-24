@@ -143,17 +143,18 @@ export const assertOperatorMcpDispositionRegistry = (
 };
 
 /**
- * An input-derived key turns every identical call into a replay of the first, which only an act
- * that reconciles from its first attempt's receipt can answer with a real result. Checked over the
- * assembled catalog, contributed descriptors included, because a violation otherwise surfaces as
- * an empty replay in the middle of an operator's retry.
+ * An input-derived key turns every identical call into a replay of the first, which only an
+ * idempotent act that reconciles from its first attempt's receipt can answer with a real result;
+ * replay recovery admits nothing else. Checked over the assembled catalog, contributed descriptors
+ * included, because a violation otherwise surfaces as an empty replay in the middle of an
+ * operator's retry.
  */
 export const assertOperatorMcpOperationIdentities = (descriptors: ReadonlyArray<CopilotToolDescriptor>): void => {
   for (const descriptor of descriptors) {
     const disposition = descriptor.mcpDisposition;
     if (disposition?.status !== "eligible" || disposition.retry.operationIdentity !== "input") continue;
-    if (disposition.retry.effect !== "act" || !descriptor.reconcileMcpInvocation) {
-      throw new Error(`Operator MCP tool "${descriptor.name}" keys its replay by its input, which requires an act with a reconcileMcpInvocation hook.`);
+    if (disposition.retry.effect !== "act" || !disposition.retry.idempotent || !descriptor.reconcileMcpInvocation) {
+      throw new Error(`Operator MCP tool "${descriptor.name}" keys its replay by its input, which requires an idempotent act with a reconcileMcpInvocation hook.`);
     }
   }
 };

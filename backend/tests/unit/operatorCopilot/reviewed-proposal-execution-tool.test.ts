@@ -84,19 +84,21 @@ describe("reviewed proposal execution tool", () => {
     expect(executeMcpReviewedProposal).toHaveBeenCalledWith(expect.objectContaining({ executionInvocationId: "original-receipt" }));
   });
 
-  it("keeps an open original receipt open while the owner cannot confirm its outcome", async () => {
+  // A concurrent retry may have reopened the receipt through the owner's claim since this snapshot
+  // was read, so what the snapshot says about the receipt cannot make an unconfirmed outcome final.
+  it.each(["running", "failed", "completed"])("never settles an unconfirmed outcome through a %s original receipt", async (status) => {
     const executeMcpReviewedProposal = vi.fn(async () => ({ status: "uncertain" as const, reason: "unconfirmed" }));
 
-    await expect(reconcileExecution(executeMcpReviewedProposal, { status: "running", proofConsumedAt: new Date(staleBefore.getTime() - 1_000) }))
+    await expect(reconcileExecution(executeMcpReviewedProposal, { status, proofConsumedAt: new Date(staleBefore.getTime() - 1_000) }))
       .resolves.toEqual({ status: "in_progress" });
   });
 
   it.each([
+    { status: "applied" as const, appliedRef: { routineId: "routine-1" } },
     { status: "stale" as const },
     { status: "failed" as const, reason: "target unavailable" },
     { status: "refused" as const, reason: "not_prepared" },
-    { status: "uncertain" as const, reason: "unconfirmed" },
-  ])("answers a finished original receipt with the owner's outcome for it (%o)", async (outcome) => {
+  ])("answers a finished original receipt with the owner's durable outcome for it (%o)", async (outcome) => {
     const executeMcpReviewedProposal = vi.fn(async () => outcome);
 
     await expect(reconcileExecution(executeMcpReviewedProposal, { status: "completed", proofConsumedAt: new Date(recoveryNow.getTime() - 1_000) }))

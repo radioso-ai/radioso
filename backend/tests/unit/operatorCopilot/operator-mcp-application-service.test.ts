@@ -12,6 +12,7 @@ import { AppError, badRequest } from "../../../src/shared/domain/errors.js";
 import { OperatorCopilotService, type CopilotRepositoryPort } from "../../../src/modules/operatorCopilot/service.js";
 import { operatorMcpDispositions } from "../../../src/modules/operatorCopilot/operatorMcpDisposition.js";
 import { createCancelReviewedProposalTool } from "../../../src/modules/operatorCopilot/tools/cancelReviewedProposal.js";
+import { createReviewedProposalExecutionTool } from "../../../src/modules/operatorCopilot/tools/reviewedProposalExecution.js";
 import { realCatalog } from "./realCatalogTestSupport.js";
 
 const uuid = (suffix: string) => `00000000-0000-4000-8000-${suffix.padStart(12, "0")}`;
@@ -647,6 +648,30 @@ describe("operator MCP operation identity", () => {
     expect(response).toMatchObject({ safeOutcomeCode: "in_progress" });
     expect(response.isError).not.toBe(true);
     expect(response).not.toHaveProperty("structuredContent");
+    expect(invocations.recordOutcome).not.toHaveBeenCalledWith(expect.objectContaining({ invocationId: original.id }));
+  });
+
+  it.each(["failed", "completed"] as const)("leaves a %s original execution receipt unsettled while its owner reports an unconfirmed outcome", async (priorStatus) => {
+    const proposalId = uuid("99");
+    const executeMcpReviewedProposal = vi.fn(async () => ({ status: "uncertain" as const, reason: "unconfirmed" }));
+    const [execution] = enrichCopilotToolCatalog(
+      [{ ...createReviewedProposalExecutionTool({ executeMcpReviewedProposal }), mcpDisposition: operatorMcpDispositions.execute_reviewed_proposal }],
+      { resolveWorkspaceKey: async () => "workspace-key" },
+    );
+    const { service, invocations, invocation } = build(execution, everyScope);
+    // A snapshot that reads the receipt as finished can be stale: a concurrent retry's claim may
+    // have reopened it, and settling it here would fence that retry's owner settlement.
+    const original = {
+      ...invocation, id: uuid("13"), method: "tools/call" as const, descriptorName: execution.name, shape: "act" as const,
+      operationId: "derived", status: priorStatus, safeOutcomeCode: priorStatus === "failed" ? "dependency_error" : "completed",
+      proofConsumedAt: new Date(now.getTime() - 600_000),
+    };
+    invocations.prepareInvocation.mockResolvedValueOnce({ status: "replay", invocation: original });
+
+    const response = await unkeyedCall(service, execution.name, { proposalId, reviewDigest: "a".repeat(43) });
+
+    expect(response).toMatchObject({ safeOutcomeCode: "in_progress" });
+    expect(executeMcpReviewedProposal).toHaveBeenCalledWith(expect.objectContaining({ executionInvocationId: original.id }));
     expect(invocations.recordOutcome).not.toHaveBeenCalledWith(expect.objectContaining({ invocationId: original.id }));
   });
 

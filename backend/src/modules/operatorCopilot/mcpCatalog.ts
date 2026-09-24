@@ -97,12 +97,12 @@ export class OperatorMcpCatalogService {
       staleBefore: input.staleBefore,
       now: input.now,
     });
-    if (reconciliation.status !== "recovered") return reconciliation;
+    if (reconciliation.status !== "recovered" && reconciliation.status !== "unconfirmed") return reconciliation;
     if (!(await hasCurrentCopilotToolPermissions(descriptor, input.context))) {
       throw new OperatorMcpCatalogError("forbidden");
     }
     const parsedOutput = descriptor.outputSchema.safeParse(reconciliation.output);
     if (!parsedOutput.success) throw new OperatorMcpCatalogError("invalid_result");
-    return { status: "recovered", output: parsedOutput.data };
+    return { status: reconciliation.status, output: parsedOutput.data };
   }
 }

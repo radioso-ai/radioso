@@ -9,6 +9,26 @@ Cut a release with the **Cut Release** workflow. It reads the commits since the 
 tag, writes the entry above this line, tags the commit, and publishes a GitHub Release. A
 deploy then ships a release that already exists; it never mints one.
 
+## [1.5.0] - 2026-09-24
+
+### Added
+
+- **agents:** record and act on whether a caller is a person or another agent ([#1316](https://github.com/radioso-ai/radioso/pull/1316))
+
+### Fixed
+
+- **operator-mcp:** accept write tool calls without an operation id ([#1321](https://github.com/radioso-ai/radioso/pull/1321))
+- **access:** list only live credentials in every access inventory ([#1318](https://github.com/radioso-ai/radioso/pull/1318))
+- **mcp:** name the field a rejected operator MCP request got wrong ([#1320](https://github.com/radioso-ai/radioso/pull/1320))
+
+### Database migrations
+
+This release adds 1 migration. They run at service startup, so deploy one stack at a time; overlapping deploys contend on the same DDL lock and stall until one gives up.
+
+- `197_conversation_caller_kind.sql`
+
+[1.5.0]: https://github.com/radioso-ai/radioso/compare/v1.4.1...v1.5.0
+
 ## [1.4.1] - 2026-09-24
 
 ### Fixed

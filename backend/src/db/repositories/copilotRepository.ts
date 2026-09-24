@@ -444,7 +444,10 @@ export class CopilotRepository implements CopilotRepositoryPort, CopilotRetentio
 
   async claimMcpReviewedProposalApply(input: { proposalId: string; executionInvocationId: string; reviewDigest: string; workspaceId: string; operatorUserId: string; grantId: string; clientId: string; now: Date; claimTtlSeconds: number }): Promise<
     | { readonly status: "claimed"; readonly claim: CopilotProposalClaim }
-    | { readonly status: "already_applied"; readonly appliedRef: unknown; readonly reason?: string }
+    /** The proposal already reached this terminal outcome through this same execution receipt. */
+    | { readonly status: "settled"; readonly outcome: "applied" | "stale" | "failed"; readonly appliedRef: unknown; readonly reason?: string }
+    /** This same execution receipt holds the apply claim and its lease has not expired. */
+    | { readonly status: "claim_held" }
     | { readonly status: "missing" | "binding_mismatch" | "digest_mismatch" | "expired" | "canceled" | "not_prepared" }
   > {
     return this.db.transaction().execute(async (trx) => {
@@ -461,8 +464,9 @@ export class CopilotRepository implements CopilotRepositoryPort, CopilotRetentio
         || execution.grant_id !== prepared.grant_id || execution.client_id !== prepared.client_id
         || execution.workspace_id !== prepared.workspace_id || execution.user_id !== prepared.user_id) return { status: "binding_mismatch" as const };
       if (!proposal.review_digest || !proposal.expires_at || proposal.review_digest !== input.reviewDigest) return { status: "digest_mismatch" as const };
-      if (proposal.status === "applied" && proposal.execution_invocation_id === input.executionInvocationId) {
-        return { status: "already_applied" as const, appliedRef: proposal.applied_ref, ...(proposal.failure_reason ? { reason: proposal.failure_reason } : {}) };
+      if (proposal.execution_invocation_id === input.executionInvocationId
+        && (proposal.status === "applied" || proposal.status === "stale" || proposal.status === "failed")) {
+        return { status: "settled" as const, outcome: proposal.status, appliedRef: proposal.applied_ref, ...(proposal.failure_reason ? { reason: proposal.failure_reason } : {}) };
       }
       // Expiry denies a first or replacement execution, but cannot strand the one receipt that
       // already crossed the claim boundary: it may need owner reconciliation after a crash.
@@ -478,7 +482,8 @@ export class CopilotRepository implements CopilotRepositoryPort, CopilotRetentio
         .where((eb) => eb.or([eb("execution_invocation_id", "is", null), eb("execution_invocation_id", "=", input.executionInvocationId)]))
         .where((eb) => eb.or([eb("apply_started_at", "is", null), eb("apply_started_at", "<=", nowMinusSeconds(input.claimTtlSeconds))]))
         .returning(proposalColumns).executeTakeFirst();
-      if (!claimed) return { status: "not_prepared" as const };
+      // The row is locked and still pending, so a failed claim by the bound receipt means its lease is live.
+      if (!claimed) return { status: proposal.execution_invocation_id === input.executionInvocationId ? "claim_held" as const : "not_prepared" as const };
       // A retry owns the original, digest-bound receipt, not the fresh transport invocation.
       // Reopen only that receipt while its matching proposal is still pending and locked here.
       // This makes the owner transaction's existing admitted/running settlement fence usable

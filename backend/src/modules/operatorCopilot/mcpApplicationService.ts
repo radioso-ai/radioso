@@ -424,7 +424,7 @@ export class OperatorMcpApplicationService {
               principal, invocationId: input.proof.invocationId, method: "tools/call", descriptorName: input.name,
               capabilityShape, eventStatus: "success", outcome: "replayed", reason: "operation_in_progress",
             });
-            return replayResponse(replayed);
+            return { content: [], safeOutcomeCode: "in_progress" };
           }
         }
 

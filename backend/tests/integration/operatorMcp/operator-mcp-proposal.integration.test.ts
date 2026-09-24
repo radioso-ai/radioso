@@ -101,6 +101,28 @@ describeIntegration("operator MCP proposal origin", () => {
     await expect(proposals.claimMcpReviewedProposalApply({ ...claim, executionInvocationId, now: new Date() })).resolves.toMatchObject({ status: "expired" });
   });
 
+  it("answers the bound receipt with its held claim or settled outcome, and any other receipt as not prepared", async () => {
+    const reviewId = await createReview();
+    const executionId = await createExecution();
+    const otherExecutionId = await createExecution();
+    const proposal = await proposals.createProposal({
+      workspaceId, operatorUserId: userId, origin: { type: "operator_mcp_invocation", invocationId: reviewId },
+      targetType: "ingestion_settings", targetRef: { workspaceId }, payload: { summary: "Replay settled receipt" },
+      versionToken: "v1", evidence: null, reviewDigest: "5".repeat(64), expiresAt: new Date(Date.now() + 60_000),
+    });
+    const input = { proposalId: proposal.id, executionInvocationId: executionId, reviewDigest: "5".repeat(64), workspaceId, operatorUserId: userId, grantId, clientId, now: new Date(), claimTtlSeconds: 300 };
+    await expect(proposals.claimMcpReviewedProposalApply(input)).resolves.toMatchObject({ status: "claimed" });
+
+    await expect(proposals.claimMcpReviewedProposalApply({ ...input, now: new Date() })).resolves.toEqual({ status: "claim_held" });
+    await expect(proposals.claimMcpReviewedProposalApply({ ...input, executionInvocationId: otherExecutionId, now: new Date() })).resolves.toEqual({ status: "not_prepared" });
+
+    await database.query("UPDATE copilot_proposals SET status = 'stale' WHERE id = $1", [proposal.id]);
+    await expect(proposals.claimMcpReviewedProposalApply({ ...input, now: new Date() })).resolves.toEqual({ status: "settled", outcome: "stale", appliedRef: null });
+    await database.query("UPDATE copilot_proposals SET status = 'failed', failure_reason = 'target unavailable' WHERE id = $1", [proposal.id]);
+    await expect(proposals.claimMcpReviewedProposalApply({ ...input, now: new Date() })).resolves.toEqual({ status: "settled", outcome: "failed", appliedRef: null, reason: "target unavailable" });
+    await expect(proposals.claimMcpReviewedProposalApply({ ...input, executionInvocationId: otherExecutionId, now: new Date() })).resolves.toEqual({ status: "not_prepared" });
+  });
+
   it("does not cancel a reviewed receipt after its pre-effect claim is released", async () => {
     const reviewId = await createReview();
     const executionId = await createExecution();
@@ -157,7 +179,7 @@ describeIntegration("operator MCP proposal origin", () => {
     const settled = await structuralApply.apply({ workspaceId, agentId, operation: "update", routineId: original.id, draft: replacement, expectedUpdatedAt: original.updatedAt, removedNodeIds: [], removedSlotIds: [], proposalId: proposal.id, executionInvocationId: executionId, operatorUserId: userId, claimedAt: claim.claim.claimedAt });
     expect(settled.appliedRef).toEqual({ agentId, routineId: original.id });
     expect((await routines.findById(agentId, original.id))?.enabled).toBe(false);
-    await expect(proposals.claimMcpReviewedProposalApply({ proposalId: proposal.id, executionInvocationId: executionId, reviewDigest: "9".repeat(64), workspaceId, operatorUserId: userId, grantId, clientId, now: new Date(), claimTtlSeconds: 300 })).resolves.toEqual({ status: "already_applied", appliedRef: settled.appliedRef });
+    await expect(proposals.claimMcpReviewedProposalApply({ proposalId: proposal.id, executionInvocationId: executionId, reviewDigest: "9".repeat(64), workspaceId, operatorUserId: userId, grantId, clientId, now: new Date(), claimTtlSeconds: 300 })).resolves.toEqual({ status: "settled", outcome: "applied", appliedRef: settled.appliedRef });
   });
 
   it("recovers a failed original receipt after its lease and settles one routine owner write", async () => {

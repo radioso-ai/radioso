@@ -151,6 +151,33 @@ describe("copilot catalog contributions through the real factory", () => {
     })).toThrow("extension_usage");
   });
 
+  it.each([
+    ["a proposal", "proposal", { reconcileMcpInvocation: vi.fn() }],
+    ["an act without a replay reconciliation", "act", {}],
+  ] as const)("refuses a contributed tool that keys its replay by its input as %s", (_label, effect, reconciliation) => {
+    // An input-derived key makes every identical call a replay of the first. Only an act that
+    // reconciles from its first attempt's receipt can answer that replay with a real result.
+    expect(() => assemble({
+      moduleId: "extension",
+      descriptors: [contributedDescriptor({
+        ...reconciliation,
+        mcpDisposition: { status: "eligible", inputStrategy: "explicit", scope: "operator:act", retry: { effect, idempotent: true, operationIdentity: "input" } },
+      })],
+      operationPermissions: { getExtensionUsage: ["workspace.settings.read"] },
+    })).toThrow("extension_usage");
+  });
+
+  it("assembles a contributed act that keys its replay by its input and reconciles it", () => {
+    expect(() => assemble({
+      moduleId: "extension",
+      descriptors: [contributedDescriptor({
+        reconcileMcpInvocation: vi.fn(),
+        mcpDisposition: { status: "eligible", inputStrategy: "explicit", scope: "operator:act", retry: { effect: "act", idempotent: true, operationIdentity: "input" } },
+      })],
+      operationPermissions: { getExtensionUsage: ["workspace.settings.read"] },
+    })).not.toThrow();
+  });
+
   it("leaves the first-party provenance registry a bijection when a contribution is present", () => {
     // Running the registry check over the merged catalog would report every contributed descriptor
     // as ungoverned, which is the failure that would push EE identities into a first-party map.

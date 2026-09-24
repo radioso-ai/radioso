@@ -792,16 +792,20 @@ to pass the stateful-operation release gate from every launch client.
 - **FR-023**: Existing bounded acts MAY be exposed only when they remain
   idempotent or safely retryable, reversible where promised, non-destructive,
   non-secret, non-identity-changing, and non-customer-replying. The MCP contract
-  MUST declare a stable operation identity, effect boundary, retry and
-  reconciliation behavior, maximum execution/cancellation semantics, and
-  confirmation hints without treating client hints as authorization. Retrying a
+  MUST declare where a call's stable operation identity comes from (a
+  client-sent operation id, or the validated input of an act whose owner binds
+  its first attempt's receipt), effect boundary, retry and reconciliation
+  behavior, maximum execution/cancellation semantics, and confirmation hints
+  without treating client hints as authorization. Retrying under a presented
   stable operation identity MUST return the original or reconciled result and
   MUST NOT repeat model spend, queue dispatch, persisted acts, eval verdicts, or
-  proposals. Payload reuse with a different operation identity or payload
-  mismatch on the same identity MUST fail safely. General availability is
-  blocked until at least one named act has an owner-approved MCP disposition and
-  passes lost-response, retry, concurrency, and multi-instance reconciliation
-  tests; a limited read, probe, and propose rollout may precede that gate.
+  proposals; a proposal call retried without one can create a second pending
+  proposal for review. Payload reuse with a different operation identity or
+  payload mismatch on the same identity MUST fail safely. General availability
+  is blocked until at least one named act has an owner-approved MCP disposition
+  and passes lost-response, retry, concurrency, and multi-instance
+  reconciliation tests; a limited read, probe, and propose rollout may precede
+  that gate.
 - **FR-024**: Proposal tools MUST create the same pending proposal, current-state
   snapshot, evidence, optimistic guard, and target-domain behavior as the
   dashboard catalog and MUST NOT apply or dismiss the proposal. Proposal and
@@ -976,15 +980,15 @@ to pass the stateful-operation release gate from every launch client.
 - **FR-054**: A stateful descriptor invocation is keyed by a stable operation
   identity within the grant: the client-generated operation id when the client
   sends one, otherwise an identity derived from the validated input when that
-  input names exactly one one-shot operation (reviewed execution and
-  cancellation). A proposal call without a client operation id runs unkeyed, so
-  its retry can leave a second pending proposal for review. For a keyed
-  invocation the system MUST bind the identity to the descriptor and a bounded,
-  versioned, domain-separated keyed digest of canonical validated input, retain
-  only that digest in the reconciliation record, reject mismatched reuse, and
-  coordinate concurrent duplicates across instances so a lost response cannot
-  multiply effects or spend. Raw and canonical input may exist only transiently
-  for validation and execution and MUST NOT be retained in reconciliation,
+  input names one act whose owner binds its first attempt's receipt (reviewed
+  execution). A proposal call without a client operation id runs unkeyed, so its
+  retry can leave a second pending proposal for review. For a keyed invocation
+  the system MUST bind the identity to the descriptor and a bounded, versioned,
+  domain-separated keyed digest of canonical validated input, retain only that
+  digest in the reconciliation record, reject mismatched reuse, and coordinate
+  concurrent duplicates across instances so a lost response cannot multiply
+  effects or spend. Raw and canonical input may exist only transiently for
+  validation and execution and MUST NOT be retained in reconciliation,
   invocation, audit, or unrestricted error records.
 - **FR-055**: The standalone resource MUST validate raw access credentials only
   through the authorization service's validation boundary. Internal capability

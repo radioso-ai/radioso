@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createReviewedProposalExecutionTool } from "../../../src/modules/operatorCopilot/tools/reviewedProposalExecution.js";
+import { createReviewedProposalExecutionTool, type ReviewedProposalExecutionPort } from "../../../src/modules/operatorCopilot/tools/reviewedProposalExecution.js";
 import { createCancelReviewedProposalTool } from "../../../src/modules/operatorCopilot/tools/cancelReviewedProposal.js";
 
 describe("reviewed proposal execution tool", () => {
@@ -44,20 +44,63 @@ describe("reviewed proposal execution tool", () => {
     }));
   });
 
-  it("does not settle an original receipt while its matching owner lease is active", async () => {
-    const descriptor = createReviewedProposalExecutionTool({
-      executeMcpReviewedProposal: vi.fn(async () => ({ status: "refused" as const, reason: "not_prepared" })),
-    });
+  const recoveryNow = new Date("2026-09-25T12:00:00Z");
+  const staleBefore = new Date(recoveryNow.getTime() - 120_000);
+  const proposalId = "11111111-1111-4111-8111-111111111111";
+  const reconcileExecution = (
+    executeMcpReviewedProposal: ReviewedProposalExecutionPort["executeMcpReviewedProposal"],
+    invocation: { status: string; proofConsumedAt: Date | null },
+  ) => createReviewedProposalExecutionTool({ executeMcpReviewedProposal }).reconcileMcpInvocation?.({
+    invocation: { id: "original-receipt", ...invocation } as never,
+    arguments: { proposalId, reviewDigest: "a".repeat(43) },
+    context: {
+      workspaceId: "workspace-1", accountId: "account-1", operatorUserId: "user-1", surface: "mcp",
+      operatorMcpGrantId: "grant-1", operatorMcpClientId: "client-1", currentAuthorization: { hasAllPermissions: vi.fn() },
+      pageContext: { view: null, agentId: null, conversationId: null, selection: null, entities: [] },
+    },
+    staleBefore, now: recoveryNow,
+  });
 
-    await expect(descriptor.reconcileMcpInvocation?.({
-      invocation: { id: "original-receipt" } as never,
-      arguments: { proposalId: "11111111-1111-4111-8111-111111111111", reviewDigest: "a".repeat(43) },
-      context: {
-        workspaceId: "workspace-1", accountId: "account-1", operatorUserId: "user-1", surface: "mcp",
-        operatorMcpGrantId: "grant-1", operatorMcpClientId: "client-1", currentAuthorization: { hasAllPermissions: vi.fn() },
-        pageContext: { view: null, agentId: null, conversationId: null, selection: null, entities: [] },
-      }, staleBefore: new Date(), now: new Date(),
-    })).resolves.toEqual({ status: "in_progress" });
+  it.each(["admitted", "running"])("leaves an %s original receipt to its first runner while its proof is inside the recovery lease", async (status) => {
+    const executeMcpReviewedProposal = vi.fn();
+
+    await expect(reconcileExecution(executeMcpReviewedProposal, { status, proofConsumedAt: new Date(recoveryNow.getTime() - 1_000) }))
+      .resolves.toEqual({ status: "in_progress" });
+    expect(executeMcpReviewedProposal).not.toHaveBeenCalled();
+  });
+
+  it("refuses to reconcile an open original receipt whose proof was never consumed", async () => {
+    const executeMcpReviewedProposal = vi.fn();
+
+    await expect(reconcileExecution(executeMcpReviewedProposal, { status: "admitted", proofConsumedAt: null })).resolves.toEqual({ status: "conflict" });
+    expect(executeMcpReviewedProposal).not.toHaveBeenCalled();
+  });
+
+  it("reconciles an open original receipt through the owner once its runner outlived the recovery lease", async () => {
+    const executeMcpReviewedProposal = vi.fn(async () => ({ status: "applied" as const, appliedRef: { routineId: "routine-1" } }));
+
+    await expect(reconcileExecution(executeMcpReviewedProposal, { status: "running", proofConsumedAt: new Date(staleBefore.getTime() - 1_000) }))
+      .resolves.toEqual({ status: "recovered", output: { proposalId, status: "applied", appliedRef: { routineId: "routine-1" } } });
+    expect(executeMcpReviewedProposal).toHaveBeenCalledWith(expect.objectContaining({ executionInvocationId: "original-receipt" }));
+  });
+
+  it("keeps an open original receipt open while the owner cannot confirm its outcome", async () => {
+    const executeMcpReviewedProposal = vi.fn(async () => ({ status: "uncertain" as const, reason: "unconfirmed" }));
+
+    await expect(reconcileExecution(executeMcpReviewedProposal, { status: "running", proofConsumedAt: new Date(staleBefore.getTime() - 1_000) }))
+      .resolves.toEqual({ status: "in_progress" });
+  });
+
+  it.each([
+    { status: "stale" as const },
+    { status: "failed" as const, reason: "target unavailable" },
+    { status: "refused" as const, reason: "not_prepared" },
+    { status: "uncertain" as const, reason: "unconfirmed" },
+  ])("answers a finished original receipt with the owner's outcome for it (%o)", async (outcome) => {
+    const executeMcpReviewedProposal = vi.fn(async () => outcome);
+
+    await expect(reconcileExecution(executeMcpReviewedProposal, { status: "completed", proofConsumedAt: new Date(recoveryNow.getTime() - 1_000) }))
+      .resolves.toEqual({ status: "recovered", output: { proposalId, ...outcome } });
   });
 
   it("forwards the request-scoped authorization to a reviewed cancellation", async () => {

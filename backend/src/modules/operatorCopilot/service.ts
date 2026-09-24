@@ -58,6 +58,10 @@ const APPLY_CLAIM_TTL_SECONDS = 300;
 const INTERRUPTED_APPLY_REASON =
   "An earlier apply of this proposal was interrupted and may already have taken effect. Check the workspace before asking for this change again.";
 
+/** What a reviewed MCP execution reports while its receipt holds an apply claim whose effect is unconfirmed. */
+const UNCONFIRMED_APPLY_REASON =
+  "The owner did not confirm whether this reviewed operation took effect. Retry with the same execution receipt to reconcile it.";
+
 export interface CopilotConversation {
   readonly id: string;
   readonly workspaceId: string;
@@ -141,7 +145,10 @@ export interface CopilotRepositoryPort {
   releaseProposalApplyClaim(input: { id: string; workspaceId: string; operatorUserId: string; claimedAt: Date }): Promise<boolean>;
   claimMcpReviewedProposalApply(input: { proposalId: string; executionInvocationId: string; reviewDigest: string; workspaceId: string; operatorUserId: string; grantId: string; clientId: string; now: Date; claimTtlSeconds: number }): Promise<
     | { readonly status: "claimed"; readonly claim: CopilotProposalClaim }
-    | { readonly status: "already_applied"; readonly appliedRef: unknown; readonly reason?: string }
+    /** The proposal already reached this terminal outcome through this same execution receipt. */
+    | { readonly status: "settled"; readonly outcome: "applied" | "stale" | "failed"; readonly appliedRef: unknown; readonly reason?: string }
+    /** This same execution receipt holds the apply claim and its lease has not expired. */
+    | { readonly status: "claim_held" }
     | { readonly status: "missing" | "binding_mismatch" | "digest_mismatch" | "expired" | "canceled" | "not_prepared" }
   >;
 }
@@ -341,7 +348,7 @@ export class OperatorCopilotService {
         throw error;
       }
       if (input.executionInvocationId) {
-        return { status: "uncertain", reason: "The owner did not confirm whether this reviewed operation took effect. Retry with the same execution receipt to reconcile it." };
+        return { status: "uncertain", reason: UNCONFIRMED_APPLY_REASON };
       }
       await this.updateProposalAndAudit(input.input, proposal, "failed", null, "copilot.proposal.apply_failed", "failure", "failed", claimGuard);
       return { status: "failed" };
@@ -381,7 +388,11 @@ export class OperatorCopilotService {
       now: input.now ?? (this.deps.now?.() ?? new Date()),
       claimTtlSeconds: APPLY_CLAIM_TTL_SECONDS,
     });
-    if (claimed.status === "already_applied") return { status: "applied", appliedRef: claimed.appliedRef, ...(claimed.reason ? { reason: claimed.reason } : {}) };
+    if (claimed.status === "settled") {
+      const reason = claimed.reason ? { reason: claimed.reason } : {};
+      return claimed.outcome === "applied" ? { status: "applied", appliedRef: claimed.appliedRef, ...reason } : { status: claimed.outcome, ...reason };
+    }
+    if (claimed.status === "claim_held") return { status: "uncertain", reason: UNCONFIRMED_APPLY_REASON };
     if (claimed.status !== "claimed") return { status: "refused", reason: claimed.status };
     return this.executeClaimedProposal({
       input: { surface: "mcp", workspaceId: input.workspaceId, accountId: input.accountId, operatorUserId: input.operatorUserId, proposalId: input.proposalId, currentAuthorization: input.currentAuthorization },
@@ -402,10 +413,15 @@ export class OperatorCopilotService {
     if (!proposal) throw new CopilotNotFoundError();
     if (proposal.status !== "pending" && proposal.status !== "dismissed") throw new CopilotConflictError();
     await this.requireProposalAuthorization({ ...input, surface: "mcp" }, proposal.targetType);
-    // A retried cancellation reports the outcome its first attempt reached.
+    // Cancelling an already-dismissed proposal reports the outcome it already reached.
     if (proposal.status === "dismissed") return { status: "dismissed" };
     const cancelled = await this.deps.repository.cancelPendingProposal({ id: proposal.id, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId });
-    if (!cancelled) throw new CopilotConflictError();
+    if (!cancelled) {
+      // A concurrent cancellation can win the pending-only write; its outcome is this one's too.
+      const current = await this.deps.repository.findMcpReviewedProposal({ id: input.proposalId, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId, grantId: input.grantId, clientId: input.clientId });
+      if (current?.status === "dismissed") return { status: "dismissed" };
+      throw new CopilotConflictError();
+    }
     await this.audit({ ...input, surface: "mcp" }, { accountId: input.accountId, workspaceId: input.workspaceId, eventType: "copilot.proposal.dismissed", eventStatus: "success", metadata: { proposalId: proposal.id, targetType: proposal.targetType, outcome: "dismissed" } });
     return { status: "dismissed" };
   }

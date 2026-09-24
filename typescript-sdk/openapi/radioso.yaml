@@ -29404,6 +29404,15 @@ paths:
           required: false
           name: outcome
           in: query
+        - schema:
+            type: string
+            enum:
+              - human
+              - agent
+            description: "Narrows to conversations whose caller was a person or another AI agent. Narrows results to chat rows only: a contact request has no conversation behind it and so no caller."
+          required: false
+          name: callerKind
+          in: query
       responses:
         "200":
           description: Merged history items

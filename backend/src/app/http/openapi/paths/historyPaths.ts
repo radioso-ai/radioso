@@ -37,6 +37,9 @@ export const registerHistoryPaths = (
           description:
             "Narrows to conversations in this outcome bucket: handed_off (a human_owned ownership record exists), in_progress (no such record and updated within the last 10 minutes), or completed (no such record and updated more than 10 minutes ago). Narrows results to chat rows only.",
         }),
+        callerKind: z.enum(["human", "agent"]).optional().openapi({
+          description: "Narrows to conversations whose caller was a person or another AI agent. Narrows results to chat rows only: a contact request has no conversation behind it and so no caller.",
+        }),
       }),
     },
     responses: {

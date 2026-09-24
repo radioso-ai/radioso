@@ -119,10 +119,27 @@ The spec's own Observability section asks for "converse turns ... by `callerKind
 the second. Left for a decision rather than guessed at; the fact it needs is now stored and queryable
 either way.
 
-### US6-C — the view (FR-051 Activity/Inbox)
+### US6-C — the view (FR-051 Activity/Inbox) — backend done, frontend open
 
-`callerKind` filter on the history query schemas, a marker on the conversation row, and the filter
-control. Recorded as a coverage-map exclusion per FR-051 (read-only view control).
+Backend: `callerKind` on `historyItemsListQuerySchema`, filtered in `historyItemsRepository` on both
+the row CTE and the COUNT subquery (a filter on only one makes a page claim more rows than it can
+show), documented on the `/history` path, and joined to `hasChatOnlyFilter` — a contact request has
+no conversation behind it and therefore no caller, so asking for one kind cannot be answered by
+returning contacts too.
+
+Frontend remains: the filter control on the Activity toolbar and the Inbox All-lens toolbar (both
+feed `buildConversationSearchParams` in `frontend/lib/conversation-filters.ts`, so one addition
+serves both), a caller chip on the conversation row modelled on `TYPE_CHIP_META`/`TypeChip` in
+`inbox-queue-row.tsx`, and Playwright coverage extending `assistant-history.spec.ts`. The generated
+frontend types already carry `callerKind`, so no type work is needed — only wiring.
+
+The Inbox **Needs-you** lens is a different projection: `InboxItem` carries no `sourceChannel` or
+`callerKind`, so filtering that lens needs the field added to the needs-attention read as well. That
+is its own slice, not part of this one.
+
+### US7 — not started
+
+See the slice above for what it covers.
 
 ### US6-D — the catalog description (FR-052)
 
@@ -134,7 +151,7 @@ explicitly *not* in scope — the spec calls it a follow-up, and this slice is w
 
 Channels → MCP "Share with agent developers" block; docs-portal `/llms.txt`; the connect guide and
 converse contract reference; OpenAPI, SDK snapshot, and MCP generated client regenerated; product-docs
-corpus re-synced.
+corpus re-synced. Not started.
 
 ## Contract-change review
 

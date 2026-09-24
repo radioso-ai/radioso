@@ -64,7 +64,7 @@ describe("createAgentToolCatalog", () => {
       ],
       // Composed here, not in the MCP package: the package reads generated types and must not
       // learn what an agent description is made of. See askAgentDescription.ts for the shape.
-      askAgentDescription: expect.stringContaining("start_return") as unknown as string,
+      askAgentDescription: expect.stringContaining("start_return"),
     });
   });
 

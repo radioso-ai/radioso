@@ -22031,6 +22031,7 @@ export interface operations {
                 agentId?: string;
                 sourceOrigin?: string;
                 outcome?: "in_progress" | "completed" | "handed_off";
+                callerKind?: "human" | "agent";
             };
             header?: never;
             path?: never;

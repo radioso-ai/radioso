@@ -937,6 +937,7 @@ export class ChatHistoryService {
       agentId?: string;
       sourceOrigin?: string;
       outcome?: ConversationOutcomeFilter;
+      callerKind?: CallerKind;
     } = { limit: 50, offset: 0 },
   ): Promise<HistoryItemsPage> {
     const offset = input.offset ?? 0;
@@ -946,7 +947,9 @@ export class ChatHistoryService {
     // requests carry none of those facets, mirroring how HistoryItemsRepository already
     // drops search rows under the same condition. Skip the contact fetch entirely rather
     // than fetch-then-discard.
-    const hasChatOnlyFilter = Boolean(input.q || input.agentId || input.sourceOrigin || input.outcome);
+    // Caller kind joins the chat-only facets: a contact request has no conversation behind it and
+    // therefore no caller, so asking for one kind cannot be answered by returning contacts too.
+    const hasChatOnlyFilter = Boolean(input.q || input.agentId || input.sourceOrigin || input.outcome || input.callerKind);
     const [basePage, contactPage] = await Promise.all([
       this.historyItemsRepository.listPageByWorkspaceId(workspaceId, {
         limit: sourceLimit,
@@ -956,6 +959,7 @@ export class ChatHistoryService {
         agentId: input.agentId,
         sourceOrigin: input.sourceOrigin,
         outcome: input.outcome,
+        callerKind: input.callerKind,
       }),
       hasChatOnlyFilter
         ? Promise.resolve({ contacts: [], total: 0, nextCursor: null, hasMore: false })

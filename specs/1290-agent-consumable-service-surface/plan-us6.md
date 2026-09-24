@@ -90,11 +90,34 @@ index supporting the Activity/Inbox filter. `db:types` **and** `db:schema` both 
 + repository writes + `callerKind` on the conversation domain record and its API mappings. Ray's
 `conversation_transcript` and `conversation_history_search` outputs gain the field.
 
-### US6-B — the lever (FR-051 matching, FR-034 metering)
+### US6-B — the lever (FR-051 matching) — as built
 
-`visitorMatchContext` gains the reserved key; a test asserts it reaches **both** the matcher path and
-the planner prompt, because covering one is the known way to ship this dead. Caller-kind dimension on
-the EE per-kind counter.
+`visitorMatchContext` gains the reserved key `radioso_caller_kind`, applied *after* the projection so
+a workspace context variable of the same name cannot shadow the fact. Both consumers read that one
+projection, so the matcher and the fused planner get it together or not at all.
+
+**Behaviour change, deliberate.** The matcher used to omit `visitorContext` entirely when no context
+variable resolved; it is now always sent, carrying at least the caller kind. A key that is only
+sometimes present is not something an operator can write a condition against, and "absent means
+human" is not a rule a prose condition can rely on. Two existing matcher assertions were updated to
+state the new shape rather than loosened.
+
+### FR-034 metering split — not done, needs a decision
+
+The spec says "usage rows carry `callerKind` so the split is observable". There are no per-turn usage
+rows: usage aggregates into EE counter tables (`ee_usage_limit_unit_kind_counters`,
+`ee_usage_limit_conversation_replies`), and `usageLimitService` emits no metrics at all. So there are
+two different changes hiding behind one sentence, and they answer to different owners:
+
+- a **counter dimension** in EE — a schema change to billing-adjacent tables, which fragments the
+  numbers an invoice is reconciled against;
+- a **metric label** — observability only, but there is no answer-counting metric to label yet, and
+  `converse_turns_total` is the wrong host because both doors that emit it are agent callers, so the
+  label would be constant.
+
+The spec's own Observability section asks for "converse turns ... by `callerKind`", which reads as
+the second. Left for a decision rather than guessed at; the fact it needs is now stored and queryable
+either way.
 
 ### US6-C — the view (FR-051 Activity/Inbox)
 

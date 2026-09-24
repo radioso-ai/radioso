@@ -330,7 +330,9 @@ describe("createChatProcessTurnInput", () => {
         selectionReason: "test matcher",
       }),
     ]);
-    expect(matchedTurnContexts).toEqual([{ query: "Where is my order?", route: "direct" }]);
+    // Caller kind is stated on every turn, including a turn with no context variables at all:
+    // an operator cannot write a condition against a key that is only sometimes there.
+    expect(matchedTurnContexts).toEqual([{ query: "Where is my order?", route: "direct", visitorContext: { radioso_caller_kind: "human" } }]);
     expect(directiveInputs[0]?.usageContext).toMatchObject({
       surface: "eval",
       requestId: "run-123",
@@ -387,6 +389,8 @@ describe("createChatProcessTurnInput", () => {
       visitorContext: {
         cart_value: 120,
         page_context: { pageUrl: "https://shop.example/cart" },
+        // Radioso's own fact about the turn, always present so a directive can be scoped to it.
+        radioso_caller_kind: "human",
       },
     }]);
   });
@@ -807,7 +811,9 @@ describe("createAttemptRoutineInput", () => {
         selectionReason: "test matcher",
       }),
     ]);
-    expect(matchedTurnContexts).toEqual([{ query: "Where is my order?", route: "direct" }]);
+    // Caller kind is stated on every turn, including a turn with no context variables at all:
+    // an operator cannot write a condition against a key that is only sometimes there.
+    expect(matchedTurnContexts).toEqual([{ query: "Where is my order?", route: "direct", visitorContext: { radioso_caller_kind: "human" } }]);
     expect(session.directiveSteering).toMatchObject({
       rules: [{ action: "Keep the routine answer precise.", source: "directive", lifespan: "response" }],
       matches: [expect.objectContaining({ directive })],

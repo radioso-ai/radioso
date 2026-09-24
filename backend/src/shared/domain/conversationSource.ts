@@ -34,7 +34,13 @@ export const AGENT_SOURCE_CHANNELS = ["mcp", "agent_api"] as const;
 // Whether the other side of a conversation is a person or a calling agent. Derived from the source
 // channel rather than stored independently, so a conversation cannot claim a kind its channel
 // contradicts.
-export type CallerKind = "human" | "agent";
+export const CALLER_KINDS = ["human", "agent"] as const;
+
+export type CallerKind = typeof CALLER_KINDS[number];
+
+/** Narrows a stored `caller_kind` to the vocabulary the domain owns; the column carries no CHECK. */
+export const asCallerKind = (value: string | null | undefined): CallerKind | null =>
+  (CALLER_KINDS as readonly string[]).includes(value ?? "") ? value as CallerKind : null;
 
 /**
  * `source_channel` is an unconstrained `TEXT` column written from string literals at each call site,

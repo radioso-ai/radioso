@@ -218,7 +218,7 @@ Authorization: Bearer <session token>
 }
 ```
 
-`agent.description` is the agent's public description, written by the operator under the agent's settings. `askAgentDescription` composes it with the agent's name and the names of the exposed tools into the sentence a client should advertise for `ask_agent` — a calling model reads that sentence to decide between holding a conversation and calling a typed tool, so what an operator writes there reaches every caller verbatim. It is assembled from configuration, which makes it identical for every caller on a given release.
+`agent.description` is the agent's public description, written by the operator under the agent's settings. `askAgentDescription` composes it with the agent's name and the names of the exposed tools into the sentence a client should advertise for `ask_agent` — a calling model reads that sentence to decide between holding a conversation and calling a typed tool, so what an operator writes there reaches every caller verbatim. It is assembled from configuration rather than written by a model, so the same settings always produce the same sentence. The exposed tools come from the agent's published release, while the name and public description are read live, so editing the description changes what callers read without a publish.
 
 Each descriptor's `inputSchema` is JSON Schema built from the routine's declared slots: `text` becomes `string`, `number` and `boolean` keep their types, `email` is `string` with `format: "email"`, `date` is `string` with `format: "date"` (an ISO calendar day such as `2026-09-01`), and `required` follows the slot. A routine with no slots is a tool with an empty object schema.
 

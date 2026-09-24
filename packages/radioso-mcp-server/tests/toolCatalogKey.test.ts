@@ -34,9 +34,10 @@ describe("toToolCatalogKey", () => {
   });
 
   it("separates two agents that expose no routines but describe themselves differently", () => {
-    // Sessions whose keys match share one MCP server. Every agent without an exposed routine hashes
-    // to the same empty tool list, so without the description in the key the second agent to
-    // connect would be served the first agent's `ask_agent` description.
+    // The key covers the whole observable tool surface, and the composed `ask_agent` description is
+    // part of it. Every agent without an exposed routine hashes to the same empty tool list, so the
+    // description is the only thing telling those catalogs apart. Nothing reads the key yet —
+    // servers are built per request — which is exactly why it must not start out lossy.
     expect(toToolCatalogKey([], "Hold a conversation with Acme Support."))
       .not.toBe(toToolCatalogKey([], "Hold a conversation with Globex Billing."));
     expect(toToolCatalogKey([], "Hold a conversation with Acme Support."))

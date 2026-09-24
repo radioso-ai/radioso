@@ -275,6 +275,17 @@ condition can describe visitor state rather than only what the visitor said.
 page" are conditions the matcher can decide, because `cart` and `page_context`
 are part of the signals it sees.
 
+Alongside your own variables, the turn carries one fact Radioso establishes
+itself: `radioso_caller_kind` is `agent` when the other side of the conversation
+is another AI agent rather than a person, and `human` otherwise. Radioso reads it
+from the channel the conversation arrived on — the MCP converse door and the REST
+agent channel carry agents; the embed, a shared link, Slack, and the dashboard
+carry people — so a caller cannot claim to be something it is not. Write
+"the caller is another AI agent" to scope a directive to them, which is how you
+give agent callers a terser answer or a different escalation path than a person
+gets. The key is present on every turn, so a condition about it always has
+something to read.
+
 Every resolved variable takes part, whatever its surfacing: `operator_only` and
 `on_reference` values steer behavior without being written into the answer
 prompt. Two limits are worth knowing when you write a condition:

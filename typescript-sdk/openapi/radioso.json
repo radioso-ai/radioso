@@ -16369,7 +16369,7 @@
           },
           "askAgentDescription": {
             "type": "string",
-            "description": "The description an MCP client should advertise for `ask_agent`, composed from the agent's name, its operator-authored description, and the names of its exposed tools. Assembled from configuration, so it is stable for a given release."
+            "description": "The description an MCP client should advertise for `ask_agent`, composed from the agent's name, its operator-authored description, and the names of its exposed tools. Assembled from configuration rather than written by a model, so the same settings always produce the same sentence. The tool names come from the published release; the name and description are read from the agent's current settings."
           }
         },
         "required": [

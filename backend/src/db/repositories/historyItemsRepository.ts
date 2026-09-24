@@ -7,6 +7,7 @@ import type { ConversationChannelContext } from "@radioso/conversation-contract"
 import {
   OPERATOR_TEST_SOURCE_CHANNELS,
   WORKBENCH_TEST_SOURCE_CHANNELS,
+  asCallerKind,
   callerKindForSourceChannel,
   type CallerKind,
   type ConversationSourceScope,
@@ -297,9 +298,7 @@ export class HistoryItemsRepository implements HistoryItemsRepositoryPort {
             sourceChannel: row.source_channel,
             // Read the stored column the `callerKind` filter matches on, so a filtered page and an
             // unfiltered one cannot disagree about the same row.
-            callerKind: row.caller_kind === "agent" || row.caller_kind === "human"
-              ? row.caller_kind
-              : callerKindForSourceChannel(row.source_channel),
+            callerKind: asCallerKind(row.caller_kind) ?? callerKindForSourceChannel(row.source_channel),
             sourceOrigin: row.source_origin,
             channelContext: (row.channel_context) ?? null,
             anonymousSessionId: row.anonymous_session_id,

@@ -24,13 +24,16 @@ interface AskAgentDescriptionSource {
  */
 export const composeAskAgentDescription = (source: AskAgentDescriptionSource): string => {
   const named = source.tools.slice(0, MAX_NAMED_TOOLS).map((tool) => tool.toolName);
+  // Saying "and others" matters more than the names it replaces: without it the list reads as the
+  // whole catalog, and a model sends every unnamed task here instead of to the tool that fits it.
+  const namedList = source.tools.length > named.length ? `${named.join(", ")}, and others` : named.join(", ");
   const covers = source.agent.description?.trim();
   const sentences = [
     `Hold a conversation with ${source.agent.name}.`,
     covers ? `It covers ${covers}.` : null,
     "Runs the agent's full behavior — persona, directives, and multi-step routines — and continues the same conversation across calls (stateful).",
     named.length > 0
-      ? `Prefer the typed tools for the tasks they name (${named.join(", ")}); use this for anything else, or when you do not know which tool applies.`
+      ? `Prefer the typed tools for the tasks they name (${namedList}); use this for anything else, or when you do not know which tool applies.`
       : "Use this for an interactive agent experience, not just a one-off fact lookup.",
   ];
   return sentences.filter((sentence): sentence is string => sentence !== null).join(" ");

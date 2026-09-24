@@ -85,8 +85,13 @@ derivation; the MCP package stays a consumer of generated types.
 ### US6-A — the fact (FR-050, FR-031's deferral)
 
 Migration `197_conversation_caller_kind.sql`: `caller_kind TEXT NOT NULL DEFAULT 'human'` on
-`conversations`, backfilled from `source_channel` with the same rule as the domain function, plus an
-index supporting the Activity/Inbox filter. `db:types` **and** `db:schema` both re-run. Domain function
+`conversations`, backfilled from `source_channel` with the same rule as the domain function. **No
+index, deliberately.** The only query filtering on the column is the Activity/Inbox filter, whose
+interface is US6-C, and a non-concurrent `CREATE INDEX` on `conversations` would block live chat
+writes for its scan — migrations run at API boot while the previous revision serves, one transaction
+per file, so it cannot be built `CONCURRENTLY`. Taking that lock for an index no shipped query reads
+buys nothing; it belongs with the surface that reads it, sized against real traffic. Without it this
+migration needs no coordinated deploy window at all. `db:types` **and** `db:schema` both re-run. Domain function
 + repository writes + `callerKind` on the conversation domain record and its API mappings. Ray's
 `conversation_transcript` and `conversation_history_search` outputs gain the field.
 

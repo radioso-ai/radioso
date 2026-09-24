@@ -51,6 +51,7 @@ const conversation = (): ConversationRecord => ({
   agentName: "Support",
   agentInternalName: null,
   sourceChannel: null,
+  callerKind: "human" as const,
   anonymousSessionId: null,
   sourceOrigin: null,
   channelContext: null,

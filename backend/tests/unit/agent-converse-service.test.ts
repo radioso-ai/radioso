@@ -40,6 +40,7 @@ const principal: AgentConversePrincipal = {
 const startReturnCatalog = () => ({
   load: vi.fn<AgentToolCatalogPort["load"]>(async () => ({
     agent: { name: "Support", description: null },
+    askAgentDescription: "Hold a conversation with Support.",
     tools: [{
       toolName: "start_return",
       description: "Start a return.",
@@ -98,7 +99,7 @@ describe("AgentConverseService", () => {
   it("answers routine_tool_unknown from the pinned release and records no turn", async () => {
     const answer = vi.fn(async () => chatResponse());
     const catalog = startReturnCatalog();
-    catalog.load.mockResolvedValueOnce({ agent: { name: "Support", description: null }, tools: [] });
+    catalog.load.mockResolvedValueOnce({ agent: { name: "Support", description: null }, askAgentDescription: "Hold a conversation with Support.", tools: [] });
     const audit = { recordAskOutcome: vi.fn(async () => {}) };
     const service = new AgentConverseService({
       conversationRepository: {

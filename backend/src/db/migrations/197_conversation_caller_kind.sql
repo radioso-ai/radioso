@@ -13,28 +13,18 @@
 ALTER TABLE conversations
   ADD COLUMN IF NOT EXISTS caller_kind TEXT NOT NULL DEFAULT 'human';
 
--- Run this migration in a coordinated deploy window, the same as `171_answer_coverage_assessments`.
--- Migrations run at API boot while the previous revision still serves traffic, the runner executes
--- each file in one transaction so PostgreSQL cannot build the index CONCURRENTLY, and the build
--- takes a lock on `conversations` that blocks live chat writes for its duration. Booting a second
--- instance during that window leaves it waiting on the migration advisory lock.
+-- Backfill by the same rule the domain applies, so history reads the way new rows will. Adding the
+-- column is cheap — a `NOT NULL DEFAULT` on PostgreSQL 11+ does not rewrite the table — and the
+-- backfill touches only the two agent channels, so this migration needs no coordinated deploy
+-- window.
 --
--- Adding the column itself is cheap: a `NOT NULL DEFAULT` on PostgreSQL 11+ does not rewrite the
--- table. The backfill touches only the two agent channels, and the index is partial over the same
--- rare rows — it is the scan to build it, not the rows it holds, that costs.
-
--- Backfill by the same rule the domain applies, so history reads the way new rows will.
+-- No index. The only query that filters on `caller_kind` is the Activity and Inbox filter, whose
+-- interface is a later slice, and a non-concurrent `CREATE INDEX` on `conversations` would block
+-- live chat writes for the length of its scan: migrations run at API boot while the previous
+-- revision still serves, and the runner executes each file in one transaction, so PostgreSQL
+-- cannot build it CONCURRENTLY. The index belongs with the surface that reads it, when there is
+-- traffic to size it against.
 UPDATE conversations
   SET caller_kind = 'agent'
   WHERE source_channel IN ('mcp', 'agent_api')
     AND caller_kind <> 'agent';
-
--- Agent callers are the rare kind, and both read surfaces filter within one workspace. A partial
--- index over just those rows stays small and serves `caller_kind = 'agent'`; the `human` case is the
--- unfiltered list, which already has its own path.
---
--- The column order matches the feed's `ORDER BY c.updated_at DESC, c.created_at DESC, c.id DESC`
--- exactly, so a filtered page reads the index in order instead of sorting the matched set.
-CREATE INDEX IF NOT EXISTS conversations_workspace_agent_caller_idx
-  ON conversations (workspace_id, updated_at DESC, created_at DESC, id DESC)
-  WHERE caller_kind = 'agent';

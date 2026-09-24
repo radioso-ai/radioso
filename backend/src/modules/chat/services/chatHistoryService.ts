@@ -947,9 +947,10 @@ export class ChatHistoryService {
     // requests carry none of those facets, mirroring how HistoryItemsRepository already
     // drops search rows under the same condition. Skip the contact fetch entirely rather
     // than fetch-then-discard.
-    // Caller kind joins the chat-only facets: a contact request has no conversation behind it and
-    // therefore no caller, so asking for one kind cannot be answered by returning contacts too.
-    const hasChatOnlyFilter = Boolean(input.q || input.agentId || input.sourceOrigin || input.outcome || input.callerKind);
+    // Only `agent` is chat-only. A contact request is submitted by a person, so asking for human
+    // callers should still return them; asking for agent callers cannot, because no agent fills in
+    // a contact form.
+    const hasChatOnlyFilter = Boolean(input.q || input.agentId || input.sourceOrigin || input.outcome || input.callerKind === "agent");
     const [basePage, contactPage] = await Promise.all([
       this.historyItemsRepository.listPageByWorkspaceId(workspaceId, {
         limit: sourceLimit,

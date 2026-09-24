@@ -57,8 +57,8 @@ export class ContextVariableService {
   }
 
   /**
-   * Every writer reaches the repository through this service — the HTTP route, a Ray proposal
-   * apply, and bundle import alike — so the namespace is defended once here rather than at each.
+   * Called from all three write paths this service exposes — `create`, `update`, and
+   * `applyProposal` — so the namespace is defended once rather than at each caller of the service.
    */
   private assertNameIsNotReserved(name: string | undefined): void {
     if (name !== undefined && isReservedContextVariableName(name)) {
@@ -137,6 +137,10 @@ export class ContextVariableService {
   }
 
   async applyProposal(input: ApplyContextVariableProposalInput): Promise<ApplyContextVariableProposalResult> {
+    // A proposal with a null `variableId` inserts a brand-new variable, so this is a third write
+    // path and not a variant of `update`. A Ray-proposed `radioso_`-prefixed name would otherwise be
+    // created and then permanently shadowed by the reserved key, leaving a variable that never reads.
+    this.assertNameIsNotReserved(input.definition?.name);
     await this.requireAgent(input.workspaceId, input.agentId);
     if (input.variableId) await this.requireVariable(input.workspaceId, input.variableId);
     if (input.enablement) {

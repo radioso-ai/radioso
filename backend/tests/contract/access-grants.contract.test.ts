@@ -127,6 +127,15 @@ describe("access grants contract", () => {
     expect(afterRevoke.status).toBe(200);
     // The inventory carries live credentials only, so a revoked one leaves it.
     expect(afterRevoke.body.credentials).toEqual([]);
+
+    // It left because it is revoked, not because the row disappeared.
+    const rotateRevoked = await request(app)
+      .post(`/api/v1/agents/${defaultAgent.id}/channel-credentials/${grantId}/rotate`)
+      .set(adminSessionHeaders(session))
+      .set("X-Radioso-CSRF", "1")
+      .send();
+
+    expect(rotateRevoked.status).toBe(400);
   });
 
   it("uses one grant lifecycle for public launch credentials", async () => {

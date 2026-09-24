@@ -314,7 +314,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List active account users and invitations */
+        /** List active account users and pending invitations */
         get: operations["listAccountUsers"];
         put?: never;
         post?: never;
@@ -435,7 +435,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List personal-token metadata */
+        /** List live personal-token metadata */
         get: operations["listPersonalApiTokens"];
         put?: never;
         /** Issue a personal API token */
@@ -504,7 +504,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List workspace service accounts */
+        /** List workspace service accounts that are not archived */
         get: operations["listServiceAccounts"];
         put?: never;
         /** Create a service account and first credential */
@@ -591,7 +591,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List service-account credentials */
+        /** List live service-account credentials */
         get: operations["listServiceAccountCredentials"];
         put?: never;
         /** Issue another service-account credential */
@@ -677,7 +677,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List visible Operator MCP grants */
+        /** List active Operator MCP grants */
         get: operations["listOperatorMcpGrants"];
         put?: never;
         post?: never;
@@ -1329,7 +1329,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List MCP and REST chat credentials for an agent with cursor pagination */
+        /** List live MCP and REST chat credentials for an agent with cursor pagination */
         get: operations["listAgentChannelCredentials"];
         put?: never;
         /** Issue an MCP or REST chat credential for an agent */
@@ -6889,6 +6889,11 @@ export interface components {
                 activityTrace: components["schemas"]["ActivityTrace"];
             };
         };
+        /**
+         * @description Whether a person or a calling agent is on the other side of the conversation.
+         * @enum {string}
+         */
+        CallerKind: "human" | "agent";
         SkillAvailability: {
             /** @enum {string} */
             state: "available" | "forbidden" | "unavailable";
@@ -7400,6 +7405,7 @@ export interface components {
             agentName: string | null;
             agentInternalName: string | null;
             sourceChannel: string | null;
+            callerKind: components["schemas"]["CallerKind"];
             sourceOrigin: string | null;
             channelContext: components["schemas"]["ConversationChannelContext"] | null;
             anonymousSessionId: string | null;
@@ -7687,6 +7693,7 @@ export interface components {
             agentName?: string | null;
             agentInternalName?: string | null;
             sourceChannel: string | null;
+            callerKind: components["schemas"]["CallerKind"];
             sourceOrigin: string | null;
             entryPageUrl?: string | null;
             /** @description Client-claimed referrer of the host page. Dashboard-only, like entryPageUrl. */
@@ -7732,6 +7739,7 @@ export interface components {
             agentId: string | null;
             agentName?: string | null;
             sourceChannel: string | null;
+            callerKind: components["schemas"]["CallerKind"];
             sourceOrigin: string | null;
             /** @description See ChatConversationSummary.title. */
             title: string | null;
@@ -7863,6 +7871,8 @@ export interface components {
                 description: string | null;
             };
             tools: components["schemas"]["AgentToolDescriptor"][];
+            /** @description The description an MCP client should advertise for `ask_agent`, composed from the agent's name, its operator-authored description, and the names of its exposed tools. Assembled from configuration rather than written by a model, so the same settings always produce the same sentence. The tool names come from the published release; the name and description are read from the agent's current settings. */
+            askAgentDescription: string;
         };
         /** @description One field-level problem with a tool call's input. `too_long` is a string value over 2000 characters; `format` is an `email` or `date` slot whose value does not parse as one. */
         RoutineInvocationError: {
@@ -12435,7 +12445,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description User or workspace grant inventory */
+            /** @description Active user or workspace grant inventory; revoked and superseded grants are excluded */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -22016,6 +22026,7 @@ export interface operations {
                 agentId?: string;
                 sourceOrigin?: string;
                 outcome?: "in_progress" | "completed" | "handed_off";
+                callerKind?: "human" | "agent";
             };
             header?: never;
             path?: never;

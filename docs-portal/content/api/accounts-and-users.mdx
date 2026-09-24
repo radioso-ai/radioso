@@ -1,7 +1,7 @@
 ---
 title: Accounts and users
 description: List accounts, invite users, accept invitations, manage organization roles, and switch account context.
-last_updated: 2026-09-05
+last_updated: 2026-09-24
 ---
 
 # Accounts and users
@@ -125,7 +125,7 @@ This one takes no body and authenticates with the session cookie. It returns the
 
 ## Revoke an invitation
 
-Cancel a pending invitation that has not been accepted yet. Use the invitation id from the `invitations` array in `GET /api/v1/account/users`.
+Cancel a pending invitation that has not been accepted yet. Use the invitation id from the `invitations` array in `GET /api/v1/account/users`, which carries the invitations still waiting to be accepted.
 
 ```text
 DELETE /api/v1/account/invitations/{invitationId}

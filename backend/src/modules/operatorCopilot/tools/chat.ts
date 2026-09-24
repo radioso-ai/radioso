@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import type { CallerKind } from "../../../shared/domain/conversationSource.js";
 import type { CopilotToolDescriptor } from "../contracts.js";
 import { boundPayload } from "../payloadCompaction.js";
 import { boundConversationPayload, boundTurnTracePayload } from "./chatPayloadBounds.js";
@@ -65,6 +66,7 @@ const conversationTranscriptOutputSchema = z.object({
     agentId: z.string().uuid().nullable(),
     agentName: z.string().nullable(),
     sourceChannel: z.string().nullable(),
+    callerKind: z.enum(["human", "agent"]),
     createdAt: z.string(),
     updatedAt: z.string(),
     messageCount: z.number().int().nonnegative(),
@@ -220,6 +222,7 @@ interface CopilotConversationDetail {
   agentId: string | null;
   agentName: string | null;
   sourceChannel: string | null;
+  callerKind: CallerKind;
   createdAt: string;
   updatedAt: string;
   messageCount: number;
@@ -264,6 +267,7 @@ const projectTranscript = (conversation: CopilotConversationDetail): Record<stri
   agentId: conversation.agentId,
   agentName: conversation.agentName,
   sourceChannel: conversation.sourceChannel,
+  callerKind: conversation.callerKind,
   createdAt: conversation.createdAt,
   updatedAt: conversation.updatedAt,
   messageCount: conversation.messageCount,

@@ -577,7 +577,7 @@ export class OperatorMcpAuthorizationRepository implements OperatorMcpAuthorizat
     });
   }
 
-  async listGrants(input: { workspaceId: string; userId?: string }): Promise<readonly OperatorMcpGrantSummaryRecord[]> {
+  private async selectGrantSummaries(predicate: ReturnType<typeof sql>): Promise<readonly OperatorMcpGrantSummaryRecord[]> {
     const result = await sql<GrantSummaryRow>`
       SELECT oauth_grant.id, client.client_id, client.display_name AS client_name,
         oauth_grant.client_version::text AS client_version, snapshot.metadata_digest AS client_metadata_digest,
@@ -593,16 +593,27 @@ export class OperatorMcpAuthorizationRepository implements OperatorMcpAuthorizat
       JOIN operator_mcp_client_metadata_snapshots snapshot ON snapshot.id = oauth_grant.client_metadata_snapshot_id
       JOIN workspaces workspace ON workspace.id = oauth_grant.workspace_id
       JOIN users account_user ON account_user.id = oauth_grant.user_id
-      WHERE oauth_grant.workspace_id = ${input.workspaceId}
-        AND (${input.userId ?? null}::uuid IS NULL OR oauth_grant.user_id = ${input.userId ?? null})
+      WHERE ${predicate}
       ORDER BY oauth_grant.created_at DESC, oauth_grant.id DESC
     `.execute(this.db);
     return result.rows.map(mapGrantSummary);
   }
 
+  // The inventory answers "what can reach this workspace right now", so retired grants stay out of it;
+  // superseded rows in particular accumulate on every re-consent and authorize nothing.
+  async listGrants(input: { workspaceId: string; userId?: string }): Promise<readonly OperatorMcpGrantSummaryRecord[]> {
+    return this.selectGrantSummaries(sql`
+      oauth_grant.workspace_id = ${input.workspaceId}
+        AND oauth_grant.status = 'active'
+        AND (${input.userId ?? null}::uuid IS NULL OR oauth_grant.user_id = ${input.userId ?? null})
+    `);
+  }
+
   async findGrant(input: { workspaceId: string; grantId: string }): Promise<OperatorMcpGrantSummaryRecord | null> {
-    const rows = await this.listGrants({ workspaceId: input.workspaceId });
-    return rows.find((grant) => grant.id === input.grantId) ?? null;
+    const rows = await this.selectGrantSummaries(sql`
+      oauth_grant.id = ${input.grantId} AND oauth_grant.workspace_id = ${input.workspaceId}
+    `);
+    return rows[0] ?? null;
   }
 
   async persistClientSnapshot(snapshot: OperatorMcpClientSnapshot): Promise<PersistedOperatorMcpClient> {

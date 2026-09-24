@@ -17,7 +17,7 @@ const startReturn: AgentToolDescriptor = {
 };
 
 const catalogWith = (tools: AgentToolDescriptor[]) => {
-  const load = vi.fn(async () => ({ agent: { name: "Acme", description: null }, tools }));
+  const load = vi.fn(async () => ({ agent: { name: "Acme", description: null }, askAgentDescription: "Hold a conversation with Acme.", tools }));
   const catalog: AgentToolCatalogPort = { load };
   return { catalog, load };
 };

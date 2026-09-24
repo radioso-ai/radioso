@@ -11,7 +11,6 @@ import {
   type OperatorMcpSetupResponse,
 } from '@/lib/api-operator-mcp'
 import { useRuntimeConfig } from '@/hooks/use-runtime-config'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { CopyValueField } from '@/components/ui/copy-value-field'
@@ -48,9 +47,6 @@ export const selectOperatorMcpArtifactId = (
   if (current && current.status !== 'unavailable') return current.id
   return artifacts.find((artifact) => artifact.status !== 'unavailable')?.id ?? artifacts[0]?.id ?? null
 }
-
-const statusVariant = (status: OperatorMcpGrantSummary['status']) =>
-  status === 'active' ? 'secondary' as const : 'outline' as const
 
 const formatDate = (value: string | null) => value ? new Date(value).toLocaleString() : 'Never'
 
@@ -120,7 +116,6 @@ function GrantInventory({ workspaceId, grants, onRefresh }: { workspaceId: strin
                 <p className="text-xs text-muted-foreground">{grant.userName ?? 'Current user'} · Created {formatDate(grant.createdAt)} · Last used {formatDate(grant.lastUsedAt)}</p>
               </div>
               <div className="flex items-center gap-2">
-                {grant.status !== 'active' ? <Badge variant={statusVariant(grant.status)}>{grant.status}</Badge> : null}
                 <Button type="button" size="sm" variant="ghost" onClick={() => void openDetail(grant)}>{selected?.id === grant.id ? 'Hide details' : 'Inspect'}</Button>
               </div>
             </div>
@@ -144,7 +139,7 @@ function GrantInventory({ workspaceId, grants, onRefresh }: { workspaceId: strin
                 <div><dt className="text-muted-foreground">Recent invocations</dt><dd>{detail.recentInvocationCount}</dd></div>
               </dl>
             ) : <Spinner className="h-4 w-4" />}
-            {selected.canRevoke && selected.status === 'active' ? <Button type="button" variant="destructive" onClick={() => setRevokeTarget(selected)}>Revoke grant</Button> : null}
+            {selected.canRevoke ? <Button type="button" variant="destructive" onClick={() => setRevokeTarget(selected)}>Revoke grant</Button> : null}
           </CardContent>
         </Card>
       ) : null}

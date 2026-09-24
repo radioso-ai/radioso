@@ -111,7 +111,7 @@ export class InMemoryMachineAccessRepository implements Pick<
   async listServiceAccounts(input: InputOf<"listServiceAccounts">): Promise<ServiceAccountRecord[]> {
     const offset = ((input.page ?? 1) - 1) * input.limit;
     return [...this.serviceAccounts.values()]
-      .filter((account) => account.workspaceId === input.workspaceId)
+      .filter((account) => account.workspaceId === input.workspaceId && account.status !== "archived")
       .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime() || right.id.localeCompare(left.id))
       .slice(offset, offset + input.limit)
       .map((account) => ({
@@ -121,7 +121,8 @@ export class InMemoryMachineAccessRepository implements Pick<
   }
 
   async countServiceAccounts(workspaceId: string): Promise<number> {
-    return [...this.serviceAccounts.values()].filter((account) => account.workspaceId === workspaceId).length;
+    return [...this.serviceAccounts.values()]
+      .filter((account) => account.workspaceId === workspaceId && account.status !== "archived").length;
   }
 
   async mutateServiceAccount(input: InputOf<"mutateServiceAccount">) {
@@ -261,6 +262,8 @@ export class InMemoryMachineAccessRepository implements Pick<
     return [...this.credentials.values()]
       .filter((credential) =>
         credential.workspaceId === input.workspaceId
+        && credential.revokedAt === null
+        && credential.expiresAt.getTime() > input.now.getTime()
         && (!input.kind || credential.kind === input.kind)
         && (!input.ownerUserId || credential.ownerUserId === input.ownerUserId)
         && (!input.serviceAccountId || credential.serviceAccountId === input.serviceAccountId)

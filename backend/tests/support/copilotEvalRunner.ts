@@ -357,6 +357,7 @@ export const copilotEvalCatalogDependencies = (): Parameters<typeof createCopilo
         agentId: COPILOT_EVAL_AGENT_ID,
         agentName: "Support",
         sourceChannel: "web",
+callerKind: "human" as const,
         createdAt: "2026-08-26T07:30:00.000Z",
         updatedAt: "2026-08-26T08:10:00.000Z",
         messageCount: 2,

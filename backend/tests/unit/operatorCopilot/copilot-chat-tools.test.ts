@@ -57,6 +57,7 @@ describe("copilot chat readers", () => {
       agentId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       agentName: "Support",
       sourceChannel: "website_embed",
+      callerKind: "human" as const,
       createdAt: "2026-08-18T10:00:00.000Z",
       updatedAt: "2026-08-18T10:00:02.000Z",
       messageCount: 1,

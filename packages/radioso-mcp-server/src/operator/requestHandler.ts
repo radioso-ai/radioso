@@ -1,6 +1,7 @@
 import {
   OPERATOR_MCP_PROTOCOL_VERSION,
   OperatorMcpRequestSchema,
+  describeOperatorMcpRejection,
   digestOperatorMcpCall,
   isOperatorMcpMethod,
   type OperatorMcpProof,
@@ -192,7 +193,9 @@ const createModernOperatorMcpRequestHandler = (dependencies: OperatorMcpRequestH
   }
 
   const parsed = OperatorMcpRequestSchema.safeParse(parsedBody);
-  if (!parsed.success) return rpcError(id, -32600, "Invalid Request");
+  if (!parsed.success) {
+    return rpcError(id, -32600, "Invalid Request", { data: describeOperatorMcpRejection(parsed.error.issues) });
+  }
 
   const { method } = parsed.data;
   if (method === "server/discover") {

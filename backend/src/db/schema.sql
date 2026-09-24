@@ -2073,6 +2073,7 @@ CREATE TABLE public.conversations (
     visitor_id uuid,
     request_context jsonb,
     entry_referrer text,
+    caller_kind text DEFAULT 'human'::text NOT NULL,
     CONSTRAINT conversations_purpose_check CHECK ((purpose = ANY (ARRAY['production'::text, 'operator_test'::text])))
 );
 

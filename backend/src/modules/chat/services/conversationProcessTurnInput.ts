@@ -117,16 +117,13 @@ const effectiveInputEventForSession = (session: PreparedSession) => ({
 });
 
 /**
- * The turn's resolved visitor context, bounded for matching. Omitted entirely
- * when nothing resolved, so turns without context variables send the matcher the
- * same signals they always did.
+ * The turn's resolved visitor context, bounded for matching. Always sent: it carries the caller
+ * kind even on a turn that resolved no context variable, because a directive condition cannot be
+ * written against a key that is only sometimes there.
  */
 const visitorContextForMatching = (
   session: PreparedSession,
-): { visitorContext?: Record<string, unknown> } => {
-  const { context } = visitorMatchContext(session);
-  return Object.keys(context).length > 0 ? { visitorContext: context } : {};
-};
+): { visitorContext: Record<string, unknown> } => ({ visitorContext: visitorMatchContext(session).context });
 
 const directiveSteerInputForSession = (
   session: PreparedSession,

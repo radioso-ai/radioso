@@ -107,6 +107,7 @@ Startup never advances a persisted epoch. A replica with an older epoch, a newer
 - **Consent expired or account changed:** restart the connection from the client so Radioso creates a new browser-bound transaction.
 - **Permission or membership changed:** restore the required workspace access, then reconnect if the grant was revoked.
 - **Credential epoch mismatch:** complete the explicit rotation step and deploy the same epoch and secret to every replica.
+- **Rejected request:** a malformed envelope answers `-32600 Invalid Request` and lists what was wrong in the JSON-RPC `error.data`, one `<path>: <reason>` line each, such as `params._meta.io.modelcontextprotocol/clientCapabilities: invalid_type` when a self-describing request leaves out the client capabilities. Send `{}` there if the client declares none.
 - **Rejected arguments:** a refused call answers `-32602 invalid_arguments` and carries what was wrong in the JSON-RPC `error.data`, one line each. A schema rejection names fields and array positions, never the values at them. A tool that rejects the call on its own grounds states its reason instead, which can name a workspace object the credential already reads through other tools. Correct those fields and call again.
 - **Client reports an unavailable runtime:** search the backend logs for `operator_mcp_route_failed`, which names the cause and carries the invocation id the audit record is keyed by. `operator_mcp_route_not_ready` instead means the replica has not reached credential readiness.
 

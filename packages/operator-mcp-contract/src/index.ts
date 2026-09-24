@@ -53,6 +53,36 @@ export const OperatorMcpRequestSchema = z.object({
 }).strict();
 export type OperatorMcpRequest = z.infer<typeof OperatorMcpRequestSchema>;
 
+/** The part of a zod issue a rejection may disclose; zod 3 and zod 4 issues both satisfy it. */
+export interface OperatorMcpRejectedIssue {
+  readonly code: string;
+  readonly path: readonly PropertyKey[];
+  readonly keys?: readonly string[];
+}
+
+const MAX_REJECTION_DETAILS = 12;
+const MAX_PATH_SEGMENT_LENGTH = 80;
+
+const pathSegment = (segment: PropertyKey): string => String(segment).slice(0, MAX_PATH_SEGMENT_LENGTH);
+
+const rejectionLinesFor = (issue: OperatorMcpRejectedIssue): readonly string[] => {
+  const path = issue.path.map(pathSegment).join(".");
+  if (issue.code === "unrecognized_keys" && issue.keys) {
+    return issue.keys.map((key) => `${[path, pathSegment(key)].filter(Boolean).join(".")}: ${issue.code}`);
+  }
+  return [`${path || "(root)"}: ${issue.code}`];
+};
+
+/**
+ * Names where a rejected request went wrong, one line per issue, as `<path>: <zod code>`, for the
+ * JSON-RPC `error.data`. Only the issue's path and code travel — never the value at that path. A
+ * path segment can be a key the caller wrote — an unrecognized field, or a record key — echoed to
+ * that caller, bounded like every segment; naming it is the difference between a correctable call
+ * and another guess.
+ */
+export const describeOperatorMcpRejection = (issues: readonly OperatorMcpRejectedIssue[]): readonly string[] =>
+  issues.flatMap(rejectionLinesFor).slice(0, MAX_REJECTION_DETAILS);
+
 export const OperatorProtectedResourceMetadataSchema = z.object({
   resource: z.string().url(),
   authorization_servers: z.array(z.string().url()).min(1),

@@ -93,10 +93,13 @@ describe("MCP converse HTTP contract", () => {
       "429": { content: { "application/json": { schema: { $ref: "#/components/schemas/ErrorResponse" } } } },
     });
     expect(document.components?.schemas?.McpConverseToolsResponse).toMatchObject({
-      required: ["agent", "tools"],
+      // `askAgentDescription` is required, not optional: a client renders it as the `ask_agent`
+      // description, and an absent one would leave the tool describing nothing.
+      required: ["agent", "tools", "askAgentDescription"],
       properties: {
         agent: { required: ["name", "description"] },
         tools: { items: { $ref: "#/components/schemas/AgentToolDescriptor" } },
+        askAgentDescription: { type: "string" },
       },
     });
     expect(document.components?.schemas?.AgentToolDescriptor).toMatchObject({

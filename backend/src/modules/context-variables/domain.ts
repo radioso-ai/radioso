@@ -47,3 +47,14 @@ export interface ContextVariableValue {
   data: unknown;
   lastModified: Date;
 }
+
+/**
+ * Names in this namespace belong to Radioso, not to a workspace. Facts Radioso establishes about a
+ * turn are rendered into the same match record as operator-defined variables, and the directive
+ * prompts are told they may be relied on — so a workspace variable here would put its value, which
+ * can be supplied by the host page at `trustTier: "unverified"`, inside that trust.
+ */
+export const RESERVED_CONTEXT_VARIABLE_PREFIX = "radioso_";
+
+export const isReservedContextVariableName = (name: string): boolean =>
+  name.trim().toLowerCase().startsWith(RESERVED_CONTEXT_VARIABLE_PREFIX);

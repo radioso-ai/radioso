@@ -91,6 +91,28 @@ describe("AccessGrantService", () => {
     expect(expired.grant.tokenHash).toBe(expiredHash);
   });
 
+  it("lists live agent-channel grants only and keeps disabled ones", async () => {
+    const { repository, service } = createService();
+    const agentId = randomUUID();
+    const workspaceId = randomUUID();
+    const issue = (channel: "mcp-converse" | "agent-api" = "mcp-converse") => service.issueGrant({
+      agentId, workspaceId, principalKind: "agent-api", channel,
+      originConstraint: { mode: "allow-all", origins: [] }, expiresAt: futureExpiry(),
+    });
+
+    const live = await issue();
+    const revoked = await issue();
+    const expired = await issue("agent-api");
+    const disabled = await issue("agent-api");
+    await service.revokeGrant({ grantId: revoked.grant.id });
+    repository.items.find((item) => item.id === expired.grant.id)!.expiresAt = new Date(Date.now() - 1);
+    repository.items.find((item) => item.id === disabled.grant.id)!.enabled = false;
+
+    const page = await service.listAgentGrants(agentId, { workspaceId, principalKind: "agent-api" });
+
+    expect(page.grants.map((grant) => grant.id).sort()).toEqual([live.grant.id, disabled.grant.id].sort());
+  });
+
   it("keeps the original revocation timestamp when a grant is revoked repeatedly", async () => {
     const { service } = createService();
     const issued = await service.issueGrant({

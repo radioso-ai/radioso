@@ -9,6 +9,8 @@ import { hashToken, isExpired } from "./token.js";
 export interface SessionToolCatalog {
   key: string;
   tools: AgentToolDescriptor[];
+  /** The `ask_agent` description the backend composed for this agent; part of `key`. */
+  askAgentDescription?: string;
 }
 
 export interface AccessSessionRecord {

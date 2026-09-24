@@ -6,6 +6,9 @@ import { decodeCursorWithKeys, encodeCursor } from "../../shared/domain/cursorPa
 import {
   OPERATOR_TEST_SOURCE_CHANNELS,
   WORKBENCH_TEST_SOURCE_CHANNELS,
+  asCallerKind,
+  callerKindForSourceChannel,
+  type CallerKind,
   type ConversationSourceScope,
 } from "../../shared/domain/conversationSource.js";
 import { normalizeNullableText } from "../../shared/domain/nullableText.js";
@@ -28,6 +31,11 @@ export interface ConversationRecord {
   agentName: string | null;
   agentInternalName: string | null;
   sourceChannel: string | null;
+  /**
+   * Whether the other side is a person or a calling agent (spec 1290, FR-050). Derived from
+   * `sourceChannel` at creation, never supplied by a caller, so the two cannot disagree.
+   */
+  callerKind: CallerKind;
   sourceOrigin: string | null;
   channelContext: ConversationChannelContext | null;
   anonymousSessionId: string | null;
@@ -162,6 +170,7 @@ interface ConversationRow {
   agent_name?: string | null;
   agent_internal_name?: string | null;
   source_channel: string | null;
+  caller_kind?: string | null;
   source_origin: string | null;
   channel_context?: ConversationChannelContext | null;
   anonymous_session_id: string | null;
@@ -191,6 +200,7 @@ const conversationColumns = [
   "agent_revision_id",
   "purpose",
   "source_channel",
+  "caller_kind",
   "source_origin",
   "channel_context",
   "anonymous_session_id",
@@ -213,6 +223,7 @@ const conversationSelectColumns = [
   "a.name as agent_name",
   "a.internal_name as agent_internal_name",
   "c.source_channel as source_channel",
+  "c.caller_kind as caller_kind",
   "c.source_origin as source_origin",
   "c.channel_context as channel_context",
   "c.anonymous_session_id as anonymous_session_id",
@@ -250,6 +261,10 @@ const mapConversation = (row: ConversationRow): ConversationRecord => ({
   agentName: row.agent_name ?? null,
   agentInternalName: normalizeNullableText(row.agent_internal_name),
   sourceChannel: row.source_channel,
+  // The stored column is the answer wherever a query selected it, so a read and the `caller_kind`
+  // filter beside it can never disagree. Deriving from the channel is the fallback for a projection
+  // that omits the column, not a second opinion about a row that has one.
+  callerKind: asCallerKind(row.caller_kind) ?? callerKindForSourceChannel(row.source_channel),
   sourceOrigin: row.source_origin ?? null,
   channelContext: (row.channel_context as ConversationChannelContext | null) ?? null,
   anonymousSessionId: row.anonymous_session_id ?? null,
@@ -305,6 +320,7 @@ export class ConversationRepository implements ConversationRepositoryPort {
           workspace_id: input.workspaceId,
           agent_id: input.agentId,
           source_channel: input.sourceChannel,
+          caller_kind: callerKindForSourceChannel(input.sourceChannel),
           source_origin: input.sourceOrigin ?? null,
           anonymous_session_id: input.anonymousSessionId,
         })
@@ -324,6 +340,7 @@ export class ConversationRepository implements ConversationRepositoryPort {
         agent_revision_id: input.agentRevisionId ?? null,
         purpose: input.purpose ?? "production",
         source_channel: input.sourceChannel ?? null,
+        caller_kind: callerKindForSourceChannel(input.sourceChannel),
         source_origin: input.sourceOrigin ?? null,
         channel_context: input.channelContext ? toJsonb(input.channelContext) : null,
         anonymous_session_id: input.anonymousSessionId ?? null,
@@ -381,6 +398,7 @@ export class ConversationRepository implements ConversationRepositoryPort {
           workspace_id: input.workspaceId,
           agent_id: input.agentId ?? null,
           source_channel: input.sourceChannel ?? null,
+          caller_kind: callerKindForSourceChannel(input.sourceChannel),
           source_origin: input.sourceOrigin ?? null,
           channel_context: input.channelContext ? toJsonb(input.channelContext) : null,
           anonymous_session_id: input.anonymousSessionId ?? null,

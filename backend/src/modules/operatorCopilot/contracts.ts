@@ -543,7 +543,8 @@ export interface CopilotToolDescriptor<TInput = unknown, TOutput = unknown> {
    * a committed proposal or a reviewed execution's receipt, or by repeating an owner call that is
    * safe to repeat. `recovered` settles the earlier invocation, so it carries only a durable
    * outcome. `unconfirmed` answers the retry with an outcome the owner could not confirm and leaves
-   * the earlier invocation unsettled. `in_progress` means another runner still holds the attempt.
+   * the earlier invocation unsettled. `in_progress` defers the retry while the earlier attempt may
+   * still be running.
    */
   reconcileMcpInvocation?(input: {
     readonly invocation: OperatorMcpInvocationRecord;

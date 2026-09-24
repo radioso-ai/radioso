@@ -401,7 +401,7 @@ describe("OperatorMcpApplicationService", () => {
       },
     });
     const enriched = enrichCopilotToolCatalog([rawProposalDescriptor], { resolveWorkspaceKey: async () => "workspace-key" })[0];
-    const { service, invocations, invocation } = build(enriched);
+    const { service, invocations, invocation, audit } = build(enriched);
     const proposalId = uuid("14");
     const operationId = "recover-proposal";
     const argumentsValue = { section: "retrieval" };
@@ -443,6 +443,7 @@ describe("OperatorMcpApplicationService", () => {
       invocationId: uuid("12"), status: "completed", safeOutcomeCode: "replayed",
       resultReference: `/oauth/operator-mcp/proposal/${proposalId}`,
     }));
+    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ metadata: expect.objectContaining({ outcome: "replayed", reason: "operation_recovered" }) }));
   });
 
   it("re-prepares exactly once after a stale proposal attempt is released", async () => {

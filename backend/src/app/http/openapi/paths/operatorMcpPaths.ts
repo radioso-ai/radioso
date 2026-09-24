@@ -117,11 +117,11 @@ export const registerOperatorMcpPaths = (
     method: "get",
     path: "/api/v1/workspaces/{workspaceId}/operator-mcp/grants",
     tags: ["Operator MCP"],
-    summary: "List visible Operator MCP grants",
+    summary: "List active Operator MCP grants",
     operationId: "listOperatorMcpGrants",
     security: session,
     request: { params: workspaceParams },
-    responses: { 200: { description: "User or workspace grant inventory", content: { "application/json": { schema: z.object({ grants: z.array(grantSummary), canViewWorkspace: z.boolean() }) } } }, ...errors },
+    responses: { 200: { description: "Active user or workspace grant inventory; revoked and superseded grants are excluded", content: { "application/json": { schema: z.object({ grants: z.array(grantSummary), canViewWorkspace: z.boolean() }) } } }, ...errors },
   });
 
   registry.registerPath({

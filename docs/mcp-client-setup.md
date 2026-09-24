@@ -197,7 +197,8 @@ Authorization: Bearer <session token>
 
 ```json
 {
-  "agent": { "name": "Acme Support", "description": null },
+  "agent": { "name": "Acme Support", "description": "orders, returns, billing" },
+  "askAgentDescription": "Hold a conversation with Acme Support. It covers orders, returns, billing. Runs the agent's full behavior — persona, directives, and multi-step routines — and continues the same conversation across calls (stateful). Prefer the typed tools for the tasks they name (start_return); use this for anything else, or when you do not know which tool applies.",
   "tools": [
     {
       "toolName": "start_return",
@@ -216,6 +217,8 @@ Authorization: Bearer <session token>
   ]
 }
 ```
+
+`agent.description` is the agent's public description, written by the operator under the agent's settings. `askAgentDescription` composes it with the agent's name and the names of the exposed tools into the sentence a client should advertise for `ask_agent` — a calling model reads that sentence to decide between holding a conversation and calling a typed tool, so what an operator writes there reaches every caller verbatim. It is assembled from configuration, which makes it identical for every caller on a given release.
 
 Each descriptor's `inputSchema` is JSON Schema built from the routine's declared slots: `text` becomes `string`, `number` and `boolean` keep their types, `email` is `string` with `format: "email"`, `date` is `string` with `format: "date"` (an ISO calendar day such as `2026-09-01`), and `required` follows the slot. A routine with no slots is a tool with an empty object schema.
 
@@ -270,7 +273,7 @@ The tool name is checked against the release the conversation is pinned to, on b
 
 An MCP client sees the same catalog without calling the REST route itself. The standalone server reads `GET /api/v1/mcp/converse/tools` once, at the moment it exchanges the credential for a session, and pins the result to that session, so `tools/list` is stable for the session's lifetime. It is then:
 
-- `ask_agent`
+- `ask_agent`, described by the catalog's `askAgentDescription`
 - `radioso_docs` and `radioso_doc_page`, Radioso's own documentation
 - one tool per descriptor, named by its `toolName`, carrying the operator's description and the descriptor's `inputSchema` verbatim
 

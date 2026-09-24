@@ -55,6 +55,7 @@ const conversation = (
   agentName: 'Marta',
   agentInternalName: null,
   sourceChannel: 'authenticated_chat',
+  callerKind: 'human' as const,
   sourceOrigin: null,
   channelContext: null,
   anonymousSessionId: null,

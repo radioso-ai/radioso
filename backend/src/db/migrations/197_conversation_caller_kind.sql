@@ -13,6 +13,16 @@
 ALTER TABLE conversations
   ADD COLUMN IF NOT EXISTS caller_kind TEXT NOT NULL DEFAULT 'human';
 
+-- Run this migration in a coordinated deploy window, the same as `171_answer_coverage_assessments`.
+-- Migrations run at API boot while the previous revision still serves traffic, the runner executes
+-- each file in one transaction so PostgreSQL cannot build the index CONCURRENTLY, and the build
+-- takes a lock on `conversations` that blocks live chat writes for its duration. Booting a second
+-- instance during that window leaves it waiting on the migration advisory lock.
+--
+-- Adding the column itself is cheap: a `NOT NULL DEFAULT` on PostgreSQL 11+ does not rewrite the
+-- table. The backfill touches only the two agent channels, and the index is partial over the same
+-- rare rows — it is the scan to build it, not the rows it holds, that costs.
+
 -- Backfill by the same rule the domain applies, so history reads the way new rows will.
 UPDATE conversations
   SET caller_kind = 'agent'

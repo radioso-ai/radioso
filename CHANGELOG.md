@@ -9,6 +9,40 @@ Cut a release with the **Cut Release** workflow. It reads the commits since the 
 tag, writes the entry above this line, tags the commit, and publishes a GitHub Release. A
 deploy then ships a release that already exists; it never mints one.
 
+## [1.4.0] - 2026-09-24
+
+### Added
+
+- **agents:** let a visiting AI agent discover an agent, walk in without a credential, and come back after a handoff ([#1306](https://github.com/radioso-ai/radioso/pull/1306))
+- **agents:** expose routines as typed tools and return an agent reply envelope for calling agents ([#1292](https://github.com/radioso-ai/radioso/pull/1292))
+
+### Fixed
+
+- **mcp:** name the cause when an operator MCP route fails ([#1314](https://github.com/radioso-ai/radioso/pull/1314))
+- **mcp:** make prepare_routine_structure callable and say what a rejected call got wrong ([#1313](https://github.com/radioso-ai/radioso/pull/1313))
+- **mcp:** advertise every operator tool with an object schema ([#1310](https://github.com/radioso-ai/radioso/pull/1310))
+- **auth:** wire Enterprise Google login into the Cloud Run deploy ([#1295](https://github.com/radioso-ai/radioso/pull/1295))
+- isolate workspace selection and improve MCP connections ([#1304](https://github.com/radioso-ai/radioso/pull/1304))
+- **security:** admit rate-limited requests on a sliding window and tell callers when to retry ([#1305](https://github.com/radioso-ai/radioso/pull/1305))
+- **frontend:** stop an unconfigured channel from reading as a live one ([#1303](https://github.com/radioso-ai/radioso/pull/1303))
+- **operator-console:** read the conversation meter for catalog-plan organizations ([#1300](https://github.com/radioso-ai/radioso/pull/1300))
+- **test-chat:** keep the draft-candidate refusal visible after the proactive greeting starts ([#1297](https://github.com/radioso-ai/radioso/pull/1297))
+- **frontend:** give Button a loading/icon slot so translated labels cannot crash submits ([#1298](https://github.com/radioso-ai/radioso/pull/1298))
+
+### Internal
+
+- **evals:** record baselines for routine tool invocation and exposure cases ([#1299](https://github.com/radioso-ai/radioso/pull/1299))
+
+### Database migrations
+
+This release adds 3 migrations. They run at service startup, so deploy one stack at a time; overlapping deploys contend on the same DDL lock and stall until one gives up.
+
+- `194_routine_definition_exposure.sql`
+- `195_abuse_control_sliding_window.sql`
+- `196_agent_public_identity.sql`
+
+[1.4.0]: https://github.com/radioso-ai/radioso/compare/v1.3.0...v1.4.0
+
 ## [1.3.0] - 2026-09-22
 
 ### Added

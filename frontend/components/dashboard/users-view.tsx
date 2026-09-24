@@ -53,7 +53,7 @@ export function UsersPanel() {
   const ownerUsers = users.filter((user) => user.role === 'owner')
   const activeUserEmails = new Set(users.map((user) => user.email.toLowerCase()))
   const visibleInvitations = invitations.filter((invitation) => (
-    invitation.status === 'pending' && !activeUserEmails.has(invitation.email.toLowerCase())
+    !activeUserEmails.has(invitation.email.toLowerCase())
   ))
   const trimmedEmail = email.trim()
   const isEmailValid = isValidEmailAddress(trimmedEmail)

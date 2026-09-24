@@ -834,9 +834,9 @@ export class InMemoryAccountInvitationRepository implements AccountInvitationRep
     return [...this.items.values()].find((item) => item.tokenHash === tokenHash) ?? null;
   }
 
-  async listByAccount(accountId: string): Promise<AccountInvitationRecord[]> {
+  async listPendingByAccount(accountId: string): Promise<AccountInvitationRecord[]> {
     return [...this.items.values()]
-      .filter((item) => item.accountId === accountId)
+      .filter((item) => item.accountId === accountId && item.status === "pending")
       .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime());
   }
 

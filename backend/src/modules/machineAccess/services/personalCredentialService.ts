@@ -64,7 +64,7 @@ export class PersonalCredentialService {
       permission: "workspace.api_access.personal.manage",
       workspaceId: input.workspaceId,
     });
-    const query = { workspaceId: input.workspaceId, ownerUserId: input.userId, kind: "personal" as const };
+    const query = { workspaceId: input.workspaceId, ownerUserId: input.userId, kind: "personal" as const, now: this.now() };
     const [items, total] = await Promise.all([
       this.input.repository.listCredentials({ ...query, page: input.page, limit: Math.min(input.limit ?? MACHINE_ACCESS_LIMITS.defaultPageSize, MACHINE_ACCESS_LIMITS.maxPageSize) }),
       this.input.repository.countCredentials(query),
@@ -156,7 +156,7 @@ export class PersonalCredentialService {
       permission: "workspace.api_access.personal.audit",
       workspaceId: input.workspaceId,
     });
-    const query = { workspaceId: input.workspaceId, kind: "personal" as const };
+    const query = { workspaceId: input.workspaceId, kind: "personal" as const, now: this.now() };
     const [items, total] = await Promise.all([
       this.input.repository.listCredentials({ ...query, page: input.page, limit: Math.min(input.limit ?? MACHINE_ACCESS_LIMITS.defaultPageSize, MACHINE_ACCESS_LIMITS.maxPageSize) }),
       this.input.repository.countCredentials(query),

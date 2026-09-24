@@ -94,7 +94,7 @@ describeIntegration("AccountInvitationRepository (Postgres)", () => {
     expect(await repository.findByTokenHash("no-such-hash")).toBeNull();
   });
 
-  it("listByAccount returns invitations ordered DESC by created_at", async () => {
+  it("listPendingByAccount returns invitations ordered DESC by created_at", async () => {
     const second = await repository.create({
       accountId,
       email: `another-${randomUUID()}@example.com`,
@@ -104,9 +104,25 @@ describeIntegration("AccountInvitationRepository (Postgres)", () => {
       expiresAt,
     });
 
-    const rows = await repository.listByAccount(accountId);
+    const rows = await repository.listPendingByAccount(accountId);
     expect(rows[0]?.id).toBe(second.id);
     expect(rows.map((r) => r.id)).toContain(invitationId);
+  });
+
+  it("listPendingByAccount omits invitations that are no longer pending", async () => {
+    const retired = await repository.create({
+      accountId,
+      email: `retired-${randomUUID()}@example.com`,
+      invitedByMembershipId: membershipId,
+      tokenHash: `invite-hash-retired-${randomUUID()}`,
+      role: "member",
+      expiresAt,
+    });
+    await repository.update({ id: retired.id, status: "revoked" });
+
+    const rows = await repository.listPendingByAccount(accountId);
+    expect(rows.map((row) => row.id)).not.toContain(retired.id);
+    expect(rows.every((row) => row.status === "pending")).toBe(true);
   });
 
   it("update sets status, accepted_at and accepted_by_user_id", async () => {

@@ -80,7 +80,7 @@ export interface AccountInvitationRepositoryPort {
   findById(id: string): Promise<AccountInvitationRecord | null>;
   findPendingByAccountAndEmail(accountId: string, email: string): Promise<AccountInvitationRecord | null>;
   findByTokenHash(tokenHash: string): Promise<AccountInvitationRecord | null>;
-  listByAccount(accountId: string): Promise<AccountInvitationRecord[]>;
+  listPendingByAccount(accountId: string): Promise<AccountInvitationRecord[]>;
   update(params: {
     id: string;
     status: AccountInvitationStatus;
@@ -160,11 +160,13 @@ export class AccountInvitationRepository implements AccountInvitationRepositoryP
     return row ? mapInvitation(row as AccountInvitationRow) : null;
   }
 
-  async listByAccount(accountId: string): Promise<AccountInvitationRecord[]> {
+  /** Pending invitations only: an accepted, revoked or expired invitation grants nothing. */
+  async listPendingByAccount(accountId: string): Promise<AccountInvitationRecord[]> {
     const rows = await this.db
       .selectFrom("account_invitations")
       .select(accountInvitationColumns)
       .where("account_id", "=", accountId)
+      .where("status", "=", "pending")
       .orderBy("created_at", "desc")
       .execute();
 

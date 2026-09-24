@@ -135,11 +135,12 @@ test("operator connects an MCP client, rotates it, and revokes it", async ({ pag
   await expect.poll(() => credentialRequests.some((request) =>
     request.method === "POST" && request.path === `/agents/${defaultAgentId}/channel-credentials/existing-grant/revoke`,
   )).toBe(true);
-  await expect(card.getByText("Revoked", { exact: true })).toBeHidden();
-  await card.locator('summary').filter({ hasText: 'Revoked access' }).click();
-  await expect(card.getByText("Revoked", { exact: true })).toBeVisible();
-  await openRowMenu(page, 'Acme pilot');
-  await expect(page.getByRole('menuitem', { name: 'Rotate', exact: true })).toBeDisabled();
+  // Revoked access leaves the inventory outright: no row, no badge, no history to reopen.
+  await expect(card.getByText("Acme pilot")).toHaveCount(0);
+  await expect(card.getByText("Revoked", { exact: true })).toHaveCount(0);
+  await expect(card.locator('summary').filter({ hasText: 'Revoked access' })).toHaveCount(0);
+  await expect(card.getByText("Claude Code", { exact: true })).toBeVisible();
+  await openRowMenu(page, 'Claude Code');
   await page.getByRole('menuitem', { name: 'Details', exact: true }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
 });
@@ -260,40 +261,35 @@ test('Test connection discovers tools, reports failures, and supports retry with
   await page.screenshot({ path: '../.context/mcp-test-connection.png', fullPage: true });
 });
 
-test('revoked history stays collapsed while older active access remains reachable', async ({ page }) => {
+test('the inventory lists only live access and pages older active access', async ({ page }) => {
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, {});
   await stubRuntimeConfig(page, { mcpUrl: MCP_SERVER_URL });
-  const revoked: AgentChannelCredentialFixture = {
-    id: 'revoked', audience: 'mcp', label: 'Old client', prefix: 'rd_old', status: 'revoked',
+  const live: AgentChannelCredentialFixture = {
+    id: 'live', audience: 'mcp', label: 'Working client', prefix: 'rd_live', status: 'active',
     createdAt: '2026-01-01T00:00:00Z', expiresAt: '2030-01-01T00:00:00Z',
-    lastUsedAt: null, revokedAt: '2026-09-01T00:00:00Z',
+    lastUsedAt: null, revokedAt: null,
   };
   await page.route('**/backend/api/v1/agents/*/channel-credentials?*', async (route) => {
     const nextPage = new URL(route.request().url()).searchParams.has('cursor');
     await route.fulfill({ json: {
-      credentials: nextPage ? [
-        { ...revoked, id: 'active', label: 'Working client', status: 'active', revokedAt: null },
-        { ...revoked, id: 'expired', label: 'Expired client', status: 'expired', expiresAt: '2026-01-02T00:00:00Z', revokedAt: null },
-      ] : [revoked],
+      credentials: nextPage
+        ? [{ ...live, id: 'older', label: 'Older client' }]
+        : [live, { ...live, id: 'paused', label: 'Paused client', status: 'disabled' }],
       nextCursor: nextPage ? null : 'older',
     } });
   });
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=channels&anchor=mcp-channel`);
   const card = page.locator('#mcp-channel');
-  const history = card.locator('summary').filter({ hasText: 'Revoked access' });
-  await expect(history).toHaveText('Revoked access (1 loaded)');
-  await expect(card.getByText('Old client', { exact: true })).toBeHidden();
+  await expect(card.getByText('Working client', { exact: true })).toBeVisible();
+  // Disabled access is restorable, not retired, so it stays on the list with its badge.
+  await expect(card.getByText('Paused client', { exact: true })).toBeVisible();
+  await expect(card.getByText('Disabled', { exact: true })).toBeVisible();
+  await expect(card.locator('summary').filter({ hasText: 'Revoked access' })).toHaveCount(0);
   await expect(card.getByText('No clients connected yet.')).toHaveCount(0);
   await card.getByRole('button', { name: 'Load more', exact: true }).click();
-  await expect(card.getByText('Working client', { exact: true })).toBeVisible();
-  await expect(card.getByText('Expired client', { exact: true })).toBeVisible();
-  await expect(history).toHaveText('Revoked access (1)');
+  await expect(card.getByText('Older client', { exact: true })).toBeVisible();
   await expect(card.getByRole('button', { name: 'Load more', exact: true })).toHaveCount(0);
-  await history.click();
-  await expect(card.getByText('Old client', { exact: true })).toBeVisible();
-  await history.click();
-  await expect(card.getByText('Old client', { exact: true })).toBeHidden();
   await page.screenshot({ path: '../.context/mcp-channel-ux.png', fullPage: true });
 });
 

@@ -1,7 +1,7 @@
 ---
 title: "Personal tokens and service accounts"
 description: "Create role-bounded credentials for people and durable service identities for unattended API clients."
-last_updated: 2026-09-02
+last_updated: 2026-09-24
 ---
 
 # Personal tokens and service accounts
@@ -14,7 +14,7 @@ Credential management itself is available only through a signed-in browser sessi
 
 A personal token remains attached to your current workspace membership. Its role ceiling can be `member` or `admin`, but never exceeds your live role. Demotion takes effect on the next request; leaving and later rejoining the workspace does not revive an older token.
 
-A service account is a workspace-owned identity with its own live `member` or `admin` role. It can have several credentials, so you can deploy a replacement before revoking the old credential. Disabling the account suspends every credential. Archiving it permanently invalidates them while preserving the audit identity.
+A service account is a workspace-owned identity with its own live `member` or `admin` role. It can have several credentials, so you can deploy a replacement before revoking the old credential. Disabling the account suspends every credential and keeps the account in **Settings → API access**, ready to re-enable. Archiving is the permanent choice: it invalidates every credential and retires the account from that list, while past audit events keep naming it.
 
 Credentials created under an agent's **Channels** settings are a different kind. They have no workspace role, are bound to exactly one agent and one audience (`mcp` or `rest`), and can only talk to that agent. A personal or service credential cannot be substituted for one of these agent credentials, and an agent credential cannot administer the workspace.
 
@@ -29,6 +29,8 @@ curl -sS -b cookies.txt \
 ```
 
 Every credential needs an expiry. A personal token can last up to 90 days; a service-account credential can last up to 365 days. The other default limits are 10 active personal tokens per user, 50 service accounts per workspace, and 5 active credentials per service account.
+
+The list endpoints and **Settings → API access** show the credentials that can authenticate today, so the count on screen is the count that runs against those limits. A credential leaves the list once you revoke it or once its expiry passes, and a credential suspended by a disabled service account stays listed because re-enabling the account restores it. Audit events keep every credential's history either way.
 
 ## Create a personal token
 

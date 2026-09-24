@@ -15,7 +15,7 @@ import { AccountAccessService } from "./accountAccessService.js";
 
 const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
-export interface AccountInvitationSummary {
+interface AccountInvitationSummary {
   id: string;
   email: string;
   status: AccountInvitationStatus;
@@ -48,10 +48,15 @@ export class AccountInvitationService {
   ) {}
 
   async listForAccount(accountId: string): Promise<AccountInvitationSummary[]> {
-    const invitations = await this.invitationRepository.listByAccount(accountId);
-    return Promise.all(
-      invitations.map(async (invitation) => serializeInvitation(invitation, await this.resolveStatus(invitation))),
+    const invitations = await this.invitationRepository.listPendingByAccount(accountId);
+    const resolved = await Promise.all(
+      invitations.map(async (invitation) => ({ invitation, status: await this.resolveStatus(invitation) })),
     );
+    // resolveStatus retires an invitation whose expiry has passed; those grant nothing, so
+    // the listing keeps only what a person can still accept.
+    return resolved
+      .filter(({ status }) => status === "pending")
+      .map(({ invitation, status }) => serializeInvitation(invitation, status));
   }
 
   async createInvitation(input: {

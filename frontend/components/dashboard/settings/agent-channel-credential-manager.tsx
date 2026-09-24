@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { ChevronDown, Info, KeyRound, MoreHorizontal, RefreshCw, Trash2 } from 'lucide-react'
+import { Info, KeyRound, MoreHorizontal, RefreshCw, Trash2 } from 'lucide-react'
 
 import { CREDENTIAL_EXPIRY_HINT, defaultExpiryDate, expiryInputToIso } from '@/components/dashboard/settings/api-access-dialogs'
 import {
@@ -41,15 +41,11 @@ const statusBadgeLabel = (status: AgentChannelCredential['status']) =>
   `${status.charAt(0).toUpperCase()}${status.slice(1)}`
 
 /** Quiet row meta: identity, when it stops working, and whether anything ever used it. */
-const credentialMeta = (credential: AgentChannelCredential): string => {
-  const facts = [
-    credential.prefix,
-    `Expires ${formatCredentialDate(credential.expiresAt)}`,
-    `Last used ${formatCredentialDate(credential.lastUsedAt)}`,
-  ]
-  if (credential.revokedAt) facts.push(`Revoked ${formatCredentialDate(credential.revokedAt)}`)
-  return facts.join(' · ')
-}
+const credentialMeta = (credential: AgentChannelCredential): string => [
+  credential.prefix,
+  `Expires ${formatCredentialDate(credential.expiresAt)}`,
+  `Last used ${formatCredentialDate(credential.lastUsedAt)}`,
+].join(' · ')
 
 type RowAction = { type: 'details' | 'revoke' | 'rotate'; credential: AgentChannelCredential }
 
@@ -89,9 +85,6 @@ export function AgentChannelCredentialList({
   const closeUnlessBusy = (open: boolean) => {
     if (!open && !busyCredentialId) setAction(null)
   }
-
-  const currentCredentials = credentials.filter((credential) => credential.status !== 'revoked')
-  const revokedCredentials = credentials.filter((credential) => credential.status === 'revoked')
 
   const renderCredential = (credential: AgentChannelCredential) => {
     const active = credential.status === 'active'
@@ -155,20 +148,8 @@ export function AgentChannelCredentialList({
       ) : null}
 
       <div className="space-y-2">
-        {currentCredentials.map(renderCredential)}
+        {credentials.map(renderCredential)}
       </div>
-
-      {revokedCredentials.length > 0 ? (
-        <details className="group rounded-md border border-border">
-          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-md px-3 py-2 text-sm text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
-            <span>Revoked access ({revokedCredentials.length}{hasMore ? ' loaded' : ''})</span>
-            <ChevronDown aria-hidden="true" className="h-4 w-4 transition-transform group-open:rotate-180" />
-          </summary>
-          <div className="space-y-2 border-t border-border p-3">
-            {revokedCredentials.map(renderCredential)}
-          </div>
-        </details>
-      ) : null}
 
       {hasMore ? (
         <Button type="button" variant="outline" size="sm" onClick={onLoadMore} loading={isLoadingMore}>

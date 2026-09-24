@@ -13,12 +13,6 @@ import type {
 } from "../../modules/machineAccess/ports.js";
 import { MachineAccessActorAuthorityRepository } from "./machineAccessActorAuthorityRepository.js";
 
-export type {
-  ApiCredentialRecord,
-  CredentialExpiryWarningClaim,
-  ServiceAccountRecord,
-} from "../../modules/machineAccess/ports.js";
-
 // Postgres timestamp columns come back as `Date` (or `string`, depending on driver config); a
 // bare unknown never reaches this branch for nullable timestamp fields in practice.
 const toNullableDate = (value: unknown): Date | null =>
@@ -182,8 +176,11 @@ export class MachineAccessRepository implements MachineAccessPersistencePort {
     return row ? mapAccount(row) : null;
   }
 
+  // Archiving is terminal and irreversible — no transition leaves it and every child credential is already
+  // revoked — so archived accounts leave the inventory. Disabled stays: it is restorable from the row.
   async listServiceAccounts(input: { workspaceId: string; limit: number; page?: number }): Promise<ServiceAccountRecord[]> {
     const rows = await this.db.selectFrom("workspace_service_accounts").selectAll().where("workspace_id", "=", input.workspaceId)
+      .where("status", "<>", "archived")
       .orderBy("created_at", "desc").orderBy("id", "desc").limit(input.limit)
       .offset(((input.page ?? 1) - 1) * input.limit).execute();
     return Promise.all(rows.map(async (row) => ({
@@ -194,7 +191,7 @@ export class MachineAccessRepository implements MachineAccessPersistencePort {
 
   async countServiceAccounts(workspaceId: string): Promise<number> {
     const row = await this.db.selectFrom("workspace_service_accounts").select(({ fn }) => fn.countAll<number>().as("count"))
-      .where("workspace_id", "=", workspaceId).executeTakeFirstOrThrow();
+      .where("workspace_id", "=", workspaceId).where("status", "<>", "archived").executeTakeFirstOrThrow();
     return Number(row.count);
   }
 
@@ -373,16 +370,19 @@ export class MachineAccessRepository implements MachineAccessPersistencePort {
     });
   }
 
-  async listCredentials(input: { workspaceId: string; kind?: MachineCredentialKind; ownerUserId?: string; serviceAccountId?: string; limit: number; page?: number }): Promise<ApiCredentialRecord[]> {
-    let query = this.db.selectFrom("api_credentials").selectAll().where("workspace_id", "=", input.workspaceId).orderBy("created_at", "desc").orderBy("id", "desc").limit(input.limit).offset(((input.page ?? 1) - 1) * input.limit);
+  // The inventory answers "what can reach this workspace right now", and it has to agree with the issuance
+  // limit above, which counts the same live rows. Revoked and expired are the terminal statuses; a credential
+  // suspended by a disabled service account stays listed, because re-enabling the account restores it.
+  async listCredentials(input: { workspaceId: string; kind?: MachineCredentialKind; ownerUserId?: string; serviceAccountId?: string; now: Date; limit: number; page?: number }): Promise<ApiCredentialRecord[]> {
+    let query = this.db.selectFrom("api_credentials").selectAll().where("workspace_id", "=", input.workspaceId).where("revoked_at", "is", null).where("expires_at", ">", input.now).orderBy("created_at", "desc").orderBy("id", "desc").limit(input.limit).offset(((input.page ?? 1) - 1) * input.limit);
     if (input.kind) query = query.where("kind", "=", input.kind);
     if (input.ownerUserId) query = query.where("owner_user_id", "=", input.ownerUserId);
     if (input.serviceAccountId) query = query.where("service_account_id", "=", input.serviceAccountId);
     return (await query.execute()).map((row) => mapCredential(row as Record<string, unknown>));
   }
 
-  async countCredentials(input: { workspaceId: string; kind?: MachineCredentialKind; ownerUserId?: string; serviceAccountId?: string }): Promise<number> {
-    let query = this.db.selectFrom("api_credentials").select(({ fn }) => fn.countAll<number>().as("count")).where("workspace_id", "=", input.workspaceId);
+  async countCredentials(input: { workspaceId: string; kind?: MachineCredentialKind; ownerUserId?: string; serviceAccountId?: string; now: Date }): Promise<number> {
+    let query = this.db.selectFrom("api_credentials").select(({ fn }) => fn.countAll<number>().as("count")).where("workspace_id", "=", input.workspaceId).where("revoked_at", "is", null).where("expires_at", ">", input.now);
     if (input.kind) query = query.where("kind", "=", input.kind);
     if (input.ownerUserId) query = query.where("owner_user_id", "=", input.ownerUserId);
     if (input.serviceAccountId) query = query.where("service_account_id", "=", input.serviceAccountId);

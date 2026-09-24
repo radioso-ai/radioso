@@ -343,8 +343,11 @@ export class InMemoryAccessGrantRepository implements AccessGrantRepositoryPort 
     limit?: number;
     cursor?: { createdAt: string; id: string };
   } = {}): Promise<{ grants: AccessGrant[]; nextCursor: { createdAt: string; id: string } | null }> {
+    const now = Date.now();
     const matching = this.items
       .filter((item) => item.agentId === agentId)
+      // Mirrors the repository: the inventory carries live grants only.
+      .filter((item) => !item.revokedAt && (!item.expiresAt || item.expiresAt.getTime() > now))
       .filter((item) => !params.workspaceId || item.workspaceId === params.workspaceId)
       .filter((item) => !params.principalKind || item.principalKind === params.principalKind)
       .filter((item) => !params.channel || item.channel === params.channel)
@@ -834,9 +837,9 @@ export class InMemoryAccountInvitationRepository implements AccountInvitationRep
     return [...this.items.values()].find((item) => item.tokenHash === tokenHash) ?? null;
   }
 
-  async listByAccount(accountId: string): Promise<AccountInvitationRecord[]> {
+  async listPendingByAccount(accountId: string): Promise<AccountInvitationRecord[]> {
     return [...this.items.values()]
-      .filter((item) => item.accountId === accountId)
+      .filter((item) => item.accountId === accountId && item.status === "pending")
       .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime());
   }
 

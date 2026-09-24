@@ -154,8 +154,9 @@ const installOperatorRoutes = async (page: Page, options: {
     if (request.method() === "GET" && /\/grants\/[^/]+$/.test(path)) return route.fulfill({ json: options.details ?? grantDetail() });
     if (request.method() === "POST" && path.endsWith("/revoke")) {
       options.onRevoke?.();
-      currentGrants = currentGrants.map((item) => ({ ...item, status: "revoked", revokedAt: "2026-09-04T12:00:00.000Z" }));
-      return route.fulfill({ json: currentGrants[0] ?? grant({ status: "revoked" }) });
+      const revoked = currentGrants.map((item) => ({ ...item, status: "revoked", revokedAt: "2026-09-04T12:00:00.000Z" }));
+      currentGrants = [];
+      return route.fulfill({ json: revoked[0] ?? grant({ status: "revoked" }) });
     }
     return route.fulfill({ status: 404, json: { error: { message: `Unhandled Operator MCP request: ${path}` } } });
   });
@@ -388,6 +389,8 @@ test("grant inventory exposes safe detail and requires explicit confirmation bef
   await card.getByRole("button", { name: "Revoke grant" }).click();
   await page.getByRole("alertdialog", { name: "Revoke grant?" }).getByRole("button", { name: "Revoke grant" }).click();
   await expect.poll(() => revokeRequests).toHaveLength(1);
+  await expect(card.getByText("Codex CLI", { exact: true })).toHaveCount(0);
+  await expect(card.getByText("No operator MCP grants yet.", { exact: false })).toBeVisible();
 });
 
 test("member sees an owner-controlled grant without a revoke action", async ({ page }) => {

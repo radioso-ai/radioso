@@ -30,7 +30,9 @@ export const composeAskAgentDescription = (source: AskAgentDescriptionSource): s
   const covers = source.agent.description?.trim();
   const sentences = [
     `Hold a conversation with ${source.agent.name}.`,
-    covers ? `It covers ${covers}.` : null,
+    // An operator's description is a sentence as often as it is a phrase; appending a period to one
+    // that already ends in terminal punctuation reads as a typo to every caller.
+    covers ? (/[.!?]$/u.test(covers) ? `It covers ${covers}` : `It covers ${covers}.`) : null,
     "Runs the agent's full behavior — persona, directives, and multi-step routines — and continues the same conversation across calls (stateful).",
     named.length > 0
       ? `Prefer the typed tools for the tasks they name (${namedList}); use this for anything else, or when you do not know which tool applies.`

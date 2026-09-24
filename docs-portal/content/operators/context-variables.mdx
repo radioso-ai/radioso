@@ -286,6 +286,11 @@ give agent callers a terser answer or a different escalation path than a person
 gets. The key is present on every turn, so a condition about it always has
 something to read.
 
+Test Chat and the workbench run as `human`, because an operator driving a test is
+a person. A condition scoped to agent callers is therefore one you confirm
+against real traffic from the MCP converse door or the REST agent channel rather
+than in a test run.
+
 Every resolved variable takes part, whatever its surfacing: `operator_only` and
 `on_reference` values steer behavior without being written into the answer
 prompt. Two limits are worth knowing when you write a condition:

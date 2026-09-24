@@ -39,6 +39,25 @@ describe("composeAskAgentDescription", () => {
     expect(composeAskAgentDescription(input)).toBe(composeAskAgentDescription(input));
   });
 
+  it("does not double the period when the operator's description is already a sentence", () => {
+    const sentence = composeAskAgentDescription({
+      agent: { name: "Acme", description: "We handle orders and returns." },
+      tools: [],
+    });
+
+    expect(sentence).toContain("It covers We handle orders and returns.");
+    expect(sentence).not.toContain("..");
+  });
+
+  it("says the list is partial rather than reading as the whole catalog", () => {
+    const many = Array.from({ length: 20 }, (_, index) => tool(`tool_${index}`, "A tool."));
+    const description = composeAskAgentDescription({ agent: { name: "Acme", description: null }, tools: many });
+
+    // Without this a model reads the named twelve as exhaustive and sends every other task to
+    // `ask_agent` instead of the tool that fits it.
+    expect(description).toContain("and others");
+  });
+
   it("bounds a long list rather than letting the catalog set the description's size", () => {
     const many = Array.from({ length: 40 }, (_, index) => tool(`tool_${index}`, "A tool."));
     const description = composeAskAgentDescription({ agent: { name: "Acme", description: null }, tools: many });

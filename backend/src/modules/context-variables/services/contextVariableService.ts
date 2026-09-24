@@ -7,6 +7,7 @@ import type {
   ContextVariableUpdateRecord,
 } from "../repository.js";
 import { badRequest, conflict, notFound } from "../../../shared/domain/errors.js";
+import { RESERVED_CONTEXT_VARIABLE_PREFIX, isReservedContextVariableName } from "../domain.js";
 import { isValueCompatibleWithType } from "../valueCompatibility.js";
 import type {
   AgentContextVariableEnablement,
@@ -48,11 +49,25 @@ export class ContextVariableService {
     this.agentSkillsReader = options.agentSkillsReader;
   }
 
-  create(input: ContextVariableCreateRecord): Promise<ContextVariable> {
+  // `async` so a rejected name arrives as a rejected promise rather than a synchronous throw from
+  // a method whose signature says it returns one; a caller using `.catch()` would otherwise miss it.
+  async create(input: ContextVariableCreateRecord): Promise<ContextVariable> {
+    this.assertNameIsNotReserved(input.name);
     return this.repository.create(input);
   }
 
-  update(workspaceId: string, id: string, input: ContextVariableUpdateRecord): Promise<ContextVariable | null> {
+  /**
+   * Every writer reaches the repository through this service — the HTTP route, a Ray proposal
+   * apply, and bundle import alike — so the namespace is defended once here rather than at each.
+   */
+  private assertNameIsNotReserved(name: string | undefined): void {
+    if (name !== undefined && isReservedContextVariableName(name)) {
+      throw badRequest(`Context variable names starting with "${RESERVED_CONTEXT_VARIABLE_PREFIX}" are reserved for facts Radioso establishes about a turn`);
+    }
+  }
+
+  async update(workspaceId: string, id: string, input: ContextVariableUpdateRecord): Promise<ContextVariable | null> {
+    this.assertNameIsNotReserved(input.name);
     return this.repository.update(workspaceId, id, input);
   }
 

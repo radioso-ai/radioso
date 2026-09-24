@@ -541,7 +541,8 @@ export interface CopilotToolDescriptor<TInput = unknown, TOutput = unknown> {
   /**
    * Answers a replay of an earlier invocation from the durable state that invocation left, such as
    * a committed proposal or a reviewed execution's receipt, or by repeating an owner call that is
-   * safe to repeat.
+   * safe to repeat. `recovered` settles the earlier invocation, so it carries only a durable
+   * outcome; an attempt whose outcome is still unconfirmed answers `in_progress`.
    */
   reconcileMcpInvocation?(input: {
     readonly invocation: OperatorMcpInvocationRecord;

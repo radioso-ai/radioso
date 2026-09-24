@@ -152,16 +152,17 @@ describe("copilot catalog contributions through the real factory", () => {
   });
 
   it.each([
-    ["a proposal", "proposal", { reconcileMcpInvocation: vi.fn() }],
-    ["an act without a replay reconciliation", "act", {}],
-  ] as const)("refuses a contributed tool that keys its replay by its input as %s", (_label, effect, reconciliation) => {
-    // An input-derived key makes every identical call a replay of the first. Only an act that
-    // reconciles from its first attempt's receipt can answer that replay with a real result.
+    ["a proposal", "proposal", true, { reconcileMcpInvocation: vi.fn() }],
+    ["an act without a replay reconciliation", "act", true, {}],
+    ["a non-idempotent act", "act", false, { reconcileMcpInvocation: vi.fn() }],
+  ] as const)("refuses a contributed tool that keys its replay by its input as %s", (_label, effect, idempotent, reconciliation) => {
+    // An input-derived key makes every identical call a replay of the first. Only an idempotent act
+    // that reconciles from its first attempt's receipt can answer that replay with a real result.
     expect(() => assemble({
       moduleId: "extension",
       descriptors: [contributedDescriptor({
         ...reconciliation,
-        mcpDisposition: { status: "eligible", inputStrategy: "explicit", scope: "operator:act", retry: { effect, idempotent: true, operationIdentity: "input" } },
+        mcpDisposition: { status: "eligible", inputStrategy: "explicit", scope: "operator:act", retry: { effect, idempotent, operationIdentity: "input" } },
       })],
       operationPermissions: { getExtensionUsage: ["workspace.settings.read"] },
     })).toThrow("extension_usage");

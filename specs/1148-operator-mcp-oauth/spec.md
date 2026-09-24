@@ -978,18 +978,18 @@ to pass the stateful-operation release gate from every launch client.
   distinguishable from customer conversations, Ray conversations, messages, and
   eval case source conversations.
 - **FR-054**: A stateful descriptor invocation is keyed by a stable operation
-  identity within the grant: the client-generated operation id when the client
-  sends one, otherwise an identity derived from the validated input when that
-  input names one act whose owner binds its first attempt's receipt (reviewed
-  execution). A proposal call without a client operation id runs unkeyed, so its
-  retry can leave a second pending proposal for review. For a keyed invocation
-  the system MUST bind the identity to the descriptor and a bounded, versioned,
-  domain-separated keyed digest of canonical validated input, retain only that
-  digest in the reconciliation record, reject mismatched reuse, and coordinate
-  concurrent duplicates across instances so a lost response cannot multiply
-  effects or spend. Raw and canonical input may exist only transiently for
-  validation and execution and MUST NOT be retained in reconciliation,
-  invocation, audit, or unrestricted error records.
+  identity within the grant when the client sends an operation id. Without one,
+  only reviewed execution is keyed, by an identity derived from its validated
+  input, because its owner binds the first attempt's receipt; every other call
+  runs unkeyed, so a retried proposal can leave a second pending proposal for
+  review. For a keyed invocation the system MUST bind the identity to the
+  descriptor and a bounded, versioned, domain-separated keyed digest of
+  canonical validated input, retain only that digest in the reconciliation
+  record, reject mismatched reuse, and coordinate concurrent duplicates across
+  instances so a lost response cannot multiply effects or spend. Raw and
+  canonical input may exist only transiently for validation and execution and
+  MUST NOT be retained in reconciliation, invocation, audit, or unrestricted
+  error records.
 - **FR-055**: The standalone resource MUST validate raw access credentials only
   through the authorization service's validation boundary. Internal capability
   calls MUST use a short-lived service-authenticated proof bound to grant,

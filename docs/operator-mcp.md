@@ -24,7 +24,7 @@ The setup snippets are labelled **Not verified** until Radioso has captured a fu
 
 ## Tool boundary
 
-The catalog is rebuilt from the caller's current permissions for every list or call, and every production Ray descriptor carries a reviewed disposition: eligible with a scope and retry contract, or excluded with a stated reason. Each listed tool advertises an object JSON Schema for both its arguments and its result, so a client that validates `tools/list` loads the whole catalog. It currently admits:
+The catalog is rebuilt from the caller's current permissions for every list or call, and every production Ray descriptor carries a reviewed disposition: eligible with a scope and retry contract, or excluded with a stated reason. Each listed tool advertises both its arguments and its result as an object schema in JSON Schema 2020-12, so a client that validates `tools/list` against the metaschema loads the whole catalog. It currently admits:
 
 - **Reads** (`operator:read`) — the workspace, agent, and routine readers (`workspace_settings`, `agent_configuration`, `agent_skills`, `context_variables`, `routine_definition`, `validate_routine`), the history and document readers (`conversation_history_search`, `conversation_transcript`, `document_search`, `document_status`, `document_chunks`), the quality, eval, trace, and triage readers (`quality_signals`, `eval_results`, `turn_trace`, `workspace_triage`), plus `retrieval_settings`, `agent_publication_state`, `agent_publication_candidate`, and `agent_publication_candidate_change`. Retrieval settings show code-owned system defaults as read-only and identify the writable per-agent setting.
 - **Probes** (`operator:probe`) — `retrieval_probe`.

@@ -131,7 +131,11 @@ Frontend remains: the filter control on the Activity toolbar and the Inbox All-l
 feed `buildConversationSearchParams` in `frontend/lib/conversation-filters.ts`, so one addition
 serves both), a caller chip on the conversation row modelled on `TYPE_CHIP_META`/`TypeChip` in
 `inbox-queue-row.tsx`, and Playwright coverage extending `assistant-history.spec.ts`. The generated
-frontend types already carry `callerKind`, so no type work is needed — only wiring.
+frontend types already carry `callerKind`. That is what makes the hand-written fixtures incomplete
+rather than what makes them fine: eight of them construct a conversation summary or detail
+literally, and the CI Frontend job typechecks them through `pretest:e2e`. Run
+`pnpm exec tsc --noEmit -p frontend/tsconfig.json` before assuming a generated-type change is
+frontend-neutral.
 
 The Inbox **Needs-you** lens is a different projection: `InboxItem` carries no `sourceChannel` or
 `callerKind`, so filtering that lens needs the field added to the needs-attention read as well. That

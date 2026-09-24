@@ -557,7 +557,13 @@ export type CopilotMcpDisposition =
       readonly retry: {
         readonly effect: "none" | "proposal" | "act";
         readonly idempotent: boolean;
-        readonly requiresOperationId: boolean;
+        /**
+         * Where a call's replay key comes from. `client`: only an operation id the MCP client sends
+         * keys the call; without one the call runs unkeyed. `input`: the validated input names
+         * exactly one one-shot operation, so an unkeyed call is keyed by its input digest. A
+         * client-sent operation id keys the call under either identity.
+         */
+        readonly operationIdentity: "client" | "input";
       };
     }
   | {

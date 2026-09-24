@@ -744,6 +744,27 @@ describe("US3 copilot proposals", () => {
     expect((await repository.findProposal({ id: proposal.id, workspaceId, operatorUserId }))?.status).toBe("pending");
   });
 
+  it("reports a reviewed MCP proposal that is already cancelled as dismissed without dismissing it again", async () => {
+    const repository = new MemoryProposalRepository();
+    const proposal = await repository.createProposal({ workspaceId, operatorUserId, conversationId: "conversation-1", targetType: "directive", targetRef: { agentId, directiveId }, payload: { name: "Updated" }, versionToken: "current", evidence: null });
+    const audit = auditService();
+    const service = new OperatorCopilotService({
+      repository, capabilityRunner: { runStreaming: vi.fn() }, usageLimitPolicy: noLimitPolicy(), auditService: audit, prompt: "system", workspaceRouteKeyResolver, currentAuthorization, tools: [],
+      proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn() }],
+    });
+    const cancel = () => service.cancelMcpReviewedProposal({
+      workspaceId, accountId, operatorUserId, grantId: "grant-1", clientId: "client-1", proposalId: proposal.id, currentAuthorization,
+    });
+
+    await expect(cancel()).resolves.toEqual({ status: "dismissed" });
+    const cancelPendingProposal = vi.spyOn(repository, "cancelPendingProposal");
+    await expect(cancel()).resolves.toEqual({ status: "dismissed" });
+
+    expect(cancelPendingProposal).not.toHaveBeenCalled();
+    expect(audit.record).toHaveBeenCalledOnce();
+    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ eventType: "copilot.proposal.dismissed" }));
+  });
+
   it("finalizes an unexpected apply exception as failed so the proposal is not stranded", async () => {
     const repository = new MemoryProposalRepository();
     const proposal = await repository.createProposal({ workspaceId, operatorUserId, conversationId: "conversation-1", targetType: "directive", targetRef: { agentId, directiveId }, payload: { name: "Updated" }, versionToken: "current", evidence: null });

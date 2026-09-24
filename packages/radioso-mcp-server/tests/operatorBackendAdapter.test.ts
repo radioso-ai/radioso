@@ -38,7 +38,7 @@ describe("operator backend adapter", () => {
   });
 
   it("preserves safe backend application errors without leaking response bodies", async () => {
-    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({ code: "operation_required", message: "contains customer data" }), { status: 400 }));
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({ code: "operation_conflict", message: "contains customer data" }), { status: 400 }));
 
     await expect(createOperatorBackendAdapter({
       baseUrl: "https://app.example",
@@ -50,7 +50,7 @@ describe("operator backend adapter", () => {
       name: "workspace_settings",
       arguments: {},
       bodyDigest: sha256Digest("{}"),
-    })).rejects.toMatchObject({ code: "operation_required", status: 400, details: undefined });
+    })).rejects.toMatchObject({ code: "operation_conflict", status: 400, details: undefined });
   });
 
   it("forwards the backend's rejected argument paths, bounded, and nothing else from the body", async () => {

@@ -111,7 +111,8 @@ Safe, transport-neutral receipt for one list or tool request.
 - `method`: fixed MCP method.
 - `descriptorName`: nullable for catalog list.
 - `shape`: nullable fixed descriptor shape.
-- `operationId`: required for stateful tool calls.
+- `operationId`: the client-sent operation id; for reviewed execution and
+  cancellation without one, the input digest; otherwise null.
 - `inputDigest`: versioned HMAC digest of canonical validated input; no raw input.
 - `verificationCost`, `budgetReservedAt`.
 - `proofNonceDigest`, `proofConsumedAt`.

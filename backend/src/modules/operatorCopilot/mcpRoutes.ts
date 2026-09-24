@@ -56,7 +56,7 @@ const statusFor = (error: OperatorMcpApplicationError): number => {
   if (error.code === "insufficient_scope") return 403;
   if (error.code === "budget_exhausted") return 429;
   if (error.code === "invalid_proof" || error.code === "proof_replay" || error.code === "invalid_admission") return 401;
-  if (error.code === "invalid_arguments" || error.code === "operation_required" || error.code === "operation_conflict" || error.code === "unknown_tool") return 400;
+  if (error.code === "invalid_arguments" || error.code === "operation_conflict" || error.code === "unknown_tool") return 400;
   if (error.code === "missing_configuration") return 409;
   return 500;
 };

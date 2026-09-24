@@ -46,9 +46,16 @@ export const createReviewedProposalExecutionTool = (
   requiredPermissions: ["workspace.agents.manage"],
   inputSchema,
   outputSchema,
-  reconcileMcpInvocation: async ({ invocation, arguments: rawInput, context }) => {
+  reconcileMcpInvocation: async ({ invocation, arguments: rawInput, context, staleBefore }) => {
     const input = inputSchema.parse(rawInput);
     if (!context.operatorMcpGrantId || !context.operatorMcpClientId) return { status: "conflict" };
+    const receiptOpen = invocation.status === "admitted" || invocation.status === "running";
+    // An open receipt whose proof is inside the recovery lease belongs to its first runner: a
+    // retry that reached the owner first could claim under that receipt before the runner does.
+    if (receiptOpen) {
+      if (!invocation.proofConsumedAt) return { status: "conflict" };
+      if (invocation.proofConsumedAt.getTime() > staleBefore.getTime()) return { status: "in_progress" };
+    }
     const result = await executor.executeMcpReviewedProposal({
       workspaceId: context.workspaceId,
       accountId: context.accountId,
@@ -62,10 +69,9 @@ export const createReviewedProposalExecutionTool = (
       clientId: context.operatorMcpClientId,
       currentAuthorization: context.currentAuthorization,
     });
-    // A matching receipt with a live lease belongs to the first runner. Settling its invocation
-    // from this retry would fence that runner's atomic owner+receipt transaction, so leave the
-    // original receipt untouched until its lease expires or it reaches a durable outcome.
-    if (result.status === "refused" && result.reason === "not_prepared") return { status: "in_progress" };
+    // Settling a still-open receipt from this retry would fence the owner's atomic owner+receipt
+    // settlement, so an unconfirmed outcome leaves it open until the owner reaches a durable one.
+    if (result.status === "uncertain" && receiptOpen) return { status: "in_progress" };
     return { status: "recovered", output: { proposalId: input.proposalId, ...result } };
   },
   createTool: (context) => ({

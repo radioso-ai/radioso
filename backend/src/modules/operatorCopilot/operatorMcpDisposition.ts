@@ -49,7 +49,7 @@ export const operatorMcpDispositions: Readonly<Record<string, CopilotMcpDisposit
     scope: "operator:write",
     retry: { effect: "none", idempotent: true, operationIdentity: "client" },
   },
-  cancel_reviewed_proposal: { status: "eligible", inputStrategy: "explicit", scope: "operator:write", retry: { effect: "act", idempotent: true, operationIdentity: "input" } },
+  cancel_reviewed_proposal: { status: "eligible", inputStrategy: "explicit", scope: "operator:write", retry: { effect: "act", idempotent: true, operationIdentity: "client" } },
   document_status: eligibleRead,
   eval_results: eligibleRead,
   needs_attention: contextDependent,
@@ -138,6 +138,22 @@ export const assertOperatorMcpDispositionRegistry = (
   for (const [name, disposition] of Object.entries(dispositions)) {
     if (disposition.status === "excluded" && disposition.reason.trim().length === 0) {
       throw new Error(`Operator MCP exclusion reason is blank: ${name}`);
+    }
+  }
+};
+
+/**
+ * An input-derived key turns every identical call into a replay of the first, which only an act
+ * that reconciles from its first attempt's receipt can answer with a real result. Checked over the
+ * assembled catalog, contributed descriptors included, because a violation otherwise surfaces as
+ * an empty replay in the middle of an operator's retry.
+ */
+export const assertOperatorMcpOperationIdentities = (descriptors: ReadonlyArray<CopilotToolDescriptor>): void => {
+  for (const descriptor of descriptors) {
+    const disposition = descriptor.mcpDisposition;
+    if (disposition?.status !== "eligible" || disposition.retry.operationIdentity !== "input") continue;
+    if (disposition.retry.effect !== "act" || !descriptor.reconcileMcpInvocation) {
+      throw new Error(`Operator MCP tool "${descriptor.name}" keys its replay by its input, which requires an act with a reconcileMcpInvocation hook.`);
     }
   }
 };

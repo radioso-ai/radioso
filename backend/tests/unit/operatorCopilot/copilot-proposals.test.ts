@@ -12,9 +12,12 @@ import {
   OperatorCopilotService,
   copilotProposalTargetTypes,
   CopilotAuthorizationError,
+  CopilotConflictError,
+  CopilotNotFoundError,
   type CopilotConversation,
   type CopilotMessage,
   type CopilotProposal,
+  type CopilotProposalAdapter,
   type CopilotProposalDraft,
   type CopilotProposalApplyClaimGuard,
   type CopilotProposalClaim,
@@ -723,7 +726,7 @@ describe("US3 copilot proposals", () => {
 
   it("does not cancel a reviewed MCP proposal when request authorization is revoked while its receipt is read", async () => {
     const repository = new MemoryProposalRepository();
-    const proposal = await repository.createProposal({ workspaceId, operatorUserId, conversationId: "conversation-1", targetType: "directive", targetRef: { agentId, directiveId }, payload: { name: "Updated" }, versionToken: "current", evidence: null });
+    const proposal = await createMcpReviewedProposal(repository);
     const originalFind = repository.findMcpReviewedProposal.bind(repository);
     let authorized = true;
     vi.spyOn(repository, "findMcpReviewedProposal").mockImplementation(async (input) => {
@@ -731,13 +734,10 @@ describe("US3 copilot proposals", () => {
       authorized = false;
       return found;
     });
-    const service = new OperatorCopilotService({
-      repository, capabilityRunner: { runStreaming: vi.fn() }, usageLimitPolicy: noLimitPolicy(), auditService: auditService(), prompt: "system", workspaceRouteKeyResolver, currentAuthorization, tools: [],
-      proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn() }],
-    });
+    const service = reviewedOperationService(repository);
 
     await expect(service.cancelMcpReviewedProposal({
-      workspaceId, accountId, operatorUserId, grantId: "grant-1", clientId: "client-1", proposalId: proposal.id,
+      workspaceId, accountId, operatorUserId, ...mcpBinding, proposalId: proposal.id,
       currentAuthorization: { hasAllPermissions: vi.fn(async () => authorized) },
     })).rejects.toBeInstanceOf(CopilotAuthorizationError);
 
@@ -746,15 +746,10 @@ describe("US3 copilot proposals", () => {
 
   it("reports a reviewed MCP proposal that is already cancelled as dismissed without dismissing it again", async () => {
     const repository = new MemoryProposalRepository();
-    const proposal = await repository.createProposal({ workspaceId, operatorUserId, conversationId: "conversation-1", targetType: "directive", targetRef: { agentId, directiveId }, payload: { name: "Updated" }, versionToken: "current", evidence: null });
+    const proposal = await createMcpReviewedProposal(repository);
     const audit = auditService();
-    const service = new OperatorCopilotService({
-      repository, capabilityRunner: { runStreaming: vi.fn() }, usageLimitPolicy: noLimitPolicy(), auditService: audit, prompt: "system", workspaceRouteKeyResolver, currentAuthorization, tools: [],
-      proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn() }],
-    });
-    const cancel = () => service.cancelMcpReviewedProposal({
-      workspaceId, accountId, operatorUserId, grantId: "grant-1", clientId: "client-1", proposalId: proposal.id, currentAuthorization,
-    });
+    const service = reviewedOperationService(repository, audit);
+    const cancel = () => service.cancelMcpReviewedProposal({ workspaceId, accountId, operatorUserId, ...mcpBinding, proposalId: proposal.id, currentAuthorization });
 
     await expect(cancel()).resolves.toEqual({ status: "dismissed" });
     const cancelPendingProposal = vi.spyOn(repository, "cancelPendingProposal");
@@ -763,6 +758,87 @@ describe("US3 copilot proposals", () => {
     expect(cancelPendingProposal).not.toHaveBeenCalled();
     expect(audit.record).toHaveBeenCalledOnce();
     expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ eventType: "copilot.proposal.dismissed" }));
+  });
+
+  it("refuses to report an already-cancelled reviewed proposal to a caller whose authorization is denied", async () => {
+    const repository = new MemoryProposalRepository();
+    const proposal = await createMcpReviewedProposal(repository);
+    const service = reviewedOperationService(repository);
+    await expect(service.cancelMcpReviewedProposal({ workspaceId, accountId, operatorUserId, ...mcpBinding, proposalId: proposal.id, currentAuthorization })).resolves.toEqual({ status: "dismissed" });
+    const denied = { hasAllPermissions: vi.fn(async () => false) };
+
+    await expect(service.cancelMcpReviewedProposal({ workspaceId, accountId, operatorUserId, ...mcpBinding, proposalId: proposal.id, currentAuthorization: denied }))
+      .rejects.toBeInstanceOf(CopilotAuthorizationError);
+    expect(denied.hasAllPermissions).toHaveBeenCalledOnce();
+  });
+
+  it("finds a reviewed proposal to cancel only through the grant and client that prepared it", async () => {
+    const repository = new MemoryProposalRepository();
+    const proposal = await createMcpReviewedProposal(repository);
+    const service = reviewedOperationService(repository);
+
+    for (const binding of [{ ...mcpBinding, clientId: "client-2" }, { ...mcpBinding, grantId: "grant-2" }]) {
+      await expect(service.cancelMcpReviewedProposal({ workspaceId, accountId, operatorUserId, ...binding, proposalId: proposal.id, currentAuthorization }))
+        .rejects.toBeInstanceOf(CopilotNotFoundError);
+    }
+    expect((await repository.findProposal({ id: proposal.id, workspaceId, operatorUserId }))?.status).toBe("pending");
+  });
+
+  it("reports a cancellation that lost its race to a concurrent cancellation as dismissed", async () => {
+    const repository = new MemoryProposalRepository();
+    const proposal = await createMcpReviewedProposal(repository);
+    const audit = auditService();
+    const service = reviewedOperationService(repository, audit);
+    const concurrentCancel = repository.cancelPendingProposal.bind(repository);
+    vi.spyOn(repository, "cancelPendingProposal").mockImplementationOnce(async (input) => {
+      await concurrentCancel(input);
+      return null;
+    });
+
+    await expect(service.cancelMcpReviewedProposal({ workspaceId, accountId, operatorUserId, ...mcpBinding, proposalId: proposal.id, currentAuthorization }))
+      .resolves.toEqual({ status: "dismissed" });
+    expect(audit.record).not.toHaveBeenCalled();
+  });
+
+  it("keeps refusing a cancellation that lost its race to a reviewed execution", async () => {
+    const repository = new MemoryProposalRepository();
+    const proposal = await createMcpReviewedProposal(repository);
+    const service = reviewedOperationService(repository);
+    vi.spyOn(repository, "cancelPendingProposal").mockResolvedValueOnce(null);
+
+    await expect(service.cancelMcpReviewedProposal({ workspaceId, accountId, operatorUserId, ...mcpBinding, proposalId: proposal.id, currentAuthorization }))
+      .rejects.toBeInstanceOf(CopilotConflictError);
+    expect((await repository.findProposal({ id: proposal.id, workspaceId, operatorUserId }))?.status).toBe("pending");
+  });
+
+  it.each([
+    [{ status: "settled", outcome: "stale", appliedRef: null }, { status: "stale" }],
+    [{ status: "settled", outcome: "failed", appliedRef: null, reason: "target unavailable" }, { status: "failed", reason: "target unavailable" }],
+    [{ status: "settled", outcome: "applied", appliedRef: { directiveId: "directive-1" } }, { status: "applied", appliedRef: { directiveId: "directive-1" } }],
+  ] as const)("answers a receipt its reviewed execution already settled with that outcome (%o)", async (claimed, expected) => {
+    const repository = new MemoryProposalRepository();
+    const proposal = await createMcpReviewedProposal(repository);
+    const applyIfVersionMatches = vi.fn();
+    const service = reviewedOperationService(repository, auditService(), applyIfVersionMatches);
+    vi.spyOn(repository, "claimMcpReviewedProposalApply").mockResolvedValueOnce(claimed);
+
+    await expect(service.executeMcpReviewedProposal({ workspaceId, accountId, operatorUserId, ...mcpBinding, proposalId: proposal.id, reviewDigest: "a".repeat(43), executionInvocationId: "execution-1", currentAuthorization }))
+      .resolves.toEqual(expected);
+    expect(applyIfVersionMatches).not.toHaveBeenCalled();
+  });
+
+  it("answers a receipt whose apply claim is still held with the unconfirmed outcome its first attempt reported", async () => {
+    const repository = new MemoryProposalRepository();
+    const proposal = await createMcpReviewedProposal(repository);
+    const applyIfVersionMatches = vi.fn(async () => { throw new Error("owner response lost"); });
+    const service = reviewedOperationService(repository, auditService(), applyIfVersionMatches);
+    const execute = () => service.executeMcpReviewedProposal({ workspaceId, accountId, operatorUserId, ...mcpBinding, proposalId: proposal.id, reviewDigest: "a".repeat(43), executionInvocationId: "execution-1", currentAuthorization });
+    const first = await execute();
+    expect(first).toMatchObject({ status: "uncertain" });
+    vi.spyOn(repository, "claimMcpReviewedProposalApply").mockResolvedValueOnce({ status: "claim_held" });
+
+    await expect(execute()).resolves.toEqual(first);
+    expect(applyIfVersionMatches).toHaveBeenCalledOnce();
   });
 
   it("finalizes an unexpected apply exception as failed so the proposal is not stranded", async () => {
@@ -849,11 +925,27 @@ const tool = (name: string, requiredPermission: "workspace.agents.manage") => ({
 const auditService = () => ({ record: vi.fn(async () => {}), getLatestSuccessfulChatAnswerMetadata: vi.fn(), updateChatAnswerSuggestions: vi.fn() });
 const noLimitPolicy = () => ({ reserveAnswer: vi.fn(async () => ({ commit: vi.fn(async () => {}), release: vi.fn(async () => {}) })), reserveDocument: vi.fn(), reserveIndexedStorage: vi.fn(), reserveMonthlyIndexedContent: vi.fn() });
 
+const mcpBinding = { grantId: "grant-1", clientId: "client-1" } as const;
+/** A reviewed proposal prepared over the operator MCP transport by `mcpBinding`'s grant and client. */
+const createMcpReviewedProposal = async (repository: MemoryProposalRepository): Promise<CopilotProposal> => {
+  const preparationId = randomUUID();
+  repository.bindMcpPreparation(preparationId, mcpBinding);
+  return repository.createProposal({
+    workspaceId, operatorUserId, origin: { type: "operator_mcp_invocation", invocationId: preparationId }, targetType: "directive", targetRef: { agentId, directiveId },
+    payload: { name: "Updated" }, versionToken: "current", evidence: null, reviewDigest: "a".repeat(43), expiresAt: new Date(Date.now() + 60_000),
+  });
+};
+const reviewedOperationService = (repository: MemoryProposalRepository, audit = auditService(), applyIfVersionMatches: CopilotProposalAdapter["applyIfVersionMatches"] = vi.fn()) => new OperatorCopilotService({
+  repository, capabilityRunner: { runStreaming: vi.fn() }, usageLimitPolicy: noLimitPolicy(), auditService: audit, prompt: "system", workspaceRouteKeyResolver, currentAuthorization, tools: [],
+  proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches }],
+});
+
 class MemoryProposalRepository implements CopilotRepositoryPort {
   conversations: CopilotConversation[] = [];
   messages: CopilotMessage[] = [];
   proposals: CopilotProposal[] = [];
   private readonly applyClaims = new Map<string, Date>();
+  private readonly mcpPreparations = new Map<string, { grantId: string; clientId: string }>();
 
   async createConversation(input: { workspaceId: string; operatorUserId: string; title: string | null }): Promise<CopilotConversation> { const createdAt = new Date(); const conversation = { id: randomUUID(), ...input, status: "idle" as const, createdAt, updatedAt: createdAt }; this.conversations.push(conversation); return conversation; }
   async findConversation(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotConversation | null> { return this.conversations.find((item) => item.id === input.id && item.workspaceId === input.workspaceId && item.operatorUserId === input.operatorUserId) ?? null; }
@@ -865,7 +957,13 @@ class MemoryProposalRepository implements CopilotRepositoryPort {
   async finishTurn(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<void> { const conversation = await this.findConversation(input); if (conversation) this.conversations[this.conversations.indexOf(conversation)] = { ...conversation, status: "idle" }; }
   async createProposal(input: CopilotProposalDraft): Promise<CopilotProposal> { const createdAt = new Date(); const origin = input.origin ?? { type: "conversation" as const, conversationId: input.conversationId }; const proposal: CopilotProposal = { ...input, origin, conversationId: origin.type === "conversation" ? origin.conversationId : null, operatorMcpInvocationId: origin.type === "operator_mcp_invocation" ? origin.invocationId : null, id: randomUUID(), messageId: null, reviewDigest: input.reviewDigest ?? null, reviewSnapshot: input.reviewSnapshot ?? null, expiresAt: input.expiresAt ?? null, executionInvocationId: null, status: "pending", reason: null, appliedRef: null, createdAt, updatedAt: createdAt }; this.proposals.push(proposal); return proposal; }
   async findProposal(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotProposal | null> { return this.proposals.find((item) => item.id === input.id && item.workspaceId === input.workspaceId && item.operatorUserId === input.operatorUserId) ?? null; }
-  async findMcpReviewedProposal(input: { id: string; workspaceId: string; operatorUserId: string; grantId: string; clientId: string }): Promise<CopilotProposal | null> { return this.findProposal(input); }
+  async findMcpReviewedProposal(input: { id: string; workspaceId: string; operatorUserId: string; grantId: string; clientId: string }): Promise<CopilotProposal | null> {
+    const proposal = await this.findProposal(input);
+    const binding = proposal?.operatorMcpInvocationId ? this.mcpPreparations.get(proposal.operatorMcpInvocationId) : undefined;
+    return proposal?.reviewDigest && binding?.grantId === input.grantId && binding.clientId === input.clientId ? proposal : null;
+  }
+  /** Records the grant and client of the MCP preparation a reviewed proposal was created by. */
+  bindMcpPreparation(invocationId: string, binding: { grantId: string; clientId: string }): void { this.mcpPreparations.set(invocationId, binding); }
   async findProposalWorkspace(input: { id: string; accountId: string; operatorUserId: string }): Promise<string | null> { return this.proposals.find((item) => item.id === input.id && item.operatorUserId === input.operatorUserId)?.workspaceId ?? null; }
   async attachProposalsToMessage(input: { proposalIds: ReadonlyArray<string>; messageId: string; conversationId: string }): Promise<void> { this.proposals = this.proposals.map((proposal) => input.proposalIds.includes(proposal.id) && proposal.conversationId === input.conversationId ? { ...proposal, messageId: input.messageId } : proposal); }
   async updateProposalOutcome(input: { id: string; workspaceId: string; operatorUserId: string; status: CopilotProposal["status"]; appliedRef?: unknown; reason?: string | null; applyClaimGuard: CopilotProposalApplyClaimGuard }): Promise<CopilotProposal | null> {
@@ -886,7 +984,7 @@ class MemoryProposalRepository implements CopilotRepositoryPort {
     this.applyClaims.set(proposal.id, claimedAt);
     return { proposal, claimedAt, previousAttemptStartedAt };
   }
-  async claimMcpReviewedProposalApply(input: { proposalId: string; executionInvocationId: string; reviewDigest: string; workspaceId: string; operatorUserId: string; grantId: string; clientId: string; now: Date; claimTtlSeconds: number }) {
+  async claimMcpReviewedProposalApply(input: { proposalId: string; executionInvocationId: string; reviewDigest: string; workspaceId: string; operatorUserId: string; grantId: string; clientId: string; now: Date; claimTtlSeconds: number }): ReturnType<CopilotRepositoryPort["claimMcpReviewedProposalApply"]> {
     const claim = await this.claimProposalApply({ id: input.proposalId, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId, claimTtlSeconds: input.claimTtlSeconds });
     if (claim) {
       const proposal = await this.findProposal({ id: input.proposalId, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId });

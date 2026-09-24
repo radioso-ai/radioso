@@ -538,7 +538,11 @@ export interface CopilotToolDescriptor<TInput = unknown, TOutput = unknown> {
   describeOutputEntity?(output: TOutput): CopilotEntityReference | null;
   /** Optional last-mile sanitizer for the successful result after its dashboard link is attached. */
   finalizeEnrichedOutput?(output: Record<string, unknown>): Record<string, unknown>;
-  /** Reconstructs a proposal result after the proposal committed but its invocation outcome did not. */
+  /**
+   * Answers a replay of an earlier invocation from the durable state that invocation left, such as
+   * a committed proposal or a reviewed execution's receipt, or by repeating an owner call that is
+   * safe to repeat.
+   */
   reconcileMcpInvocation?(input: {
     readonly invocation: OperatorMcpInvocationRecord;
     /** The fresh request's schema-validated arguments. Their digest was matched to `invocation`. */
@@ -559,9 +563,11 @@ export type CopilotMcpDisposition =
         readonly idempotent: boolean;
         /**
          * Where a call's replay key comes from. `client`: only an operation id the MCP client sends
-         * keys the call; without one the call runs unkeyed. `input`: the validated input names
-         * exactly one one-shot operation, so an unkeyed call is keyed by its input digest. A
-         * client-sent operation id keys the call under either identity.
+         * keys the call; without one the call runs unkeyed. `input`: an unkeyed call is keyed by
+         * its input digest, so an identical retry replays the first attempt. That is reserved for
+         * an act whose owner binds the first attempt's receipt and can only recover through it; a
+         * call its owner already answers idempotently gains nothing from it. A client-sent
+         * operation id keys the call under either identity.
          */
         readonly operationIdentity: "client" | "input";
       };

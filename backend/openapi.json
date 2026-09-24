@@ -23415,7 +23415,7 @@
         "tags": [
           "Account"
         ],
-        "summary": "List active account users and invitations",
+        "summary": "List active account users and pending invitations",
         "operationId": "listAccountUsers",
         "security": [
           {
@@ -24056,7 +24056,7 @@
         "tags": [
           "API Access"
         ],
-        "summary": "List personal-token metadata",
+        "summary": "List live personal-token metadata",
         "operationId": "listPersonalApiTokens",
         "security": [
           {
@@ -25473,7 +25473,7 @@
         "tags": [
           "API Access"
         ],
-        "summary": "List workspace service accounts",
+        "summary": "List workspace service accounts that are not archived",
         "operationId": "listServiceAccounts",
         "security": [
           {
@@ -27083,7 +27083,7 @@
         "tags": [
           "API Access"
         ],
-        "summary": "List service-account credentials",
+        "summary": "List live service-account credentials",
         "operationId": "listServiceAccountCredentials",
         "security": [
           {
@@ -32247,7 +32247,7 @@
         "tags": [
           "Agent Channels"
         ],
-        "summary": "List MCP and REST chat credentials for an agent with cursor pagination",
+        "summary": "List live MCP and REST chat credentials for an agent with cursor pagination",
         "operationId": "listAgentChannelCredentials",
         "security": [
           {

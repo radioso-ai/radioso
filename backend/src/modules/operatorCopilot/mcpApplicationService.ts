@@ -1,4 +1,5 @@
 import {
+  describeOperatorMcpRejection,
   digestOperatorMcpCall,
   digestOperatorMcpInput,
   createOperatorMcpProof,
@@ -24,7 +25,7 @@ import type { CopilotCurrentAuthorizationPort, CopilotToolInvocationContext } fr
 import { OperatorMcpCatalogError, OperatorMcpCatalogService } from "./mcpCatalog.js";
 import type { OperatorMcpInvocationRecord, OperatorMcpInvocationRepositoryPort } from "./mcpContracts.js";
 import { AppError } from "../../shared/domain/errors.js";
-import { invalidArgumentDetails, toolRejectionDetail } from "./invalidArgumentDetails.js";
+import { toolRejectionDetail } from "./invalidArgumentDetails.js";
 
 const MAX_RESULT_BYTES = 256 * 1024;
 const PROOF_TTL_MS = 15_000;
@@ -323,7 +324,7 @@ export class OperatorMcpApplicationService {
       if (!descriptor || !disposition || disposition.status !== "eligible") throw new OperatorMcpApplicationError("unknown_tool");
       capabilityShape = descriptor.shape;
       const parsed = descriptor.inputSchema.safeParse(input.arguments);
-      if (!parsed.success) throw new OperatorMcpApplicationError("invalid_arguments", undefined, invalidArgumentDetails(parsed.error));
+      if (!parsed.success) throw new OperatorMcpApplicationError("invalid_arguments", undefined, describeOperatorMcpRejection(parsed.error.issues));
       const verificationCost = descriptor.verificationCost(parsed.data);
       const inputDigest = digestOperatorMcpInput({
         secret: this.dependencies.secret,

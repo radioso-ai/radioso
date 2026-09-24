@@ -1,13 +1,16 @@
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import {
   OperatorAdmissionRequestSchema,
   OperatorAdmissionResponseSchema,
   OperatorCatalogResponseSchema,
   OperatorInvocationRequestSchema,
+  OperatorMcpRequestSchema,
   OPERATOR_MCP_EXECUTION_TIMEOUT_MS,
   OPERATOR_MCP_PROTOCOL_VERSION,
   createOperatorMcpProof,
   canonicalizeOperatorResource,
+  describeOperatorMcpRejection,
   digestOperatorMcpCall,
   verifyOperatorMcpProof,
   sha256Digest,
@@ -135,5 +138,45 @@ describe("operator MCP contract", () => {
       name: "retrieval_probe",
       arguments: { query: "safe" },
     })).toThrow();
+  });
+});
+
+describe("describeOperatorMcpRejection", () => {
+  it("names each rejected path and its code without echoing the value at it", () => {
+    const parsed = OperatorMcpRequestSchema.safeParse({
+      id: 1,
+      jsonrpc: "2.0",
+      method: "ping",
+      params: {
+        _meta: {
+          "io.modelcontextprotocol/clientCapabilities": "caller-value",
+          "io.modelcontextprotocol/protocolVersion": OPERATOR_MCP_PROTOCOL_VERSION,
+        },
+      },
+      unexpected: "caller-value",
+    });
+    if (parsed.success) throw new Error("expected the envelope to be rejected");
+
+    const details = describeOperatorMcpRejection(parsed.error.issues);
+
+    expect(details).toEqual(expect.arrayContaining([
+      "params._meta.io.modelcontextprotocol/clientCapabilities: invalid_type",
+      "unexpected: unrecognized_keys",
+    ]));
+    expect(JSON.stringify(details)).not.toContain("caller-value");
+  });
+
+  it("bounds a record key the caller wrote into the path like any other echoed key", () => {
+    const parsed = z.object({ settings: z.record(z.string(), z.number()) })
+      .safeParse({ settings: { ["k".repeat(200)]: "caller-value" } });
+    if (parsed.success) throw new Error("expected the record value to be rejected");
+
+    expect(describeOperatorMcpRejection(parsed.error.issues)).toEqual([`settings.${"k".repeat(80)}: invalid_type`]);
+  });
+
+  it("labels a root rejection and bounds how many lines travel", () => {
+    expect(describeOperatorMcpRejection([{ code: "invalid_type", path: [] }])).toEqual(["(root): invalid_type"]);
+    expect(describeOperatorMcpRejection(Array.from({ length: 20 }, (_, index) => ({ code: "invalid_type", path: [index] }))))
+      .toHaveLength(12);
   });
 });

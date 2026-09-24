@@ -102,13 +102,16 @@ export const createAuthService = (dependencies: AuthServiceDependencies): AuthSe
    */
   const readToolCatalog = async (sessionToken: string, sourceDigest?: string) => {
     try {
-      return (await dependencies.converseApi.tools(sessionToken, { sourceDigest })).tools;
+      const catalog = await dependencies.converseApi.tools(sessionToken, { sourceDigest });
+      return { tools: catalog.tools, askAgentDescription: catalog.askAgentDescription };
     } catch (error) {
       if (!isMissingRoute(error)) {
         throw error;
       }
       warn("The Radioso backend has no agent tool catalog route (GET /api/v1/mcp/converse/tools answered 404); serving the static tools only.");
-      return [];
+      // An older backend composes no description; `ask_agent` keeps its generic one rather than
+      // claiming to describe an agent this session could not read.
+      return { tools: [], askAgentDescription: undefined };
     }
   };
 
@@ -126,7 +129,7 @@ export const createAuthService = (dependencies: AuthServiceDependencies): AuthSe
       // The catalog is read once here and pinned to the session: every MCP instance that
       // later serves this session renders the same tools, and a routine exposed after this
       // point appears when the client opens its next session.
-      const tools = await readToolCatalog(exchange.sessionToken, input.sourceDigest);
+      const { tools, askAgentDescription } = await readToolCatalog(exchange.sessionToken, input.sourceDigest);
 
       return dependencies.sessionStore.save({
         accessToken: input.storeKey,
@@ -136,7 +139,7 @@ export const createAuthService = (dependencies: AuthServiceDependencies): AuthSe
         issuedAt,
         conversationId: exchange.conversationId,
         sessionId: `${input.sessionIdPrefix}_${randomUUID()}`,
-        toolCatalog: { key: toToolCatalogKey(tools), tools },
+        toolCatalog: { key: toToolCatalogKey(tools, askAgentDescription), tools, askAgentDescription },
       });
     } catch (error) {
       if (isAuthenticationFailure(error)) {

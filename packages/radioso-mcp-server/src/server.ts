@@ -30,6 +30,11 @@ export interface RadiosoMcpServerContext {
   ) => Promise<ToolExecutionContext>;
   /** The session's exposed routines, one tool each, listed after the static tools. */
   routineTools?: AgentToolDescriptor[];
+  /**
+   * The `ask_agent` description this agent's catalog composed. Absent when the catalog could not be
+   * read, in which case the tool keeps a generic description rather than describing nothing.
+   */
+  askAgentDescription?: string;
   warn?: (message: string) => void;
 }
 
@@ -73,6 +78,7 @@ export const createRadiosoMcpServer = ({
   onToolResult,
   resolveExecutionContext,
   routineTools = [],
+  askAgentDescription,
   serverName,
   warn = console.warn,
 }: RadiosoMcpServerContext): RadiosoMcpServerHandle => {
@@ -82,7 +88,7 @@ export const createRadiosoMcpServer = ({
   });
 
   const converseToolDefinitions = [
-    ...createConverseToolDefinitions(),
+    ...createConverseToolDefinitions(askAgentDescription),
     // Resumption sits beside ask_agent: the same session, read instead of written.
     ...createConversationUpdatesToolDefinitions(),
   ];

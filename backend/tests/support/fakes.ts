@@ -138,7 +138,7 @@ import type {
   CreateConversationInput,
   GetOrCreateConversationResult,
 } from "../../src/db/repositories/conversationRepository.js";
-import type { ConversationSourceScope } from "../../src/shared/domain/conversationSource.js";
+import { callerKindForSourceChannel, type ConversationSourceScope } from "../../src/shared/domain/conversationSource.js";
 import type { ConversationOwnershipScope } from "../../src/modules/handoff/ownershipState.js";
 import type {
   ConversationOwnershipHandBackInput,
@@ -343,8 +343,11 @@ export class InMemoryAccessGrantRepository implements AccessGrantRepositoryPort 
     limit?: number;
     cursor?: { createdAt: string; id: string };
   } = {}): Promise<{ grants: AccessGrant[]; nextCursor: { createdAt: string; id: string } | null }> {
+    const now = Date.now();
     const matching = this.items
       .filter((item) => item.agentId === agentId)
+      // Mirrors the repository: the inventory carries live grants only.
+      .filter((item) => !item.revokedAt && (!item.expiresAt || item.expiresAt.getTime() > now))
       .filter((item) => !params.workspaceId || item.workspaceId === params.workspaceId)
       .filter((item) => !params.principalKind || item.principalKind === params.principalKind)
       .filter((item) => !params.channel || item.channel === params.channel)
@@ -834,9 +837,9 @@ export class InMemoryAccountInvitationRepository implements AccountInvitationRep
     return [...this.items.values()].find((item) => item.tokenHash === tokenHash) ?? null;
   }
 
-  async listByAccount(accountId: string): Promise<AccountInvitationRecord[]> {
+  async listPendingByAccount(accountId: string): Promise<AccountInvitationRecord[]> {
     return [...this.items.values()]
-      .filter((item) => item.accountId === accountId)
+      .filter((item) => item.accountId === accountId && item.status === "pending")
       .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime());
   }
 
@@ -3887,6 +3890,9 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
       agentName: null,
       agentInternalName: null,
       sourceChannel: input.sourceChannel ?? null,
+      // The fake derives it the same way the repository does, so a test cannot see a caller kind
+      // production would never produce.
+      callerKind: callerKindForSourceChannel(input.sourceChannel),
       sourceOrigin: input.sourceOrigin ?? null,
       channelContext: input.channelContext ?? null,
       anonymousSessionId: input.anonymousSessionId ?? null,

@@ -35,7 +35,8 @@ const requestCallback: AgentToolDescriptor = {
   routineLineageId: "lineage-request-callback",
 };
 
-const catalogOf = (tools: AgentToolDescriptor[]): SessionToolCatalog => ({ key: toToolCatalogKey(tools), tools });
+const catalogOf = (tools: AgentToolDescriptor[], askAgentDescription?: string): SessionToolCatalog =>
+  ({ key: toToolCatalogKey(tools, askAgentDescription), tools, askAgentDescription });
 
 const makeSession = (sessionId: string, toolCatalog?: SessionToolCatalog): AccessSessionRecord => ({
   accessTokenHash: `hash-${sessionId}`,
@@ -119,6 +120,23 @@ describe("session MCP server manager catalogs", () => {
 
     expect(await listToolNames(manager, legacy)).toEqual(["ask_agent", "get_conversation_updates", "radioso_docs", "radioso_doc_page"]);
     expect(await listToolNames(manager, empty)).toEqual(["ask_agent", "get_conversation_updates", "radioso_docs", "radioso_doc_page"]);
+  });
+
+  it("advertises the agent's own ask_agent description, and a generic one when the catalog carries none", async () => {
+    // The last hop: a session's composed description has to reach `tools/list`. Without this, the
+    // wiring can be deleted and every suite still passes while clients read the generic sentence.
+    const manager = createSessionMcpServerManager({ config });
+    const described = makeSession("described", catalogOf([startReturn], "Hold a conversation with Acme Support. It covers orders and returns."));
+    const undescribed = makeSession("undescribed", catalogOf([startReturn]));
+
+    const askAgentOf = async (session: typeof described) => {
+      const payload = await postMcpRequest(manager, { id: "tools-list", jsonrpc: "2.0", method: "tools/list", params: {} }, session);
+      const tools = (payload.result as { tools: Array<{ name: string; description: string }> }).tools;
+      return tools.find((tool) => tool.name === "ask_agent")?.description;
+    };
+
+    expect(await askAgentOf(described)).toBe("Hold a conversation with Acme Support. It covers orders and returns.");
+    expect(await askAgentOf(undescribed)).toContain("Hold a conversation with this Radioso agent.");
   });
 
   it("answers a request without a prior initialize on the same connection, since every request gets its own", async () => {

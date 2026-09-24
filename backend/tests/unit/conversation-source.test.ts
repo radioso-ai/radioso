@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  AGENT_SOURCE_CHANNELS,
   OPERATOR_TEST_SOURCE_CHANNELS,
   WORKBENCH_TEST_SOURCE_CHANNELS,
+  callerKindForSourceChannel,
   isOperatorTestSourceChannel,
 } from "../../src/shared/domain/conversationSource.js";
 import { assistantChatSchema } from "../../src/app/http/schemas/assistantChatSchemas.js";
@@ -47,5 +49,28 @@ describe("conversationSource", () => {
     expect(isOperatorTestSourceChannel("anonymous")).toBe(false);
     expect(isOperatorTestSourceChannel("assistant")).toBe(false);
     expect(isOperatorTestSourceChannel("slack")).toBe(false);
+  });
+
+  it("reads the machine-driven channels as agent callers", () => {
+    expect(AGENT_SOURCE_CHANNELS).toEqual(["mcp", "agent_api"]);
+    for (const channel of AGENT_SOURCE_CHANNELS) {
+      expect(callerKindForSourceChannel(channel)).toBe("agent");
+    }
+  });
+
+  it("reads every channel a person speaks through as a human caller", () => {
+    for (const channel of ["website_embed", "anonymous", "authenticated_chat", "slack", "whatsapp", "workbench_replay"]) {
+      expect(callerKindForSourceChannel(channel)).toBe("human");
+    }
+  });
+
+  it("calls an unclassified, absent, or empty channel a human", () => {
+    // The column is untyped `TEXT` with no constraint, so this default is reached by any channel
+    // added without a decision here. `callerKind` scopes agent-only behaviour, and a person
+    // wrongly treated as an agent is the worse failure of the two.
+    expect(callerKindForSourceChannel("a_channel_nobody_has_classified")).toBe("human");
+    expect(callerKindForSourceChannel(null)).toBe("human");
+    expect(callerKindForSourceChannel(undefined)).toBe("human");
+    expect(callerKindForSourceChannel("")).toBe("human");
   });
 });

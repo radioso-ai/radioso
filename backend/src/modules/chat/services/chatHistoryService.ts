@@ -1,6 +1,6 @@
 import { notFound } from "../../../shared/domain/errors.js";
 import { decodeCursorWithKeys } from "../../../shared/domain/cursorPagination.js";
-import type { ConversationSourceScope } from "../../../shared/domain/conversationSource.js";
+import type { CallerKind, ConversationSourceScope } from "../../../shared/domain/conversationSource.js";
 import type { ConversationOutcomeFilter } from "../../../shared/domain/conversationOutcome.js";
 import type { ConversationTurnStage } from "../contracts/interruption.js";
 import type { ConversationOwnershipScope } from "../../handoff/public.js";
@@ -131,6 +131,8 @@ export interface ChatConversationSummary {
   agentName: string | null;
   agentInternalName: string | null;
   sourceChannel: string | null;
+  /** Whether a person or a calling agent is on the other side (spec 1290, FR-051). */
+  callerKind: CallerKind;
   sourceOrigin: string | null;
   channelContext: ConversationChannelContext | null;
   anonymousSessionId: string | null;
@@ -255,6 +257,8 @@ export interface ChatConversationDetail {
   agentName: string | null;
   agentInternalName?: string | null;
   sourceChannel: string | null;
+  /** Whether a person or a calling agent is on the other side (spec 1290, FR-051). */
+  callerKind: CallerKind;
   sourceOrigin: string | null;
   channelContext: ConversationChannelContext | null;
   // Entry page provenance is dashboard-only; the public detail response omits it (and
@@ -933,6 +937,7 @@ export class ChatHistoryService {
       agentId?: string;
       sourceOrigin?: string;
       outcome?: ConversationOutcomeFilter;
+      callerKind?: CallerKind;
     } = { limit: 50, offset: 0 },
   ): Promise<HistoryItemsPage> {
     const offset = input.offset ?? 0;
@@ -942,7 +947,10 @@ export class ChatHistoryService {
     // requests carry none of those facets, mirroring how HistoryItemsRepository already
     // drops search rows under the same condition. Skip the contact fetch entirely rather
     // than fetch-then-discard.
-    const hasChatOnlyFilter = Boolean(input.q || input.agentId || input.sourceOrigin || input.outcome);
+    // Only `agent` is chat-only. A contact request is submitted by a person, so asking for human
+    // callers should still return them; asking for agent callers cannot, because no agent fills in
+    // a contact form.
+    const hasChatOnlyFilter = Boolean(input.q || input.agentId || input.sourceOrigin || input.outcome || input.callerKind === "agent");
     const [basePage, contactPage] = await Promise.all([
       this.historyItemsRepository.listPageByWorkspaceId(workspaceId, {
         limit: sourceLimit,
@@ -952,6 +960,7 @@ export class ChatHistoryService {
         agentId: input.agentId,
         sourceOrigin: input.sourceOrigin,
         outcome: input.outcome,
+        callerKind: input.callerKind,
       }),
       hasChatOnlyFilter
         ? Promise.resolve({ contacts: [], total: 0, nextCursor: null, hasMore: false })
@@ -1162,6 +1171,7 @@ export class ChatHistoryService {
           }
         : {}),
       sourceChannel: conversation.sourceChannel,
+      callerKind: conversation.callerKind,
       sourceOrigin: conversation.sourceOrigin,
       channelContext: conversation.channelContext,
       title: conversation.title,

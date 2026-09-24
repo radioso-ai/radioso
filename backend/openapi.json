@@ -12591,6 +12591,14 @@
           "validation"
         ]
       },
+      "CallerKind": {
+        "type": "string",
+        "enum": [
+          "human",
+          "agent"
+        ],
+        "description": "Whether a person or a calling agent is on the other side of the conversation."
+      },
       "SkillAvailability": {
         "type": "object",
         "properties": {
@@ -14497,6 +14505,9 @@
               "null"
             ]
           },
+          "callerKind": {
+            "$ref": "#/components/schemas/CallerKind"
+          },
           "sourceOrigin": {
             "type": [
               "string",
@@ -14578,6 +14589,7 @@
           "agentName",
           "agentInternalName",
           "sourceChannel",
+          "callerKind",
           "sourceOrigin",
           "channelContext",
           "anonymousSessionId",
@@ -15577,6 +15589,9 @@
               "null"
             ]
           },
+          "callerKind": {
+            "$ref": "#/components/schemas/CallerKind"
+          },
           "sourceOrigin": {
             "type": [
               "string",
@@ -15706,6 +15721,7 @@
           "workspaceId",
           "agentId",
           "sourceChannel",
+          "callerKind",
           "sourceOrigin",
           "title",
           "channelContext",
@@ -15798,6 +15814,9 @@
               "null"
             ]
           },
+          "callerKind": {
+            "$ref": "#/components/schemas/CallerKind"
+          },
           "sourceOrigin": {
             "type": [
               "string",
@@ -15884,6 +15903,7 @@
           "workspaceId",
           "agentId",
           "sourceChannel",
+          "callerKind",
           "sourceOrigin",
           "title",
           "channelContext",
@@ -16346,11 +16366,16 @@
             "items": {
               "$ref": "#/components/schemas/AgentToolDescriptor"
             }
+          },
+          "askAgentDescription": {
+            "type": "string",
+            "description": "The description an MCP client should advertise for `ask_agent`, composed from the agent's name, its operator-authored description, and the names of its exposed tools. Assembled from configuration rather than written by a model, so the same settings always produce the same sentence. The tool names come from the published release; the name and description are read from the agent's current settings."
           }
         },
         "required": [
           "agent",
-          "tools"
+          "tools",
+          "askAgentDescription"
         ],
         "description": "The bound agent's tool catalog: exposed routines from its current published release."
       },
@@ -23415,7 +23440,7 @@
         "tags": [
           "Account"
         ],
-        "summary": "List active account users and invitations",
+        "summary": "List active account users and pending invitations",
         "operationId": "listAccountUsers",
         "security": [
           {
@@ -24056,7 +24081,7 @@
         "tags": [
           "API Access"
         ],
-        "summary": "List personal-token metadata",
+        "summary": "List live personal-token metadata",
         "operationId": "listPersonalApiTokens",
         "security": [
           {
@@ -25473,7 +25498,7 @@
         "tags": [
           "API Access"
         ],
-        "summary": "List workspace service accounts",
+        "summary": "List workspace service accounts that are not archived",
         "operationId": "listServiceAccounts",
         "security": [
           {
@@ -27083,7 +27108,7 @@
         "tags": [
           "API Access"
         ],
-        "summary": "List service-account credentials",
+        "summary": "List live service-account credentials",
         "operationId": "listServiceAccountCredentials",
         "security": [
           {
@@ -28723,7 +28748,7 @@
         "tags": [
           "Operator MCP"
         ],
-        "summary": "List visible Operator MCP grants",
+        "summary": "List active Operator MCP grants",
         "operationId": "listOperatorMcpGrants",
         "security": [
           {
@@ -28743,7 +28768,7 @@
         ],
         "responses": {
           "200": {
-            "description": "User or workspace grant inventory",
+            "description": "Active user or workspace grant inventory; revoked and superseded grants are excluded",
             "content": {
               "application/json": {
                 "schema": {
@@ -32247,7 +32272,7 @@
         "tags": [
           "Agent Channels"
         ],
-        "summary": "List MCP and REST chat credentials for an agent with cursor pagination",
+        "summary": "List live MCP and REST chat credentials for an agent with cursor pagination",
         "operationId": "listAgentChannelCredentials",
         "security": [
           {
@@ -45255,6 +45280,19 @@
             },
             "required": false,
             "name": "outcome",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "human",
+                "agent"
+              ],
+              "description": "Narrows to conversations whose caller was a person or another AI agent. Narrows results to chat rows only: a contact request has no conversation behind it and so no caller."
+            },
+            "required": false,
+            "name": "callerKind",
             "in": "query"
           }
         ],

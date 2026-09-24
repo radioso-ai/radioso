@@ -7,6 +7,9 @@ import type { ConversationChannelContext } from "@radioso/conversation-contract"
 import {
   OPERATOR_TEST_SOURCE_CHANNELS,
   WORKBENCH_TEST_SOURCE_CHANNELS,
+  asCallerKind,
+  callerKindForSourceChannel,
+  type CallerKind,
   type ConversationSourceScope,
 } from "../../shared/domain/conversationSource.js";
 import {
@@ -59,6 +62,9 @@ const buildAgentFilter = (agentId: string | undefined, column: RawBuilder<unknow
 
 const buildSourceOriginFilter = (sourceOrigin: string | undefined, column: RawBuilder<unknown>): RawBuilder<unknown> =>
   sourceOrigin ? sql`AND ${column} = ${sourceOrigin}` : sql``;
+
+const buildCallerKindFilter = (callerKind: CallerKind | undefined, column: RawBuilder<unknown>): RawBuilder<unknown> =>
+  callerKind ? sql`AND ${column} = ${callerKind}` : sql``;
 
 /**
  * Mirrors `deriveConversationOutcome` (`frontend/lib/conversation-outcome.ts`) in SQL: an
@@ -140,6 +146,7 @@ export interface HistoryItemsRepositoryPort {
       agentId?: string;
       sourceOrigin?: string;
       outcome?: ConversationOutcomeFilter;
+      callerKind?: CallerKind;
     },
   ): Promise<{ items: HistoryItemsSourceRecord[]; total: number; hasMore: boolean }>;
 }
@@ -156,6 +163,7 @@ interface HistoryItemsRow {
   conversation_agent_name: string | null;
   conversation_agent_internal_name: string | null;
   source_channel: string | null;
+  caller_kind: string | null;
   source_origin: string | null;
   channel_context: ConversationChannelContext | null;
   anonymous_session_id: string | null;
@@ -186,6 +194,7 @@ export class HistoryItemsRepository implements HistoryItemsRepositoryPort {
       agentId?: string;
       sourceOrigin?: string;
       outcome?: ConversationOutcomeFilter;
+      callerKind?: CallerKind;
     },
   ): Promise<{ items: HistoryItemsSourceRecord[]; total: number; hasMore: boolean }> {
     const offset = input.offset ?? 0;
@@ -201,6 +210,8 @@ export class HistoryItemsRepository implements HistoryItemsRepositoryPort {
     const countAgentFilter = buildAgentFilter(input.agentId, sql`conversations.agent_id`);
     const rowSourceOriginFilter = buildSourceOriginFilter(input.sourceOrigin, sql`c.source_origin`);
     const countSourceOriginFilter = buildSourceOriginFilter(input.sourceOrigin, sql`conversations.source_origin`);
+    const rowCallerKindFilter = buildCallerKindFilter(input.callerKind, sql`c.caller_kind`);
+    const countCallerKindFilter = buildCallerKindFilter(input.callerKind, sql`conversations.caller_kind`);
     const rowOutcomeFilter = buildOutcomeFilter(input.outcome, sql`c.id`, sql`c.workspace_id`, sql`c.updated_at`);
     const countOutcomeFilter = buildOutcomeFilter(input.outcome, sql`conversations.id`, sql`conversations.workspace_id`, sql`conversations.updated_at`);
     // The Inbox's All lens is a conversation feed. Document-search audit events remain
@@ -221,6 +232,7 @@ export class HistoryItemsRepository implements HistoryItemsRepositoryPort {
            ag.name AS conversation_agent_name,
            ag.internal_name AS conversation_agent_internal_name,
            c.source_channel,
+           c.caller_kind,
            c.source_origin,
            c.channel_context,
            c.anonymous_session_id,
@@ -243,6 +255,7 @@ export class HistoryItemsRepository implements HistoryItemsRepositoryPort {
            ${rowTextSearchFilter}
            ${rowAgentFilter}
            ${rowSourceOriginFilter}
+           ${rowCallerKindFilter}
            ${rowOutcomeFilter}
          ORDER BY c.updated_at DESC, c.created_at DESC, c.id DESC
          LIMIT ${sourceLimit}
@@ -252,6 +265,7 @@ export class HistoryItemsRepository implements HistoryItemsRepositoryPort {
            ${countTextSearchFilter}
            ${countAgentFilter}
            ${countSourceOriginFilter}
+           ${countCallerKindFilter}
            ${countOutcomeFilter}
          )::text AS total_count
        ),
@@ -282,6 +296,9 @@ export class HistoryItemsRepository implements HistoryItemsRepositoryPort {
             agentName: row.conversation_agent_name ?? null,
             agentInternalName: normalizeNullableText(row.conversation_agent_internal_name),
             sourceChannel: row.source_channel,
+            // Read the stored column the `callerKind` filter matches on, so a filtered page and an
+            // unfiltered one cannot disagree about the same row.
+            callerKind: asCallerKind(row.caller_kind) ?? callerKindForSourceChannel(row.source_channel),
             sourceOrigin: row.source_origin,
             channelContext: (row.channel_context) ?? null,
             anonymousSessionId: row.anonymous_session_id,

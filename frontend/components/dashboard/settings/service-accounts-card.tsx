@@ -114,7 +114,6 @@ export function ServiceAccountsCard({
                 <QuietRow
                   key={account.id}
                   name={account.displayName}
-                  muted={account.status === 'archived'}
                   badges={statusBadge ? <Badge variant="secondary">{statusBadge}</Badge> : null}
                   meta={serviceAccountRowMeta(account)}
                   actions={(

@@ -31,6 +31,7 @@ const conversation = (overrides: Partial<ConversationRecord> = {}): Conversation
   agentName: "Ray test agent",
   agentInternalName: "ray-test-agent",
   sourceChannel: OPERATOR_COPILOT_PROBE_SOURCE_CHANNEL,
+  callerKind: "human" as const,
   sourceOrigin: `operator:${ids.operator}:copilot_conversation:${ids.copilotConversation}`,
   channelContext: null,
   anonymousSessionId: null,

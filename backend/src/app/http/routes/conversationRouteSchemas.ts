@@ -53,6 +53,9 @@ export const historyItemsListQuerySchema = historyItemsPageQuerySchema.extend({
   agentId: z.string().uuid().optional(),
   sourceOrigin: z.string().trim().min(1).max(2048).optional(),
   outcome: z.enum(["in_progress", "completed", "handed_off"]).optional(),
+  // Who was on the other side (spec 1290, FR-051). Absent means both, because the unfiltered
+  // list is the one an operator triages from; the filter narrows it rather than defining it.
+  callerKind: z.enum(["human", "agent"]).optional(),
 });
 
 export const conversationWindowQuerySchema = z.object({

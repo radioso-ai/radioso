@@ -18,7 +18,9 @@ export const createAgentToolCatalogComposition = (input: {
     agents: {
       find: async ({ workspaceId, agentId }) => {
         const agent = await input.agentRepository.findByIdAndWorkspaceId(agentId, workspaceId);
-        return agent ? { name: agent.name, description: null } : null;
+        // `publicDescription` defaults to the empty string, which is "unset" rather than a
+        // description of nothing — the formatter drops the clause instead of writing "It covers .".
+        return agent ? { name: agent.name, description: agent.publicDescription.trim() || null } : null;
       },
     },
     publishedRoutines: {

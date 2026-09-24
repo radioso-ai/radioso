@@ -104,6 +104,7 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
         agent_revision_id UUID,
         purpose TEXT NOT NULL DEFAULT 'production',
         source_channel TEXT,
+        caller_kind TEXT NOT NULL DEFAULT 'human',
         source_origin TEXT,
         entry_page_url TEXT,
         entry_referrer TEXT,

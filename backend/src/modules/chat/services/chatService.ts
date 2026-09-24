@@ -48,7 +48,7 @@ import type {
 } from "../types/assistantApi.js";
 import type { UserMessageInputMetadata } from "../../../db/repositories/messageRepository.js";
 import { CHAT_TURN_ROUTE } from "../../../shared/domain/chatTurnRoute.js";
-import { visitorMatchContext } from "./visitorMatchContext.js";
+import { CALLER_KIND_MATCH_KEY, visitorMatchContext } from "./visitorMatchContext.js";
 import {
   NoopProductAnalyticsService,
   type ProductAnalyticsPort,
@@ -726,7 +726,9 @@ export class ChatService {
    */
   private planVisitorContext(session: PreparedSession): Record<string, unknown> {
     const { context, dropped, clamped } = visitorMatchContext(session);
-    const variableCount = Object.keys(context).length;
+    // Radioso's own facts are not operator-defined context variables. Counting them would make
+    // this attribute fire on every turn and report one more variable than resolved.
+    const variableCount = Object.keys(context).filter((key) => key !== CALLER_KIND_MATCH_KEY).length;
     if (variableCount > 0 || dropped.length > 0) {
       setTraceAttributes({
         "chat.directive_match.visitor_context_variables": variableCount,

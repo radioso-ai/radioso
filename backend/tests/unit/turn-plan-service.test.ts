@@ -552,6 +552,18 @@ describe("buildTurnPlanningPrompt", () => {
     expect(prompt.indexOf('"cart_value": 120')).toBeGreaterThan(prompt.indexOf("Directive Rules"));
   });
 
+  it("renders caller kind into the directive section so a directive can be scoped to agent callers", () => {
+    // The planner is the path that matters: when a fused turn plan exists the matcher is never
+    // called, so a fact carried only to the matcher would be absent from every normal turn.
+    const prompt = buildTurnPlanningPrompt(promptInput({
+      directiveCandidates: [{ name: "agent-brief", condition: "the caller is another AI agent" }],
+      visitorContext: { radioso_caller_kind: "agent" },
+    }));
+
+    expect(prompt).toContain('"radioso_caller_kind": "agent"');
+    expect(prompt.indexOf('"radioso_caller_kind"')).toBeGreaterThan(prompt.indexOf("Directive Rules"));
+  });
+
   it("omits visitor context when the turn has no directive candidates", () => {
     const prompt = buildTurnPlanningPrompt(promptInput({
       visitorContext: { cart_value: 120 },

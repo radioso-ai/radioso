@@ -11,6 +11,7 @@ const conversation: ConversationRecord = {
   agentName: null,
   agentInternalName: null,
   sourceChannel: "authenticated_chat",
+  callerKind: "human" as const,
   sourceOrigin: null,
   channelContext: null,
   anonymousSessionId: null,

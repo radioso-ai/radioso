@@ -129,6 +129,7 @@ export const createSessionMcpServerManager = ({
         };
       },
       routineTools: toolCatalog.tools,
+      askAgentDescription: toolCatalog.askAgentDescription,
       serverName: config.serverName,
     });
 

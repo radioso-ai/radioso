@@ -590,6 +590,7 @@ export interface Conversations {
   agent_id: string | null;
   agent_revision_id: string | null;
   anonymous_session_id: string | null;
+  caller_kind: Generated<string>;
   channel_context: Json | null;
   created_at: Generated<Timestamp>;
   entry_page_url: string | null;

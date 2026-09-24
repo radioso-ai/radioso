@@ -21,6 +21,7 @@ import {
   type DirectiveFiringState,
   type DirectiveStateStore,
 } from "../../directives/public.js";
+import { callerKindForSourceChannel } from "../../../shared/domain/conversationSource.js";
 import { InMemoryRoutineStore } from "./routines/inMemoryRoutineStore.js";
 
 const ephemeralConversation = (
@@ -37,6 +38,7 @@ const ephemeralConversation = (
     agentName: null,
     agentInternalName: null,
     sourceChannel: "workbench_replay",
+    callerKind: callerKindForSourceChannel("workbench_replay"),
     sourceOrigin: null,
     channelContext: null,
     anonymousSessionId: null,

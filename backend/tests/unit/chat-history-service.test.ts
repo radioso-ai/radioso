@@ -329,6 +329,45 @@ describe("chat history service ownership read surface", () => {
     expect(webDetail.channelContext).toBeNull();
   });
 
+  it("keeps contact requests in a human-caller feed and drops them only for agent callers", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditRepository = new InMemoryAuditEventRepository();
+    const historyItemsRepository = new InMemoryHistoryItemsRepository(conversationRepository, auditRepository);
+    const contactHistoryProvider = new InMemoryContactHistoryProvider();
+    const service = new ChatHistoryService(
+      conversationRepository, messageRepository, auditRepository, historyItemsRepository, contactHistoryProvider,
+    );
+    const conversation = await conversationRepository.create({ workspaceId: "workspace-1", sourceChannel: "website_embed" });
+    contactHistoryProvider.contacts.push({
+      id: "66666666-6666-4666-8666-666666666666",
+      sortAt: "2026-04-22T10:00:00.000Z",
+      workspaceId: "workspace-1",
+      conversationId: conversation.id,
+      assistantMessageId: null,
+      sourceChannel: "website_embed",
+      sourceOrigin: "https://example.com/help",
+      userEmail: "customer@example.com",
+      messagePreview: "Please contact me about billing.",
+      message: "Please contact me about billing.",
+      triggerSource: "manual",
+      triggerReason: null,
+      status: "pending",
+      attempts: 0,
+      finalDeliveryError: null,
+      createdAt: "2026-04-22T10:00:00.000Z",
+      updatedAt: "2026-04-22T10:00:00.000Z",
+    } as never);
+
+    const humans = await service.listItems("workspace-1", { limit: 50, offset: 0, callerKind: "human" });
+    const agents = await service.listItems("workspace-1", { limit: 50, offset: 0, callerKind: "agent" });
+
+    // A contact request is filled in by a person, so asking for human callers still returns one.
+    // No agent fills in a contact form, so asking for agent callers genuinely cannot.
+    expect(humans.items.some((item) => item.kind === "contact")).toBe(true);
+    expect(agents.items.some((item) => item.kind === "contact")).toBe(false);
+  });
+
   it("projects the generated conversation title into list, items, and detail responses, defaulting to null", async () => {
     const { conversationRepository, service } = createService();
     const titled = await conversationRepository.create({ workspaceId: "workspace-1" });

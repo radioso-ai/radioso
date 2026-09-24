@@ -34,6 +34,7 @@ const rowSummary = (overrides: Partial<ChatConversationSummary> = {}): ChatConve
   agentName: 'Marta',
   agentInternalName: null,
   sourceChannel: 'authenticated_chat',
+  callerKind: 'human' as const,
   sourceOrigin: null,
   channelContext: null,
   anonymousSessionId: 'session-1',

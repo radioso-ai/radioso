@@ -233,6 +233,7 @@ describe("routine invocation (US2)", () => {
     expect(response.status).toBe(200);
     expect(response.body).toEqual({
       agent: { name: converse.agent.name, description: null },
+      askAgentDescription: expect.stringContaining("start_return"),
       tools: [startReturnDescriptor(draft.routine.lineageId)],
     });
   });
@@ -476,6 +477,7 @@ describe("routine invocation (US2)", () => {
     expect(tools.status).toBe(200);
     expect(tools.body).toEqual({
       agent: { name: converse.agent.name, description: null },
+      askAgentDescription: expect.stringContaining("start_return"),
       tools: [startReturnDescriptor(published.routine.lineageId)],
     });
   });

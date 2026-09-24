@@ -12591,6 +12591,14 @@
           "validation"
         ]
       },
+      "CallerKind": {
+        "type": "string",
+        "enum": [
+          "human",
+          "agent"
+        ],
+        "description": "Whether a person or a calling agent is on the other side of the conversation."
+      },
       "SkillAvailability": {
         "type": "object",
         "properties": {
@@ -14497,6 +14505,9 @@
               "null"
             ]
           },
+          "callerKind": {
+            "$ref": "#/components/schemas/CallerKind"
+          },
           "sourceOrigin": {
             "type": [
               "string",
@@ -14578,6 +14589,7 @@
           "agentName",
           "agentInternalName",
           "sourceChannel",
+          "callerKind",
           "sourceOrigin",
           "channelContext",
           "anonymousSessionId",
@@ -15577,6 +15589,9 @@
               "null"
             ]
           },
+          "callerKind": {
+            "$ref": "#/components/schemas/CallerKind"
+          },
           "sourceOrigin": {
             "type": [
               "string",
@@ -15706,6 +15721,7 @@
           "workspaceId",
           "agentId",
           "sourceChannel",
+          "callerKind",
           "sourceOrigin",
           "title",
           "channelContext",
@@ -15798,6 +15814,9 @@
               "null"
             ]
           },
+          "callerKind": {
+            "$ref": "#/components/schemas/CallerKind"
+          },
           "sourceOrigin": {
             "type": [
               "string",
@@ -15884,6 +15903,7 @@
           "workspaceId",
           "agentId",
           "sourceChannel",
+          "callerKind",
           "sourceOrigin",
           "title",
           "channelContext",
@@ -16346,11 +16366,16 @@
             "items": {
               "$ref": "#/components/schemas/AgentToolDescriptor"
             }
+          },
+          "askAgentDescription": {
+            "type": "string",
+            "description": "The description an MCP client should advertise for `ask_agent`, composed from the agent's name, its operator-authored description, and the names of its exposed tools. Assembled from configuration rather than written by a model, so the same settings always produce the same sentence. The tool names come from the published release; the name and description are read from the agent's current settings."
           }
         },
         "required": [
           "agent",
-          "tools"
+          "tools",
+          "askAgentDescription"
         ],
         "description": "The bound agent's tool catalog: exposed routines from its current published release."
       },
@@ -45255,6 +45280,19 @@
             },
             "required": false,
             "name": "outcome",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "human",
+                "agent"
+              ],
+              "description": "Narrows to conversations whose caller was a person or another AI agent. Narrows results to chat rows only: a contact request has no conversation behind it and so no caller."
+            },
+            "required": false,
+            "name": "callerKind",
             "in": "query"
           }
         ],

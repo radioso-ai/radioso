@@ -138,7 +138,7 @@ import type {
   CreateConversationInput,
   GetOrCreateConversationResult,
 } from "../../src/db/repositories/conversationRepository.js";
-import type { ConversationSourceScope } from "../../src/shared/domain/conversationSource.js";
+import { callerKindForSourceChannel, type ConversationSourceScope } from "../../src/shared/domain/conversationSource.js";
 import type { ConversationOwnershipScope } from "../../src/modules/handoff/ownershipState.js";
 import type {
   ConversationOwnershipHandBackInput,
@@ -3887,6 +3887,9 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
       agentName: null,
       agentInternalName: null,
       sourceChannel: input.sourceChannel ?? null,
+      // The fake derives it the same way the repository does, so a test cannot see a caller kind
+      // production would never produce.
+      callerKind: callerKindForSourceChannel(input.sourceChannel),
       sourceOrigin: input.sourceOrigin ?? null,
       channelContext: input.channelContext ?? null,
       anonymousSessionId: input.anonymousSessionId ?? null,

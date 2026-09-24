@@ -66,6 +66,7 @@ const conversation = (): ConversationRecord => ({
   agentName: "Support",
   agentInternalName: null,
   sourceChannel: null,
+  callerKind: "human" as const,
   sourceOrigin: null,
   channelContext: null,
   anonymousSessionId: null,
@@ -1004,7 +1005,7 @@ describe("runPreparedChatTurnWithConversationEngine", () => {
     });
 
     expect(matched).toEqual([{
-      turnContext: { query: "Where is my order?", route: "direct" },
+      turnContext: { query: "Where is my order?", route: "direct", visitorContext: { radioso_caller_kind: "human" } },
       directives: ["brief"],
     }]);
     expect(selectedDirectiveSets).toEqual([["brief"]]);

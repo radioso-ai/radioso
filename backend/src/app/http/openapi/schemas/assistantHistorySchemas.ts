@@ -28,6 +28,11 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
   const answerFeedbackParamsSchema = z.object({
     assistantMessageId: z.string().uuid(),
   }).openapi("AnswerFeedbackParams");
+  // Registered once and shared: the list row and the detail answer the same question about the
+  // same conversation, and a second inline enum would let them drift apart.
+  const CallerKindSchema = registry.register("CallerKind", z.enum(["human", "agent"]).openapi({
+    description: "Whether a person or a calling agent is on the other side of the conversation.",
+  }));
   const SkillAvailabilitySchema = registry.register("SkillAvailability", skillAvailabilitySchema);
   const SkillContractReferenceSchema = registry.register("SkillContractReference", skillContractReferenceSchema);
   const SkillDiagnosticsSummarySchema = registry.register("SkillDiagnosticsSummary", skillDiagnosticsSummarySchema);
@@ -355,6 +360,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       agentName: z.string().nullable(),
       agentInternalName: z.string().nullable(),
       sourceChannel: z.string().nullable(),
+      callerKind: CallerKindSchema,
       sourceOrigin: z.string().nullable(),
       // Union-with-null rather than `.nullable()`: `.nullable()` on a registered $ref emits a
       // contradictory `allOf: [$ref, null]` under OpenAPI 3.1, so `channelContext: null` (every
@@ -676,6 +682,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       agentName: z.string().nullable().optional(),
       agentInternalName: z.string().nullable().optional(),
       sourceChannel: z.string().nullable(),
+      callerKind: CallerKindSchema,
       sourceOrigin: z.string().nullable(),
       // Entry page provenance is dashboard-only; the public detail response omits it (and
       // the three fields below it — see PublicChatConversationDetail's omit list).

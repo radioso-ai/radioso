@@ -51,11 +51,12 @@ export const createAgentPublicProfileComposition = (input: {
       agentId: agent.id,
       agentRevisionId: revision.id,
     });
-    const description = agent.publicDescription.trim();
     return {
       publicId,
       name: agent.name,
-      description: description.length > 0 ? description : null,
+      // The catalog already applied the "blank is absent" rule to the same field; reading its
+      // answer keeps the card and the composed `ask_agent` description from ever disagreeing.
+      description: catalog.agent.description,
       mcpEndpointUrl: agentMcpEndpointUrl(input.mcpBaseUrl, publicId),
       documentationUrl: connectGuideUrl(),
       walkInEnabled: agent.publicAgentAccessEnabled,

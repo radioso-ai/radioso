@@ -7876,6 +7876,8 @@ export interface components {
                 description: string | null;
             };
             tools: components["schemas"]["AgentToolDescriptor"][];
+            /** @description The description an MCP client should advertise for `ask_agent`, composed from the agent's name, its operator-authored description, and the names of its exposed tools. Assembled from configuration, so it is stable for a given release. */
+            askAgentDescription: string;
         };
         /** @description One field-level problem with a tool call's input. `too_long` is a string value over 2000 characters; `format` is an `email` or `date` slot whose value does not parse as one. */
         RoutineInvocationError: {

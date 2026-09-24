@@ -11072,9 +11072,13 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/AgentToolDescriptor"
+        askAgentDescription:
+          type: string
+          description: The description an MCP client should advertise for `ask_agent`, composed from the agent's name, its operator-authored description, and the names of its exposed tools. Assembled from configuration, so it is stable for a given release.
       required:
         - agent
         - tools
+        - askAgentDescription
       description: "The bound agent's tool catalog: exposed routines from its current published release."
     RoutineInvocationError:
       type: object

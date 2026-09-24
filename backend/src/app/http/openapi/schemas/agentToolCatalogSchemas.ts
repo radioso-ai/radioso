@@ -48,6 +48,9 @@ export const registerAgentToolCatalogSchemas = (registry: OpenAPIRegistry, schem
         description: z.string().nullable(),
       }),
       tools: z.array(AgentToolDescriptorSchema),
+      askAgentDescription: z.string().openapi({
+        description: "The description an MCP client should advertise for `ask_agent`, composed from the agent's name, its operator-authored description, and the names of its exposed tools. Assembled from configuration, so it is stable for a given release.",
+      }),
     }).openapi({
       description: "The bound agent's tool catalog: exposed routines from its current published release.",
     }),

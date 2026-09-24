@@ -2,6 +2,7 @@ import { notFound } from "../../../shared/domain/errors.js";
 import type { RoutineDefinition } from "../domain.js";
 import { routineCanActivate } from "../compiler.js";
 import { buildAgentToolDescriptor, type AgentToolDescriptor } from "./agentToolDescriptor.js";
+import { composeAskAgentDescription } from "./askAgentDescription.js";
 
 export interface AgentToolCatalogScope {
   workspaceId: string;
@@ -19,6 +20,12 @@ interface AgentToolCatalogAgent {
 export interface AgentToolCatalog {
   agent: AgentToolCatalogAgent;
   tools: AgentToolDescriptor[];
+  /**
+   * The `ask_agent` description this catalog composes to (FR-052). Composed here rather than in the
+   * MCP package: the package consumes generated OpenAPI types and must not learn what an agent
+   * description is made of, and the cards need the same sentence from the same inputs.
+   */
+  askAgentDescription: string;
 }
 
 /** Narrow read of the agent an agent-facing caller is bound to; composition implements it. */
@@ -55,11 +62,9 @@ export const createAgentToolCatalog = (dependencies: {
       throw notFound("Agent not found");
     }
     const routines = await dependencies.publishedRoutines.listPublished(input);
-    return {
-      agent,
-      tools: routines
-        .filter(isExposedForAgents)
-        .map((definition) => buildAgentToolDescriptor(definition)),
-    };
+    const tools = routines
+      .filter(isExposedForAgents)
+      .map((definition) => buildAgentToolDescriptor(definition));
+    return { agent, tools, askAgentDescription: composeAskAgentDescription({ agent, tools }) };
   },
 });

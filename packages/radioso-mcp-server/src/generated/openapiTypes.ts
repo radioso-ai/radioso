@@ -6889,6 +6889,11 @@ export interface components {
                 activityTrace: components["schemas"]["ActivityTrace"];
             };
         };
+        /**
+         * @description Whether a person or a calling agent is on the other side of the conversation.
+         * @enum {string}
+         */
+        CallerKind: "human" | "agent";
         SkillAvailability: {
             /** @enum {string} */
             state: "available" | "forbidden" | "unavailable";
@@ -7400,6 +7405,7 @@ export interface components {
             agentName: string | null;
             agentInternalName: string | null;
             sourceChannel: string | null;
+            callerKind: components["schemas"]["CallerKind"];
             sourceOrigin: string | null;
             channelContext: components["schemas"]["ConversationChannelContext"] | null;
             anonymousSessionId: string | null;
@@ -7687,6 +7693,7 @@ export interface components {
             agentName?: string | null;
             agentInternalName?: string | null;
             sourceChannel: string | null;
+            callerKind: components["schemas"]["CallerKind"];
             sourceOrigin: string | null;
             entryPageUrl?: string | null;
             /** @description Client-claimed referrer of the host page. Dashboard-only, like entryPageUrl. */
@@ -7732,6 +7739,7 @@ export interface components {
             agentId: string | null;
             agentName?: string | null;
             sourceChannel: string | null;
+            callerKind: components["schemas"]["CallerKind"];
             sourceOrigin: string | null;
             /** @description See ChatConversationSummary.title. */
             title: string | null;
@@ -7863,6 +7871,8 @@ export interface components {
                 description: string | null;
             };
             tools: components["schemas"]["AgentToolDescriptor"][];
+            /** @description The description an MCP client should advertise for `ask_agent`, composed from the agent's name, its operator-authored description, and the names of its exposed tools. Assembled from configuration, so it is stable for a given release. */
+            askAgentDescription: string;
         };
         /** @description One field-level problem with a tool call's input. `too_long` is a string value over 2000 characters; `format` is an `email` or `date` slot whose value does not parse as one. */
         RoutineInvocationError: {

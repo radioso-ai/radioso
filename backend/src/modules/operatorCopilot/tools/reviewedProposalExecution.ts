@@ -71,7 +71,7 @@ export const createReviewedProposalExecutionTool = (
     // `recovered` settles the original receipt, so only a durable outcome may take that path. The
     // snapshot above can be stale: a concurrent retry's claim may have reopened the receipt, and
     // settling it from here would fence that retry's atomic owner+receipt settlement.
-    if (result.status === "uncertain") return { status: "in_progress" };
+    if (result.status === "uncertain") return { status: "unconfirmed", output: { proposalId: input.proposalId, ...result } };
     return { status: "recovered", output: { proposalId: input.proposalId, ...result } };
   },
   createTool: (context) => ({

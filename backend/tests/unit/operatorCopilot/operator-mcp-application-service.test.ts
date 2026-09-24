@@ -651,14 +651,20 @@ describe("operator MCP operation identity", () => {
     expect(invocations.recordOutcome).not.toHaveBeenCalledWith(expect.objectContaining({ invocationId: original.id }));
   });
 
-  it.each(["failed", "completed"] as const)("leaves a %s original execution receipt unsettled while its owner reports an unconfirmed outcome", async (priorStatus) => {
+  it.each(["failed", "completed"] as const)("answers an unconfirmed outcome through a %s original execution receipt without settling it", async (priorStatus) => {
     const proposalId = uuid("99");
-    const executeMcpReviewedProposal = vi.fn(async () => ({ status: "uncertain" as const, reason: "unconfirmed" }));
+    const unconfirmed = { status: "uncertain" as const, reason: "The owner did not confirm whether this reviewed operation took effect." };
+    const executeMcpReviewedProposal = vi.fn(async () => unconfirmed);
     const [execution] = enrichCopilotToolCatalog(
       [{ ...createReviewedProposalExecutionTool({ executeMcpReviewedProposal }), mcpDisposition: operatorMcpDispositions.execute_reviewed_proposal }],
       { resolveWorkspaceKey: async () => "workspace-key" },
     );
-    const { service, invocations, invocation } = build(execution, everyScope);
+    const argumentsValue = { proposalId, reviewDigest: "a".repeat(43) };
+    const firstCall = build(execution, everyScope);
+    const firstResponse = await unkeyedCall(firstCall.service, execution.name, argumentsValue);
+    expect(firstResponse).toMatchObject({ structuredContent: expect.objectContaining({ proposalId, ...unconfirmed }) });
+
+    const { service, invocations, invocation, audit } = build(execution, everyScope);
     // A snapshot that reads the receipt as finished can be stale: a concurrent retry's claim may
     // have reopened it, and settling it here would fence that retry's owner settlement.
     const original = {
@@ -668,11 +674,17 @@ describe("operator MCP operation identity", () => {
     };
     invocations.prepareInvocation.mockResolvedValueOnce({ status: "replay", invocation: original });
 
-    const response = await unkeyedCall(service, execution.name, { proposalId, reviewDigest: "a".repeat(43) });
+    const response = await unkeyedCall(service, execution.name, argumentsValue);
 
-    expect(response).toMatchObject({ safeOutcomeCode: "in_progress" });
-    expect(executeMcpReviewedProposal).toHaveBeenCalledWith(expect.objectContaining({ executionInvocationId: original.id }));
+    expect(response).toMatchObject({
+      structuredContent: expect.objectContaining({ proposalId, ...unconfirmed }),
+      safeOutcomeCode: firstResponse.safeOutcomeCode,
+      resultReference: firstResponse.resultReference,
+    });
+    expect(executeMcpReviewedProposal).toHaveBeenLastCalledWith(expect.objectContaining({ executionInvocationId: original.id }));
     expect(invocations.recordOutcome).not.toHaveBeenCalledWith(expect.objectContaining({ invocationId: original.id }));
+    expect(invocations.recordOutcome).toHaveBeenCalledWith(expect.objectContaining({ invocationId: uuid("12"), status: "completed", safeOutcomeCode: "replayed" }));
+    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ metadata: expect.objectContaining({ outcome: "replayed", reason: "operation_unconfirmed" }) }));
   });
 
   it("cancels through the real reviewed-cancellation tool and owner, then answers repeats and replays with the dismissed outcome", async () => {

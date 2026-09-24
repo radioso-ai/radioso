@@ -374,20 +374,23 @@ export class OperatorMcpApplicationService {
             staleBefore: new Date(recoveryNow.getTime() - PROPOSAL_RECOVERY_LEASE_MS),
             now: recoveryNow,
           });
-          if (reconciliation.status === "recovered") {
+          if (reconciliation.status === "recovered" || reconciliation.status === "unconfirmed") {
             const serialized = JSON.stringify(reconciliation.output);
             if (Buffer.byteLength(serialized, "utf8") > MAX_RESULT_BYTES) throw new OperatorMcpApplicationError("result_too_large");
             if (!reconciliation.output || typeof reconciliation.output !== "object" || Array.isArray(reconciliation.output)) {
               throw new OperatorMcpApplicationError("invalid_result");
             }
             const reference = resultReference(reconciliation.output, disposition.retry.effect === "act");
-            await this.dependencies.invocations.recordOutcome({
-              invocationId: replayed.id,
-              status: "completed",
-              safeOutcomeCode: "completed",
-              ...(reference ? { resultReference: reference } : {}),
-              now: this.now(),
-            });
+            // An unconfirmed answer leaves the earlier receipt for the owner to settle.
+            if (reconciliation.status === "recovered") {
+              await this.dependencies.invocations.recordOutcome({
+                invocationId: replayed.id,
+                status: "completed",
+                safeOutcomeCode: "completed",
+                ...(reference ? { resultReference: reference } : {}),
+                now: this.now(),
+              });
+            }
             await this.dependencies.invocations.recordOutcome({
               invocationId: input.proof.invocationId,
               status: "completed",
@@ -397,7 +400,8 @@ export class OperatorMcpApplicationService {
             });
             await this.audit({
               principal, invocationId: input.proof.invocationId, method: "tools/call", descriptorName: input.name,
-              capabilityShape, eventStatus: "success", outcome: "replayed", reason: "operation_recovered",
+              capabilityShape, eventStatus: "success", outcome: "replayed",
+              reason: reconciliation.status === "recovered" ? "operation_recovered" : "operation_unconfirmed",
             });
             return {
               structuredContent: reconciliation.output as Record<string, unknown>,

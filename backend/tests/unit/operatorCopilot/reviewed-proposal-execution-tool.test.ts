@@ -86,11 +86,11 @@ describe("reviewed proposal execution tool", () => {
 
   // A concurrent retry may have reopened the receipt through the owner's claim since this snapshot
   // was read, so what the snapshot says about the receipt cannot make an unconfirmed outcome final.
-  it.each(["running", "failed", "completed"])("never settles an unconfirmed outcome through a %s original receipt", async (status) => {
+  it.each(["running", "failed", "completed"])("answers an unconfirmed outcome through a %s original receipt without settling it", async (status) => {
     const executeMcpReviewedProposal = vi.fn(async () => ({ status: "uncertain" as const, reason: "unconfirmed" }));
 
     await expect(reconcileExecution(executeMcpReviewedProposal, { status, proofConsumedAt: new Date(staleBefore.getTime() - 1_000) }))
-      .resolves.toEqual({ status: "in_progress" });
+      .resolves.toEqual({ status: "unconfirmed", output: { proposalId, status: "uncertain", reason: "unconfirmed" } });
   });
 
   it.each([

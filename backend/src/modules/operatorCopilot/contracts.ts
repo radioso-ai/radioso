@@ -475,7 +475,7 @@ export type CopilotAnyProposalAdapter =
 export type CopilotProposalAdapterRegistry = ReadonlyArray<CopilotAnyProposalAdapter>;
 
 export type CopilotMcpInvocationReconciliation<TOutput> =
-  | { readonly status: "recovered"; readonly output: TOutput }
+  | { readonly status: "recovered" | "unconfirmed"; readonly output: TOutput }
   | { readonly status: "in_progress" | "retry_prepare" | "conflict" };
 
 /** Narrow persistence boundary used only by descriptor-owned MCP proposal recovery. */
@@ -542,7 +542,8 @@ export interface CopilotToolDescriptor<TInput = unknown, TOutput = unknown> {
    * Answers a replay of an earlier invocation from the durable state that invocation left, such as
    * a committed proposal or a reviewed execution's receipt, or by repeating an owner call that is
    * safe to repeat. `recovered` settles the earlier invocation, so it carries only a durable
-   * outcome; an attempt whose outcome is still unconfirmed answers `in_progress`.
+   * outcome. `unconfirmed` answers the retry with an outcome the owner could not confirm and leaves
+   * the earlier invocation unsettled. `in_progress` means another runner still holds the attempt.
    */
   reconcileMcpInvocation?(input: {
     readonly invocation: OperatorMcpInvocationRecord;

@@ -125,12 +125,8 @@ describe("access grants contract", () => {
       .get(`/api/v1/agents/${defaultAgent.id}/channel-credentials?audience=mcp`)
       .set(adminSessionHeaders(session));
     expect(afterRevoke.status).toBe(200);
-    expect(afterRevoke.body.credentials).toEqual([
-      expect.objectContaining({
-        id: grantId,
-        revokedAt: expect.any(String),
-      }),
-    ]);
+    // The inventory carries live credentials only, so a revoked one leaves it.
+    expect(afterRevoke.body.credentials).toEqual([]);
   });
 
   it("uses one grant lifecycle for public launch credentials", async () => {

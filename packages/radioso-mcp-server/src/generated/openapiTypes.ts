@@ -677,7 +677,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List visible Operator MCP grants */
+        /** List active Operator MCP grants */
         get: operations["listOperatorMcpGrants"];
         put?: never;
         post?: never;
@@ -12435,7 +12435,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description User or workspace grant inventory */
+            /** @description Active user or workspace grant inventory; revoked and superseded grants are excluded */
             200: {
                 headers: {
                     [name: string]: unknown;

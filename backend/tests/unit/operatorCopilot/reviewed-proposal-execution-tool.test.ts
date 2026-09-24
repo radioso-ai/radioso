@@ -75,6 +75,44 @@ describe("reviewed proposal execution tool", () => {
     expect(cancelMcpReviewedProposal).toHaveBeenCalledWith(expect.objectContaining({ currentAuthorization }));
   });
 
+  it("reconciles a replayed cancellation to the proposal's dismissed outcome under the fresh request's binding", async () => {
+    const cancelMcpReviewedProposal = vi.fn(async () => ({ status: "dismissed" as const }));
+    const descriptor = createCancelReviewedProposalTool({ cancelMcpReviewedProposal });
+    const currentAuthorization = { hasAllPermissions: vi.fn() };
+    const proposalId = "11111111-1111-4111-8111-111111111111";
+
+    await expect(descriptor.reconcileMcpInvocation?.({
+      invocation: { id: "original-receipt" } as never,
+      arguments: { proposalId },
+      context: {
+        workspaceId: "workspace-1", accountId: "account-1", operatorUserId: "user-1", surface: "mcp",
+        operatorMcpInvocationId: "fresh-retry", operatorMcpGrantId: "grant-1", operatorMcpClientId: "client-1",
+        currentAuthorization, pageContext: { view: null, agentId: null, conversationId: null, selection: null, entities: [] },
+      },
+      staleBefore: new Date(), now: new Date(),
+    })).resolves.toEqual({ status: "recovered", output: { proposalId, status: "dismissed" } });
+    expect(cancelMcpReviewedProposal).toHaveBeenCalledWith(expect.objectContaining({
+      proposalId, grantId: "grant-1", clientId: "client-1", currentAuthorization,
+    }));
+  });
+
+  it("does not reconcile a cancellation without its MCP grant and client binding", async () => {
+    const cancelMcpReviewedProposal = vi.fn();
+    const descriptor = createCancelReviewedProposalTool({ cancelMcpReviewedProposal });
+
+    await expect(descriptor.reconcileMcpInvocation?.({
+      invocation: { id: "original-receipt" } as never,
+      arguments: { proposalId: "11111111-1111-4111-8111-111111111111" },
+      context: {
+        workspaceId: "workspace-1", accountId: "account-1", operatorUserId: "user-1", surface: "mcp",
+        currentAuthorization: { hasAllPermissions: vi.fn() },
+        pageContext: { view: null, agentId: null, conversationId: null, selection: null, entities: [] },
+      },
+      staleBefore: new Date(), now: new Date(),
+    })).resolves.toEqual({ status: "conflict" });
+    expect(cancelMcpReviewedProposal).not.toHaveBeenCalled();
+  });
+
   it("refuses a non-MCP invocation instead of accepting an unbound execution", async () => {
     const descriptor = createReviewedProposalExecutionTool({ executeMcpReviewedProposal: vi.fn() });
     const tool = descriptor.createTool({

@@ -145,7 +145,7 @@ describe("copilot catalog contributions through the real factory", () => {
       moduleId: "extension",
       descriptors: [contributedDescriptor({
         inputSchema: z.union([z.object({ kind: z.literal("a") }), z.string()]),
-        mcpDisposition: { status: "eligible", inputStrategy: "explicit", scope: "operator:read", retry: { effect: "none", idempotent: true, requiresOperationId: false } },
+        mcpDisposition: { status: "eligible", inputStrategy: "explicit", scope: "operator:read", retry: { effect: "none", idempotent: true, operationIdentity: "client" } },
       })],
       operationPermissions: { getExtensionUsage: ["workspace.settings.read"] },
     })).toThrow("extension_usage");

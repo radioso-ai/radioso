@@ -377,7 +377,7 @@ describe("operator MCP stateless request handler", () => {
     const handler = createOperatorMcpRequestHandler({
       ...dependencies,
       call: vi.fn<OperatorMcpRequestHandlerDependencies["call"]>(async () => {
-        throw new OperatorBackendAdapterError("Operator request was rejected.", 400, "operation_required");
+        throw new OperatorBackendAdapterError("Operator request was rejected.", 400, "operation_conflict");
       }),
     });
     dependencies.admit.mockResolvedValue({ proof: { ...proof, method: "tools/call" } });
@@ -390,7 +390,7 @@ describe("operator MCP stateless request handler", () => {
     }));
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toMatchObject({ error: { code: -32602, message: "operation_required" } });
+    await expect(response.json()).resolves.toMatchObject({ error: { code: -32602, message: "operation_conflict" } });
   });
 
   it("carries the rejected argument paths back to the caller as JSON-RPC error data", async () => {

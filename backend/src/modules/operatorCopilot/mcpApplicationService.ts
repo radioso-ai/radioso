@@ -36,7 +36,7 @@ type CredentialValidation = Pick<OperatorMcpCredentialValidationService, "valida
 export class OperatorMcpApplicationError extends Error {
   constructor(readonly code:
     | "invalid_admission" | "insufficient_scope" | "invalid_proof" | "proof_replay"
-    | "unknown_tool" | "invalid_arguments" | "missing_configuration" | "operation_required" | "operation_conflict" | "budget_exhausted" | "result_too_large" | "invalid_result",
+    | "unknown_tool" | "invalid_arguments" | "missing_configuration" | "operation_conflict" | "budget_exhausted" | "result_too_large" | "invalid_result",
   readonly requiredScope?: OperatorMcpScope,
   /** Rejected argument paths, so a caller can correct the call instead of guessing. */
   readonly details?: readonly string[]) {
@@ -322,7 +322,6 @@ export class OperatorMcpApplicationService {
       const disposition = descriptor?.mcpDisposition;
       if (!descriptor || !disposition || disposition.status !== "eligible") throw new OperatorMcpApplicationError("unknown_tool");
       capabilityShape = descriptor.shape;
-      if (disposition.retry.requiresOperationId && !input.operationId) throw new OperatorMcpApplicationError("operation_required");
       const parsed = descriptor.inputSchema.safeParse(input.arguments);
       if (!parsed.success) throw new OperatorMcpApplicationError("invalid_arguments", undefined, invalidArgumentDetails(parsed.error));
       const verificationCost = descriptor.verificationCost(parsed.data);
@@ -332,11 +331,13 @@ export class OperatorMcpApplicationService {
         descriptorVersion: "1",
         value: parsed.data,
       });
+      const operationId = input.operationId
+        ?? (disposition.retry.operationIdentity === "input" ? inputDigest : null);
       let readyToInvoke = false;
       for (let attempt = 0; attempt < MAX_PREPARE_ATTEMPTS; attempt += 1) {
         const prepared = await this.dependencies.invocations.prepareInvocation({
           invocationId: input.proof.invocationId,
-          operationId: input.operationId ?? null,
+          operationId,
           descriptorName: input.name,
           shape: descriptor.shape,
           inputDigest,
@@ -356,7 +357,7 @@ export class OperatorMcpApplicationService {
         const recoverableAttempt = Boolean(descriptor.reconcileMcpInvocation)
           && disposition.retry.idempotent
           && (disposition.retry.effect === "proposal" || disposition.retry.effect === "act")
-          && input.operationId
+          && operationId
           // `completed` can be an acknowledged `uncertain` owner result. The descriptor reads
           // its durable subject state before deciding whether it is terminal or recoverable.
           && (replayed.status === "admitted" || replayed.status === "running" || replayed.status === "failed"
@@ -488,7 +489,7 @@ export class OperatorMcpApplicationService {
         ? error.code
         : error instanceof OperatorMcpCatalogError ? error.code : "dependency_error";
       const refused = error instanceof OperatorMcpApplicationError
-        && ["unknown_tool", "invalid_arguments", "missing_configuration", "operation_required", "operation_conflict", "budget_exhausted"].includes(error.code);
+        && ["unknown_tool", "invalid_arguments", "missing_configuration", "operation_conflict", "budget_exhausted"].includes(error.code);
       await this.dependencies.invocations.recordOutcome({
         invocationId: input.proof.invocationId,
         status: refused ? "refused" : "failed",

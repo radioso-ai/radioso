@@ -400,8 +400,10 @@ export class OperatorCopilotService {
     if (!input.currentAuthorization) throw new CopilotAuthorizationError();
     const proposal = await this.deps.repository.findMcpReviewedProposal({ id: input.proposalId, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId, grantId: input.grantId, clientId: input.clientId });
     if (!proposal) throw new CopilotNotFoundError();
-    if (proposal.status !== "pending") throw new CopilotConflictError();
+    if (proposal.status !== "pending" && proposal.status !== "dismissed") throw new CopilotConflictError();
     await this.requireProposalAuthorization({ ...input, surface: "mcp" }, proposal.targetType);
+    // A retried cancellation reports the outcome its first attempt reached.
+    if (proposal.status === "dismissed") return { status: "dismissed" };
     const cancelled = await this.deps.repository.cancelPendingProposal({ id: proposal.id, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId });
     if (!cancelled) throw new CopilotConflictError();
     await this.audit({ ...input, surface: "mcp" }, { accountId: input.accountId, workspaceId: input.workspaceId, eventType: "copilot.proposal.dismissed", eventStatus: "success", metadata: { proposalId: proposal.id, targetType: proposal.targetType, outcome: "dismissed" } });

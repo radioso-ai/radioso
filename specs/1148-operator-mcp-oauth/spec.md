@@ -973,15 +973,19 @@ to pass the stateful-operation release gate from every launch client.
   cascade safely when their workspace or user ownership is removed, and remain
   distinguishable from customer conversations, Ray conversations, messages, and
   eval case source conversations.
-- **FR-054**: A stateful descriptor invocation MUST require a client-generated or
-  transport-derived stable operation identity within the grant. The system MUST
-  bind it to the descriptor and a bounded, versioned, domain-separated keyed
-  digest of canonical validated input, retain only that digest in the
-  reconciliation record, reject mismatched reuse, and coordinate concurrent
-  duplicates across instances so a lost response cannot multiply effects or
-  spend. Raw and canonical input may exist only transiently for validation and
-  execution and MUST NOT be retained in reconciliation, invocation, audit, or
-  unrestricted error records.
+- **FR-054**: A stateful descriptor invocation is keyed by a stable operation
+  identity within the grant: the client-generated operation id when the client
+  sends one, otherwise an identity derived from the validated input when that
+  input names exactly one one-shot operation (reviewed execution and
+  cancellation). A proposal call without a client operation id runs unkeyed, so
+  its retry can leave a second pending proposal for review. For a keyed
+  invocation the system MUST bind the identity to the descriptor and a bounded,
+  versioned, domain-separated keyed digest of canonical validated input, retain
+  only that digest in the reconciliation record, reject mismatched reuse, and
+  coordinate concurrent duplicates across instances so a lost response cannot
+  multiply effects or spend. Raw and canonical input may exist only transiently
+  for validation and execution and MUST NOT be retained in reconciliation,
+  invocation, audit, or unrestricted error records.
 - **FR-055**: The standalone resource MUST validate raw access credentials only
   through the authorization service's validation boundary. Internal capability
   calls MUST use a short-lived service-authenticated proof bound to grant,

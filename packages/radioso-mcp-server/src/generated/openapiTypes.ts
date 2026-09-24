@@ -314,7 +314,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List active account users and invitations */
+        /** List active account users and pending invitations */
         get: operations["listAccountUsers"];
         put?: never;
         post?: never;
@@ -435,7 +435,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List personal-token metadata */
+        /** List live personal-token metadata */
         get: operations["listPersonalApiTokens"];
         put?: never;
         /** Issue a personal API token */
@@ -504,7 +504,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List workspace service accounts */
+        /** List workspace service accounts that are not archived */
         get: operations["listServiceAccounts"];
         put?: never;
         /** Create a service account and first credential */
@@ -591,7 +591,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List service-account credentials */
+        /** List live service-account credentials */
         get: operations["listServiceAccountCredentials"];
         put?: never;
         /** Issue another service-account credential */
@@ -677,7 +677,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List visible Operator MCP grants */
+        /** List active Operator MCP grants */
         get: operations["listOperatorMcpGrants"];
         put?: never;
         post?: never;
@@ -1329,7 +1329,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List MCP and REST chat credentials for an agent with cursor pagination */
+        /** List live MCP and REST chat credentials for an agent with cursor pagination */
         get: operations["listAgentChannelCredentials"];
         put?: never;
         /** Issue an MCP or REST chat credential for an agent */
@@ -12445,7 +12445,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description User or workspace grant inventory */
+            /** @description Active user or workspace grant inventory; revoked and superseded grants are excluded */
             200: {
                 headers: {
                     [name: string]: unknown;

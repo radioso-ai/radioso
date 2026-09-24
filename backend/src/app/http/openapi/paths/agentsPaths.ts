@@ -170,7 +170,7 @@ export const registerAgentsPaths = (
     method: "get",
     path: "/api/v1/agents/{agentId}/channel-credentials",
     tags: ["Agent Channels"],
-    summary: "List MCP and REST chat credentials for an agent with cursor pagination",
+    summary: "List live MCP and REST chat credentials for an agent with cursor pagination",
     operationId: "listAgentChannelCredentials",
     security: security.workspaceAdminSecurity,
     request: {

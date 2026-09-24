@@ -144,6 +144,29 @@ describeIntegration("OperatorMcpAuthorizationRepository", () => {
     )).resolves.toEqual([{ status: "revoked", revoked_reason: "explicit" }]);
   });
 
+  it("lists active grants only and still resolves a retired grant by id", async () => {
+    const retiredGrantId = randomUUID();
+    await database.query(
+      `INSERT INTO operator_mcp_grants
+        (id, client_id, client_version, client_metadata_snapshot_id, account_id, workspace_id, user_id,
+         membership_id, resource, tool_scopes, offline_access, credential_epoch, status, revoked_at, revoked_reason)
+       VALUES ($1, $2, 1, $3, $4, $5, $6, $7, $8, ARRAY['operator:read'], false, 7, 'superseded', NOW(), 'replaced')`,
+      [retiredGrantId, clientRecordId, snapshotId, accountId, workspaceId, userId, membershipId, resource],
+    );
+    await database.query(
+      "UPDATE operator_mcp_grants SET status = 'active', revoked_at = NULL, revoked_reason = NULL WHERE id = $1",
+      [grantId],
+    );
+    try {
+      await expect(repository.listGrants({ workspaceId })).resolves.toMatchObject([{ id: grantId, status: "active" }]);
+      await expect(repository.findGrant({ workspaceId, grantId: retiredGrantId })).resolves.toMatchObject({
+        id: retiredGrantId, status: "superseded", revokedReason: "replaced",
+      });
+    } finally {
+      await database.query("DELETE FROM operator_mcp_grants WHERE id = $1", [retiredGrantId]);
+    }
+  });
+
   it("accepts only monotonic external epoch/key state and rejects mixed replicas", async () => {
     const epochResource = `https://mcp.example/operator/mcp?test=${randomUUID()}`;
     await expect(repository.ensureDeploymentCredentialState({ resource: epochResource, credentialEpoch: "7", keyFingerprint: "key-a", now: new Date() })).resolves.toBe("initialized");

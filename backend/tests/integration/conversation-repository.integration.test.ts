@@ -309,5 +309,18 @@ describeIntegration("ConversationRepository (Postgres)", () => {
       [embed.id],
     );
     expect(storedEmbed.caller_kind).toBe("human");
+
+    // The stored column is the answer, not a hint to be second-guessed: a read and the
+    // `caller_kind` filter beside it must never disagree about the same row. Writing a kind the
+    // channel would not derive is how a later addition to AGENT_SOURCE_CHANNELS looks before a
+    // backfill runs.
+    const divergent = randomUUID();
+    await database.query(
+      `INSERT INTO conversations (id, workspace_id, agent_id, source_channel, caller_kind, created_at, updated_at)
+       VALUES ($1,$2,$3,'some_future_channel','agent',NOW(),NOW())`,
+      [divergent, workspaceId, agentId],
+    );
+    const read = await repository.findByIdAndWorkspaceId(divergent, workspaceId);
+    expect(read?.callerKind).toBe("agent");
   });
 });

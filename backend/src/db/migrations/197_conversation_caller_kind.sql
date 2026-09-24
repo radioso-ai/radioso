@@ -22,6 +22,9 @@ UPDATE conversations
 -- Agent callers are the rare kind, and both read surfaces filter within one workspace. A partial
 -- index over just those rows stays small and serves `caller_kind = 'agent'`; the `human` case is the
 -- unfiltered list, which already has its own path.
+--
+-- The column order matches the feed's `ORDER BY c.updated_at DESC, c.created_at DESC, c.id DESC`
+-- exactly, so a filtered page reads the index in order instead of sorting the matched set.
 CREATE INDEX IF NOT EXISTS conversations_workspace_agent_caller_idx
-  ON conversations (workspace_id, created_at DESC)
+  ON conversations (workspace_id, updated_at DESC, created_at DESC, id DESC)
   WHERE caller_kind = 'agent';

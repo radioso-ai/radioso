@@ -251,6 +251,14 @@ const initialAssistantMessageColumns = [
 const operatorTestChannels = [...OPERATOR_TEST_SOURCE_CHANNELS];
 const workbenchTestChannels = [...WORKBENCH_TEST_SOURCE_CHANNELS];
 
+/**
+ * The stored column is the answer wherever a query selected it, so a read and the `caller_kind`
+ * filter beside it can never disagree. Deriving from the channel is the fallback for a projection
+ * that omits the column, not a second opinion about a row that has one.
+ */
+const storedCallerKind = (value: string | null | undefined): CallerKind | null =>
+  value === "agent" || value === "human" ? value : null;
+
 const mapConversation = (row: ConversationRow): ConversationRecord => ({
   id: row.id,
   workspaceId: row.workspace_id,
@@ -260,9 +268,7 @@ const mapConversation = (row: ConversationRow): ConversationRecord => ({
   agentName: row.agent_name ?? null,
   agentInternalName: normalizeNullableText(row.agent_internal_name),
   sourceChannel: row.source_channel,
-  // Rows written before the column existed were backfilled by the migration; re-deriving here
-  // rather than trusting the stored string keeps one rule in one place.
-  callerKind: row.caller_kind === "agent" ? "agent" : callerKindForSourceChannel(row.source_channel),
+  callerKind: storedCallerKind(row.caller_kind) ?? callerKindForSourceChannel(row.source_channel),
   sourceOrigin: row.source_origin ?? null,
   channelContext: (row.channel_context as ConversationChannelContext | null) ?? null,
   anonymousSessionId: row.anonymous_session_id ?? null,

@@ -6665,7 +6665,7 @@ CREATE INDEX conversation_ownership_workspace_idx ON public.conversation_ownersh
 -- Name: conversations_workspace_agent_caller_idx; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX conversations_workspace_agent_caller_idx ON public.conversations USING btree (workspace_id, created_at DESC) WHERE (caller_kind = 'agent'::text);
+CREATE INDEX conversations_workspace_agent_caller_idx ON public.conversations USING btree (workspace_id, updated_at DESC, created_at DESC, id DESC) WHERE (caller_kind = 'agent'::text);
 
 
 --

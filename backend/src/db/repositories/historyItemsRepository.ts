@@ -162,6 +162,7 @@ interface HistoryItemsRow {
   conversation_agent_name: string | null;
   conversation_agent_internal_name: string | null;
   source_channel: string | null;
+  caller_kind: string | null;
   source_origin: string | null;
   channel_context: ConversationChannelContext | null;
   anonymous_session_id: string | null;
@@ -230,6 +231,7 @@ export class HistoryItemsRepository implements HistoryItemsRepositoryPort {
            ag.name AS conversation_agent_name,
            ag.internal_name AS conversation_agent_internal_name,
            c.source_channel,
+           c.caller_kind,
            c.source_origin,
            c.channel_context,
            c.anonymous_session_id,
@@ -293,7 +295,11 @@ export class HistoryItemsRepository implements HistoryItemsRepositoryPort {
             agentName: row.conversation_agent_name ?? null,
             agentInternalName: normalizeNullableText(row.conversation_agent_internal_name),
             sourceChannel: row.source_channel,
-            callerKind: callerKindForSourceChannel(row.source_channel),
+            // Read the stored column the `callerKind` filter matches on, so a filtered page and an
+            // unfiltered one cannot disagree about the same row.
+            callerKind: row.caller_kind === "agent" || row.caller_kind === "human"
+              ? row.caller_kind
+              : callerKindForSourceChannel(row.source_channel),
             sourceOrigin: row.source_origin,
             channelContext: (row.channel_context) ?? null,
             anonymousSessionId: row.anonymous_session_id,

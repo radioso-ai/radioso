@@ -19292,7 +19292,7 @@ paths:
     get:
       tags:
         - Operator MCP
-      summary: List visible Operator MCP grants
+      summary: List active Operator MCP grants
       operationId: listOperatorMcpGrants
       security: *a65
       parameters:
@@ -19304,7 +19304,7 @@ paths:
           in: path
       responses:
         "200":
-          description: User or workspace grant inventory
+          description: Active user or workspace grant inventory; revoked and superseded grants are excluded
           content:
             application/json:
               schema:

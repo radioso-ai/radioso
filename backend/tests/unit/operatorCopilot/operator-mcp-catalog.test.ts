@@ -22,7 +22,7 @@ const descriptor = (name: string, scope: "operator:read" | "operator:probe", sta
   outputSchema: z.object({ value: z.string() }).strict(), requiredPermissions: ["workspace.settings.read"],
   contributingModule: "test", dashboardSubject: { type: "settings" },
   mcpDisposition: status === "eligible"
-    ? { status: "eligible", inputStrategy: "explicit", scope, retry: { effect: "none", idempotent: true, requiresOperationId: false } }
+    ? { status: "eligible", inputStrategy: "explicit", scope, retry: { effect: "none", idempotent: true, operationIdentity: "client" } }
     : { status: "excluded", reason: "not reviewed" },
   createTool: () => ({
     name, description: name, inputSchema: z.object({ key: z.string() }), outputSchema: z.object({ value: z.string() }),

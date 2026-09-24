@@ -123,10 +123,10 @@ export const enrichCopilotToolCatalog = (
   ...(descriptor.reconcileMcpInvocation ? {
     reconcileMcpInvocation: async (input) => {
       const reconciliation = await descriptor.reconcileMcpInvocation!(input);
-      if (reconciliation.status !== "recovered") return reconciliation;
+      if (reconciliation.status !== "recovered" && reconciliation.status !== "unconfirmed") return reconciliation;
       const workspaceKey = await deps.resolveWorkspaceKey(input.context.workspaceId);
       return {
-        status: "recovered" as const,
+        status: reconciliation.status,
         output: enrichSuccessfulOutput({
           descriptor,
           context: input.context,

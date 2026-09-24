@@ -46,9 +46,15 @@ export const createReviewedProposalExecutionTool = (
   requiredPermissions: ["workspace.agents.manage"],
   inputSchema,
   outputSchema,
-  reconcileMcpInvocation: async ({ invocation, arguments: rawInput, context }) => {
+  reconcileMcpInvocation: async ({ invocation, arguments: rawInput, context, staleBefore }) => {
     const input = inputSchema.parse(rawInput);
     if (!context.operatorMcpGrantId || !context.operatorMcpClientId) return { status: "conflict" };
+    // An open receipt whose proof is inside the recovery lease belongs to its first runner: a
+    // retry that reached the owner first could claim under that receipt before the runner does.
+    if (invocation.status === "admitted" || invocation.status === "running") {
+      if (!invocation.proofConsumedAt) return { status: "conflict" };
+      if (invocation.proofConsumedAt.getTime() > staleBefore.getTime()) return { status: "in_progress" };
+    }
     const result = await executor.executeMcpReviewedProposal({
       workspaceId: context.workspaceId,
       accountId: context.accountId,
@@ -62,10 +68,10 @@ export const createReviewedProposalExecutionTool = (
       clientId: context.operatorMcpClientId,
       currentAuthorization: context.currentAuthorization,
     });
-    // A matching receipt with a live lease belongs to the first runner. Settling its invocation
-    // from this retry would fence that runner's atomic owner+receipt transaction, so leave the
-    // original receipt untouched until its lease expires or it reaches a durable outcome.
-    if (result.status === "refused" && result.reason === "not_prepared") return { status: "in_progress" };
+    // `recovered` settles the original receipt, so only a durable outcome may take that path. The
+    // snapshot above can be stale: a concurrent retry's claim may have reopened the receipt, and
+    // settling it from here would fence that retry's atomic owner+receipt settlement.
+    if (result.status === "uncertain") return { status: "unconfirmed", output: { proposalId: input.proposalId, ...result } };
     return { status: "recovered", output: { proposalId: input.proposalId, ...result } };
   },
   createTool: (context) => ({

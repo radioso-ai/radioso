@@ -1,14 +1,19 @@
 import { z } from "zod";
 import { describe, expect, it, vi } from "vitest";
-import { digestOperatorMcpCall, sha256Digest } from "@radioso/operator-mcp-contract";
+import { digestOperatorMcpCall, OPERATOR_MCP_SCOPES, sha256Digest } from "@radioso/operator-mcp-contract";
 
 import { OperatorMcpApplicationService } from "../../../src/modules/operatorCopilot/mcpApplicationService.js";
 import { OperatorMcpCatalogService } from "../../../src/modules/operatorCopilot/mcpCatalog.js";
 import { enrichCopilotToolCatalog } from "../../../src/modules/operatorCopilot/catalog.js";
-import { OperatorMcpAccessError } from "../../../src/modules/operatorMcpAuthorization/public.js";
+import { OperatorMcpAccessError, type OperatorMcpPrincipal } from "../../../src/modules/operatorMcpAuthorization/public.js";
 import type { CopilotToolDescriptor } from "../../../src/modules/operatorCopilot/public.js";
 import type { OperatorMcpInvocationRepositoryPort } from "../../../src/modules/operatorCopilot/mcpContracts.js";
 import { AppError, badRequest } from "../../../src/shared/domain/errors.js";
+import { OperatorCopilotService, type CopilotRepositoryPort } from "../../../src/modules/operatorCopilot/service.js";
+import { operatorMcpDispositions } from "../../../src/modules/operatorCopilot/operatorMcpDisposition.js";
+import { createCancelReviewedProposalTool } from "../../../src/modules/operatorCopilot/tools/cancelReviewedProposal.js";
+import { createReviewedProposalExecutionTool } from "../../../src/modules/operatorCopilot/tools/reviewedProposalExecution.js";
+import { realCatalog } from "./realCatalogTestSupport.js";
 
 const uuid = (suffix: string) => `00000000-0000-4000-8000-${suffix.padStart(12, "0")}`;
 const now = new Date("2026-09-04T00:00:00Z");
@@ -23,7 +28,7 @@ const descriptor: CopilotToolDescriptor = {
   name: "workspace_settings", shape: "read", verificationCost: () => 0, uiLabel: "Workspace settings", description: "Read settings",
   inputSchema: z.object({ section: z.string() }).strict(), outputSchema: z.object({ section: z.string() }).strict(),
   requiredPermissions: ["workspace.settings.read"], contributingModule: "settings", dashboardSubject: { type: "settings" },
-  mcpDisposition: { status: "eligible", inputStrategy: "explicit", scope: "operator:read", retry: { effect: "none", idempotent: true, requiresOperationId: false } },
+  mcpDisposition: { status: "eligible", inputStrategy: "explicit", scope: "operator:read", retry: { effect: "none", idempotent: true, operationIdentity: "client" } },
   createTool: () => ({ name: "workspace_settings", description: "Read settings", inputSchema: z.object({ section: z.string() }), outputSchema: z.object({ section: z.string() }), invoke: vi.fn(async (input: { section: string }) => input) }),
 };
 const proposalOutputSchema = z.object({
@@ -54,7 +59,7 @@ const rawProposalDescriptor: CopilotToolDescriptor = {
     status: "eligible",
     inputStrategy: "explicit",
     scope: "operator:read",
-    retry: { effect: "proposal", idempotent: true, requiresOperationId: true },
+    retry: { effect: "proposal", idempotent: true, operationIdentity: "client" },
   },
   reconcileMcpInvocation: proposalReconciliation,
   createTool: () => ({
@@ -68,8 +73,8 @@ const rawProposalDescriptor: CopilotToolDescriptor = {
 const callDigest = (argumentsValue: Record<string, unknown>, operationId?: string): string =>
   digestOperatorMcpCall({ name: descriptor.name, arguments: argumentsValue, ...(operationId ? { operationId } : {}) });
 
-const build = (activeDescriptor: CopilotToolDescriptor = descriptor) => {
-  const credentialValidation = { validate: vi.fn(async () => principal), revalidateCredential: vi.fn(async () => principal) };
+const build = (activeDescriptor: CopilotToolDescriptor = descriptor, activePrincipal: OperatorMcpPrincipal = principal) => {
+  const credentialValidation = { validate: vi.fn(async () => activePrincipal), revalidateCredential: vi.fn(async () => activePrincipal) };
   const invocation = {
     id: uuid("12"), credentialId: principal.credentialId, grantId: principal.grantId, grantVersion: principal.grantVersion,
     accountId: principal.accountId, workspaceId: principal.workspaceId, userId: principal.userId, clientId: principal.clientRecordId,
@@ -113,7 +118,7 @@ describe("OperatorMcpApplicationService", () => {
     const recoveryDescriptor: CopilotToolDescriptor = {
       ...descriptor,
       name: "reviewed_act",
-      mcpDisposition: { status: "eligible", inputStrategy: "explicit", scope: "operator:read", retry: { effect: "act", idempotent: true, requiresOperationId: true } },
+      mcpDisposition: { status: "eligible", inputStrategy: "explicit", scope: "operator:read", retry: { effect: "act", idempotent: true, operationIdentity: "input" } },
       reconcileMcpInvocation,
     };
     const { service, invocations, invocation } = build(recoveryDescriptor);
@@ -132,8 +137,8 @@ describe("OperatorMcpApplicationService", () => {
   it("keeps a completed idempotent act without a recovery hook as a terminal replay", async () => {
     const terminalAct: CopilotToolDescriptor = {
       ...descriptor,
-      name: "cancel_reviewed_proposal",
-      mcpDisposition: { status: "eligible", inputStrategy: "explicit", scope: "operator:read", retry: { effect: "act", idempotent: true, requiresOperationId: true } },
+      name: "terminal_act",
+      mcpDisposition: { status: "eligible", inputStrategy: "explicit", scope: "operator:read", retry: { effect: "act", idempotent: true, operationIdentity: "input" } },
     };
     const { service, invocations, invocation } = build(terminalAct);
     const original = { ...invocation, method: "tools/call" as const, descriptorName: terminalAct.name, shape: "act" as const, operationId: "operation-1", status: "completed" as const, safeOutcomeCode: "completed" };
@@ -151,7 +156,7 @@ describe("OperatorMcpApplicationService", () => {
     const activeAct: CopilotToolDescriptor = {
       ...descriptor,
       name: "reviewed_act",
-      mcpDisposition: { status: "eligible", inputStrategy: "explicit", scope: "operator:read", retry: { effect: "act", idempotent: true, requiresOperationId: true } },
+      mcpDisposition: { status: "eligible", inputStrategy: "explicit", scope: "operator:read", retry: { effect: "act", idempotent: true, operationIdentity: "input" } },
       reconcileMcpInvocation: vi.fn(async () => ({ status: "in_progress" as const })),
     };
     const { service, invocations, invocation } = build(activeAct);
@@ -396,7 +401,7 @@ describe("OperatorMcpApplicationService", () => {
       },
     });
     const enriched = enrichCopilotToolCatalog([rawProposalDescriptor], { resolveWorkspaceKey: async () => "workspace-key" })[0];
-    const { service, invocations, invocation } = build(enriched);
+    const { service, invocations, invocation, audit } = build(enriched);
     const proposalId = uuid("14");
     const operationId = "recover-proposal";
     const argumentsValue = { section: "retrieval" };
@@ -438,6 +443,7 @@ describe("OperatorMcpApplicationService", () => {
       invocationId: uuid("12"), status: "completed", safeOutcomeCode: "replayed",
       resultReference: `/oauth/operator-mcp/proposal/${proposalId}`,
     }));
+    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ metadata: expect.objectContaining({ outcome: "replayed", reason: "operation_recovered" }) }));
   });
 
   it("re-prepares exactly once after a stale proposal attempt is released", async () => {
@@ -530,7 +536,7 @@ describe("OperatorMcpApplicationService", () => {
       shape: "act",
       inputSchema: z.object({ proposalId: z.string().uuid() }).strict(),
       outputSchema: z.object({ proposalId: z.string().uuid(), status: z.literal("applied") }).strict(),
-      mcpDisposition: { status: "eligible", inputStrategy: "explicit", scope: "operator:read", retry: { effect: "act", idempotent: true, requiresOperationId: true } },
+      mcpDisposition: { status: "eligible", inputStrategy: "explicit", scope: "operator:read", retry: { effect: "act", idempotent: true, operationIdentity: "input" } },
       createTool: () => ({ name: "execute_reviewed_proposal", description: "execute", inputSchema: z.object({ proposalId: z.string().uuid() }), outputSchema: z.unknown(), invoke: vi.fn(async () => ({ proposalId, status: "applied" as const })) }),
     };
     const { service, invocations, invocation } = build(execution);
@@ -544,5 +550,190 @@ describe("OperatorMcpApplicationService", () => {
     invocations.consumeProof.mockResolvedValueOnce("consumed");
     const retry = await service.admit({ accessToken: "operator-access", invocationId: uuid("13"), method: "tools/call", descriptorName: execution.name, resource: principal.resource, timestamp: "1788480000", nonce: "retry", bodyDigest });
     await expect(service.invoke({ proof: retry.proof, name: execution.name, arguments: args, operationId, bodyDigest })).resolves.toMatchObject({ safeOutcomeCode: "completed", resultReference: proposalId });
+  });
+});
+
+describe("operator MCP operation identity", () => {
+  const unkeyedCall = async (service: OperatorMcpApplicationService, name: string, argumentsValue: Record<string, unknown>, nonce = "edge-unkeyed") => {
+    const bodyDigest = digestOperatorMcpCall({ name, arguments: argumentsValue });
+    const admitted = await service.admit({ accessToken: "operator-access", invocationId: uuid("12"), method: "tools/call", descriptorName: name, resource: principal.resource, timestamp: "1788480000", nonce, bodyDigest });
+    return service.invoke({ proof: admitted.proof, name, arguments: argumentsValue, bodyDigest });
+  };
+  const inputKeyedAct = (reconcileMcpInvocation: CopilotToolDescriptor["reconcileMcpInvocation"]): CopilotToolDescriptor => ({
+    ...descriptor,
+    name: "reviewed_act",
+    shape: "act",
+    mcpDisposition: { status: "eligible", inputStrategy: "explicit", scope: "operator:read", retry: { effect: "act", idempotent: true, operationIdentity: "input" } },
+    reconcileMcpInvocation,
+  });
+
+  it("runs a client-keyed proposal unkeyed when the client sends no operation id", async () => {
+    proposalReconciliation.mockReset();
+    proposalInvoke.mockClear();
+    const enriched = enrichCopilotToolCatalog([rawProposalDescriptor], { resolveWorkspaceKey: async () => "workspace-key" })[0];
+    const { service, invocations } = build(enriched);
+
+    await expect(unkeyedCall(service, enriched.name, { section: "retrieval" }))
+      .resolves.toMatchObject({ structuredContent: { proposalId: uuid("14") }, safeOutcomeCode: "completed" });
+    expect(invocations.prepareInvocation).toHaveBeenCalledWith(expect.objectContaining({ operationId: null }));
+    expect(proposalReconciliation).not.toHaveBeenCalled();
+    expect(proposalInvoke).toHaveBeenCalledOnce();
+  });
+
+  it("keys an input-identity act by its input, so an identical unkeyed retry reconciles instead of running again", async () => {
+    const reconcileMcpInvocation = vi.fn(async ({ invocation, arguments: input }: { invocation: { id: string }; arguments: unknown }) => ({
+      status: "recovered" as const,
+      output: { section: `${(input as { section: string }).section}:${invocation.id}` },
+    }));
+    const act = inputKeyedAct(reconcileMcpInvocation);
+    const first = build(act);
+    await expect(unkeyedCall(first.service, act.name, { section: "retrieval" }))
+      .resolves.toMatchObject({ structuredContent: { section: "retrieval" }, safeOutcomeCode: "completed" });
+    const firstPrepare = first.invocations.prepareInvocation.mock.calls[0][0];
+    expect(firstPrepare.operationId).toBe(firstPrepare.inputDigest);
+    expect(reconcileMcpInvocation).not.toHaveBeenCalled();
+
+    const retry = build(act);
+    const original = {
+      ...retry.invocation, id: uuid("13"), method: "tools/call" as const, descriptorName: act.name, shape: "act" as const,
+      operationId: firstPrepare.operationId, inputDigest: firstPrepare.inputDigest, status: "completed" as const, safeOutcomeCode: "completed",
+    };
+    retry.invocations.prepareInvocation.mockResolvedValueOnce({ status: "replay", invocation: original });
+
+    await expect(unkeyedCall(retry.service, act.name, { section: "retrieval" }))
+      .resolves.toMatchObject({ structuredContent: { section: `retrieval:${uuid("13")}` }, safeOutcomeCode: "completed" });
+    expect(retry.invocations.prepareInvocation).toHaveBeenCalledWith(expect.objectContaining({ operationId: firstPrepare.operationId }));
+    expect(reconcileMcpInvocation).toHaveBeenCalledWith(expect.objectContaining({ invocation: original }));
+    expect(retry.invocations.claimRunning).not.toHaveBeenCalled();
+  });
+
+  it("keys an input-identity act by a client-sent operation id when one is present", async () => {
+    const act = inputKeyedAct(vi.fn());
+    const { service, invocations } = build(act);
+    const argumentsValue = { section: "retrieval" };
+    const bodyDigest = digestOperatorMcpCall({ name: act.name, arguments: argumentsValue, operationId: "client-operation" });
+    const admitted = await service.admit({ accessToken: "operator-access", invocationId: uuid("12"), method: "tools/call", descriptorName: act.name, resource: principal.resource, timestamp: "1788480000", nonce: "edge-keyed", bodyDigest });
+
+    await expect(service.invoke({ proof: admitted.proof, name: act.name, arguments: argumentsValue, operationId: "client-operation", bodyDigest }))
+      .resolves.toMatchObject({ safeOutcomeCode: "completed" });
+    expect(invocations.prepareInvocation).toHaveBeenCalledWith(expect.objectContaining({ operationId: "client-operation" }));
+  });
+
+  const eligibleCatalog = realCatalog().filter((candidate) => candidate.mcpDisposition?.status === "eligible");
+  const everyScope: OperatorMcpPrincipal = { ...principal, currentToolScopes: [...OPERATOR_MCP_SCOPES] };
+
+  it.each(eligibleCatalog.map((real) => [real.name, real] as const))("accepts a standard %s call that carries no operation id", async (_name, real) => {
+    const standIn: CopilotToolDescriptor = { ...descriptor, name: real.name, shape: real.shape, mcpDisposition: real.mcpDisposition };
+    const { service, invocations } = build(standIn, everyScope);
+
+    await expect(unkeyedCall(service, real.name, { section: "retrieval" })).resolves.toMatchObject({ safeOutcomeCode: "completed" });
+    const prepared = invocations.prepareInvocation.mock.calls[0][0];
+    const identity = real.mcpDisposition?.status === "eligible" ? real.mcpDisposition.retry.operationIdentity : null;
+    expect(prepared.operationId).toBe(identity === "input" ? prepared.inputDigest : null);
+  });
+
+  it("keys only reviewed execution by its input, since its owner binds the first attempt's receipt", () => {
+    const inputKeyed = eligibleCatalog.filter((real) => real.mcpDisposition?.status === "eligible" && real.mcpDisposition.retry.operationIdentity === "input");
+
+    expect(inputKeyed.map((real) => real.name)).toEqual(["execute_reviewed_proposal"]);
+  });
+
+  it("reports a replay whose reconciliation is still in flight as in progress, whatever the original receipt recorded", async () => {
+    const act = inputKeyedAct(vi.fn(async () => ({ status: "in_progress" as const })));
+    const { service, invocations, invocation } = build(act);
+    const original = { ...invocation, id: uuid("13"), method: "tools/call" as const, descriptorName: act.name, shape: "act" as const, operationId: "digest", status: "completed" as const, safeOutcomeCode: "completed", resultReference: uuid("77") };
+    invocations.prepareInvocation.mockResolvedValueOnce({ status: "replay", invocation: original });
+
+    const response = await unkeyedCall(service, act.name, { section: "retrieval" });
+
+    expect(response).toMatchObject({ safeOutcomeCode: "in_progress" });
+    expect(response.isError).not.toBe(true);
+    expect(response).not.toHaveProperty("structuredContent");
+    expect(invocations.recordOutcome).not.toHaveBeenCalledWith(expect.objectContaining({ invocationId: original.id }));
+  });
+
+  it.each(["failed", "completed"] as const)("answers an unconfirmed outcome through a %s original execution receipt without settling it", async (priorStatus) => {
+    const proposalId = uuid("99");
+    const unconfirmed = { status: "uncertain" as const, reason: "The owner did not confirm whether this reviewed operation took effect." };
+    const executeMcpReviewedProposal = vi.fn(async () => unconfirmed);
+    const [execution] = enrichCopilotToolCatalog(
+      [{ ...createReviewedProposalExecutionTool({ executeMcpReviewedProposal }), mcpDisposition: operatorMcpDispositions.execute_reviewed_proposal }],
+      { resolveWorkspaceKey: async () => "workspace-key" },
+    );
+    const argumentsValue = { proposalId, reviewDigest: "a".repeat(43) };
+    const firstCall = build(execution, everyScope);
+    const firstResponse = await unkeyedCall(firstCall.service, execution.name, argumentsValue);
+    expect(firstResponse).toMatchObject({ structuredContent: expect.objectContaining({ proposalId, ...unconfirmed }) });
+
+    const { service, invocations, invocation, audit } = build(execution, everyScope);
+    // A snapshot that reads the receipt as finished can be stale: a concurrent retry's claim may
+    // have reopened it, and settling it here would fence that retry's owner settlement.
+    const original = {
+      ...invocation, id: uuid("13"), method: "tools/call" as const, descriptorName: execution.name, shape: "act" as const,
+      operationId: "derived", status: priorStatus, safeOutcomeCode: priorStatus === "failed" ? "dependency_error" : "completed",
+      proofConsumedAt: new Date(now.getTime() - 600_000),
+    };
+    invocations.prepareInvocation.mockResolvedValueOnce({ status: "replay", invocation: original });
+
+    const response = await unkeyedCall(service, execution.name, argumentsValue);
+
+    expect(response).toMatchObject({
+      structuredContent: expect.objectContaining({ proposalId, ...unconfirmed }),
+      safeOutcomeCode: firstResponse.safeOutcomeCode,
+      resultReference: firstResponse.resultReference,
+    });
+    expect(executeMcpReviewedProposal).toHaveBeenLastCalledWith(expect.objectContaining({ executionInvocationId: original.id }));
+    expect(invocations.recordOutcome).not.toHaveBeenCalledWith(expect.objectContaining({ invocationId: original.id }));
+    expect(invocations.recordOutcome).toHaveBeenCalledWith(expect.objectContaining({ invocationId: uuid("12"), status: "completed", safeOutcomeCode: "replayed" }));
+    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ metadata: expect.objectContaining({ outcome: "replayed", reason: "operation_unconfirmed" }) }));
+  });
+
+  it("cancels through the real reviewed-cancellation tool and owner, then answers repeats and replays with the dismissed outcome", async () => {
+    const proposalId = uuid("88");
+    const preparation = { grantId: principal.grantId, clientId: principal.clientRecordId };
+    let proposal = { id: proposalId, workspaceId: principal.workspaceId, operatorUserId: principal.userId, targetType: "directive" as const, status: "pending" as string };
+    // The two repository reads cancellation performs, holding the preparation's grant/client binding
+    // and the pending-only compare-and-set the database enforces.
+    const proposals = {
+      findMcpReviewedProposal: vi.fn(async (input: { id: string; grantId: string; clientId: string }) =>
+        input.id === proposal.id && input.grantId === preparation.grantId && input.clientId === preparation.clientId ? proposal : null),
+      cancelPendingProposal: vi.fn(async (input: { id: string }) => {
+        if (input.id !== proposal.id || proposal.status !== "pending") return null;
+        proposal = { ...proposal, status: "dismissed" };
+        return proposal;
+      }),
+    };
+    const ownerAudit = { record: vi.fn(async () => undefined), getLatestSuccessfulChatAnswerMetadata: vi.fn(), updateChatAnswerSuggestions: vi.fn() };
+    const owner = new OperatorCopilotService({
+      repository: proposals as unknown as CopilotRepositoryPort,
+      capabilityRunner: { runStreaming: vi.fn() }, auditService: ownerAudit, prompt: "system", tools: [],
+      usageLimitPolicy: { reserveAnswer: vi.fn(), reserveDocument: vi.fn(), reserveIndexedStorage: vi.fn(), reserveMonthlyIndexedContent: vi.fn() },
+      workspaceRouteKeyResolver: { resolveWorkspaceKey: async () => "workspace-key" },
+      currentAuthorization: { hasAllPermissions: vi.fn(async () => false) },
+    });
+    const [cancellation] = enrichCopilotToolCatalog(
+      [{ ...createCancelReviewedProposalTool(owner), mcpDisposition: operatorMcpDispositions.cancel_reviewed_proposal }],
+      { resolveWorkspaceKey: async () => "workspace-key" },
+    );
+    const { service, invocations, invocation } = build(cancellation, everyScope);
+    const dismissed = { structuredContent: expect.objectContaining({ proposalId, status: "dismissed" }), safeOutcomeCode: "completed" };
+
+    await expect(unkeyedCall(service, cancellation.name, { proposalId }, "edge-cancel")).resolves.toMatchObject(dismissed);
+    invocations.consumeProof.mockResolvedValueOnce("consumed");
+    await expect(unkeyedCall(service, cancellation.name, { proposalId }, "edge-cancel-repeat")).resolves.toMatchObject(dismissed);
+
+    const operationId = "cancel-once";
+    invocations.prepareInvocation.mockResolvedValueOnce({
+      status: "replay",
+      invocation: { ...invocation, id: uuid("13"), method: "tools/call", descriptorName: cancellation.name, shape: "act", operationId, status: "completed", safeOutcomeCode: "completed", resultReference: proposalId },
+    });
+    invocations.consumeProof.mockResolvedValueOnce("consumed");
+    const bodyDigest = digestOperatorMcpCall({ name: cancellation.name, arguments: { proposalId }, operationId });
+    const replay = await service.admit({ accessToken: "operator-access", invocationId: uuid("14"), method: "tools/call", descriptorName: cancellation.name, resource: principal.resource, timestamp: "1788480000", nonce: "edge-cancel-replay", bodyDigest });
+    await expect(service.invoke({ proof: replay.proof, name: cancellation.name, arguments: { proposalId }, operationId, bodyDigest })).resolves.toMatchObject(dismissed);
+
+    expect(proposals.cancelPendingProposal).toHaveBeenCalledOnce();
+    expect(ownerAudit.record).toHaveBeenCalledOnce();
+    expect(ownerAudit.record).toHaveBeenCalledWith(expect.objectContaining({ eventType: "copilot.proposal.dismissed" }));
   });
 });

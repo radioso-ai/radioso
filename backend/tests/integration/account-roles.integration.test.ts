@@ -175,9 +175,7 @@ describe("organization roles", () => {
     expect(revoked.status).toBe(204);
 
     const usersAfter = await request(app).get("/api/v1/account/users").set("Cookie", owner.cookie);
-    expect(usersAfter.body.invitations.find((invitation: { id: string }) => invitation.id === invite.body.id)).toMatchObject({
-      status: "revoked",
-    });
+    expect(usersAfter.body.invitations.find((invitation: { id: string }) => invitation.id === invite.body.id)).toBeUndefined();
   });
 
   it("returns 404 when revoking an invitation from another organization", async () => {

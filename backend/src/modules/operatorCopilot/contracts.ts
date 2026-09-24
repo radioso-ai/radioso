@@ -475,7 +475,7 @@ export type CopilotAnyProposalAdapter =
 export type CopilotProposalAdapterRegistry = ReadonlyArray<CopilotAnyProposalAdapter>;
 
 export type CopilotMcpInvocationReconciliation<TOutput> =
-  | { readonly status: "recovered"; readonly output: TOutput }
+  | { readonly status: "recovered" | "unconfirmed"; readonly output: TOutput }
   | { readonly status: "in_progress" | "retry_prepare" | "conflict" };
 
 /** Narrow persistence boundary used only by descriptor-owned MCP proposal recovery. */
@@ -538,7 +538,14 @@ export interface CopilotToolDescriptor<TInput = unknown, TOutput = unknown> {
   describeOutputEntity?(output: TOutput): CopilotEntityReference | null;
   /** Optional last-mile sanitizer for the successful result after its dashboard link is attached. */
   finalizeEnrichedOutput?(output: Record<string, unknown>): Record<string, unknown>;
-  /** Reconstructs a proposal result after the proposal committed but its invocation outcome did not. */
+  /**
+   * Answers a replay of an earlier invocation from the durable state that invocation left, such as
+   * a committed proposal or a reviewed execution's receipt, or by repeating an owner call that is
+   * safe to repeat. `recovered` settles the earlier invocation, so it carries only a durable
+   * outcome. `unconfirmed` answers the retry with an outcome the owner could not confirm and leaves
+   * the earlier invocation unsettled. `in_progress` defers the retry while the earlier attempt may
+   * still be running.
+   */
   reconcileMcpInvocation?(input: {
     readonly invocation: OperatorMcpInvocationRecord;
     /** The fresh request's schema-validated arguments. Their digest was matched to `invocation`. */
@@ -557,7 +564,15 @@ export type CopilotMcpDisposition =
       readonly retry: {
         readonly effect: "none" | "proposal" | "act";
         readonly idempotent: boolean;
-        readonly requiresOperationId: boolean;
+        /**
+         * Where a call's replay key comes from. `client`: only an operation id the MCP client sends
+         * keys the call; without one the call runs unkeyed. `input`: an unkeyed call is keyed by
+         * its input digest, so an identical retry replays the first attempt. That is reserved for
+         * an act whose owner binds the first attempt's receipt and can only recover through it; a
+         * call its owner already answers idempotently gains nothing from it. A client-sent
+         * operation id keys the call under either identity.
+         */
+        readonly operationIdentity: "client" | "input";
       };
     }
   | {

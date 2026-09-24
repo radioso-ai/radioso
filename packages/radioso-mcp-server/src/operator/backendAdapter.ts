@@ -54,7 +54,6 @@ type OperatorBackendAdapterErrorCode =
   | "request_failed"
   | "invalid_arguments"
   | "unknown_tool"
-  | "operation_required"
   | "operation_conflict"
   | "budget_exhausted"
   | "rate_limit_exceeded";
@@ -85,7 +84,6 @@ const isAbort = (error: unknown): boolean => error instanceof Error && error.nam
 const SAFE_BACKEND_ERROR_CODES = new Set<OperatorBackendAdapterErrorCode>([
   "invalid_arguments",
   "unknown_tool",
-  "operation_required",
   "operation_conflict",
   "budget_exhausted",
   "rate_limit_exceeded",

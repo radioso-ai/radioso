@@ -14,7 +14,7 @@ const eligibleRead: CopilotMcpDisposition = {
   status: "eligible",
   inputStrategy: "explicit",
   scope: "operator:read",
-  retry: { effect: "none", idempotent: true, requiresOperationId: false },
+  retry: { effect: "none", idempotent: true, operationIdentity: "client" },
 };
 
 /** A proposal whose evidence-citation no longer hard-requires a Ray conversation and whose descriptor owns a `reconcileMcpInvocation` recovery hook. */
@@ -22,7 +22,7 @@ const eligibleProposal: CopilotMcpDisposition = {
   status: "eligible",
   inputStrategy: "explicit",
   scope: "operator:propose",
-  retry: { effect: "proposal", idempotent: true, requiresOperationId: true },
+  retry: { effect: "proposal", idempotent: true, operationIdentity: "client" },
 };
 
 export const operatorMcpDispositions: Readonly<Record<string, CopilotMcpDisposition>> = {
@@ -41,15 +41,15 @@ export const operatorMcpDispositions: Readonly<Record<string, CopilotMcpDisposit
     status: "eligible",
     inputStrategy: "explicit",
     scope: "operator:write",
-    retry: { effect: "act", idempotent: true, requiresOperationId: true },
+    retry: { effect: "act", idempotent: true, operationIdentity: "input" },
   },
   reviewed_proposal_outcome: {
     status: "eligible",
     inputStrategy: "explicit",
     scope: "operator:write",
-    retry: { effect: "none", idempotent: true, requiresOperationId: false },
+    retry: { effect: "none", idempotent: true, operationIdentity: "client" },
   },
-  cancel_reviewed_proposal: { status: "eligible", inputStrategy: "explicit", scope: "operator:write", retry: { effect: "act", idempotent: true, requiresOperationId: true } },
+  cancel_reviewed_proposal: { status: "eligible", inputStrategy: "explicit", scope: "operator:write", retry: { effect: "act", idempotent: true, operationIdentity: "client" } },
   document_status: eligibleRead,
   eval_results: eligibleRead,
   needs_attention: contextDependent,
@@ -80,7 +80,7 @@ export const operatorMcpDispositions: Readonly<Record<string, CopilotMcpDisposit
     status: "eligible",
     inputStrategy: "explicit",
     scope: "operator:probe",
-    retry: { effect: "none", idempotent: false, requiresOperationId: false },
+    retry: { effect: "none", idempotent: false, operationIdentity: "client" },
   },
   retrieval_settings: eligibleRead,
   prepare_retrieval_settings: eligibleProposal,
@@ -88,14 +88,14 @@ export const operatorMcpDispositions: Readonly<Record<string, CopilotMcpDisposit
     status: "eligible",
     inputStrategy: "explicit",
     scope: "operator:propose",
-    retry: { effect: "proposal", idempotent: true, requiresOperationId: true },
+    retry: { effect: "proposal", idempotent: true, operationIdentity: "client" },
   },
   agent_publication_state: eligibleRead,
   prepare_agent_publication: {
     status: "eligible",
     inputStrategy: "explicit",
     scope: "operator:propose",
-    retry: { effect: "proposal", idempotent: true, requiresOperationId: true },
+    retry: { effect: "proposal", idempotent: true, operationIdentity: "client" },
   },
   agent_publication_candidate: eligibleRead,
   agent_publication_candidate_change: eligibleRead,
@@ -108,7 +108,7 @@ export const operatorMcpDispositions: Readonly<Record<string, CopilotMcpDisposit
     status: "eligible",
     inputStrategy: "explicit",
     scope: "operator:act",
-    retry: { effect: "act", idempotent: true, requiresOperationId: false },
+    retry: { effect: "act", idempotent: true, operationIdentity: "client" },
   },
   test_agent_turn: contextDependent,
   turn_trace: eligibleRead,
@@ -117,7 +117,7 @@ export const operatorMcpDispositions: Readonly<Record<string, CopilotMcpDisposit
     status: "eligible",
     inputStrategy: "explicit",
     scope: "operator:read",
-    retry: { effect: "none", idempotent: true, requiresOperationId: false },
+    retry: { effect: "none", idempotent: true, operationIdentity: "client" },
   },
   // Scopes from the request's own `agentId` alone; it never falls back to dashboard page context
   // (triage.ts explicitly avoids that so a broad "what needs my attention" query is not silently
@@ -138,6 +138,23 @@ export const assertOperatorMcpDispositionRegistry = (
   for (const [name, disposition] of Object.entries(dispositions)) {
     if (disposition.status === "excluded" && disposition.reason.trim().length === 0) {
       throw new Error(`Operator MCP exclusion reason is blank: ${name}`);
+    }
+  }
+};
+
+/**
+ * An input-derived key turns every identical call into a replay of the first, which only an
+ * idempotent act that reconciles from its first attempt's receipt can answer with a real result;
+ * replay recovery admits nothing else. Checked over the assembled catalog, contributed descriptors
+ * included, because a violation otherwise surfaces as an empty replay in the middle of an
+ * operator's retry.
+ */
+export const assertOperatorMcpOperationIdentities = (descriptors: ReadonlyArray<CopilotToolDescriptor>): void => {
+  for (const descriptor of descriptors) {
+    const disposition = descriptor.mcpDisposition;
+    if (disposition?.status !== "eligible" || disposition.retry.operationIdentity !== "input") continue;
+    if (disposition.retry.effect !== "act" || !disposition.retry.idempotent || !descriptor.reconcileMcpInvocation) {
+      throw new Error(`Operator MCP tool "${descriptor.name}" keys its replay by its input, which requires an idempotent act with a reconcileMcpInvocation hook.`);
     }
   }
 };

@@ -145,10 +145,38 @@ describe("copilot catalog contributions through the real factory", () => {
       moduleId: "extension",
       descriptors: [contributedDescriptor({
         inputSchema: z.union([z.object({ kind: z.literal("a") }), z.string()]),
-        mcpDisposition: { status: "eligible", inputStrategy: "explicit", scope: "operator:read", retry: { effect: "none", idempotent: true, requiresOperationId: false } },
+        mcpDisposition: { status: "eligible", inputStrategy: "explicit", scope: "operator:read", retry: { effect: "none", idempotent: true, operationIdentity: "client" } },
       })],
       operationPermissions: { getExtensionUsage: ["workspace.settings.read"] },
     })).toThrow("extension_usage");
+  });
+
+  it.each([
+    ["a proposal", "proposal", true, { reconcileMcpInvocation: vi.fn() }],
+    ["an act without a replay reconciliation", "act", true, {}],
+    ["a non-idempotent act", "act", false, { reconcileMcpInvocation: vi.fn() }],
+  ] as const)("refuses a contributed tool that keys its replay by its input as %s", (_label, effect, idempotent, reconciliation) => {
+    // An input-derived key makes every identical call a replay of the first. Only an idempotent act
+    // that reconciles from its first attempt's receipt can answer that replay with a real result.
+    expect(() => assemble({
+      moduleId: "extension",
+      descriptors: [contributedDescriptor({
+        ...reconciliation,
+        mcpDisposition: { status: "eligible", inputStrategy: "explicit", scope: "operator:act", retry: { effect, idempotent, operationIdentity: "input" } },
+      })],
+      operationPermissions: { getExtensionUsage: ["workspace.settings.read"] },
+    })).toThrow("extension_usage");
+  });
+
+  it("assembles a contributed act that keys its replay by its input and reconciles it", () => {
+    expect(() => assemble({
+      moduleId: "extension",
+      descriptors: [contributedDescriptor({
+        reconcileMcpInvocation: vi.fn(),
+        mcpDisposition: { status: "eligible", inputStrategy: "explicit", scope: "operator:act", retry: { effect: "act", idempotent: true, operationIdentity: "input" } },
+      })],
+      operationPermissions: { getExtensionUsage: ["workspace.settings.read"] },
+    })).not.toThrow();
   });
 
   it("leaves the first-party provenance registry a bijection when a contribution is present", () => {

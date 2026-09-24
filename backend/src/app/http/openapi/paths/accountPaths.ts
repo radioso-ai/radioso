@@ -152,7 +152,7 @@ export const registerAccountManagementPaths = (
     method: "get",
     path: "/api/v1/account/users",
     tags: ["Account"],
-    summary: "List active account users and invitations",
+    summary: "List active account users and pending invitations",
     operationId: "listAccountUsers",
     security: [{ [security.sessionCookieScheme.name]: [] }],
     responses: {

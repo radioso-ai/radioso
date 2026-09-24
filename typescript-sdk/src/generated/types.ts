@@ -6894,6 +6894,11 @@ export interface components {
                 activityTrace: components["schemas"]["ActivityTrace"];
             };
         };
+        /**
+         * @description Whether a person or a calling agent is on the other side of the conversation.
+         * @enum {string}
+         */
+        CallerKind: "human" | "agent";
         SkillAvailability: {
             /** @enum {string} */
             state: "available" | "forbidden" | "unavailable";
@@ -7405,6 +7410,7 @@ export interface components {
             agentName: string | null;
             agentInternalName: string | null;
             sourceChannel: string | null;
+            callerKind: components["schemas"]["CallerKind"];
             sourceOrigin: string | null;
             channelContext: components["schemas"]["ConversationChannelContext"] | null;
             anonymousSessionId: string | null;
@@ -7692,6 +7698,7 @@ export interface components {
             agentName?: string | null;
             agentInternalName?: string | null;
             sourceChannel: string | null;
+            callerKind: components["schemas"]["CallerKind"];
             sourceOrigin: string | null;
             entryPageUrl?: string | null;
             /** @description Client-claimed referrer of the host page. Dashboard-only, like entryPageUrl. */
@@ -7737,6 +7744,7 @@ export interface components {
             agentId: string | null;
             agentName?: string | null;
             sourceChannel: string | null;
+            callerKind: components["schemas"]["CallerKind"];
             sourceOrigin: string | null;
             /** @description See ChatConversationSummary.title. */
             title: string | null;

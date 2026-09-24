@@ -1,6 +1,6 @@
 import { notFound } from "../../../shared/domain/errors.js";
 import { decodeCursorWithKeys } from "../../../shared/domain/cursorPagination.js";
-import type { ConversationSourceScope } from "../../../shared/domain/conversationSource.js";
+import type { CallerKind, ConversationSourceScope } from "../../../shared/domain/conversationSource.js";
 import type { ConversationOutcomeFilter } from "../../../shared/domain/conversationOutcome.js";
 import type { ConversationTurnStage } from "../contracts/interruption.js";
 import type { ConversationOwnershipScope } from "../../handoff/public.js";
@@ -131,6 +131,8 @@ export interface ChatConversationSummary {
   agentName: string | null;
   agentInternalName: string | null;
   sourceChannel: string | null;
+  /** Whether a person or a calling agent is on the other side (spec 1290, FR-051). */
+  callerKind: CallerKind;
   sourceOrigin: string | null;
   channelContext: ConversationChannelContext | null;
   anonymousSessionId: string | null;
@@ -255,6 +257,8 @@ export interface ChatConversationDetail {
   agentName: string | null;
   agentInternalName?: string | null;
   sourceChannel: string | null;
+  /** Whether a person or a calling agent is on the other side (spec 1290, FR-051). */
+  callerKind: CallerKind;
   sourceOrigin: string | null;
   channelContext: ConversationChannelContext | null;
   // Entry page provenance is dashboard-only; the public detail response omits it (and
@@ -1162,6 +1166,7 @@ export class ChatHistoryService {
           }
         : {}),
       sourceChannel: conversation.sourceChannel,
+      callerKind: conversation.callerKind,
       sourceOrigin: conversation.sourceOrigin,
       channelContext: conversation.channelContext,
       title: conversation.title,

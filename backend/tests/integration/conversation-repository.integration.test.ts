@@ -277,4 +277,37 @@ describeIntegration("ConversationRepository (Postgres)", () => {
     expect(excluded.total).toBe(1);
     expect(excluded.conversations.map((c) => c.id)).toEqual([first.id]);
   });
+
+  it("stamps caller kind from the channel on every creation path, and never lets a caller set it", async () => {
+    // FR-050 / FR-031: the MCP converse door and the REST agent channel carry a calling agent;
+    // everything else carries a person. All three inserts go through the same derivation, so a
+    // walk-in conversation is marked without its caller saying anything.
+    const walkIn = await repository.getOrCreateByAnonymousSession({
+      workspaceId, agentId, sourceChannel: "mcp", anonymousSessionId: `anon-${randomUUID()}`,
+    });
+    expect(walkIn.record.callerKind).toBe("agent");
+
+    const restAgent = await repository.create({ workspaceId, agentId, sourceChannel: "agent_api" });
+    expect(restAgent.callerKind).toBe("agent");
+
+    const embed = await repository.create({ workspaceId, agentId, sourceChannel: "website_embed" });
+    expect(embed.callerKind).toBe("human");
+
+    // A conversation with no channel at all is a person, not an unknown.
+    const unchannelled = await repository.create({ workspaceId, agentId });
+    expect(unchannelled.callerKind).toBe("human");
+
+    // Read the column directly: the mapper re-derives from `source_channel`, so only raw SQL
+    // distinguishes a value that was written from one that was inferred on the way out.
+    const stored = await database.queryOne<{ caller_kind: string }>(
+      "SELECT caller_kind FROM conversations WHERE id = $1",
+      [restAgent.id],
+    );
+    expect(stored.caller_kind).toBe("agent");
+    const storedEmbed = await database.queryOne<{ caller_kind: string }>(
+      "SELECT caller_kind FROM conversations WHERE id = $1",
+      [embed.id],
+    );
+    expect(storedEmbed.caller_kind).toBe("human");
+  });
 });

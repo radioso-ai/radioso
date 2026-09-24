@@ -2073,6 +2073,7 @@ CREATE TABLE public.conversations (
     visitor_id uuid,
     request_context jsonb,
     entry_referrer text,
+    caller_kind text DEFAULT 'human'::text NOT NULL,
     CONSTRAINT conversations_purpose_check CHECK ((purpose = ANY (ARRAY['production'::text, 'operator_test'::text])))
 );
 
@@ -6658,6 +6659,13 @@ CREATE INDEX clarification_states_pending_idx ON public.clarification_states USI
 --
 
 CREATE INDEX conversation_ownership_workspace_idx ON public.conversation_ownership USING btree (workspace_id);
+
+
+--
+-- Name: conversations_workspace_agent_caller_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX conversations_workspace_agent_caller_idx ON public.conversations USING btree (workspace_id, created_at DESC) WHERE (caller_kind = 'agent'::text);
 
 
 --

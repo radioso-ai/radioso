@@ -7,6 +7,7 @@ import type { ConversationChannelContext } from "@radioso/conversation-contract"
 import {
   OPERATOR_TEST_SOURCE_CHANNELS,
   WORKBENCH_TEST_SOURCE_CHANNELS,
+  callerKindForSourceChannel,
   type ConversationSourceScope,
 } from "../../shared/domain/conversationSource.js";
 import {
@@ -282,6 +283,7 @@ export class HistoryItemsRepository implements HistoryItemsRepositoryPort {
             agentName: row.conversation_agent_name ?? null,
             agentInternalName: normalizeNullableText(row.conversation_agent_internal_name),
             sourceChannel: row.source_channel,
+            callerKind: callerKindForSourceChannel(row.source_channel),
             sourceOrigin: row.source_origin,
             channelContext: (row.channel_context) ?? null,
             anonymousSessionId: row.anonymous_session_id,

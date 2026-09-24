@@ -8493,6 +8493,12 @@ components:
         - agentScope
         - answer
         - validation
+    CallerKind:
+      type: string
+      enum:
+        - human
+        - agent
+      description: Whether a person or a calling agent is on the other side of the conversation.
     SkillAvailability:
       type: object
       properties:
@@ -9778,6 +9784,8 @@ components:
           type:
             - string
             - "null"
+        callerKind:
+          $ref: "#/components/schemas/CallerKind"
         sourceOrigin:
           type:
             - string
@@ -9832,6 +9840,7 @@ components:
         - agentName
         - agentInternalName
         - sourceChannel
+        - callerKind
         - sourceOrigin
         - channelContext
         - anonymousSessionId
@@ -10537,6 +10546,8 @@ components:
           type:
             - string
             - "null"
+        callerKind:
+          $ref: "#/components/schemas/CallerKind"
         sourceOrigin:
           type:
             - string
@@ -10617,6 +10628,7 @@ components:
         - workspaceId
         - agentId
         - sourceChannel
+        - callerKind
         - sourceOrigin
         - title
         - channelContext
@@ -10684,6 +10696,8 @@ components:
           type:
             - string
             - "null"
+        callerKind:
+          $ref: "#/components/schemas/CallerKind"
         sourceOrigin:
           type:
             - string
@@ -10742,6 +10756,7 @@ components:
         - workspaceId
         - agentId
         - sourceChannel
+        - callerKind
         - sourceOrigin
         - title
         - channelContext

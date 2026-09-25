@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { AppError } from "../../../src/shared/domain/errors.js";
 import { createReviewedProposalExecutionTool, type ReviewedProposalExecutionPort } from "../../../src/modules/operatorCopilot/tools/reviewedProposalExecution.js";
 import { createCancelReviewedProposalTool } from "../../../src/modules/operatorCopilot/tools/cancelReviewedProposal.js";
+import { REVIEWED_OPERATION_NOT_CANCELLABLE, REVIEWED_OPERATION_NOT_FOUND } from "../../../src/modules/operatorCopilot/reviewedOperation.js";
 
 describe("reviewed proposal execution tool", () => {
   it("binds the MCP execution receipt, grant, and client to the reviewed apply", async () => {
@@ -156,6 +158,78 @@ describe("reviewed proposal execution tool", () => {
       staleBefore: new Date(), now: new Date(),
     })).resolves.toEqual({ status: "conflict" });
     expect(cancelMcpReviewedProposal).not.toHaveBeenCalled();
+  });
+
+  it("rejects cancelling an id with no reviewed operation bound to this grant and client as a correctable not-found, not an outage", async () => {
+    const cancelMcpReviewedProposal = vi.fn(async () => ({ status: "not_found" as const }));
+    const descriptor = createCancelReviewedProposalTool({ cancelMcpReviewedProposal });
+    const tool = descriptor.createTool({
+      workspaceId: "workspace-1", accountId: "account-1", operatorUserId: "user-1", surface: "mcp",
+      operatorMcpGrantId: "grant-1", operatorMcpClientId: "client-1", currentAuthorization: { hasAllPermissions: vi.fn() },
+      pageContext: { view: null, agentId: null, conversationId: null, selection: null, entities: [] },
+    });
+
+    const rejection = await tool.invoke({ proposalId: "11111111-1111-4111-8111-111111111111" }, {} as never).then(() => null, (error: unknown) => error);
+
+    expect(rejection).toBeInstanceOf(AppError);
+    expect((rejection as AppError).statusCode).toBe(404);
+    expect((rejection as AppError).message).toBe(REVIEWED_OPERATION_NOT_FOUND);
+  });
+
+  it("rejects reconciling a cancellation with no bound reviewed operation as a correctable not-found, not an outage", async () => {
+    const cancelMcpReviewedProposal = vi.fn(async () => ({ status: "not_found" as const }));
+    const descriptor = createCancelReviewedProposalTool({ cancelMcpReviewedProposal });
+
+    const rejection = await descriptor.reconcileMcpInvocation?.({
+      invocation: { id: "original-receipt" } as never,
+      arguments: { proposalId: "11111111-1111-4111-8111-111111111111" },
+      context: {
+        workspaceId: "workspace-1", accountId: "account-1", operatorUserId: "user-1", surface: "mcp",
+        operatorMcpInvocationId: "fresh-retry", operatorMcpGrantId: "grant-1", operatorMcpClientId: "client-1",
+        currentAuthorization: { hasAllPermissions: vi.fn() }, pageContext: { view: null, agentId: null, conversationId: null, selection: null, entities: [] },
+      },
+      staleBefore: new Date(), now: new Date(),
+    }).then(() => null, (error: unknown) => error);
+
+    expect(rejection).toBeInstanceOf(AppError);
+    expect((rejection as AppError).statusCode).toBe(404);
+    expect((rejection as AppError).message).toBe(REVIEWED_OPERATION_NOT_FOUND);
+  });
+
+  it("rejects cancelling a non-pending reviewed operation as a correctable refusal, not an outage", async () => {
+    const cancelMcpReviewedProposal = vi.fn(async () => ({ status: "not_cancellable" as const }));
+    const descriptor = createCancelReviewedProposalTool({ cancelMcpReviewedProposal });
+    const tool = descriptor.createTool({
+      workspaceId: "workspace-1", accountId: "account-1", operatorUserId: "user-1", surface: "mcp",
+      operatorMcpGrantId: "grant-1", operatorMcpClientId: "client-1", currentAuthorization: { hasAllPermissions: vi.fn() },
+      pageContext: { view: null, agentId: null, conversationId: null, selection: null, entities: [] },
+    });
+
+    const rejection = await tool.invoke({ proposalId: "11111111-1111-4111-8111-111111111111" }, {} as never).then(() => null, (error: unknown) => error);
+
+    expect(rejection).toBeInstanceOf(AppError);
+    expect((rejection as AppError).statusCode).toBe(400);
+    expect((rejection as AppError).message).toBe(REVIEWED_OPERATION_NOT_CANCELLABLE);
+  });
+
+  it("rejects reconciling a cancellation of a non-pending reviewed operation as a correctable refusal, not an outage", async () => {
+    const cancelMcpReviewedProposal = vi.fn(async () => ({ status: "not_cancellable" as const }));
+    const descriptor = createCancelReviewedProposalTool({ cancelMcpReviewedProposal });
+
+    const rejection = await descriptor.reconcileMcpInvocation?.({
+      invocation: { id: "original-receipt" } as never,
+      arguments: { proposalId: "11111111-1111-4111-8111-111111111111" },
+      context: {
+        workspaceId: "workspace-1", accountId: "account-1", operatorUserId: "user-1", surface: "mcp",
+        operatorMcpInvocationId: "fresh-retry", operatorMcpGrantId: "grant-1", operatorMcpClientId: "client-1",
+        currentAuthorization: { hasAllPermissions: vi.fn() }, pageContext: { view: null, agentId: null, conversationId: null, selection: null, entities: [] },
+      },
+      staleBefore: new Date(), now: new Date(),
+    }).then(() => null, (error: unknown) => error);
+
+    expect(rejection).toBeInstanceOf(AppError);
+    expect((rejection as AppError).statusCode).toBe(400);
+    expect((rejection as AppError).message).toBe(REVIEWED_OPERATION_NOT_CANCELLABLE);
   });
 
   it("refuses a non-MCP invocation instead of accepting an unbound execution", async () => {

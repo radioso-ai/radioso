@@ -101,8 +101,11 @@ class MemoryRepository implements TestExecutionRepositoryPort {
     });
     return { claims };
   }
+  /** A newer attempt's fence won: the store keeps this attempt's result out and records nothing for it. */
+  completeStale = false;
   async complete(input: Parameters<TestExecutionRepositoryPort["complete"]>[0]) {
     this.completeCalls += 1;
+    if (this.completeStale) return "stale" as const;
     const side = this.execution!.sides.find((item) => item.id === input.sideId)!;
     side.state = "completed"; side.retryable = false; side.continuation = input.result.continuation;
     (side.history as Array<unknown>).push({ turnId: input.turnId, attemptId: input.attemptId, role: "assistant", content: input.result.answer, messageId: input.result.messageId, createdAt: input.now });
@@ -584,6 +587,50 @@ describe("TestExecutionService turn reads", () => {
       nextCursor: "cursor-2",
       hasMore: true,
     });
+  });
+});
+
+describe("TestExecutionService send", () => {
+  const scope = { workspaceId, agentId, accountId: null };
+  const running = (executionId: string, sideId: string): TestExecutionAttemptRecord => ({
+    executionId, sideId, turnId: "turn-1", attemptId: "attempt-other", fence: 2, state: "running", failureCode: null, leaseExpiresAt: new Date(10_000), createdAt: new Date(0), updatedAt: new Date(0),
+  });
+  const started = async (context: ReturnType<typeof setup>) => {
+    const execution = await context.service.start({ ...scope, idempotencyKey: "idem-send", mode: "single", revisionIds: [ids[0]], testValues: [] });
+    return { execution, send: { ...scope, executionId: execution.id, message: "hello", generation: 1, turnId: "turn-1", attemptId: "attempt-1" } };
+  };
+
+  it("returns the stored turn when this attempt completes", async () => {
+    const context = setup();
+    const { execution, send } = await started(context);
+
+    await expect(context.service.send(send)).resolves.toEqual({
+      executionId: execution.id,
+      side: { id: execution.sides[0].id, revision: execution.sides[0].revision, state: "completed" },
+      turn: { turnId: "turn-1", userMessage: "hello", answer: { messageId: ids[6], content: "answer" }, state: "completed", failureCode: null, createdAt: new Date(1000), turnTrace: undefined },
+    });
+  });
+
+  it("reports a stale attempt as failed with its code, though the store still shows another attempt running the turn", async () => {
+    const context = setup();
+    const { execution, send } = await started(context);
+    context.repository.completeStale = true;
+    context.repository.attempts = [running(execution.id, execution.sides[0].id)];
+
+    const { turn } = await context.service.send(send);
+
+    expect(turn).toMatchObject({ turnId: "turn-1", userMessage: "hello", state: "failed", failureCode: "stale_attempt", answer: null, turnTrace: undefined });
+    await expect(context.service.turn({ ...scope, executionId: execution.id, turnId: "turn-1" })).resolves.toMatchObject({ turn: { state: "running", failureCode: null } });
+  });
+
+  it("reports an attempt whose outcome could not be saved as failed with its code", async () => {
+    const context = setup(vi.fn(async (): Promise<TestExecutionRunnerResult> => { throw new Error("provider unavailable"); }));
+    const { send } = await started(context);
+    context.repository.failThrows = true;
+
+    const { turn } = await context.service.send(send);
+
+    expect(turn).toMatchObject({ turnId: "turn-1", state: "failed", failureCode: "persistence_failed", answer: null });
   });
 });
 

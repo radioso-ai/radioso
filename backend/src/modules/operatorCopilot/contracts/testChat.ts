@@ -109,7 +109,7 @@ export interface CopilotTestChatPort {
 }
 
 /** Test-execution's reads and the calls that drive one turn; the copilot makes exactly these. */
-export type CopilotTestChatExecutionPort = Pick<TestExecutionService, "summaries" | "transcript" | "turn" | "start" | "message">;
+export type CopilotTestChatExecutionPort = Pick<TestExecutionService, "summaries" | "transcript" | "turn" | "start" | "send">;
 
 export interface TestChatServiceDependencies extends CopilotExpensiveOperationGuardDependencies {
   readonly executions: CopilotTestChatExecutionPort;

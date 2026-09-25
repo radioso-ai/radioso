@@ -1,5 +1,5 @@
 import { notFound } from "../../shared/domain/errors.js";
-import type { TestExecution, TestExecutionAttemptRecord, TestExecutionHistoryEntry, TestExecutionSide } from "./testExecution.js";
+import type { TestExecution, TestExecutionAttemptRecord, TestExecutionEvent, TestExecutionHistoryEntry, TestExecutionSide } from "./testExecution.js";
 
 /**
  * One aligned turn on one side: the operator's message and the answer to it. A greeting is a turn
@@ -92,4 +92,18 @@ export const findTranscriptTurn = (transcript: TestExecutionTranscript, input: {
   const turn = side.turns.find((candidate) => candidate.turnId === input.turnId);
   if (!turn) throw notFound("Test execution turn is unavailable.");
   return { executionId: transcript.id, side: { id: side.id, revision: side.revision, state: side.state }, turn };
+};
+
+type SideSettledEvent = Extract<TestExecutionEvent, { type: "side_completed" | "side_failed" }>;
+
+/**
+ * This attempt's outcome on the side `read` names. A completed attempt is the stored turn. A failed
+ * one carries the event's code: a stale or unsaved attempt leaves no stored failure, and the store
+ * may still show the turn running under another attempt.
+ */
+export const settleSentTurn = (read: TestExecutionTurnRead, events: readonly TestExecutionEvent[]): TestExecutionTurnRead => {
+  const settled = events.find((event): event is SideSettledEvent => (event.type === "side_completed" || event.type === "side_failed") && event.sideId === read.side.id);
+  if (!settled) throw new Error("Test execution turn settled without an outcome");
+  if (settled.type === "side_completed") return read;
+  return { ...read, turn: { ...read.turn, state: "failed", failureCode: settled.code, answer: null, turnTrace: undefined } };
 };

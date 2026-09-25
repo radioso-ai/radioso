@@ -14,7 +14,7 @@ import {
   type FrozenTestValue,
   type TestValue,
 } from "../context-variables/public.js";
-import { findTranscriptTurn, readTranscript, type TestExecutionTranscript, type TestExecutionTurnRead } from "./testExecutionTurns.js";
+import { findTranscriptTurn, readTranscript, settleSentTurn, type TestExecutionTranscript, type TestExecutionTurnRead } from "./testExecutionTurns.js";
 
 // An attempt's lease must outlast the slowest legitimate turn, or a concurrent detail read
 // marks a still-running attempt lease_expired and its result is discarded — and Retry then
@@ -390,7 +390,7 @@ export class TestExecutionService {
     return readTranscript(await this.detail({ workspaceId: input.workspaceId, agentId: input.agentId, executionId: input.executionId }));
   }
 
-  /** One turn on one side, the first side unless one is named; after `message` it is the settled turn. */
+  /** One turn on one side, the first side unless one is named, as the store holds it. */
   async turn(input: { workspaceId: string; agentId: string; executionId: string; turnId: string; sideId?: string }): Promise<TestExecutionTurnRead> {
     return findTranscriptTurn(await this.transcript(input), input);
   }
@@ -436,6 +436,12 @@ export class TestExecutionService {
     const events: TestExecutionEvent[] = [];
     for await (const event of this.streamMessage(input)) events.push(event);
     return events;
+  }
+
+  /** One turn without the stream: the settled outcome of this call's own attempt, on the first side. */
+  async send(input: TestExecutionMessageInput): Promise<TestExecutionTurnRead> {
+    const events = await this.message(input);
+    return settleSentTurn(await this.turn({ workspaceId: input.workspaceId, agentId: input.agentId, executionId: input.executionId, turnId: input.turnId }), events);
   }
 
   async *streamMessage(input: TestExecutionMessageInput): AsyncGenerator<TestExecutionEvent> {

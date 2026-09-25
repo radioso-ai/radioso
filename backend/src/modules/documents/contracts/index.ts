@@ -1,5 +1,7 @@
 import type { DocumentSourceResolverInput, IndexedFieldValue } from "./documentContracts.js";
 
+export { documentInventoryStatuses } from "./documentContracts.js";
+
 export type {
   ChunkDetail,
   ChunkMetadataRevisionPatch,
@@ -11,6 +13,7 @@ export type {
   DocumentDerivedContentUpdateInput,
   DocumentEnrichmentMetadataUpdateInput,
   DocumentInventoryListInput,
+  DocumentInventoryStatus,
   DocumentInventoryPort,
   DocumentRetrievalSettingsInput,
   DocumentQueueUpdateInput,

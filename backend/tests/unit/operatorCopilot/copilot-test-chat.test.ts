@@ -386,6 +386,14 @@ describe("Test Chat tools through the operator MCP catalog", () => {
     expect(output.turn).toMatchObject({ outcome: "failed", failureCode: "runner_failed", answer: null, messageId: null, stages: [] });
   });
 
+  it("carries a send whose attempt went stale to the MCP output with its failure code", async () => {
+    const { service } = serviceHarness({ settled: { answer: null, state: "failed", failureCode: "stale_attempt", turnTrace: undefined } });
+
+    const output = await overMcp(service, "send_test_chat_message", { message: "hi" });
+
+    expect(output.turn).toMatchObject({ outcome: "failed", failureCode: "stale_attempt", answer: null, messageId: null, stages: [] });
+  });
+
   it("returns a schema-valid full trace for an answered turn", async () => {
     const output = await overMcp(port(), "test_chat_turn_trace", { testExecutionId: EXECUTION_ID, turnId: TURN_ID });
 
@@ -452,15 +460,15 @@ const serviceHarness = (options: {
     }),
     turn: vi.fn(async (input: { turnId: string }) => {
       calls.push("turn");
-      return { executionId: EXECUTION_ID, side: { id: SIDE_ID, revision: revision(), state: "completed" }, turn: ownerTurn({ turnId: input.turnId, ...options.settled }) };
+      return { executionId: EXECUTION_ID, side: { id: SIDE_ID, revision: revision(), state: "completed" }, turn: ownerTurn({ turnId: input.turnId }) };
     }),
     start: vi.fn(async () => {
       calls.push("start");
       return { id: EXECUTION_ID, generation: 1 };
     }),
-    message: vi.fn(async () => {
-      calls.push("message");
-      return [];
+    send: vi.fn(async (input: { turnId: string }) => {
+      calls.push("send");
+      return { executionId: EXECUTION_ID, side: { id: SIDE_ID, revision: revision(), state: "completed" }, turn: ownerTurn({ turnId: input.turnId, ...options.settled }) };
     }),
   } as unknown as CopilotTestChatExecutionPort;
   const abuseControl = {
@@ -531,9 +539,8 @@ describe("TestChatService", () => {
     const result = await service.sendMessage({ ...sender, message: "  Can I book a demo?  " });
 
     expect(executions.start).toHaveBeenCalledWith({ ...scope, accountId: "account-1", mode: "single", testValues: [], idempotencyKey: expect.any(String), skillEffects: "suppressed" });
-    expect(executions.message).toHaveBeenCalledWith({ ...scope, accountId: "account-1", executionId: EXECUTION_ID, message: "Can I book a demo?", generation: 1, turnId: result.turnId, attemptId: expect.any(String) });
-    expect(executions.turn).toHaveBeenCalledWith({ ...scope, executionId: EXECUTION_ID, turnId: result.turnId });
-    expect(calls).toEqual(["guard", "start", "message", "turn"]);
+    expect(executions.send).toHaveBeenCalledWith({ ...scope, accountId: "account-1", executionId: EXECUTION_ID, message: "Can I book a demo?", generation: 1, turnId: result.turnId, attemptId: expect.any(String) });
+    expect(calls).toEqual(["guard", "start", "send"]);
     expect(result).toEqual({
       testExecutionId: EXECUTION_ID,
       started: true,
@@ -562,8 +569,8 @@ describe("TestChatService", () => {
     const result = await service.sendMessage({ ...sender, message: "and on Friday?", testExecutionId: EXECUTION_ID });
 
     expect(executions.start).not.toHaveBeenCalled();
-    expect(executions.message).toHaveBeenCalledWith(expect.objectContaining({ executionId: EXECUTION_ID, generation: 2 }));
-    expect(calls).toEqual(["transcript", "guard", "message", "turn"]);
+    expect(executions.send).toHaveBeenCalledWith(expect.objectContaining({ executionId: EXECUTION_ID, generation: 2 }));
+    expect(calls).toEqual(["transcript", "guard", "send"]);
     expect(result.started).toBe(false);
   });
 
@@ -574,7 +581,7 @@ describe("TestChatService", () => {
       await expect(service.sendMessage({ ...sender, message: "hi", testExecutionId: EXECUTION_ID }))
         .rejects.toMatchObject({ statusCode: 400 });
       expect(abuseControl.enforce).not.toHaveBeenCalled();
-      expect(executions.message).not.toHaveBeenCalled();
+      expect(executions.send).not.toHaveBeenCalled();
     }
   });
 

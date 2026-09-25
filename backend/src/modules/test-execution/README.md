@@ -26,8 +26,12 @@ conversation ids, continuations, or turn traces.
 `testExecutionTurns.ts` is the turn read model. It pairs each user message with
 its answer, keeps a greeting as a turn with no user message, and takes an
 unanswered turn's state and failure code from its highest-fenced attempt.
-`TestExecutionService.transcript` reads an execution as those turns per side;
-`turn` reads one of them, and right after `message` that is the settled turn.
+`TestExecutionService.transcript` reads an execution as those turns per side,
+and `turn` reads one of them. `send` runs one turn without the stream and
+returns the settled outcome of its own attempt. When that attempt went stale or
+its outcome could not be saved, the turn reads `failed` with the event's code
+(`stale_attempt`, `persistence_failed`), even though the store may still show
+another attempt running it.
 `summaries` returns a list page with each execution's turn count and opening
 message, computed by one repository projection over the first side's history.
 These reads leave out continuations, conversation ids, and frozen sample values.
@@ -40,7 +44,7 @@ is a separate port from the revision reader because choosing can freeze a
 candidate, which is a write.
 
 Operator Copilot reads and drives Test Chat through `summaries`, `transcript`,
-`turn`, `start`, and `message`, from `operatorCopilot/services/testChatService.ts`,
+`turn`, `start`, and `send`, from `operatorCopilot/services/testChatService.ts`,
 which adds its spend guard, output bounds, and surface policy. This module knows
 nothing about the copilot.
 

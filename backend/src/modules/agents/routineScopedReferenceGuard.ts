@@ -1,3 +1,5 @@
+import { badRequest } from "../../shared/domain/errors.js";
+
 interface RoutineScopedReferenceInput {
   readonly workspaceId: string;
   readonly agentId: string;
@@ -21,7 +23,9 @@ export const createRoutineScopedReferenceGuard = (deps: {
     for (const stableStepId of input.removedNodeIds) {
       const tag = deps.buildStepScopeTag(input.routineId, stableStepId);
       if (tags.some((directiveTags) => directiveTags.includes(tag))) {
-        throw new Error(`A scoped directive still references removed routine step "${stableStepId}". Replace or remove that directive scope in the same authoring change.`);
+        // A validation refusal, not a conflict: the change as authored stays invalid until the
+        // directive scope is replaced, so callers must not treat it as a stale read.
+        throw badRequest(`A scoped directive still references removed routine step "${stableStepId}". Replace or remove that directive scope in the same authoring change.`);
       }
     }
   },

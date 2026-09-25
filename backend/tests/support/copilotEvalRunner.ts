@@ -543,6 +543,7 @@ callerKind: "human" as const,
         payload: { intent },
         targetLabel: "Support",
         summary: `Draft ${targetType}: ${intent.slice(0, 60)}`,
+        versionToken: "v1",
         diagnostics: [],
         };
       },

@@ -53,7 +53,8 @@ export {
 export {
   DirectiveAuthorService,
   directiveAuthorDraftInputSchema,
-  directiveAuthorStructuredFieldsSchema,
+  directiveAuthorProposalInputSchema,
+  projectDirectiveAuthorProposalInput,
 } from "./services/directiveAuthorService.js";
 export {
   steeringDirectivesFromAuthored,

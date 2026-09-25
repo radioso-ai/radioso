@@ -24,7 +24,7 @@ export interface DirectiveAuthorTextGenerationPort {
 
 type DirectiveAuthorAgentContext = Pick<
   AgentRecord,
-  "id" | "name" | "customInstruction" | "greetingInstruction"
+  "id" | "name" | "customInstruction" | "greetingInstruction" | "updatedAt"
 >;
 
 const directiveAuthorTurnSchema = z.object({
@@ -34,13 +34,23 @@ const directiveAuthorTurnSchema = z.object({
   activeStepId: z.string().trim().min(1).max(200).optional(),
 }).strict();
 
-export const directiveAuthorStructuredFieldsSchema = authoredDirectiveInputSchema.pick({
+const MAX_DIRECTIVE_REPLACEMENTS = 100;
+
+const directiveAuthorStructuredFieldsSchema = authoredDirectiveInputSchema.pick({
   name: true,
   condition: true,
   action: true,
   priority: true,
   excludes: true,
+}).extend({
+  excludes: z.array(z.string().trim().min(1).max(200)).max(MAX_DIRECTIVE_REPLACEMENTS).optional(),
 }).partial().strict();
+
+/** Flat operator-facing fields; projection into the authoring command stays in this owner. */
+export const directiveAuthorProposalInputSchema = z.object({
+  intent: z.string().trim().min(1).max(20_000).optional(),
+  ...directiveAuthorStructuredFieldsSchema.shape,
+});
 
 export const directiveAuthorDraftInputSchema = z.object({
   coachingText: z.string().trim().min(1).max(20_000).optional(),
@@ -136,6 +146,18 @@ const hasRequiredDirectiveFields = (
   action: string;
 } => fields.name !== undefined && fields.condition !== undefined && fields.action !== undefined;
 
+/**
+ * The copilot descriptor adds transport-only fields such as agentId and evidenceIds. This owner
+ * projection deliberately strips those fields in one place before authoring starts.
+ */
+export const projectDirectiveAuthorProposalInput = (raw: unknown): Omit<DirectiveAuthorDraftInput, "directiveId"> => {
+  const { intent, ...fields } = directiveAuthorProposalInputSchema.parse(raw);
+  return {
+    ...(intent ? { coachingText: intent, turn: { userMessage: intent, assistantAnswer: intent } } : {}),
+    fields,
+  };
+};
+
 export class DirectiveAuthorService {
   constructor(private readonly options: DirectiveAuthorServiceOptions) {}
 
@@ -144,6 +166,27 @@ export class DirectiveAuthorService {
     agentId: string,
     input: DirectiveAuthorDraftInput,
   ): Promise<DirectiveAuthorDraftResult> {
+    return (await this.draftWithFence(workspaceId, agentId, input)).draft;
+  }
+
+  /**
+   * Produces a proposal draft and its optimistic fence from the same owner snapshots. An edit's
+   * full payload is expanded from the directive row whose updatedAt supplies the fence; a create
+   * uses the agent row read before drafting. Consumers must persist this fence unchanged.
+   */
+  async draftForProposal(
+    workspaceId: string,
+    agentId: string,
+    input: DirectiveAuthorDraftInput,
+  ): Promise<{ draft: DirectiveAuthorDraftResult; versionToken: string }> {
+    return this.draftWithFence(workspaceId, agentId, input);
+  }
+
+  private async draftWithFence(
+    workspaceId: string,
+    agentId: string,
+    input: DirectiveAuthorDraftInput,
+  ): Promise<{ draft: DirectiveAuthorDraftResult; versionToken: string }> {
     const parsedInput = directiveAuthorDraftInputSchema.parse(input);
     const agent = await this.requireAgent(workspaceId, agentId);
     const existingDirectives = await this.options.repository.listDirectives(agentId, workspaceId);
@@ -153,6 +196,7 @@ export class DirectiveAuthorService {
     if (parsedInput.directiveId && !existing) {
       throw notFound("Directive not found");
     }
+    const versionToken = (existing?.updatedAt ?? agent.updatedAt).toISOString();
     const existingFields = existing ? {
       name: existing.name,
       condition: existing.condition,
@@ -174,7 +218,7 @@ export class DirectiveAuthorService {
         diagnosis: "directive_recommended",
       }, parsedInput);
       this.validateReplacementNames(result.directive.excludes ?? [], existingDirectives);
-      return result;
+      return { draft: result, versionToken };
     }
     if (!parsedInput.coachingText || !parsedInput.turn) {
       throw badRequest(`A directive without intent needs ${missing.join(" and ")}.`);
@@ -193,7 +237,7 @@ export class DirectiveAuthorService {
     if (primaryDraft) {
       const result = this.finalizeDraft(primaryDraft, parsedInput, suppliedFields);
       this.validateReplacementNames(result.directive.excludes ?? [], existingDirectives);
-      return result;
+      return { draft: result, versionToken };
     }
 
     const retry = await this.callLlm({
@@ -207,7 +251,7 @@ export class DirectiveAuthorService {
     if (retryDraft) {
       const result = this.finalizeDraft(retryDraft, parsedInput, suppliedFields);
       this.validateReplacementNames(result.directive.excludes ?? [], existingDirectives);
-      return result;
+      return { draft: result, versionToken };
     }
 
     throw invalidDraftError();

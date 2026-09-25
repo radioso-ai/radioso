@@ -15,8 +15,9 @@ import {
   type AgentInput,
   type AuthoredDirective,
   type AuthoredDirectiveInput,
-  directiveAuthorStructuredFieldsSchema,
+  projectDirectiveAuthorProposalInput,
 } from "../agents/public.js";
+import { boundedSummary } from "./tools/shared.js";
 import { exactContentItemSchema, validateExactContentItem } from "../../shared/domain/exactContent.js";
 import {
   applyRoutineFieldPatch,
@@ -73,10 +74,6 @@ export interface AgentSkillMcpApplyPort {
 }
 
 const directiveTargetRefSchema = z.object({ agentId: z.string().uuid(), directiveId: z.string().uuid().nullable() }).strict();
-const directiveCopilotDraftInputSchema = z.object({
-  intent: z.string().trim().min(1).max(20_000).optional(),
-  ...directiveAuthorStructuredFieldsSchema.shape,
-}).strict();
 const settingTargetRefSchema = z.object({ agentId: z.string().uuid(), settingKey: z.string().min(1).max(200) }).strict();
 /**
  * An agent setting is addressed by one key, but `surfaceSettings` is a whole nested object holding
@@ -237,7 +234,7 @@ const contextVariableStoredPayloadSchema = z.object({
 /** Composition adapter: drafts through the existing coach and writes only through authored-directive management. */
 export const createDirectiveCopilotProposalAdapter = (deps: {
   readonly authoredDirectiveService: Pick<AuthoredDirectiveService, "list" | "create" | "update" | "delete">;
-  readonly directiveAuthorService: Pick<DirectiveAuthorService, "draft">;
+  readonly directiveAuthorService: Pick<DirectiveAuthorService, "draftForProposal">;
   readonly agentService: Pick<AgentService, "get">;
 }): CopilotDirectiveProposalAdapter => ({
   targetType: "directive",
@@ -310,23 +307,13 @@ export const createDirectiveCopilotProposalAdapter = (deps: {
   },
   async draft(workspaceId, rawTargetRef, rawInput) {
     const targetRef = directiveTargetRefSchema.parse(rawTargetRef);
-    const input = directiveCopilotDraftInputSchema.parse(rawInput);
-    const fields = Object.fromEntries(
-      ["name", "condition", "action", "priority", "excludes"]
-        .filter((field) => Object.hasOwn(input, field))
-        .map((field) => [field, input[field as keyof typeof input]]),
-    );
-    const draft = await deps.directiveAuthorService.draft(workspaceId, targetRef.agentId, {
-      ...(input.intent ? {
-        coachingText: input.intent,
-        turn: { userMessage: input.intent, assistantAnswer: input.intent },
-      } : {}),
+    const draft = await deps.directiveAuthorService.draftForProposal(workspaceId, targetRef.agentId, {
+      ...projectDirectiveAuthorProposalInput(rawInput),
       ...(targetRef.directiveId ? { directiveId: targetRef.directiveId } : {}),
-      fields,
     });
-    const directive = directivePayload(draft.directive);
-    const summary = describeDirectiveChange(directive, draft.rationale);
-    return { payload: { ...directive, rationale: summary }, targetLabel: directive.name, summary };
+    const directive = directivePayload(draft.draft.directive);
+    const summary = boundedSummary(describeDirectiveChange(directive, draft.draft.rationale));
+    return { payload: { ...directive, rationale: summary }, targetLabel: directive.name, summary, versionToken: draft.versionToken };
   },
 });
 

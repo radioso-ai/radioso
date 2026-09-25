@@ -5,6 +5,9 @@ import { ListToolsResultSchema } from "@modelcontextprotocol/sdk/types.js";
 import { OPERATOR_MCP_SCOPES } from "@radioso/operator-mcp-contract";
 
 import { OperatorMcpCatalogService } from "../../../src/modules/operatorCopilot/mcpCatalog.js";
+import { operatorMcpDispositions } from "../../../src/modules/operatorCopilot/operatorMcpDisposition.js";
+import { createDirectiveCopilotProposalAdapter } from "../../../src/modules/operatorCopilot/proposalAdapters.js";
+import { createDirectiveProposalCopilotTools } from "../../../src/modules/operatorCopilot/tools/directives.js";
 import { realCatalog } from "./realCatalogTestSupport.js";
 import type { CopilotToolDescriptor, CopilotToolInvocationContext } from "../../../src/modules/operatorCopilot/public.js";
 
@@ -81,6 +84,69 @@ describe("OperatorMcpCatalogService", () => {
     await expect(service.invoke({ name: "workspace_settings", arguments: { key: "safe" }, context, scopes: new Set(["operator:read"]), signal: AbortSignal.timeout(1000) })).resolves.toEqual({ value: "safe" });
     expect(currentAuthorization.hasAllPermissions).toHaveBeenCalledTimes(2);
     await expect(service.invoke({ name: "workspace_settings", arguments: { wrong: true }, context, scopes: new Set(["operator:read"]), signal: AbortSignal.timeout(1000) })).rejects.toMatchObject({ code: "invalid_arguments" });
+  });
+
+  it("enforces propose_directive fields and bounded summaries through the MCP catalog", async () => {
+    const agentId = "11111111-1111-4111-8111-111111111111";
+    const excludes = Array.from({ length: 100 }, (_, index) => `replaced-${index}-${"x".repeat(180)}`);
+    const draftForProposal = vi.fn(async () => ({
+      draft: {
+        directive: {
+          name: "quote-primary-source",
+          condition: { kind: "always" as const },
+          action: "Quote the governing source before explaining it.",
+          priority: 85,
+          excludes,
+          tags: [],
+          surfaces: [],
+        },
+        diagnosis: "directive_recommended" as const,
+      },
+      versionToken: "2026-09-26T11:00:00.000Z",
+    }));
+    const createProposal = vi.fn(async () => ({ id: "22222222-2222-4222-8222-222222222222" }));
+    const adapter = createDirectiveCopilotProposalAdapter({
+      directiveAuthorService: { draftForProposal },
+      authoredDirectiveService: {} as never,
+      agentService: {} as never,
+    });
+    const [directive] = createDirectiveProposalCopilotTools({
+      proposalRepository: { createProposal } as never,
+      proposalEvidence: { evidence: { findMany: vi.fn() }, agentVersion: { get: vi.fn() } } as never,
+      proposalRecovery: { recoverOperatorMcpProposal: vi.fn() },
+      proposalAdapters: [adapter],
+      auditService: { record: vi.fn(async () => undefined) },
+    });
+    const service = new OperatorMcpCatalogService([{
+      ...directive,
+      mcpDisposition: operatorMcpDispositions.propose_directive,
+    }]);
+    const invoke = (arguments_: unknown) => service.invoke({
+      name: "propose_directive",
+      arguments: arguments_,
+      context,
+      scopes: new Set(["operator:propose"]),
+      signal: AbortSignal.timeout(1_000),
+    });
+
+    const output = await invoke({
+      agentId,
+      name: "quote-primary-source",
+      condition: { kind: "always" },
+      action: "Quote the governing source before explaining it.",
+      priority: 85,
+      excludes,
+    });
+
+    expect(output).toMatchObject({ targetLabel: "quote-primary-source", summary: expect.any(String) });
+    expect((output as { summary: string }).summary).toHaveLength(2_000);
+    expect(createProposal).toHaveBeenCalledWith(expect.objectContaining({
+      versionToken: "2026-09-26T11:00:00.000Z",
+      payload: expect.objectContaining({ rationale: (output as { summary: string }).summary }),
+    }));
+    await expect(invoke({ agentId, name: "quote-primary-source", condition: { kind: "always" }, action: "Quote first.", priority: 101 }))
+      .rejects.toMatchObject({ code: "invalid_arguments" });
+    expect(draftForProposal).toHaveBeenCalledTimes(1);
   });
 });
 

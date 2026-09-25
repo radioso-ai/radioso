@@ -38,6 +38,7 @@ const createRepository = () => ({
     name: "Coachable assistant",
     customInstruction: "Help operators explain booking policies.",
     greetingInstruction: "Welcome visitors warmly.",
+    updatedAt: new Date("2026-09-26T10:00:00.000Z"),
   }),
   listDirectives: vi.fn().mockResolvedValue([]),
 });
@@ -188,6 +189,42 @@ describe("DirectiveAuthorService", () => {
       priority: 90,
       excludes: ["represent-organization"],
     });
+  });
+
+  it("returns an edit fence from the directive snapshot used to expand its payload", async () => {
+    const textGenerationClient = new FakeTextClient([]);
+    const { service, repository } = createService(textGenerationClient);
+    const directiveUpdatedAt = new Date("2026-09-26T11:00:00.000Z");
+    repository.listDirectives.mockResolvedValue([{
+      id: "33333333-3333-4333-8333-333333333333",
+      agentId,
+      name: "existing-rule",
+      condition: { kind: "always" },
+      action: "Keep this action.",
+      priority: 40,
+      excludes: ["represent-organization"],
+      tags: [],
+      surfaces: [],
+      requiredCapabilities: [],
+      dependsOn: [],
+      routes: [],
+      description: null,
+      binding: null,
+      lifecycle: null,
+      enabled: true,
+      metadata: {},
+      createdAt: new Date(),
+      updatedAt: directiveUpdatedAt,
+    }]);
+
+    const result = await service.draftForProposal(workspaceId, agentId, {
+      directiveId: "33333333-3333-4333-8333-333333333333",
+      fields: { priority: 90 },
+    });
+
+    expect(result.versionToken).toBe(directiveUpdatedAt.toISOString());
+    expect(result.draft.directive).toMatchObject({ action: "Keep this action.", priority: 90 });
+    expect(textGenerationClient.calls).toEqual([]);
   });
 
   it("refuses an unknown replacement and lists bounded valid names", async () => {

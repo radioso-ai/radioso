@@ -146,7 +146,7 @@ export const proposalOutputSchema = z.object({
   proposalId: z.string().uuid(),
   targetType: z.enum(copilotProposalTargetTypes),
   targetLabel: z.string(),
-  summary: z.string(),
+  summary: z.string().min(1).max(MAX_COPILOT_PROPOSAL_SUMMARY),
   /** Absent when the change was proposed unmeasured, so silence never reads as verified. */
   evidence: z.object({
     total: z.number().int().nonnegative(),

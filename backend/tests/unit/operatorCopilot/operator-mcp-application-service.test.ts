@@ -2,13 +2,13 @@ import { z } from "zod";
 import { describe, expect, it, vi } from "vitest";
 import { digestOperatorMcpCall, OPERATOR_MCP_SCOPES, sha256Digest } from "@radioso/operator-mcp-contract";
 
-import { OperatorMcpApplicationService } from "../../../src/modules/operatorCopilot/mcpApplicationService.js";
+import { OperatorMcpApplicationError, OperatorMcpApplicationService } from "../../../src/modules/operatorCopilot/mcpApplicationService.js";
 import { OperatorMcpCatalogService } from "../../../src/modules/operatorCopilot/mcpCatalog.js";
 import { enrichCopilotToolCatalog } from "../../../src/modules/operatorCopilot/catalog.js";
 import { OperatorMcpAccessError, type OperatorMcpPrincipal } from "../../../src/modules/operatorMcpAuthorization/public.js";
 import type { CopilotToolDescriptor } from "../../../src/modules/operatorCopilot/public.js";
 import type { OperatorMcpInvocationRepositoryPort } from "../../../src/modules/operatorCopilot/mcpContracts.js";
-import { AppError, badRequest } from "../../../src/shared/domain/errors.js";
+import { AppError, badRequest, conflict, notFound, serviceUnavailable } from "../../../src/shared/domain/errors.js";
 import { OperatorCopilotService, type CopilotRepositoryPort } from "../../../src/modules/operatorCopilot/service.js";
 import { operatorMcpDispositions } from "../../../src/modules/operatorCopilot/operatorMcpDisposition.js";
 import { createCancelReviewedProposalTool } from "../../../src/modules/operatorCopilot/tools/cancelReviewedProposal.js";
@@ -340,6 +340,109 @@ describe("OperatorMcpApplicationService", () => {
     expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
       eventStatus: "failure",
       metadata: expect.objectContaining({ outcome: "refused", reason: "invalid_arguments" }),
+    }));
+  });
+
+  it("reports a descriptor's own not-found rejection as a clean invalid_arguments refusal, not an opaque dependency failure", async () => {
+    // An id that addresses nothing this credential can reach (e.g. a reviewed-operation id from
+    // another grant, or a propose_* proposal with no reviewed-operation binding at all) is the
+    // caller's mistake to correct, not a runtime outage.
+    const rejectingDescriptor: CopilotToolDescriptor = {
+      ...descriptor,
+      createTool: () => ({
+        name: "workspace_settings", description: "Read settings",
+        inputSchema: z.object({ section: z.string() }), outputSchema: z.object({ section: z.string() }),
+        invoke: vi.fn(async () => { throw notFound("No reviewed operation with this id is bound to this MCP connection."); }),
+      }),
+    };
+    const { service, invocations, audit } = build(rejectingDescriptor);
+    const argumentsValue = { section: "retrieval" };
+    const bodyDigest = callDigest(argumentsValue);
+    const admitted = await service.admit({ accessToken: "operator-access", invocationId: uuid("12"), method: "tools/call", descriptorName: rejectingDescriptor.name, resource: principal.resource, timestamp: "1788480000", nonce: "not-found", bodyDigest });
+
+    const rejection = await service.invoke({ proof: admitted.proof, name: rejectingDescriptor.name, arguments: argumentsValue, bodyDigest })
+      .then(() => null, (error: OperatorMcpApplicationError) => error);
+
+    expect(rejection).toMatchObject({ code: "invalid_arguments" });
+    expect(rejection?.details?.[0]).toBe("No reviewed operation with this id is bound to this MCP connection.");
+    expect(invocations.recordOutcome).toHaveBeenCalledWith(expect.objectContaining({ status: "refused", safeOutcomeCode: "invalid_arguments" }));
+    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
+      eventStatus: "failure",
+      metadata: expect.objectContaining({ outcome: "refused", reason: "invalid_arguments" }),
+    }));
+  });
+
+  it("reports a descriptor's own conflict rejection as a clean invalid_arguments refusal, not an opaque dependency failure", async () => {
+    // A naming collision with current workspace state (e.g. proposing a context variable whose
+    // name already exists) is the caller's mistake to correct, same as bad input or an unbound id.
+    const rejectingDescriptor: CopilotToolDescriptor = {
+      ...descriptor,
+      createTool: () => ({
+        name: "workspace_settings", description: "Read settings",
+        inputSchema: z.object({ section: z.string() }), outputSchema: z.object({ section: z.string() }),
+        invoke: vi.fn(async () => { throw conflict('A context variable named "region" already exists for this workspace'); }),
+      }),
+    };
+    const { service, invocations, audit } = build(rejectingDescriptor);
+    const argumentsValue = { section: "retrieval" };
+    const bodyDigest = callDigest(argumentsValue);
+    const admitted = await service.admit({ accessToken: "operator-access", invocationId: uuid("12"), method: "tools/call", descriptorName: rejectingDescriptor.name, resource: principal.resource, timestamp: "1788480000", nonce: "conflict", bodyDigest });
+
+    const rejection = await service.invoke({ proof: admitted.proof, name: rejectingDescriptor.name, arguments: argumentsValue, bodyDigest })
+      .then(() => null, (error: OperatorMcpApplicationError) => error);
+
+    expect(rejection).toMatchObject({ code: "invalid_arguments" });
+    expect(rejection?.details?.[0]).toBe('A context variable named "region" already exists for this workspace');
+    expect(invocations.recordOutcome).toHaveBeenCalledWith(expect.objectContaining({ status: "refused", safeOutcomeCode: "invalid_arguments" }));
+    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
+      eventStatus: "failure",
+      metadata: expect.objectContaining({ outcome: "refused", reason: "invalid_arguments" }),
+    }));
+  });
+
+  it("leaves an AppError outside the caller-rejection statuses unchanged", async () => {
+    const rejectingDescriptor: CopilotToolDescriptor = {
+      ...descriptor,
+      createTool: () => ({
+        name: "workspace_settings", description: "Read settings",
+        inputSchema: z.object({ section: z.string() }), outputSchema: z.object({ section: z.string() }),
+        invoke: vi.fn(async () => { throw serviceUnavailable("Upstream dependency is unavailable."); }),
+      }),
+    };
+    const { service, invocations, audit } = build(rejectingDescriptor);
+    const argumentsValue = { section: "retrieval" };
+    const bodyDigest = callDigest(argumentsValue);
+    const admitted = await service.admit({ accessToken: "operator-access", invocationId: uuid("12"), method: "tools/call", descriptorName: rejectingDescriptor.name, resource: principal.resource, timestamp: "1788480000", nonce: "service-unavailable", bodyDigest });
+
+    await expect(service.invoke({ proof: admitted.proof, name: rejectingDescriptor.name, arguments: argumentsValue, bodyDigest }))
+      .rejects.toThrow("Upstream dependency is unavailable.");
+    expect(invocations.recordOutcome).toHaveBeenCalledWith(expect.objectContaining({ status: "failed", safeOutcomeCode: "dependency_error" }));
+    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
+      eventStatus: "failure",
+      metadata: expect.objectContaining({ outcome: "failed", reason: "dependency_error" }),
+    }));
+  });
+
+  it("leaves a non-AppError dependency failure unchanged", async () => {
+    const rejectingDescriptor: CopilotToolDescriptor = {
+      ...descriptor,
+      createTool: () => ({
+        name: "workspace_settings", description: "Read settings",
+        inputSchema: z.object({ section: z.string() }), outputSchema: z.object({ section: z.string() }),
+        invoke: vi.fn(async () => { throw new Error("connection reset"); }),
+      }),
+    };
+    const { service, invocations, audit } = build(rejectingDescriptor);
+    const argumentsValue = { section: "retrieval" };
+    const bodyDigest = callDigest(argumentsValue);
+    const admitted = await service.admit({ accessToken: "operator-access", invocationId: uuid("12"), method: "tools/call", descriptorName: rejectingDescriptor.name, resource: principal.resource, timestamp: "1788480000", nonce: "dependency-error", bodyDigest });
+
+    await expect(service.invoke({ proof: admitted.proof, name: rejectingDescriptor.name, arguments: argumentsValue, bodyDigest }))
+      .rejects.toThrow("connection reset");
+    expect(invocations.recordOutcome).toHaveBeenCalledWith(expect.objectContaining({ status: "failed", safeOutcomeCode: "dependency_error" }));
+    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
+      eventStatus: "failure",
+      metadata: expect.objectContaining({ outcome: "failed", reason: "dependency_error" }),
     }));
   });
 

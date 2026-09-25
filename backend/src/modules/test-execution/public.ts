@@ -28,10 +28,13 @@ interface TestExecutionEvalSnapshotHistoryEntry {
 }
 
 export {
+  type TestExecution,
   type TestExecutionHistoryEntry,
+  type TestExecutionService,
   type TestExecutionSeed,
   type TestExecutionSeedMessage,
   type TestExecutionSeedSource,
   type TrustedTestExecutionRunnerPort,
 } from "./testExecution.js";
+export type { TestExecutionTranscriptSide, TestExecutionTurn } from "./testExecutionTurns.js";
 export type { FrozenTestValue } from "../context-variables/public.js";

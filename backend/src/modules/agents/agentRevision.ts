@@ -302,6 +302,19 @@ export class AgentRevisionService {
     if (candidate === "conflict") throw revisionConflict("Agent draft changed before the candidate was created.");
     return candidate;
   }
+  /**
+   * The revision a test runs when the operator names none: a fresh candidate of the saved draft,
+   * or the published revision when the draft holds exactly what is published. An agent that was
+   * never published has only its candidate to test. The generation lets the caller fence the test
+   * start against a draft edit made after the choice.
+   */
+  async resolveDefaultTestRevision(workspaceId: string, agentId: string): Promise<{ revisionId: string; expectedDraftGeneration: number }> {
+    const state = await this.state(workspaceId, agentId);
+    const expectedDraftGeneration = state.draft.generation;
+    if (state.status === "draft_clean" && state.publishedRevision) return { revisionId: state.publishedRevision.id, expectedDraftGeneration };
+    const candidate = await this.createCandidate(workspaceId, agentId, expectedDraftGeneration);
+    return { revisionId: candidate.id, expectedDraftGeneration };
+  }
   async list(workspaceId: string, agentId: string): Promise<AgentRevision[]> { await this.state(workspaceId, agentId); return this.repository.listRevisions(workspaceId, agentId); }
   async detail(workspaceId: string, agentId: string, revisionId: string): Promise<AgentRevision> {
     const revision = await this.repository.findRevision(workspaceId, agentId, revisionId);

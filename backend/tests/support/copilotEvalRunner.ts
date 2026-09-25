@@ -477,6 +477,12 @@ callerKind: "human" as const,
       getGeneralSettings: async () => ({}),
     },
     agentTurnProbe: { run: unusedPort("agentTurnProbe.run") },
+    testChat: {
+      listSessions: unusedPort("testChat.listSessions"),
+      readSession: unusedPort("testChat.readSession"),
+      readTurn: unusedPort("testChat.readTurn"),
+      sendMessage: unusedPort("testChat.sendMessage"),
+    },
     retrievalProbe: {
       probe: async ({ agentId }: { agentId: string }) => ({
         agentId,

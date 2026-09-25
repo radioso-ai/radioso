@@ -77,6 +77,7 @@ import {
   OperatorCopilotService,
   ReplyDraftProbeService,
   RetrievalProbeService,
+  TestChatService,
 } from "../../modules/operatorCopilot/public.js";
 import { AgenticCapabilityRunner, DefaultAgentRuntime } from "../../shared/agent-runtime/index.js";
 import { TtlRetentionWorker } from "../../shared/domain/ttlRetentionWorker.js";
@@ -364,22 +365,6 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     agentReader: { get: agentService.get.bind(agentService) },
     agentSkillsReader: { list: agentSkillsService.list.bind(agentSkillsService) },
   });
-  const testExecutionService = new TestExecutionService({
-    revisions: repositories.testExecutionRepository,
-    contextCatalog: contextVariableRepository,
-    repository: repositories.testExecutionRepository,
-    runner: new TrustedTestExecutionRunnerAdapter({
-      replay: chat.workbenchReplayRunner,
-      liveAgentConfig: createLiveAgentConfigReader({ agentRepository: repositories.agentRepository }),
-      revisions: repositories.testExecutionRepository,
-      bootstrap: chat.chatBootstrapService,
-    }),
-    seedSource: chat.testExecutionSeedSource,
-    usageLimitPolicy: infrastructure.usageLimitPolicy,
-    audit: infrastructure.auditService,
-    logger,
-    createId: randomUUID,
-  });
 
   // Lazy-loaded crawler utility provider for EE agent wizard, also reused by
   // the connector ingestion port for HTML-to-text normalisation.
@@ -424,6 +409,24 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     // this resolves the workspace-scoped skill/context-variable state once for the whole release
     // check instead of once per routine (item 8 of the routine-lifecycle-collapse review).
     validateManyForServing: routineDefinitionService.validateManyForServing.bind(routineDefinitionService),
+  });
+  const testExecutionService = new TestExecutionService({
+    revisions: repositories.testExecutionRepository,
+    // The agents module owns which revision a test runs when the caller names none.
+    defaultRevision: { resolveDefault: ({ workspaceId, agentId }) => agentRevisionService.resolveDefaultTestRevision(workspaceId, agentId) },
+    contextCatalog: contextVariableRepository,
+    repository: repositories.testExecutionRepository,
+    runner: new TrustedTestExecutionRunnerAdapter({
+      replay: chat.workbenchReplayRunner,
+      liveAgentConfig: createLiveAgentConfigReader({ agentRepository: repositories.agentRepository }),
+      revisions: repositories.testExecutionRepository,
+      bootstrap: chat.chatBootstrapService,
+    }),
+    seedSource: chat.testExecutionSeedSource,
+    usageLimitPolicy: infrastructure.usageLimitPolicy,
+    audit: infrastructure.auditService,
+    logger,
+    createId: randomUUID,
   });
   const evalServices = buildEvalServices({
     chat,
@@ -663,6 +666,16 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       },
     },
   });
+  const testChatService = new TestChatService({
+    executions: testExecutionService,
+    createId: randomUUID,
+    abuseControl: chat.abuseControlService,
+    audit: infrastructure.auditService,
+    abusePolicy: {
+      limit: env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_MAX_ATTEMPTS,
+      windowMs: env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_WINDOW_MS,
+    },
+  });
   const evalCaseCaptureService = new EvalCaseCaptureService({
     messageCases: evalMessageCaseService,
     audit: infrastructure.auditService,
@@ -770,6 +783,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     evalSuiteProbe: evalSuiteProbeService,
     evalCaseReplay: evalCaseReplayService,
     retrievalProbe: retrievalProbeService,
+    testChat: testChatService,
     websiteAnalysisProbe: websiteAnalysisProbeService,
     proposalEvidence: {
       evidence: copilotReplayEvidenceRepository,

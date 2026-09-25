@@ -61,7 +61,10 @@ describe("operator copilot catalog coverage", () => {
   //   105 -> 106 capturing an Eval snapshot from a private Test Chat response
   //   carries frozen revision and context-value evidence. It remains dashboard
   //   owned until Ray has a private-test evidence contract.
-  const maxDeferredCatalogExclusions = 106;
+  //   106 -> 102 test_chat_sessions, test_chat_transcript, and send_test_chat_message cover the
+  //   Test Chat list, detail, start, and send operations. Retry, side retention, and eval
+  //   snapshot capture stay deferred.
+  const maxDeferredCatalogExclusions = 102;
 
   it("keeps provider input-token caching outside Ray's operation catalog", () => {
     expect(internalRuntimeCoverageExclusions.providerInputTokenCaching).toMatchObject({

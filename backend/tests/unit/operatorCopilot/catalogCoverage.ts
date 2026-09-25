@@ -74,7 +74,7 @@ const agentRevisionLifecycle = deferred(
   "Deferred: agent revision state, candidate materialization, revision detail, and publication are dashboard lifecycle operations. Ray's current descriptors can propose scoped authoring changes, but they do not select immutable candidates, run candidate-pinned tests/evals, or publish a revision with the required concurrency and idempotency controls.",
 );
 const revisionTestingAndEval = deferred(
-  "Deferred: private candidate test and frozen eval operations require explicit revision selection, sample-value validation, retry identity, and evidence handling that current Copilot descriptors do not expose.",
+  "Deferred: retrying or retaining a Test Chat side, capturing Test Chat evidence, and frozen revision-eval runs require comparison handling, sample-value validation, retry identity, and evidence handling that current Copilot descriptors do not expose.",
 );
 const wave3KnowledgeBase = deferred("Deferred to Wave 3 knowledge base work: document source and crawl changes need their own bounded proposal flows.");
 // Ray reads documents as search snippets and paged chunks, both derived and partial. This
@@ -461,10 +461,12 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
   listAgentRevisions: agentRevisionLifecycle,
   getAgentRevision: agentRevisionLifecycle,
   publishAgentRevision: agentRevisionLifecycle,
-  listAgentTestExecutions: revisionTestingAndEval,
-  getAgentTestExecution: revisionTestingAndEval,
-  startAgentTestExecution: revisionTestingAndEval,
-  sendAgentTestExecutionMessage: revisionTestingAndEval,
+  // Test Chat's own reads and its single-revision start/send. What those tools leave out of the
+  // start body (comparison, sample values, seeding) is recorded field by field in fieldParity.ts.
+  listAgentTestExecutions: "test_chat_sessions",
+  getAgentTestExecution: "test_chat_transcript",
+  startAgentTestExecution: "send_test_chat_message",
+  sendAgentTestExecutionMessage: "send_test_chat_message",
   retainAgentTestExecutionSide: revisionTestingAndEval,
   captureAgentTestExecutionEvalSnapshot: revisionTestingAndEval,
   retryAgentTestExecutionSide: revisionTestingAndEval,

@@ -12,7 +12,8 @@ points are `app/http/routes/agentRevisionRoutes.ts`; persistence is in
 
 The agents module owns revision selection and fail-closed production resolution.
 Private Test Chat and revision evals consume its narrow ports; they never read
-the mutable draft directly. Writer modules continue to own their resource
+the mutable draft directly. `AgentRevisionService.resolveDefaultTestRevision`
+decides which revision a test runs when the operator names none. Writer modules continue to own their resource
 validation and use the shared draft-mutation boundary.
 
 Focused checks:

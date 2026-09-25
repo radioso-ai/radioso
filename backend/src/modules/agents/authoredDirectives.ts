@@ -161,6 +161,22 @@ export interface AuthoredDirective {
   updatedAt: Date;
 }
 
+/**
+ * Directive relationships are names rather than ids because they resolve against the merged
+ * built-in and authored steering catalog. Both draft-time and save-time owners use this one
+ * projection so a proposal cannot advertise a replacement that the persisted directive rejects.
+ */
+export const validateDirectiveReplacementNames = (
+  excludes: ReadonlyArray<string>,
+  existingDirectives: ReadonlyArray<Pick<AuthoredDirective, "name">>,
+): { readonly unknown: string[]; readonly validNames: string[] } => {
+  const validNames = [...new Set([
+    ...defaultAnswerDirectives.map((directive) => directive.name),
+    ...existingDirectives.map((directive) => directive.name),
+  ])];
+  return { unknown: excludes.filter((name) => !validNames.includes(name)), validNames };
+};
+
 interface AuthoredDirectiveCapabilityValidationOk {
   ok: true;
 }

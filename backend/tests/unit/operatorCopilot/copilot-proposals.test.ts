@@ -253,6 +253,40 @@ describe("US3 copilot proposals", () => {
     expect(createProposal.mock.calls[1]?.[0]).toMatchObject({ targetType: "agent_setting", targetRef: { agentId, settingKey: "retrievalEnabled" }, versionToken: "agent-version" });
   });
 
+  it("forwards structured directive fields unchanged to the owner adapter", async () => {
+    const draft = vi.fn(async () => ({
+      payload: { name: "quote-primary-source", condition: { kind: "always" }, action: "Quote first.", priority: 85, excludes: ["represent-organization"] },
+      targetLabel: "quote-primary-source",
+      summary: "quote-primary-source",
+    }));
+    const descriptors = createDirectiveProposalCopilotTools({
+      proposalRepository: { createProposal: vi.fn(async (input) => ({ id: randomUUID(), ...input, ...proposalOriginFields(input), messageId: null, status: "pending" as const, appliedRef: null, createdAt: new Date(), updatedAt: new Date() })) },
+      proposalEvidence: unmeasured(),
+      proposalRecovery: { recoverOperatorMcpProposal: vi.fn() },
+      proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(async () => "directive-version"), draft, preview: vi.fn(), applyIfVersionMatches: vi.fn() }],
+      auditService: auditService(),
+    });
+    const context = { workspaceId, accountId, operatorUserId, surface: "dashboard" as const, copilotConversationId: "conversation-1", currentAuthorization, pageContext: { view: "agent" as const, agentId, conversationId: null, selection: null, entities: [] } };
+    const fields = { name: "quote-primary-source", condition: { kind: "always" as const }, action: "Quote first.", priority: 85, excludes: ["represent-organization"] };
+
+    await descriptors.find((descriptor) => descriptor.name === "propose_directive")?.createTool(context).invoke(fields, {} as never);
+
+    expect(draft).toHaveBeenCalledWith(workspaceId, { agentId, directiveId: null }, fields);
+  });
+
+  it("bounds structured directive priority and replacement names in the input schema", () => {
+    const descriptor = createDirectiveProposalCopilotTools({
+      proposalRepository: { createProposal: vi.fn() },
+      proposalEvidence: unmeasured(),
+      proposalRecovery: { recoverOperatorMcpProposal: vi.fn() },
+      proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), draft: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn() }],
+      auditService: auditService(),
+    }).find((candidate) => candidate.name === "propose_directive")!;
+
+    expect(descriptor.inputSchema.safeParse({ name: "quote-primary-source", condition: { kind: "always" }, action: "Quote first.", priority: 101 }).success).toBe(false);
+    expect(descriptor.inputSchema.safeParse({ name: "quote-primary-source", condition: { kind: "always" }, action: "Quote first.", excludes: Array.from({ length: 101 }, (_, index) => `directive-${index}`) }).success).toBe(false);
+  });
+
   it("creates a reversible directive enablement proposal after reading its version first", async () => {
     const createProposal = vi.fn(async (input: Parameters<MemoryProposalRepository["createProposal"]>[0]) => ({
       id: randomUUID(), ...input, ...proposalOriginFields(input), messageId: null, status: "pending" as const, appliedRef: null, createdAt: new Date(), updatedAt: new Date(),

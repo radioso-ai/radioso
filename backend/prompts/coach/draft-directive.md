@@ -14,6 +14,11 @@ Coaching and coached turn:
 {{coaching_context}}
 </coaching_context>
 
+Fixed operator fields:
+<fixed_fields>
+{{fixed_fields}}
+</fixed_fields>
+
 Scope context:
 <scope_context>
 {{scope_context}}
@@ -34,6 +39,11 @@ Return one JSON object with this shape:
 }
 
 Field rules:
+
+Fixed fields:
+- Values in fixed_fields were supplied by the operator. Copy each supplied value exactly, without rewriting, summarizing, reformatting, or changing its meaning.
+- Draft only fields absent from fixed_fields. Keep the output complete even when only part of the directive is fixed.
+- The operator may supply priority and excludes. Return them unchanged when present. Do not invent either field when absent.
 
 name:
 - Short kebab-case slug.

@@ -533,12 +533,19 @@ callerKind: "human" as const,
     },
     proposalAdapters: copilotProposalTargetTypes.map((targetType) => ({
       targetType,
-      draft: async (_workspaceId: string, _targetRef: unknown, intent: string) => ({
+      draft: async (_workspaceId: string, _targetRef: unknown, input: unknown) => {
+        const intent = typeof input === "string"
+          ? input
+          : typeof input === "object" && input !== null && "intent" in input && typeof input.intent === "string"
+            ? input.intent
+            : "structured directive";
+        return {
         payload: { intent },
         targetLabel: "Support",
         summary: `Draft ${targetType}: ${intent.slice(0, 60)}`,
         diagnostics: [],
-      }),
+        };
+      },
       draftEdit: async (_workspaceId: string, _targetRef: unknown, changes: unknown) => ({
         payload: { kind: "edit", name: "Order status", changes },
         targetLabel: "Order status",

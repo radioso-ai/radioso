@@ -15,6 +15,7 @@ import {
   type AgentInput,
   type AuthoredDirective,
   type AuthoredDirectiveInput,
+  directiveAuthorStructuredFieldsSchema,
 } from "../agents/public.js";
 import { exactContentItemSchema, validateExactContentItem } from "../../shared/domain/exactContent.js";
 import {
@@ -72,6 +73,10 @@ export interface AgentSkillMcpApplyPort {
 }
 
 const directiveTargetRefSchema = z.object({ agentId: z.string().uuid(), directiveId: z.string().uuid().nullable() }).strict();
+const directiveCopilotDraftInputSchema = z.object({
+  intent: z.string().trim().min(1).max(20_000).optional(),
+  ...directiveAuthorStructuredFieldsSchema.shape,
+}).strict();
 const settingTargetRefSchema = z.object({ agentId: z.string().uuid(), settingKey: z.string().min(1).max(200) }).strict();
 /**
  * An agent setting is addressed by one key, but `surfaceSettings` is a whole nested object holding
@@ -303,14 +308,24 @@ export const createDirectiveCopilotProposalAdapter = (deps: {
       return { outcome: "failed" as const, reason: error instanceof Error ? error.message : "Directive apply failed" };
     }
   },
-  async draft(workspaceId, rawTargetRef, intent) {
+  async draft(workspaceId, rawTargetRef, rawInput) {
     const targetRef = directiveTargetRefSchema.parse(rawTargetRef);
+    const input = directiveCopilotDraftInputSchema.parse(rawInput);
+    const fields = Object.fromEntries(
+      ["name", "condition", "action", "priority", "excludes"]
+        .filter((field) => Object.hasOwn(input, field))
+        .map((field) => [field, input[field as keyof typeof input]]),
+    );
     const draft = await deps.directiveAuthorService.draft(workspaceId, targetRef.agentId, {
-      coachingText: intent,
-      turn: { userMessage: intent, assistantAnswer: intent },
+      ...(input.intent ? {
+        coachingText: input.intent,
+        turn: { userMessage: input.intent, assistantAnswer: input.intent },
+      } : {}),
+      ...(targetRef.directiveId ? { directiveId: targetRef.directiveId } : {}),
+      fields,
     });
     const directive = directivePayload(draft.directive);
-    const summary = draft.rationale ?? directive.name;
+    const summary = describeDirectiveChange(directive, draft.rationale);
     return { payload: { ...directive, rationale: summary }, targetLabel: directive.name, summary };
   },
 });
@@ -1032,6 +1047,14 @@ const directivePayload = (value: unknown): AuthoredDirectiveInput => {
     metadata: z.record(z.unknown()).optional(),
   }).parse(value);
   return draft as AuthoredDirectiveInput;
+};
+
+const describeDirectiveChange = (directive: AuthoredDirectiveInput, rationale?: string): string => {
+  const details = [
+    directive.priority === null || directive.priority === undefined ? null : `Priority ${directive.priority}.`,
+    directive.excludes?.length ? `Replaces ${directive.excludes.join(", ")}.` : null,
+  ].filter((detail): detail is string => detail !== null);
+  return [rationale ?? directive.name, ...details].join(" ");
 };
 
 // Strips the draft-only rationale before the .strict() authoring schema, the

@@ -170,6 +170,21 @@ class CapturingChecker implements DirectiveCoherenceChecker {
 }
 
 describe("AuthoredDirectiveService", () => {
+  it("refuses a replacement name that is absent from the agent and built-in catalog", async () => {
+    const repository = new StubAgentRepository();
+    const service = new AuthoredDirectiveService({
+      repository,
+      coherenceChecker: new CapturingChecker(),
+      registeredCapabilityNames: new Set(),
+    });
+
+    await expect(service.create(workspaceId, agentId, directiveInput({ excludes: ["unknown-directive"] })))
+      .rejects.toMatchObject({
+        statusCode: 400,
+        message: expect.stringContaining("represent-organization"),
+      });
+  });
+
   it("normalizes directive skill bindings and defaults absent bindings to null", async () => {
     const repository = new StubAgentRepository();
     const agentSkills = new StubAgentSkillRepository();
@@ -532,7 +547,7 @@ describe("AuthoredDirectiveService", () => {
       action: "Escalate to a human.",
       requiredCapabilities: ["custom.capability"],
       dependsOn: ["some-other-directive"],
-      excludes: ["conflicting-directive"],
+      excludes: ["represent-organization"],
       surfaces: ["suggested_questions"],
       tags: ["tag-a", "tag-b"],
       description: "A fully populated directive.",
@@ -574,7 +589,7 @@ describe("AuthoredDirectiveService", () => {
       action: "Escalate to a human.",
       requiredCapabilities: ["custom.capability"],
       dependsOn: ["some-other-directive"],
-      excludes: ["conflicting-directive"],
+      excludes: ["represent-organization"],
       surfaces: ["answer"],
       tags: ["tag-a", "tag-b"],
       description: "A fully populated directive.",

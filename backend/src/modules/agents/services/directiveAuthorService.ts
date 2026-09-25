@@ -3,9 +3,9 @@ import { z } from "zod";
 
 import type { AgentRepositoryPort } from "../../../db/repositories/agentRepository.js";
 import type { ModelCallUsageContext } from "../../../shared/domain/modelCallUsageContext.js";
-import { AppError, notFound } from "../../../shared/domain/errors.js";
+import { AppError, badRequest, notFound } from "../../../shared/domain/errors.js";
 import { loadPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
-import { authoredDirectiveSurfaceValues } from "../authoredDirectives.js";
+import { authoredDirectiveInputSchema, authoredDirectiveSurfaceValues, validateDirectiveReplacementNames } from "../authoredDirectives.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import { traceOperation } from "../../../shared/observability/tracing/operations.js";
 import type { TelemetryService } from "../../../shared/observability/telemetry/telemetryService.js";
@@ -27,19 +27,29 @@ type DirectiveAuthorAgentContext = Pick<
   "id" | "name" | "customInstruction" | "greetingInstruction"
 >;
 
-export const directiveAuthorTurnSchema = z.object({
+const directiveAuthorTurnSchema = z.object({
   userMessage: z.string().trim().min(1).max(20_000),
   assistantAnswer: z.string().trim().min(1).max(40_000),
   activeRoutineId: z.string().trim().min(1).max(200).optional(),
   activeStepId: z.string().trim().min(1).max(200).optional(),
 }).strict();
 
+export const directiveAuthorStructuredFieldsSchema = authoredDirectiveInputSchema.pick({
+  name: true,
+  condition: true,
+  action: true,
+  priority: true,
+  excludes: true,
+}).partial().strict();
+
 export const directiveAuthorDraftInputSchema = z.object({
-  coachingText: z.string().trim().min(1).max(20_000),
-  turn: directiveAuthorTurnSchema,
+  coachingText: z.string().trim().min(1).max(20_000).optional(),
+  turn: directiveAuthorTurnSchema.optional(),
+  directiveId: z.string().uuid().optional(),
+  fields: directiveAuthorStructuredFieldsSchema.optional(),
 }).strict();
 
-export const directiveAuthorDraftSchema = z.object({
+const directiveAuthorDraftSchema = z.object({
   directive: z.object({
     name: z.string().trim().min(1).max(200),
     condition: z.discriminatedUnion("kind", [
@@ -50,6 +60,8 @@ export const directiveAuthorDraftSchema = z.object({
       }).strict(),
     ]),
     action: z.string().trim().min(1).max(4_000),
+    priority: z.number().int().min(0).max(100).nullable().optional(),
+    excludes: z.array(z.string().trim().min(1).max(200)).optional(),
     tags: z.array(z.string().trim().min(1).max(200)).optional(),
     surfaces: z.array(z.enum(authoredDirectiveSurfaceValues)).optional(),
   }).strict(),
@@ -57,11 +69,11 @@ export const directiveAuthorDraftSchema = z.object({
   rationale: z.string().trim().min(1).max(1_000).optional(),
 }).strict();
 
-export type DirectiveAuthorDraftInput = z.infer<typeof directiveAuthorDraftInputSchema>;
-export type DirectiveAuthorDraftResult = z.infer<typeof directiveAuthorDraftSchema>;
+type DirectiveAuthorDraftInput = z.infer<typeof directiveAuthorDraftInputSchema>;
+type DirectiveAuthorDraftResult = z.infer<typeof directiveAuthorDraftSchema>;
 
-export interface DirectiveAuthorServiceOptions {
-  repository: Pick<AgentRepositoryPort, "findByIdAndWorkspaceId">;
+interface DirectiveAuthorServiceOptions {
+  repository: Pick<AgentRepositoryPort, "findByIdAndWorkspaceId" | "listDirectives">;
   textGenerationClient: DirectiveAuthorTextGenerationPort;
   logger: Pick<AppLogger, "info" | "warn">;
   telemetryService?: Pick<TelemetryService, "emit">;
@@ -105,7 +117,7 @@ const defaultTags = (
   if (tags) {
     return [];
   }
-  const { activeRoutineId, activeStepId } = input.turn;
+  const { activeRoutineId, activeStepId } = input.turn ?? {};
   return activeRoutineId && activeStepId ? [buildStepScopeTag(activeRoutineId, activeStepId)] : [];
 };
 
@@ -115,6 +127,14 @@ const invalidDraftError = () =>
     "invalid_directive_draft",
     "The directive draft could not be generated as valid JSON. Try again or revise the coaching text.",
   );
+
+const hasRequiredDirectiveFields = (
+  fields: z.infer<typeof directiveAuthorStructuredFieldsSchema>,
+): fields is z.infer<typeof directiveAuthorStructuredFieldsSchema> & {
+  name: string;
+  condition: NonNullable<z.infer<typeof directiveAuthorStructuredFieldsSchema>["condition"]>;
+  action: string;
+} => fields.name !== undefined && fields.condition !== undefined && fields.action !== undefined;
 
 export class DirectiveAuthorService {
   constructor(private readonly options: DirectiveAuthorServiceOptions) {}
@@ -126,8 +146,41 @@ export class DirectiveAuthorService {
   ): Promise<DirectiveAuthorDraftResult> {
     const parsedInput = directiveAuthorDraftInputSchema.parse(input);
     const agent = await this.requireAgent(workspaceId, agentId);
+    const existingDirectives = await this.options.repository.listDirectives(agentId, workspaceId);
+    const existing = parsedInput.directiveId
+      ? existingDirectives.find((directive) => directive.id === parsedInput.directiveId)
+      : undefined;
+    if (parsedInput.directiveId && !existing) {
+      throw notFound("Directive not found");
+    }
+    const existingFields = existing ? {
+      name: existing.name,
+      condition: existing.condition,
+      action: existing.action,
+      priority: existing.priority,
+      excludes: existing.excludes,
+      tags: existing.tags,
+      surfaces: existing.surfaces,
+    } : undefined;
+    const suppliedFields = parsedInput.fields ?? {};
+    const completeFields = { ...existingFields, ...suppliedFields };
+    const missing = ["name", "condition", "action"].filter((field) => completeFields[field as keyof typeof completeFields] === undefined);
+
+    // An edit starts from the persisted directive, so every structured edit is complete even when
+    // the caller names one field. This prevents an omitted field from being rewritten or reset.
+    if (missing.length === 0 && hasRequiredDirectiveFields(completeFields) && (existing || hasRequiredDirectiveFields(suppliedFields))) {
+      const result = this.finalizeDraft({
+        directive: { ...completeFields, tags: existing?.tags ?? [], surfaces: existing?.surfaces ?? [] },
+        diagnosis: "directive_recommended",
+      }, parsedInput);
+      this.validateReplacementNames(result.directive.excludes ?? [], existingDirectives);
+      return result;
+    }
+    if (!parsedInput.coachingText || !parsedInput.turn) {
+      throw badRequest(`A directive without intent needs ${missing.join(" and ")}.`);
+    }
     const requestId = randomUUID();
-    const prompt = this.buildPrompt(agent, parsedInput);
+    const prompt = this.buildPrompt(agent, parsedInput, suppliedFields);
 
     const primary = await this.callLlm({
       workspaceId,
@@ -138,7 +191,9 @@ export class DirectiveAuthorService {
     });
     const primaryDraft = parseDraft(primary);
     if (primaryDraft) {
-      return this.finalizeDraft(primaryDraft, parsedInput);
+      const result = this.finalizeDraft(primaryDraft, parsedInput, suppliedFields);
+      this.validateReplacementNames(result.directive.excludes ?? [], existingDirectives);
+      return result;
     }
 
     const retry = await this.callLlm({
@@ -150,7 +205,9 @@ export class DirectiveAuthorService {
     });
     const retryDraft = parseDraft(retry);
     if (retryDraft) {
-      return this.finalizeDraft(retryDraft, parsedInput);
+      const result = this.finalizeDraft(retryDraft, parsedInput, suppliedFields);
+      this.validateReplacementNames(result.directive.excludes ?? [], existingDirectives);
+      return result;
     }
 
     throw invalidDraftError();
@@ -164,7 +221,11 @@ export class DirectiveAuthorService {
     return agent;
   }
 
-  private buildPrompt(agent: DirectiveAuthorAgentContext, input: DirectiveAuthorDraftInput): string {
+  private buildPrompt(
+    agent: DirectiveAuthorAgentContext,
+    input: DirectiveAuthorDraftInput,
+    fixedFields: z.infer<typeof directiveAuthorStructuredFieldsSchema>,
+  ): string {
     const template = loadPromptTemplate(PROMPT_PATH);
     return renderTemplate(template, {
       agent_context: serializePromptData({
@@ -177,10 +238,11 @@ export class DirectiveAuthorService {
         coachingText: input.coachingText,
         turn: input.turn,
       }),
+      fixed_fields: serializePromptData(fixedFields),
       scope_context: serializePromptData({
-        activeRoutineId: input.turn.activeRoutineId ?? null,
-        activeStepId: input.turn.activeStepId ?? null,
-        defaultStepTag: input.turn.activeRoutineId && input.turn.activeStepId
+        activeRoutineId: input.turn?.activeRoutineId ?? null,
+        activeStepId: input.turn?.activeStepId ?? null,
+        defaultStepTag: input.turn?.activeRoutineId && input.turn.activeStepId
           ? this.options.buildStepScopeTag(input.turn.activeRoutineId, input.turn.activeStepId)
           : null,
       }),
@@ -273,14 +335,23 @@ export class DirectiveAuthorService {
   private finalizeDraft(
     draft: DirectiveAuthorDraftResult,
     input: DirectiveAuthorDraftInput,
+    fixedFields: z.infer<typeof directiveAuthorStructuredFieldsSchema> = {},
   ): DirectiveAuthorDraftResult {
     return {
       ...draft,
       directive: {
         ...draft.directive,
+        ...fixedFields,
         tags: defaultTags(draft, input, this.options.buildStepScopeTag),
       },
     };
+  }
+
+  private validateReplacementNames(excludes: string[], existingDirectives: ReadonlyArray<{ name: string }>): void {
+    const validation = validateDirectiveReplacementNames(excludes, existingDirectives);
+    if (validation.unknown.length > 0) {
+      throw badRequest(`Unknown directive replacement ${validation.unknown.join(", ")}. Valid names: ${validation.validNames.slice(0, 20).join(", ")}.`);
+    }
   }
 
   private async emitTelemetry(input: {

@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   DirectiveAuthorService,
+  projectDirectiveAuthorProposalInput,
   type DirectiveAuthorTextGenerationPort,
 } from "../../src/modules/agents/services/directiveAuthorService.js";
 
@@ -189,6 +190,47 @@ describe("DirectiveAuthorService", () => {
       priority: 90,
       excludes: ["represent-organization"],
     });
+  });
+
+  it("coaches an intent-only edit instead of returning the inherited directive unchanged", async () => {
+    const textGenerationClient = new FakeTextClient([validDraft({
+      directive: {
+        name: "cite-sources-first",
+        condition: { kind: "always" },
+        action: "Require a source citation before explaining the answer.",
+        tags: [],
+      },
+    })]);
+    const { service, repository } = createService(textGenerationClient);
+    repository.listDirectives.mockResolvedValue([{
+      id: "33333333-3333-4333-8333-333333333333",
+      agentId,
+      name: "existing-rule",
+      condition: { kind: "always" },
+      action: "Keep this action.",
+      priority: 40,
+      excludes: [],
+      tags: [],
+      surfaces: [],
+      requiredCapabilities: [],
+      dependsOn: [],
+      routes: [],
+      description: null,
+      binding: null,
+      lifecycle: null,
+      enabled: true,
+      metadata: {},
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }]);
+
+    const result = await service.draftForProposal(workspaceId, agentId, {
+      directiveId: "33333333-3333-4333-8333-333333333333",
+      ...projectDirectiveAuthorProposalInput({ intent: "Require a source citation first." }),
+    });
+
+    expect(textGenerationClient.calls).toHaveLength(1);
+    expect(result.draft.directive.action).toBe("Require a source citation before explaining the answer.");
   });
 
   it("returns an edit fence from the directive snapshot used to expand its payload", async () => {

@@ -167,6 +167,11 @@ interface OperatorCopilotServiceDeps {
   /** Probe calls one turn may spend; see {@link COPILOT_PROBE_BUDGET_PER_TURN_DEFAULT}. */
   readonly probeBudgetPerTurn?: number;
   readonly now?: () => Date;
+  /**
+   * Records the owner error behind a reviewed MCP execution answered `uncertain`; the proposal and
+   * its audit carry no error, so this is where support finds it.
+   */
+  readonly logger?: { warn(fields: Record<string, unknown>, message: string): void };
 }
 
 export class OperatorCopilotService {
@@ -179,6 +184,14 @@ export class OperatorCopilotService {
    */
   private async audit(actor: CopilotActor, event: { accountId: string; workspaceId: string; eventType: string; eventStatus: "success" | "failure"; metadata: Record<string, unknown> }): Promise<void> {
     await this.deps.auditService.record({ ...event, metadata: withCopilotActor(actor, event.metadata) });
+  }
+
+  /** Logs the owner error plus join keys only: never the proposal payload, targetRef contents, or a prompt. */
+  private logUnconfirmedMcpAttempt(input: { error: unknown; proposalId: string; executionInvocationId: string; targetType: string; workspaceId: string }): void {
+    this.deps.logger?.warn(
+      { err: input.error, proposalId: input.proposalId, executionInvocationId: input.executionInvocationId, targetType: input.targetType, workspaceId: input.workspaceId },
+      "operator_copilot_mcp_apply_unconfirmed",
+    );
   }
 
   async list(workspaceId: string, operatorUserId: string): Promise<ReadonlyArray<CopilotConversation>> {
@@ -310,6 +323,7 @@ export class OperatorCopilotService {
           });
           throw error;
         }
+        this.logUnconfirmedMcpAttempt({ error, proposalId: proposal.id, executionInvocationId: input.executionInvocationId, targetType: proposal.targetType, workspaceId: input.input.workspaceId });
         reconciliation = { outcome: "unknown" as const, reason: INTERRUPTED_APPLY_REASON };
       }
       if (reconciliation.outcome === "applied") {
@@ -348,6 +362,7 @@ export class OperatorCopilotService {
         throw error;
       }
       if (input.executionInvocationId) {
+        this.logUnconfirmedMcpAttempt({ error, proposalId: proposal.id, executionInvocationId: input.executionInvocationId, targetType: proposal.targetType, workspaceId: input.input.workspaceId });
         return { status: "uncertain", reason: UNCONFIRMED_APPLY_REASON };
       }
       await this.updateProposalAndAudit(input.input, proposal, "failed", null, "copilot.proposal.apply_failed", "failure", "failed", claimGuard);

@@ -407,11 +407,11 @@ export class OperatorCopilotService {
     return { status: "dismissed" };
   }
 
-  async cancelMcpReviewedProposal(input: { workspaceId: string; accountId: string; operatorUserId: string; grantId: string; clientId: string; proposalId: string; currentAuthorization: CopilotCurrentAuthorizationPort }): Promise<{ status: "dismissed" }> {
+  async cancelMcpReviewedProposal(input: { workspaceId: string; accountId: string; operatorUserId: string; grantId: string; clientId: string; proposalId: string; currentAuthorization: CopilotCurrentAuthorizationPort }): Promise<{ status: "dismissed" | "not_found" | "not_cancellable" }> {
     if (!input.currentAuthorization) throw new CopilotAuthorizationError();
     const proposal = await this.deps.repository.findMcpReviewedProposal({ id: input.proposalId, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId, grantId: input.grantId, clientId: input.clientId });
-    if (!proposal) throw new CopilotNotFoundError();
-    if (proposal.status !== "pending" && proposal.status !== "dismissed") throw new CopilotConflictError();
+    if (!proposal) return { status: "not_found" };
+    if (proposal.status !== "pending" && proposal.status !== "dismissed") return { status: "not_cancellable" };
     await this.requireProposalAuthorization({ ...input, surface: "mcp" }, proposal.targetType);
     // Cancelling an already-dismissed proposal reports the outcome it already reached.
     if (proposal.status === "dismissed") return { status: "dismissed" };
@@ -419,8 +419,9 @@ export class OperatorCopilotService {
     if (!cancelled) {
       // A concurrent cancellation can win the pending-only write; its outcome is this one's too.
       const current = await this.deps.repository.findMcpReviewedProposal({ id: input.proposalId, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId, grantId: input.grantId, clientId: input.clientId });
-      if (current?.status === "dismissed") return { status: "dismissed" };
-      throw new CopilotConflictError();
+      if (!current) return { status: "not_found" };
+      if (current.status === "dismissed") return { status: "dismissed" };
+      return { status: "not_cancellable" };
     }
     await this.audit({ ...input, surface: "mcp" }, { accountId: input.accountId, workspaceId: input.workspaceId, eventType: "copilot.proposal.dismissed", eventStatus: "success", metadata: { proposalId: proposal.id, targetType: proposal.targetType, outcome: "dismissed" } });
     return { status: "dismissed" };

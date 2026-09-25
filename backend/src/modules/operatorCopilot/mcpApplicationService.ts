@@ -117,6 +117,21 @@ const replayResponse = (invocation: OperatorMcpInvocationRecord): OperatorInvoca
   ...(invocation.resultReference ? { resultReference: invocation.resultReference } : {}),
 });
 
+// A tool's own domain rejection — bad input or an id addressing nothing this credential can
+// reach — is a correctable caller mistake, the same class `invalid_arguments` already covers.
+// Everything else (a plain dependency failure, an unrecognized AppError) is left unchanged so it
+// keeps surfacing as the outage it actually is.
+const toApplicationError = (rawError: unknown): unknown => {
+  if (!(rawError instanceof AppError)) return rawError;
+  if (rawError.code === "retrieval_not_configured") return new OperatorMcpApplicationError("missing_configuration");
+  if (rawError.statusCode === 400 || rawError.statusCode === 404) {
+    // The tool's own rejection sentence is the only account of what was wrong with the call;
+    // without it the caller reads the bare code and has to guess again.
+    return new OperatorMcpApplicationError("invalid_arguments", undefined, toolRejectionDetail(rawError.message));
+  }
+  return rawError;
+};
+
 export class OperatorMcpApplicationService {
   constructor(private readonly dependencies: {
     credentialValidation: CredentialValidation;
@@ -477,19 +492,12 @@ export class OperatorMcpApplicationService {
       return { structuredContent: output as Record<string, unknown>, content: [], safeOutcomeCode: "completed", ...(reference ? { resultReference: reference } : {}) };
     } catch (rawError) {
       // A tool's own domain rejection of the caller's input (e.g. citing evidence over a transport
-      // with no Ray conversation to attribute it to) is the same class of mistake schema validation
-      // above already reports as `invalid_arguments`. Without this, `mcpRoutes.ts`'s error handler
-      // — which only recognizes `OperatorMcpApplicationError` — falls back to a generic 503
-      // unavailability the caller cannot act on for what is actually a clean, correctable rejection.
-      const error = rawError instanceof AppError
-        ? rawError.code === "retrieval_not_configured"
-          ? new OperatorMcpApplicationError("missing_configuration")
-          : rawError.statusCode === 400
-            // The tool's own rejection sentence is the only account of what was wrong with the
-            // call; without it the caller reads the bare code and has to guess again.
-            ? new OperatorMcpApplicationError("invalid_arguments", undefined, toolRejectionDetail(rawError.message))
-            : rawError
-        : rawError;
+      // with no Ray conversation to attribute it to, or an id that addresses nothing this
+      // credential can reach) is the same class of mistake schema validation above already reports
+      // as `invalid_arguments`. Without this, `mcpRoutes.ts`'s error handler — which only recognizes
+      // `OperatorMcpApplicationError` — falls back to a generic 503 unavailability the caller cannot
+      // act on for what is actually a clean, correctable rejection.
+      const error = toApplicationError(rawError);
       const reason = error instanceof OperatorMcpApplicationError
         ? error.code
         : error instanceof OperatorMcpCatalogError ? error.code : "dependency_error";

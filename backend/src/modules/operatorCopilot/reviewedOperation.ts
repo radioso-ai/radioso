@@ -3,6 +3,16 @@ import { createHash } from "node:crypto";
 /** sha256's unpadded base64url encoding; shared by prepare output and execute input validation. */
 export const reviewedOperationDigestPattern = /^[A-Za-z0-9_-]{43}$/;
 
+/**
+ * A proposal id alone never grants access, so one sentence answers "no such id", "not bound to this
+ * grant and client", and a propose_* proposal (no review digest) alike.
+ */
+export const REVIEWED_OPERATION_NOT_FOUND =
+  "No reviewed operation with this id is bound to this MCP connection. These tools address operations a prepare_* tool created; a proposal from a propose_* tool is approved or dismissed by a person in the dashboard.";
+
+export const REVIEWED_OPERATION_NOT_CANCELLABLE =
+  "Only a pending reviewed operation that has not started executing can be cancelled. Read its outcome with reviewed_proposal_outcome.";
+
 const canonicalJson = (value: unknown): string => {
   if (value === null || typeof value === "boolean" || typeof value === "string") return JSON.stringify(value);
   if (typeof value === "number") {

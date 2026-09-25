@@ -16,7 +16,8 @@ const jsonValueSchema: z.ZodType<unknown> = z.lazy(() => z.union([
   z.array(jsonValueSchema),
   z.record(jsonValueSchema),
 ]));
-const truncationSchema = z.object({
+/** The truncation record `boundTurnTracePayload` attaches; shared by every reader of a turn trace. */
+export const truncationSchema = z.object({
   truncated: z.literal(true),
   entries: z.array(z.object({
     path: z.string(),
@@ -84,7 +85,11 @@ const traceStageSchema = z.object({
   outputs: z.record(jsonValueSchema).optional(),
   subTrace: jsonValueSchema.optional(),
 }).passthrough();
-const turnTraceEnvelopeSchema = z.object({
+/**
+ * One turn's persisted diagnostic spine, as every trace reader renders it: `turn_trace` for a
+ * customer or dashboard conversation and `test_chat_turn_trace` for a Test Chat turn.
+ */
+export const turnTraceEnvelopeSchema = z.object({
   version: z.number().int().nonnegative(),
   spine: z.object({
     traceId: z.string(),
@@ -354,6 +359,12 @@ const projectTurnTrace = (detail: CopilotConversationTurnDetail): Record<string,
 };
 
 
+// Test Chat sessions are private test executions rather than conversations, so these two readers
+// never see them; naming the Test Chat readers keeps a "why didn't it fire in Test Chat" question
+// from searching customer history.
+const CONVERSATION_TRANSCRIPT_DESCRIPTION = "Read a bounded transcript of a customer or dashboard chat conversation with shallow per-turn outcomes, routing, feedback, and ownership. Use turn_trace for one turn's full diagnostic spine. Test Chat sessions are read with test_chat_transcript.";
+const CONVERSATION_HISTORY_SEARCH_DESCRIPTION = "List recent customer and dashboard chat conversations in this workspace for investigation. Test Chat sessions are listed with test_chat_sessions.";
+
 export interface ChatCopilotToolDependencies {
   readonly chatHistoryService: CopilotConversationHistoryPort;
 }
@@ -361,11 +372,11 @@ export interface ChatCopilotToolDependencies {
 export const createChatCopilotTools = (deps: ChatCopilotToolDependencies): ReadonlyArray<CopilotToolDescriptor> => [
   {
     name: "conversation_transcript", shape: "read", verificationCost: () => 0, uiLabel: "Reading conversation transcript", contributingModule: "chat", dashboardSubject: { type: "conversation" }, requiredPermissions: ["workspace.history.read"],
-    description: "Read a bounded customer transcript with shallow per-turn outcomes, routing, feedback, and ownership. Use turn_trace for one turn's full diagnostic spine.",
+    description: CONVERSATION_TRANSCRIPT_DESCRIPTION,
     inputSchema: z.object({ conversationId: idSchema.optional() }), outputSchema: conversationTranscriptOutputSchema,
     createTool: (context) => ({
       name: "conversation_transcript",
-      description: "Read a bounded customer transcript with shallow per-turn outcomes, routing, feedback, and ownership. Use turn_trace for one turn's full diagnostic spine.",
+      description: CONVERSATION_TRANSCRIPT_DESCRIPTION,
       inputSchema: z.object({ conversationId: idSchema.optional() }),
       outputSchema: conversationTranscriptOutputSchema,
       invoke: async ({ conversationId }) => ({
@@ -399,9 +410,9 @@ export const createChatCopilotTools = (deps: ChatCopilotToolDependencies): Reado
   },
   {
     name: "conversation_history_search", shape: "read", verificationCost: () => 0, uiLabel: "Searching conversations", contributingModule: "chat", dashboardSubject: { type: "conversation" }, requiredPermissions: ["workspace.history.read"],
-    description: "List recent customer conversations in this workspace for investigation.",
+    description: CONVERSATION_HISTORY_SEARCH_DESCRIPTION,
     inputSchema: z.object({ limit: z.number().int().min(1).max(50).optional() }), outputSchema: z.object({ conversations: z.array(unknownRecord) }),
-    createTool: (context) => ({ name: "conversation_history_search", description: "List recent customer conversations in this workspace for investigation.", inputSchema: z.object({ limit: z.number().int().min(1).max(50).optional() }), outputSchema: z.object({ conversations: z.array(unknownRecord) }), invoke: async ({ limit }) => ({ conversations: boundPayload({ conversations: (await deps.chatHistoryService.listConversations(context.workspaceId, { limit: limit ?? 20 })).conversations.map(asRecord) }).conversations }) }),
+    createTool: (context) => ({ name: "conversation_history_search", description: CONVERSATION_HISTORY_SEARCH_DESCRIPTION, inputSchema: z.object({ limit: z.number().int().min(1).max(50).optional() }), outputSchema: z.object({ conversations: z.array(unknownRecord) }), invoke: async ({ limit }) => ({ conversations: boundPayload({ conversations: (await deps.chatHistoryService.listConversations(context.workspaceId, { limit: limit ?? 20 })).conversations.map(asRecord) }).conversations }) }),
   },
 
 ];

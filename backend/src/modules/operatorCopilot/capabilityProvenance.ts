@@ -16,7 +16,8 @@ type ProductionDescriptorName =
   | "routine_definition" | "run_eval_suite" | "set_triage_state" | "test_agent_turn" | "turn_trace" | "validate_routine"
   | "workspace_settings" | "workspace_triage" | "prepare_routine_structure" | "execute_reviewed_proposal" | "reviewed_proposal_outcome" | "cancel_reviewed_proposal"
   | "agent_publication_state" | "prepare_agent_publication" | "agent_publication_candidate" | "agent_publication_candidate_change"
-  | "retrieval_settings" | "prepare_retrieval_settings";
+  | "retrieval_settings" | "prepare_retrieval_settings"
+  | "test_chat_sessions" | "test_chat_transcript" | "test_chat_turn_trace" | "send_test_chat_message";
 
 const rayOnly = (reason: string) => ({ rayOnly: { reason } }) as const;
 
@@ -86,6 +87,12 @@ export const copilotCapabilityProvenance: Readonly<Record<ProductionDescriptorNa
   routine_definition: { backingOperationIds: ["listAgentRoutines", "getAgentRoutine"], applicationPrimitiveIds: ["routines.definition.read"] },
   run_eval_suite: { backingOperationIds: ["runEvalCases"], applicationPrimitiveIds: ["eval.suite.run"] },
   set_triage_state: { backingOperationIds: ["setQualityTurnTriage"] },
+  test_chat_sessions: { backingOperationIds: ["listAgentTestExecutions", "getAgentTestExecution"] },
+  test_chat_transcript: { backingOperationIds: ["getAgentTestExecution"] },
+  test_chat_turn_trace: { backingOperationIds: ["getAgentTestExecution"] },
+  // The dashboard's Test Chat send, end to end: a candidate of the saved draft when no revision is
+  // named, a single-revision start, then the message.
+  send_test_chat_message: { backingOperationIds: ["createAgentRevisionCandidate", "startAgentTestExecution", "sendAgentTestExecutionMessage"] },
   test_agent_turn: { backingOperationIds: ["createAssistantChatResponse"], applicationPrimitiveIds: ["operatorCopilot.safe-test.orchestration"], ...rayOnly("Ray adds operator provenance, bounded projection, and proposal evidence to the generic safe-test turn.") },
   turn_trace: { applicationPrimitiveIds: ["chat.conversation.trace.read"] },
   validate_routine: { backingOperationIds: ["validateAgentRoutine"], applicationPrimitiveIds: ["routines.validation"] },

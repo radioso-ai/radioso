@@ -29,6 +29,7 @@ export type { ProposalEvidenceDependencies } from "./services/proposalEvidenceSe
 export { EvalSuiteProbeService } from "./services/evalSuiteProbeService.js";
 export { ReplyDraftProbeService } from "./services/replyDraftProbeService.js";
 export { RetrievalProbeService } from "./services/retrievalProbeService.js";
+export { TestChatService } from "./services/testChatService.js";
 export * from "./toolShape.js";
 export * from "./probeBudget.js";
 export {

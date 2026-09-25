@@ -77,6 +77,7 @@ import {
   OperatorCopilotService,
   ReplyDraftProbeService,
   RetrievalProbeService,
+  TestChatService,
 } from "../../modules/operatorCopilot/public.js";
 import { AgenticCapabilityRunner, DefaultAgentRuntime } from "../../shared/agent-runtime/index.js";
 import { TtlRetentionWorker } from "../../shared/domain/ttlRetentionWorker.js";
@@ -663,6 +664,17 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       },
     },
   });
+  const testChatService = new TestChatService({
+    executions: testExecutionService,
+    revisions: agentRevisionService,
+    createId: randomUUID,
+    abuseControl: chat.abuseControlService,
+    audit: infrastructure.auditService,
+    abusePolicy: {
+      limit: env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_MAX_ATTEMPTS,
+      windowMs: env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_WINDOW_MS,
+    },
+  });
   const evalCaseCaptureService = new EvalCaseCaptureService({
     messageCases: evalMessageCaseService,
     audit: infrastructure.auditService,
@@ -770,6 +782,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     evalSuiteProbe: evalSuiteProbeService,
     evalCaseReplay: evalCaseReplayService,
     retrievalProbe: retrievalProbeService,
+    testChat: testChatService,
     websiteAnalysisProbe: websiteAnalysisProbeService,
     proposalEvidence: {
       evidence: copilotReplayEvidenceRepository,

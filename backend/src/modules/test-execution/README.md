@@ -20,8 +20,15 @@ missing, other-workspace, or other-agent conversation is one `null`, presented a
 404. A comparison cannot be seeded.
 
 `public.ts` exposes the narrow private-test evidence shape Eval may consume to
-capture an immutable test-turn snapshot. It must not expose conversation ids,
-continuations, or turn traces.
+capture an immutable test-turn snapshot. That Eval shape must not carry
+conversation ids, continuations, or turn traces.
+
+Operator Copilot reads and drives Test Chat through the `TestExecutionService`
+type `public.ts` exports (`list`, `detail`, `start`, `message`), from
+`operatorCopilot/services/testChatService.ts`. It projects bounded copies of
+turns and traces for its tools, starts only single-revision executions with
+skill effects suppressed, and never reads continuations. This module knows
+nothing about the copilot.
 
 Test histories and sample values are never public channel inputs. A published
 revision does not make a private test conversation resumable by a visitor.

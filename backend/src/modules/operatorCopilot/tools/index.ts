@@ -30,6 +30,8 @@ import { createEvalCopilotTools, createEvalVerificationCopilotTools } from "./ev
 import type { EvalCopilotToolDependencies, EvalVerificationCopilotToolDependencies } from "./eval.js";
 import { createRetrievalProbeCopilotTools } from "./retrievalProbe.js";
 import type { RetrievalProbeCopilotToolDependencies } from "./retrievalProbe.js";
+import { createTestChatCopilotTools } from "./testChat.js";
+import type { TestChatCopilotToolDependencies } from "./testChat.js";
 import { createQualityCopilotTools, createQualityTriageCopilotTools } from "./quality.js";
 import type { QualityCopilotToolDependencies, QualityTriageCopilotToolDependencies } from "./quality.js";
 import { createRoutineDefinitionCopilotTools, createRoutineProposalCopilotTools } from "./routines.js";
@@ -66,6 +68,7 @@ type CopilotToolCatalogDependencies = AgentConfigurationCopilotToolDependencies
   & EvalCopilotToolDependencies
   & EvalVerificationCopilotToolDependencies
   & Omit<RetrievalProbeCopilotToolDependencies, "agentLookup">
+  & Omit<TestChatCopilotToolDependencies, "agentLookup">
   & QualityCopilotToolDependencies
   & QualityTriageCopilotToolDependencies
   & AudiencePulseCopilotToolDependencies
@@ -102,6 +105,7 @@ export const createCopilotToolDescriptors = (
   ...createEvalCopilotTools({ ...deps, agentLookup: deps.agentService }),
   ...createEvalVerificationCopilotTools(deps),
   ...createRetrievalProbeCopilotTools({ ...deps, agentLookup: deps.agentService }),
+  ...createTestChatCopilotTools({ ...deps, agentLookup: deps.agentService }),
   ...createQualityCopilotTools({ ...deps, agentLookup: deps.agentService }),
   ...createQualityTriageCopilotTools(deps),
   ...createAudiencePulseCopilotTools(deps),
@@ -143,6 +147,7 @@ export type { CopilotDocumentChunksPort, CopilotDocumentMaintenancePort, Copilot
 export type { CopilotEvalResultsPort } from "./eval.js";
 export type { CopilotQualitySignalsPort, CopilotQualityTriagePort } from "./quality.js";
 export type { CopilotRetrievalProbePort } from "./retrievalProbe.js";
+export type { CopilotTestChatPort } from "./testChat.js";
 export type { CopilotRoutineDefinitionPort } from "./routines.js";
 export type { CopilotProductDocsPort } from "./productDocs.js";
 export type { CopilotWorkspaceSettingsPort } from "./settings.js";

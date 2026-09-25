@@ -189,6 +189,7 @@ import {
   EvalSuiteProbeService,
   OperatorCopilotService,
   RetrievalProbeService,
+  TestChatService,
   type CopilotReplayEvidenceRecord,
   type CopilotReplayEvidenceRepositoryPort,
 } from "../../src/modules/operatorCopilot/public.js";
@@ -2020,6 +2021,17 @@ export const createTestDependencies = (overrides: {
       windowMs: env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_WINDOW_MS,
     },
   });
+  const testChatService = new TestChatService({
+    executions: testExecutionService,
+    revisions: agentRevisionService,
+    createId: randomUUID,
+    abuseControl: abuseControlService,
+    audit: auditService,
+    abusePolicy: {
+      limit: env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_MAX_ATTEMPTS,
+      windowMs: env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_WINDOW_MS,
+    },
+  });
   const platformSettingsService = new PlatformSettingsService({
     workspaceRepository,
     auditService,
@@ -2177,6 +2189,7 @@ export const createTestDependencies = (overrides: {
     chatHistoryService,
     agentTurnProbe: agentTurnProbeService,
     retrievalProbe: retrievalProbeService,
+    testChat: testChatService,
     websiteAnalysisProbe: websiteAnalysisProbeService,
     documentSearchService,
     documentChunks: chunkRepository,

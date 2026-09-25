@@ -30,6 +30,7 @@ export const realCatalogDependencies = () => {
     qualitySignalsService: { getQualityStats: stub(), listLowQualityTurns: stub() },
     qualityTriageService: { triageStates: ["open"] as [string, ...string[]], resolutionReasons: ["knowledge_gap"] as [string, ...string[]], setTriageState: stub() },
     retrievalProbe: { probe: stub() },
+    testChat: { listSessions: stub(), readSession: stub(), readTurn: stub(), sendMessage: stub() },
     audiencePulseService: { read: stub() },
     agentSkillsService: { list: stub() },
     skillCapabilityTargets: { list: stub() },

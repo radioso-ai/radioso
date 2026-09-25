@@ -28,7 +28,11 @@ interface TestExecutionEvalSnapshotHistoryEntry {
 }
 
 export {
+  type TestExecution,
+  type TestExecutionAttemptRecord,
+  type TestExecutionEvent,
   type TestExecutionHistoryEntry,
+  type TestExecutionService,
   type TestExecutionSeed,
   type TestExecutionSeedMessage,
   type TestExecutionSeedSource,

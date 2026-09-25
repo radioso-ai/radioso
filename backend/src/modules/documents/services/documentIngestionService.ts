@@ -722,7 +722,7 @@ export class DocumentIngestionService implements DocumentInventoryPort {
   ): Promise<DocumentListPage> {
     validateInventoryCursor(input.cursor);
     // Indexed is the operator-facing name for a document that reached the owner's ready state.
-    const inventoryInput = input.status === "indexed" ? { ...input, status: "ready" } : input;
+    const inventoryInput = input.status === "indexed" ? { ...input, status: "ready" as const } : input;
     const { documents, total, nextCursor, hasMore } = await this.documentRepository.listInventoryPageByWorkspaceId(
       workspaceId,
       inventoryInput,

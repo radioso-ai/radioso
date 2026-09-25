@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { ChunkRepositoryPort, DocumentInventoryPort } from "../../../src/modules/documents/contracts/index.js";
+import {
+  documentInventoryStatuses,
+  type ChunkRepositoryPort,
+  type DocumentInventoryPort,
+} from "../../../src/modules/documents/contracts/index.js";
 import { OperatorMcpCatalogService } from "../../../src/modules/operatorCopilot/mcpCatalog.js";
 import {
   createDocumentInventoryCopilotTools,
@@ -77,6 +81,16 @@ const knowledgePorts = () => {
 };
 
 describe("copilot document readers", () => {
+  it("accepts the inventory statuses declared by the documents owner", () => {
+    const [descriptor] = createDocumentInventoryCopilotTools({
+      documentInventory: { listInventoryForWorkspace: vi.fn() },
+    });
+
+    for (const status of documentInventoryStatuses) {
+      expect(descriptor.inputSchema.safeParse({ status }).success).toBe(true);
+    }
+  });
+
   it("lists a bounded, filtered document inventory through the documents-owned port", async () => {
     const listInventoryForWorkspace = vi.fn(async () => ({
       documents: [{

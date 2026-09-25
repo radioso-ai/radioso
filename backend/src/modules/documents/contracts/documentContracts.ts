@@ -421,9 +421,12 @@ export interface DocumentListPage {
 }
 
 /** A bounded, content-free inventory query for operator surfaces. */
+export const documentInventoryStatuses = ["queued", "processing", "ready", "indexed", "failed"] as const;
+export type DocumentInventoryStatus = (typeof documentInventoryStatuses)[number];
+
 export interface DocumentInventoryListInput {
   sourceId?: string;
-  status?: string;
+  status?: DocumentInventoryStatus;
   externalDocumentIds?: readonly string[];
   titleContains?: string;
   metadata?: Record<string, string | number | boolean | null>;

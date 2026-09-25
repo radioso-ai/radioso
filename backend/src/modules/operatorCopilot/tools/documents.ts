@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import type { ChunkRepositoryPort, DocumentInventoryPort } from "../../documents/contracts/index.js";
+import { documentInventoryStatuses, type ChunkRepositoryPort, type DocumentInventoryPort } from "../../documents/contracts/index.js";
 import { documentMetadataRecordSchema } from "../../documents/public.js";
 import type { CopilotToolDescriptor } from "../contracts.js";
 import { boundPayload, compactForBudget, MAX_STRING_CHARS, truncationRecordSchema, withTruncation } from "../payloadCompaction.js";
@@ -30,7 +30,7 @@ const DOCUMENT_INVENTORY_DESCRIPTION = `List a bounded, content-free workspace d
 const documentInventoryMetadataValueSchema = z.union([z.string().max(documentInventoryStringLimit), z.number(), z.boolean(), z.null()]);
 const documentInventoryInputSchema = z.object({
   sourceId: z.string().uuid().optional(),
-  status: z.enum(["queued", "processing", "ready", "indexed", "failed"]).optional(),
+  status: z.enum(documentInventoryStatuses).optional(),
   externalDocumentIds: z.array(z.string().min(1).max(500)).min(1).max(documentInventoryRequestLimit).optional(),
   titleContains: z.string().trim().min(1).max(500).optional(),
   metadata: documentMetadataRecordSchema.optional(),

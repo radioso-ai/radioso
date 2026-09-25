@@ -2,9 +2,8 @@ import { z } from "zod";
 
 import type { CopilotToolDescriptor } from "../contracts.js";
 import type { CopilotTestChatPort, CopilotTestChatTurn } from "../contracts/testChat.js";
-import { serializedLength } from "../payloadCompaction.js";
-import { truncationSchema, turnTraceEnvelopeSchema } from "./chat.js";
-import { boundTurnTracePayload, CONVERSATION_PAYLOAD_CHAR_BUDGET } from "./chatPayloadBounds.js";
+import { serializedLength, truncationRecordSchema } from "../payloadCompaction.js";
+import { boundTurnTracePayload, CONVERSATION_PAYLOAD_CHAR_BUDGET, turnTraceEnvelopeSchema } from "./chatPayloadBounds.js";
 import { describeNamedAgent, requiredPageAgent, type CopilotAgentLookupPort } from "./shared.js";
 
 export type { CopilotTestChatPort } from "../contracts/testChat.js";
@@ -113,8 +112,9 @@ const turnTraceOutputSchema = z.object({
     createdAt: z.string(),
     userMessage: z.string().nullable(),
     answer: z.object({ messageId: z.string().nullable(), content: z.string() }).nullable(),
-    turnTrace: turnTraceEnvelopeSchema,
-  }).and(z.object({ truncation: truncationSchema.optional() })),
+    /** Null for a turn with no trace: a greeting, or one that failed, is running, or was never answered. */
+    turnTrace: turnTraceEnvelopeSchema.nullable(),
+  }).and(z.object({ truncation: truncationRecordSchema })),
 });
 
 const sendOutputSchema = z.object({
@@ -166,7 +166,8 @@ const coarseStages = <TField extends string>(turnTrace: unknown, max: number, fi
   return readable.slice(0, max);
 };
 
-const envelopeOrNull = (turnTrace: unknown): unknown => (isRecord(turnTrace) && isRecord(turnTrace.spine) ? turnTrace : null);
+/** A stored trace this reader cannot render as an envelope reads as absent rather than failing the read. */
+const readableEnvelope = (turnTrace: unknown): unknown => (turnTraceEnvelopeSchema.safeParse(turnTrace).success ? turnTrace : null);
 
 type TranscriptOmission = Omission<"turns" | "turns.userMessage" | "turns.answer" | "turns.stages">;
 
@@ -313,22 +314,20 @@ export const createTestChatCopilotTools = (
           ...(input.sideId ? { sideId: input.sideId } : {}),
         });
         const { turn } = detail;
-        // Bounded by the same profile and budget as turn_trace and, like it, passed through rather
-        // than re-validated, so one turn's spine reads the same whichever surface ran it.
-        return {
-          trace: boundTurnTracePayload({
-            testExecutionId: detail.testExecutionId,
-            sideId: detail.sideId,
-            revision: detail.revision,
-            turnId: turn.turnId,
-            state: turn.state,
-            failureCode: turn.failureCode,
-            createdAt: turn.createdAt,
-            userMessage: turn.userMessage,
-            answer: turn.answer,
-            turnTrace: envelopeOrNull(turn.turnTrace),
-          }),
-        } as z.infer<typeof turnTraceOutputSchema>;
+        // Bounded by the same profile and budget as turn_trace, so one turn's spine reads the same
+        // whichever surface ran it. The identifiers join after bounding, so compaction never clips
+        // the ids a caller needs to follow up.
+        const bounded = boundTurnTracePayload({
+          state: turn.state,
+          failureCode: turn.failureCode,
+          createdAt: turn.createdAt,
+          userMessage: turn.userMessage,
+          answer: turn.answer,
+          turnTrace: readableEnvelope(turn.turnTrace),
+        });
+        return turnTraceOutputSchema.parse({
+          trace: { ...bounded, testExecutionId: detail.testExecutionId, sideId: detail.sideId, revision: detail.revision, turnId: turn.turnId },
+        });
       },
     }),
     describeEntity: (input, context) => describeNamedAgent(input, context, deps.agentLookup),

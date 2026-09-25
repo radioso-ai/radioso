@@ -4,12 +4,16 @@ import type { AgentRevision } from "../../src/modules/agents/agentRevision.js";
 import {
   TestExecutionService,
   type TestExecution,
+  type TestExecutionAttemptRecord,
+  type TestExecutionDefaultRevisionPort,
+  type TestExecutionHistoryItem,
   type TestExecutionRepositoryPort,
   type TestExecutionRunnerResult,
   type TestExecutionSeed,
   type TestExecutionSeedSource,
   type TrustedTestExecutionRunnerPort,
 } from "../../src/modules/test-execution/testExecution.js";
+import { readSideTurns } from "../../src/modules/test-execution/testExecutionTurns.js";
 import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../src/shared/domain/usageLimitPolicy.js";
 
 const ids = ["00000000-0000-4000-8000-000000000001", "00000000-0000-4000-8000-000000000002", "00000000-0000-4000-8000-000000000003", "00000000-0000-4000-8000-000000000004", "00000000-0000-4000-8000-000000000005", "00000000-0000-4000-8000-000000000006", "00000000-0000-4000-8000-000000000007", "00000000-0000-4000-8000-000000000008", "00000000-0000-4000-8000-000000000009", "00000000-0000-4000-8000-000000000010"];
@@ -73,8 +77,14 @@ class MemoryRepository implements TestExecutionRepositoryPort {
     };
     return this.execution;
   }
-  async list() { return { executions: this.execution ? [this.execution] : [], nextCursor: null, hasMore: false }; }
-  async listAttempts() { return []; }
+  async list(_input?: Parameters<TestExecutionRepositoryPort["list"]>[0]): ReturnType<TestExecutionRepositoryPort["list"]> { return { executions: this.execution ? [this.execution] : [], nextCursor: null, hasMore: false }; }
+  attempts: TestExecutionAttemptRecord[] = [];
+  async listAttempts() { return this.attempts; }
+  transcriptSummaries = new Map<string, { turnCount: number; firstMessage: string | null }>();
+  async summarizeTranscripts(input: Parameters<TestExecutionRepositoryPort["summarizeTranscripts"]>[0]) {
+    this.calls.push(`summarize:${input.executionIds.join(",")}`);
+    return new Map([...this.transcriptSummaries].filter(([id]) => input.executionIds.includes(id)));
+  }
   lastLeaseMs: number | null = null;
   async claimTurn(input: Parameters<TestExecutionRepositoryPort["claimTurn"]>[0]) {
     this.calls.push(`claim:${input.sideIds.join(",")}`);
@@ -110,15 +120,18 @@ class MemoryRepository implements TestExecutionRepositoryPort {
 const setup = (
   runner = vi.fn(async (_input: Parameters<TrustedTestExecutionRunnerPort["run"]>[0]): Promise<TestExecutionRunnerResult> => ({ answer: "answer", messageId: ids[6], continuation: { routine: "next" } })),
   usageLimitPolicy: Pick<UsageLimitPolicy, "reserveAnswer"> = new NoopUsageLimitPolicy(),
+  options: { defaultRevision?: TestExecutionDefaultRevisionPort; draftGeneration?: number } = {},
 ) => {
   const repository = new MemoryRepository();
   let next = 2;
+  const revisions = { findRevision: vi.fn(async ({ revisionId }: { revisionId: string }) => revisionId === ids[0] ? revision(ids[0]) : revision(ids[1])), readDraftGeneration: vi.fn(async () => options.draftGeneration ?? 1) };
   const service = new TestExecutionService({
-    revisions: { findRevision: vi.fn(async ({ revisionId }) => revisionId === ids[0] ? revision(ids[0]) : revision(ids[1])), readDraftGeneration: vi.fn(async () => 1) },
+    revisions,
+    ...(options.defaultRevision ? { defaultRevision: options.defaultRevision } : {}),
     contextCatalog: { get: vi.fn(async () => ({ id: "40000000-0000-4000-8000-000000000001", workspaceId, name: "account_tier", description: null, valueType: "string" as const, trustTier: "signed" as const, sensitivity: "normal" as const, defaultSurfacing: "always" as const, createdAt: new Date(0), updatedAt: new Date(0) })) },
     repository, runner: { run: runner }, usageLimitPolicy, createId: () => ids[next++], now: () => new Date(1000),
   });
-  return { service, repository, runner };
+  return { service, repository, runner, revisions };
 };
 
 describe("TestExecutionService", () => {
@@ -475,5 +488,134 @@ describe("TestExecutionService", () => {
 
       expect(audit).toHaveBeenCalledWith(expect.objectContaining({ eventType: "agent.test_execution.started", metadata: expect.objectContaining({ seedConversationId, seededMessageCount: 4 }) }));
     });
+  });
+});
+
+describe("test execution turns", () => {
+  const entry = (overrides: Partial<TestExecution["sides"][number]["history"][number]>) => ({
+    turnId: "turn-1", attemptId: "attempt-1", role: "user" as const, content: "Can I book a demo?", createdAt: new Date(1_000), ...overrides,
+  });
+  const attempt = (overrides: Partial<TestExecutionAttemptRecord>): TestExecutionAttemptRecord => ({
+    executionId: "execution-1", sideId: "side-1", turnId: "turn-1", attemptId: "attempt-1", fence: 1, state: "completed", failureCode: null,
+    leaseExpiresAt: new Date(0), createdAt: new Date(0), updatedAt: new Date(0), ...overrides,
+  });
+
+  it("pairs each user message with its answer and keeps a greeting as a turn with no user message", () => {
+    const turns = readSideTurns({ id: "side-1", history: [
+      entry({ turnId: "greeting", role: "assistant", content: "Hi!", messageId: "bootstrap:1", createdAt: new Date(500) }),
+      entry({}),
+      entry({ role: "assistant", content: "Sure, here is how.", messageId: "message-1", turnTrace: { version: 1 }, createdAt: new Date(2_000) }),
+    ] }, [attempt({})]);
+
+    expect(turns).toEqual([
+      { turnId: "greeting", userMessage: null, answer: { messageId: "bootstrap:1", content: "Hi!" }, state: "completed", failureCode: null, createdAt: new Date(500), turnTrace: undefined },
+      { turnId: "turn-1", userMessage: "Can I book a demo?", answer: { messageId: "message-1", content: "Sure, here is how." }, state: "completed", failureCode: null, createdAt: new Date(1_000), turnTrace: { version: 1 } },
+    ]);
+  });
+
+  it("takes an unanswered turn's state and failure code from its highest-fenced attempt on the same side", () => {
+    const turns = readSideTurns({ id: "side-1", history: [entry({ turnId: "failed" }), entry({ turnId: "running" }), entry({ turnId: "seeded" })] }, [
+      attempt({ turnId: "failed", fence: 2, state: "failed", failureCode: "runner_failed" }),
+      attempt({ turnId: "failed", fence: 1, state: "failed", failureCode: "lease_expired" }),
+      attempt({ turnId: "running", state: "running" }),
+      attempt({ turnId: "seeded", sideId: "side-2", state: "failed", failureCode: "runner_failed" }),
+    ]);
+
+    expect(turns.map(({ turnId, answer, state, failureCode }) => ({ turnId, answer, state, failureCode }))).toEqual([
+      { turnId: "failed", answer: null, state: "failed", failureCode: "runner_failed" },
+      { turnId: "running", answer: null, state: "running", failureCode: null },
+      { turnId: "seeded", answer: null, state: "unanswered", failureCode: null },
+    ]);
+  });
+});
+
+describe("TestExecutionService turn reads", () => {
+  const scope = { workspaceId, agentId };
+
+  it("reads an execution as turns per side, without its continuation, conversation, or frozen inputs", async () => {
+    const { service, repository } = setup();
+    const execution = await service.start({ ...scope, idempotencyKey: "idem-read", accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [] });
+    await service.message({ ...scope, accountId: null, executionId: execution.id, message: "hello", generation: 1, turnId: "turn-1", attemptId: "attempt-1" });
+    repository.execution!.state = "running";
+
+    const transcript = await service.transcript({ ...scope, executionId: execution.id });
+
+    expect(repository.recoverExpiredSidesCalls).toBe(1);
+    expect(transcript).toEqual({
+      id: execution.id, mode: "single", generation: 1, state: "completed", skillEffects: "suppressed", createdAt: new Date(0),
+      sides: [{ id: execution.sides[0].id, revision: execution.sides[0].revision, state: "completed", turns: [
+        { turnId: "turn-1", userMessage: "hello", answer: { messageId: ids[6], content: "answer" }, state: "completed", failureCode: null, createdAt: new Date(1000), turnTrace: undefined },
+      ] }],
+    });
+  });
+
+  it("reads the turn a message settled, on the first side unless one is named, and answers 404 for an unknown side or turn", async () => {
+    const { service, repository } = setup();
+    const execution = await service.start({ ...scope, idempotencyKey: "idem-turn", accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [] });
+    const sideId = execution.sides[0].id;
+    await service.message({ ...scope, accountId: null, executionId: execution.id, message: "hello", generation: 1, turnId: "turn-1", attemptId: "attempt-1" });
+    repository.attempts = [{ executionId: execution.id, sideId, turnId: "turn-1", attemptId: "attempt-1", fence: 1, state: "completed", failureCode: null, leaseExpiresAt: new Date(0), createdAt: new Date(0), updatedAt: new Date(0) }];
+
+    await expect(service.turn({ ...scope, executionId: execution.id, turnId: "turn-1" })).resolves.toEqual({
+      executionId: execution.id,
+      side: { id: sideId, revision: execution.sides[0].revision, state: "completed" },
+      turn: expect.objectContaining({ turnId: "turn-1", answer: { messageId: ids[6], content: "answer" }, state: "completed" }),
+    });
+    await expect(service.turn({ ...scope, executionId: execution.id, turnId: "turn-1", sideId })).resolves.toMatchObject({ side: { id: sideId } });
+    await expect(service.turn({ ...scope, executionId: execution.id, turnId: "turn-2" })).rejects.toMatchObject({ statusCode: 404 });
+    await expect(service.turn({ ...scope, executionId: execution.id, turnId: "turn-1", sideId: "side-unknown" })).rejects.toMatchObject({ statusCode: 404 });
+  });
+
+  it("lists a page with each execution's turn count and opening message from one projection read", async () => {
+    const { service, repository } = setup();
+    const item = (id: string): TestExecutionHistoryItem => ({ id, mode: "single", generation: 1, state: "completed", createdAt: new Date(0), skillEffects: "suppressed", sides: [] });
+    const list = vi.spyOn(repository, "list").mockResolvedValue({ executions: [item("execution-1"), item("execution-2")], nextCursor: "cursor-2", hasMore: true });
+    repository.transcriptSummaries.set("execution-1", { turnCount: 2, firstMessage: "Can I book a demo?" });
+
+    const page = await service.summaries({ ...scope, limit: 2, cursor: "cursor-1" });
+
+    expect(list).toHaveBeenCalledWith({ ...scope, limit: 2, cursor: "cursor-1" });
+    expect(repository.calls).toEqual(["summarize:execution-1,execution-2"]);
+    expect(page).toEqual({
+      executions: [
+        { ...item("execution-1"), turnCount: 2, firstMessage: "Can I book a demo?" },
+        { ...item("execution-2"), turnCount: 0, firstMessage: null },
+      ],
+      nextCursor: "cursor-2",
+      hasMore: true,
+    });
+  });
+});
+
+describe("TestExecutionService default revision", () => {
+  const scope = { workspaceId, agentId, accountId: null, testValues: [] };
+
+  it("starts a single test on the agent's default revision, fenced on the draft generation it was chosen from, once per idempotency key", async () => {
+    const resolveDefault = vi.fn(async () => ({ revisionId: ids[1], expectedDraftGeneration: 1 }));
+    const { service, revisions } = setup(undefined, undefined, { defaultRevision: { resolveDefault } });
+
+    const execution = await service.start({ ...scope, mode: "single", idempotencyKey: "idem-default" });
+    await service.start({ ...scope, mode: "single", idempotencyKey: "idem-default" });
+
+    expect(resolveDefault).toHaveBeenCalledTimes(1);
+    expect(resolveDefault).toHaveBeenCalledWith({ workspaceId, agentId });
+    expect(revisions.readDraftGeneration).toHaveBeenCalledWith({ workspaceId, agentId });
+    expect(execution.sides.map((side) => side.revision.id)).toEqual([ids[1]]);
+  });
+
+  it("refuses a default start when the draft moved after the default was chosen", async () => {
+    const resolveDefault = vi.fn(async () => ({ revisionId: ids[1], expectedDraftGeneration: 1 }));
+    const { service } = setup(undefined, undefined, { defaultRevision: { resolveDefault }, draftGeneration: 2 });
+
+    await expect(service.start({ ...scope, mode: "single", idempotencyKey: "idem-moved" })).rejects.toMatchObject({ statusCode: 409 });
+  });
+
+  it("refuses a default for a comparison, or where no default source is configured", async () => {
+    const resolveDefault = vi.fn(async () => ({ revisionId: ids[1], expectedDraftGeneration: 1 }));
+
+    await expect(setup(undefined, undefined, { defaultRevision: { resolveDefault } }).service.start({ ...scope, mode: "compare", idempotencyKey: "idem-compare" }))
+      .rejects.toMatchObject({ statusCode: 400 });
+    expect(resolveDefault).not.toHaveBeenCalled();
+    await expect(setup().service.start({ ...scope, mode: "single", idempotencyKey: "idem-unconfigured" })).rejects.toMatchObject({ statusCode: 400 });
   });
 });

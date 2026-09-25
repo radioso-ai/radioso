@@ -1,4 +1,3 @@
-import type { AgentRevisionService } from "../../agents/public.js";
 import type { TestExecution, TestExecutionService } from "../../test-execution/public.js";
 import type { CopilotExpensiveOperationGuardDependencies } from "./expensiveOperation.js";
 
@@ -109,12 +108,10 @@ export interface CopilotTestChatPort {
   sendMessage(input: CopilotTestChatSendInput): Promise<CopilotTestChatSendResult>;
 }
 
-/** The owner calls the dashboard's Test Chat makes; the copilot makes exactly these. */
-export type CopilotTestChatExecutionPort = Pick<TestExecutionService, "list" | "detail" | "start" | "message">;
-export type CopilotTestChatRevisionPort = Pick<AgentRevisionService, "state" | "createCandidate">;
+/** Test-execution's reads and the calls that drive one turn; the copilot makes exactly these. */
+export type CopilotTestChatExecutionPort = Pick<TestExecutionService, "summaries" | "transcript" | "turn" | "start" | "message">;
 
 export interface TestChatServiceDependencies extends CopilotExpensiveOperationGuardDependencies {
   readonly executions: CopilotTestChatExecutionPort;
-  readonly revisions: CopilotTestChatRevisionPort;
   readonly createId: () => string;
 }

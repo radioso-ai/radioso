@@ -2023,7 +2023,6 @@ export const createTestDependencies = (overrides: {
   });
   const testChatService = new TestChatService({
     executions: testExecutionService,
-    revisions: agentRevisionService,
     createId: randomUUID,
     abuseControl: abuseControlService,
     audit: auditService,

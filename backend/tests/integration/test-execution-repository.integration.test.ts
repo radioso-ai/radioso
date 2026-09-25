@@ -60,6 +60,24 @@ describeDb("test execution repository", () => {
     await expect(repository.listAttempts({ workspaceId: randomUUID(), agentId, executionId })).resolves.toEqual([]);
   });
 
+  it("summarizes each listed execution's operator turns and opening message from its first side only", async () => {
+    const executionId = randomUUID(), emptyId = randomUUID(), turnA = randomUUID(), turnB = randomUUID();
+    const entry = (turnId: string, role: "user" | "assistant", content: string, at: number) => ({ turnId, attemptId: randomUUID(), role, content, createdAt: new Date(at) });
+    await repository.create({ id: executionId, workspaceId, agentId, mode: "compare", generation: 1, testValues: [], skillEffects: "suppressed", idempotencyKey: executionId, sides: [
+      { id: randomUUID(), executionId, revision: frozenRevision(), conversationId: randomUUID(), state: "ready", retryable: false, continuation: null, history: [
+        entry(randomUUID(), "assistant", "Hi!", 1), entry(turnA, "user", "first question", 2), entry(turnA, "assistant", "answer", 3), entry(turnB, "user", "second question", 4),
+      ] },
+      { id: randomUUID(), executionId, revision: frozenRevision(secondRevisionId), conversationId: randomUUID(), state: "ready", retryable: false, continuation: null, history: [entry(randomUUID(), "user", "not the first side", 1)] },
+    ] });
+    await repository.create({ id: emptyId, workspaceId, agentId, mode: "single", generation: 1, testValues: [], skillEffects: "suppressed", idempotencyKey: emptyId, sides: [{ id: randomUUID(), executionId: emptyId, revision: frozenRevision(), conversationId: randomUUID(), state: "ready", retryable: false, history: [], continuation: null }] });
+
+    const summaries = await repository.summarizeTranscripts({ workspaceId, agentId, executionIds: [executionId, emptyId] });
+
+    expect(summaries.get(executionId)).toEqual({ turnCount: 2, firstMessage: "first question" });
+    expect(summaries.get(emptyId)).toEqual({ turnCount: 0, firstMessage: null });
+    await expect(repository.summarizeTranscripts({ workspaceId: randomUUID(), agentId, executionIds: [executionId] })).resolves.toEqual(new Map());
+  });
+
   it("claims all comparison sides atomically and serializes simultaneous completions", async () => {
     const executionId = randomUUID(), leftId = randomUUID(), rightId = randomUUID(), turnId = randomUUID(), attemptId = randomUUID();
     await repository.create({ id: executionId, workspaceId, agentId, mode: "compare", generation: 1, testValues: [], skillEffects: "suppressed", idempotencyKey: executionId, sides: [

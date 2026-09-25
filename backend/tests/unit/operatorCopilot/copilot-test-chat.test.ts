@@ -12,10 +12,10 @@ import { createTestChatCopilotTools } from "../../../src/modules/operatorCopilot
 import type {
   CopilotTestChatExecutionPort,
   CopilotTestChatPort,
-  CopilotTestChatRevisionPort,
   CopilotTestChatSession,
   CopilotTestChatTurn,
 } from "../../../src/modules/operatorCopilot/contracts/testChat.js";
+import type { TestExecutionTranscript, TestExecutionTurn } from "../../../src/modules/test-execution/testExecutionTurns.js";
 import { TestChatService } from "../../../src/modules/operatorCopilot/services/testChatService.js";
 import {
   CopilotExpensiveOperationRateLimitedError,
@@ -402,111 +402,67 @@ const revision = (overrides: Record<string, unknown> = {}) => ({
   publishedAt: null,
   publishedVersion: null,
   ...overrides,
-});
+}) as unknown as TestExecutionTranscript["sides"][number]["revision"];
 
-const historyEntry = (overrides: Record<string, unknown>) => ({
+const ownerTurn = (overrides: Partial<TestExecutionTurn> = {}): TestExecutionTurn => ({
   turnId: TURN_ID,
-  attemptId: "a0000000-0000-4000-8000-000000000001",
-  role: "user" as const,
-  content: "Can I book a demo?",
+  userMessage: "Can I book a demo?",
+  answer: { messageId: MESSAGE_ID, content: "Sure, here is how." },
+  state: "completed",
+  failureCode: null,
   createdAt: new Date("2026-09-20T10:00:00.000Z"),
+  turnTrace: envelope(),
   ...overrides,
 });
 
-const execution = (overrides: Record<string, unknown> = {}) => ({
+const transcript = (overrides: Partial<TestExecutionTranscript> = {}): TestExecutionTranscript => ({
   id: EXECUTION_ID,
-  workspaceId: "workspace-1",
-  agentId: AGENT_ID,
   mode: "single",
   generation: 2,
   state: "completed",
-  testValues: [],
   skillEffects: "suppressed",
   createdAt: new Date("2026-09-20T10:00:00.000Z"),
-  sides: [{
-    id: SIDE_ID,
-    executionId: EXECUTION_ID,
-    revision: revision(),
-    conversationId: "c1000000-0000-4000-8000-000000000001",
-    state: "completed",
-    retryable: false,
-    continuation: null,
-    history: [
-      historyEntry({ turnId: GREETING_TURN_ID, role: "assistant", content: "Hi!", messageId: "bootstrap:1" }),
-      historyEntry({}),
-      historyEntry({ role: "assistant", content: "Sure, here is how.", messageId: MESSAGE_ID, turnTrace: envelope() }),
-    ],
-  }],
+  sides: [{ id: SIDE_ID, revision: revision(), state: "completed", turns: [ownerTurn()] }],
   ...overrides,
 });
 
-const attempt = (overrides: Record<string, unknown>) => ({
-  executionId: EXECUTION_ID,
-  sideId: SIDE_ID,
-  turnId: TURN_ID,
-  attemptId: "a0000000-0000-4000-8000-000000000001",
-  fence: 1,
-  state: "completed",
-  failureCode: null,
-  leaseExpiresAt: new Date("2026-09-20T10:05:00.000Z"),
-  createdAt: new Date("2026-09-20T10:00:00.000Z"),
-  updatedAt: new Date("2026-09-20T10:00:03.000Z"),
-  ...overrides,
-});
-
-const completedEvents = (turnId: string) => [
-  { type: "side_started", executionId: EXECUTION_ID, generation: 1, turnId, attemptId: "x", sideId: SIDE_ID },
-  { type: "message_delta", executionId: EXECUTION_ID, generation: 1, turnId, attemptId: "x", sideId: SIDE_ID, delta: "Sure, here is how." },
-  { type: "side_completed", executionId: EXECUTION_ID, generation: 1, turnId, attemptId: "x", sideId: SIDE_ID, messageId: MESSAGE_ID, turnTrace: envelope() },
-  { type: "execution_completed", executionId: EXECUTION_ID, generation: 1, turnId, attemptId: "x" },
-];
-
+/** A stand-in for test-execution: it owns turns, summaries, and the default revision; these tests cover what the copilot adds. */
 const serviceHarness = (options: {
-  draftStatus?: "unpublished" | "draft_clean" | "draft_dirty" | "published_changed_since_draft";
-  published?: boolean;
-  detail?: ReturnType<typeof execution>;
-  attempts?: ReturnType<typeof attempt>[];
-  events?: (turnId: string) => unknown[];
+  transcript?: TestExecutionTranscript;
+  settled?: Partial<TestExecutionTurn>;
   abuse?: () => Promise<unknown>;
 } = {}) => {
   const calls: string[] = [];
   let nextId = 0;
   const createId = vi.fn(() => `00000000-0000-4000-8000-${String(++nextId).padStart(12, "0")}`);
   const executions = {
-    list: vi.fn(async () => ({
-      executions: [{ id: EXECUTION_ID, mode: "single", generation: 2, state: "completed", createdAt: new Date("2026-09-20T10:00:00.000Z"), skillEffects: "suppressed", sides: [] }],
+    summaries: vi.fn(async () => ({
+      executions: [{
+        id: EXECUTION_ID, mode: "single", generation: 2, state: "completed", createdAt: new Date("2026-09-20T10:00:00.000Z"), skillEffects: "suppressed",
+        sides: [{ id: SIDE_ID, revision: revision(), conversationId: "c1000000-0000-4000-8000-000000000001", state: "completed", retryable: false }],
+        turnCount: 1,
+        firstMessage: "Can I book a demo?",
+      }],
       nextCursor: "cursor-2",
       hasMore: true,
     })),
-    detail: vi.fn(async () => {
-      calls.push("detail");
-      return { execution: options.detail ?? execution(), attempts: options.attempts ?? [attempt({})] };
+    transcript: vi.fn(async () => {
+      calls.push("transcript");
+      return options.transcript ?? transcript();
     }),
-    start: vi.fn(async (input: { revisionIds: readonly string[] }) => {
+    turn: vi.fn(async (input: { turnId: string }) => {
+      calls.push("turn");
+      return { executionId: EXECUTION_ID, side: { id: SIDE_ID, revision: revision(), state: "completed" }, turn: ownerTurn({ turnId: input.turnId, ...options.settled }) };
+    }),
+    start: vi.fn(async () => {
       calls.push("start");
-      return execution({ generation: 1, sides: [{ ...execution().sides[0], revision: revision({ id: input.revisionIds[0] }), history: [] }] });
+      return { id: EXECUTION_ID, generation: 1 };
     }),
-    message: vi.fn(async (input: { turnId: string }) => {
+    message: vi.fn(async () => {
       calls.push("message");
-      return (options.events ?? completedEvents)(input.turnId);
+      return [];
     }),
   } as unknown as CopilotTestChatExecutionPort;
-  const revisions = {
-    state: vi.fn(async () => {
-      calls.push("state");
-      return {
-        agentId: AGENT_ID,
-        status: options.draftStatus ?? "draft_dirty",
-        draft: { generation: 7, basePublishedRevisionId: options.published === false ? null : PUBLISHED_ID, updatedAt: new Date() },
-        publishedRevision: options.published === false ? null : revision({ id: PUBLISHED_ID, publishedAt: new Date("2026-09-01T00:00:00.000Z"), publishedVersion: 3 }),
-        canPublish: true,
-      };
-    }),
-    createCandidate: vi.fn(async () => {
-      calls.push("createCandidate");
-      return revision();
-    }),
-  } as unknown as CopilotTestChatRevisionPort;
   const abuseControl = {
     enforce: vi.fn(async () => {
       calls.push("guard");
@@ -515,26 +471,24 @@ const serviceHarness = (options: {
   };
   const service = new TestChatService({
     executions,
-    revisions,
     createId,
     abuseControl: abuseControl as never,
     audit: { record: vi.fn(async () => {}) },
     abusePolicy: { limit: 10, windowMs: 60_000 },
   });
-  return { service, executions, revisions, abuseControl, calls };
+  return { service, executions, abuseControl, calls };
 };
 
 const scope = { workspaceId: "workspace-1", agentId: AGENT_ID };
 const sender = { ...scope, accountId: "account-1", operatorUserId: "operator-1" };
 
 describe("TestChatService", () => {
-  it("lists sessions from the executions the dashboard lists, with each one's message count and opening", async () => {
+  it("lists sessions from test-execution's summaries in copilot vocabulary", async () => {
     const { service, executions } = serviceHarness();
 
     const page = await service.listSessions({ ...scope, limit: 5, cursor: "cursor-1" });
 
-    expect(executions.list).toHaveBeenCalledWith({ ...scope, limit: 5, cursor: "cursor-1" });
-    expect(executions.detail).toHaveBeenCalledWith({ ...scope, executionId: EXECUTION_ID });
+    expect(executions.summaries).toHaveBeenCalledWith({ ...scope, limit: 5, cursor: "cursor-1" });
     expect(page).toEqual({
       sessions: [{
         testExecutionId: EXECUTION_ID,
@@ -550,71 +504,36 @@ describe("TestChatService", () => {
     });
   });
 
-  it("reads a session as turns, naming the published version a side ran", async () => {
-    const { service } = serviceHarness({
-      detail: execution({ sides: [{ ...execution().sides[0], revision: revision({ id: PUBLISHED_ID, publishedAt: new Date("2026-09-01T00:00:00.000Z"), publishedVersion: 3 }) }] }),
+  it("reads a session's turns, naming the published version a side ran", async () => {
+    const { service, executions } = serviceHarness({
+      transcript: transcript({ sides: [{ id: SIDE_ID, revision: revision({ id: PUBLISHED_ID, publishedAt: new Date("2026-09-01T00:00:00.000Z"), publishedVersion: 3 }), state: "completed", turns: [ownerTurn()] }] }),
     });
 
     const read = await service.readSession({ ...scope, testExecutionId: EXECUTION_ID });
 
+    expect(executions.transcript).toHaveBeenCalledWith({ ...scope, executionId: EXECUTION_ID });
     expect(read.sides[0].revision).toEqual({ id: PUBLISHED_ID, kind: "published", versionNumber: 3, createdAt: "2026-09-20T09:59:00.000Z" });
-    expect(read.sides[0].turns).toEqual([
-      { turnId: GREETING_TURN_ID, userMessage: null, answer: { messageId: "bootstrap:1", content: "Hi!" }, state: "completed", failureCode: null, createdAt: "2026-09-20T10:00:00.000Z", turnTrace: undefined },
-      { turnId: TURN_ID, userMessage: "Can I book a demo?", answer: { messageId: MESSAGE_ID, content: "Sure, here is how." }, state: "completed", failureCode: null, createdAt: "2026-09-20T10:00:00.000Z", turnTrace: envelope() },
-    ]);
+    expect(read.sides[0].turns).toEqual([turn()]);
   });
 
-  it("reports an unanswered turn's state and failure code from its latest attempt", async () => {
-    const detail = execution({ state: "partial", sides: [{ ...execution().sides[0], state: "failed", retryable: true, history: [historyEntry({})] }] });
-    const { service } = serviceHarness({
-      detail,
-      attempts: [attempt({ fence: 1, state: "failed", failureCode: "lease_expired" }), attempt({ fence: 2, state: "failed", failureCode: "runner_failed" })],
+  it("reads one turn on the side the caller names", async () => {
+    const { service, executions } = serviceHarness();
+
+    await expect(service.readTurn({ ...scope, testExecutionId: EXECUTION_ID, turnId: TURN_ID, sideId: SIDE_ID })).resolves.toEqual({
+      testExecutionId: EXECUTION_ID, sideId: SIDE_ID, revision: candidateRevision, turn: turn(),
     });
-
-    const read = await service.readSession({ ...scope, testExecutionId: EXECUTION_ID });
-
-    expect(read.sides[0].turns[0]).toMatchObject({ answer: null, state: "failed", failureCode: "runner_failed" });
+    expect(executions.turn).toHaveBeenCalledWith({ ...scope, executionId: EXECUTION_ID, turnId: TURN_ID, sideId: SIDE_ID });
   });
 
-  it("reads one turn, defaulting to the first side, and refuses an unknown turn or side as not found", async () => {
-    const { service } = serviceHarness();
-
-    await expect(service.readTurn({ ...scope, testExecutionId: EXECUTION_ID, turnId: TURN_ID })).resolves.toMatchObject({
-      sideId: SIDE_ID,
-      turn: { turnId: TURN_ID, turnTrace: envelope() },
-    });
-    await expect(service.readTurn({ ...scope, testExecutionId: EXECUTION_ID, turnId: "70000000-0000-4000-8000-00000000ffff" }))
-      .rejects.toMatchObject({ statusCode: 404 });
-    await expect(service.readTurn({ ...scope, testExecutionId: EXECUTION_ID, turnId: TURN_ID, sideId: OTHER_SIDE_ID }))
-      .rejects.toMatchObject({ statusCode: 404 });
-  });
-
-  it("starts a session on a fresh candidate of a changed draft, exactly as the dashboard does", async () => {
-    const { service, executions, revisions, calls } = serviceHarness({ draftStatus: "draft_dirty" });
+  it("starts a single session on the owner's default revision with skill effects suppressed, and returns the settled turn", async () => {
+    const { service, executions, calls } = serviceHarness();
 
     const result = await service.sendMessage({ ...sender, message: "  Can I book a demo?  " });
 
-    expect(revisions.createCandidate).toHaveBeenCalledWith("workspace-1", AGENT_ID, 7);
-    expect(executions.start).toHaveBeenCalledWith(expect.objectContaining({
-      ...scope,
-      accountId: "account-1",
-      mode: "single",
-      revisionIds: [CANDIDATE_ID],
-      testValues: [],
-      expectedDraftGeneration: 7,
-      skillEffects: "suppressed",
-      idempotencyKey: expect.any(String),
-    }));
-    expect(executions.message).toHaveBeenCalledWith(expect.objectContaining({
-      ...scope,
-      accountId: "account-1",
-      executionId: EXECUTION_ID,
-      message: "Can I book a demo?",
-      generation: 1,
-      turnId: result.turnId,
-      attemptId: expect.any(String),
-    }));
-    expect(calls).toEqual(["guard", "state", "createCandidate", "start", "message"]);
+    expect(executions.start).toHaveBeenCalledWith({ ...scope, accountId: "account-1", mode: "single", testValues: [], idempotencyKey: expect.any(String), skillEffects: "suppressed" });
+    expect(executions.message).toHaveBeenCalledWith({ ...scope, accountId: "account-1", executionId: EXECUTION_ID, message: "Can I book a demo?", generation: 1, turnId: result.turnId, attemptId: expect.any(String) });
+    expect(executions.turn).toHaveBeenCalledWith({ ...scope, executionId: EXECUTION_ID, turnId: result.turnId });
+    expect(calls).toEqual(["guard", "start", "message", "turn"]);
     expect(result).toEqual({
       testExecutionId: EXECUTION_ID,
       started: true,
@@ -629,31 +548,12 @@ describe("TestChatService", () => {
     });
   });
 
-  it("starts on the published revision when the saved draft has no changes", async () => {
-    const { service, executions, revisions } = serviceHarness({ draftStatus: "draft_clean" });
-
-    await service.sendMessage({ ...sender, message: "hi" });
-
-    expect(revisions.createCandidate).not.toHaveBeenCalled();
-    expect(executions.start).toHaveBeenCalledWith(expect.objectContaining({ revisionIds: [PUBLISHED_ID], expectedDraftGeneration: 7 }));
-  });
-
-  it("starts on the candidate of a clean draft that was never published", async () => {
-    const { service, revisions } = serviceHarness({ draftStatus: "draft_clean", published: false });
-
-    await service.sendMessage({ ...sender, message: "hi" });
-
-    expect(revisions.createCandidate).toHaveBeenCalled();
-  });
-
-  it("starts on a named revision without touching the draft", async () => {
-    const { service, executions, revisions } = serviceHarness();
+  it("starts on a named revision", async () => {
+    const { service, executions } = serviceHarness();
 
     await service.sendMessage({ ...sender, message: "hi", revisionId: PUBLISHED_ID });
 
-    expect(revisions.state).not.toHaveBeenCalled();
     expect(executions.start).toHaveBeenCalledWith(expect.objectContaining({ revisionIds: [PUBLISHED_ID], skillEffects: "suppressed" }));
-    expect(executions.start).toHaveBeenCalledWith(expect.not.objectContaining({ expectedDraftGeneration: expect.anything() }));
   });
 
   it("continues a session at its current generation", async () => {
@@ -663,13 +563,13 @@ describe("TestChatService", () => {
 
     expect(executions.start).not.toHaveBeenCalled();
     expect(executions.message).toHaveBeenCalledWith(expect.objectContaining({ executionId: EXECUTION_ID, generation: 2 }));
-    expect(calls).toEqual(["detail", "guard", "message"]);
+    expect(calls).toEqual(["transcript", "guard", "message", "turn"]);
     expect(result.started).toBe(false);
   });
 
   it("refuses to continue a comparison or a session whose skills act, before spending anything", async () => {
-    for (const detail of [execution({ mode: "compare" }), execution({ skillEffects: "allowed" })]) {
-      const { service, executions, abuseControl } = serviceHarness({ detail });
+    for (const session of [transcript({ mode: "compare" }), transcript({ skillEffects: "allowed" })]) {
+      const { service, executions, abuseControl } = serviceHarness({ transcript: session });
 
       await expect(service.sendMessage({ ...sender, message: "hi", testExecutionId: EXECUTION_ID }))
         .rejects.toMatchObject({ statusCode: 400 });
@@ -683,30 +583,25 @@ describe("TestChatService", () => {
 
     await expect(service.sendMessage({ ...sender, message: "hi", testExecutionId: EXECUTION_ID, revisionId: PUBLISHED_ID }))
       .rejects.toBeInstanceOf(AppError);
-    expect(executions.detail).not.toHaveBeenCalled();
+    expect(executions.transcript).not.toHaveBeenCalled();
   });
 
   it("starts nothing once the operator's expensive-operation budget is spent", async () => {
-    const { service, executions, revisions } = serviceHarness({
+    const { service, executions } = serviceHarness({
       abuse: async () => { throw new AppError(429, "rate_limit_exceeded", "Please wait", { retryAfterSeconds: 12 }); },
     });
 
     await expect(service.sendMessage({ ...sender, message: "hi" })).rejects.toBeInstanceOf(CopilotExpensiveOperationRateLimitedError);
-    expect(revisions.state).not.toHaveBeenCalled();
     expect(executions.start).not.toHaveBeenCalled();
   });
 
   it("returns a failed turn with its code, and refuses an exhausted answer allowance the way other probes do", async () => {
-    const failed = (code: string) => (turnId: string) => [
-      { type: "side_started", executionId: EXECUTION_ID, generation: 1, turnId, attemptId: "x", sideId: SIDE_ID },
-      { type: "side_failed", executionId: EXECUTION_ID, generation: 1, turnId, attemptId: "x", sideId: SIDE_ID, code, retryable: true },
-      { type: "execution_partial", executionId: EXECUTION_ID, generation: 1, turnId, attemptId: "x" },
-    ];
+    const failed = (code: string) => ({ answer: null, state: "failed" as const, failureCode: code, turnTrace: undefined });
 
-    const runnerFailed = await serviceHarness({ events: failed("runner_failed") }).service.sendMessage({ ...sender, message: "hi" });
-    expect(runnerFailed).toMatchObject({ outcome: "failed", failureCode: "runner_failed", answer: null, messageId: null });
+    const runnerFailed = await serviceHarness({ settled: failed("runner_failed") }).service.sendMessage({ ...sender, message: "hi" });
+    expect(runnerFailed).toMatchObject({ outcome: "failed", failureCode: "runner_failed", answer: null, messageId: null, turnTrace: undefined });
 
-    await expect(serviceHarness({ events: failed(USAGE_LIMIT_EXCEEDED_CODE) }).service.sendMessage({ ...sender, message: "hi" }))
+    await expect(serviceHarness({ settled: failed(USAGE_LIMIT_EXCEEDED_CODE) }).service.sendMessage({ ...sender, message: "hi" }))
       .rejects.toBeInstanceOf(CopilotUsageLimitReachedError);
   });
 });

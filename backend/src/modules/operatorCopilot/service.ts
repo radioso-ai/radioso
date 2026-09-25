@@ -411,8 +411,11 @@ export class OperatorCopilotService {
     if (!input.currentAuthorization) throw new CopilotAuthorizationError();
     const proposal = await this.deps.repository.findMcpReviewedProposal({ id: input.proposalId, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId, grantId: input.grantId, clientId: input.clientId });
     if (!proposal) return { status: "not_found" };
-    if (proposal.status !== "pending" && proposal.status !== "dismissed") return { status: "not_cancellable" };
+    // Authorize before reporting anything about the proposal's state: a caller whose target-type
+    // permission was revoked must not learn whether an operation is cancellable, already
+    // dismissed, or settled.
     await this.requireProposalAuthorization({ ...input, surface: "mcp" }, proposal.targetType);
+    if (proposal.status !== "pending" && proposal.status !== "dismissed") return { status: "not_cancellable" };
     // Cancelling an already-dismissed proposal reports the outcome it already reached.
     if (proposal.status === "dismissed") return { status: "dismissed" };
     const cancelled = await this.deps.repository.cancelPendingProposal({ id: proposal.id, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId });

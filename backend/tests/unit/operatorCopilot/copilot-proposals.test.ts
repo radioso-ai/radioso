@@ -823,6 +823,19 @@ describe("US3 copilot proposals", () => {
     expect((await repository.findProposal({ id: proposal.id, workspaceId, operatorUserId }))?.status).toBe("pending");
   });
 
+  it("does not report an applied reviewed proposal's state to a caller whose current authorization is denied", async () => {
+    const repository = new MemoryProposalRepository();
+    const proposal = await createMcpReviewedProposal(repository);
+    const applyIfVersionMatches = vi.fn(async () => ({ outcome: "applied" as const, appliedRef: { directiveId } }));
+    const service = reviewedOperationService(repository, auditService(), applyIfVersionMatches);
+    await expect(service.executeMcpReviewedProposal({ workspaceId, accountId, operatorUserId, ...mcpBinding, proposalId: proposal.id, reviewDigest: "a".repeat(43), executionInvocationId: "execution-1", currentAuthorization }))
+      .resolves.toMatchObject({ status: "applied" });
+    const denied = { hasAllPermissions: vi.fn(async () => false) };
+
+    await expect(service.cancelMcpReviewedProposal({ workspaceId, accountId, operatorUserId, ...mcpBinding, proposalId: proposal.id, currentAuthorization: denied }))
+      .rejects.toBeInstanceOf(CopilotAuthorizationError);
+  });
+
   it.each([
     [{ status: "settled", outcome: "stale", appliedRef: null }, { status: "stale" }],
     [{ status: "settled", outcome: "failed", appliedRef: null, reason: "target unavailable" }, { status: "failed", reason: "target unavailable" }],

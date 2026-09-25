@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { createRoutineCopilotProposalAdapter } from "../../../src/modules/operatorCopilot/proposalAdapters.js";
+import { AppError, badRequest } from "../../../src/shared/domain/errors.js";
 
 const workspaceId = "workspace-1";
 const agentId = "11111111-1111-4111-8111-111111111111";
@@ -50,9 +51,12 @@ describe("structural routine proposal adapter", () => {
     await expect(adapter.reconcileMcpInterruptedApply?.({ ...base, payload: { kind: "delete" } })).resolves.toEqual({ outcome: "not_applied" });
   });
 
-  it("revalidates references added after review before atomic delete or structural removal", async () => {
+  // The guard runs before routineMcpApply.apply ever starts, so its refusal proves the delete or
+  // structural removal never wrote anything - it settles the proposal durably instead of leaving
+  // the operator retrying a receipt that will only ever come back uncertain.
+  it("settles a scoped-reference refusal as failed before atomic delete or structural removal ever writes", async () => {
     const apply = vi.fn();
-    const assertNoScopedReferences = vi.fn(async () => { throw new Error("A scoped directive still references removed routine step \"step_collect\"."); });
+    const assertNoScopedReferences = vi.fn(async () => { throw badRequest("A scoped directive still references removed routine step \"step_collect\". Replace or remove that directive scope in the same authoring change."); });
     const adapter = createRoutineCopilotProposalAdapter({
       agentService: { get: vi.fn() },
       routineDraftAssistService: {} as never,
@@ -60,11 +64,71 @@ describe("structural routine proposal adapter", () => {
       routineMcpApply: { apply }, scopedReferences: { assertNoScopedReferences },
     });
     const context = { surface: "mcp" as const, proposalId: "proposal-1", executionInvocationId: "receipt-1", operatorUserId: "operator-1", applyClaimedAt: new Date("2026-09-02T00:00:00Z") };
-    await expect(adapter.applyIfVersionMatches(workspaceId, { agentId, routineId }, { kind: "delete" }, routine.updatedAt.toISOString(), context)).rejects.toThrow(/scoped directive/);
-    await expect(adapter.applyIfVersionMatches(workspaceId, { agentId, routineId }, { ...payload, draft: { ...payload.draft, steps: [{ ...routine.steps[0], stableStepId: "step_replacement" }] } }, routine.updatedAt.toISOString(), context)).rejects.toThrow(/scoped directive/);
+    await expect(adapter.applyIfVersionMatches(workspaceId, { agentId, routineId }, { kind: "delete" }, routine.updatedAt.toISOString(), context)).resolves.toEqual({ outcome: "failed", reason: expect.stringContaining("scoped directive") });
+    await expect(adapter.applyIfVersionMatches(workspaceId, { agentId, routineId }, { ...payload, draft: { ...payload.draft, steps: [{ ...routine.steps[0], stableStepId: "step_replacement" }] } }, routine.updatedAt.toISOString(), context)).resolves.toEqual({ outcome: "failed", reason: expect.stringContaining("scoped directive") });
     expect(assertNoScopedReferences).toHaveBeenNthCalledWith(1, expect.objectContaining({ removedNodeIds: ["step_collect", "terminal_done"] }));
     expect(assertNoScopedReferences).toHaveBeenNthCalledWith(2, expect.objectContaining({ removedNodeIds: ["step_collect"] }));
     expect(apply).not.toHaveBeenCalled();
+  });
+
+  it("settles a refusal thrown inside the atomic write transaction as failed", async () => {
+    const apply = vi.fn(async () => { throw new AppError(400, "bad_request", "The routine references a capability the workspace no longer grants."); });
+    const adapter = createRoutineCopilotProposalAdapter({
+      agentService: { get: vi.fn(async () => ({ updatedAt: new Date() })) } as never,
+      routineDraftAssistService: {} as never,
+      routineDefinitionService: { validate: vi.fn(async () => ({ ok: true, diagnostics: [] })) } as never,
+      routineMcpApply: { apply },
+    });
+    const context = { surface: "mcp" as const, accountId: "account-1", proposalId: "proposal-1", executionInvocationId: "receipt-1", operatorUserId: "operator-1", applyClaimedAt: new Date("2026-09-02T00:00:00Z") };
+    const draft = { name: "Created", enabled: true, activation: routine.activation, steps: routine.steps, terminals: routine.terminals, slots: [], transitions: routine.transitions };
+    await expect(adapter.applyIfVersionMatches(workspaceId, { agentId, routineId: null }, { kind: "create", draft }, "open", context))
+      .resolves.toEqual({ outcome: "failed", reason: "The routine references a capability the workspace no longer grants." });
+  });
+
+  it("keeps an unclassifiable atomic write failure uncertain by rethrowing it on an MCP apply", async () => {
+    const apply = vi.fn(async () => { throw new Error("connection reset"); });
+    const adapter = createRoutineCopilotProposalAdapter({
+      agentService: { get: vi.fn(async () => ({ updatedAt: new Date() })) } as never,
+      routineDraftAssistService: {} as never,
+      routineDefinitionService: { validate: vi.fn(async () => ({ ok: true, diagnostics: [] })) } as never,
+      routineMcpApply: { apply },
+    });
+    const context = { surface: "mcp" as const, accountId: "account-1", proposalId: "proposal-1", executionInvocationId: "receipt-1", operatorUserId: "operator-1", applyClaimedAt: new Date("2026-09-02T00:00:00Z") };
+    const draft = { name: "Created", enabled: true, activation: routine.activation, steps: routine.steps, terminals: routine.terminals, slots: [], transitions: routine.transitions };
+    await expect(adapter.applyIfVersionMatches(workspaceId, { agentId, routineId: null }, { kind: "create", draft }, "open", context)).rejects.toThrow("connection reset");
+  });
+
+  it("keeps a refusal from the non-atomic field-edit write uncertain on an MCP apply", async () => {
+    const apply = vi.fn();
+    const updateDraft = vi.fn(async () => { throw badRequest("The edited routine is invalid."); });
+    const adapter = createRoutineCopilotProposalAdapter({
+      agentService: { get: vi.fn() },
+      routineDraftAssistService: {} as never,
+      routineDefinitionService: { get: vi.fn(async () => routine), updateDraft } as never,
+      routineMcpApply: { apply },
+    });
+    const context = { surface: "mcp" as const, accountId: "account-1", proposalId: "proposal-1", executionInvocationId: "receipt-1", operatorUserId: "operator-1", applyClaimedAt: new Date("2026-09-02T00:00:00Z") };
+    await expect(adapter.applyIfVersionMatches(workspaceId, { agentId, routineId }, { kind: "edit", name: routine.name, changes: { enabled: false } }, routine.updatedAt.toISOString(), context))
+      .rejects.toThrow("The edited routine is invalid.");
+    expect(updateDraft).toHaveBeenCalledOnce();
+    expect(apply).not.toHaveBeenCalled();
+  });
+
+  // completeExternalDraftMutation only runs once routineMcpApply.apply has already committed the
+  // routine and its receipt, as a best-effort owner side effect - its own failure can never prove
+  // the write didn't happen, so it must stay uncertain rather than being read as a refusal.
+  it("keeps a post-commit completeExternalDraftMutation failure uncertain instead of reporting a false failed", async () => {
+    const apply = vi.fn(async () => ({ appliedRef: { agentId, routineId: "created-routine" }, routine: { ...routine, id: "created-routine" } as never }));
+    const completeExternalDraftMutation = vi.fn(async () => { throw new AppError(400, "bad_request", "unexpected post-commit failure"); });
+    const adapter = createRoutineCopilotProposalAdapter({
+      agentService: { get: vi.fn(async () => ({ updatedAt: new Date() })) } as never,
+      routineDraftAssistService: {} as never,
+      routineDefinitionService: { validate: vi.fn(async () => ({ ok: true, diagnostics: [] })), completeExternalDraftMutation } as never,
+      routineMcpApply: { apply },
+    });
+    const context = { surface: "mcp" as const, accountId: "account-1", proposalId: "proposal-1", executionInvocationId: "receipt-1", operatorUserId: "operator-1", applyClaimedAt: new Date("2026-09-02T00:00:00Z") };
+    const draft = { name: "Created", enabled: true, activation: routine.activation, steps: routine.steps, terminals: routine.terminals, slots: [], transitions: routine.transitions };
+    await expect(adapter.applyIfVersionMatches(workspaceId, { agentId, routineId: null }, { kind: "create", draft }, "open", context)).rejects.toThrow("unexpected post-commit failure");
   });
 
   it("applies the prepared authoring draft once through owner CAS and rejects a stale fence", async () => {

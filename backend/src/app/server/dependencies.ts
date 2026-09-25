@@ -880,6 +880,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     prompt: copilotPrompt,
     tools: copilotToolCatalog,
     probeBudgetPerTurn: env.COPILOT_PROBE_BUDGET_PER_TURN,
+    logger,
     currentAuthorization: {
       hasAllPermissions: ({ workspaceId, accountId, operatorUserId, requiredPermissions }) =>
         access.accountAccessService.hasAllWorkspacePermissions({

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { badRequest, conflict, notFound } from "../../shared/domain/errors.js";
+import { badRequest, conflict, notFound, type AppError } from "../../shared/domain/errors.js";
 import { DefaultAllowCapabilityPolicy, type CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
 import type { ActionCapabilityMap } from "../../shared/domain/actionCapabilities.js";
 import type { AuditEventInput, AuditPort } from "../audit/contracts/index.js";
@@ -184,6 +184,21 @@ const isRoutineDefinitionNameVersionConstraintError = (error: unknown): boolean 
     );
 };
 
+/**
+ * The domain `conflict` for a raw repository write conflict (name/version unique violation, update
+ * CAS miss), or undefined. Exported for callers that write through the repository inside their own
+ * transaction, such as the copilot's atomic MCP apply port.
+ */
+export const translateRoutineDefinitionWriteConflict = (error: unknown): AppError | undefined => {
+  if (isRoutineDefinitionNameVersionConstraintError(error)) {
+    return conflict("A routine definition with this name and version already exists for this agent");
+  }
+  if (error instanceof Error && error.message.startsWith("routine_definition_update_conflict:")) {
+    return conflict("Routine changed while it was being edited — reload it and try again");
+  }
+  return undefined;
+};
+
 export class RoutineDefinitionService {
   private readonly capabilityPolicy: CapabilityPolicy;
 
@@ -223,10 +238,7 @@ export class RoutineDefinitionService {
     try {
       saved = await this.options.repository.createDraftWithAgentDraft(workspaceId, agentId, draft);
     } catch (error) {
-      if (isRoutineDefinitionNameVersionConstraintError(error)) {
-        throw conflict("A routine definition with this name and version already exists for this agent");
-      }
-      throw this.completionExportDestinationError(error, draft) ?? error;
+      throw translateRoutineDefinitionWriteConflict(error) ?? this.completionExportDestinationError(error, draft) ?? error;
     }
     return this.savedRoutine(workspaceId, agentId, "routine_definition.create", saved);
   }
@@ -266,18 +278,12 @@ export class RoutineDefinitionService {
     try {
       saved = await this.options.repository.updateDraftWithAgentDraft(workspaceId, agentId, id, draft, options);
     } catch (error) {
-      if (error instanceof Error && error.message.startsWith("routine_definition_update_conflict:")) {
-        throw conflict("Routine changed while it was being edited — reload it and try again");
-      }
       // Every canonical routine is now permanently pinned at version 1 (the routine lifecycle
       // collapse), so renaming one routine to collide with another's name is the common case a
       // rename can hit, not the rare cross-lineage edge case it was under the old branching-
       // version model. createDraft already reports this collision as a friendly 409; do the same
       // here instead of letting the raw unique-violation escape as a 500.
-      if (isRoutineDefinitionNameVersionConstraintError(error)) {
-        throw conflict("A routine definition with this name and version already exists for this agent");
-      }
-      throw this.completionExportDestinationError(error, draft) ?? error;
+      throw translateRoutineDefinitionWriteConflict(error) ?? this.completionExportDestinationError(error, draft) ?? error;
     }
     return this.savedRoutine(workspaceId, agentId, "routine_definition.update", saved);
   }

@@ -331,7 +331,7 @@ export type CopilotMcpInterruptedApplyReconciliation =
 
 export interface CopilotDirectiveProposalAdapter extends CopilotProposalAdapter {
   readonly targetType: "directive";
-  draft(workspaceId: string, targetRef: unknown, input: unknown): Promise<{ payload: unknown; targetLabel: string; summary: string }>;
+  draft(workspaceId: string, targetRef: unknown, input: unknown): Promise<{ payload: unknown; targetLabel: string; summary: string; versionToken: string }>;
 }
 
 export interface CopilotRoutineProposalDraft {

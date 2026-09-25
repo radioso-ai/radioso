@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { directiveAuthorStructuredFieldsSchema } from "../../agents/public.js";
+import { directiveAuthorProposalInputSchema } from "../../agents/public.js";
 
 import type {
   CopilotMcpProposalRecoveryPort,
@@ -25,14 +25,11 @@ import {
 
 const idSchema = z.string().uuid();
 const entityNameSchema = z.string().trim().min(1).max(160);
-const maxDirectiveReplacementNames = 100;
 const directiveProposalInputSchema = z.object({
   agentId: idSchema.optional(),
   agentName: entityNameSchema.optional(),
   directiveId: idSchema.optional(),
-  intent: z.string().trim().min(1).max(20_000).optional(),
-  ...directiveAuthorStructuredFieldsSchema.shape,
-  excludes: z.array(z.string().trim().min(1).max(200)).max(maxDirectiveReplacementNames).optional(),
+  ...directiveAuthorProposalInputSchema.shape,
   evidenceIds: citedEvidenceSchema,
 }).strict();
 export interface DirectiveProposalCopilotToolDependencies extends CopilotProposalEvidenceDependencies, CopilotProposalToolDependencies {
@@ -120,14 +117,9 @@ export const createDirectiveProposalCopilotTools = (
           const { agentId, directiveId, evidenceIds } = input;
           const targetRef = { agentId: agentId ?? requiredPageAgent(context.pageContext.agentId), directiveId: directiveId ?? null };
           await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
-          const draftInput = Object.fromEntries(
-            ["intent", "name", "condition", "action", "priority", "excludes"]
-              .filter((field) => Object.hasOwn(input, field))
-              .map((field) => [field, input[field as keyof typeof input]]),
-          );
-          const draft = await directiveAdapter.draft(context.workspaceId, targetRef, draftInput);
+          const draft = await directiveAdapter.draft(context.workspaceId, targetRef, input);
           await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
-          const versionToken = await directiveAdapter.readVersionToken(context.workspaceId, targetRef);
+          const versionToken = draft.versionToken;
           await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
           const evidence = await citedProposalEvidence(deps, context, targetRef.agentId, evidenceIds, { targetType: "directive" });
           await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);

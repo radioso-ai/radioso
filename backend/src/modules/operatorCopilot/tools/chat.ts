@@ -2,30 +2,12 @@ import { z } from "zod";
 
 import type { CallerKind } from "../../../shared/domain/conversationSource.js";
 import type { CopilotToolDescriptor } from "../contracts.js";
-import { boundPayload } from "../payloadCompaction.js";
-import { boundConversationPayload, boundTurnTracePayload } from "./chatPayloadBounds.js";
+import { boundPayload, truncationRecordSchema } from "../payloadCompaction.js";
+import { boundConversationPayload, boundTurnTracePayload, jsonValueSchema, turnTraceEnvelopeSchema } from "./chatPayloadBounds.js";
 import { asRecord, entity, requiredPageConversation } from "./shared.js";
 
 const idSchema = z.string().uuid();
 const unknownRecord = z.record(z.unknown());
-const jsonValueSchema: z.ZodType<unknown> = z.lazy(() => z.union([
-  z.string(),
-  z.number(),
-  z.boolean(),
-  z.null(),
-  z.array(jsonValueSchema),
-  z.record(jsonValueSchema),
-]));
-/** The truncation record `boundTurnTracePayload` attaches; shared by every reader of a turn trace. */
-export const truncationSchema = z.object({
-  truncated: z.literal(true),
-  entries: z.array(z.object({
-    path: z.string(),
-    reason: z.enum(["string_length", "array_length", "budget_omitted"]),
-    originalLength: z.number().int().nonnegative().optional(),
-    retainedLength: z.number().int().nonnegative().optional(),
-  })),
-});
 const shallowRouteSchema = z.object({
   generator: z.string(),
   routeType: z.enum(["direct", "retrieval"]),
@@ -73,33 +55,8 @@ const conversationTranscriptOutputSchema = z.object({
     messageCount: z.number().int().nonnegative(),
     ownership: ownershipSchema,
     messages: z.array(transcriptMessageSchema),
-  }).and(z.object({ truncation: truncationSchema.optional() })),
+  }).and(z.object({ truncation: truncationRecordSchema })),
 });
-const traceStageSchema = z.object({
-  id: z.string(),
-  kind: z.string(),
-  status: z.string(),
-  startedAt: z.string().optional(),
-  completedAt: z.string().optional(),
-  inputs: z.record(jsonValueSchema).optional(),
-  outputs: z.record(jsonValueSchema).optional(),
-  subTrace: jsonValueSchema.optional(),
-}).passthrough();
-/**
- * One turn's persisted diagnostic spine, as every trace reader renders it: `turn_trace` for a
- * customer or dashboard conversation and `test_chat_turn_trace` for a Test Chat turn.
- */
-export const turnTraceEnvelopeSchema = z.object({
-  version: z.number().int().nonnegative(),
-  spine: z.object({
-    traceId: z.string(),
-    startedAt: z.string(),
-    completedAt: z.string().optional(),
-    stages: z.array(traceStageSchema),
-  }).passthrough(),
-  openTelemetry: z.object({ traceId: z.string(), spanId: z.string(), sampled: z.boolean() }).optional(),
-  summary: z.record(jsonValueSchema).optional(),
-}).nullable();
 const turnTraceOutputSchema = z.object({
   trace: z.object({
     conversationId: z.string().uuid(),
@@ -124,11 +81,11 @@ const turnTraceOutputSchema = z.object({
         route: shallowRouteSchema,
         activitySummary: jsonValueSchema.nullable(),
         activityTrace: jsonValueSchema.nullable(),
-        turnTrace: turnTraceEnvelopeSchema,
+        turnTrace: turnTraceEnvelopeSchema.nullable(),
         errorMessage: z.string().nullable(),
       }).nullable(),
     }),
-  }).and(z.object({ truncation: truncationSchema.optional() })),
+  }).and(z.object({ truncation: truncationRecordSchema })),
 });
 
 

@@ -426,7 +426,7 @@ Public and tool surfaces:
 - `backend/src/modules/operatorCopilot/contracts.ts`, `catalog.ts`, `service.ts`, and `routes.ts`
 - `backend/src/modules/operatorCopilot/tools/index.ts` (catalog contributions)
 - `backend/src/modules/operatorCopilot/tools/agentTurnProbe.ts` (`test_agent_turn` contract and projection)
-- `backend/src/modules/operatorCopilot/tools/testChat.ts`, `contracts/testChat.ts`, and `services/testChatService.ts` (`test_chat_sessions`, `test_chat_transcript`, `test_chat_turn_trace`, `send_test_chat_message`), over the Test Chat executions in `backend/src/modules/test-execution/`; the turn trace reuses `turn_trace`'s envelope schema and bound from `tools/chat.ts` and `tools/chatPayloadBounds.ts`
+- `backend/src/modules/operatorCopilot/tools/testChat.ts`, `contracts/testChat.ts`, and `services/testChatService.ts` (`test_chat_sessions`, `test_chat_transcript`, `test_chat_turn_trace`, `send_test_chat_message`), over the Test Chat executions in `backend/src/modules/test-execution/`; the turn trace reuses `turn_trace`'s envelope schema and bound from `tools/chatPayloadBounds.ts`
 - `backend/src/modules/operatorCopilot/tools/routines.ts` (`routine_definition`, `validate_routine`, `propose_routine`, `propose_routine_edit`, `propose_routine_exposure`)
 - `backend/src/app/composition/copilotProposalAdapters.ts` (proposal adapters: directive, agent setting, and the routine edit apply rules)
 - `backend/src/app/composition/copilotToolCatalog.ts` (default wiring and contributed-tool assembly)

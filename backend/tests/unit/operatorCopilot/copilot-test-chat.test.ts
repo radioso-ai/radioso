@@ -4,6 +4,9 @@ import { admittedAbuseControlDecision } from "../../support/fakes.js";
 import { AppError } from "../../../src/shared/domain/errors.js";
 import { USAGE_LIMIT_EXCEEDED_CODE } from "../../../src/shared/domain/usageLimitPolicy.js";
 import { operatorMcpToolSchemas } from "../../../src/modules/operatorCopilot/mcpToolSchema.js";
+import { OperatorMcpCatalogService } from "../../../src/modules/operatorCopilot/mcpCatalog.js";
+import { operatorMcpDispositions } from "../../../src/modules/operatorCopilot/operatorMcpDisposition.js";
+import type { CopilotToolInvocationContext } from "../../../src/modules/operatorCopilot/contracts.js";
 import { createChatCopilotTools } from "../../../src/modules/operatorCopilot/tools/chat.js";
 import { createTestChatCopilotTools } from "../../../src/modules/operatorCopilot/tools/testChat.js";
 import type {
@@ -278,6 +281,115 @@ describe("Test Chat copilot descriptors", () => {
 
     await expect(invoke(testChat, "send_test_chat_message", { message: "hi" }, null)).rejects.toThrow(/agent/i);
     expect(testChat.sendMessage).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Calls a tool the way operator MCP does: through the catalog service, which validates each result
+ * against the descriptor's own output schema. Calling `invoke` directly skips that check, which is
+ * how a result the schema refuses can pass a unit test and fail every real call.
+ */
+const mcpContext: CopilotToolInvocationContext = {
+  workspaceId: "workspace-1",
+  accountId: "account-1",
+  operatorUserId: "operator-1",
+  surface: "mcp",
+  permissions: undefined,
+  currentAuthorization: { hasAllPermissions: async () => true },
+  operatorMcpInvocationId: "0c000000-0000-4000-8000-000000000001",
+  pageContext: { view: null, agentId: null, conversationId: null, selection: null, entities: [] },
+};
+
+const overMcp = (testChat: CopilotTestChatPort, name: string, args: Record<string, unknown>) => new OperatorMcpCatalogService(
+  createTestChatCopilotTools({ testChat, agentLookup: { listExisting: async () => [] } })
+    .map((descriptor) => ({ ...descriptor, mcpDisposition: operatorMcpDispositions[descriptor.name] })),
+).invoke({
+  name,
+  arguments: { agentId: AGENT_ID, ...args },
+  context: mcpContext,
+  scopes: new Set(["operator:read", "operator:probe"] as const),
+  signal: AbortSignal.timeout(1_000),
+}) as Promise<Record<string, any>>;
+
+const traceLessTurns: Array<[string, CopilotTestChatTurn]> = [
+  ["failed", turn({ answer: null, state: "failed", failureCode: "runner_failed", turnTrace: undefined })],
+  ["unanswered seeded", turn({ answer: null, state: "unanswered", turnTrace: undefined })],
+  ["running", turn({ answer: null, state: "running", turnTrace: undefined })],
+  ["greeting", turn({ turnId: GREETING_TURN_ID, userMessage: null, answer: { messageId: "bootstrap:c0000000-0000-4000-8000-000000000001", content: "Hi!" }, turnTrace: undefined })],
+  ["unreadable trace", turn({ turnTrace: { version: 1, spine: { stages: "not a list" } } })],
+];
+
+describe("Test Chat tools through the operator MCP catalog", () => {
+  it.each(traceLessTurns)("returns a schema-valid turn trace for a %s turn", async (_label, subject) => {
+    const readTurn = vi.fn(async () => ({ testExecutionId: EXECUTION_ID, sideId: SIDE_ID, revision: candidateRevision, turn: subject }));
+
+    const output = await overMcp(port({ readTurn }), "test_chat_turn_trace", { testExecutionId: EXECUTION_ID, turnId: subject.turnId });
+
+    expect(output.trace).toMatchObject({ turnId: subject.turnId, state: subject.state, failureCode: subject.failureCode, turnTrace: null });
+  });
+
+  it("returns a schema-valid transcript for failed, unanswered, running, greeting, and untraced turns", async () => {
+    const readSession = vi.fn(async () => session({
+      state: "partial",
+      sides: [{ sideId: SIDE_ID, revision: candidateRevision, state: "failed", turns: traceLessTurns.map(([, subject], index) => ({
+        ...subject,
+        turnId: `70000000-0000-4000-8000-0000000000${String(index + 10)}`,
+      })) }],
+    }));
+
+    const output = await overMcp(port({ readSession }), "test_chat_transcript", { testExecutionId: EXECUTION_ID });
+
+    expect(output.session.sides[0].turns.map((entry: { state: string; stages: unknown[] }) => [entry.state, entry.stages])).toEqual([
+      ["failed", []], ["unanswered", []], ["running", []], ["completed", []], ["completed", []],
+    ]);
+  });
+
+  it("returns a schema-valid session list for a session with no messages yet", async () => {
+    const listSessions = vi.fn(async () => ({
+      sessions: [{
+        testExecutionId: EXECUTION_ID,
+        mode: "compare" as const,
+        state: "running" as const,
+        skillEffects: "allowed" as const,
+        createdAt: "2026-09-20T10:00:00.000Z",
+        sides: [
+          { sideId: SIDE_ID, revision: candidateRevision, state: "ready" as const },
+          { sideId: OTHER_SIDE_ID, revision: { id: PUBLISHED_ID, kind: "published" as const, versionNumber: 3, createdAt: "2026-09-01T00:00:00.000Z" }, state: "ready" as const },
+        ],
+        turnCount: 0,
+        firstMessage: null,
+      }],
+      nextCursor: null,
+    }));
+
+    const output = await overMcp(port({ listSessions }), "test_chat_sessions", {});
+
+    expect(output.sessions[0]).toMatchObject({ turnCount: 0, firstMessage: null });
+  });
+
+  it("returns a schema-valid result for a failed send", async () => {
+    const sendMessage = vi.fn(async () => ({
+      testExecutionId: EXECUTION_ID,
+      started: false,
+      sideId: SIDE_ID,
+      revision: candidateRevision,
+      turnId: TURN_ID,
+      outcome: "failed" as const,
+      failureCode: "runner_failed",
+      answer: null,
+      messageId: null,
+      turnTrace: undefined,
+    }));
+
+    const output = await overMcp(port({ sendMessage }), "send_test_chat_message", { message: "hi", testExecutionId: EXECUTION_ID });
+
+    expect(output.turn).toMatchObject({ outcome: "failed", failureCode: "runner_failed", answer: null, messageId: null, stages: [] });
+  });
+
+  it("returns a schema-valid full trace for an answered turn", async () => {
+    const output = await overMcp(port(), "test_chat_turn_trace", { testExecutionId: EXECUTION_ID, turnId: TURN_ID });
+
+    expect(output.trace.turnTrace.spine.stages).toHaveLength(3);
   });
 });
 

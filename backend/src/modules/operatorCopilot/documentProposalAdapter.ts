@@ -11,6 +11,7 @@ import {
 import type { CopilotDocumentProposalAdapter } from "./contracts.js";
 import { isStale, versionInstant, versionToken } from "./proposalVersioning.js";
 import { AppError, badRequest } from "../../shared/domain/errors.js";
+import { resolveRetrievalEligibility } from "../documents/public.js";
 
 /**
  * A create addresses no stored row, and it carries no external identity that could collide with
@@ -34,7 +35,7 @@ const readOrMissing = async <T>(read: Promise<T>): Promise<T | null> => {
   }
 };
 
-export interface DocumentCopilotProposalAdapterDependencies {
+interface DocumentCopilotProposalAdapterDependencies {
   readonly documentAuthoring: CopilotDocumentAuthoringPort;
   /** Injected so a preview's expiry reasoning is testable rather than clock-dependent. */
   readonly now?: () => Date;
@@ -60,19 +61,25 @@ const proposedRetrievalState = (
   now: Date,
 ) => {
   const current = retrievalState(document);
-  const proposed = {
+  // Eligibility (enabled + expiry, including the "re-enabling clears an already-elapsed expiry"
+  // rule) is resolved by the same reader the ingestion write path uses, so this preview cannot
+  // promise a window Apply would not actually produce.
+  const eligibility = resolveRetrievalEligibility(
+    { retrievalEnabled: document.retrievalEnabled, retrievalExpiresAt: document.retrievalExpiresAt },
+    {
+      retrievalEnabled: payload.retrievalEnabled,
+      retrievalExpiresAt: payload.retrievalExpiresAt !== undefined
+        ? (payload.retrievalExpiresAt === null ? null : new Date(payload.retrievalExpiresAt))
+        : undefined,
+    },
+    now,
+  );
+  return {
     ...current,
     ...(payload.metadata !== undefined ? { metadata: payload.metadata } : {}),
-    ...(payload.retrievalEnabled !== undefined ? { retrievalEnabled: payload.retrievalEnabled } : {}),
-    ...(payload.retrievalExpiresAt !== undefined ? { retrievalExpiresAt: payload.retrievalExpiresAt } : {}),
+    retrievalEnabled: eligibility.retrievalEnabled,
+    retrievalExpiresAt: eligibility.retrievalExpiresAt ? eligibility.retrievalExpiresAt.toISOString() : null,
   };
-  // The write clears an expiry already in the past when retrieval is being switched on, so showing
-  // the requested date would promise an eligibility window the document will not come back with.
-  const expiresAt = proposed.retrievalExpiresAt;
-  if (payload.retrievalEnabled === true && expiresAt !== null && new Date(expiresAt).getTime() <= now.getTime()) {
-    return { ...proposed, retrievalExpiresAt: null };
-  }
-  return proposed;
 };
 
 export const createDocumentCopilotProposalAdapter = (

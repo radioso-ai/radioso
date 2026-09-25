@@ -113,6 +113,7 @@ export {
   type EmbedConfigCacheInvalidator,
 } from "./services/embedConfigCacheInvalidator.js";
 export {
+  AUTHORED_DIRECTIVE_ENABLED_DEFAULT,
   authoredDirectiveInputSchema,
   authoredDirectiveRouteValues,
   authoredDirectiveSurfaceValues,

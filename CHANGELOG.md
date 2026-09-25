@@ -9,6 +9,23 @@ Cut a release with the **Cut Release** workflow. It reads the commits since the 
 tag, writes the entry above this line, tags the commit, and publishes a GitHub Release. A
 deploy then ships a release that already exists; it never mints one.
 
+## [1.6.0] - 2026-09-25
+
+### Added
+
+- **operator-mcp:** read and drive Test Chat over operator MCP ([#1327](https://github.com/radioso-ai/radioso/pull/1327))
+
+### Fixed
+
+- **operator-mcp:** settle owner refusals on reviewed executions as failed ([#1326](https://github.com/radioso-ai/radioso/pull/1326))
+- **operator-mcp:** refuse an unknown reviewed operation instead of reporting an outage ([#1325](https://github.com/radioso-ai/radioso/pull/1325))
+
+### Internal
+
+- **operator-copilot:** use owner rules for notify reachability, retrieval expiry, and directive defaults ([#1328](https://github.com/radioso-ai/radioso/pull/1328))
+
+[1.6.0]: https://github.com/radioso-ai/radioso/compare/v1.5.0...v1.6.0
+
 ## [1.5.0] - 2026-09-24
 
 ### Added

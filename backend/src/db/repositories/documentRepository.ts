@@ -483,9 +483,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
     input: DocumentInventoryListInput,
   ): Promise<{ documents: DocumentSummaryRecord[]; total: number; nextCursor: string | null; hasMore: boolean }> {
     const cursor = input.cursor ? decodeCursorWithKeys(input.cursor, ["createdAt", "id"]) : null;
-    const total = cursor?.totalSnapshot !== undefined
-      ? Number(cursor.totalSnapshot)
-      : Number((await withInventoryFilters(
+    const total = Number((await withInventoryFilters(
           this.db.selectFrom("documents").select(sql<string>`COUNT(*)::text`.as("count")).where("workspace_id", "=", workspaceId),
           input,
         ).executeTakeFirst())?.count ?? "0");

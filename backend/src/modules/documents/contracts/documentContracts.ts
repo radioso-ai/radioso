@@ -432,6 +432,11 @@ export interface DocumentInventoryListInput {
   limit: number;
 }
 
+/** Content-free inventory read owned by documents and consumed by operator surfaces. */
+export interface DocumentInventoryPort {
+  listInventoryForWorkspace(workspaceId: string, input: DocumentInventoryListInput): Promise<DocumentListPage>;
+}
+
 export interface EmbeddingCoverageReconciliationPort {
   reconcileWorkspace(workspaceId: string): Promise<{ enqueued: number; skipped: number }>;
 }

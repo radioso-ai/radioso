@@ -413,6 +413,8 @@ describe("verification cost declarations", () => {
     test_agent_turn: { input: {}, expected: 1 },
     replay_eval_case: { input: {}, expected: 1 },
     retrieval_probe: { input: {}, expected: 1 },
+    // One Test Chat turn per call, charged like any other agent turn Ray runs.
+    send_test_chat_message: { input: {}, expected: 1 },
     // One ephemeral turn over the live conversation, whatever its length.
     draft_reply: { input: {}, expected: 1 },
     // One completion over the crawled pages, whatever the site's size.

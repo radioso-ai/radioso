@@ -111,6 +111,20 @@ export const operatorMcpDispositions: Readonly<Record<string, CopilotMcpDisposit
     retry: { effect: "act", idempotent: true, operationIdentity: "client" },
   },
   test_agent_turn: contextDependent,
+  // Test Chat's reads scope by the request's own agent and session ids, the same explicit shape as
+  // the conversation readers.
+  test_chat_sessions: eligibleRead,
+  test_chat_transcript: eligibleRead,
+  test_chat_turn_trace: eligibleRead,
+  // One agent turn per call, like retrieval_probe: it spends model budget and leaves a session
+  // behind, so a retry runs a second turn unless the client keys it with an operation id. Skill
+  // effects are always suppressed, so a turn has no outward effect to reconcile.
+  send_test_chat_message: {
+    status: "eligible",
+    inputStrategy: "explicit",
+    scope: "operator:probe",
+    retry: { effect: "none", idempotent: false, operationIdentity: "client" },
+  },
   turn_trace: eligibleRead,
   validate_routine: eligibleRead,
   workspace_settings: {

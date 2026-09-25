@@ -66,8 +66,6 @@
   "exports|backend/src/modules/operatorCopilot/ingestionSettingsProposalAdapter.ts|changedIngestionSettingKeys",
   "exports|backend/src/modules/operatorCopilot/probeBudget.ts|CopilotProbeBudgetExhaustedError",
   "exports|backend/src/modules/operatorCopilot/probeBudget.ts|CopilotVerificationCostError",
-  "exports|backend/src/modules/operatorCopilot/services/expensiveOperationGuard.ts|CopilotExpensiveOperationRateLimitedError",
-  "exports|backend/src/modules/operatorCopilot/services/expensiveOperationGuard.ts|CopilotUsageLimitReachedError",
   "exports|backend/src/modules/operatorCopilot/tools/retrievalProbe.ts|retrievalProbeInputSchema",
   "exports|backend/src/modules/operatorCopilot/tools/retrievalProbe.ts|retrievalProbeOutputSchema",
   "exports|backend/src/modules/operatorCopilot/workspaceSettingProposalAdapter.ts|changedWorkspaceSettingKeys",

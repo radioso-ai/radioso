@@ -12,8 +12,6 @@ import {
   OperatorCopilotService,
   copilotProposalTargetTypes,
   CopilotAuthorizationError,
-  CopilotConflictError,
-  CopilotNotFoundError,
   type CopilotConversation,
   type CopilotMessage,
   type CopilotProposal,
@@ -783,9 +781,23 @@ describe("US3 copilot proposals", () => {
 
     for (const binding of [{ ...mcpBinding, clientId: "client-2" }, { ...mcpBinding, grantId: "grant-2" }]) {
       await expect(service.cancelMcpReviewedProposal({ workspaceId, accountId, operatorUserId, ...binding, proposalId: proposal.id, currentAuthorization }))
-        .rejects.toBeInstanceOf(CopilotNotFoundError);
+        .resolves.toEqual({ status: "not_found" });
     }
     expect((await repository.findProposal({ id: proposal.id, workspaceId, operatorUserId }))?.status).toBe("pending");
+  });
+
+  it("finds no bound reviewed operation for a propose_*-style proposal, which never carries a review digest", async () => {
+    const repository = new MemoryProposalRepository();
+    const preparationId = randomUUID();
+    repository.bindMcpPreparation(preparationId, mcpBinding);
+    const proposal = await repository.createProposal({
+      workspaceId, operatorUserId, origin: { type: "operator_mcp_invocation", invocationId: preparationId }, targetType: "directive", targetRef: { agentId, directiveId },
+      payload: { name: "Updated" }, versionToken: "current", evidence: null,
+    });
+    const service = reviewedOperationService(repository);
+
+    await expect(service.cancelMcpReviewedProposal({ workspaceId, accountId, operatorUserId, ...mcpBinding, proposalId: proposal.id, currentAuthorization }))
+      .resolves.toEqual({ status: "not_found" });
   });
 
   it("reports a cancellation that lost its race to a concurrent cancellation as dismissed", async () => {
@@ -811,8 +823,21 @@ describe("US3 copilot proposals", () => {
     vi.spyOn(repository, "cancelPendingProposal").mockResolvedValueOnce(null);
 
     await expect(service.cancelMcpReviewedProposal({ workspaceId, accountId, operatorUserId, ...mcpBinding, proposalId: proposal.id, currentAuthorization }))
-      .rejects.toBeInstanceOf(CopilotConflictError);
+      .resolves.toEqual({ status: "not_cancellable" });
     expect((await repository.findProposal({ id: proposal.id, workspaceId, operatorUserId }))?.status).toBe("pending");
+  });
+
+  it("does not report an applied reviewed proposal's state to a caller whose current authorization is denied", async () => {
+    const repository = new MemoryProposalRepository();
+    const proposal = await createMcpReviewedProposal(repository);
+    const applyIfVersionMatches = vi.fn(async () => ({ outcome: "applied" as const, appliedRef: { directiveId } }));
+    const service = reviewedOperationService(repository, auditService(), applyIfVersionMatches);
+    await expect(service.executeMcpReviewedProposal({ workspaceId, accountId, operatorUserId, ...mcpBinding, proposalId: proposal.id, reviewDigest: "a".repeat(43), executionInvocationId: "execution-1", currentAuthorization }))
+      .resolves.toMatchObject({ status: "applied" });
+    const denied = { hasAllPermissions: vi.fn(async () => false) };
+
+    await expect(service.cancelMcpReviewedProposal({ workspaceId, accountId, operatorUserId, ...mcpBinding, proposalId: proposal.id, currentAuthorization: denied }))
+      .rejects.toBeInstanceOf(CopilotAuthorizationError);
   });
 
   it.each([

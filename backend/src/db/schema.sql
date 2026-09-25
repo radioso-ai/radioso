@@ -22,6 +22,13 @@ SET client_min_messages = warning;
 SET row_security = off;
 
 --
+-- Name: pg_trgm; Type: EXTENSION; Schema: -; Owner: -
+--
+
+CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;
+
+
+--
 -- Name: pgcrypto; Type: EXTENSION; Schema: -; Owner: -
 --
 
@@ -7156,6 +7163,13 @@ CREATE UNIQUE INDEX idx_document_sources_workspace_kind_external_id_unique ON pu
 --
 
 CREATE INDEX idx_documents_metadata ON public.documents USING gin (metadata);
+
+
+--
+-- Name: idx_documents_title_trgm; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_documents_title_trgm ON public.documents USING gin (title public.gin_trgm_ops);
 
 
 --

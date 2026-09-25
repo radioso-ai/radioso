@@ -32,6 +32,7 @@ describe("operator MCP descriptor disposition", () => {
       "document_status",
       "eval_results",
       "execute_reviewed_proposal",
+      "list_documents",
       "prepare_agent_publication",
       "prepare_retrieval_settings",
       "prepare_routine_structure",

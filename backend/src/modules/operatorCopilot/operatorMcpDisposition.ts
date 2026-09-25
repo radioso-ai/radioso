@@ -36,6 +36,7 @@ export const operatorMcpDispositions: Readonly<Record<string, CopilotMcpDisposit
   create_eval_case_from_turn: unsafeAct,
   draft_reply: customerReply,
   document_chunks: eligibleRead,
+  list_documents: eligibleRead,
   document_search: eligibleRead,
   execute_reviewed_proposal: {
     status: "eligible",

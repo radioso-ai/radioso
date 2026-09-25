@@ -1039,4 +1039,59 @@ describeIntegration("DocumentRepository (Postgres)", () => {
     expect(result.deletedCount).toBe(2);
     expect(result.deletedContentBytes).toBe(30);
   });
+
+  it("lists a filtered, cursor-paginated document inventory without reading document content", async () => {
+    const matching = await repository.create({
+      ...baseCreateInput({
+        sourceId,
+        title: "Operator handbook",
+        externalDocumentId: "handbook-1",
+        metadata: { locale: "en", revision: 2 },
+      }),
+      status: "ready",
+    });
+    await repository.create({
+      ...baseCreateInput({
+        sourceId,
+        title: "Operator handbook draft",
+        externalDocumentId: "handbook-2",
+        metadata: { locale: "en", revision: 2 },
+      }),
+      status: "processing",
+    });
+    await repository.create({
+      ...baseCreateInput({
+        title: "Billing handbook",
+        externalDocumentId: "billing-1",
+        metadata: { locale: "et", revision: 2 },
+      }),
+      status: "ready",
+    });
+    await settledDocument(repository.updateRetrievalSettings({
+      documentId: matching.id,
+      workspaceId,
+      retrievalEnabled: false,
+    }));
+
+    const page = await repository.listInventoryPageByWorkspaceId(workspaceId, {
+      sourceId,
+      status: "ready",
+      externalDocumentIds: ["handbook-1", "handbook-2"],
+      titleContains: "HANDBOOK",
+      metadata: { locale: "en", revision: 2 },
+      retrievalEnabled: false,
+      limit: 1,
+    });
+
+    expect(page.total).toBe(1);
+    expect(page.nextCursor).toBeNull();
+    expect(page.documents).toHaveLength(1);
+    expect(page.documents[0]).toMatchObject({
+      id: matching.id,
+      title: "Operator handbook",
+      externalDocumentId: "handbook-1",
+      source: { name: "Docs Site" },
+      contentSize: expect.any(Number),
+    });
+  });
 });

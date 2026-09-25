@@ -57,6 +57,12 @@ const usageDescriptor = (deps: { usage: CopilotAccountUsagePort }): CopilotToolD
   // Strictly stricter than the tenant-facing route this mirrors, which is gated on an account
   // session alone. Usage is organization-scoped, so the numbers cover every workspace in the org.
   requiredPermissions: ["workspace.settings.read"],
+  mcpDisposition: {
+    status: "eligible",
+    inputStrategy: "explicit",
+    scope: "operator:read",
+    retry: { effect: "none", idempotent: true, operationIdentity: "client" },
+  },
   capabilityProvenance: {
     backingOperationIds: ["getEnterpriseAccountUsage"],
     applicationPrimitiveIds: ["usageLimits.account-usage.read"],

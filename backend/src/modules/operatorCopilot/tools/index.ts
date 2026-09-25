@@ -19,8 +19,8 @@ import { createAgentTurnProbeCopilotTools } from "./agentTurnProbe.js";
 import type { AgentTurnProbeCopilotToolDependencies } from "./agentTurnProbe.js";
 import { createDirectiveProposalCopilotTools } from "./directives.js";
 import type { DirectiveProposalCopilotToolDependencies } from "./directives.js";
-import { createDocumentKnowledgeCopilotTools, createDocumentSearchCopilotTools, createDocumentStatusCopilotTools } from "./documents.js";
-import type { DocumentKnowledgeCopilotToolDependencies, DocumentSearchCopilotToolDependencies, DocumentStatusCopilotToolDependencies } from "./documents.js";
+import { createDocumentInventoryCopilotTools, createDocumentKnowledgeCopilotTools, createDocumentSearchCopilotTools, createDocumentStatusCopilotTools } from "./documents.js";
+import type { DocumentInventoryCopilotToolDependencies, DocumentKnowledgeCopilotToolDependencies, DocumentSearchCopilotToolDependencies, DocumentStatusCopilotToolDependencies } from "./documents.js";
 import { createDocumentProposalCopilotTools } from "./documentProposals.js";
 import { createWebsiteCrawlProposalCopilotTools } from "./websiteCrawlProposals.js";
 import { createIngestionSettingsProposalCopilotTools } from "./ingestionSettingsProposals.js";
@@ -63,6 +63,7 @@ type CopilotToolCatalogDependencies = AgentConfigurationCopilotToolDependencies
   & ReplyDraftCopilotToolDependencies
   & Omit<AgentTurnProbeCopilotToolDependencies, "agentLookup">
   & DocumentSearchCopilotToolDependencies
+  & DocumentInventoryCopilotToolDependencies
   & DocumentStatusCopilotToolDependencies
   & DocumentKnowledgeCopilotToolDependencies
   & EvalCopilotToolDependencies
@@ -102,6 +103,7 @@ export const createCopilotToolDescriptors = (
   ...createReplyDraftCopilotTools(deps),
   ...createAgentTurnProbeCopilotTools({ ...deps, agentLookup: deps.agentService }),
   ...createDocumentSearchCopilotTools(deps),
+  ...createDocumentInventoryCopilotTools(deps),
   ...createEvalCopilotTools({ ...deps, agentLookup: deps.agentService }),
   ...createEvalVerificationCopilotTools(deps),
   ...createRetrievalProbeCopilotTools({ ...deps, agentLookup: deps.agentService }),
@@ -143,7 +145,7 @@ export type { CopilotContextVariablesPort } from "./contextVariables.js";
 export type { CopilotConversationHistoryPort } from "./chat.js";
 export type { CopilotReplyDraftPort } from "./replyDraft.js";
 export type { CopilotAgentTurnProbePort } from "./agentTurnProbe.js";
-export type { CopilotDocumentChunksPort, CopilotDocumentMaintenancePort, CopilotDocumentSearchPort, CopilotDocumentSourceStatusPort, CopilotDocumentStatusPort } from "./documents.js";
+export type { CopilotDocumentChunksPort, CopilotDocumentInventoryPort, CopilotDocumentMaintenancePort, CopilotDocumentSearchPort, CopilotDocumentSourceStatusPort, CopilotDocumentStatusPort } from "./documents.js";
 export type { CopilotEvalResultsPort } from "./eval.js";
 export type { CopilotQualitySignalsPort, CopilotQualityTriagePort } from "./quality.js";
 export type { CopilotRetrievalProbePort } from "./retrievalProbe.js";

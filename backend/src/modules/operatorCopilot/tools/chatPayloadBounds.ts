@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 import {
   compactForBudget,
   compactRecord,
@@ -8,6 +10,44 @@ import {
   withTruncation,
 } from "../payloadCompaction.js";
 import { copilotPayloadCharBudget } from "../turnBudget.js";
+
+export const jsonValueSchema: z.ZodType<unknown> = z.lazy(() => z.union([
+  z.string(),
+  z.number(),
+  z.boolean(),
+  z.null(),
+  z.array(jsonValueSchema),
+  z.record(jsonValueSchema),
+]));
+
+const traceStageSchema = z.object({
+  id: z.string(),
+  kind: z.string(),
+  status: z.string(),
+  startedAt: z.string().optional(),
+  completedAt: z.string().optional(),
+  inputs: z.record(jsonValueSchema).optional(),
+  outputs: z.record(jsonValueSchema).optional(),
+  subTrace: jsonValueSchema.optional(),
+}).passthrough();
+
+/**
+ * One turn's persisted diagnostic spine, the payload `boundTurnTracePayload` bounds. Every trace
+ * reader renders it in this shape: `turn_trace` for a customer or dashboard conversation and
+ * `test_chat_turn_trace` for a Test Chat turn. A turn with no trace reads as null, so each reader
+ * declares it `.nullable()`.
+ */
+export const turnTraceEnvelopeSchema = z.object({
+  version: z.number().int().nonnegative(),
+  spine: z.object({
+    traceId: z.string(),
+    startedAt: z.string(),
+    completedAt: z.string().optional(),
+    stages: z.array(traceStageSchema),
+  }).passthrough(),
+  openTelemetry: z.object({ traceId: z.string(), spanId: z.string(), sampled: z.boolean() }).optional(),
+  summary: z.record(jsonValueSchema).optional(),
+});
 
 const MAX_MESSAGES = 20;
 

@@ -1,5 +1,5 @@
 import type { AgentRevision } from "../../modules/agents/public.js";
-import type { Transaction } from "kysely";
+import { sql, type Transaction } from "kysely";
 import { parseAgentRevisionSnapshot } from "../../modules/agents/public.js";
 import type { TestExecution, TestExecutionAttempt, TestExecutionAttemptRecord, TestExecutionClaim, TestExecutionHistoryItem, TestExecutionHistorySide, TestExecutionRepositoryPort, TestExecutionRunnerResult, TestExecutionSide, TestExecutionState } from "../../modules/test-execution/testExecution.js";
 import { currentTimestamp, toJsonb, transactionAdvisoryLock } from "../../shared/infra/kysely/sqlHelpers.js";
@@ -161,6 +161,23 @@ export class TestExecutionRepository implements TestExecutionRepositoryPort {
       hasMore: rows.length > input.limit,
       nextCursor: rows.length > input.limit && last ? encodeCursor({ createdAt: new Date(last.created_at).toISOString(), id: last.id }) : null,
     };
+  }
+
+  async summarizeTranscripts(input: Parameters<TestExecutionRepositoryPort["summarizeTranscripts"]>[0]): ReturnType<TestExecutionRepositoryPort["summarizeTranscripts"]> {
+    if (input.executionIds.length === 0) return new Map();
+    // Computed in Postgres so a list page never ships whole histories (and their turn traces) to count them.
+    const rows = await this.db.selectFrom("agent_test_execution_sides as side")
+      .select([
+        "side.execution_id",
+        sql<string>`(SELECT count(DISTINCT entry ->> 'turnId') FROM jsonb_array_elements(side.history) AS entry WHERE entry ->> 'role' = 'user')`.as("turn_count"),
+        sql<string | null>`(SELECT entry ->> 'content' FROM jsonb_array_elements(side.history) WITH ORDINALITY AS item(entry, ordinal) WHERE entry ->> 'role' = 'user' ORDER BY ordinal LIMIT 1)`.as("first_message"),
+      ])
+      .where("side.workspace_id", "=", input.workspaceId)
+      .where("side.agent_id", "=", input.agentId)
+      .where("side.execution_id", "in", input.executionIds)
+      .where("side.side_ordinal", "=", 0)
+      .execute();
+    return new Map(rows.map((row) => [row.execution_id, { turnCount: Number(row.turn_count), firstMessage: row.first_message }]));
   }
 
   async listAttempts(input: { workspaceId: string; agentId: string; executionId: string }): Promise<readonly TestExecutionAttemptRecord[]> {

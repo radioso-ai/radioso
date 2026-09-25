@@ -15,6 +15,7 @@ import {
   type CopilotReplyDraftPort,
   type CopilotQualityTriagePort,
   type CopilotRetrievalProbePort,
+  type CopilotTestChatPort,
   type CopilotTriageLogPort,
   type CopilotRoutineDefinitionPort,
   type CopilotSkillCapabilityTargetsPort,
@@ -197,6 +198,7 @@ export const createCopilotToolCatalog = (deps: {
   readonly qualitySignalsService: CopilotQualitySignalsPort;
   readonly qualityTriageService: CopilotQualityTriagePort;
   readonly retrievalProbe: CopilotRetrievalProbePort;
+  readonly testChat: CopilotTestChatPort;
   readonly websiteAnalysisProbe: CopilotWebsiteAnalysisProbePort;
   readonly audiencePulseService: CopilotAudiencePulsePort;
   readonly documentStatusService: CopilotDocumentStatusPort;

@@ -2,29 +2,12 @@ import { z } from "zod";
 
 import type { CallerKind } from "../../../shared/domain/conversationSource.js";
 import type { CopilotToolDescriptor } from "../contracts.js";
-import { boundPayload } from "../payloadCompaction.js";
-import { boundConversationPayload, boundTurnTracePayload } from "./chatPayloadBounds.js";
+import { boundPayload, truncationRecordSchema } from "../payloadCompaction.js";
+import { boundConversationPayload, boundTurnTracePayload, jsonValueSchema, turnTraceEnvelopeSchema } from "./chatPayloadBounds.js";
 import { asRecord, entity, requiredPageConversation } from "./shared.js";
 
 const idSchema = z.string().uuid();
 const unknownRecord = z.record(z.unknown());
-const jsonValueSchema: z.ZodType<unknown> = z.lazy(() => z.union([
-  z.string(),
-  z.number(),
-  z.boolean(),
-  z.null(),
-  z.array(jsonValueSchema),
-  z.record(jsonValueSchema),
-]));
-const truncationSchema = z.object({
-  truncated: z.literal(true),
-  entries: z.array(z.object({
-    path: z.string(),
-    reason: z.enum(["string_length", "array_length", "budget_omitted"]),
-    originalLength: z.number().int().nonnegative().optional(),
-    retainedLength: z.number().int().nonnegative().optional(),
-  })),
-});
 const shallowRouteSchema = z.object({
   generator: z.string(),
   routeType: z.enum(["direct", "retrieval"]),
@@ -72,29 +55,8 @@ const conversationTranscriptOutputSchema = z.object({
     messageCount: z.number().int().nonnegative(),
     ownership: ownershipSchema,
     messages: z.array(transcriptMessageSchema),
-  }).and(z.object({ truncation: truncationSchema.optional() })),
+  }).and(z.object({ truncation: truncationRecordSchema })),
 });
-const traceStageSchema = z.object({
-  id: z.string(),
-  kind: z.string(),
-  status: z.string(),
-  startedAt: z.string().optional(),
-  completedAt: z.string().optional(),
-  inputs: z.record(jsonValueSchema).optional(),
-  outputs: z.record(jsonValueSchema).optional(),
-  subTrace: jsonValueSchema.optional(),
-}).passthrough();
-const turnTraceEnvelopeSchema = z.object({
-  version: z.number().int().nonnegative(),
-  spine: z.object({
-    traceId: z.string(),
-    startedAt: z.string(),
-    completedAt: z.string().optional(),
-    stages: z.array(traceStageSchema),
-  }).passthrough(),
-  openTelemetry: z.object({ traceId: z.string(), spanId: z.string(), sampled: z.boolean() }).optional(),
-  summary: z.record(jsonValueSchema).optional(),
-}).nullable();
 const turnTraceOutputSchema = z.object({
   trace: z.object({
     conversationId: z.string().uuid(),
@@ -119,11 +81,11 @@ const turnTraceOutputSchema = z.object({
         route: shallowRouteSchema,
         activitySummary: jsonValueSchema.nullable(),
         activityTrace: jsonValueSchema.nullable(),
-        turnTrace: turnTraceEnvelopeSchema,
+        turnTrace: turnTraceEnvelopeSchema.nullable(),
         errorMessage: z.string().nullable(),
       }).nullable(),
     }),
-  }).and(z.object({ truncation: truncationSchema.optional() })),
+  }).and(z.object({ truncation: truncationRecordSchema })),
 });
 
 
@@ -354,6 +316,12 @@ const projectTurnTrace = (detail: CopilotConversationTurnDetail): Record<string,
 };
 
 
+// Test Chat sessions are private test executions rather than conversations, so these two readers
+// never see them; naming the Test Chat readers keeps a "why didn't it fire in Test Chat" question
+// from searching customer history.
+const CONVERSATION_TRANSCRIPT_DESCRIPTION = "Read a bounded transcript of a customer or dashboard chat conversation with shallow per-turn outcomes, routing, feedback, and ownership. Use turn_trace for one turn's full diagnostic spine. Test Chat sessions are read with test_chat_transcript.";
+const CONVERSATION_HISTORY_SEARCH_DESCRIPTION = "List recent customer and dashboard chat conversations in this workspace for investigation. Test Chat sessions are listed with test_chat_sessions.";
+
 export interface ChatCopilotToolDependencies {
   readonly chatHistoryService: CopilotConversationHistoryPort;
 }
@@ -361,11 +329,11 @@ export interface ChatCopilotToolDependencies {
 export const createChatCopilotTools = (deps: ChatCopilotToolDependencies): ReadonlyArray<CopilotToolDescriptor> => [
   {
     name: "conversation_transcript", shape: "read", verificationCost: () => 0, uiLabel: "Reading conversation transcript", contributingModule: "chat", dashboardSubject: { type: "conversation" }, requiredPermissions: ["workspace.history.read"],
-    description: "Read a bounded customer transcript with shallow per-turn outcomes, routing, feedback, and ownership. Use turn_trace for one turn's full diagnostic spine.",
+    description: CONVERSATION_TRANSCRIPT_DESCRIPTION,
     inputSchema: z.object({ conversationId: idSchema.optional() }), outputSchema: conversationTranscriptOutputSchema,
     createTool: (context) => ({
       name: "conversation_transcript",
-      description: "Read a bounded customer transcript with shallow per-turn outcomes, routing, feedback, and ownership. Use turn_trace for one turn's full diagnostic spine.",
+      description: CONVERSATION_TRANSCRIPT_DESCRIPTION,
       inputSchema: z.object({ conversationId: idSchema.optional() }),
       outputSchema: conversationTranscriptOutputSchema,
       invoke: async ({ conversationId }) => ({
@@ -399,9 +367,9 @@ export const createChatCopilotTools = (deps: ChatCopilotToolDependencies): Reado
   },
   {
     name: "conversation_history_search", shape: "read", verificationCost: () => 0, uiLabel: "Searching conversations", contributingModule: "chat", dashboardSubject: { type: "conversation" }, requiredPermissions: ["workspace.history.read"],
-    description: "List recent customer conversations in this workspace for investigation.",
+    description: CONVERSATION_HISTORY_SEARCH_DESCRIPTION,
     inputSchema: z.object({ limit: z.number().int().min(1).max(50).optional() }), outputSchema: z.object({ conversations: z.array(unknownRecord) }),
-    createTool: (context) => ({ name: "conversation_history_search", description: "List recent customer conversations in this workspace for investigation.", inputSchema: z.object({ limit: z.number().int().min(1).max(50).optional() }), outputSchema: z.object({ conversations: z.array(unknownRecord) }), invoke: async ({ limit }) => ({ conversations: boundPayload({ conversations: (await deps.chatHistoryService.listConversations(context.workspaceId, { limit: limit ?? 20 })).conversations.map(asRecord) }).conversations }) }),
+    createTool: (context) => ({ name: "conversation_history_search", description: CONVERSATION_HISTORY_SEARCH_DESCRIPTION, inputSchema: z.object({ limit: z.number().int().min(1).max(50).optional() }), outputSchema: z.object({ conversations: z.array(unknownRecord) }), invoke: async ({ limit }) => ({ conversations: boundPayload({ conversations: (await deps.chatHistoryService.listConversations(context.workspaceId, { limit: limit ?? 20 })).conversations.map(asRecord) }).conversations }) }),
   },
 
 ];

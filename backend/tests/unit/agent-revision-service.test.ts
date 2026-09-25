@@ -5,6 +5,7 @@ import {
   type AgentRevision,
   type AgentRevisionRepositoryPort,
   type AgentRevisionSnapshot,
+  type AgentRevisionState,
   type RoutineServingValidator,
 } from "../../src/modules/agents/agentRevision.js";
 import type { RoutineValidationResult } from "../../src/modules/routines/public.js";
@@ -58,8 +59,10 @@ class InMemoryRevisionRepository implements AgentRevisionRepositoryPort {
     return this.draft;
   }
   async readDraft() { return this.draft; }
-  async readState(_workspaceId: string, agentId: string) {
-    return { agentId, status: "draft_dirty" as const, draft: { generation: this.draft.generation, basePublishedRevisionId: this.draft.basePublishedRevisionId, updatedAt: this.draft.updatedAt }, publishedRevision: null, canPublish: true };
+  status: AgentRevisionState["status"] = "draft_dirty";
+  publishedRevision: AgentRevision | null = null;
+  async readState(_workspaceId: string, agentId: string): Promise<AgentRevisionState> {
+    return { agentId, status: this.status, draft: { generation: this.draft.generation, basePublishedRevisionId: this.draft.basePublishedRevisionId, updatedAt: this.draft.updatedAt }, publishedRevision: this.publishedRevision, canPublish: true };
   }
   async findRevision(_workspaceId: string, _agentId: string, revisionId: string): Promise<AgentRevision | null> {
     const value = this.revisions.get(revisionId);
@@ -84,6 +87,40 @@ class InMemoryRevisionRepository implements AgentRevisionRepositoryPort {
     return { publicationId: "publication-1", publishedAt: new Date("2026-09-08T00:00:00.000Z"), revisionId: input.revisionId, idempotentReplay: false };
   }
 }
+
+describe("AgentRevisionService default test revision", () => {
+  const published = (): AgentRevision => ({ id: "published-1", snapshot: snapshot("published v1"), sourceDraftGeneration: 1, sourceBasePublishedRevisionId: null, createdAt: new Date("2026-09-01T00:00:00.000Z"), publishedAt: new Date("2026-09-01T00:00:00.000Z"), publishedVersion: 3 });
+
+  it("tests a fresh candidate of a changed draft, fenced on the draft generation it was built from", async () => {
+    const repository = new InMemoryRevisionRepository();
+    repository.publishedRevision = published();
+    const service = new AgentRevisionService(repository, () => "candidate-1");
+
+    await expect(service.resolveDefaultTestRevision(workspaceId, agentId)).resolves.toEqual({ revisionId: "candidate-1", expectedDraftGeneration: 2 });
+    expect(repository.revisions.get("candidate-1")).toEqual(snapshot("draft v1"));
+  });
+
+  it("tests the published revision when the saved draft holds exactly what is published", async () => {
+    const repository = new InMemoryRevisionRepository();
+    repository.status = "draft_clean";
+    repository.publishedRevision = published();
+    const createCandidate = vi.spyOn(repository, "createCandidate");
+    const service = new AgentRevisionService(repository, () => "candidate-1");
+
+    await expect(service.resolveDefaultTestRevision(workspaceId, agentId)).resolves.toEqual({ revisionId: "published-1", expectedDraftGeneration: 2 });
+    expect(createCandidate).not.toHaveBeenCalled();
+  });
+
+  it("tests the candidate of an agent that was never published, since it is the only revision there is", async () => {
+    for (const status of ["unpublished", "draft_clean"] as const) {
+      const repository = new InMemoryRevisionRepository();
+      repository.status = status;
+      const service = new AgentRevisionService(repository, () => "candidate-1");
+
+      await expect(service.resolveDefaultTestRevision(workspaceId, agentId)).resolves.toEqual({ revisionId: "candidate-1", expectedDraftGeneration: 2 });
+    }
+  });
+});
 
 describe("AgentRevisionService", () => {
   it("publishes the immutable candidate selected from a saved draft, preserving later draft edits", async () => {

@@ -14,6 +14,7 @@ import {
   type FrozenTestValue,
   type TestValue,
 } from "../context-variables/public.js";
+import { findTranscriptTurn, readTranscript, settleSentTurn, type TestExecutionTranscript, type TestExecutionTurnRead } from "./testExecutionTurns.js";
 
 // An attempt's lease must outlast the slowest legitimate turn, or a concurrent detail read
 // marks a still-running attempt lease_expired and its result is discarded — and Retry then
@@ -120,6 +121,17 @@ export interface TestExecutionHistoryItem {
   sides: readonly TestExecutionHistorySide[];
 }
 
+/** A listed execution with the facts that tell one session from another. Still no transcript. */
+interface TestExecutionSummary extends TestExecutionHistoryItem {
+  /** Turns the operator sent a message in; a greeting is not one. */
+  turnCount: number;
+  firstMessage: string | null;
+}
+
+interface TestExecutionSummaryPage extends Omit<TestExecutionHistoryPage, "executions"> {
+  executions: readonly TestExecutionSummary[];
+}
+
 export interface TestExecutionClaim {
   sideId: string;
   attempt: TestExecutionAttempt;
@@ -139,6 +151,14 @@ export type TestExecutionEvent =
 interface TestExecutionRevisionReaderPort {
   findRevision(input: { workspaceId: string; agentId: string; revisionId: string }): Promise<AgentRevision | null>;
   readDraftGeneration(input: { workspaceId: string; agentId: string }): Promise<number | null>;
+}
+
+/**
+ * Chooses the revision a single test runs when the caller names none. Kept apart from the reader
+ * because choosing may write: it can freeze a candidate from the saved draft.
+ */
+export interface TestExecutionDefaultRevisionPort {
+  resolveDefault(input: { workspaceId: string; agentId: string }): Promise<{ revisionId: string; expectedDraftGeneration: number }>;
 }
 
 /** Catalog definitions remain live, while selection/configuration is frozen in a revision. */
@@ -210,6 +230,8 @@ export interface TestExecutionRepositoryPort {
   recoverExpiredSides(input: { workspaceId: string; agentId: string; executionId: string; now: Date }): Promise<TestExecution | null>;
   retainSide(input: { workspaceId: string; agentId: string; executionId: string; sideId: string; retainedExecutionId: string; retainedSideId: string; retainedConversationId: string }): Promise<"not_found" | "not_comparison" | "unsettled" | TestExecution>;
   list(input: { workspaceId: string; agentId: string; limit: number; cursor?: string }): Promise<TestExecutionHistoryPage>;
+  /** Turn count and opening user message per execution, read from its first side: comparison sides answer the same aligned messages. */
+  summarizeTranscripts(input: { workspaceId: string; agentId: string; executionIds: readonly string[] }): Promise<ReadonlyMap<string, Pick<TestExecutionSummary, "turnCount" | "firstMessage">>>;
   listAttempts(input: { workspaceId: string; agentId: string; executionId: string }): Promise<readonly TestExecutionAttemptRecord[]>;
   /** Claims one aligned turn and every selected side in one short transaction. */
   claimTurn(input: { workspaceId: string; agentId: string; executionId: string; sideIds: readonly string[]; generation: number; turnId: string; attemptId: string; message: string; inputFingerprint: string; now: Date; leaseMs: number; retry: boolean }): Promise<"generation_conflict" | "turn_conflict" | "retry_invalid" | "attempt_conflict" | { claims: readonly TestExecutionClaim[] }>;
@@ -223,6 +245,7 @@ interface TestExecutionAuditPort {
 
 interface TestExecutionServiceOptions {
   revisions: TestExecutionRevisionReaderPort;
+  defaultRevision?: TestExecutionDefaultRevisionPort;
   contextCatalog: ContextVariableTestValueCatalogPort;
   repository: TestExecutionRepositoryPort;
   runner: TrustedTestExecutionRunnerPort;
@@ -251,11 +274,13 @@ export class TestExecutionService {
     this.leaseMs = options.leaseMs ?? DEFAULT_ATTEMPT_LEASE_MS;
   }
 
-  async start(input: { workspaceId: string; agentId: string; accountId: string | null; mode: TestExecutionMode; revisionIds: readonly string[]; testValues: readonly TestValue[]; expectedDraftGeneration?: number; idempotencyKey: string; skillEffects?: SkillEffectPolicy; seedConversationId?: string }): Promise<TestExecution> {
+  /** Without `revisionIds`, a single test starts on the agent's default revision. */
+  async start(request: { workspaceId: string; agentId: string; accountId: string | null; mode: TestExecutionMode; revisionIds?: readonly string[]; testValues: readonly TestValue[]; expectedDraftGeneration?: number; idempotencyKey: string; skillEffects?: SkillEffectPolicy; seedConversationId?: string }): Promise<TestExecution> {
     // A retried or double-clicked start must never re-run the greeting bootstrap or mint a
     // second execution. Checked first, before any revision lookup or provider call.
-    const replay = await this.options.repository.findByIdempotencyKey({ workspaceId: input.workspaceId, agentId: input.agentId, idempotencyKey: input.idempotencyKey });
+    const replay = await this.options.repository.findByIdempotencyKey({ workspaceId: request.workspaceId, agentId: request.agentId, idempotencyKey: request.idempotencyKey });
     if (replay) return replay;
+    const input = { ...request, ...(request.revisionIds ? { revisionIds: request.revisionIds } : await this.defaultSelection(request)) };
     // A seed continues one conversation forward; a comparison has no single thread to continue.
     // The HTTP schema refuses this combination too; this is defence-in-depth for non-HTTP callers.
     if (input.seedConversationId !== undefined && input.mode !== "single") {
@@ -313,6 +338,14 @@ export class TestExecutionService {
     return execution;
   }
 
+  /** Fenced on the draft generation the default was chosen from, unless the caller fences on its own. */
+  private async defaultSelection(input: { workspaceId: string; agentId: string; mode: TestExecutionMode; expectedDraftGeneration?: number }): Promise<{ revisionIds: readonly string[]; expectedDraftGeneration: number }> {
+    if (input.mode !== "single") throw badRequest("A comparison test execution names both of its revisions.");
+    if (!this.options.defaultRevision) throw badRequest("Starting a test execution without a revision is unavailable.");
+    const selected = await this.options.defaultRevision.resolveDefault({ workspaceId: input.workspaceId, agentId: input.agentId });
+    return { revisionIds: [selected.revisionId], expectedDraftGeneration: input.expectedDraftGeneration ?? selected.expectedDraftGeneration };
+  }
+
   private async loadSeed(input: { workspaceId: string; agentId: string; conversationId: string }): Promise<TestExecutionSeed> {
     if (!this.options.seedSource) throw badRequest("Seeding a test execution from a conversation is unavailable.");
     const seed = await this.options.seedSource.loadSeed(input);
@@ -343,6 +376,23 @@ export class TestExecutionService {
 
   list(input: { workspaceId: string; agentId: string; limit: number; cursor?: string }): Promise<TestExecutionHistoryPage> {
     return this.options.repository.list(input);
+  }
+
+  /** A list page with each execution's turn count and opening message, read in one projection rather than per execution. */
+  async summaries(input: { workspaceId: string; agentId: string; limit: number; cursor?: string }): Promise<TestExecutionSummaryPage> {
+    const page = await this.options.repository.list(input);
+    const summaries = await this.options.repository.summarizeTranscripts({ workspaceId: input.workspaceId, agentId: input.agentId, executionIds: page.executions.map((item) => item.id) });
+    return { ...page, executions: page.executions.map((item) => ({ ...item, turnCount: summaries.get(item.id)?.turnCount ?? 0, firstMessage: summaries.get(item.id)?.firstMessage ?? null })) };
+  }
+
+  /** The execution read as turns per side, after the same stuck-side self-heal `detail` applies. */
+  async transcript(input: { workspaceId: string; agentId: string; executionId: string }): Promise<TestExecutionTranscript> {
+    return readTranscript(await this.detail({ workspaceId: input.workspaceId, agentId: input.agentId, executionId: input.executionId }));
+  }
+
+  /** One turn on one side, the first side unless one is named, as the store holds it. */
+  async turn(input: { workspaceId: string; agentId: string; executionId: string; turnId: string; sideId?: string }): Promise<TestExecutionTurnRead> {
+    return findTranscriptTurn(await this.transcript(input), input);
   }
 
   async detail(input: { workspaceId: string; agentId: string; executionId: string }): Promise<TestExecutionDetail> {
@@ -386,6 +436,12 @@ export class TestExecutionService {
     const events: TestExecutionEvent[] = [];
     for await (const event of this.streamMessage(input)) events.push(event);
     return events;
+  }
+
+  /** One turn without the stream: the settled outcome of this call's own attempt, on the first side. */
+  async send(input: TestExecutionMessageInput): Promise<TestExecutionTurnRead> {
+    const events = await this.message(input);
+    return settleSentTurn(await this.turn({ workspaceId: input.workspaceId, agentId: input.agentId, executionId: input.executionId, turnId: input.turnId }), events);
   }
 
   async *streamMessage(input: TestExecutionMessageInput): AsyncGenerator<TestExecutionEvent> {

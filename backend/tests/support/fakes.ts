@@ -2704,7 +2704,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
     const lastDocument = slice.at(-1);
     return {
       documents: (await this.listSummariesByIdsAndWorkspaceId(workspaceId, slice.map((item) => item.id))),
-      total: cursor?.totalSnapshot === undefined ? documents.length : Number(cursor.totalSnapshot),
+      total: documents.length,
       nextCursor: hasMore && lastDocument
         ? encodeCursor({ createdAt: lastDocument.createdAt.toISOString(), id: lastDocument.id }, documents.length)
         : null,

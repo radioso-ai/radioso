@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import type { ChunkRepositoryPort } from "../../documents/contracts/index.js";
+import type { ChunkRepositoryPort, DocumentInventoryPort } from "../../documents/contracts/index.js";
 import { documentMetadataRecordSchema } from "../../documents/public.js";
 import type { CopilotToolDescriptor } from "../contracts.js";
 import { boundPayload, compactForBudget, MAX_STRING_CHARS, truncationRecordSchema, withTruncation } from "../payloadCompaction.js";
@@ -19,36 +19,41 @@ const documentStatusOutputSchema = z.object({
   sources: z.array(unknownRecord),
   truncation: truncationRecordSchema,
 });
-const documentInventoryPageLimit = 100;
-const DOCUMENT_INVENTORY_DESCRIPTION = "List a bounded, content-free workspace document inventory. Filter by source, processing status, exact external ids or metadata, title text, and retrieval eligibility to confirm an import landed. Returns no document body or chunks.";
-const documentInventoryMetadataValueSchema = z.union([z.string().max(500), z.number(), z.boolean(), z.null()]);
+const documentInventoryRequestLimit = 100;
+const documentInventoryResponseLimit = 25;
+const documentInventoryMetadataFieldLimit = 8;
+// Worst-case UTF-8 sizing (four bytes per character) keeps 25 rows with eight metadata fields
+// below the MCP 256 KiB result ceiling, including identifiers and cursor overhead.
+const documentInventoryStringLimit = 128;
+const documentInventoryMetadataKeyLimit = 32;
+const DOCUMENT_INVENTORY_DESCRIPTION = `List a bounded, content-free workspace document inventory. Filter by source, processing status, exact external ids or metadata, title text, and retrieval eligibility to confirm an import landed. Returns at most ${documentInventoryResponseLimit} rows per call; follow nextCursor to continue. Returns no document body or chunks.`;
+const documentInventoryMetadataValueSchema = z.union([z.string().max(documentInventoryStringLimit), z.number(), z.boolean(), z.null()]);
 const documentInventoryInputSchema = z.object({
   sourceId: z.string().uuid().optional(),
   status: z.enum(["queued", "processing", "ready", "indexed", "failed"]).optional(),
-  externalDocumentIds: z.array(z.string().min(1).max(500)).min(1).max(documentInventoryPageLimit).optional(),
+  externalDocumentIds: z.array(z.string().min(1).max(500)).min(1).max(documentInventoryRequestLimit).optional(),
   titleContains: z.string().trim().min(1).max(500).optional(),
   metadata: documentMetadataRecordSchema.optional(),
   retrievalEnabled: z.boolean().optional(),
   cursor: z.string().min(1).max(2_000).optional(),
-  limit: z.number().int().min(1).max(documentInventoryPageLimit).default(25),
+  limit: z.number().int().min(1).max(documentInventoryRequestLimit).default(documentInventoryResponseLimit),
 }).strict();
 const documentInventoryOutputSchema = z.object({
   documents: z.array(z.object({
     id: z.string().uuid(),
-    title: z.string().max(500),
+    title: z.string().max(documentInventoryStringLimit),
     sourceId: z.string().uuid().nullable(),
-    sourceLabel: z.string().max(500).nullable(),
-    externalDocumentId: z.string().max(500).nullable(),
+    sourceLabel: z.string().max(documentInventoryStringLimit).nullable(),
+    externalDocumentId: z.string().max(documentInventoryStringLimit).nullable(),
     status: z.string().max(64),
     retrievalEnabled: z.boolean(),
-    metadata: z.record(documentInventoryMetadataValueSchema),
+    metadata: z.record(z.string().max(documentInventoryMetadataKeyLimit), documentInventoryMetadataValueSchema),
     contentLength: z.number().int().nonnegative().nullable(),
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
-  }).strict()).max(documentInventoryPageLimit),
+  }).strict()).max(documentInventoryResponseLimit),
   total: z.number().int().nonnegative(),
-  nextCursor: z.string().nullable(),
-  truncation: truncationRecordSchema,
+  nextCursor: z.string().max(2_000).nullable(),
 }).strict();
 const documentChunkPageLimit = 10;
 const documentChunksInputSchema = z.object({
@@ -164,26 +169,7 @@ export interface CopilotDocumentMaintenancePort {
   }>;
 }
 export interface DocumentSearchCopilotToolDependencies { readonly documentSearchService: CopilotDocumentSearchPort; }
-export interface CopilotDocumentInventoryPort {
-  listInventoryForWorkspace(workspaceId: string, input: {
-    sourceId?: string;
-    status?: string;
-    externalDocumentIds?: readonly string[];
-    titleContains?: string;
-    metadata?: Record<string, string | number | boolean | null>;
-    retrievalEnabled?: boolean;
-    cursor?: string;
-    limit: number;
-  }): Promise<{
-    documents: ReadonlyArray<{
-      id: string; title: string; sourceId?: string | null; source?: { name: string } | null;
-      externalDocumentId?: string | null; status: string; retrievalEnabled: boolean;
-      metadata: Record<string, unknown>; contentSize?: number | null; createdAt: Date; updatedAt: Date;
-    }>;
-    total: number; nextCursor: string | null; hasMore: boolean;
-  }>;
-}
-export interface DocumentInventoryCopilotToolDependencies { readonly documentInventory: CopilotDocumentInventoryPort; }
+export interface DocumentInventoryCopilotToolDependencies { readonly documentInventory: DocumentInventoryPort; }
 export interface DocumentStatusCopilotToolDependencies { readonly documentStatusService: CopilotDocumentStatusPort; readonly documentSourceStatusService: CopilotDocumentSourceStatusPort; }
 export interface DocumentKnowledgeCopilotToolDependencies {
   readonly documentChunks: CopilotDocumentChunksPort;
@@ -199,12 +185,14 @@ export const createDocumentSearchCopilotTools = (deps: DocumentSearchCopilotTool
   },
 ];
 
+const boundedDocumentInventoryString = (value: string): string => value.slice(0, documentInventoryStringLimit);
+
 const boundedMetadata = (metadata: Record<string, unknown>): Record<string, string | number | boolean | null> =>
   Object.fromEntries(Object.entries(metadata)
     .filter((entry): entry is [string, string | number | boolean | null] =>
       entry[1] === null || ["string", "number", "boolean"].includes(typeof entry[1]))
-    .slice(0, 32)
-    .map(([key, value]) => [key, typeof value === "string" ? value.slice(0, 500) : value]));
+    .slice(0, documentInventoryMetadataFieldLimit)
+    .map(([key, value]) => [key.slice(0, documentInventoryMetadataKeyLimit), typeof value === "string" ? boundedDocumentInventoryString(value) : value]));
 
 export const createDocumentInventoryCopilotTools = (
   deps: DocumentInventoryCopilotToolDependencies,
@@ -226,15 +214,20 @@ export const createDocumentInventoryCopilotTools = (
     outputSchema: documentInventoryOutputSchema,
     invoke: async (rawInput) => {
       const input = documentInventoryInputSchema.parse(rawInput);
-      const page = await deps.documentInventory.listInventoryForWorkspace(context.workspaceId, input);
-      return documentInventoryOutputSchema.parse(boundPayload({
+      // The response cap is chosen before the owner seeks and mints its cursor, so no mapped-out
+      // rows can be skipped by a cursor that advances farther than the returned page.
+      const page = await deps.documentInventory.listInventoryForWorkspace(context.workspaceId, {
+        ...input,
+        limit: Math.min(input.limit, documentInventoryResponseLimit),
+      });
+      return documentInventoryOutputSchema.parse({
         documents: page.documents.map((document) => ({
           id: document.id,
-          title: document.title,
+          title: boundedDocumentInventoryString(document.title),
           sourceId: document.sourceId ?? null,
-          sourceLabel: document.source?.name ?? null,
-          externalDocumentId: document.externalDocumentId ?? null,
-          status: document.status,
+          sourceLabel: document.source?.name ? boundedDocumentInventoryString(document.source.name) : null,
+          externalDocumentId: document.externalDocumentId ? boundedDocumentInventoryString(document.externalDocumentId) : null,
+          status: document.status.slice(0, 64),
           retrievalEnabled: document.retrievalEnabled,
           metadata: boundedMetadata(document.metadata),
           contentLength: document.contentSize ?? null,
@@ -243,7 +236,7 @@ export const createDocumentInventoryCopilotTools = (
         })),
         total: page.total,
         nextCursor: page.nextCursor,
-      }));
+      });
     },
   }),
 }];

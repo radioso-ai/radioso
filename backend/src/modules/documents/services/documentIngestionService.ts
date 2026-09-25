@@ -13,6 +13,7 @@ import type {
 } from "../../../db/repositories/documentProcessingJobRepository.js";
 import { normalizeMarkdown, renderMetadataSearchText } from "../../retrieval/public.js";
 import { badRequest, conflict, notFound } from "../../../shared/domain/errors.js";
+import { decodeCursorWithKeys } from "../../../shared/domain/cursorPagination.js";
 import {
   toDocumentSourceSummary,
   type DocumentSourceRecord as DocumentOriginRecord,
@@ -40,6 +41,7 @@ import type { DocumentEnrichmentProvenance } from "../domain/enrichment/document
 import type {
   DocumentDetails,
   DocumentInventoryListInput,
+  DocumentInventoryPort,
   DocumentListPage,
   DocumentRecord,
   DocumentRepositoryPort,
@@ -86,7 +88,26 @@ const relinquishedEnrichment = (
   return relinquished ? { enrichment: relinquished as unknown as Record<string, unknown> } : {};
 };
 
-export class DocumentIngestionService {
+const documentInventoryCursorKeys = ["createdAt", "id"] as const;
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * The repository casts these values in its seek predicate. Validate the owner cursor before
+ * reaching SQL so malformed caller input remains a caller refusal rather than a database error.
+ */
+const validateInventoryCursor = (cursor: string | undefined): void => {
+  if (!cursor) return;
+  const decoded = decodeCursorWithKeys(cursor, documentInventoryCursorKeys);
+  const createdAt = decoded.keys.createdAt;
+  if (Number.isNaN(Date.parse(createdAt)) || new Date(createdAt).toISOString() !== createdAt) {
+    throw badRequest("Document inventory cursor has an invalid createdAt key");
+  }
+  if (!uuidPattern.test(decoded.keys.id)) {
+    throw badRequest("Document inventory cursor has an invalid id key");
+  }
+};
+
+export class DocumentIngestionService implements DocumentInventoryPort {
   constructor(
     private readonly documentRepository: DocumentRepositoryPort,
     private readonly auditService: AuditService,
@@ -699,6 +720,7 @@ export class DocumentIngestionService {
     workspaceId: string,
     input: DocumentInventoryListInput,
   ): Promise<DocumentListPage> {
+    validateInventoryCursor(input.cursor);
     // Indexed is the operator-facing name for a document that reached the owner's ready state.
     const inventoryInput = input.status === "indexed" ? { ...input, status: "ready" } : input;
     const { documents, total, nextCursor, hasMore } = await this.documentRepository.listInventoryPageByWorkspaceId(

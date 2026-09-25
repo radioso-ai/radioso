@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { ChunkRepositoryPort } from "../../../src/modules/documents/contracts/index.js";
+import type { ChunkRepositoryPort, DocumentInventoryPort } from "../../../src/modules/documents/contracts/index.js";
+import { OperatorMcpCatalogService } from "../../../src/modules/operatorCopilot/mcpCatalog.js";
 import {
   createDocumentInventoryCopilotTools,
   createDocumentKnowledgeCopilotTools,
@@ -85,9 +86,12 @@ describe("copilot document readers", () => {
         source: { id: sourceId, kind: "website" as const, name: "Help center", externalId: null },
         externalDocumentId: "guide-1",
         status: "ready",
+        ragStatus: "processed" as const,
         retrievalEnabled: true,
+        retrievalExpiresAt: null,
         metadata: { locale: "en", version: 2 },
         contentSize: 128,
+        sourceKind: "inline_text" as const,
         createdAt: new Date("2026-09-01T10:00:00.000Z"),
         updatedAt: new Date("2026-09-02T10:00:00.000Z"),
       }],
@@ -134,6 +138,58 @@ describe("copilot document readers", () => {
       total: 1,
       nextCursor: null,
     });
+  });
+
+  it("uses the catalog and an owner-sized page so every returned row precedes its cursor", async () => {
+    const listInventoryForWorkspace = vi.fn(async (): Promise<Awaited<ReturnType<DocumentInventoryPort["listInventoryForWorkspace"]>>> => ({
+      documents: Array.from({ length: 25 }, (_, index) => ({
+        id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+        title: "😀".repeat(10_000),
+        status: "ready",
+        ragStatus: "processed" as const,
+        metadata: Object.fromEntries(Array.from({ length: 32 }, (_, metadataIndex) => [
+          `metadata-key-${metadataIndex}-${"k".repeat(100)}`,
+          "😀".repeat(10_000),
+        ])),
+        sourceId: null,
+        source: null,
+        externalDocumentId: "😀".repeat(10_000),
+        sourceKind: "inline_text" as const,
+        contentSize: 1,
+        retrievalEnabled: true,
+        retrievalExpiresAt: null,
+        createdAt: new Date("2026-09-01T10:00:00.000Z"),
+        updatedAt: new Date("2026-09-01T10:00:00.000Z"),
+      })),
+      total: 169,
+      nextCursor: "cursor-after-25",
+      hasMore: true,
+    }));
+    const descriptor = createDocumentInventoryCopilotTools({ documentInventory: { listInventoryForWorkspace } })[0];
+    const catalog = new OperatorMcpCatalogService([{
+      ...descriptor,
+      mcpDisposition: {
+        status: "eligible",
+        inputStrategy: "explicit",
+        scope: "operator:read",
+        retry: { effect: "none", idempotent: true, operationIdentity: "client" },
+      },
+    }]);
+
+    const result = await catalog.invoke({
+      name: "list_documents",
+      arguments: { limit: 100 },
+      context,
+      scopes: new Set(["operator:read"]),
+      signal: AbortSignal.timeout(1_000),
+    }) as { documents: Array<{ metadata: Record<string, unknown>; title: string }>; nextCursor: string | null };
+
+    expect(listInventoryForWorkspace).toHaveBeenCalledWith("workspace-1", { limit: 25 });
+    expect(result.documents).toHaveLength(25);
+    expect(result.nextCursor).toBe("cursor-after-25");
+    expect(result.documents[0]?.title).toHaveLength(128);
+    expect(Object.keys(result.documents[0]?.metadata ?? {})).toHaveLength(8);
+    expect(Buffer.byteLength(JSON.stringify(result), "utf8")).toBeLessThan(256 * 1024);
   });
 
   it("reports a missing document instead of an empty chunk page", async () => {

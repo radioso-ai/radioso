@@ -1094,4 +1094,37 @@ describeIntegration("DocumentRepository (Postgres)", () => {
       contentSize: expect.any(Number),
     });
   });
+
+  it("keeps the cursor page and total aligned with the active inventory filter", async () => {
+    const failedOlder = await repository.create({ ...baseCreateInput({ title: "failed older" }), status: "failed" });
+    const failedNewer = await repository.create({ ...baseCreateInput({ title: "failed newer" }), status: "failed" });
+    const readyOldest = await repository.create({ ...baseCreateInput({ title: "ready oldest" }), status: "ready" });
+    const readyMiddle = await repository.create({ ...baseCreateInput({ title: "ready middle" }), status: "ready" });
+    const readyNewest = await repository.create({ ...baseCreateInput({ title: "ready newest" }), status: "ready" });
+    const ordered = [failedOlder, failedNewer, readyOldest, readyMiddle, readyNewest];
+    await Promise.all(ordered.map((document, index) => database.query(
+      "UPDATE documents SET created_at = $1, updated_at = $1 WHERE id = $2",
+      [`2026-09-01T00:00:0${index}.000Z`, document.id],
+    )));
+
+    const firstReadyPage = await repository.listInventoryPageByWorkspaceId(workspaceId, {
+      status: "ready",
+      limit: 1,
+    });
+    const secondReadyPage = await repository.listInventoryPageByWorkspaceId(workspaceId, {
+      status: "ready",
+      limit: 1,
+      cursor: firstReadyPage.nextCursor!,
+    });
+    const switchedFilterPage = await repository.listInventoryPageByWorkspaceId(workspaceId, {
+      status: "failed",
+      limit: 1,
+      cursor: firstReadyPage.nextCursor!,
+    });
+
+    expect(firstReadyPage).toMatchObject({ total: 3, hasMore: true, documents: [{ id: readyNewest.id }] });
+    expect(secondReadyPage).toMatchObject({ total: 3, hasMore: true, documents: [{ id: readyMiddle.id }] });
+    // The cursor never carries a total across a changed filter; this result is the failed filter's total.
+    expect(switchedFilterPage).toMatchObject({ total: 2, hasMore: true, documents: [{ status: "failed" }] });
+  });
 });

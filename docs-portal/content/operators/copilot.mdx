@@ -1,7 +1,7 @@
 ---
 title: "Ray"
 description: "Use Ray in the dashboard to triage what needs attention, investigate agent behavior, edit routines, test a routine change before it ships, and review linked activity and proposals."
-last_updated: 2026-09-13
+last_updated: 2026-09-25
 ---
 
 # Ray
@@ -96,7 +96,7 @@ The MCP catalog has this boundary:
 - `operator:read` — read workspace and agent state that the user can already access, including workspace settings.
 - `operator:probe` — run bounded diagnostics, including a retrieval probe against an agent's configured source scope and retrieval settings.
 - `operator:propose` — prepare a reviewable routine, retrieval, or publication change without applying it.
-- `operator:write` — execute, inspect the outcome of, or cancel one reviewed operation bound to the same grant and client.
+- `operator:write` — execute, inspect the outcome of, or cancel one reviewed operation bound to the same grant and client. These tools reach only an operation a `prepare_*` tool created; a person approves or dismisses a `propose_*` proposal in the dashboard.
 - `operator:act` — set a version-fenced triage state.
 
 For a reviewed operation, the external client shows the exact result and asks for conversational confirmation before it calls the write-scoped execution tool. Radioso binds execution to that review's digest, grant, client, target fence, and expiry. MCP-reviewed operations stay on that lifecycle; dashboard Ray proposals keep their existing dashboard review and application flow.

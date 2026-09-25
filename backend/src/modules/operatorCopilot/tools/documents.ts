@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import type { ChunkRepositoryPort } from "../../documents/contracts/index.js";
+import { documentMetadataRecordSchema } from "../../documents/public.js";
 import type { CopilotToolDescriptor } from "../contracts.js";
 import { boundPayload, compactForBudget, MAX_STRING_CHARS, truncationRecordSchema, withTruncation } from "../payloadCompaction.js";
 import { copilotPayloadCharBudget } from "../turnBudget.js";
@@ -18,6 +19,37 @@ const documentStatusOutputSchema = z.object({
   sources: z.array(unknownRecord),
   truncation: truncationRecordSchema,
 });
+const documentInventoryPageLimit = 100;
+const DOCUMENT_INVENTORY_DESCRIPTION = "List a bounded, content-free workspace document inventory. Filter by source, processing status, exact external ids or metadata, title text, and retrieval eligibility to confirm an import landed. Returns no document body or chunks.";
+const documentInventoryMetadataValueSchema = z.union([z.string().max(500), z.number(), z.boolean(), z.null()]);
+const documentInventoryInputSchema = z.object({
+  sourceId: z.string().uuid().optional(),
+  status: z.enum(["queued", "processing", "ready", "indexed", "failed"]).optional(),
+  externalDocumentIds: z.array(z.string().min(1).max(500)).min(1).max(documentInventoryPageLimit).optional(),
+  titleContains: z.string().trim().min(1).max(500).optional(),
+  metadata: documentMetadataRecordSchema.optional(),
+  retrievalEnabled: z.boolean().optional(),
+  cursor: z.string().min(1).max(2_000).optional(),
+  limit: z.number().int().min(1).max(documentInventoryPageLimit).default(25),
+}).strict();
+const documentInventoryOutputSchema = z.object({
+  documents: z.array(z.object({
+    id: z.string().uuid(),
+    title: z.string().max(500),
+    sourceId: z.string().uuid().nullable(),
+    sourceLabel: z.string().max(500).nullable(),
+    externalDocumentId: z.string().max(500).nullable(),
+    status: z.string().max(64),
+    retrievalEnabled: z.boolean(),
+    metadata: z.record(documentInventoryMetadataValueSchema),
+    contentLength: z.number().int().nonnegative().nullable(),
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime(),
+  }).strict()).max(documentInventoryPageLimit),
+  total: z.number().int().nonnegative(),
+  nextCursor: z.string().nullable(),
+  truncation: truncationRecordSchema,
+}).strict();
 const documentChunkPageLimit = 10;
 const documentChunksInputSchema = z.object({
   documentId: z.string().uuid(),
@@ -132,6 +164,26 @@ export interface CopilotDocumentMaintenancePort {
   }>;
 }
 export interface DocumentSearchCopilotToolDependencies { readonly documentSearchService: CopilotDocumentSearchPort; }
+export interface CopilotDocumentInventoryPort {
+  listInventoryForWorkspace(workspaceId: string, input: {
+    sourceId?: string;
+    status?: string;
+    externalDocumentIds?: readonly string[];
+    titleContains?: string;
+    metadata?: Record<string, string | number | boolean | null>;
+    retrievalEnabled?: boolean;
+    cursor?: string;
+    limit: number;
+  }): Promise<{
+    documents: ReadonlyArray<{
+      id: string; title: string; sourceId?: string | null; source?: { name: string } | null;
+      externalDocumentId?: string | null; status: string; retrievalEnabled: boolean;
+      metadata: Record<string, unknown>; contentSize?: number | null; createdAt: Date; updatedAt: Date;
+    }>;
+    total: number; nextCursor: string | null; hasMore: boolean;
+  }>;
+}
+export interface DocumentInventoryCopilotToolDependencies { readonly documentInventory: CopilotDocumentInventoryPort; }
 export interface DocumentStatusCopilotToolDependencies { readonly documentStatusService: CopilotDocumentStatusPort; readonly documentSourceStatusService: CopilotDocumentSourceStatusPort; }
 export interface DocumentKnowledgeCopilotToolDependencies {
   readonly documentChunks: CopilotDocumentChunksPort;
@@ -146,6 +198,55 @@ export const createDocumentSearchCopilotTools = (deps: DocumentSearchCopilotTool
     createTool: (context) => ({ name: "document_search", description: "Search workspace documents and return matching document metadata and quoted evidence snippets — the only document text available to you.", inputSchema: documentSearchInputSchema, outputSchema: documentSearchOutputSchema, invoke: async ({ query }) => boundPayload({ results: (await deps.documentSearchService.search({ workspaceId: context.workspaceId, query, executionSurface: "operator_copilot" })).results as Record<string, unknown>[] }) }),
   },
 ];
+
+const boundedMetadata = (metadata: Record<string, unknown>): Record<string, string | number | boolean | null> =>
+  Object.fromEntries(Object.entries(metadata)
+    .filter((entry): entry is [string, string | number | boolean | null] =>
+      entry[1] === null || ["string", "number", "boolean"].includes(typeof entry[1]))
+    .slice(0, 32)
+    .map(([key, value]) => [key, typeof value === "string" ? value.slice(0, 500) : value]));
+
+export const createDocumentInventoryCopilotTools = (
+  deps: DocumentInventoryCopilotToolDependencies,
+): ReadonlyArray<CopilotToolDescriptor> => [{
+  name: "list_documents",
+  shape: "read",
+  verificationCost: () => 0,
+  uiLabel: "Listing documents",
+  contributingModule: "documents",
+  dashboardSubject: { type: "document" },
+  requiredPermissions: ["workspace.documents.read"],
+  description: DOCUMENT_INVENTORY_DESCRIPTION,
+  inputSchema: documentInventoryInputSchema,
+  outputSchema: documentInventoryOutputSchema,
+  createTool: (context) => ({
+    name: "list_documents",
+    description: DOCUMENT_INVENTORY_DESCRIPTION,
+    inputSchema: documentInventoryInputSchema,
+    outputSchema: documentInventoryOutputSchema,
+    invoke: async (rawInput) => {
+      const input = documentInventoryInputSchema.parse(rawInput);
+      const page = await deps.documentInventory.listInventoryForWorkspace(context.workspaceId, input);
+      return documentInventoryOutputSchema.parse(boundPayload({
+        documents: page.documents.map((document) => ({
+          id: document.id,
+          title: document.title,
+          sourceId: document.sourceId ?? null,
+          sourceLabel: document.source?.name ?? null,
+          externalDocumentId: document.externalDocumentId ?? null,
+          status: document.status,
+          retrievalEnabled: document.retrievalEnabled,
+          metadata: boundedMetadata(document.metadata),
+          contentLength: document.contentSize ?? null,
+          createdAt: document.createdAt.toISOString(),
+          updatedAt: document.updatedAt.toISOString(),
+        })),
+        total: page.total,
+        nextCursor: page.nextCursor,
+      }));
+    },
+  }),
+}];
 
 export const createDocumentStatusCopilotTools = (deps: DocumentStatusCopilotToolDependencies): ReadonlyArray<CopilotToolDescriptor> => [
   {

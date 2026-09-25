@@ -241,6 +241,10 @@ export interface DocumentRepositoryPort {
     workspaceId: string,
     input: { limit: number; offset?: number; cursor?: string },
   ): Promise<{ documents: DocumentSummaryRecord[]; total: number; nextCursor: string | null; hasMore: boolean }>;
+  listInventoryPageByWorkspaceId(
+    workspaceId: string,
+    input: DocumentInventoryListInput,
+  ): Promise<{ documents: DocumentSummaryRecord[]; total: number; nextCursor: string | null; hasMore: boolean }>;
   update(input: DocumentUpdateInput): Promise<DocumentRecord>;
   updateAndQueue(input: DocumentQueueUpdateInput, options?: DocumentProcessingJobOptions | null): Promise<DocumentRecord>;
   updateDerivedContentForRevision(input: DocumentDerivedContentUpdateInput): Promise<DocumentRecord | null>;
@@ -414,6 +418,18 @@ export interface DocumentListPage {
   total: number;
   nextCursor: string | null;
   hasMore: boolean;
+}
+
+/** A bounded, content-free inventory query for operator surfaces. */
+export interface DocumentInventoryListInput {
+  sourceId?: string;
+  status?: string;
+  externalDocumentIds?: readonly string[];
+  titleContains?: string;
+  metadata?: Record<string, string | number | boolean | null>;
+  retrievalEnabled?: boolean;
+  cursor?: string;
+  limit: number;
 }
 
 export interface EmbeddingCoverageReconciliationPort {

@@ -39,6 +39,7 @@ import { relinquishGeneratedKeys } from "../domain/enrichment/generatedTagOwners
 import type { DocumentEnrichmentProvenance } from "../domain/enrichment/documentEnrichmentContract.js";
 import type {
   DocumentDetails,
+  DocumentInventoryListInput,
   DocumentListPage,
   DocumentRecord,
   DocumentRepositoryPort,
@@ -684,6 +685,25 @@ export class DocumentIngestionService {
     const { documents, total, nextCursor, hasMore } = await this.documentRepository.listSummaryPageByWorkspaceId(
       workspaceId,
       input,
+    );
+    return {
+      documents: documents.map((document) => this.toSummary(document)),
+      total,
+      nextCursor,
+      hasMore,
+    };
+  }
+
+  /** Documents owns filtered inventory reads so transports do not reimplement persistence rules. */
+  async listInventoryForWorkspace(
+    workspaceId: string,
+    input: DocumentInventoryListInput,
+  ): Promise<DocumentListPage> {
+    // Indexed is the operator-facing name for a document that reached the owner's ready state.
+    const inventoryInput = input.status === "indexed" ? { ...input, status: "ready" } : input;
+    const { documents, total, nextCursor, hasMore } = await this.documentRepository.listInventoryPageByWorkspaceId(
+      workspaceId,
+      inventoryInput,
     );
     return {
       documents: documents.map((document) => this.toSummary(document)),

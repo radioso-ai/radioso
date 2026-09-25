@@ -28,7 +28,7 @@ const catalogToolCoverage = {
   getHistorySearch: "conversation_history_search",
   searchDocuments: "document_search",
   getDocument: "document_search",
-  listDocuments: "document_status",
+  listDocuments: "list_documents",
   listDocumentSources: "document_status",
   listDocumentsBySource: "document_status",
   recrawlDocumentSource: "recrawl_source",

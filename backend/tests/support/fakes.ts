@@ -123,6 +123,7 @@ import type {
   DocumentSummaryRecord,
   DocumentUpdateInput,
 } from "../../src/modules/documents/services/documentIngestionService.js";
+import type { DocumentInventoryListInput } from "../../src/modules/documents/contracts/index.js";
 import type {
   DocumentProcessingJobRecord,
   DocumentProcessingQueueSnapshot,
@@ -2674,6 +2675,38 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
             createdAt: lastDocument.createdAt.toISOString(),
             id: lastDocument.id,
           })
+        : null,
+      hasMore,
+    };
+  }
+
+  async listInventoryPageByWorkspaceId(
+    workspaceId: string,
+    input: DocumentInventoryListInput,
+  ): Promise<{ documents: DocumentSummaryRecord[]; total: number; nextCursor: string | null; hasMore: boolean }> {
+    const externalDocumentIds = input.externalDocumentIds ? new Set(input.externalDocumentIds) : null;
+    const expectedStatus = input.status === "indexed" ? "ready" : input.status;
+    const documents = [...this.items.values()]
+      .filter((item) => item.workspaceId === workspaceId)
+      .filter((item) => input.sourceId === undefined || item.sourceId === input.sourceId)
+      .filter((item) => expectedStatus === undefined || item.status === expectedStatus)
+      .filter((item) => !externalDocumentIds || (typeof item.externalDocumentId === "string" && externalDocumentIds.has(item.externalDocumentId)))
+      .filter((item) => input.titleContains === undefined || item.title.toLocaleLowerCase().includes(input.titleContains.toLocaleLowerCase()))
+      .filter((item) => input.retrievalEnabled === undefined || item.retrievalEnabled === input.retrievalEnabled)
+      .filter((item) => !input.metadata || Object.entries(input.metadata).every(([key, value]) => item.metadata[key] === value))
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime() || b.id.localeCompare(a.id));
+    const cursor = input.cursor ? decodeCursorWithKeys(input.cursor, ["createdAt", "id"]) : null;
+    const startIndex = cursor
+      ? documents.findIndex((item) => item.createdAt.toISOString() === cursor.keys.createdAt && item.id === cursor.keys.id) + 1
+      : 0;
+    const slice = documents.slice(Math.max(0, startIndex), Math.max(0, startIndex) + input.limit);
+    const hasMore = Math.max(0, startIndex) + input.limit < documents.length;
+    const lastDocument = slice.at(-1);
+    return {
+      documents: (await this.listSummariesByIdsAndWorkspaceId(workspaceId, slice.map((item) => item.id))),
+      total: cursor?.totalSnapshot === undefined ? documents.length : Number(cursor.totalSnapshot),
+      nextCursor: hasMore && lastDocument
+        ? encodeCursor({ createdAt: lastDocument.createdAt.toISOString(), id: lastDocument.id }, documents.length)
         : null,
       hasMore,
     };

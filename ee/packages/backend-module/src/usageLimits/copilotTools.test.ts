@@ -52,6 +52,12 @@ describe("usage limit copilot contribution", () => {
       shape: "read",
       contributingModule: "usageLimits",
       requiredPermissions: ["workspace.settings.read"],
+      mcpDisposition: {
+        status: "eligible",
+        inputStrategy: "explicit",
+        scope: "operator:read",
+        retry: { effect: "none", idempotent: true, operationIdentity: "client" },
+      },
     });
   });
 

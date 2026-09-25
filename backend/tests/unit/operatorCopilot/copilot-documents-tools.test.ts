@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { ChunkRepositoryPort } from "../../../src/modules/documents/contracts/index.js";
 import {
+  createDocumentInventoryCopilotTools,
   createDocumentKnowledgeCopilotTools,
   type CopilotDocumentMaintenancePort,
 } from "../../../src/modules/operatorCopilot/tools/documents.js";
@@ -75,6 +76,66 @@ const knowledgePorts = () => {
 };
 
 describe("copilot document readers", () => {
+  it("lists a bounded, filtered document inventory through the documents-owned port", async () => {
+    const listInventoryForWorkspace = vi.fn(async () => ({
+      documents: [{
+        id: documentId,
+        title: "Getting started",
+        sourceId,
+        source: { id: sourceId, kind: "website" as const, name: "Help center", externalId: null },
+        externalDocumentId: "guide-1",
+        status: "ready",
+        retrievalEnabled: true,
+        metadata: { locale: "en", version: 2 },
+        contentSize: 128,
+        createdAt: new Date("2026-09-01T10:00:00.000Z"),
+        updatedAt: new Date("2026-09-02T10:00:00.000Z"),
+      }],
+      total: 1,
+      nextCursor: null,
+      hasMore: false,
+    }));
+    const descriptor = createDocumentInventoryCopilotTools({ documentInventory: { listInventoryForWorkspace } })[0];
+
+    const result = await descriptor.createTool(context).invoke({
+      sourceId,
+      status: "ready",
+      externalDocumentIds: ["guide-1"],
+      titleContains: "started",
+      metadata: { locale: "en", version: 2 },
+      retrievalEnabled: true,
+      limit: 25,
+    }, {} as never);
+
+    expect(listInventoryForWorkspace).toHaveBeenCalledWith("workspace-1", {
+      sourceId,
+      status: "ready",
+      externalDocumentIds: ["guide-1"],
+      titleContains: "started",
+      metadata: { locale: "en", version: 2 },
+      retrievalEnabled: true,
+      cursor: undefined,
+      limit: 25,
+    });
+    expect(result).toEqual({
+      documents: [{
+        id: documentId,
+        title: "Getting started",
+        sourceId,
+        sourceLabel: "Help center",
+        externalDocumentId: "guide-1",
+        status: "ready",
+        retrievalEnabled: true,
+        metadata: { locale: "en", version: 2 },
+        contentLength: 128,
+        createdAt: "2026-09-01T10:00:00.000Z",
+        updatedAt: "2026-09-02T10:00:00.000Z",
+      }],
+      total: 1,
+      nextCursor: null,
+    });
+  });
+
   it("reports a missing document instead of an empty chunk page", async () => {
     const ports = knowledgePorts();
     ports.listPageForDocument.mockResolvedValueOnce(null);

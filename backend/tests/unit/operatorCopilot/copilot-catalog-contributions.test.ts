@@ -7,6 +7,7 @@ import {
 } from "../../../src/modules/operatorCopilot/capabilityProvenance.js";
 import { enrichCopilotToolCatalog, filterCopilotToolCatalog } from "../../../src/modules/operatorCopilot/catalog.js";
 import { resolveCopilotToolContributions } from "../../../src/modules/operatorCopilot/contribution.js";
+import { OperatorMcpCatalogService } from "../../../src/modules/operatorCopilot/mcpCatalog.js";
 import type { CopilotToolContribution } from "../../../src/modules/operatorCopilot/contribution.js";
 import type { AccountPermission } from "../../../src/modules/account/public.js";
 import type { CopilotToolDescriptor } from "../../../src/modules/operatorCopilot/public.js";
@@ -76,6 +77,27 @@ describe("copilot tool contributions", () => {
     expect([...resolved.operationIds]).toEqual(["getEnterpriseUsage"]);
     expect([...resolved.applicationPrimitiveIds]).toEqual(["usageLimits.account-usage.read"]);
     expect(resolved.operationPermissions).toEqual({ getEnterpriseUsage: ["workspace.settings.read"] });
+  });
+
+  it("keeps an owner-reviewed contributed MCP disposition through the merged catalog", async () => {
+    const [contributed] = resolveCopilotToolContributions([
+      contribution({
+        descriptors: [descriptor({
+          mcpDisposition: {
+            status: "eligible",
+            inputStrategy: "explicit",
+            scope: "operator:read",
+            retry: { effect: "none", idempotent: true, operationIdentity: "client" },
+          },
+        })],
+      }),
+    ], base).descriptors;
+
+    const catalog = new OperatorMcpCatalogService([contributed]);
+    await expect(catalog.list({
+      context: invocationContext(new Set(["workspace.settings.read"])),
+      scopes: new Set(["operator:read"]),
+    })).resolves.toMatchObject([{ name: "extension_tool", requiredScope: "operator:read" }]);
   });
 
   it("refuses a contribution that redeclares a first-party operation or primitive", () => {

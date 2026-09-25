@@ -24,6 +24,7 @@ export const copilotApplicationPrimitiveRegistry = {
   "documents.authoring.propose": { owningModule: "documents", exportedPort: "DocumentIngestionService" },
   "documents.deletion.propose": { owningModule: "documents", exportedPort: "DocumentDeletionService" },
   "documents.status.read": { owningModule: "documents", exportedPort: "DocumentIngestionService" },
+  "documents.inventory.read": { owningModule: "documents", exportedPort: "DocumentIngestionService" },
   "documents.chunks.read": { owningModule: "documents", exportedPort: "ChunkRepositoryPort" },
   "documents.reprocess.act": { owningModule: "documents", exportedPort: "DocumentIngestionService" },
   "documents.source-reprocess.act": { owningModule: "documents", exportedPort: "DocumentSourceReprocessService" },

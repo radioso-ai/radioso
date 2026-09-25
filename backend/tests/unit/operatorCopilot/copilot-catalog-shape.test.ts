@@ -254,6 +254,7 @@ describe("copilot catalog wiring", () => {
       .filter((descriptor) => descriptor.contributingModule === "documents")
       .map(({ name, shape, requiredPermissions }) => ({ name, shape, requiredPermissions }))).toEqual([
       { name: "document_search", shape: "read", requiredPermissions: ["workspace.documents.read"] },
+      { name: "list_documents", shape: "read", requiredPermissions: ["workspace.documents.read"] },
       { name: "document_status", shape: "read", requiredPermissions: ["workspace.documents.read"] },
       { name: "document_chunks", shape: "read", requiredPermissions: ["workspace.documents.read"] },
       { name: "reprocess_document", shape: "act", requiredPermissions: ["workspace.documents.manage"] },

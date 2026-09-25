@@ -9,6 +9,9 @@ import {
   mergeAgentSurfaceSettings,
   validateAgentInput,
   DEFAULT_AGENT_LOCALE_FALLBACK,
+  DEFAULT_CONTACT_REQUEST_DELIVERY,
+  hasConfiguredContactDestination,
+  readNotifyContactDelivery,
   type AgentInput,
   type AuthoredDirective,
   type AuthoredDirectiveInput,
@@ -1102,9 +1105,6 @@ const decodeContextVariableVersionToken = (token: string): { variableUpdatedAt: 
 
 const isSkillCapabilityId = (value: string): value is SkillCapabilityId => (skillCapabilityIds as readonly string[]).includes(value);
 
-const asRecord = (value: unknown): Record<string, unknown> =>
-  value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
-
 // Applies always end up as a full `replaceConfig` (see the comment on `dryRunValidate`'s call
 // site), so whatever `mergeSkillConfig` (shared with the direct HTTP PATCH path in
 // AgentSkillRepository - see backend/src/modules/agentSkills/configMerge.ts) produces here IS the
@@ -1140,13 +1140,15 @@ const assertDependentSettingsAreGated = (
  * delivery config passes the capability's own schema (both fields default to empty/null) but
  * fires without effect. Ray cannot invent a recipient address or a webhook URL, so a proposal that
  * leaves both unset is refused rather than silently creating a no-op notification.
+ *
+ * Reachability is read through `readNotifyContactDelivery`/`hasConfiguredContactDestination` -
+ * the same reader and gate dispatch and activation use - so this refusal cannot drift from what
+ * actually fires.
  */
 const assertNotifyDeliveryIsReachable = (capabilityId: string, config: Record<string, unknown>): void => {
   if (capabilityId !== "notify") return;
-  const delivery = asRecord(config.delivery);
-  const recipients = Array.isArray(delivery.recipientEmails) ? delivery.recipientEmails : [];
-  const webhookUrl = asRecord(delivery.webhook).url;
-  if (recipients.length === 0 && typeof webhookUrl !== "string") {
+  const delivery = readNotifyContactDelivery(config) ?? DEFAULT_CONTACT_REQUEST_DELIVERY;
+  if (!hasConfiguredContactDestination(delivery)) {
     throw badRequest("This notify skill has no recipient email and no webhook URL. Ask the operator which to use before proposing this change.");
   }
 };

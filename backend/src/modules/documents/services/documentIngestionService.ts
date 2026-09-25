@@ -34,6 +34,7 @@ import {
 import { NoopDocumentJobDispatcher, type DocumentJobDispatcherPort } from "./documentJobDispatcher.js";
 import { sanitizeInlineDocumentContent } from "./inlineDocumentContentSanitizer.js";
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../domain/sourceConstants.js";
+import { resolveRetrievalEligibility } from "../domain/retrievalEligibility.js";
 import { relinquishGeneratedKeys } from "../domain/enrichment/generatedTagOwnership.js";
 import type { DocumentEnrichmentProvenance } from "../domain/enrichment/documentEnrichmentContract.js";
 import type {
@@ -461,7 +462,7 @@ export class DocumentIngestionService {
     }
 
     const eligibility = settlesEligibility
-      ? this.resolveRetrievalEligibility(existing, input)
+      ? resolveRetrievalEligibility(existing, input)
       : null;
 
     let result: DocumentRetrievalSettingsResult;
@@ -528,16 +529,6 @@ export class DocumentIngestionService {
     }
 
     return this.toDetails(updated);
-  }
-
-  private resolveRetrievalEligibility(
-    existing: DocumentRecord,
-    input: { retrievalEnabled?: boolean; retrievalExpiresAt?: Date | null },
-  ): { retrievalEnabled: boolean; retrievalExpiresAt: Date | null } {
-    const retrievalEnabled = input.retrievalEnabled ?? existing.retrievalEnabled;
-    const requested = input.retrievalExpiresAt !== undefined ? input.retrievalExpiresAt : existing.retrievalExpiresAt;
-    const clearsElapsedExpiry = input.retrievalEnabled === true && requested !== null && requested.getTime() <= Date.now();
-    return { retrievalEnabled, retrievalExpiresAt: clearsElapsedExpiry ? null : requested };
   }
 
   async reprocess(input: {

@@ -120,6 +120,14 @@ export const authoredDirectiveInputSchema = z.object({
   metadata: z.record(z.unknown()).optional().default({}),
 }).strict();
 
+/**
+ * The schema's own default for a directive's `enabled` flag, exposed so a caller comparing
+ * differently-aged directive configs (e.g. eval case replay, where a config captured before this
+ * field existed simply omits it) can fill in an absent flag with the exact value this schema would
+ * apply, instead of a second hard-coded copy of it that could drift if the default ever changes.
+ */
+export const AUTHORED_DIRECTIVE_ENABLED_DEFAULT: boolean = authoredDirectiveInputSchema.shape.enabled.parse(undefined);
+
 export type AuthoredDirectiveInput = z.input<typeof authoredDirectiveInputSchema>;
 
 export type NormalizedAuthoredDirectiveInput = z.infer<typeof authoredDirectiveInputSchema>;

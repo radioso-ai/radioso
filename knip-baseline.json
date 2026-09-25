@@ -451,7 +451,6 @@
   "types|backend/src/modules/machineAccess/credentialSecretCodec.ts|IssuedMachineSecret",
   "types|backend/src/modules/notify/notifyExecutor.ts|NotifyOutboxPort",
   "types|backend/src/modules/operatorCopilot/agentProposalAdapter.ts|AgentCopilotProposalAdapterDependencies",
-  "types|backend/src/modules/operatorCopilot/documentProposalAdapter.ts|DocumentCopilotProposalAdapterDependencies",
   "types|backend/src/modules/operatorCopilot/ingestionSettingsProposalAdapter.ts|IngestionSettingsCopilotProposalAdapterDependencies",
   "types|backend/src/modules/operatorCopilot/proposalEvidence.ts|CopilotProposalEvidenceCase",
   "types|backend/src/modules/operatorCopilot/proposalEvidence.ts|CopilotProposalEvidenceSummary",

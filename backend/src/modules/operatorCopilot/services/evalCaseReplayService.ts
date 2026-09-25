@@ -1,5 +1,6 @@
 import { isDeepStrictEqual } from "node:util";
 
+import { AUTHORED_DIRECTIVE_ENABLED_DEFAULT } from "../../agents/public.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import type { CopilotExpensiveOperationGuardDependencies } from "../contracts/expensiveOperation.js";
 import type {
@@ -31,7 +32,7 @@ const readDirectiveName = (config: Record<string, unknown>): string | null => {
  * content rather than about which side happens to spell a default out.
  */
 const withDirectiveDefaults = (config: Record<string, unknown>): Record<string, unknown> =>
-  Object.prototype.hasOwnProperty.call(config, "enabled") ? config : { ...config, enabled: true };
+  Object.prototype.hasOwnProperty.call(config, "enabled") ? config : { ...config, enabled: AUTHORED_DIRECTIVE_ENABLED_DEFAULT };
 
 interface EvalCaseReplayServiceDependencies extends CopilotExpensiveOperationGuardDependencies {
   cases: CopilotEvalCaseReaderPort;

@@ -47,7 +47,7 @@ import {
 } from "./contracts.js";
 import type { ContextVariable, AgentContextVariableEnablement } from "../context-variables/public.js";
 import type { ContextVariableService } from "../context-variables/public.js";
-import { isStale, versionDate, versionToken } from "./proposalVersioning.js";
+import { isOwnerRefusal, isStale, versionDate, versionToken } from "./proposalVersioning.js";
 import { badRequest, conflict, notFound } from "../../shared/domain/errors.js";
 
 /** Composition-only atomic boundary for an existing agent-skill update and its MCP receipt. */
@@ -609,6 +609,11 @@ export const createAgentSkillCopilotProposalAdapter = (deps: {
     async applyIfVersionMatches(workspaceId, rawTargetRef, rawPayload, token, context) {
       const targetRef = skillTargetRefSchema.parse(rawTargetRef);
       const payload = skillConfigStoredPayloadSchema.parse(rawPayload);
+      // True exactly on the branch that writes the skill and settles this receipt inside one DB
+      // transaction (dryRunValidate/validatePrepared runs first on that same branch, before any
+      // write). It is the only write path here proven atomic enough for a refusal on it to prove
+      // nothing was written; the plain update/create fallbacks are not.
+      const mcpAtomicApply = Boolean(targetRef.skillId && context?.surface === "mcp" && context.proposalId && context.executionInvocationId && context.operatorUserId && context.applyClaimedAt && deps.atomicMcpApply);
       try {
         if (targetRef.skillId) {
           const config = payload.capability === "retrieve" && payload.invocationMode === "default_answer" && deps.retrievalAuthoring
@@ -660,9 +665,15 @@ export const createAgentSkillCopilotProposalAdapter = (deps: {
         return { outcome: "applied" as const, appliedRef: { agentId: targetRef.agentId, skillId: created.id } };
       } catch (error) {
         if (isStale(error)) return { outcome: "stale" as const };
-        // The atomic retrieval write may have committed with its receipt immediately before a
-        // transport failure; preserve that uncertainty for the reviewed executor to reconcile.
-        if (context?.surface === "mcp" && context.executionInvocationId) throw error;
+        if (context?.surface === "mcp" && context.executionInvocationId) {
+          // A non-stale owner refusal on the atomic branch proves nothing was written (see
+          // mcpAtomicApply above). Anything else - the plain update/create fallback, or any
+          // infrastructure fault - keeps its uncertainty: the atomic write may have committed with
+          // its receipt immediately before a transport failure, so only the reviewed executor's
+          // reconcile path may resolve it.
+          if (mcpAtomicApply && isOwnerRefusal(error)) return { outcome: "failed" as const, reason: error.message };
+          throw error;
+        }
         return { outcome: "failed" as const, reason: error instanceof Error ? error.message : "Skill apply failed" };
       }
     },
@@ -796,6 +807,11 @@ export const createRoutineCopilotProposalAdapter = (deps: {
       if (kind === "lifecycle") {
         return { outcome: "failed" as const, reason: unsupportedLifecycleProposalMessage };
       }
+      // True only inside an atomic reviewed-MCP branch until routineMcpApply.apply resolves. There, the
+      // validation and scoped-reference checks run before the write, and the write settles this
+      // receipt in one transaction that a thrown refusal rolls back, so a refusal proves nothing
+      // was written. The field-edit path and the plain service writes never set it.
+      let refusalWroteNothing = false;
       try {
         if (kind === "create") {
           // No pre-read version check here: createDraft never touches the agent row, so
@@ -808,9 +824,11 @@ export const createRoutineCopilotProposalAdapter = (deps: {
           // the write itself rather than a read-then-compare.
           const draft = routineCreateDraft(rawPayload);
           if (context?.surface === "mcp" && context.proposalId && context.executionInvocationId && context.operatorUserId && context.applyClaimedAt && deps.routineMcpApply) {
+            refusalWroteNothing = true;
             const validation = await deps.routineDefinitionService.validate(workspaceId, targetRef.agentId, { input: draft });
             if (!validation.ok) return { outcome: "failed" as const, reason: diagnosticSummary(validation.diagnostics) || "Routine validation failed" };
             const settled = await deps.routineMcpApply.apply({ workspaceId, agentId: targetRef.agentId, operation: "create", draft, proposalId: context.proposalId, executionInvocationId: context.executionInvocationId, operatorUserId: context.operatorUserId, claimedAt: context.applyClaimedAt });
+            refusalWroteNothing = false;
             if (settled.routine) await deps.routineDefinitionService.completeExternalDraftMutation(workspaceId, targetRef.agentId, settled.routine);
             return { outcome: "applied" as const, appliedRef: settled.appliedRef };
           }
@@ -824,8 +842,10 @@ export const createRoutineCopilotProposalAdapter = (deps: {
         if (kind === "delete") {
           routineDeletePayloadSchema.parse(rawPayload);
           if (context?.surface === "mcp" && context.proposalId && context.executionInvocationId && context.operatorUserId && context.applyClaimedAt && deps.routineMcpApply) {
+            refusalWroteNothing = true;
             await revalidateScopedReferences(workspaceId, targetRef.agentId, routine);
             const settled = await deps.routineMcpApply.apply({ workspaceId, agentId: targetRef.agentId, operation: "delete", routineId: routine.id, expectedUpdatedAt: routine.updatedAt, removedNodeIds: [...routine.steps, ...routine.terminals].map((node) => node.stableStepId), removedSlotIds: (routine.slots ?? []).map((slot) => slot.stableSlotId), proposalId: context.proposalId, executionInvocationId: context.executionInvocationId, operatorUserId: context.operatorUserId, claimedAt: context.applyClaimedAt });
+            refusalWroteNothing = false;
             return { outcome: "applied" as const, appliedRef: settled.appliedRef };
           }
           await deps.routineDefinitionService.deleteDraft(workspaceId, targetRef.agentId, routine.id, { expectedUpdatedAt: routine.updatedAt });
@@ -834,6 +854,7 @@ export const createRoutineCopilotProposalAdapter = (deps: {
         if (kind === "structural") {
           const payload = routineStructuralPayloadSchema.parse(rawPayload);
           if (context?.surface === "mcp" && context.proposalId && context.executionInvocationId && context.operatorUserId && context.applyClaimedAt && deps.routineMcpApply) {
+            refusalWroteNothing = true;
             // Preparation validates the authored transform, but skills, action capability policy,
             // and context variables can move before confirmation. Re-run the owning validator
             // immediately before its fenced write; the CAS then proves this is the same routine.
@@ -856,6 +877,7 @@ export const createRoutineCopilotProposalAdapter = (deps: {
               operatorUserId: context.operatorUserId,
               claimedAt: context.applyClaimedAt,
             });
+            refusalWroteNothing = false;
             if (!settled.routine) return { outcome: "failed" as const, reason: "Routine update did not return its saved draft" };
             await deps.routineDefinitionService.completeExternalDraftMutation(workspaceId, targetRef.agentId, settled.routine);
             return { outcome: "applied" as const, appliedRef: settled.appliedRef };
@@ -876,9 +898,12 @@ export const createRoutineCopilotProposalAdapter = (deps: {
         return { outcome: "applied" as const, appliedRef: { agentId: targetRef.agentId, routineId: routine.id } };
       } catch (error) {
         if (isStale(error)) return { outcome: "stale" as const };
-        // A reviewed MCP owner may have committed just before its response was lost. Let the
-        // generic executor retain the receipt as uncertain instead of falsely certifying failure.
-        if (context?.surface === "mcp" && context.executionInvocationId) throw error;
+        if (context?.surface === "mcp" && context.executionInvocationId) {
+          if (refusalWroteNothing && isOwnerRefusal(error)) return { outcome: "failed" as const, reason: error.message };
+          // Otherwise the owner may have committed just before its response was lost. Let the
+          // generic executor retain the receipt as uncertain instead of falsely certifying failure.
+          throw error;
+        }
         return { outcome: "failed" as const, reason: error instanceof Error ? error.message : "Routine change failed" };
       }
     },

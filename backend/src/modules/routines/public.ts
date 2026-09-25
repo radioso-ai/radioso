@@ -62,6 +62,7 @@ export {
 } from "./validator.js";
 export {
   RoutineDefinitionService,
+  translateRoutineDefinitionWriteConflict,
   type RoutineDefinitionDeleteDraftResult,
   type RoutineDefinitionRepositoryPort,
   type RoutineDefinitionWriteGuard,

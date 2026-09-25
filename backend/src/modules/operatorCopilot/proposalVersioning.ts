@@ -26,3 +26,21 @@ export const versionInstant = (token: string): Date | null => {
  */
 export const isStale = (error: unknown): boolean =>
   error instanceof AppError && (error.code === "conflict" || error.code === "not_found");
+
+/**
+ * Whether a throw is the owner's deliberate refusal to make the requested change, as opposed to an
+ * infrastructure fault. An adapter may report this as a durable `failed` outcome only once it has
+ * also proven structurally (never from the error) that the refusal happened before any write or
+ * inside a single transaction that rolled it back. A plain `Error`, a database fault, or a 5xx must
+ * stay `uncertain` on MCP: the routine, skill, and publication reconcile paths already answer
+ * `not_applied` or replay their idempotency record for a receipt that landed, so retrying the same
+ * execution receipt self-heals them without ever risking a false `failed`. 429s (`tooManyRequests`,
+ * `usageLimitExceeded`) are excluded because they signal the caller should slow down and retry, not
+ * that the owner rejected the request.
+ */
+export const isOwnerRefusal = (error: unknown): error is AppError =>
+  error instanceof AppError
+  && !isStale(error)
+  && error.statusCode >= 400
+  && error.statusCode < 500
+  && error.statusCode !== 429;

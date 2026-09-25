@@ -209,10 +209,12 @@ export class DirectiveAuthorService {
     const suppliedFields = parsedInput.fields ?? {};
     const completeFields = { ...existingFields, ...suppliedFields };
     const missing = ["name", "condition", "action"].filter((field) => completeFields[field as keyof typeof completeFields] === undefined);
+    const explicitDirective = hasRequiredDirectiveFields(suppliedFields);
 
-    // An edit starts from the persisted directive, so every structured edit is complete even when
-    // the caller names one field. This prevents an omitted field from being rewritten or reset.
-    if (missing.length === 0 && hasRequiredDirectiveFields(completeFields) && (existing || hasRequiredDirectiveFields(suppliedFields))) {
+    // An edit starts from the persisted directive, so an exact structured edit may preserve every
+    // omitted field. Intent is different: inherited fields must not suppress the coach unless the
+    // caller explicitly supplied a complete directive to use verbatim.
+    if (missing.length === 0 && hasRequiredDirectiveFields(completeFields) && (!parsedInput.coachingText || explicitDirective)) {
       const result = this.finalizeDraft({
         directive: { ...completeFields, tags: existing?.tags ?? [], surfaces: existing?.surfaces ?? [] },
         diagnosis: "directive_recommended",

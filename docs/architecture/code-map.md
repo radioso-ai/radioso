@@ -1,7 +1,7 @@
 ---
 title: "Code Map"
 description: "Navigation map from product areas to public surfaces, owners, tests, and related docs for focused feature work."
-last_updated: 2026-09-16
+last_updated: 2026-09-25
 ---
 
 # Code Map
@@ -426,6 +426,7 @@ Public and tool surfaces:
 - `backend/src/modules/operatorCopilot/contracts.ts`, `catalog.ts`, `service.ts`, and `routes.ts`
 - `backend/src/modules/operatorCopilot/tools/index.ts` (catalog contributions)
 - `backend/src/modules/operatorCopilot/tools/agentTurnProbe.ts` (`test_agent_turn` contract and projection)
+- `backend/src/modules/operatorCopilot/tools/testChat.ts`, `contracts/testChat.ts`, and `services/testChatService.ts` (`test_chat_sessions`, `test_chat_transcript`, `test_chat_turn_trace`, `send_test_chat_message`), which add spend, bounds, and surface policy over test-execution's own turn reads, list summaries, and default-revision start in `backend/src/modules/test-execution/`; the turn trace reuses `turn_trace`'s envelope schema and bound from `tools/chatPayloadBounds.ts`
 - `backend/src/modules/operatorCopilot/tools/routines.ts` (`routine_definition`, `validate_routine`, `propose_routine`, `propose_routine_edit`, `propose_routine_exposure`)
 - `backend/src/app/composition/copilotProposalAdapters.ts` (proposal adapters: directive, agent setting, and the routine edit apply rules)
 - `backend/src/app/composition/copilotToolCatalog.ts` (default wiring and contributed-tool assembly)
@@ -535,11 +536,13 @@ history through public channels.
 Public surfaces and key files:
 
 - `backend/src/modules/test-execution/README.md`
-- `backend/src/modules/test-execution/service.ts`
+- `backend/src/modules/test-execution/testExecution.ts`
+- `backend/src/modules/test-execution/testExecutionTurns.ts` (turn read model: turns per side with state and failure code)
 - `backend/src/app/http/routes/testExecutionRoutes.ts`
 - `backend/src/app/http/openapi/paths/testExecutionPaths.ts`
 - `backend/src/modules/chat/services/trustedTestExecutionRunnerAdapter.ts`
 - `backend/tests/unit/test-execution-service.test.ts`
+- `backend/tests/integration/test-execution-repository.integration.test.ts`
 - `backend/tests/integration/test-execution-routes.integration.test.ts`
 
 ## Revision Eval Runs
@@ -644,7 +647,10 @@ Public surfaces and key files:
 - `backend/tests/integration/agent-revision-publication.integration.test.ts`
 
 Private Test Chat and revision evals consume the agents module's narrow
-revision-reader ports. They do not read mutable authoring rows directly.
+revision-reader ports. They do not read mutable authoring rows directly. The
+revision a test runs when none is named comes from
+`AgentRevisionService.resolveDefaultTestRevision`, which test execution reaches
+through its own `TestExecutionDefaultRevisionPort`.
 
 ## Agent Public Identity
 

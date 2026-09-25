@@ -108,6 +108,28 @@ const publicationFenceIsReadFresh = permanent(
   "prepare_agent_publication reads the agent's current draft generation itself immediately before creating the candidate and supplies it as the optimistic-concurrency fence. Asking Ray to track and resupply its own expectedDraftGeneration would only reproduce a value it could already get stale.",
 );
 
+const testChatDraftFenceIsReadFresh = permanent(
+  "send_test_chat_message reads the agent's draft generation itself immediately before it creates the candidate and starts the session, and supplies it as both fences, the same way prepare_agent_publication does. A caller resupplying its own copy could only hand back a staler value.",
+);
+const testChatRunsOneRevision = permanent(
+  "Carried as the singular `revisionId`: every session send_test_chat_message starts runs one revision, so the one-element `revisionIds` array is built from it.",
+);
+const testChatComparisonUnreachable = deferred(
+  "send_test_chat_message starts and continues single-revision sessions only. A comparison (`mode: \"compare\"`, two revisions answering one message) is readable through test_chat_transcript but starts and continues in the dashboard until comparison has a reviewed transport shape.",
+);
+const testChatSampleValuesUnreachable = deferred(
+  "send_test_chat_message starts a session without context-variable sample values. Supplying `testValues` waits on a review of how an operator-supplied, possibly sensitive sample value travels through a model-facing tool.",
+);
+const testChatSeedUnreachable = deferred(
+  "Starting a session from an existing conversation's thread (`seedConversationId`) stays in the dashboard's Continue in Test Chat until that handoff has its own reviewed tool shape.",
+);
+const testChatMintsItsOwnIdentities = permanent(
+  "send_test_chat_message mints the start's idempotency key and each turn's `turnId`/`attemptId` itself, and reads the session's current `executionGeneration` before sending. A caller's retry identity is the transport's operation id, not these owner fences.",
+);
+const testChatSkillEffectsAlwaysSuppressed = permanent(
+  "send_test_chat_message always runs with skill effects suppressed: letting a skill act outward would make a probe an act. It also refuses to continue a session that was started with effects allowed, which continues only in the dashboard.",
+);
+
 const retrievalSettingsOnlyPatchesTheDefaultSkill = permanent(
   "prepare_retrieval_settings only ever patches the agent's one default retrieval skill through a typed retrieval-specific `patch`. The generic target/config/replaceConfig/invocationMode/enabled surface belongs to the general skill editor (propose_skill_config), not this narrower tool.",
 );
@@ -215,6 +237,15 @@ export const fieldExclusions: Record<string, Record<string, FieldParityExclusion
   prepare_retrieval_settings: {
     ...fields(["target", "config", "replaceConfig", "invocationMode", "enabled"], retrievalSettingsOnlyPatchesTheDefaultSkill),
   },
+  send_test_chat_message: {
+    ...fields(["expectedDraftGeneration"], testChatDraftFenceIsReadFresh),
+    ...fields(["revisionIds"], testChatRunsOneRevision),
+    ...fields(["mode"], testChatComparisonUnreachable),
+    ...fields(["testValues"], testChatSampleValuesUnreachable),
+    ...fields(["seedConversationId"], testChatSeedUnreachable),
+    ...fields(["idempotencyKey", "executionGeneration", "turnId", "attemptId"], testChatMintsItsOwnIdentities),
+    ...fields(["skillEffects"], testChatSkillEffectsAlwaysSuppressed),
+  },
 };
 
 // Ratchet: this may only ever decrease as tools land a real field or a nested one moves flat.
@@ -226,4 +257,8 @@ export const fieldExclusions: Record<string, Record<string, FieldParityExclusion
 // The first scan also surfaced a tenth gap that was not a tool gap at all: the OpenAPI
 // `getDocument` (GET) operation declared a `DocumentReprocessRequest` body it never read. The
 // contract was corrected instead of the gap being recorded.
-export const maxDeferredFieldParityExclusions = 8;
+//   8 -> 11  send_test_chat_message moved startAgentTestExecution off the catalog-coverage deferred
+//            list, where the whole operation had been uncovered. Its three unreached fields
+//            (mode, testValues, seedConversationId) are the part of that deferral still open, now
+//            recorded field by field rather than retired with the operation.
+export const maxDeferredFieldParityExclusions = 11;

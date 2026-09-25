@@ -117,14 +117,17 @@ const replayResponse = (invocation: OperatorMcpInvocationRecord): OperatorInvoca
   ...(invocation.resultReference ? { resultReference: invocation.resultReference } : {}),
 });
 
-// A tool's own domain rejection — bad input or an id addressing nothing this credential can
-// reach — is a correctable caller mistake, the same class `invalid_arguments` already covers.
-// Everything else (a plain dependency failure, an unrecognized AppError) is left unchanged so it
-// keeps surfacing as the outage it actually is.
+// Statuses a tool's own domain rejection can carry that are the caller's mistake to correct:
+// 400 bad input, 404 an id addressing nothing this credential can reach, 409 a collision with
+// current workspace state (e.g. naming a context variable that already exists). Everything else
+// (a plain dependency failure, an unrecognized AppError) is left unchanged so it keeps surfacing
+// as the outage it actually is.
+const CALLER_REJECTION_STATUSES = new Set([400, 404, 409]);
+
 const toApplicationError = (rawError: unknown): unknown => {
   if (!(rawError instanceof AppError)) return rawError;
   if (rawError.code === "retrieval_not_configured") return new OperatorMcpApplicationError("missing_configuration");
-  if (rawError.statusCode === 400 || rawError.statusCode === 404) {
+  if (CALLER_REJECTION_STATUSES.has(rawError.statusCode)) {
     // The tool's own rejection sentence is the only account of what was wrong with the call;
     // without it the caller reads the bare code and has to guess again.
     return new OperatorMcpApplicationError("invalid_arguments", undefined, toolRejectionDetail(rawError.message));

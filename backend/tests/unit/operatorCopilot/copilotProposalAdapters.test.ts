@@ -9,7 +9,7 @@ import {
 } from "../../../src/modules/operatorCopilot/proposalAdapters.js";
 import { AgentSkillsService } from "../../../src/modules/agentSkills/public.js";
 import { createDefaultSkillCapabilityRegistry } from "../../../src/modules/skills/public.js";
-import { badRequest, conflict, notFound } from "../../../src/shared/domain/errors.js";
+import { badRequest, conflict, notFound, tooManyRequests } from "../../../src/shared/domain/errors.js";
 import { InMemoryAgentSkillRepository } from "../../support/inMemoryAgentSkills.js";
 import {
   ContextVariableService,
@@ -735,6 +735,75 @@ describe("createAgentSkillCopilotProposalAdapter", () => {
         config: {},
       }),
     ).rejects.toMatchObject({ statusCode: 409 });
+  });
+
+  const mcpAtomicContext = { surface: "mcp" as const, accountId: "account-1", proposalId: "proposal-1", executionInvocationId: "execution-1", operatorUserId: "operator-1", applyClaimedAt: new Date("2026-09-02T00:00:00Z") };
+
+  // validatePrepared runs before atomicMcpApply.apply and never writes, so its refusal proves the
+  // skill was never touched - the proposal can settle durably instead of leaving the operator
+  // retrying a receipt that will only ever come back uncertain.
+  it("settles a prepared-retrieval refusal as failed before the atomic skill write starts", async () => {
+    const validatePrepared = vi.fn(async () => { throw badRequest("The source scope no longer exists."); });
+    const apply = vi.fn();
+    const adapter = createAgentSkillCopilotProposalAdapter({
+      agentService: { get: vi.fn() },
+      agentSkillsService: { dryRunValidate: vi.fn() } as never,
+      skillCapabilityRegistry: createDefaultSkillCapabilityRegistry(),
+      atomicMcpApply: { apply },
+      retrievalAuthoring: { validatePrepared },
+    });
+    const targetRef = { agentId: randomUUID(), skillId: randomUUID() };
+    const payload = { name: "faq_search", capability: "retrieve", target: { kind: "source_scope", id: null }, config: {}, invocationMode: "default_answer", enabled: true };
+
+    await expect(adapter.applyIfVersionMatches("workspace-1", targetRef, payload, new Date().toISOString(), mcpAtomicContext))
+      .resolves.toEqual({ outcome: "failed", reason: "The source scope no longer exists." });
+    expect(apply).not.toHaveBeenCalled();
+  });
+
+  it("keeps an unclassifiable atomic skill write failure uncertain by rethrowing it on an MCP apply", async () => {
+    const apply = vi.fn(async () => { throw new Error("connection reset"); });
+    const adapter = createAgentSkillCopilotProposalAdapter({
+      agentService: { get: vi.fn() },
+      agentSkillsService: { dryRunValidate: vi.fn(async () => ({})) } as never,
+      skillCapabilityRegistry: createDefaultSkillCapabilityRegistry(),
+      atomicMcpApply: { apply },
+    });
+    const targetRef = { agentId: randomUUID(), skillId: randomUUID() };
+    const payload = { name: "notify_ops", capability: "notify", target: { kind: "notify_delivery", id: null }, config: {}, invocationMode: "routine_named", enabled: true };
+
+    await expect(adapter.applyIfVersionMatches("workspace-1", targetRef, payload, new Date().toISOString(), mcpAtomicContext)).rejects.toThrow("connection reset");
+  });
+
+  it("keeps a rate-limited pre-write validation uncertain instead of certifying a refusal", async () => {
+    const dryRunValidate = vi.fn(async () => { throw tooManyRequests("Too many concurrent validations."); });
+    const apply = vi.fn();
+    const adapter = createAgentSkillCopilotProposalAdapter({
+      agentService: { get: vi.fn() },
+      agentSkillsService: { dryRunValidate } as never,
+      skillCapabilityRegistry: createDefaultSkillCapabilityRegistry(),
+      atomicMcpApply: { apply },
+    });
+    const targetRef = { agentId: randomUUID(), skillId: randomUUID() };
+    const payload = { name: "notify_ops", capability: "notify", target: { kind: "notify_delivery", id: null }, config: {}, invocationMode: "routine_named", enabled: true };
+
+    await expect(adapter.applyIfVersionMatches("workspace-1", targetRef, payload, new Date().toISOString(), mcpAtomicContext)).rejects.toThrow("Too many concurrent validations.");
+    expect(apply).not.toHaveBeenCalled();
+  });
+
+  it("keeps a refusal from the non-atomic skill create uncertain on an MCP apply", async () => {
+    const create = vi.fn(async () => { throw badRequest("The skill configuration is invalid."); });
+    const apply = vi.fn();
+    const adapter = createAgentSkillCopilotProposalAdapter({
+      agentService: { get: vi.fn() },
+      agentSkillsService: { create } as never,
+      skillCapabilityRegistry: createDefaultSkillCapabilityRegistry(),
+      atomicMcpApply: { apply },
+    });
+    const targetRef = { agentId: randomUUID(), skillId: null };
+    const payload = { name: "notify_ops", capability: "notify", target: { kind: "notify_delivery", id: null }, config: {}, invocationMode: "routine_named", enabled: true };
+
+    await expect(adapter.applyIfVersionMatches("workspace-1", targetRef, payload, "open", mcpAtomicContext)).rejects.toThrow("The skill configuration is invalid.");
+    expect(apply).not.toHaveBeenCalled();
   });
 });
 

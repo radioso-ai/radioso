@@ -167,6 +167,11 @@ interface OperatorCopilotServiceDeps {
   /** Probe calls one turn may spend; see {@link COPILOT_PROBE_BUDGET_PER_TURN_DEFAULT}. */
   readonly probeBudgetPerTurn?: number;
   readonly now?: () => Date;
+  /**
+   * Records the owner error behind a reviewed MCP execution answered `uncertain`; the proposal and
+   * its audit carry no error, so this is where support finds it.
+   */
+  readonly logger?: { warn(fields: Record<string, unknown>, message: string): void };
 }
 
 export class OperatorCopilotService {
@@ -179,6 +184,14 @@ export class OperatorCopilotService {
    */
   private async audit(actor: CopilotActor, event: { accountId: string; workspaceId: string; eventType: string; eventStatus: "success" | "failure"; metadata: Record<string, unknown> }): Promise<void> {
     await this.deps.auditService.record({ ...event, metadata: withCopilotActor(actor, event.metadata) });
+  }
+
+  /** Logs the owner error plus join keys only: never the proposal payload, targetRef contents, or a prompt. */
+  private logUnconfirmedMcpAttempt(input: { error: unknown; proposalId: string; executionInvocationId: string; targetType: string; workspaceId: string }): void {
+    this.deps.logger?.warn(
+      { err: input.error, proposalId: input.proposalId, executionInvocationId: input.executionInvocationId, targetType: input.targetType, workspaceId: input.workspaceId },
+      "operator_copilot_mcp_apply_unconfirmed",
+    );
   }
 
   async list(workspaceId: string, operatorUserId: string): Promise<ReadonlyArray<CopilotConversation>> {
@@ -310,6 +323,7 @@ export class OperatorCopilotService {
           });
           throw error;
         }
+        this.logUnconfirmedMcpAttempt({ error, proposalId: proposal.id, executionInvocationId: input.executionInvocationId, targetType: proposal.targetType, workspaceId: input.input.workspaceId });
         reconciliation = { outcome: "unknown" as const, reason: INTERRUPTED_APPLY_REASON };
       }
       if (reconciliation.outcome === "applied") {
@@ -348,6 +362,7 @@ export class OperatorCopilotService {
         throw error;
       }
       if (input.executionInvocationId) {
+        this.logUnconfirmedMcpAttempt({ error, proposalId: proposal.id, executionInvocationId: input.executionInvocationId, targetType: proposal.targetType, workspaceId: input.input.workspaceId });
         return { status: "uncertain", reason: UNCONFIRMED_APPLY_REASON };
       }
       await this.updateProposalAndAudit(input.input, proposal, "failed", null, "copilot.proposal.apply_failed", "failure", "failed", claimGuard);
@@ -407,20 +422,24 @@ export class OperatorCopilotService {
     return { status: "dismissed" };
   }
 
-  async cancelMcpReviewedProposal(input: { workspaceId: string; accountId: string; operatorUserId: string; grantId: string; clientId: string; proposalId: string; currentAuthorization: CopilotCurrentAuthorizationPort }): Promise<{ status: "dismissed" }> {
+  async cancelMcpReviewedProposal(input: { workspaceId: string; accountId: string; operatorUserId: string; grantId: string; clientId: string; proposalId: string; currentAuthorization: CopilotCurrentAuthorizationPort }): Promise<{ status: "dismissed" | "not_found" | "not_cancellable" }> {
     if (!input.currentAuthorization) throw new CopilotAuthorizationError();
     const proposal = await this.deps.repository.findMcpReviewedProposal({ id: input.proposalId, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId, grantId: input.grantId, clientId: input.clientId });
-    if (!proposal) throw new CopilotNotFoundError();
-    if (proposal.status !== "pending" && proposal.status !== "dismissed") throw new CopilotConflictError();
+    if (!proposal) return { status: "not_found" };
+    // Authorize before reporting anything about the proposal's state: a caller whose target-type
+    // permission was revoked must not learn whether an operation is cancellable, already
+    // dismissed, or settled.
     await this.requireProposalAuthorization({ ...input, surface: "mcp" }, proposal.targetType);
+    if (proposal.status !== "pending" && proposal.status !== "dismissed") return { status: "not_cancellable" };
     // Cancelling an already-dismissed proposal reports the outcome it already reached.
     if (proposal.status === "dismissed") return { status: "dismissed" };
     const cancelled = await this.deps.repository.cancelPendingProposal({ id: proposal.id, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId });
     if (!cancelled) {
       // A concurrent cancellation can win the pending-only write; its outcome is this one's too.
       const current = await this.deps.repository.findMcpReviewedProposal({ id: input.proposalId, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId, grantId: input.grantId, clientId: input.clientId });
-      if (current?.status === "dismissed") return { status: "dismissed" };
-      throw new CopilotConflictError();
+      if (!current) return { status: "not_found" };
+      if (current.status === "dismissed") return { status: "dismissed" };
+      return { status: "not_cancellable" };
     }
     await this.audit({ ...input, surface: "mcp" }, { accountId: input.accountId, workspaceId: input.workspaceId, eventType: "copilot.proposal.dismissed", eventStatus: "success", metadata: { proposalId: proposal.id, targetType: proposal.targetType, outcome: "dismissed" } });
     return { status: "dismissed" };

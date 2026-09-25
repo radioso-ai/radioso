@@ -1,6 +1,8 @@
 import { z } from "zod";
 
 import type { CopilotToolDescriptor } from "../contracts.js";
+import { badRequest, notFound } from "../../../shared/domain/errors.js";
+import { REVIEWED_OPERATION_NOT_FOUND } from "../reviewedOperation.js";
 
 const inputSchema = z.object({
   proposalId: z.string().uuid(),
@@ -52,7 +54,7 @@ export const createReviewedProposalOutcomeTool = (outcomes: ReviewedProposalOutc
   shape: "read",
   verificationCost: () => 0,
   uiLabel: "Reading reviewed operation outcome",
-  description: "Read the exact stored review and current outcome of one reviewed operation. It does not execute or refresh the review.",
+  description: "Read the exact stored review and current outcome of one reviewed operation a prepare_* tool created. It does not execute or refresh the review.",
   contributingModule: "operatorCopilot",
   dashboardSubject: { type: "proposal" },
   requiredPermissions: ["workspace.agents.manage"],
@@ -60,7 +62,7 @@ export const createReviewedProposalOutcomeTool = (outcomes: ReviewedProposalOutc
   outputSchema,
   createTool: (context) => ({
     name: "reviewed_proposal_outcome",
-    description: "Read the exact stored review and current outcome of one reviewed operation. It does not execute or refresh the review.",
+    description: "Read the exact stored review and current outcome of one reviewed operation a prepare_* tool created. It does not execute or refresh the review.",
     inputSchema,
     outputSchema,
     invoke: async (rawInput) => {
@@ -76,9 +78,9 @@ export const createReviewedProposalOutcomeTool = (outcomes: ReviewedProposalOutc
         clientId: context.operatorMcpClientId,
         proposalId: input.proposalId,
       });
-      if (!outcome || !outcome.proposal.reviewDigest || outcome.proposal.reviewSnapshot === null) throw new Error("Reviewed operation was not found");
+      if (!outcome || !outcome.proposal.reviewDigest || outcome.proposal.reviewSnapshot === null) throw notFound(REVIEWED_OPERATION_NOT_FOUND);
       const bounded = boundedSnapshot(outcome.proposal.reviewSnapshot);
-      if (input.reviewDetail && !bounded) throw new Error("Complete review detail is not available for this proposal");
+      if (input.reviewDetail && !bounded) throw badRequest("Complete review detail is not available for this reviewed operation.");
       const full = input.reviewDetail && bounded ? JSON.stringify(bounded.full) : null;
       const reviewDetail = full === null ? undefined : {
         text: full.slice(input.reviewDetail!.offset, input.reviewDetail!.offset + input.reviewDetail!.limit),

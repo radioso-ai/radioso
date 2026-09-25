@@ -23,11 +23,25 @@ missing, other-workspace, or other-agent conversation is one `null`, presented a
 capture an immutable test-turn snapshot. That Eval shape must not carry
 conversation ids, continuations, or turn traces.
 
-Operator Copilot reads and drives Test Chat through the `TestExecutionService`
-type `public.ts` exports (`list`, `detail`, `start`, `message`), from
-`operatorCopilot/services/testChatService.ts`. It projects bounded copies of
-turns and traces for its tools, starts only single-revision executions with
-skill effects suppressed, and never reads continuations. This module knows
+`testExecutionTurns.ts` is the turn read model. It pairs each user message with
+its answer, keeps a greeting as a turn with no user message, and takes an
+unanswered turn's state and failure code from its highest-fenced attempt.
+`TestExecutionService.transcript` reads an execution as those turns per side;
+`turn` reads one of them, and right after `message` that is the settled turn.
+`summaries` returns a list page with each execution's turn count and opening
+message, computed by one repository projection over the first side's history.
+These reads leave out continuations, conversation ids, and frozen sample values.
+
+`start` without `revisionIds` runs a single test on the agent's default
+revision: a fresh candidate of the saved draft, or the published revision when
+the draft matches it. The rule is `AgentRevisionService.resolveDefaultTestRevision`,
+reached through `TestExecutionDefaultRevisionPort` and wired in composition. It
+is a separate port from the revision reader because choosing can freeze a
+candidate, which is a write.
+
+Operator Copilot reads and drives Test Chat through `summaries`, `transcript`,
+`turn`, `start`, and `message`, from `operatorCopilot/services/testChatService.ts`,
+which adds its spend guard, output bounds, and surface policy. This module knows
 nothing about the copilot.
 
 Test histories and sample values are never public channel inputs. A published
@@ -36,4 +50,4 @@ revision does not make a private test conversation resumable by a visitor.
 Focused checks:
 
 - `cd backend && pnpm exec vitest run tests/unit/test-execution-service.test.ts tests/unit/trusted-test-execution-runner-adapter.test.ts tests/unit/conversation-test-execution-seed-source.test.ts tests/unit/test-execution-request-schema.test.ts`
-- `cd backend && pnpm exec vitest run tests/integration/test-execution-routes.integration.test.ts tests/integration/conversation-test-execution-seed-source.integration.test.ts --no-file-parallelism`
+- `cd backend && pnpm exec vitest run tests/integration/test-execution-repository.integration.test.ts tests/integration/test-execution-routes.integration.test.ts tests/integration/conversation-test-execution-seed-source.integration.test.ts --no-file-parallelism`

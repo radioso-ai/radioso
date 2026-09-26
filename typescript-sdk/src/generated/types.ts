@@ -23852,6 +23852,7 @@ export interface operations {
                             reviewCode: string;
                             expiresAt: string | null;
                             approvedAt: string | null;
+                            clientName: string | null;
                             review?: unknown;
                         } | null;
                     };

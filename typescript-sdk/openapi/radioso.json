@@ -48626,6 +48626,12 @@
                             "null"
                           ]
                         },
+                        "clientName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "review": {}
                       },
                       "required": [
@@ -48634,7 +48640,8 @@
                         "reviewDigest",
                         "reviewCode",
                         "expiresAt",
-                        "approvedAt"
+                        "approvedAt",
+                        "clientName"
                       ]
                     }
                   },

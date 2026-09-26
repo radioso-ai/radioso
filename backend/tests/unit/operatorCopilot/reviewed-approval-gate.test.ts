@@ -7,7 +7,8 @@ import { operatorMcpDispositions } from "../../../src/modules/operatorCopilot/op
 import { createReviewedProposalExecutionTool } from "../../../src/modules/operatorCopilot/tools/reviewedProposalExecution.js";
 import { OperatorCopilotService } from "../../../src/modules/operatorCopilot/service.js";
 import { canonicalReviewedOperationDigest } from "../../../src/modules/operatorCopilot/reviewedOperation.js";
-import type { CopilotProposalAdapter, CopilotProposalDraft } from "../../../src/modules/operatorCopilot/contracts.js";
+import type { CopilotAuditPort, CopilotProposalAdapter, CopilotProposalDraft } from "../../../src/modules/operatorCopilot/contracts.js";
+import type { OperatorMcpBoundGrantClientDescriptionPort } from "../../../src/modules/operatorMcpAuthorization/contracts.js";
 import { InMemoryCopilotRepository } from "../../support/inMemoryCopilotRepository.js";
 
 /**
@@ -28,6 +29,10 @@ const clientId = randomUUID();
 const appBaseUrl = "https://app.radioso.ai";
 
 const permissiveAuthorization = { hasAllPermissions: vi.fn(async () => true) };
+type ApprovalMetrics = {
+  incrementCounter(name: string, options: { help: string; labels: Record<string, string> }): void;
+  observeHistogram(name: string, options: { help: string; value: number; buckets: number[] }): void;
+};
 
 const directiveAdapter = (): CopilotProposalAdapter => ({
   targetType: "directive",
@@ -36,17 +41,27 @@ const directiveAdapter = (): CopilotProposalAdapter => ({
   applyIfVersionMatches: vi.fn(async () => ({ outcome: "applied" as const, appliedRef: { directiveId: "directive-1" } })),
 }) as never;
 
-const buildService = (repository: InMemoryCopilotRepository, adapter: CopilotProposalAdapter) => new OperatorCopilotService({
+const buildService = (
+  repository: InMemoryCopilotRepository,
+  adapter: CopilotProposalAdapter,
+  options: {
+    auditService?: CopilotAuditPort;
+    metrics?: ApprovalMetrics;
+    reviewedGrantClient?: OperatorMcpBoundGrantClientDescriptionPort;
+  } = {},
+) => new OperatorCopilotService({
   repository,
   capabilityRunner: { runStreaming: vi.fn() },
   usageLimitPolicy: {} as never,
-  auditService: { record: vi.fn() },
+  auditService: options.auditService ?? { record: vi.fn() },
   workspaceRouteKeyResolver: { resolveWorkspaceKey: vi.fn(async () => "workspace-key") },
   prompt: "system",
   tools: [],
   currentAuthorization: permissiveAuthorization,
   proposalAdapters: [adapter],
   appBaseUrl,
+  reviewedApprovalMetrics: options.metrics,
+  reviewedGrantClient: options.reviewedGrantClient,
 });
 
 const executeCatalog = (service: OperatorCopilotService) => new OperatorMcpCatalogService([
@@ -106,6 +121,41 @@ describe("execute_reviewed_proposal through the operator MCP catalog, driven by 
     });
     expect(adapter.applyIfVersionMatches).not.toHaveBeenCalled();
     await expect(repository.findProposal({ id: proposal.id, workspaceId, operatorUserId })).resolves.toMatchObject({ status: "pending" });
+  });
+
+  it("records the approval gate's audits and low-cardinality metrics", async () => {
+    const repository = new InMemoryCopilotRepository();
+    const auditService = { record: vi.fn<CopilotAuditPort["record"]>(async () => {}) };
+    const metrics: ApprovalMetrics = {
+      incrementCounter: vi.fn<(name: string, options: { help: string; labels: Record<string, string> }) => void>(),
+      observeHistogram: vi.fn<(name: string, options: { help: string; value: number; buckets: number[] }) => void>(),
+    };
+    const reviewedGrantClient = { describeBoundGrantClient: vi.fn<OperatorMcpBoundGrantClientDescriptionPort["describeBoundGrantClient"]>(async () => ({ clientId: "client-record-1", clientName: "Operator test client" })) };
+    const service = buildService(repository, directiveAdapter(), { auditService, metrics, reviewedGrantClient });
+    const catalog = executeCatalog(service);
+    const { proposal, reviewDigest } = await seedReviewedProposal(repository);
+
+    await expect(catalog.invoke({
+      name: "execute_reviewed_proposal", arguments: { proposalId: proposal.id, reviewDigest },
+      context: mcpContext(randomUUID()), scopes: new Set(["operator:write"]), signal: AbortSignal.timeout(1_000),
+    })).resolves.toMatchObject({ status: "approval_required" });
+    expect(auditService.record).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: "copilot.proposal.apply_denied", eventStatus: "failure", metadata: expect.objectContaining({ reason: "approval_required" }),
+    }));
+    expect(metrics.incrementCounter).toHaveBeenCalledWith("operator_mcp_reviewed_approval_total", expect.objectContaining({ labels: { requirement: "signed_in_approval", outcome: "required_at_execute" } }));
+
+    await expect(service.approveReviewedProposal({ workspaceId, accountId, operatorUserId, proposalId: proposal.id, reviewDigest })).resolves.toEqual({ status: "approved" });
+    expect(auditService.record).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: "copilot.proposal.approved", metadata: expect.objectContaining({ clientId: "client-record-1" }),
+    }));
+    expect(metrics.observeHistogram).toHaveBeenCalledWith("operator_mcp_reviewed_approval_latency_seconds", expect.objectContaining({ buckets: expect.any(Array) }));
+
+    const declined = await seedReviewedProposal(repository);
+    await expect(service.dismissProposal({ workspaceId, accountId, operatorUserId, surface: "dashboard", proposalId: declined.proposal.id, reason: "declined" })).resolves.toEqual({ status: "dismissed" });
+    expect(auditService.record).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: "copilot.proposal.dismissed", metadata: expect.objectContaining({ outcome: "declined", reason: "declined" }),
+    }));
+    expect(metrics.incrementCounter).toHaveBeenCalledWith("operator_mcp_reviewed_approval_total", expect.objectContaining({ labels: { requirement: "signed_in_approval", outcome: "declined" } }));
   });
 
   it("applies once the grant's own user has approved the exact digest", async () => {

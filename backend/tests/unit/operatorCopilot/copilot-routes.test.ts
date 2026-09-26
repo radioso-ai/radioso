@@ -147,6 +147,37 @@ describe("createCopilotRoutes", () => {
     expect(resolveDashboardWorkspace).not.toHaveBeenCalled();
   });
 
+  it("presents the same bounded reviewed snapshot as the MCP outcome and identifies its bound client", async () => {
+    const proposal = {
+      id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", targetType: "routine", targetRef: {}, status: "pending", reason: null, appliedRef: null, evidence: null,
+      reviewDigest: "a".repeat(43), confirmationRequirement: "signed_in_approval" as const,
+      changeEffect: { exposure: "live" as const, reversibility: "reversible" as const, metered: false }, expiresAt: new Date("2026-09-27T00:15:00.000Z"), approvedAt: null,
+      reviewSnapshot: { review: { visible: true }, fullReview: { steps: Array.from({ length: 2_000 }, () => "hidden") } },
+    };
+    const getProposal = vi.fn(async () => ({ proposal, preview: { targetLabel: "Routine", current: null, proposed: {} }, currentVersionMatches: true }));
+    const describeReviewedProposalClient = vi.fn(async () => ({ clientId: "client-record-1", clientName: "Operator test client" }));
+    const app = express();
+    app.use(express.json());
+    app.use((req, _res, next) => { req.cookies = Object.fromEntries((req.header("cookie") ?? "").split(";").map((part) => part.trim().split("=")).filter((part): part is [string, string] => part.length === 2)); next(); });
+    app.use("/api/v1/copilot", createCopilotRoutes({
+      env: { SESSION_COOKIE_NAME: "radioso_session" },
+      authService: { async authenticateSession() { return { accountId: ACCOUNT_ID, userId: USER_ID, sessionId: "session-id" }; } },
+      workspaceSessionService: { async resolve() { return { accountId: ACCOUNT_ID, workspaceId: WORKSPACE_ID }; } },
+      accountAccessService: { async requireActiveMembership() {}, async requirePermission() {}, hasPermission: vi.fn(async () => true) },
+      llmCapabilityResolver: { async resolve() { return {}; } },
+      operatorCopilotService: { resolveProposalWorkspaceForSession: vi.fn(async () => ({ kind: "found" as const, workspaceId: WORKSPACE_ID })), getProposal, describeReviewedProposalClient },
+      copilotToolCatalog: [], abuseControlService: { enforce: vi.fn(async () => admittedAbuseControlDecision()) }, auditService: { record: vi.fn(async () => {}) },
+    } as never));
+
+    const response = await request(app).get(`/api/v1/copilot/proposals/${proposal.id}`).set("Cookie", "radioso_session=valid-session");
+
+    expect(response.status).toBe(200);
+    expect(response.body.reviewedOperation).toMatchObject({ clientName: "Operator test client", review: { review: { visible: true } } });
+    expect(response.body.reviewedOperation.review).not.toHaveProperty("fullReview");
+    expect(JSON.stringify(response.body)).not.toContain("hidden");
+    expect(describeReviewedProposalClient).toHaveBeenCalledWith({ workspaceId: WORKSPACE_ID, operatorUserId: USER_ID, proposal });
+  });
+
   it("offers an account switch only when the signed-in operator is an active member of the proposal account", async () => {
     const app = express();
     app.use(express.json());

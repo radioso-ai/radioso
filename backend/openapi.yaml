@@ -31486,6 +31486,10 @@ paths:
                         type:
                           - string
                           - "null"
+                      clientName:
+                        type:
+                          - string
+                          - "null"
                       review: {}
                     required:
                       - requirement
@@ -31494,6 +31498,7 @@ paths:
                       - reviewCode
                       - expiresAt
                       - approvedAt
+                      - clientName
                 required:
                   - id
                   - workspaceId

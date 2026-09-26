@@ -132,6 +132,7 @@ export interface CopilotProposalDetail extends CopilotProposalSummary {
     reviewCode: string
     expiresAt: string | null
     approvedAt: string | null
+    clientName: string | null
     review: unknown
   } | null
 }
@@ -439,10 +440,10 @@ export const copilotApi = {
     }, { withSession: true })
   },
 
-  dismissProposal(proposalId: string, workspaceId?: string): Promise<{ status: 'dismissed' }> {
+  dismissProposal(proposalId: string, workspaceId?: string, reason?: 'declined'): Promise<{ status: 'dismissed' }> {
     return request(copilotPath(`/proposals/${encodeURIComponent(proposalId)}/dismiss`), {
       method: 'POST',
-      headers: workspaceId ? { 'X-Workspace-Id': workspaceId } : undefined,
+      ...(reason ? { body: JSON.stringify({ reason }), headers: { 'Content-Type': 'application/json', ...(workspaceId ? { 'X-Workspace-Id': workspaceId } : {}) } } : { headers: workspaceId ? { 'X-Workspace-Id': workspaceId } : undefined }),
     }, { withSession: true })
   },
 

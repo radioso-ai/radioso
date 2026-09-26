@@ -85,6 +85,7 @@ export const operatorMcpDispositions: Readonly<Record<string, CopilotMcpDisposit
   },
   retrieval_settings: eligibleRead,
   prepare_retrieval_settings: eligibleProposal,
+  proposal_detail: eligibleRead,
   prepare_routine_structure: {
     status: "eligible",
     inputStrategy: "explicit",

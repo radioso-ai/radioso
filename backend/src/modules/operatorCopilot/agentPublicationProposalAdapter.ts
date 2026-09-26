@@ -25,6 +25,10 @@ const currentVersionToken = async (revisions: AgentPublicationRevisionPort, work
 /** Candidate preparation stays in the MCP tool; this adapter owns one standard apply path. */
 export const createAgentPublicationProposalAdapter = (deps: { revisions: AgentPublicationRevisionPort }): CopilotAgentPublicationProposalAdapter => ({
   targetType: "agent_publication",
+  proposalDetailTargetRef: (rawTargetRef) => {
+    const targetRef = targetSchema.parse(rawTargetRef);
+    return { agentId: targetRef.agentId, candidateRevisionId: targetRef.candidateRevisionId };
+  },
 
   async validatePayload(workspaceId, rawTargetRef, rawPayload) {
     const targetRef = targetSchema.parse(rawTargetRef);

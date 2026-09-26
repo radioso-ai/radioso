@@ -639,6 +639,7 @@ describe("createAgentSkillCopilotProposalAdapter", () => {
     expect(preview.current).not.toHaveProperty("updatedAt");
     expect(preview.current).not.toHaveProperty("storedKind");
     expect(preview.current).toMatchObject({ name: "notify_ops", capability: "notify", enabled: true });
+    expect(JSON.stringify(preview)).not.toContain("ops@example.com");
   });
 
   // Finding 3 (issue triage, next-ray-epic-issue): rationale is presentation-only - Apply never

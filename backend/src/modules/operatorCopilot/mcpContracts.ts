@@ -25,6 +25,7 @@ export interface OperatorMcpInvocationRecord {
   readonly proofConsumedAt: Date | null;
   readonly status: OperatorMcpInvocationStatus;
   readonly safeOutcomeCode: string | null;
+  readonly safeRejectionDetails: readonly OperatorMcpRejectionDetail[];
   readonly resultReference: string | null;
   readonly createdAt: Date;
   readonly completedAt: Date | null;
@@ -65,6 +66,7 @@ export interface OperatorMcpInvocationRepositoryPort {
     invocationId: string;
     status: "completed" | "refused" | "failed";
     safeOutcomeCode: string;
+    safeRejectionDetails?: readonly OperatorMcpRejectionDetail[];
     resultReference?: string | null;
     now: Date;
   }): Promise<OperatorMcpInvocationRecord | null>;
@@ -79,3 +81,4 @@ export interface OperatorMcpInvocationRepositoryPort {
     now: Date;
   }): Promise<{ status: "prepared" | "replay"; invocation: OperatorMcpInvocationRecord } | { status: "conflict" | "budget_exhausted" }>;
 }
+import type { OperatorMcpRejectionDetail } from "./invalidArgumentDetails.js";

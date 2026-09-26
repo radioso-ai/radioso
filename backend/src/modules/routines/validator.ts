@@ -17,6 +17,24 @@ export interface RoutineValidationDiagnostic {
   message: string;
 }
 
+interface SafeRoutineValidationDiagnostic {
+  readonly code: string;
+  readonly location: string;
+  readonly message: string;
+}
+
+const safeRoutineValidationMessages: Partial<Record<RoutineValidationCode, string>> = {
+  node_id_collision: "A step or terminal identifier is used more than once.",
+  missing_terminal: "The routine needs at least one terminal.",
+};
+
+/** External diagnostic DTO: preserves only structural location, never authored validation text. */
+export const toSafeRoutineValidationDiagnostic = (diagnostic: { readonly code: string; readonly location: string }): SafeRoutineValidationDiagnostic => ({
+  code: diagnostic.code,
+  location: diagnostic.location.slice(0, 240),
+  message: safeRoutineValidationMessages[diagnostic.code as RoutineValidationCode] ?? "The routine structure is not valid for serving.",
+});
+
 export interface RoutineValidationResult {
   ok: boolean;
   diagnostics: RoutineValidationDiagnostic[];

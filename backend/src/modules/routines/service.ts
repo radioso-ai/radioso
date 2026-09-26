@@ -289,6 +289,30 @@ export class RoutineDefinitionService {
   }
 
   /**
+   * Applies a copilot-reviewed routine edit. Unlike the REST enable toggle, this authoring
+   * boundary refuses to put an invalid parked routine back into service. The effective draft is
+   * resolved before validation so omitted fields retain their stored values.
+   */
+  async updateDraftForCopilotProposal(
+    workspaceId: string,
+    agentId: string,
+    id: string,
+    input: RoutineDefinitionDraftAuthoringInput,
+    options: RoutineDefinitionWriteGuard = {},
+  ): Promise<RoutineDefinitionSaveResult> {
+    await this.requireAgent(workspaceId, agentId);
+    const existing = await this.options.repository.findById(agentId, id);
+    const draft = this.validateInput(existing ? mergeDraftInputWithExisting(existing, input) : input);
+    if (!existing?.enabled && draft.enabled) {
+      const validation = await this.validateForDraftMutation(workspaceId, agentId, draft);
+      if (!validation.ok) {
+        throw badRequest("The enabled routine cannot be served. Use validate_routine to correct it before enabling it.");
+      }
+    }
+    return this.updateDraft(workspaceId, agentId, id, draft, options);
+  }
+
+  /**
    * Completes best-effort owner side effects after a composition-owned atomic write. The caller
    * has already committed the routine and its external receipt, so this deliberately has the
    * same non-throwing semantics as `savedRoutine` rather than making the receipt lie about a
@@ -326,6 +350,21 @@ export class RoutineDefinitionService {
       ? await this.requireRoutine(agentId, target.id)
       : draftDefinitionFromInput(agentId, this.validateInput(target.input));
     return this.validateForServing(workspaceId, routine);
+  }
+
+  /**
+   * Validates an authored draft only when that draft would enter service. Keeping this lifecycle
+   * rule with the routine owner lets every authoring surface park a broken routine without
+   * copying the enabled-only release policy from the agent-revision gate.
+   */
+  async validateForDraftMutation(
+    workspaceId: string,
+    agentId: string,
+    input: RoutineDefinitionDraftAuthoringInput,
+  ): Promise<RoutineValidationResult> {
+    await this.requireAgent(workspaceId, agentId);
+    const routine = draftDefinitionFromInput(agentId, this.validateInput(input));
+    return routine.enabled ? this.validateForServing(workspaceId, routine) : { ok: true, diagnostics: [] };
   }
 
   async deleteDraft(workspaceId: string, agentId: string, id: string, options: RoutineDefinitionWriteGuard = {}): Promise<void> {

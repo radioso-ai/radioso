@@ -15,6 +15,8 @@ describeIntegration("CopilotRepository apply-claim recovery (Postgres)", () => {
   const accountId = randomUUID();
   const workspaceId = randomUUID();
   const operatorUserId = randomUUID();
+  const otherAccountId = randomUUID();
+  const otherWorkspaceId = randomUUID();
 
   beforeAll(async () => {
     await database.query(`INSERT INTO accounts (id, name, email, password_hash) VALUES ($1,$2,$3,$4)`, [
@@ -34,11 +36,18 @@ describeIntegration("CopilotRepository apply-claim recovery (Postgres)", () => {
       `copilot-claim-operator-${operatorUserId}@example.com`,
       "hash",
     ]);
+    await database.query(`INSERT INTO accounts (id, name, email, password_hash) VALUES ($1,$2,$3,$4)`, [otherAccountId, "Other Copilot Account", `copilot-other-${otherAccountId}@example.com`, "hash"]);
+    await database.query(`INSERT INTO workspaces (id, account_id, name, public_route_key) VALUES ($1,$2,$3,$4)`, [otherWorkspaceId, otherAccountId, "Other Copilot Workspace", `route-${otherWorkspaceId}`]);
+    await database.query(`INSERT INTO account_memberships (id, account_id, user_id, role, status) VALUES ($1,$2,$3,'member','active')`, [randomUUID(), otherAccountId, operatorUserId]);
   });
 
   afterAll(async () => {
     await database.query(`DELETE FROM copilot_conversations WHERE workspace_id = $1`, [workspaceId]).catch(() => undefined);
+    await database.query(`DELETE FROM copilot_conversations WHERE workspace_id = $1`, [otherWorkspaceId]).catch(() => undefined);
+    await database.query(`DELETE FROM account_memberships WHERE user_id = $1`, [operatorUserId]).catch(() => undefined);
     await database.query(`DELETE FROM users WHERE id = $1`, [operatorUserId]).catch(() => undefined);
+    await database.query(`DELETE FROM workspaces WHERE id = $1`, [otherWorkspaceId]).catch(() => undefined);
+    await database.query(`DELETE FROM accounts WHERE id = $1`, [otherAccountId]).catch(() => undefined);
     await database.query(`DELETE FROM workspaces WHERE id = $1`, [workspaceId]).catch(() => undefined);
     await database.query(`DELETE FROM accounts WHERE id = $1`, [accountId]).catch(() => undefined);
     await database.close().catch(() => undefined);
@@ -99,6 +108,18 @@ describeIntegration("CopilotRepository apply-claim recovery (Postgres)", () => {
       accountId,
       operatorUserId: randomUUID(),
     })).resolves.toBeNull();
+  });
+
+  it("reveals a proposal's other account only to its active member", async () => {
+    const conversation = await repository.createConversation({ workspaceId: otherWorkspaceId, operatorUserId, title: "Other account" });
+    const proposal = await repository.createProposal({
+      workspaceId: otherWorkspaceId, operatorUserId, conversationId: conversation.id, targetType: "agent_setting",
+      targetRef: { agentId: randomUUID(), settingKey: "retrievalEnabled" }, payload: { value: true }, versionToken: "v1", evidence: null,
+    });
+
+    await expect(repository.findProposalWorkspaceInAnotherMemberAccount({ id: proposal.id, accountId, operatorUserId }))
+      .resolves.toEqual({ workspaceId: otherWorkspaceId, accountId: otherAccountId, accountName: "Other Copilot Account" });
+    await expect(repository.findProposalWorkspaceInAnotherMemberAccount({ id: proposal.id, accountId, operatorUserId: randomUUID() })).resolves.toBeNull();
   });
 
   it("finalizes an outcome only for the exact claim it holds, so a superseded claim cannot overwrite a newer one's result", async () => {

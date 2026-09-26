@@ -1116,6 +1116,7 @@ export interface OperatorMcpInvocations {
   result_reference: string | null;
   retained_until: Timestamp;
   safe_outcome_code: string | null;
+  safe_rejection_details: Generated<Json>;
   shape: string | null;
   status: Generated<string>;
   user_id: string;

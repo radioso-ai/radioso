@@ -22,6 +22,17 @@ const makeService = (enumerators: SkillCapabilityTargetEnumerators = {}) => {
 };
 
 describe("AgentSkillsService", () => {
+  it("denies skill config values to copilot previews unless the capability opts in", () => {
+    const { service } = makeService();
+    const preview = service.projectForCopilot({
+      name: "notify_ops", capability: "notify", target: { kind: "webhook_destination", id: randomUUID() },
+      config: { delivery: { webhook: { url: "https://hooks.example.test/signed-token" }, recipientEmails: ["ops@example.test"] } },
+      invocationMode: "routine_named", enabled: true,
+    });
+    expect(preview).toMatchObject({ configKeys: ["delivery"], settings: {} });
+    expect(JSON.stringify(preview)).not.toContain("signed-token");
+  });
+
   it("creates and lists skills through a capability-neutral envelope", async () => {
     const workspaceId = randomUUID();
     const agentId = randomUUID();

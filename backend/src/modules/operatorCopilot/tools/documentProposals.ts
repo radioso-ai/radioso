@@ -96,7 +96,7 @@ const documentProposalDescriptor = <TInput>(
     uiLabel: spec.uiLabel,
     contributingModule: "documents",
     dashboardSubject: { type: "proposal" },
-    requiredPermissions: [...MANAGE_DOCUMENTS] as unknown as CopilotToolDescriptor["requiredPermissions"],
+    requiredPermissions: [...MANAGE_DOCUMENTS],
     reconcileMcpInvocation: async ({ invocation, context, staleBefore, now }) => {
       if (!invocation.operationId) return { status: "conflict" };
       const recovery = await deps.proposalRecovery.recoverOperatorMcpProposal({

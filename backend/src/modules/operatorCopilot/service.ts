@@ -30,6 +30,7 @@ import { COPILOT_PROBE_BUDGET_PER_TURN_DEFAULT, createCopilotProbeBudget, metere
 import { COPILOT_TURN_BUDGET } from "./turnBudget.js";
 import { hasAllCopilotToolPermissions, hasCurrentCopilotToolPermissions } from "./catalog.js";
 import { buildCopilotNeverListContext } from "./neverList.js";
+import { compactForBudget } from "./payloadCompaction.js";
 
 const TITLE_MAX_LENGTH = 120;
 const isMcpReviewedProposal = (proposal: CopilotProposal): boolean =>
@@ -83,6 +84,33 @@ export interface CopilotMessage {
   readonly createdAt: Date;
 }
 
+export interface CopilotProposalDetailReadModel {
+  readonly proposalId: string;
+  readonly targetType: CopilotProposalTargetType;
+  readonly target: { readonly agentId: string | null; readonly directiveId: string | null; readonly routineId: string | null; readonly skillId: string | null; readonly documentId: string | null; readonly settingKey: string | null; readonly label: string; readonly reference: Record<string, string | boolean | null> };
+  readonly summary: string;
+  readonly draftedChange: unknown;
+  readonly status: CopilotProposalStatus;
+  readonly createdAt: Date;
+  readonly decidedAt: Date | null;
+  readonly failureReason: string | null;
+  readonly reviewedOperation: boolean;
+}
+
+export interface CopilotProposalDetailReadPort {
+  getProposalDetail(input: { readonly workspaceId: string; readonly accountId: string; readonly operatorUserId: string; readonly proposalId: string; readonly currentAuthorization?: CopilotCurrentAuthorizationPort }): Promise<CopilotProposalDetailReadModel | null>;
+}
+
+const proposalDetailId = (value: unknown): string | null => typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(value) ? value : null;
+const proposalDetailString = (value: unknown, maximum: number): string | null => typeof value === "string" ? value.slice(0, maximum) : null;
+const proposalDetailTarget = (safeTargetRef: Record<string, string | boolean | null>, label: string): CopilotProposalDetailReadModel["target"] => {
+  return { agentId: proposalDetailId(safeTargetRef.agentId), directiveId: proposalDetailId(safeTargetRef.directiveId), routineId: proposalDetailId(safeTargetRef.routineId), skillId: proposalDetailId(safeTargetRef.skillId), documentId: proposalDetailId(safeTargetRef.documentId), settingKey: proposalDetailString(safeTargetRef.settingKey, 200), label: label.slice(0, 300), reference: safeTargetRef };
+};
+const proposalDetailSummary = (payload: unknown): string => {
+  const source = payload && typeof payload === "object" && !Array.isArray(payload) ? payload as Record<string, unknown> : {};
+  return proposalDetailString(source.summary, 2_000) ?? proposalDetailString(source.rationale, 2_000) ?? "Proposal details";
+};
+
 /**
  * Guards the transition off `pending` against a concurrent or superseded apply claim.
  *
@@ -133,6 +161,8 @@ export interface CopilotRepositoryPort {
   finishTurn(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<void>;
   createProposal(input: CopilotProposalDraft): Promise<CopilotProposal>;
   findProposalWorkspace(input: { id: string; accountId: string; operatorUserId: string }): Promise<string | null>;
+  /** A handoff may disclose a different account only after proving this same user actively belongs to it. */
+  findProposalWorkspaceInAnotherMemberAccount?(input: { id: string; accountId: string; operatorUserId: string }): Promise<{ workspaceId: string; accountId: string; accountName: string } | null>;
   findProposal(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotProposal | null>;
   /** A reviewed MCP operation is never bearer authority: recover it only through its original grant/client binding. */
   findMcpReviewedProposal(input: { id: string; workspaceId: string; operatorUserId: string; grantId: string; clientId: string }): Promise<CopilotProposal | null>;
@@ -211,15 +241,35 @@ export class OperatorCopilotService {
     return this.deps.repository.deleteConversation({ id, workspaceId, operatorUserId });
   }
 
-  async getProposal(input: { workspaceId: string; operatorUserId: string; proposalId: string }): Promise<{ proposal: CopilotProposal; preview: { targetLabel: string; current: unknown; proposed: unknown }; currentVersionMatches: boolean } | null> {
+  async getProposal(input: { workspaceId: string; operatorUserId: string; proposalId: string; accountId?: string; currentAuthorization?: CopilotCurrentAuthorizationPort }): Promise<{ proposal: CopilotProposal; preview: { targetLabel: string; current: unknown; proposed: unknown }; currentVersionMatches: boolean } | null> {
     const proposal = await this.deps.repository.findProposal({ id: input.proposalId, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId });
     if (!proposal) return null;
+    if (input.accountId && !(await this.canReadProposal({ workspaceId: input.workspaceId, accountId: input.accountId, operatorUserId: input.operatorUserId, currentAuthorization: input.currentAuthorization }, proposal.targetType))) throw new CopilotAuthorizationError();
     const adapter = this.adapterFor(proposal.targetType);
     const preview = await adapter.preview(input.workspaceId, proposal.targetRef, proposal.payload);
     const currentVersionMatches = await adapter.readVersionToken(input.workspaceId, proposal.targetRef, proposal.payload)
       .then((currentVersion) => currentVersion === proposal.versionToken)
       .catch(() => false);
     return { proposal, preview, currentVersionMatches };
+  }
+
+  async getProposalDetail(input: { workspaceId: string; accountId: string; operatorUserId: string; proposalId: string; currentAuthorization?: CopilotCurrentAuthorizationPort }): Promise<CopilotProposalDetailReadModel | null> {
+    const result = await this.getProposal(input);
+    if (!result) return null;
+    const { proposal, preview } = result;
+    const adapter = this.adapterFor(proposal.targetType);
+    return {
+      proposalId: proposal.id,
+      targetType: proposal.targetType,
+      target: proposalDetailTarget(adapter.proposalDetailTargetRef?.(proposal.targetRef) ?? {}, preview.targetLabel),
+      summary: proposalDetailSummary(proposal.payload),
+      draftedChange: compactForBudget({ draftedChange: preview.proposed }, [{ maxStringChars: 500, maxArrayItems: 40 }], 24_000).value.draftedChange,
+      status: proposal.status,
+      createdAt: proposal.createdAt,
+      decidedAt: proposal.status === "pending" ? null : proposal.updatedAt,
+      failureReason: proposal.reason?.slice(0, 2_000) ?? null,
+      reviewedOperation: isMcpReviewedProposal(proposal),
+    };
   }
 
   async getMcpReviewedProposal(input: {
@@ -252,12 +302,43 @@ export class OperatorCopilotService {
     return { proposal, currentVersionMatches };
   }
 
+  /**
+   * Distinguishes an in-scope dashboard proposal from an unknown reviewed-operation id. Gated on the
+   * same read permission `proposal_detail` requires for the target, not the manage permission
+   * cancelling or executing a reviewed operation needs: this call only decides which refusal sentence
+   * to give, so it must never throw. A caller who cannot read the target gets the same `false` an
+   * unknown id gets — telling them a proposal with this id exists, and what kind, is itself something
+   * only a caller authorized to read that target should learn.
+   */
+  async isDashboardReviewedProposal(input: {
+    workspaceId: string;
+    accountId: string;
+    operatorUserId: string;
+    proposalId: string;
+    currentAuthorization: CopilotCurrentAuthorizationPort;
+  }): Promise<boolean> {
+    const proposal = await this.deps.repository.findProposal({ id: input.proposalId, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId });
+    if (!proposal || isMcpReviewedProposal(proposal)) return false;
+    return this.canReadProposal(input, proposal.targetType);
+  }
+
   async resolveProposalWorkspace(input: { accountId: string; operatorUserId: string; proposalId: string }): Promise<string | null> {
     return this.deps.repository.findProposalWorkspace({
       id: input.proposalId,
       accountId: input.accountId,
       operatorUserId: input.operatorUserId,
     });
+  }
+
+  async resolveProposalWorkspaceForSession(input: { accountId: string; operatorUserId: string; proposalId: string }): Promise<
+    | { readonly kind: "found"; readonly workspaceId: string }
+    | { readonly kind: "other_account"; readonly workspaceId: string; readonly accountId: string; readonly accountName: string }
+    | null
+  > {
+    const workspaceId = await this.resolveProposalWorkspace(input);
+    if (workspaceId) return { kind: "found", workspaceId };
+    const other = await this.deps.repository.findProposalWorkspaceInAnotherMemberAccount?.({ id: input.proposalId, accountId: input.accountId, operatorUserId: input.operatorUserId });
+    return other ? { kind: "other_account", ...other } : null;
   }
 
   async applyProposal(input: { workspaceId: string; accountId: string; operatorUserId: string; surface: CopilotSurface; proposalId: string }): Promise<{ status: Exclude<CopilotProposalStatus, "pending" | "dismissed">; appliedRef?: unknown; reason?: string }> {
@@ -422,10 +503,10 @@ export class OperatorCopilotService {
     return { status: "dismissed" };
   }
 
-  async cancelMcpReviewedProposal(input: { workspaceId: string; accountId: string; operatorUserId: string; grantId: string; clientId: string; proposalId: string; currentAuthorization: CopilotCurrentAuthorizationPort }): Promise<{ status: "dismissed" | "not_found" | "not_cancellable" }> {
+  async cancelMcpReviewedProposal(input: { workspaceId: string; accountId: string; operatorUserId: string; grantId: string; clientId: string; proposalId: string; currentAuthorization: CopilotCurrentAuthorizationPort }): Promise<{ status: "dismissed" | "not_found" | "not_cancellable" | "dashboard_reviewed" }> {
     if (!input.currentAuthorization) throw new CopilotAuthorizationError();
     const proposal = await this.deps.repository.findMcpReviewedProposal({ id: input.proposalId, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId, grantId: input.grantId, clientId: input.clientId });
-    if (!proposal) return { status: "not_found" };
+    if (!proposal) return (await this.isDashboardReviewedProposal(input)) ? { status: "dashboard_reviewed" } : { status: "not_found" };
     // Authorize before reporting anything about the proposal's state: a caller whose target-type
     // permission was revoked must not learn whether an operation is cancellable, already
     // dismissed, or settled.
@@ -647,7 +728,12 @@ export class OperatorCopilotService {
 
   private async canManageProposal(input: { workspaceId: string; accountId: string; operatorUserId: string; currentAuthorization?: CopilotCurrentAuthorizationPort }, targetType: CopilotProposalTargetType): Promise<boolean> {
     const { currentAuthorization, ...principal } = input;
-    return (currentAuthorization ?? this.deps.currentAuthorization).hasAllPermissions({ ...principal, requiredPermissions: [...copilotProposalPermissions[targetType]] });
+    return (currentAuthorization ?? this.deps.currentAuthorization).hasAllPermissions({ ...principal, requiredPermissions: [...copilotProposalPermissions[targetType].manage] });
+  }
+
+  private async canReadProposal(input: { workspaceId: string; accountId: string; operatorUserId: string; currentAuthorization?: CopilotCurrentAuthorizationPort }, targetType: CopilotProposalTargetType): Promise<boolean> {
+    const { currentAuthorization, ...principal } = input;
+    return (currentAuthorization ?? this.deps.currentAuthorization).hasAllPermissions({ ...principal, requiredPermissions: [...copilotProposalPermissions[targetType].read] });
   }
 
   private async requireProposalAuthorization(input: { workspaceId: string; accountId: string; operatorUserId: string; surface: CopilotSurface; proposalId: string; currentAuthorization?: CopilotCurrentAuthorizationPort }, targetType: CopilotProposalTargetType): Promise<void> {

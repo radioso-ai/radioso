@@ -484,3 +484,21 @@ test("proposal deep-link returns to review after a signed-out operator logs in",
   await expect(page).toHaveURL(proposalPath);
   await expect(page.getByText("Review proposal from Radioso MCP", { exact: true })).toBeVisible();
 });
+
+test("proposal deep-link offers a switch to an account the signed-in operator can access", async ({ page }) => {
+  await seedDashboardStorage(page);
+  let switched = false;
+  await page.route("**/backend/api/v1/copilot/proposals/33333333-3333-4333-8333-333333333333", async (route) => route.fulfill(switched
+    ? { json: proposalDetail }
+    : { status: 409, json: { error: { code: "proposal_account_mismatch", message: "This proposal belongs to another account.", details: { accountId: "account-2", accountName: "Support", workspaceId } } } }));
+  await page.route("**/backend/api/v1/account/switch", async (route) => {
+    switched = true;
+    await route.fulfill({ json: { userId: "user-1", accountId: "account-2", organizationName: "Support", workspaceId, workspacePublicRouteKey: workspaceKey } });
+  });
+  await page.route("**/backend/api/v1/copilot/availability", async (route) => route.fulfill({ json: { available: true, reason: "ok", canManage: true, applyableProposalTargets: ["ingestion_settings"] } }));
+
+  await page.goto("/oauth/operator-mcp/proposal/33333333-3333-4333-8333-333333333333");
+  await expect(page.getByText("This proposal belongs to Support.")).toBeVisible();
+  await page.getByRole("button", { name: "Switch to Support" }).click();
+  await expect(page.getByText("Review proposal from Radioso MCP", { exact: true })).toBeVisible();
+});

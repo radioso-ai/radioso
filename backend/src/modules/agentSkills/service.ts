@@ -29,7 +29,7 @@ export const agentSkillCreateSchema = z.object({
   enabled: z.boolean().default(true),
 }).strict();
 
-export type AgentSkillCreateInput = z.infer<typeof agentSkillCreateSchema>;
+type AgentSkillCreateInput = z.infer<typeof agentSkillCreateSchema>;
 
 export const agentSkillUpdateSchema = z.object({
   target: targetSchema.optional(),
@@ -43,9 +43,9 @@ export const agentSkillUpdateSchema = z.object({
   message: "config and replaceConfig cannot both be provided",
 });
 
-export type AgentSkillUpdateInput = z.infer<typeof agentSkillUpdateSchema>;
+type AgentSkillUpdateInput = z.infer<typeof agentSkillUpdateSchema>;
 
-export interface AgentSkillUpdateOptions {
+interface AgentSkillUpdateOptions {
   expectedUpdatedAt?: Date;
 }
 
@@ -56,7 +56,7 @@ export interface AgentSkillUpdateOptions {
  * `null` (a stored no-target skill's view) or an unvalidated `config`/`invocationMode`, and
  * `dryRunValidate` re-validates all of it through the same schema `create`/`update` do.
  */
-export interface AgentSkillConfigurationCandidate {
+interface AgentSkillConfigurationCandidate {
   readonly name: string;
   readonly capability: SkillCapabilityId;
   readonly target: { readonly kind: string | null; readonly id: string | null };
@@ -83,7 +83,18 @@ export interface AgentSkillView {
   updatedAt: string;
 }
 
-export interface AgentSkillsServiceOptions {
+/** Safe-for-copilot representation of a skill configuration. Values are deny-by-default. */
+interface AgentSkillCopilotPreview {
+  readonly name: string;
+  readonly capability: SkillCapabilityId;
+  readonly target: { readonly kind: string | null; readonly id: string | null };
+  readonly configKeys: readonly string[];
+  readonly settings: Readonly<Record<string, unknown>>;
+  readonly invocationMode: AgentSkillInvocationMode;
+  readonly enabled: boolean;
+}
+
+interface AgentSkillsServiceOptions {
   repository: AgentSkillRepositoryPort;
   capabilities: SkillCapabilityRegistry;
   logger?: AppLogger;
@@ -111,12 +122,43 @@ const isTargetReferenceViolation = (error: unknown): boolean => {
   return code === "23503" && typeof constraint === "string" && constraint.endsWith("_target_fk");
 };
 
+const readConfigPath = (source: Record<string, unknown>, path: string): unknown =>
+  path.split(".").reduce<unknown>(
+    (value, segment) => value && typeof value === "object" && !Array.isArray(value)
+      ? (value as Record<string, unknown>)[segment]
+      : undefined,
+    source,
+  );
+
 export class AgentSkillsService {
   constructor(private readonly options: AgentSkillsServiceOptions) {}
 
   async list(workspaceId: string, agentId: string): Promise<AgentSkillView[]> {
     const records = await this.options.repository.listByAgent(workspaceId, agentId);
     return records.map((record) => this.toView(record));
+  }
+
+  /**
+   * Projects a skill into the value policy shared by every copilot surface. Capability authors
+   * must opt a settings field in with `showValueToCopilot`; unknown config fields stay hidden.
+   */
+  projectForCopilot(skill: Pick<AgentSkillView, "name" | "capability" | "target" | "config" | "invocationMode" | "enabled">): AgentSkillCopilotPreview {
+    const descriptor = this.requireCapability(skill.capability);
+    const settings: Record<string, unknown> = {};
+    for (const field of descriptor.settingsFields) {
+      if (field.showValueToCopilot !== true) continue;
+      const value = readConfigPath(skill.config, field.key);
+      if (value !== undefined) settings[field.key] = value;
+    }
+    return {
+      name: skill.name,
+      capability: skill.capability,
+      target: skill.target,
+      configKeys: Object.keys(skill.config).sort(),
+      settings,
+      invocationMode: skill.invocationMode,
+      enabled: skill.enabled,
+    };
   }
 
   async create(workspaceId: string, agentId: string, rawInput: AgentSkillCreateInput): Promise<AgentSkillView> {

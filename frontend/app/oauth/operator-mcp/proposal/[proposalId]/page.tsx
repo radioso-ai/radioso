@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, type ReactNode } from 'react'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 
 import { AuthPage } from '@/components/auth/auth-page'
 import { CopilotProposalCard } from '@/components/dashboard/copilot-proposal-card'
@@ -10,14 +10,31 @@ import { Spinner } from '@/components/ui/spinner'
 import { copilotApi, type CopilotAvailability, type CopilotProposalDetail } from '@/lib/api-copilot'
 import { getApiErrorMessage, getApiErrorStatus } from '@/lib/api-error'
 import { useAuth } from '@/lib/auth-context'
+import { accountApi } from '@/lib/api-account'
+import { seedWorkspaceSession } from '@/lib/api-client'
+
+type AccountMismatch = { accountId: string; accountName: string; workspaceId: string }
+
+const accountMismatchFromError = (error: unknown): AccountMismatch | null => {
+  if (!error || typeof error !== 'object' || !('error' in error) || !error.error || typeof error.error !== 'object') return null
+  const apiError = error.error as { code?: unknown; details?: unknown }
+  if (apiError.code !== 'proposal_account_mismatch' || !apiError.details || typeof apiError.details !== 'object') return null
+  const details = apiError.details as Record<string, unknown>
+  return typeof details.accountId === 'string' && typeof details.accountName === 'string' && typeof details.workspaceId === 'string'
+    ? { accountId: details.accountId, accountName: details.accountName, workspaceId: details.workspaceId }
+    : null
+}
 
 export default function OperatorMcpProposalPage() {
   const params = useParams<{ proposalId: string }>()
-  const { isAuthenticated, isBootstrapping } = useAuth()
+  const router = useRouter()
+  const { user, isAuthenticated, isBootstrapping, login } = useAuth()
   const [proposal, setProposal] = useState<CopilotProposalDetail | null>(null)
   const [availability, setAvailability] = useState<CopilotAvailability | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [requiresAuth, setRequiresAuth] = useState(false)
+  const [accountMismatch, setAccountMismatch] = useState<AccountMismatch | null>(null)
+  const [isSwitchingAccount, setIsSwitchingAccount] = useState(false)
 
   useEffect(() => {
     if (isBootstrapping) return
@@ -30,6 +47,7 @@ export default function OperatorMcpProposalPage() {
       .then(({ nextProposal, nextAvailability }) => {
         setError(null)
         setRequiresAuth(false)
+        setAccountMismatch(null)
         setProposal(nextProposal)
         setAvailability(nextAvailability)
       })
@@ -40,14 +58,32 @@ export default function OperatorMcpProposalPage() {
           setRequiresAuth(true)
           return
         }
+        const mismatch = accountMismatchFromError(loadError)
+        if (mismatch) {
+          setError(null)
+          setAccountMismatch(mismatch)
+          return
+        }
         setRequiresAuth(false)
         setError(getApiErrorMessage(loadError, 'Could not load this proposal.'))
       })
     return () => controller.abort()
-  }, [isAuthenticated, isBootstrapping, params.proposalId])
+  }, [isAuthenticated, isBootstrapping, params.proposalId, user?.accountId])
 
   if (isBootstrapping) return <ProposalShell><Spinner className="h-6 w-6" /></ProposalShell>
   if (requiresAuth) return <AuthPage returnTo={`/oauth/operator-mcp/proposal/${encodeURIComponent(params.proposalId)}`} />
+  if (accountMismatch) return <ProposalShell><Card className="w-full max-w-md"><CardHeader><CardTitle>Switch account to review this proposal</CardTitle></CardHeader><CardContent className="space-y-4"><p className="text-sm text-muted-foreground">This proposal belongs to {accountMismatch.accountName}.</p><button type="button" className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-50" disabled={isSwitchingAccount} onClick={() => {
+    if (!user) return
+    setIsSwitchingAccount(true)
+    void accountApi.switchAccount(accountMismatch.accountId, accountMismatch.workspaceId)
+      .then(async (response) => {
+        seedWorkspaceSession(response.workspaceId, response.workspacePublicRouteKey)
+        await login(user.email, response.userId, response.accountId, response.organizationName)
+        router.replace(`/oauth/operator-mcp/proposal/${encodeURIComponent(params.proposalId)}`)
+      })
+      .catch(() => setError('Could not switch accounts.'))
+      .finally(() => setIsSwitchingAccount(false))
+  }}>{isSwitchingAccount ? 'Switching…' : `Switch to ${accountMismatch.accountName}`}</button>{error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}</CardContent></Card></ProposalShell>
   if (error) return <ProposalShell><p role="alert" className="text-sm text-destructive">{error}</p></ProposalShell>
   if (!proposal || !availability) return <ProposalShell><Spinner className="h-6 w-6" /></ProposalShell>
 

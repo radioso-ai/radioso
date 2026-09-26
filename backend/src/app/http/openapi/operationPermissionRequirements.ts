@@ -15,6 +15,7 @@ export const operationPermissionRequirements: Readonly<Record<string, readonly A
   getAgentRevisionState: ["workspace.agents.read"],
   createAgentRevisionCandidate: ["workspace.agents.manage"],
   getAgentRevision: ["workspace.agents.read"],
+  getCopilotProposal: ["workspace.agents.read"],
   publishAgentRevision: ["workspace.agents.manage"],
   getAgentTestExecution: ["workspace.agents.manage"],
   updateAgentSkill: ["workspace.agents.manage"],

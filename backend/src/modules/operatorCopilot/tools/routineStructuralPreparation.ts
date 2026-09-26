@@ -19,8 +19,12 @@ import type { CopilotMcpProposalRecoveryPort } from "../contracts.js";
 import type { CopilotRepositoryPort } from "../service.js";
 import { requireCurrentCopilotPermissions } from "../authorization.js";
 import { canonicalReviewedOperationDigest } from "../reviewedOperation.js";
+import { routineValidationRefusal } from "../routineValidationRefusal.js";
 import { badRequest } from "../../../shared/domain/errors.js";
 import { copilotProposalOrigin } from "./shared.js";
+
+/** The one message every blocking structural-validation failure states, whatever the caller is trying to do to the routine. */
+const ROUTINE_NOT_SERVABLE_MESSAGE = "The routine cannot be served. Disable it to park it, or use validate_routine to correct the reported diagnostics.";
 
 const structuralOperationSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("set_enabled"), enabled: z.boolean() }).strict(),
@@ -147,7 +151,7 @@ const reviewOutput = (input: {
 });
 
 export interface RoutineStructuralPreparationDependencies {
-  readonly routines: Pick<RoutineDefinitionService, "get" | "validate"> & { readonly findCreateConflict?: RoutineDefinitionService["findCreateConflict"] };
+  readonly routines: Pick<RoutineDefinitionService, "get" | "validateForDraftMutation"> & { readonly findCreateConflict?: RoutineDefinitionService["findCreateConflict"] };
   readonly scopedReferences: {
     assertNoScopedReferences(input: { readonly workspaceId: string; readonly agentId: string; readonly routineId: string; readonly removedNodeIds: readonly string[]; readonly removedSlotIds: readonly string[] }): Promise<void>;
   };
@@ -190,8 +194,8 @@ export const createRoutineStructuralPreparationTool = (
       await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
       if (input.kind === "create") {
         await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
-        const validation = await deps.routines.validate(context.workspaceId, input.agentId, { input: input.draft });
-        if (!validation.ok) throw new Error(validation.diagnostics.map((diagnostic) => diagnostic.message).join(" ") || "Routine validation failed");
+        const validation = await deps.routines.validateForDraftMutation(context.workspaceId, input.agentId, input.draft);
+        if (!validation.ok) throw routineValidationRefusal(ROUTINE_NOT_SERVABLE_MESSAGE, null, validation.diagnostics);
         const blocking = await deps.routines.findCreateConflict?.(context.workspaceId, input.agentId, input.draft.name);
         const targetRef = { agentId: input.agentId, routineId: null };
         const payload = { kind: "create" as const, draft: input.draft };
@@ -244,8 +248,8 @@ export const createRoutineStructuralPreparationTool = (
           removedSlotIds: references.removedSlotIds,
         });
       }
-      const validation = await deps.routines.validate(context.workspaceId, input.agentId, { input: draft });
-      if (!validation.ok) throw new Error(validation.diagnostics.map((diagnostic) => diagnostic.message).join(" ") || "Routine validation failed");
+      const validation = await deps.routines.validateForDraftMutation(context.workspaceId, input.agentId, draft);
+      if (!validation.ok) throw routineValidationRefusal(ROUTINE_NOT_SERVABLE_MESSAGE, input.routineId, validation.diagnostics);
       await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
       const targetRef = { agentId: input.agentId, routineId: input.routineId };
       const payload = { kind: "structural", draft, operations: input.operations };

@@ -31456,6 +31456,43 @@ paths:
                   - evidenceCases
         "404":
           description: Not found
+        "409":
+          description: Proposal belongs to another account the signed-in user can access
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: object
+                    properties:
+                      code:
+                        type: string
+                        enum:
+                          - proposal_account_mismatch
+                      message:
+                        type: string
+                      details:
+                        type: object
+                        properties:
+                          accountId:
+                            type: string
+                            format: uuid
+                          accountName:
+                            type: string
+                          workspaceId:
+                            type: string
+                            format: uuid
+                        required:
+                          - accountId
+                          - accountName
+                          - workspaceId
+                    required:
+                      - code
+                      - message
+                      - details
+                required:
+                  - error
   /api/v1/copilot/proposals/{proposalId}/apply:
     post:
       tags:

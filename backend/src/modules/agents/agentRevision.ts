@@ -5,7 +5,7 @@ import {
   exactContentItemSchema,
   validateExactContentItem,
 } from "../../shared/domain/exactContent.js";
-import { routineDefinitionSchema, validateExposureAcrossSnapshot, validateRoutineDefinition, type RoutineDefinition, type RoutineValidationResult } from "../routines/public.js";
+import { routineDefinitionSchema, toSafeRoutineValidationDiagnostic, validateExposureAcrossSnapshot, validateRoutineDefinition, type RoutineDefinition, type RoutineValidationResult } from "../routines/public.js";
 import { authoredDirectiveInputSchema } from "./authoredDirectives.js";
 import { describeCandidateReleaseDiff, type CandidateReleaseChange } from "./candidateReleaseReview.js";
 
@@ -20,6 +20,17 @@ import { describeCandidateReleaseDiff, type CandidateReleaseChange } from "./can
 export const DEFAULT_AGENT_LOCALE_FALLBACK = "en";
 
 const persistedDate = z.coerce.date();
+const safeRevisionDiagnostic = (diagnostic: { readonly routineId: string | null; readonly code: string; readonly location: string }): { readonly safeDiagnostic: true; readonly routineId: string | null; readonly code: string; readonly location: string; readonly message: string } => ({
+  safeDiagnostic: true,
+  routineId: diagnostic.routineId,
+  code: diagnostic.code,
+  location: diagnostic.location.slice(0, 240),
+  message: diagnostic.code === "missing_exact_greeting_content"
+    ? "Exact greeting content is required when exact words is enabled."
+    : diagnostic.code.startsWith("missing_scoped_routine")
+      ? "A directive references a routine or step that is unavailable in this revision."
+      : "The agent revision contains content that is not valid for serving.",
+});
 const revisionConflict = (message: string): AppError => new AppError(409, "revision_conflict", message);
 const authoredDirectiveSnapshotSchema = authoredDirectiveInputSchema.extend({
   id: z.string().uuid(), agentId: z.string().uuid(), createdAt: persistedDate, updatedAt: persistedDate,
@@ -142,7 +153,7 @@ export const assertCandidateSnapshotIsRunnable = (
   // still spans every routine, because a tag naming a parked routine is still a real one.
   const diagnostics: Array<{ routineId: string | null; code: string; location: string; message: string }> = snapshot.routines.flatMap((routine) =>
     routine.enabled
-      ? validateRoutineDefinition(routine).diagnostics.map((diagnostic) => ({ routineId: routine.id, ...diagnostic }))
+      ? validateRoutineDefinition(routine).diagnostics.map((diagnostic) => ({ routineId: routine.id, ...toSafeRoutineValidationDiagnostic(diagnostic) }))
       : []
   );
   diagnostics.push(...validateExposureAcrossSnapshot(snapshot.routines, options.publishedSnapshot?.routines ?? []));
@@ -179,7 +190,7 @@ export const assertCandidateSnapshotIsRunnable = (
     }
   }
   if (diagnostics.length > 0) {
-    throw new AppError(422, "revision_invalid", "The draft contains content that cannot be released.", { diagnostics });
+    throw new AppError(422, "revision_invalid", "The draft contains content that cannot be released.", { diagnostics: diagnostics.map(safeRevisionDiagnostic) });
   }
 };
 
@@ -225,10 +236,10 @@ const assertCandidateSnapshotIsServable = async (
       ));
   const diagnostics = enabledRoutines.flatMap((routine) => {
     const result = results.get(routine.id);
-    return result && !result.ok ? result.diagnostics.map((diagnostic) => ({ routineId: routine.id, ...diagnostic })) : [];
+    return result && !result.ok ? result.diagnostics.map((diagnostic) => ({ routineId: routine.id, ...toSafeRoutineValidationDiagnostic(diagnostic) })) : [];
   });
   if (diagnostics.length > 0) {
-    throw new AppError(422, "revision_invalid", "The draft contains a routine that cannot be released.", { diagnostics });
+    throw new AppError(422, "revision_invalid", "The draft contains a routine that cannot be released.", { diagnostics: diagnostics.map(safeRevisionDiagnostic) });
   }
 };
 

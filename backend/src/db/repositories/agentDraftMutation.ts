@@ -13,7 +13,7 @@ export const agentRevisionLockKey = (workspaceId: string, agentId: string): stri
   `agent-revision:${workspaceId}:${agentId}`;
 
 type AgentDraftMutationResult<T> =
-  | { result: T; snapshot: AgentRevisionSnapshot }
+  | { result: T; snapshot: AgentRevisionSnapshot; onCommitted?: (transaction: Transaction<DB>, result: T) => Promise<void> }
   | { result: T; unchanged: true };
 
 type AgentDraftMutationOperation<T> = (
@@ -73,6 +73,9 @@ export const withAgentDraftMutation = async <T>(
       .executeTakeFirst();
     if (!updated) {
       throw conflict("Agent draft changed during an atomic mutation");
+    }
+    if ("onCommitted" in mutation && mutation.onCommitted) {
+      await mutation.onCommitted(trx, mutation.result);
     }
     return mutation.result;
   };

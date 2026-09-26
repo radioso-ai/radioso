@@ -608,6 +608,7 @@ const proposalFieldValue = (agent: AgentRecord, key: string): unknown => {
 export interface AgentDirectiveUpdateOptions {
   expectedUpdatedAt?: Date;
   expectedAgentUpdatedAt?: Date;
+  onCommitted?: OwnerCommitHook<AuthoredDirective | { readonly directiveId: string }>;
 }
 
 export interface AgentGreetingUpdateOptions {
@@ -1049,6 +1050,7 @@ export class AgentRepository implements AgentRepositoryPort {
           ...snapshot,
           directives: [...snapshot.directives.filter((existing) => existing.id !== saved.id), saved],
         },
+        ...(options.onCommitted ? { onCommitted: (transaction: Db) => options.onCommitted!(transaction, saved) } : {}),
       };
     });
   }
@@ -1151,6 +1153,7 @@ export class AgentRepository implements AgentRepositoryPort {
           ...snapshot,
           directives: [...snapshot.directives.filter((current) => current.id !== saved.id), saved],
         },
+        ...(options.onCommitted ? { onCommitted: (transaction: Db) => options.onCommitted!(transaction, saved) } : {}),
       };
     });
   }
@@ -1184,6 +1187,7 @@ export class AgentRepository implements AgentRepositoryPort {
               ...snapshot,
               directives: snapshot.directives.filter((directive) => directive.id !== directiveId),
             },
+            ...(options.onCommitted ? { onCommitted: (transaction: Db) => options.onCommitted!(transaction, { directiveId }) } : {}),
           }
         : { result: false, unchanged: true };
     });

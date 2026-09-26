@@ -4,12 +4,27 @@ import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { IngestionSettingsRepository } from "../../src/db/repositories/ingestionSettingsRepository.js";
+import {
+  validateIngestionSettings,
+  type IngestionSettingsRecord,
+} from "../../src/modules/settings/domain/ingestionSettings.js";
 import { defaultIngestionSettings } from "../../src/modules/settings/contracts/ingestion.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 import { createTestApp, issueTestToken } from "../support/testApp.js";
 
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
+
+const validateLockedProposalSettings = (current: IngestionSettingsRecord, fixedWindowChunkSize: number) => validateIngestionSettings({
+  chunkingStrategy: current.chunkingStrategy,
+  fixedWindowChunkSize,
+  fixedWindowChunkOverlap: current.fixedWindowChunkOverlap,
+  structuredMinChunkSize: current.structuredMinChunkSize,
+  structuredMaxChunkSize: current.structuredMaxChunkSize,
+  embeddingModel: "text-embedding-3-small",
+  documentEnrichmentEnabled: current.documentEnrichmentEnabled,
+  manualDocumentEnrichmentOverride: current.manualDocumentEnrichmentOverride,
+});
 
 describe("document and settings integration", () => {
   it("rejects invalid settings payloads", async () => {
@@ -325,5 +340,48 @@ describeIntegration("IngestionSettingsRepository document enrichment settings (P
       { expectedUpdatedAt: moved.updatedAt },
     );
     expect(applied.fixedWindowChunkSize).toBe(950);
+  });
+
+  it("updates a proposal field after an unrelated rewrite, and names the guarded field on conflict", async () => {
+    const defaults = defaultIngestionSettings(workspaceId);
+    const drafted = await repository.upsert(workspaceId, { ...defaults, fixedWindowChunkSize: 1_000, documentEnrichmentEnabled: false });
+    // A plan or maintenance rewrite can touch the row without changing the proposed chunk size.
+    await repository.upsert(workspaceId, { ...drafted, documentEnrichmentEnabled: true });
+    const applied = await repository.applyProposalPatch({
+      workspaceId,
+      patch: { fixedWindowChunkSize: 1_200 },
+      expected: { fixedWindowChunkSize: 1_000 },
+      validateMerged: (current) => validateLockedProposalSettings(current, 1_200),
+    });
+    expect(applied).toEqual({ outcome: "applied" });
+    expect(await repository.findByWorkspaceId(workspaceId)).toMatchObject({ fixedWindowChunkSize: 1_200, documentEnrichmentEnabled: true });
+
+    await expect(repository.applyProposalPatch({
+      workspaceId,
+      patch: { fixedWindowChunkSize: 1_300 },
+      expected: { fixedWindowChunkSize: 1_000, documentEnrichmentEnabled: false },
+      validateMerged: (current) => validateLockedProposalSettings(current, 1_300),
+    })).resolves.toEqual({ outcome: "changed", fields: ["fixedWindowChunkSize", "documentEnrichmentEnabled"] });
+  });
+
+  it("keeps timestamp-era ingestion proposals on a row-version fence", async () => {
+    const defaults = defaultIngestionSettings(workspaceId);
+    const drafted = await repository.upsert(workspaceId, { ...defaults, fixedWindowChunkSize: 1_000 });
+    await expect(repository.applyProposalPatch({
+      workspaceId,
+      patch: { fixedWindowChunkSize: 1_200 },
+      expectedUpdatedAt: drafted.updatedAt,
+      validateMerged: (current) => validateLockedProposalSettings(current, 1_200),
+    })).resolves.toEqual({ outcome: "applied" });
+    await database.query(
+      `UPDATE ingestion_settings SET updated_at = updated_at + interval '1 second' WHERE workspace_id = $1`,
+      [workspaceId],
+    );
+    await expect(repository.applyProposalPatch({
+      workspaceId,
+      patch: { fixedWindowChunkSize: 1_300 },
+      expectedUpdatedAt: drafted.updatedAt,
+      validateMerged: (current) => validateLockedProposalSettings(current, 1_300),
+    })).resolves.toEqual({ outcome: "changed", fields: ["target"] });
   });
 });

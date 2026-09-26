@@ -3,7 +3,9 @@ import { describe, expect, it, vi } from "vitest";
 import { presentProposalCard } from "../../../src/db/repositories/copilotRepository.js";
 import { createWorkspaceSettingCopilotProposalAdapter } from "../../../src/modules/operatorCopilot/workspaceSettingProposalAdapter.js";
 import { createWorkspaceSettingProposalCopilotTools } from "../../../src/modules/operatorCopilot/tools/workspaceSettingProposals.js";
-import { conflict } from "../../../src/shared/domain/errors.js";
+import { OperatorMcpCatalogService } from "../../../src/modules/operatorCopilot/mcpCatalog.js";
+import { badRequest } from "../../../src/shared/domain/errors.js";
+import type { CopilotWorkspaceSettingPort } from "../../../src/modules/operatorCopilot/contracts/workspaceSettingAuthoring.js";
 
 const context = {
   workspaceId: "workspace-1",
@@ -37,10 +39,43 @@ const storedPayload = (overrides: Record<string, unknown> = {}) => {
   return { name: "Workspace settings" as const, ...fields, changesReach: false, ...overrides };
 };
 
-const settingsPorts = (settings = storedSettings()) => ({
-  getForWorkspace: vi.fn(async () => settings),
-  updateForWorkspace: vi.fn(async () => settings),
-});
+type SettingsPortMock = CopilotWorkspaceSettingPort & {
+  getForWorkspace: ReturnType<typeof vi.fn>;
+  applyFieldProposal: ReturnType<typeof vi.fn>;
+};
+
+const settingsPorts = (settings = storedSettings()): SettingsPortMock => {
+  const getForWorkspace = vi.fn(async () => settings);
+  const surface = () => {
+    const { updatedAt: _updatedAt, ...current } = settings;
+    return current;
+  };
+  return {
+    getForWorkspace,
+    prepareFieldProposal: vi.fn(async (_workspaceId, patch) => {
+      const named = Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined));
+      if (Object.keys(named).length === 0) throw badRequest("Name at least one workspace setting to change");
+      const current: Record<string, unknown> = surface();
+      const normalized = { ...current, ...named } as Record<string, unknown>;
+      if (Array.isArray(normalized.websiteEmbedAllowedOrigins)) {
+        normalized.websiteEmbedAllowedOrigins = normalized.websiteEmbedAllowedOrigins.map((origin) => new URL(origin as string).origin);
+      }
+      if (normalized.websiteEmbedEnabled && Array.isArray(normalized.websiteEmbedAllowedOrigins) && normalized.websiteEmbedAllowedOrigins.length === 0) {
+        throw badRequest(Object.hasOwn(named, "websiteEmbedAllowedOrigins") ? "Website embed needs an allowed origin" : "The workspace's stored website embed settings block any settings change until they are fixed: Website embed needs an allowed origin");
+      }
+      const changed = Object.keys(normalized).filter((key) => JSON.stringify(normalized[key]) !== JSON.stringify(current[key]));
+      if (changed.length === 0) throw badRequest("The workspace settings already hold these values");
+      return {
+        normalizedPatch: normalized,
+        expected: Object.fromEntries(changed.map((key) => [key, current[key]])),
+        display: { current, proposed: normalized, changesReach: changed.some((key) => ["anonymousChatEnabled", "websiteEmbedEnabled", "websiteEmbedAllowedOrigins"].includes(key)) },
+      };
+    }),
+    readFieldProposalVersion: vi.fn(async () => "fields:test"),
+    readFieldProposalDisplay: vi.fn(async () => surface()),
+    applyFieldProposal: vi.fn(async () => ({ status: "applied" as const })),
+  };
+};
 
 const adapterFor = (settings = settingsPorts()) => ({
   adapter: createWorkspaceSettingCopilotProposalAdapter({ workspaceSetting: settings }),
@@ -63,6 +98,25 @@ const toolFor = (adapter: ReturnType<typeof createWorkspaceSettingCopilotProposa
 };
 
 describe("propose_workspace_setting", () => {
+  it("validates field-scoped workspace proposals through the MCP catalog", async () => {
+    const { adapter, settings } = adapterFor();
+    const { descriptor, createProposal } = toolFor(adapter);
+    const catalog = new OperatorMcpCatalogService([{
+      ...descriptor,
+      mcpDisposition: { status: "eligible", inputStrategy: "explicit", scope: "operator:propose", retry: { effect: "proposal", idempotent: true, operationIdentity: "client" } },
+    }]);
+    await expect(catalog.invoke({
+      name: "propose_workspace_setting",
+      arguments: { assistantName: "Ida" },
+      context: { ...context, surface: "mcp", operatorMcpInvocationId: "11111111-1111-4111-8111-111111111111" },
+      scopes: new Set(["operator:propose"]), signal: AbortSignal.timeout(1_000),
+    })).resolves.toMatchObject({ targetType: "workspace_setting" });
+    expect(createProposal).toHaveBeenCalledWith(expect.objectContaining({ targetRef: { expectedFields: { assistantName: "Ada" } } }));
+    settings.applyFieldProposal.mockResolvedValueOnce({ status: "changed", fields: ["assistantName"] });
+    await expect(adapter.applyIfVersionMatches("workspace-1", { expectedFields: { assistantName: "Ada" } }, storedPayload({ assistantName: "Ida" }), "fields:test"))
+      .resolves.toEqual({ outcome: "stale", reason: "Field changed: assistantName" });
+  });
+
   it("expands a one-field change against the stored settings, because the write is a whole-object replace", async () => {
     const { adapter, settings } = adapterFor();
     const { descriptor, createProposal } = toolFor(adapter);
@@ -72,11 +126,11 @@ describe("propose_workspace_setting", () => {
       rationale: "The launcher reads as support-only.",
     }, {} as never);
 
-    expect(settings.getForWorkspace).toHaveBeenCalledWith("workspace-1");
+    expect(settings.prepareFieldProposal).toHaveBeenCalledWith("workspace-1", expect.objectContaining({ websiteEmbedLauncherLabel: "Chat with us" }));
     expect(createProposal).toHaveBeenCalledWith(expect.objectContaining({
       targetType: "workspace_setting",
-      targetRef: {},
-      versionToken: "2026-09-01T10:00:00.000Z",
+      targetRef: { expectedFields: { websiteEmbedLauncherLabel: "Ask us" } },
+      versionToken: expect.stringMatching(/^fields:/),
       payload: expect.objectContaining({
         name: "Workspace settings",
         websiteEmbedLauncherLabel: "Chat with us",
@@ -186,44 +240,36 @@ describe("propose_workspace_setting", () => {
     const outcome = await adapter.applyIfVersionMatches("workspace-1", {}, storedPayload({ assistantName: "Ida" }), "2026-09-01T10:00:00.000Z");
 
     expect(outcome).toEqual({ outcome: "applied", appliedRef: { workspaceId: "workspace-1" } });
-    expect(settings.updateForWorkspace).toHaveBeenCalledWith(
-      "workspace-1",
-      expect.objectContaining({ assistantName: "Ida" }),
-      { expectedUpdatedAt: new Date("2026-09-01T10:00:00.000Z") },
-    );
+    expect(settings.applyFieldProposal).toHaveBeenCalledWith("workspace-1", expect.objectContaining({ expectedUpdatedAt: new Date("2026-09-01T10:00:00.000Z") }));
   });
 
   it("reports stale when the settings moved since the draft", async () => {
     const settings = settingsPorts();
-    settings.updateForWorkspace.mockRejectedValueOnce(conflict("Settings changed"));
+    settings.applyFieldProposal.mockResolvedValueOnce({ status: "changed", fields: ["assistantName"] });
     const { adapter } = adapterFor(settings);
 
     const outcome = await adapter.applyIfVersionMatches("workspace-1", {}, storedPayload({ assistantName: "Ida" }), "2026-09-01T10:00:00.000Z");
 
-    expect(outcome).toEqual({ outcome: "stale" });
+    expect(outcome).toEqual({ outcome: "stale", reason: "Field changed: assistantName" });
   });
 
   it("reports a write that landed and then tripped over its own follow-up as applied, with what is unfinished", async () => {
     // The settings write commits before the public launch grants, the legacy mirror, and the embed
     // cache. Recording "failed" for settings that are already live invites applying them twice.
-    const applied = storedSettings({ assistantName: "Ida" });
     const settings = settingsPorts();
-    settings.updateForWorkspace.mockRejectedValueOnce(new Error("grant sync failed"));
-    settings.getForWorkspace.mockResolvedValueOnce(applied);
+    settings.applyFieldProposal.mockResolvedValueOnce({ status: "applied", reason: "The workspace settings now hold the proposed values, but the apply did not finish cleanly: grant sync failed" });
     const { adapter } = adapterFor(settings);
 
     const outcome = await adapter.applyIfVersionMatches("workspace-1", {}, storedPayload({ assistantName: "Ida" }), "2026-09-01T10:00:00.000Z");
 
     expect(outcome).toMatchObject({ outcome: "applied", appliedRef: { workspaceId: "workspace-1" } });
-    // Stated as what the settings hold, not as what this apply did: another writer could have
-    // stored the same values first, and that is the one claim the read-back cannot support.
     expect((outcome as { reason?: string }).reason).toContain("now hold the proposed values");
     expect((outcome as { reason?: string }).reason).toContain("grant sync failed");
   });
 
   it("keeps a write that never landed a failure", async () => {
     const settings = settingsPorts();
-    settings.updateForWorkspace.mockRejectedValueOnce(new Error("database unavailable"));
+    settings.applyFieldProposal.mockRejectedValueOnce(new Error("database unavailable"));
     const { adapter } = adapterFor(settings);
 
     const outcome = await adapter.applyIfVersionMatches("workspace-1", {}, storedPayload({ assistantName: "Ida" }), "2026-09-01T10:00:00.000Z");
@@ -262,7 +308,7 @@ describe("a reloaded workspace setting card", () => {
       appliedRef: null,
       createdAt: new Date("2026-09-01T10:00:00.000Z"),
       updatedAt: new Date("2026-09-01T10:00:00.000Z"),
-    });
+    } as never);
 
     expect(card.targetLabel).toBe("Workspace settings");
     expect(card.reach).toBe(true);

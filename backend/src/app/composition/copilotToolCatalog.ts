@@ -112,53 +112,12 @@ export const createCopilotDocumentAuthoringPort = (
  * It names no rotation flag, which is why applying a proposal can never rotate a token.
  */
 export const createCopilotWorkspaceSettingPort = (
-  platformSettingsService: Pick<PlatformSettingsService, "getVersionedForWorkspace" | "applyForWorkspace">,
-  workspaceAccount: CopilotWorkspaceAccountResolver,
+  platformSettingsService: Pick<PlatformSettingsService, "prepareFieldProposal" | "readFieldProposalVersion" | "readFieldProposalDisplay" | "applyFieldProposal">,
 ): CopilotWorkspaceSettingPort => ({
-  getForWorkspace: async (workspaceId) => {
-    const { settings, updatedAt } = await platformSettingsService.getVersionedForWorkspace(workspaceId);
-    return {
-      assistantName: settings.assistant.assistantName,
-      greetingInstruction: settings.assistant.greetingInstruction,
-      assistantDefaultLocale: settings.assistant.assistantDefaultLocale,
-      proactiveGreetingEnabled: settings.assistant.proactiveGreetingEnabled,
-      suggestedQuestionsEnabled: settings.assistant.suggestedQuestionsEnabled,
-      customInstruction: settings.assistant.customInstruction,
-      anonymousChatEnabled: settings.channels.anonymousChatEnabled,
-      websiteEmbedEnabled: settings.channels.websiteEmbedEnabled,
-      websiteEmbedAllowedOrigins: settings.channels.websiteEmbedAllowedOrigins,
-      websiteEmbedLauncherLabel: settings.channels.websiteEmbedLauncherLabel,
-      websiteEmbedLauncherPosition: settings.channels.websiteEmbedLauncherPosition,
-      updatedAt,
-    };
-  },
-  updateForWorkspace: async (workspaceId, input, options) => platformSettingsService.applyForWorkspace(
-    workspaceId,
-    {
-      assistant: {
-        assistantName: input.assistantName,
-        greetingInstruction: input.greetingInstruction,
-        assistantDefaultLocale: input.assistantDefaultLocale,
-        proactiveGreetingEnabled: input.proactiveGreetingEnabled,
-        suggestedQuestionsEnabled: input.suggestedQuestionsEnabled,
-        customInstruction: input.customInstruction,
-      },
-      channels: {
-        anonymousChatEnabled: input.anonymousChatEnabled,
-        websiteEmbedEnabled: input.websiteEmbedEnabled,
-        websiteEmbedAllowedOrigins: [...input.websiteEmbedAllowedOrigins],
-        websiteEmbedLauncherLabel: input.websiteEmbedLauncherLabel,
-        websiteEmbedLauncherPosition: input.websiteEmbedLauncherPosition,
-      },
-    },
-    {
-      // Enabling a public channel writes an audit event, and an operator reviewing account activity
-      // reads those by account. The dashboard route stamps this from the session; a proposal is
-      // applied outside one, so the account is resolved from the workspace instead of left null.
-      accountId: await workspaceAccount.resolveAccountId(workspaceId),
-      ...(options?.expectedUpdatedAt ? { expectedUpdatedAt: options.expectedUpdatedAt } : {}),
-    },
-  ),
+  prepareFieldProposal: (workspaceId, patch) => platformSettingsService.prepareFieldProposal(workspaceId, patch),
+  readFieldProposalVersion: (workspaceId, expected) => platformSettingsService.readFieldProposalVersion(workspaceId, expected),
+  readFieldProposalDisplay: (workspaceId) => platformSettingsService.readFieldProposalDisplay(workspaceId),
+  applyFieldProposal: (workspaceId, prepared) => platformSettingsService.applyFieldProposal(workspaceId, prepared),
 });
 
 export const createCopilotWorkspaceAccountResolver = (

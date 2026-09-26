@@ -49,7 +49,12 @@ import type {
 } from "../../src/modules/auth/services/authService.js";
 import type { UserRecord, UserRepositoryPort } from "../../src/db/repositories/userRepository.js";
 import type { WorkspaceRecord, WorkspaceRepositoryPort } from "../../src/db/repositories/workspaceRepository.js";
-import type { AgentGreetingUpdateOptions, AgentRepositoryPort } from "../../src/db/repositories/agentRepository.js";
+import type {
+  AgentGreetingUpdateOptions,
+  AgentProposalCasGuard,
+  AgentProposalCasOutcome,
+  AgentRepositoryPort,
+} from "../../src/db/repositories/agentRepository.js";
 import type {
   DocumentOriginKind,
   DocumentSourceRecord,
@@ -1217,6 +1222,7 @@ export class InMemoryAgentRepository implements AgentRepositoryPort {
       updatedAt: now,
     };
     this.directives.set(directive.id, directive);
+    agent.updatedAt = new Date(Math.max(Date.now(), agent.updatedAt.getTime() + 1));
     agent.authoredDirectives = await this.listDirectives(agentId, workspaceId);
     return directive;
   }
@@ -1259,6 +1265,7 @@ export class InMemoryAgentRepository implements AgentRepositoryPort {
       updatedAt: new Date(),
     };
     this.directives.set(directiveId, updated);
+    agent.updatedAt = new Date(Math.max(Date.now(), agent.updatedAt.getTime() + 1));
     agent.authoredDirectives = await this.listDirectives(agentId, workspaceId);
     return updated;
   }
@@ -1281,6 +1288,7 @@ export class InMemoryAgentRepository implements AgentRepositoryPort {
       return false;
     }
     const deleted = this.directives.delete(directiveId);
+    if (deleted) agent.updatedAt = new Date(Math.max(Date.now(), agent.updatedAt.getTime() + 1));
     agent.authoredDirectives = await this.listDirectives(agentId, workspaceId);
     return deleted;
   }
@@ -1314,6 +1322,35 @@ export class InMemoryAgentRepository implements AgentRepositoryPort {
     };
     this.items.set(agentId, updated);
     return updated;
+  }
+
+  async applyProposalPatch(
+    agentId: string,
+    workspaceId: string,
+    input: AgentInput,
+    guard: AgentProposalCasGuard,
+  ): Promise<AgentProposalCasOutcome> {
+    if (guard.expectedDefaultAgentId !== undefined && this.defaultAgentIds.get(workspaceId) !== guard.expectedDefaultAgentId) {
+      return { outcome: "changed", fields: ["target"] };
+    }
+    const previous = await this.findByIdAndWorkspaceId(agentId, workspaceId);
+    if (!previous) return { outcome: "targetDeleted" };
+    const value = (key: string): unknown => {
+      if (key === "assistantName") return previous.name;
+      if (key === "anonymousChatEnabled") return previous.surfaceSettings.anonymousChat.enabled;
+      if (key === "websiteEmbedEnabled") return previous.surfaceSettings.websiteEmbed.enabled;
+      if (key === "websiteEmbedAllowedOrigins") return previous.surfaceSettings.websiteEmbed.allowedOrigins;
+      if (key === "websiteEmbedLauncherLabel") return previous.surfaceSettings.websiteEmbed.launcherLabel;
+      if (key === "websiteEmbedLauncherPosition") return previous.surfaceSettings.websiteEmbed.launcherPosition;
+      return (previous as unknown as Record<string, unknown>)[key];
+    };
+    const changed = "expectedFields" in guard
+      ? guard.expectedFields.filter((field) => JSON.stringify(value(field.key)) !== JSON.stringify(field.value)).map((field) => field.key)
+      : previous.updatedAt.getTime() === guard.expectedUpdatedAt.getTime() ? [] : ["target"];
+    if (changed.length) return { outcome: "changed", fields: changed };
+    const lockedInput = guard.normalizeLocked?.(previous) ?? input;
+    const agent = await this.update(agentId, workspaceId, lockedInput);
+    return { outcome: "applied", previous, agent };
   }
 
   async setDefault(workspaceId: string, agentId: string): Promise<void> {
@@ -1913,6 +1950,26 @@ export class InMemoryIngestionSettingsRepository implements IngestionSettingsRep
       (this.revisions.get(workspaceId) ?? 0n) + 1n,
     );
     return record;
+  }
+
+  async applyProposalPatch(input: {
+    readonly workspaceId: string;
+    readonly patch: Partial<ValidatedIngestionSettingsInput>;
+    readonly validateMerged: (current: IngestionSettingsRecord) => ValidatedIngestionSettingsInput;
+  } & (
+    | { readonly expected: Partial<ValidatedIngestionSettingsInput> }
+    | { readonly expectedUpdatedAt: Date }
+  )): Promise<import("../../src/modules/settings/contracts/services.js").FieldScopedCasOutcome> {
+    const current = this.items.get(input.workspaceId);
+    if (!current) return { outcome: "targetDeleted" };
+    const changed = "expected" in input
+      ? Object.entries(input.expected)
+        .filter(([field, value]) => JSON.stringify((current as unknown as Record<string, unknown>)[field]) !== JSON.stringify(value))
+        .map(([field]) => field)
+      : current.updatedAt.getTime() === input.expectedUpdatedAt.getTime() ? [] : ["target"];
+    if (changed.length) return { outcome: "changed", fields: changed };
+    await this.upsert(input.workspaceId, input.validateMerged(current));
+    return { outcome: "applied" };
   }
 
   async clearPendingEmbeddingModel(

@@ -272,7 +272,8 @@ export interface CopilotProposalAdapter {
      * "applied" when one of the later steps failed trades one wrong card for another.
      */
     | { outcome: "applied"; appliedRef: unknown; reason?: string }
-    | { outcome: "stale" }
+    /** `reason` identifies the target field that moved, never its (potentially long) value. */
+    | { outcome: "stale"; reason?: string }
     | { outcome: "failed"; reason: string }
   >;
   /**

@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { normalizeBaseUrl } from "../../../src/modules/websiteCrawler/public.js";
 
-import { notFound } from "../../../src/shared/domain/errors.js";
+import { badRequest, notFound } from "../../../src/shared/domain/errors.js";
 
-import { copilotProposalPermissions } from "../../../src/modules/operatorCopilot/contracts.js";
+import { copilotProposalPermissions, type CopilotProposal } from "../../../src/modules/operatorCopilot/contracts.js";
 import { boundedSummary } from "../../../src/modules/operatorCopilot/tools/shared.js";
 import { presentProposalCard } from "../../../src/db/repositories/copilotRepository.js";
 import { OperatorCopilotService } from "../../../src/modules/operatorCopilot/service.js";
@@ -35,7 +35,7 @@ const proposalRow = (overrides: Record<string, unknown> = {}) => ({
   createdAt: new Date("2026-08-30T10:00:00.000Z"),
   updatedAt: new Date("2026-08-30T10:00:00.000Z"),
   ...overrides,
-});
+}) as unknown as CopilotProposal;
 
 const serviceFor = (proposal = proposalRow(), holds: ReadonlyArray<string> = []) => {
   const hasAllPermissions = vi.fn(async ({ requiredPermissions }: { requiredPermissions: ReadonlyArray<string> }) =>
@@ -212,11 +212,10 @@ describe("live and reloaded cards state the same thing", () => {
     const { createProposal, deps } = recorder();
     const adapter = createIngestionSettingsCopilotProposalAdapter({
       ingestionSettings: {
-        getForWorkspace: vi.fn(async () => ({
-          chunkingStrategy: "fixed_window", fixedWindowChunkSize: 1_000, fixedWindowChunkOverlap: 100,
-          structuredMinChunkSize: 200, structuredMaxChunkSize: 2_000, updatedAt: new Date("2026-08-30T10:00:00.000Z"),
-        })),
-        updateForWorkspace: vi.fn(),
+        prepareFieldProposal: vi.fn(async (_workspaceId, patch) => ({ normalizedPatch: { chunkingStrategy: "fixed_window", fixedWindowChunkSize: 1_000, fixedWindowChunkOverlap: 100, structuredMinChunkSize: 200, structuredMaxChunkSize: 2_000, ...patch }, expected: { fixedWindowChunkSize: 1_000 }, display: { current: {}, proposed: {} } })),
+        readFieldProposalVersion: vi.fn(async () => "fields:test"),
+        readFieldProposalDisplay: vi.fn(async () => ({})),
+        applyFieldProposal: vi.fn(),
       },
     });
     const { live, reloaded } = await drafted(createIngestionSettingsProposalCopilotTools({ ...deps, proposalAdapters: [adapter] }), "propose_ingestion_settings", { fixedWindowChunkSize: 1_500 }, createProposal);
@@ -231,14 +230,8 @@ describe("live and reloaded cards state the same thing", () => {
     const { createProposal, deps } = recorder();
     const adapter = createWorkspaceSettingCopilotProposalAdapter({
       workspaceSetting: {
-        getForWorkspace: vi.fn(async () => ({
-          assistantName: "Ada", greetingInstruction: "Greet warmly.", assistantDefaultLocale: null,
-          proactiveGreetingEnabled: false, suggestedQuestionsEnabled: true, customInstruction: "",
-          anonymousChatEnabled: false, websiteEmbedEnabled: true, websiteEmbedAllowedOrigins: ["https://example.com"],
-          websiteEmbedLauncherLabel: "Ask us", websiteEmbedLauncherPosition: "bottom-right",
-          updatedAt: new Date("2026-09-01T10:00:00.000Z"),
-        })),
-        updateForWorkspace: vi.fn(),
+        prepareFieldProposal: vi.fn(async (_workspaceId, patch) => ({ normalizedPatch: { assistantName: "Ada", greetingInstruction: "Greet warmly.", assistantDefaultLocale: null, proactiveGreetingEnabled: false, suggestedQuestionsEnabled: true, customInstruction: "", anonymousChatEnabled: false, websiteEmbedEnabled: true, websiteEmbedAllowedOrigins: ["https://example.com"], websiteEmbedLauncherLabel: "Ask us", websiteEmbedLauncherPosition: "bottom-right", ...patch }, expected: { anonymousChatEnabled: false }, display: { current: {}, proposed: {}, changesReach: true } })),
+        readFieldProposalVersion: vi.fn(async () => "fields:test"), readFieldProposalDisplay: vi.fn(async () => ({})), applyFieldProposal: vi.fn(),
       },
     });
     const { live, reloaded } = await drafted(createWorkspaceSettingProposalCopilotTools({ ...deps, proposalAdapters: [adapter] }), "propose_workspace_setting", { anonymousChatEnabled: true }, createProposal);
@@ -253,14 +246,8 @@ describe("live and reloaded cards state the same thing", () => {
     const { createProposal, deps } = recorder();
     const adapter = createWorkspaceSettingCopilotProposalAdapter({
       workspaceSetting: {
-        getForWorkspace: vi.fn(async () => ({
-          assistantName: "Ada", greetingInstruction: "Greet warmly.", assistantDefaultLocale: null,
-          proactiveGreetingEnabled: false, suggestedQuestionsEnabled: true, customInstruction: "",
-          anonymousChatEnabled: false, websiteEmbedEnabled: true, websiteEmbedAllowedOrigins: ["https://example.com"],
-          websiteEmbedLauncherLabel: "Ask us", websiteEmbedLauncherPosition: "bottom-right",
-          updatedAt: new Date("2026-09-01T10:00:00.000Z"),
-        })),
-        updateForWorkspace: vi.fn(),
+        prepareFieldProposal: vi.fn(async (_workspaceId, patch) => ({ normalizedPatch: { assistantName: "Ada", greetingInstruction: "Greet warmly.", assistantDefaultLocale: null, proactiveGreetingEnabled: false, suggestedQuestionsEnabled: true, customInstruction: "", anonymousChatEnabled: false, websiteEmbedEnabled: true, websiteEmbedAllowedOrigins: ["https://example.com"], websiteEmbedLauncherLabel: "Ask us", websiteEmbedLauncherPosition: "bottom-right", ...patch }, expected: { websiteEmbedLauncherLabel: "Ask us" }, display: { current: {}, proposed: {}, changesReach: false } })),
+        readFieldProposalVersion: vi.fn(async () => "fields:test"), readFieldProposalDisplay: vi.fn(async () => ({})), applyFieldProposal: vi.fn(),
       },
     });
     const { live, reloaded } = await drafted(createWorkspaceSettingProposalCopilotTools({ ...deps, proposalAdapters: [adapter] }), "propose_workspace_setting", { websiteEmbedLauncherLabel: "Chat with us" }, createProposal);
@@ -326,11 +313,8 @@ describe("failure modes the adapters must tell apart", () => {
     // Each field is individually in range; the combination is not, and only the domain knows that.
     const adapter = createIngestionSettingsCopilotProposalAdapter({
       ingestionSettings: {
-        getForWorkspace: vi.fn(async () => ({
-          chunkingStrategy: "fixed_window", fixedWindowChunkSize: 1_000, fixedWindowChunkOverlap: 100,
-          structuredMinChunkSize: 200, structuredMaxChunkSize: 2_000, updatedAt: new Date("2026-08-30T10:00:00.000Z"),
-        })),
-        updateForWorkspace: vi.fn(),
+        prepareFieldProposal: vi.fn(async () => { throw badRequest("Overlap must be smaller than window"); }),
+        readFieldProposalVersion: vi.fn(), readFieldProposalDisplay: vi.fn(), applyFieldProposal: vi.fn(),
       },
     });
 
@@ -361,58 +345,27 @@ describe("the composed workspace settings port", () => {
     // compile-time claim. This proves the object itself carries none, so a widening cast or a JSON
     // dump downstream cannot put an anonymous-chat or embed token in a model context.
     const port = createCopilotWorkspaceSettingPort({
-      getVersionedForWorkspace: async () => ({
-        settings: {
-          assistant: {
-            assistantName: "Ada", greetingInstruction: "Greet warmly.", assistantDefaultLocale: null,
-            proactiveGreetingEnabled: false, assistantBootstrapActive: false, suggestedQuestionsEnabled: true,
-            customInstruction: "", assistantLogoUrl: null,
-          },
-          channels: {
-            anonymousChatEnabled: false, anonymousChatUrl: null, anonymousChatLastUsedAt: null,
-            websiteEmbedEnabled: true, websiteEmbedToken: "embed-token-secret", websiteEmbedLastUsedAt: null,
-            websiteEmbedAllowedOrigins: ["https://example.com"], websiteEmbedLauncherLabel: "Ask us",
-            websiteEmbedLauncherPosition: "bottom-right", websiteEmbedScriptUrl: null,
-            websiteEmbedSnippet: "<script data-token=\"embed-token-secret\"></script>",
-            websiteEmbedTheme: {}, websiteEmbedCopy: {}, websiteEmbedExpertOverrides: {},
-          },
-        },
-        updatedAt: new Date("2026-09-01T10:00:00.000Z"),
-      }) as never,
-      applyForWorkspace: async () => undefined,
-    }, { resolveAccountId: async () => "account-1" });
+      readFieldProposalDisplay: async () => ({ assistantName: "Ada", websiteEmbedAllowedOrigins: ["https://example.com"] }),
+      prepareFieldProposal: async () => ({} as never), readFieldProposalVersion: async () => "fields:test", applyFieldProposal: async () => ({ status: "applied" as const }),
+    });
 
-    const snapshot = await port.getForWorkspace("workspace-1");
+    const snapshot = await port.readFieldProposalDisplay("workspace-1");
 
     expect(JSON.stringify(snapshot)).not.toContain("embed-token-secret");
     expect(snapshot).not.toHaveProperty("websiteEmbedToken");
     expect(snapshot).not.toHaveProperty("websiteEmbedSnippet");
   });
 
-  it("applies through the settings service under the workspace's account and without a rotation flag", async () => {
-    // The account matters: enabling a public channel writes an audit event an operator reads by
-    // account, and an apply happens outside the session the dashboard route stamps it from.
-    const applyForWorkspace = vi.fn(async () => undefined);
+  it("delegates a typed proposal patch to the settings owner", async () => {
+    const applyFieldProposal = vi.fn(async () => ({ status: "applied" as const }));
     const port = createCopilotWorkspaceSettingPort(
       {
-        getVersionedForWorkspace: async () => ({ settings: {}, updatedAt: new Date() }) as never,
-        applyForWorkspace,
+        prepareFieldProposal: async () => ({} as never), readFieldProposalVersion: async () => "fields:test", readFieldProposalDisplay: async () => ({}), applyFieldProposal,
       },
-      { resolveAccountId: async () => "account-1" },
     );
 
-    await port.updateForWorkspace("workspace-1", {
-      name: "Workspace settings", assistantName: "Ada", greetingInstruction: "Greet warmly.",
-      assistantDefaultLocale: null, proactiveGreetingEnabled: false, suggestedQuestionsEnabled: true,
-      customInstruction: "", anonymousChatEnabled: true, websiteEmbedEnabled: true,
-      websiteEmbedAllowedOrigins: ["https://example.com"], websiteEmbedLauncherLabel: "Ask us",
-      websiteEmbedLauncherPosition: "bottom-right", changesReach: true,
-    }, { expectedUpdatedAt: new Date("2026-09-01T10:00:00.000Z") });
-
-    const call = applyForWorkspace.mock.calls[0] as unknown as [string, { channels: Record<string, unknown> }, Record<string, unknown>];
-    expect(call[1].channels).not.toHaveProperty("rotateAnonymousChatToken");
-    expect(call[1].channels).not.toHaveProperty("rotateWebsiteEmbedToken");
-    expect(call[2]).toEqual({ accountId: "account-1", expectedUpdatedAt: new Date("2026-09-01T10:00:00.000Z") });
+    await port.applyFieldProposal("workspace-1", { normalizedPatch: { assistantName: "Ada" }, expected: { assistantName: "Support" } });
+    expect(applyFieldProposal).toHaveBeenCalledWith("workspace-1", { normalizedPatch: { assistantName: "Ada" }, expected: { assistantName: "Support" } });
   });
 });
 

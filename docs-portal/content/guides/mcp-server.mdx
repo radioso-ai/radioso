@@ -52,6 +52,8 @@ Operator MCP has five scoped capabilities. `operator:read` reads bounded workspa
 
 `list_documents` lets an `operator:read` client confirm an import with a cursor-paginated document inventory. It filters by source, status, exact external ids or metadata, case-insensitive title text, and retrieval eligibility; each response has at most 25 rows, and `nextCursor` continues the inventory. Each row carries identifiers, metadata, content length, and timestamps but never the document body. Enterprise workspaces also expose `workspace_usage_limits`, which reports the organization plan and each answer, document, and indexing window's used, limit, remaining, and reset values.
 
+Proposal fences compare only the settings a proposal changes. An unrelated update stays out of its way; a stale result names the changed field, or reports `Target deleted` when its target disappeared.
+
 Publication stays a separate reviewed operation: prepare an immutable candidate, inspect its changes, then confirm and apply that candidate. The trusted MCP client asks for confirmation; the server binds the resulting execution to the grant, client, review digest, target fence, and expiry. A successful consent decision creates a grant tied to one user, workspace, client, and resource; the grant appears in the same API access card and can be revoked there.
 
 The browser consent page lets you choose a workspace and the capabilities the client receives. If a client requests refresh access, approving the connection keeps it connected until that access expires or you revoke the grant.

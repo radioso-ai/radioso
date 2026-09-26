@@ -1,4 +1,10 @@
-import type { AgentGreetingUpdateOptions, AgentRepositoryPort, AgentUpdateOptions } from "../../../db/repositories/agentRepository.js";
+import type {
+  AgentGreetingUpdateOptions,
+  AgentProposalCasGuard,
+  AgentProposalCasOutcome,
+  AgentRepositoryPort,
+  AgentUpdateOptions,
+} from "../../../db/repositories/agentRepository.js";
 import type { DocumentSourceRepositoryPort } from "../../../db/repositories/documentSourceRepository.js";
 import type { WorkspaceRecord, WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
 import type { AccessGrantService } from "../../accessGrants/public.js";
@@ -7,14 +13,18 @@ import { generateApiToken } from "../../auth/contracts/index.js";
 import type { EmbedConfigCacheInvalidator } from "./embedConfigCacheInvalidator.js";
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../documents/contracts/index.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
+import { fieldProposalVersion } from "../../../shared/domain/fieldProposalVersion.js";
 import { validateExactContentItem, type ExactContentValidationResult } from "../../../shared/domain/exactContent.js";
 import {
   getWebsiteEmbedSurfaceSettings,
   isAgentBootstrapActive,
+  mergeAgentSurfaceSettings,
   resolveEffectiveContactDelivery,
+  validateAgentInput,
   type AgentInput,
   type AgentRecord,
 } from "../domain.js";
+import { agentInputFieldSchemas } from "../agentInputSchema.js";
 import { DEFAULT_AGENT_LOCALE_FALLBACK, type AgentGreetingSnapshot } from "../agentRevision.js";
 import { ensurePublicIdMintedForInput } from "./agentPublicIdentity.js";
 
@@ -22,6 +32,35 @@ export type AgentSettingsResource = Omit<AgentRecord, "authoredDirectives"> & {
   isDefault: boolean;
   assistantBootstrapActive: boolean;
 };
+
+interface AgentFieldProposalPreparation {
+  readonly targetAgentId: string;
+  readonly normalizedPatch: AgentInput;
+  readonly expected: { readonly key: string; readonly value: unknown };
+  readonly display: { readonly current: unknown; readonly proposed: unknown };
+}
+type AgentFieldProposalApplyInput = Pick<AgentFieldProposalPreparation, "targetAgentId" | "normalizedPatch"> & (
+  | { readonly expected: { readonly key: string; readonly value: unknown } }
+  | { readonly expectedUpdatedAt: Date }
+);
+type AgentFieldProposalApplyOutcome =
+  | { readonly status: "applied" }
+  | { readonly status: "changed"; readonly fields: readonly string[] }
+  | { readonly status: "target_changed" }
+  | { readonly status: "target_deleted" };
+
+const proposalSettingPatch = (settingKey: string, value: unknown): AgentInput => {
+  if (settingKey === "surfaceSettings") {
+    throw badRequest("Public channel and embed settings are proposed with propose_workspace_setting, which names each field and states on the card when a change alters who can reach the agent");
+  }
+  const schema = agentInputFieldSchemas[settingKey as keyof typeof agentInputFieldSchemas];
+  if (!schema) throw badRequest(`Unknown agent setting: ${settingKey}`);
+  const parsed = schema.safeParse(value);
+  if (!parsed.success) throw badRequest(`Invalid ${settingKey} setting value`);
+  return { [settingKey]: parsed.data };
+};
+const proposalSettingValue = (settings: object, settingKey: string): unknown =>
+  Object.hasOwn(settings, settingKey) ? (settings as Record<string, unknown>)[settingKey] : undefined;
 
 export class AgentService {
   constructor(
@@ -121,18 +160,102 @@ export class AgentService {
       ensurePublicIdMintedForInput(existing, input),
       options,
     );
-    await this.syncPublicLaunchGrants(existing, updated);
-    if (workspace.defaultAgentId === agentId) {
-      await this.syncLegacyWorkspaceDefaults(workspace, updated);
-    }
-    // Drop the CDN-cached embed config so settings changes take effect now
-    // rather than after the cache TTL. Best effort — the invalidator never
-    // throws, and most deployments wire the no-op.
-    const embedToken = getWebsiteEmbedSurfaceSettings(updated).token;
-    if (embedToken && this.embedConfigCacheInvalidator) {
-      await this.embedConfigCacheInvalidator.invalidateForToken(embedToken);
-    }
+    await this.afterAgentWrite(workspace, existing, updated);
     return this.present(updated, workspace.defaultAgentId);
+  }
+
+  /**
+   * Proposal/reviewed-operation write boundary. The repository owns the locked comparison and
+   * merge; this service owns source validation and the side effects that every live agent write
+   * must run. Infrastructure failures deliberately escape rather than becoming a false stale
+   * result after the row has already committed.
+   */
+  async applyProposalPatch(
+    workspaceId: string,
+    agentId: string,
+    input: AgentInput,
+    guard: AgentProposalCasGuard,
+  ): Promise<AgentProposalCasOutcome> {
+    const workspace = await this.requireWorkspace(workspaceId);
+    await this.validateSourceScope(workspaceId, input);
+    const outcome = await this.agentRepository.applyProposalPatch(agentId, workspaceId, input, guard);
+    if (outcome.outcome !== "applied") {
+      return outcome;
+    }
+    await this.afterAgentWrite(workspace, outcome.previous, outcome.agent);
+    return outcome;
+  }
+
+  /** The agent owner validates, normalizes, and captures the exact field a proposal changes. */
+  async prepareFieldProposal(
+    workspaceId: string,
+    agentId: string,
+    input: { readonly settingKey: string; readonly value: unknown },
+  ): Promise<AgentFieldProposalPreparation> {
+    const current = await this.get(workspaceId, agentId);
+    const patch = proposalSettingPatch(input.settingKey, input.value);
+    const merged = {
+      ...current,
+      ...patch,
+      surfaceSettings: patch.surfaceSettings
+        ? mergeAgentSurfaceSettings(current.surfaceSettings, patch.surfaceSettings)
+        : current.surfaceSettings,
+    };
+    const normalized = validateAgentInput(merged);
+    if (!Object.hasOwn(normalized, input.settingKey)) {
+      throw badRequest(`Unknown agent setting: ${input.settingKey}`);
+    }
+    const proposed = proposalSettingValue(normalized, input.settingKey);
+    const previous = proposalSettingValue(current, input.settingKey);
+    return {
+      targetAgentId: agentId,
+      normalizedPatch: proposalSettingPatch(input.settingKey, proposed),
+      expected: { key: input.settingKey, value: previous },
+      display: { current: previous, proposed },
+    };
+  }
+
+  async readFieldProposalVersion(
+    workspaceId: string,
+    agentId: string,
+    expected?: { readonly key: string },
+  ): Promise<string> {
+    const current = await this.get(workspaceId, agentId);
+    if (!expected) return current.updatedAt.toISOString();
+    // Validate the key on every entry point, including legacy-card preview/read paths.
+    proposalSettingPatch(expected.key, proposalSettingValue(current, expected.key));
+    return fieldProposalVersion({ [expected.key]: proposalSettingValue(current, expected.key) });
+  }
+
+  async readFieldProposalDisplay(workspaceId: string, agentId: string, settingKey: string): Promise<unknown> {
+    const current = await this.get(workspaceId, agentId);
+    proposalSettingPatch(settingKey, proposalSettingValue(current, settingKey));
+    return proposalSettingValue(current, settingKey);
+  }
+
+  /** Applies a prepared single-field proposal through the agent repository's locked CAS. */
+  async applyFieldProposal(
+    workspaceId: string,
+    prepared: AgentFieldProposalApplyInput,
+  ): Promise<AgentFieldProposalApplyOutcome> {
+    const entries = Object.entries(prepared.normalizedPatch);
+    if (entries.length !== 1) {
+      throw badRequest("An agent field proposal must name exactly one setting");
+    }
+    const [settingKey, value] = entries[0];
+    const normalizedPatch = proposalSettingPatch(settingKey, value);
+    const outcome = await this.applyProposalPatch(
+      workspaceId,
+      prepared.targetAgentId,
+      normalizedPatch,
+      "expected" in prepared
+        ? { expectedFields: [prepared.expected] }
+        : { expectedUpdatedAt: prepared.expectedUpdatedAt },
+    );
+    if (outcome.outcome === "applied") return { status: "applied" };
+    if (outcome.outcome === "targetDeleted") return { status: "target_deleted" };
+    if (outcome.outcome === "changed" && outcome.fields.includes("target")) return { status: "target_changed" };
+    return { status: "changed", fields: outcome.fields };
   }
 
   /**
@@ -316,6 +439,24 @@ export class AgentService {
       throw notFound("Workspace not found");
     }
     return workspace;
+  }
+
+  private async afterAgentWrite(
+    workspace: WorkspaceRecord,
+    previous: AgentRecord,
+    updated: AgentRecord,
+  ): Promise<void> {
+    await this.syncPublicLaunchGrants(previous, updated);
+    if (workspace.defaultAgentId === updated.id) {
+      await this.syncLegacyWorkspaceDefaults(workspace, updated);
+    }
+    // Drop the CDN-cached embed config so settings changes take effect now
+    // rather than after the cache TTL. Best effort — the invalidator never
+    // throws, and most deployments wire the no-op.
+    const embedToken = getWebsiteEmbedSurfaceSettings(updated).token;
+    if (embedToken && this.embedConfigCacheInvalidator) {
+      await this.embedConfigCacheInvalidator.invalidateForToken(embedToken);
+    }
   }
 
   private async validateSourceScope(workspaceId: string, input: AgentInput): Promise<void> {

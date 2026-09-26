@@ -9,6 +9,28 @@ Cut a release with the **Cut Release** workflow. It reads the commits since the 
 tag, writes the entry above this line, tags the commit, and publishes a GitHub Release. A
 deploy then ships a release that already exists; it never mints one.
 
+## [1.7.0] - 2026-09-26
+
+### Added
+
+- **operator-mcp:** import, remove, and reprocess documents through reviewed operations ([#1333](https://github.com/radioso-ai/radioso/pull/1333))
+- **operator-mcp:** list documents and read plan usage ([#1330](https://github.com/radioso-ai/radioso/pull/1330))
+- **operator-mcp:** accept structured directive fields in propose_directive ([#1329](https://github.com/radioso-ai/radioso/pull/1329))
+
+### Fixed
+
+- **operator-mcp:** refuse invalid revisions with diagnostics and read back proposals ([#1331](https://github.com/radioso-ai/radioso/pull/1331))
+- **operator-copilot:** mark a proposal stale only when the fields it changes moved ([#1332](https://github.com/radioso-ai/radioso/pull/1332))
+
+### Database migrations
+
+This release adds 2 migrations. They run at service startup, so deploy one stack at a time; overlapping deploys contend on the same DDL lock and stall until one gives up.
+
+- `198_operator_mcp_rejection_details.sql`
+- `199_copilot_document_operation_target.sql`
+
+[1.7.0]: https://github.com/radioso-ai/radioso/compare/v1.6.0...v1.7.0
+
 ## [1.6.0] - 2026-09-25
 
 ### Added

@@ -4,7 +4,7 @@ import { copilotApplicationPrimitiveRegistry, copilotRayOwnedPrimitiveIds } from
 type ProductionDescriptorName =
   | "agent_configuration" | "agent_skills" | "analyze_website" | "audience_topics" | "context_variables"
   | "conversation_history_search"
-  | "conversation_transcript" | "create_eval_case_from_turn" | "draft_reply" | "document_chunks" | "document_search" | "document_status"
+  | "conversation_transcript" | "create_eval_case_from_turn" | "draft_reply" | "document_chunks" | "document_search" | "document_status" | "list_documents"
   | "eval_results" | "needs_attention" | "propose_agent" | "propose_agent_setting" | "propose_context_variable" | "propose_directive" | "propose_greeting"
   | "propose_document" | "propose_document_removal" | "propose_document_retrieval"
   | "product_doc_page" | "product_docs"
@@ -42,6 +42,7 @@ export const copilotCapabilityProvenance: Readonly<Record<ProductionDescriptorNa
   draft_reply: { applicationPrimitiveIds: ["chat.reply-draft.probe"], ...rayOnly("Ray bounds an ephemeral draft run, spends the operator budget for it, and keeps the result on the drafting side of the send boundary.") },
   document_search: { backingOperationIds: ["searchDocuments", "getDocument"], applicationPrimitiveIds: ["documents.source-status.read"] },
   document_status: { backingOperationIds: ["listDocuments", "listDocumentSources", "listDocumentsBySource"], applicationPrimitiveIds: ["documents.status.read", "documents.source-status.read"] },
+  list_documents: { applicationPrimitiveIds: ["documents.inventory.read"] },
   document_chunks: { applicationPrimitiveIds: ["documents.chunks.read"] },
   eval_results: { backingOperationIds: ["listEvalCases"] },
   needs_attention: { applicationPrimitiveIds: ["operatorCopilot.needs-attention"], ...rayOnly("Ray composes the authorized escalation sources into one operator working list carrying the handles its follow-up acts consume.") },

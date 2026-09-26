@@ -89,6 +89,23 @@ export interface CopilotCapabilityProvenance {
   readonly rayOnly?: { readonly reason: string };
 }
 
+/**
+ * Operator MCP exposure a contributed descriptor declares. OSS keeps a contributed descriptor that
+ * omits it off the operator MCP catalog.
+ */
+export type CopilotMcpDisposition =
+  | {
+      readonly status: "eligible";
+      readonly inputStrategy: "explicit";
+      readonly scope: "operator:read" | "operator:probe" | "operator:act" | "operator:propose" | "operator:write";
+      readonly retry: {
+        readonly effect: "none" | "proposal" | "act";
+        readonly idempotent: boolean;
+        readonly operationIdentity: "client" | "input";
+      };
+    }
+  | { readonly status: "excluded"; readonly reason: string };
+
 export interface CopilotToolDescriptor<TInput = unknown, TOutput = unknown> {
   readonly name: string;
   readonly shape: CopilotToolShape;
@@ -109,6 +126,7 @@ export interface CopilotToolDescriptor<TInput = unknown, TOutput = unknown> {
   readonly requiredPermissions: readonly [string, ...string[]];
   readonly capabilityProvenance: CopilotCapabilityProvenance;
   readonly contributingModule: string;
+  readonly mcpDisposition?: CopilotMcpDisposition;
   readonly dashboardSubject: CopilotEntityReference;
   createTool(context: CopilotToolInvocationContext): CopilotAgentTool<TInput, TOutput>;
 }

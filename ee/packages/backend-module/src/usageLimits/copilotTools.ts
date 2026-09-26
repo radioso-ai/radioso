@@ -4,6 +4,9 @@ import type { CopilotToolContribution, CopilotToolDescriptor } from "../radiosoM
 
 import type { AccountUsageSummary } from "./usageLimitService.js";
 
+const planNameMaxLength = 200;
+const resetAtSchema = z.string().datetime({ offset: true }).max(35).nullable();
+
 /** The one read this contribution needs; the service itself owns reservation and enforcement. */
 interface CopilotAccountUsagePort {
   getAccountUsage(accountId: string): Promise<AccountUsageSummary>;
@@ -13,7 +16,7 @@ const usageWindowSchema = z.object({
   used: z.number().int().nonnegative(),
   limit: z.number().int().nonnegative().nullable(),
   remaining: z.number().int().nonnegative().nullable(),
-  resetAt: z.string().nullable(),
+  resetAt: resetAtSchema,
 });
 
 // Conversation metering counts in tenths (ten test runs make one conversation), so used/limit/remaining
@@ -22,11 +25,11 @@ const fractionalUsageWindowSchema = z.object({
   used: z.number().nonnegative(),
   limit: z.number().nonnegative().nullable(),
   remaining: z.number().nonnegative().nullable(),
-  resetAt: z.string().nullable(),
+  resetAt: resetAtSchema,
 });
 
 const outputSchema = z.object({
-  planName: z.string().nullable(),
+  planName: z.string().max(planNameMaxLength).nullable(),
   monthlyAnswers: usageWindowSchema,
   storedDocuments: usageWindowSchema,
   storedIndexedBytes: usageWindowSchema,
@@ -42,8 +45,15 @@ const window = (
   used: entry.used,
   limit: entry.limit,
   remaining: entry.limit === null ? null : Math.max(0, entry.limit - entry.used),
-  resetAt: entry.resetAt ?? null,
+  resetAt: formatResetAt(entry.resetAt),
 });
+
+/** The usage owner stores monthly boundaries as dates; MCP exposes an explicit UTC instant. */
+const formatResetAt = (value: string | undefined): string | null => {
+  if (!value) return null;
+  const date = new Date(value.length === 10 ? `${value}T00:00:00.000Z` : value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+};
 
 const usageDescriptor = (deps: { usage: CopilotAccountUsagePort }): CopilotToolDescriptor => ({
   name: "workspace_usage_limits",
@@ -57,6 +67,12 @@ const usageDescriptor = (deps: { usage: CopilotAccountUsagePort }): CopilotToolD
   // Strictly stricter than the tenant-facing route this mirrors, which is gated on an account
   // session alone. Usage is organization-scoped, so the numbers cover every workspace in the org.
   requiredPermissions: ["workspace.settings.read"],
+  mcpDisposition: {
+    status: "eligible",
+    inputStrategy: "explicit",
+    scope: "operator:read",
+    retry: { effect: "none", idempotent: true, operationIdentity: "client" },
+  },
   capabilityProvenance: {
     backingOperationIds: ["getEnterpriseAccountUsage"],
     applicationPrimitiveIds: ["usageLimits.account-usage.read"],
@@ -71,7 +87,7 @@ const usageDescriptor = (deps: { usage: CopilotAccountUsagePort }): CopilotToolD
     invoke: async () => {
       const usage = await deps.usage.getAccountUsage(context.accountId);
       return {
-        planName: usage.profile?.displayName ?? null,
+        planName: usage.profile?.displayName.slice(0, planNameMaxLength) ?? null,
         monthlyAnswers: window(usage.monthlyAnswers),
         storedDocuments: window(usage.storedDocuments),
         storedIndexedBytes: window(usage.storedIndexedBytes),

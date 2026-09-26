@@ -2191,6 +2191,9 @@ export const createTestDependencies = (overrides: {
     testChat: testChatService,
     websiteAnalysisProbe: websiteAnalysisProbeService,
     documentSearchService,
+    documentInventory: {
+      listInventoryForWorkspace: documentIngestionService.listInventoryForWorkspace.bind(documentIngestionService),
+    },
     documentChunks: chunkRepository,
     documentMaintenance: {
       reprocessDocument: documentIngestionService.reprocessEligible.bind(documentIngestionService),

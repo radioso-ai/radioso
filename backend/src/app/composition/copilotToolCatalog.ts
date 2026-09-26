@@ -24,6 +24,7 @@ import {
   type CopilotWorkspaceSettingsPort,
   type CopilotProductDocsPort,
 } from "../../modules/operatorCopilot/tools/index.js";
+import type { DocumentInventoryPort } from "../../modules/documents/contracts/index.js";
 import type { CopilotWebsiteAnalysisProbePort } from "../../modules/operatorCopilot/contracts/agentAuthoring.js";
 import type { RoutineStructuralPreparationDependencies } from "../../modules/operatorCopilot/tools/routineStructuralPreparation.js";
 import type { ReviewedProposalExecutionPort } from "../../modules/operatorCopilot/tools/reviewedProposalExecution.js";
@@ -187,6 +188,7 @@ export const createCopilotToolCatalog = (deps: {
   readonly replyDraft: CopilotReplyDraftPort;
   readonly agentTurnProbe: CopilotAgentTurnProbePort;
   readonly documentSearchService: CopilotDocumentSearchPort;
+  readonly documentInventory: DocumentInventoryPort;
   readonly documentChunks: CopilotDocumentChunksPort;
   readonly documentMaintenance: CopilotDocumentMaintenancePort;
   readonly evalResultsService: CopilotEvalResultsPort;

@@ -328,7 +328,11 @@ export const createDirectiveCopilotProposalAdapter = (deps: {
     });
     const directive = directivePayload(draft.draft.directive);
     const summary = boundedSummary(describeDirectiveChange(directive, draft.draft.rationale));
-    return { payload: { ...directive, rationale: summary }, targetLabel: directive.name, summary, versionToken: draft.versionToken };
+    // A create is fenced on the agent existing, not on its row version (see readVersionToken), so an
+    // unrelated agent write between draft and apply cannot turn it stale; an edit keeps the owner's
+    // snapshot fence.
+    const versionToken = targetRef.directiveId ? draft.versionToken : directiveCreateToken;
+    return { payload: { ...directive, rationale: summary }, targetLabel: directive.name, summary, versionToken };
   },
 });
 

@@ -9,6 +9,7 @@ import {
   routineSlotSchema,
   routineStepSchema,
   routineTerminalSchema,
+  routineDraftChangeEffect,
   routineTransitionSchema,
   type RoutineDefinition,
   type RoutineDefinitionService,
@@ -198,7 +199,7 @@ export const createRoutineStructuralPreparationTool = (
         const versionToken = blocking ? `blocked:${blocking.id}:${blocking.updatedAt.toISOString()}` : "open";
         const after = boundedRoutineReview(input.draft);
         const reviewSnapshot = storedReviewSnapshot({ diagnostics: validation.diagnostics.slice(0, reviewLimit), review: { before: {}, after: after.summary, truncated: after.truncated, detailAvailable: after.truncated, beforeConnections: [], afterConnections: connectionsForReview(input.draft.transitions ?? []), connectionsTruncated: (input.draft.transitions?.length ?? 0) > reviewLimit, operations: [{ kind: "create" }], operationsTruncated: false }, fullReview: { before: {}, after: after.full } });
-        const stored = await persistReviewedPreparation({ deps, context, targetType: "routine", targetRef, payload, versionToken, reviewSnapshot, operation: "prepare_routine_structure", metadata: { kind: input.kind }, effect: { exposure: "draft", reversibility: "reversible", metered: false } });
+        const stored = await persistReviewedPreparation({ deps, context, targetType: "routine", targetRef, payload, versionToken, reviewSnapshot, operation: "prepare_routine_structure", metadata: { kind: input.kind }, effect: routineDraftChangeEffect(input.kind) });
         return reviewOutput({ proposalId: stored.proposal.id, reviewDigest: stored.reviewDigest, expiresAt: stored.expiresAt, snapshot: reviewSnapshot });
       }
       const current = await deps.routines.get(context.workspaceId, input.agentId, input.routineId);
@@ -209,7 +210,7 @@ export const createRoutineStructuralPreparationTool = (
         const versionToken = current.updatedAt.toISOString();
         const before = boundedRoutineReview(current);
         const reviewSnapshot = storedReviewSnapshot({ diagnostics: [], review: { before: before.summary, after: {}, truncated: before.truncated, detailAvailable: before.truncated, beforeConnections: connectionsForReview(current.transitions ?? []), afterConnections: [], connectionsTruncated: (current.transitions?.length ?? 0) > reviewLimit, operations: [{ kind: "delete" }], operationsTruncated: false }, fullReview: { before: before.full, after: {} } });
-        const stored = await persistReviewedPreparation({ deps, context, targetType: "routine", targetRef, payload, versionToken, reviewSnapshot, operation: "prepare_routine_structure", metadata: { kind: input.kind }, effect: { exposure: "draft", reversibility: "irreversible", metered: false } });
+        const stored = await persistReviewedPreparation({ deps, context, targetType: "routine", targetRef, payload, versionToken, reviewSnapshot, operation: "prepare_routine_structure", metadata: { kind: input.kind }, effect: routineDraftChangeEffect(input.kind) });
         return reviewOutput({ proposalId: stored.proposal.id, reviewDigest: stored.reviewDigest, expiresAt: stored.expiresAt, snapshot: reviewSnapshot });
       }
       const removedReferences: { current: { readonly removedNodeIds: readonly string[]; readonly removedSlotIds: readonly string[] } | null } = { current: null };
@@ -247,7 +248,7 @@ export const createRoutineStructuralPreparationTool = (
       const before = boundedRoutineReview(current);
       const after = boundedRoutineReview(draft);
       const reviewSnapshot = storedReviewSnapshot({ diagnostics: validation.diagnostics.slice(0, 40), review: { before: before.summary, after: after.summary, truncated: before.truncated || after.truncated, detailAvailable: before.truncated || after.truncated, beforeConnections, afterConnections, connectionsTruncated: (current.transitions?.length ?? 0) > reviewLimit || (draft.transitions?.length ?? 0) > reviewLimit, operations: input.operations.slice(0, reviewLimit), operationsTruncated: input.operations.length > reviewLimit }, fullReview: { before: before.full, after: after.full } });
-      const stored = await persistReviewedPreparation({ deps, context, targetType: "routine", targetRef, payload, versionToken, reviewSnapshot, operation: "prepare_routine_structure", metadata: { kind: input.kind }, effect: { exposure: "draft", reversibility: "reversible", metered: false } });
+      const stored = await persistReviewedPreparation({ deps, context, targetType: "routine", targetRef, payload, versionToken, reviewSnapshot, operation: "prepare_routine_structure", metadata: { kind: input.kind }, effect: routineDraftChangeEffect("edit") });
       return reviewOutput({ proposalId: stored.proposal.id, reviewDigest: stored.reviewDigest, expiresAt: stored.expiresAt, snapshot: reviewSnapshot });
     },
   }),

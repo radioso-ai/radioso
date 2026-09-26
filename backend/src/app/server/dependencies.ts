@@ -770,6 +770,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       ? registration({ database: infrastructure.database, logger, auditService: infrastructure.auditService })
       : registration);
   const copilotToolCatalog = createCopilotToolCatalog({
+    appBaseUrl: env.APP_BASE_URL,
     toolContributions: copilotToolContributions,
     agentService: {
       get: agentService.get.bind(agentService),
@@ -918,6 +919,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     prompt: copilotPrompt,
     tools: copilotToolCatalog,
     probeBudgetPerTurn: env.COPILOT_PROBE_BUDGET_PER_TURN,
+    appBaseUrl: env.APP_BASE_URL,
     logger,
     currentAuthorization: {
       hasAllPermissions: ({ workspaceId, accountId, operatorUserId, requiredPermissions }) =>

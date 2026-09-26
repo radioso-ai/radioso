@@ -2,12 +2,14 @@ import type { CopilotMcpProposalRecoveryPort, CopilotProposal, CopilotToolInvoca
 import { canonicalReviewedOperationDigest } from "../reviewedOperation.js";
 import { reviewedConfirmationRequirement } from "../reviewedOperation.js";
 import type { ReviewedChangeEffect } from "../../../shared/domain/reviewedChangeEffect.js";
+import { buildAbsoluteOperatorMcpProposalLink } from "../dashboardLinks.js";
 import { copilotProposalOrigin, recordProposalCreated, type CopilotProposalToolDependencies } from "./shared.js";
 
 export interface ReviewedPreparationDependencies extends CopilotProposalToolDependencies {
   readonly proposalRecovery: CopilotMcpProposalRecoveryPort;
   readonly now?: () => Date;
   readonly reviewTtlMs?: number;
+  readonly appBaseUrl?: string | null;
 }
 
 /** Generic persistence and recovery only: target owners provide every semantic value. */
@@ -52,7 +54,16 @@ export const persistReviewedPreparation = async (input: {
     operation: input.operation,
     ...input.metadata,
   });
-  return { proposal, reviewDigest, expiresAt, confirmation: { requirement: confirmationRequirement, effect: input.effect } };
+  return { proposal, reviewDigest, expiresAt, confirmation: { requirement: confirmationRequirement, effect: input.effect, ...(confirmationRequirement === "signed_in_approval" ? { approvalUrl: buildAbsoluteOperatorMcpProposalLink(proposal.id, input.deps.appBaseUrl) } : {}) } };
+};
+
+export const reviewedPreparationConfirmation = (deps: Pick<ReviewedPreparationDependencies, "appBaseUrl">, proposal: CopilotProposal) => {
+  if (!proposal.confirmationRequirement || !proposal.changeEffect) return null;
+  return {
+    requirement: proposal.confirmationRequirement,
+    effect: proposal.changeEffect,
+    ...(proposal.confirmationRequirement === "signed_in_approval" ? { approvalUrl: buildAbsoluteOperatorMcpProposalLink(proposal.id, deps.appBaseUrl) } : {}),
+  };
 };
 
 export const recoverReviewedPreparation = (input: {

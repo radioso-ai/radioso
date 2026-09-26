@@ -119,7 +119,7 @@ export class InMemoryCopilotRepository implements CopilotRepositoryPort, Copilot
   async createProposal(input: CopilotProposalDraft): Promise<CopilotProposal> {
     const createdAt = new Date();
     const origin = input.origin ?? { type: "conversation", conversationId: input.conversationId } as const;
-    const proposal: CopilotProposal = { ...input, origin, conversationId: origin.type === "conversation" ? origin.conversationId : null, operatorMcpInvocationId: origin.type === "operator_mcp_invocation" ? origin.invocationId : null, id: randomUUID(), executionInvocationId: null, messageId: null, reviewDigest: input.reviewDigest ?? null, expiresAt: input.expiresAt ?? null, status: "pending", reason: null, appliedRef: null, createdAt, updatedAt: createdAt };
+    const proposal: CopilotProposal = { ...input, origin, conversationId: origin.type === "conversation" ? origin.conversationId : null, operatorMcpInvocationId: origin.type === "operator_mcp_invocation" ? origin.invocationId : null, id: randomUUID(), executionInvocationId: null, messageId: null, reviewDigest: input.reviewDigest ?? null, reviewSnapshot: input.reviewSnapshot ?? null, expiresAt: input.expiresAt ?? null, confirmationRequirement: input.confirmationRequirement ?? null, changeEffect: input.changeEffect ?? null, approvedAt: null, approvedByUserId: null, approvalDigest: null, status: "pending", reason: null, appliedRef: null, createdAt, updatedAt: createdAt };
     this.proposals.push(proposal);
     return proposal;
   }

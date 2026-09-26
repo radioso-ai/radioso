@@ -5,9 +5,15 @@ ALTER TABLE copilot_proposals
   ADD COLUMN approved_by_user_id uuid NULL,
   ADD COLUMN approval_digest text NULL;
 
+-- A pending reviewed row was created before it carried an effect and cannot safely be tiered.
+-- Settle the small (15-minute) deploy window as stale so callers prepare a fresh review.
 UPDATE copilot_proposals
-  SET confirmation_requirement = CASE WHEN status = 'pending' THEN 'signed_in_approval' ELSE 'conversation' END
-  WHERE review_digest IS NOT NULL;
+  SET status = 'stale', confirmation_requirement = 'conversation', updated_at = now()
+  WHERE review_digest IS NOT NULL AND status = 'pending';
+
+UPDATE copilot_proposals
+  SET confirmation_requirement = 'conversation'
+  WHERE review_digest IS NOT NULL AND confirmation_requirement IS NULL;
 
 ALTER TABLE copilot_proposals
   ADD CONSTRAINT copilot_proposals_reviewed_requirement_check

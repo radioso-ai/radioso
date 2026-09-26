@@ -352,6 +352,48 @@ const seedExisting = async (fixture: ReturnType<typeof buildFixture>, name = "qu
 };
 
 describe("reviewed directives, prepared and executed through the operator MCP catalog", () => {
+  it("reports a partial structured edit as verbatim without calling the coach", async () => {
+    const fixture = buildFixture();
+    const existing = await seedExisting(fixture);
+
+    const prepared = await fixture.invoke("prepare_directive", {
+      kind: "edit", agentId: fixture.agentId, directiveId: existing.id, priority: 90,
+    }) as { review: { drafting: string } };
+
+    expect(prepared.review.drafting).toBe("verbatim");
+    expect(fixture.textGenerationClient.complete).not.toHaveBeenCalled();
+  });
+
+  it("returns the owner's typed unavailable coherence status", async () => {
+    const fixture = buildFixture();
+    fixture.checker.check.mockRejectedValueOnce(new Error("provider unavailable"));
+
+    const prepared = await fixture.invoke("prepare_directive", {
+      kind: "create", agentId: fixture.agentId, name: "coherence-unavailable", condition: { kind: "always" }, action: "Keep the requested answer concise.",
+    }) as { review: { coherence: { status: string } } };
+
+    expect(prepared.review.coherence.status).toBe("unavailable");
+  });
+
+  it("bounds removal references before persisting its readable review", async () => {
+    const fixture = buildFixture();
+    const target = await seedExisting(fixture, "target-directive");
+    fixture.directiveRepository.directives.push(...Array.from({ length: 101 }, (_, index) => toDirectiveRecord(
+      fixture.agentId,
+      { name: `referrer-${index}`, condition: { kind: "always" }, action: "Keep this reference.", excludes: [target.name] },
+      new Date(`2026-09-26T10:${String(index % 60).padStart(2, "0")}:00.000Z`),
+    )));
+
+    const prepared = await fixture.invoke("prepare_directive", {
+      kind: "remove", agentId: fixture.agentId, directiveId: target.id,
+    }) as { proposalId: string; review: { referencedBy: unknown[]; referencedByTruncated: boolean } };
+
+    expect(prepared.review.referencedBy).toHaveLength(100);
+    expect(prepared.review.referencedByTruncated).toBe(true);
+    expect(fixture.proposalRepository.proposals.find((proposal) => proposal.id === prepared.proposalId)?.reviewSnapshot)
+      .toMatchObject({ referencedBy: expect.any(Array), referencedByTruncated: true });
+  });
+
   it.each([
     { kind: "create" as const },
     { kind: "edit" as const },

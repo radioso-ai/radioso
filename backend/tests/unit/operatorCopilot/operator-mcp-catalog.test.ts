@@ -111,6 +111,7 @@ describe("OperatorMcpCatalogService", () => {
       },
       versionToken: "2026-09-26T11:00:00.000Z",
       current: null,
+      drafting: "verbatim" as const,
     }));
     const createProposal = vi.fn(async () => ({ id: "22222222-2222-4222-8222-222222222222" }));
     const adapter = createDirectiveCopilotProposalAdapter({

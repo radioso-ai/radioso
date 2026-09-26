@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { AgentService, unpublishedAgentPublicIdentity, type AgentRecord } from "../../src/modules/agents/public.js";
+import { reviewedConfirmationRequirement } from "../../src/modules/operatorCopilot/reviewedOperation.js";
 
 const agent = (): AgentRecord => ({
   ...unpublishedAgentPublicIdentity(), id: "agent-1", workspaceId: "workspace-1", name: "Support", internalName: "support",
@@ -30,6 +31,22 @@ describe("AgentService reviewed settings owner port", () => {
       expect.objectContaining({ key: "customInstruction", lifecycle: "agent_draft", reach: false }),
       expect.objectContaining({ key: "agentCardEnabled", lifecycle: "live", reach: true }),
     ]));
+    // Design §4.4 (mixed operations): one live field among several changed keys takes the whole
+    // operation's owner-declared effect to `live`, which the one policy rule turns into
+    // signed_in_approval - the copilot layer never re-derives this from the field list itself.
+    expect(prepared.effect).toEqual({ exposure: "live", reversibility: "reversible", metered: false });
+    expect(reviewedConfirmationRequirement(prepared.effect)).toBe("signed_in_approval");
+  });
+
+  it("declares a draft effect, and the conversation tier, when every changed key is an agent draft field", async () => {
+    const service = new AgentService({} as never, {} as never);
+    vi.spyOn(service, "get").mockResolvedValue({ ...agent(), isDefault: false, assistantBootstrapActive: false });
+
+    const prepared = await service.prepareFieldsProposal("workspace-1", "agent-1", { customInstruction: "Be concise." });
+
+    expect(prepared.changes).toEqual([expect.objectContaining({ key: "customInstruction", lifecycle: "agent_draft" })]);
+    expect(prepared.effect).toEqual({ exposure: "draft", reversibility: "reversible", metered: false });
+    expect(reviewedConfirmationRequirement(prepared.effect)).toBe("conversation");
   });
 
   it("does not invoke the commit hook after a stale field CAS", async () => {

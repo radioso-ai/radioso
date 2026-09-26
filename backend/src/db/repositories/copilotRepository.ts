@@ -499,7 +499,9 @@ export class CopilotRepository implements CopilotRepositoryPort, CopilotRetentio
       const claimed = await trx.updateTable("copilot_proposals")
         .set({ execution_invocation_id: input.executionInvocationId, apply_started_at: claimedAt, updated_at: claimedAt })
         .where("id", "=", input.proposalId).where("status", "=", "pending")
-        .where("expires_at", ">", lockedNow)
+        // Mirrors the pre-check above: expiry blocks a first or replacement claim, but the receipt
+        // that already crossed this boundary may still reopen its own stale lease past expiry.
+        .where((eb) => eb.or([eb("expires_at", ">", lockedNow), eb("execution_invocation_id", "=", input.executionInvocationId)]))
         .where((eb) => eb.or([eb("execution_invocation_id", "is", null), eb("execution_invocation_id", "=", input.executionInvocationId)]))
         .where((eb) => eb.or([eb("apply_started_at", "is", null), eb("apply_started_at", "<=", nowMinusSeconds(input.claimTtlSeconds))]))
         .returning(proposalColumns).executeTakeFirst();

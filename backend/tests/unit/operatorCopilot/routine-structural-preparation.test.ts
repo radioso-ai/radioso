@@ -96,6 +96,25 @@ describe("routine structural preparation", () => {
     expect(scopedReferences.assertNoScopedReferences).toHaveBeenCalledWith(expect.objectContaining({ routineId: routine.id, removedNodeIds: ["step_collect", "terminal_done"] }));
   });
 
+  it("carries the owner-declared confirmation fragment: conversation for an edit, signed-in approval with an absolute link for a delete", async () => {
+    const get = vi.fn(async () => routine);
+    const validate = vi.fn(async () => ({ ok: true, diagnostics: [] }));
+    const descriptor = createRoutineStructuralPreparationTool({
+      routines: { get, validateForDraftMutation: validate },
+      proposalRepository: { createProposal: vi.fn(async (input) => ({ id: "proposal-1", ...input })) },
+      proposalRecovery: { recoverOperatorMcpProposal: vi.fn() }, auditService: { record: vi.fn() },
+      scopedReferences: { assertNoScopedReferences: vi.fn() }, appBaseUrl: "https://app.radioso.ai",
+    });
+
+    const edited = await descriptor.createTool(context).invoke({ kind: "edit", agentId: routine.agentId, routineId: routine.id, operations: [{ kind: "set_enabled", enabled: false }] }, {} as never) as { confirmation: { requirement: string; approvalUrl?: string } };
+    expect(edited.confirmation).toMatchObject({ requirement: "conversation" });
+    expect(edited.confirmation.approvalUrl).toBeUndefined();
+
+    const deleted = await descriptor.createTool(context).invoke({ kind: "delete", agentId: routine.agentId, routineId: routine.id }, {} as never) as { confirmation: { requirement: string; approvalUrl?: string } };
+    expect(deleted.confirmation).toMatchObject({ requirement: "signed_in_approval" });
+    expect(deleted.confirmation.approvalUrl).toMatch(/^https:\/\/app\.radioso\.ai\/oauth\/operator-mcp\/proposal\//);
+  });
+
   it("recovers the original immutable review after a lost response without drafting again", async () => {
     const createProposal = vi.fn();
     const reviewSnapshot = { diagnostics: [], review: { before: {}, after: {}, truncated: false, detailAvailable: false, beforeConnections: [{ fromStep: "old", toRef: "done", guardKind: "default", ordinal: 0 }], afterConnections: [], connectionsTruncated: false, operations: [], operationsTruncated: false } };

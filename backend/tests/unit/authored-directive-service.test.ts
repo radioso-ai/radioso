@@ -194,6 +194,13 @@ describe("AuthoredDirectiveService", () => {
     ]);
     expect(disabled.coherence.status).toBe("not_checked");
     expect(removal).toMatchObject({ before: { id: existing.id }, after: null, referencedBy: [{ name: "referrer", relation: "excludes" }, { name: "referrer", relation: "dependsOn" }] });
+    // The owning directive service, not the copilot layer, declares the reviewed-confirmation
+    // effect: every draft directive change is reversible except a removal, which the reviewed
+    // reviewedConfirmationRequirement policy alone turns into signed-in approval.
+    expect(create.effect).toEqual({ exposure: "draft", reversibility: "reversible", metered: false });
+    expect(edit.effect).toEqual({ exposure: "draft", reversibility: "reversible", metered: false });
+    expect(disabled.effect).toEqual({ exposure: "draft", reversibility: "reversible", metered: false });
+    expect(removal.effect).toEqual({ exposure: "draft", reversibility: "irreversible", metered: false });
     expect(repository.created).toEqual([]);
     expect(repository.updated).toEqual([]);
     // Only the two enabled previews (create, edit) run the advisory coherence checker; the

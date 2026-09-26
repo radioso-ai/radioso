@@ -29,6 +29,8 @@ import { createIngestionSettingsReviewedPreparationTool } from "./ingestionSetti
 import type { IngestionSettingsReviewedPreparationDependencies } from "./ingestionSettingsReviewedPreparation.js";
 import { createAgentSettingsReviewedPreparationTool } from "./agentSettingsReviewedPreparation.js";
 import type { AgentSettingsReviewedPreparationDependencies } from "./agentSettingsReviewedPreparation.js";
+import { createDirectiveReviewedPreparationTool } from "./directiveReviewedPreparation.js";
+import type { DirectiveReviewedPreparationDependencies } from "./directiveReviewedPreparation.js";
 import { createWorkspaceSettingProposalCopilotTools } from "./workspaceSettingProposals.js";
 import { createEvalCopilotTools, createEvalVerificationCopilotTools } from "./eval.js";
 import type { EvalCopilotToolDependencies, EvalVerificationCopilotToolDependencies } from "./eval.js";
@@ -97,6 +99,7 @@ type CopilotToolCatalogDependencies = AgentConfigurationCopilotToolDependencies
   & IngestionSettingsProposalCopilotToolDependencies
   & Omit<IngestionSettingsReviewedPreparationDependencies, keyof IngestionSettingsProposalCopilotToolDependencies>
   & Omit<AgentSettingsReviewedPreparationDependencies, keyof IngestionSettingsProposalCopilotToolDependencies>
+  & Omit<DirectiveReviewedPreparationDependencies, keyof IngestionSettingsProposalCopilotToolDependencies>
   & ProductDocsCopilotToolDependencies
   & RoutineStructuralPreparationDependencies
   & AgentPublicationCopilotToolDependencies
@@ -143,6 +146,7 @@ export const createCopilotToolDescriptors = (
   ...createIngestionSettingsProposalCopilotTools(deps),
   createIngestionSettingsReviewedPreparationTool(deps),
   createAgentSettingsReviewedPreparationTool(deps),
+  createDirectiveReviewedPreparationTool(deps),
   ...createWorkspaceSettingProposalCopilotTools(deps),
   ...createWebsiteCrawlProposalCopilotTools(deps),
   createRoutineStructuralPreparationTool(deps),

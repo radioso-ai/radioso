@@ -1313,31 +1313,32 @@ describe("directive proposal adapter payload mapping", () => {
     expect(preview.proposed as string).toMatch(/remov/i);
   });
 
-  it("creates a new directive after an unrelated agent-row change", async () => {
+  it("creates a new directive whose fence survives an unrelated agent-row change", async () => {
     const { createDirectiveCopilotProposalAdapter } = await import("../../../src/modules/operatorCopilot/proposalAdapters.js");
+    const { DIRECTIVE_CREATE_FENCE } = await import("../../../src/modules/agents/public.js");
     const agentId = "6a6a6a6a-1111-2222-3333-444444444444";
     const create = vi.fn(async () => ({ directive: { id: "6a6a6a6a-1111-2222-3333-444444444445" } }));
-    const agentUpdatedAt = new Date("2026-09-26T10:00:00.000Z");
     const draftForProposal = vi.fn(async () => ({
       draft: { directive: { name: "locale", condition: { kind: "always" }, action: "Use Estonian." } },
-      versionToken: agentUpdatedAt.toISOString(),
+      versionToken: DIRECTIVE_CREATE_FENCE,
     }));
     const adapter = createDirectiveCopilotProposalAdapter({
       authoredDirectiveService: { list: vi.fn(async () => []), create, update: vi.fn(), delete: vi.fn() } as never,
-      directiveAuthorService: { draftForProposal } as never,
-      agentService: { get: vi.fn(async () => ({ updatedAt: new Date() })) } as never,
+      directiveAuthorService: { draftForProposal, readProposalFence: vi.fn(async () => DIRECTIVE_CREATE_FENCE) } as never,
+      // An unrelated write bumps the agent row between draft and apply; the create fence must not
+      // depend on that row at all, so applying below never has to reconcile against it.
+      agentService: { get: vi.fn(async () => ({ updatedAt: new Date("2026-09-26T12:00:00.000Z") })) } as never,
     });
     const targetRef = { agentId, directiveId: null };
 
-    // The drafted create carries the same fence readVersionToken reports, so the proposal reads as
-    // current rather than stale, and apply does not pin the agent row's updatedAt.
+    // The owner-defined create fence is the agent-exists constant, not the agent version.
     const drafted = await adapter.draft("workspace-1", targetRef, { name: "locale", condition: { kind: "always" }, action: "Use Estonian." });
-    expect(drafted.versionToken).toBe("agent-exists");
-    expect(await adapter.readVersionToken("workspace-1", targetRef)).toBe(drafted.versionToken);
+    expect(drafted.versionToken).toBe(DIRECTIVE_CREATE_FENCE);
+    expect(await adapter.readVersionToken("workspace-1", targetRef)).toBe(DIRECTIVE_CREATE_FENCE);
     await expect(adapter.applyIfVersionMatches("workspace-1", targetRef, {
       name: "locale", condition: { kind: "always" }, action: "Use Estonian.",
-    }, "agent-exists")).resolves.toMatchObject({ outcome: "applied" });
-    expect(create).toHaveBeenCalledWith("workspace-1", agentId, expect.objectContaining({ name: "locale" }), undefined);
+    }, DIRECTIVE_CREATE_FENCE)).resolves.toMatchObject({ outcome: "applied" });
+    expect(create).toHaveBeenCalledWith("workspace-1", agentId, expect.objectContaining({ name: "locale" }), {});
   });
 
   it("previews and applies a set_enabled payload as a one-field partial update", async () => {

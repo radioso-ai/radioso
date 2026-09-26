@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   DirectiveAuthorService,
+  DIRECTIVE_CREATE_FENCE,
   projectDirectiveAuthorProposalInput,
   type DirectiveAuthorTextGenerationPort,
 } from "../../src/modules/agents/services/directiveAuthorService.js";
@@ -267,6 +268,86 @@ describe("DirectiveAuthorService", () => {
     expect(result.versionToken).toBe(directiveUpdatedAt.toISOString());
     expect(result.draft.directive).toMatchObject({ action: "Keep this action.", priority: 90 });
     expect(textGenerationClient.calls).toEqual([]);
+  });
+
+  it("reports a create's fence as the owner's agent-exists constant, not the agent row's updatedAt", async () => {
+    const textGenerationClient = new FakeTextClient([]);
+    const { service, repository } = createService(textGenerationClient);
+    const agentUpdatedAt = new Date("2026-09-26T10:00:00.000Z");
+    repository.findByIdAndWorkspaceId.mockResolvedValue({
+      id: agentId,
+      name: "Coachable assistant",
+      customInstruction: "Help operators explain booking policies.",
+      greetingInstruction: "Welcome visitors warmly.",
+      updatedAt: agentUpdatedAt,
+    });
+
+    const drafted = await service.draftForProposal(workspaceId, agentId, {
+      fields: { name: "quote-primary-source", condition: { kind: "always" }, action: "Quote the source." },
+    });
+    const fence = await service.readProposalFence(workspaceId, agentId, null);
+
+    // A create's fence must not move when the agent row does - an operator drafting a directive
+    // alongside unrelated agent-setting proposals must be able to apply each independently.
+    expect(drafted.versionToken).toBe(DIRECTIVE_CREATE_FENCE);
+    expect(fence).toBe(DIRECTIVE_CREATE_FENCE);
+
+    repository.findByIdAndWorkspaceId.mockResolvedValue({
+      id: agentId,
+      name: "Coachable assistant",
+      customInstruction: "Help operators explain booking policies.",
+      greetingInstruction: "Welcome visitors warmly.",
+      updatedAt: new Date("2026-09-26T12:00:00.000Z"),
+    });
+    await expect(service.readProposalFence(workspaceId, agentId, null)).resolves.toBe(DIRECTIVE_CREATE_FENCE);
+  });
+
+  it("refuses a create's fence read once the agent no longer exists", async () => {
+    const { service, repository } = createService(new FakeTextClient([]));
+    repository.findByIdAndWorkspaceId.mockResolvedValue(null);
+
+    await expect(service.readProposalFence(workspaceId, agentId, null)).rejects.toMatchObject({ statusCode: 404 });
+  });
+
+  it("reports an edit's fence as the same directive version draftForProposal captured", async () => {
+    const textGenerationClient = new FakeTextClient([]);
+    const { service, repository } = createService(textGenerationClient);
+    const directiveUpdatedAt = new Date("2026-09-26T11:00:00.000Z");
+    const directiveId = "33333333-3333-4333-8333-333333333333";
+    repository.listDirectives.mockResolvedValue([{
+      id: directiveId,
+      agentId,
+      name: "existing-rule",
+      condition: { kind: "always" },
+      action: "Keep this action.",
+      priority: 40,
+      excludes: [],
+      tags: [],
+      surfaces: [],
+      requiredCapabilities: [],
+      dependsOn: [],
+      routes: [],
+      description: null,
+      binding: null,
+      lifecycle: null,
+      enabled: true,
+      metadata: {},
+      createdAt: new Date(),
+      updatedAt: directiveUpdatedAt,
+    }]);
+
+    const drafted = await service.draftForProposal(workspaceId, agentId, { directiveId, fields: { priority: 90 } });
+    const fence = await service.readProposalFence(workspaceId, agentId, directiveId);
+
+    expect(drafted.versionToken).toBe(directiveUpdatedAt.toISOString());
+    expect(fence).toBe(drafted.versionToken);
+  });
+
+  it("refuses a fence read for a directive id that no longer exists", async () => {
+    const { service } = createService(new FakeTextClient([]));
+
+    await expect(service.readProposalFence(workspaceId, agentId, "99999999-9999-4999-8999-999999999999"))
+      .rejects.toMatchObject({ statusCode: 404 });
   });
 
   it("refuses an unknown replacement and lists bounded valid names", async () => {

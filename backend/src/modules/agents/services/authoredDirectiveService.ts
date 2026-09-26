@@ -3,11 +3,12 @@ import { addressesSurface, effectiveSurfaces } from "../../../shared/domain/stee
 import type { DirectiveCoherenceChecker, DirectiveCoherenceVerdict } from "@radioso/conversation-contract";
 
 import type { AgentDirectiveUpdateOptions, AgentRepositoryPort } from "../../../db/repositories/agentRepository.js";
-import { badRequest, conflict, notFound } from "../../../shared/domain/errors.js";
+import { AppError, badRequest, conflict, notFound } from "../../../shared/domain/errors.js";
 import type { AgentSkillRepositoryPort } from "../../agentSkills/public.js";
 import { defaultAnswerDirectives } from "../../directives/public.js";
 import {
   authoredDirectiveInputSchema,
+  DIRECTIVE_CREATE_FENCE,
   validateDirectiveReplacementNames,
   validateAuthoredDirectiveCapabilities,
   type AuthoredDirective,
@@ -23,7 +24,25 @@ interface AuthoredDirectiveSaveResult {
   coherence: DirectiveCoherenceVerdict;
 }
 
-type AuthoredDirectiveVersionOptions = AgentDirectiveUpdateOptions;
+type AuthoredDirectiveVersionOptions = AgentDirectiveUpdateOptions & {
+  coherence?: "check" | "skip";
+};
+
+type AuthoredDirectivePreviewChange =
+  | { kind: "save"; directiveId: string | null; input: AuthoredDirectiveInput; versionToken: string }
+  | { kind: "set_enabled"; directiveId: string; enabled: boolean }
+  | { kind: "remove"; directiveId: string };
+
+interface AuthoredDirectivePreview {
+  readonly before: AuthoredDirective | null;
+  readonly after: NormalizedAuthoredDirectiveInput | null;
+  readonly coherence: { readonly status: "coherent" | "conflicts" | "not_checked" | "unavailable"; readonly conflicts: ReadonlyArray<{ directiveName: string; reason: string }>; readonly rationale: string };
+  readonly referencedBy: ReadonlyArray<{ directiveId: string; name: string; relation: "excludes" | "dependsOn" }>;
+  readonly referencedByTotal: number;
+  readonly drafting: "verbatim";
+  readonly irreversible: boolean;
+  readonly versionToken: string;
+}
 
 // Every key the input schema declares, read from the schema itself rather than hand-listed, so a
 // field added to `authoredDirectiveInputSchema` is carried forward on update automatically instead
@@ -86,6 +105,24 @@ const disabledCandidateVerdict = (): DirectiveCoherenceVerdict => ({
   rationale: "Directive is disabled and cannot fire, so it cannot conflict with other directives; coherence was not checked.",
 });
 
+const coherenceSkippedVerdict = (): DirectiveCoherenceVerdict => ({
+  coherent: true,
+  conflicts: [],
+  rationale: "Coherence check skipped for deterministic reviewed execution.",
+});
+
+/**
+ * Whether `create`/`update` refused a write because the target name collides with another
+ * directive on the agent, as opposed to the optimistic-concurrency fence losing. Both throw an
+ * AppError coded `"conflict"` from the repository, so a caller distinguishing "the world moved"
+ * (stale) from "this name is taken" (a durable refusal) needs this dedicated signal rather than
+ * the shared error code.
+ */
+export const isDirectiveNameConflict = (error: unknown): error is AppError =>
+  error instanceof AppError
+  && error.code === "conflict"
+  && (error.details as { reason?: string } | undefined)?.reason === "duplicate_name";
+
 export class AuthoredDirectiveService {
   constructor(private readonly options: AuthoredDirectiveServiceOptions) {}
 
@@ -100,7 +137,7 @@ export class AuthoredDirectiveService {
     await this.validateBinding(workspaceId, agentId, directive);
     const existingDirectives = await this.options.repository.listDirectives(agentId, workspaceId);
     this.validateReplacementNames(directive.excludes, existingDirectives);
-    const coherence = await this.checkCoherence(workspaceId, agent, directive, existingDirectives);
+    const coherence = options?.coherence === "skip" ? coherenceSkippedVerdict() : await this.checkCoherence(workspaceId, agent, directive, existingDirectives);
     const saved = await this.options.repository.createDirective(agentId, workspaceId, {
       ...directive,
       routes: [],
@@ -125,7 +162,7 @@ export class AuthoredDirectiveService {
     await this.validateBinding(workspaceId, agentId, directive);
     this.validateReplacementNames(directive.excludes, existingDirectives);
     const comparisonDirectives = existingDirectives.filter((directiveToCompare) => directiveToCompare.id !== directiveId);
-    const coherence = await this.checkCoherence(workspaceId, agent, directive, comparisonDirectives);
+    const coherence = options?.coherence === "skip" ? coherenceSkippedVerdict() : await this.checkCoherence(workspaceId, agent, directive, comparisonDirectives);
     const saved = await this.options.repository.updateDirective(agentId, workspaceId, directiveId, {
       ...directive,
       routes: [],
@@ -144,6 +181,66 @@ export class AuthoredDirectiveService {
     const deleted = await this.options.repository.deleteDirective(agentId, workspaceId, directiveId, options);
     if (!deleted) {
       throw options?.expectedUpdatedAt ? conflict("Directive was updated by another writer; reload before saving again") : notFound("Directive not found");
+    }
+  }
+
+  /** Computes the reviewed change from owner state; callers never reconstruct directive rules. */
+  async previewChange(workspaceId: string, agentId: string, change: AuthoredDirectivePreviewChange): Promise<AuthoredDirectivePreview> {
+    const agent = await this.requireAgent(workspaceId, agentId);
+    const directives = await this.options.repository.listDirectives(agentId, workspaceId);
+    const existing = change.kind === "save" && change.directiveId
+      ? directives.find((directive) => directive.id === change.directiveId) ?? null
+      : change.kind === "set_enabled" || change.kind === "remove"
+        ? directives.find((directive) => directive.id === change.directiveId) ?? null
+        : null;
+    if ((change.kind !== "save" || change.directiveId) && !existing) throw notFound("Directive not found");
+    const versionToken = existing ? existing.updatedAt.toISOString() : DIRECTIVE_CREATE_FENCE;
+    if (change.kind === "save" && change.versionToken !== versionToken) {
+      throw conflict("Directive changed while it was being prepared; prepare it again before review.");
+    }
+    if (change.kind === "remove") {
+      const referencedBy = this.referencedBy(existing!.name, directives, existing!.id);
+      return { before: existing, after: null, coherence: { status: "not_checked", conflicts: [], rationale: "Coherence is not checked for a removal." }, referencedBy, referencedByTotal: referencedBy.length, drafting: "verbatim", irreversible: true, versionToken };
+    }
+    const raw = change.kind === "set_enabled"
+      ? carryForwardAuthoredDirectiveInput({ enabled: change.enabled }, existing!)
+      : change.directiveId
+        ? carryForwardAuthoredDirectiveInput(change.input, existing!)
+        : change.input;
+    const after = this.validateInput(raw);
+    await this.validateBinding(workspaceId, agentId, after);
+    this.validateReplacementNames(after.excludes, directives);
+    if (change.kind === "set_enabled" && existing!.enabled === change.enabled) {
+      throw badRequest(`The directive "${existing!.name}" is already ${change.enabled ? "enabled" : "disabled"}.`);
+    }
+    const comparisons = existing ? directives.filter((directive) => directive.id !== existing.id) : directives;
+    const referencedBy = this.referencedBy(after.name, directives, existing?.id);
+    return {
+      before: existing,
+      after,
+      coherence: await this.reviewedCoherence(workspaceId, agent, after, comparisons),
+      referencedBy,
+      referencedByTotal: referencedBy.length,
+      drafting: "verbatim",
+      irreversible: false,
+      versionToken,
+    };
+  }
+
+  private referencedBy(name: string, directives: ReadonlyArray<AuthoredDirective>, selfId?: string): ReadonlyArray<{ directiveId: string; name: string; relation: "excludes" | "dependsOn" }> {
+    return directives.flatMap((directive) => directive.id === selfId ? [] : [
+      ...(directive.excludes.includes(name) ? [{ directiveId: directive.id, name: directive.name, relation: "excludes" as const }] : []),
+      ...(directive.dependsOn.includes(name) ? [{ directiveId: directive.id, name: directive.name, relation: "dependsOn" as const }] : []),
+    ]);
+  }
+
+  private async reviewedCoherence(workspaceId: string, agent: AuthoredDirectiveAgentContext, candidate: NormalizedAuthoredDirectiveInput, existingDirectives: AuthoredDirective[]): Promise<AuthoredDirectivePreview["coherence"]> {
+    if (!candidate.enabled) return { status: "not_checked", conflicts: [], rationale: "Coherence is not checked for a disabled directive." };
+    try {
+      const verdict = await this.checkCoherenceStrict(workspaceId, agent, candidate, existingDirectives);
+      return { status: verdict.coherent ? "coherent" : "conflicts", conflicts: verdict.conflicts, rationale: verdict.rationale };
+    } catch {
+      return { status: "unavailable", conflicts: [], rationale: "Coherence check unavailable." };
     }
   }
 
@@ -235,10 +332,20 @@ export class AuthoredDirectiveService {
     // call whose verdict the UI would discard. Re-enabling, in contrast, brings the
     // directive back into play and must still be checked, since that is exactly when a
     // reintroduced conflict would matter.
-    if (!candidate.enabled) {
-      return disabledCandidateVerdict();
-    }
+    if (!candidate.enabled) return disabledCandidateVerdict();
     try {
+      return await this.checkCoherenceStrict(workspaceId, agent, candidate, existingDirectives);
+    } catch {
+      return coherenceUnavailableVerdict();
+    }
+  }
+
+  private async checkCoherenceStrict(
+    workspaceId: string,
+    agent: AuthoredDirectiveAgentContext,
+    candidate: NormalizedAuthoredDirectiveInput,
+    existingDirectives: AuthoredDirective[],
+  ): Promise<DirectiveCoherenceVerdict> {
       const candidateDirective = authoredDirectiveToDirective(candidate);
       const comparisonDirectives = [
         // A disabled directive cannot fire, so it cannot conflict with the candidate;
@@ -250,7 +357,7 @@ export class AuthoredDirectiveService {
           addressesSurface(directive.surfaces, surface),
         ),
       );
-      return await this.options.coherenceChecker.check({
+      return this.options.coherenceChecker.check({
         invocationContext: { workspaceId, agentId: agent.id },
         agent: {
           id: agent.id,
@@ -262,9 +369,6 @@ export class AuthoredDirectiveService {
         candidate: candidateDirective,
         existingDirectives: comparisonDirectives,
       });
-    } catch {
-      return coherenceUnavailableVerdict();
-    }
   }
 
   private async requireAgent(workspaceId: string, agentId: string): Promise<AuthoredDirectiveAgentContext> {

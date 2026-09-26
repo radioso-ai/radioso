@@ -5,7 +5,7 @@ import type { AgentRepositoryPort } from "../../../db/repositories/agentReposito
 import type { ModelCallUsageContext } from "../../../shared/domain/modelCallUsageContext.js";
 import { AppError, badRequest, notFound } from "../../../shared/domain/errors.js";
 import { loadPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
-import { authoredDirectiveInputSchema, authoredDirectiveSurfaceValues, validateDirectiveReplacementNames } from "../authoredDirectives.js";
+import { DIRECTIVE_CREATE_FENCE, authoredDirectiveInputSchema, authoredDirectiveSurfaceValues, validateDirectiveReplacementNames } from "../authoredDirectives.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import { traceOperation } from "../../../shared/observability/tracing/operations.js";
 import type { TelemetryService } from "../../../shared/observability/telemetry/telemetryService.js";
@@ -81,6 +81,8 @@ const directiveAuthorDraftSchema = z.object({
 
 type DirectiveAuthorDraftInput = z.infer<typeof directiveAuthorDraftInputSchema>;
 type DirectiveAuthorDraftResult = z.infer<typeof directiveAuthorDraftSchema>;
+type DirectiveAuthorProposalDrafting = "verbatim" | "coach";
+type DirectiveAuthorProposalResult = { draft: DirectiveAuthorDraftResult; versionToken: string; current: import("../authoredDirectives.js").AuthoredDirective | null; drafting: DirectiveAuthorProposalDrafting };
 
 interface DirectiveAuthorServiceOptions {
   repository: Pick<AgentRepositoryPort, "findByIdAndWorkspaceId" | "listDirectives">;
@@ -91,6 +93,15 @@ interface DirectiveAuthorServiceOptions {
 }
 
 const PROMPT_PATH = "coach/draft-directive.md";
+
+/**
+ * A directive create's optimistic fence: whether the agent still exists, never the agent row's own
+ * `updatedAt`. Drafting several proposals together (a directive plus unrelated agent-setting
+ * changes) must not invalidate each other's creates when one applies first, so a create is fenced
+ * only on its agent, not on unrelated agent-row mutations. This exact string is persisted in
+ * pending copilot proposal version tokens, so it must not change.
+ */
+export { DIRECTIVE_CREATE_FENCE } from "../authoredDirectives.js";
 
 const cleanJsonCompletion = (raw: string): string =>
   raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/i, "").trim();
@@ -172,21 +183,31 @@ export class DirectiveAuthorService {
   /**
    * Produces a proposal draft and its optimistic fence from the same owner snapshots. An edit's
    * full payload is expanded from the directive row whose updatedAt supplies the fence; a create
-   * uses the agent row read before drafting. Consumers must persist this fence unchanged.
+   * carries the owner's `DIRECTIVE_CREATE_FENCE` constant instead of the agent row's updatedAt, so
+   * it survives unrelated agent writes made between drafting and apply. Consumers must persist this
+   * fence unchanged.
    */
   async draftForProposal(
     workspaceId: string,
     agentId: string,
     input: DirectiveAuthorDraftInput,
-  ): Promise<{ draft: DirectiveAuthorDraftResult; versionToken: string }> {
+  ): Promise<DirectiveAuthorProposalResult> {
     return this.draftWithFence(workspaceId, agentId, input);
+  }
+
+  async readProposalFence(workspaceId: string, agentId: string, directiveId: string | null): Promise<string> {
+    await this.requireAgent(workspaceId, agentId);
+    if (!directiveId) return DIRECTIVE_CREATE_FENCE;
+    const directive = (await this.options.repository.listDirectives(agentId, workspaceId)).find((item) => item.id === directiveId);
+    if (!directive) throw notFound("Directive not found");
+    return directive.updatedAt.toISOString();
   }
 
   private async draftWithFence(
     workspaceId: string,
     agentId: string,
     input: DirectiveAuthorDraftInput,
-  ): Promise<{ draft: DirectiveAuthorDraftResult; versionToken: string }> {
+  ): Promise<DirectiveAuthorProposalResult> {
     const parsedInput = directiveAuthorDraftInputSchema.parse(input);
     const agent = await this.requireAgent(workspaceId, agentId);
     const existingDirectives = await this.options.repository.listDirectives(agentId, workspaceId);
@@ -196,7 +217,7 @@ export class DirectiveAuthorService {
     if (parsedInput.directiveId && !existing) {
       throw notFound("Directive not found");
     }
-    const versionToken = (existing?.updatedAt ?? agent.updatedAt).toISOString();
+    const versionToken = existing ? existing.updatedAt.toISOString() : DIRECTIVE_CREATE_FENCE;
     const existingFields = existing ? {
       name: existing.name,
       condition: existing.condition,
@@ -220,7 +241,7 @@ export class DirectiveAuthorService {
         diagnosis: "directive_recommended",
       }, parsedInput);
       this.validateReplacementNames(result.directive.excludes ?? [], existingDirectives);
-      return { draft: result, versionToken };
+      return { draft: result, versionToken, current: existing ?? null, drafting: "verbatim" };
     }
     if (!parsedInput.coachingText || !parsedInput.turn) {
       throw badRequest(`A directive without intent needs ${missing.join(" and ")}.`);
@@ -239,7 +260,7 @@ export class DirectiveAuthorService {
     if (primaryDraft) {
       const result = this.finalizeDraft(primaryDraft, parsedInput, suppliedFields);
       this.validateReplacementNames(result.directive.excludes ?? [], existingDirectives);
-      return { draft: result, versionToken };
+      return { draft: result, versionToken, current: existing ?? null, drafting: "coach" };
     }
 
     const retry = await this.callLlm({
@@ -253,7 +274,7 @@ export class DirectiveAuthorService {
     if (retryDraft) {
       const result = this.finalizeDraft(retryDraft, parsedInput, suppliedFields);
       this.validateReplacementNames(result.directive.excludes ?? [], existingDirectives);
-      return { draft: result, versionToken };
+      return { draft: result, versionToken, current: existing ?? null, drafting: "coach" };
     }
 
     throw invalidDraftError();

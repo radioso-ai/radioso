@@ -180,8 +180,9 @@ export interface CopilotRepositoryPort {
     | { readonly status: "settled"; readonly outcome: "applied" | "stale" | "failed"; readonly appliedRef: unknown; readonly reason?: string }
     /** This same execution receipt holds the apply claim and its lease has not expired. */
     | { readonly status: "claim_held" }
-    | { readonly status: "missing" | "binding_mismatch" | "digest_mismatch" | "expired" | "canceled" | "not_prepared" }
+    | { readonly status: "missing" | "binding_mismatch" | "digest_mismatch" | "expired" | "canceled" | "not_prepared" | "approval_required" }
   >;
+  approveMcpReviewedProposal?(input: { proposalId: string; workspaceId: string; operatorUserId: string; reviewDigest: string; now: Date }): Promise<"approved" | "expired" | "not_pending" | "digest_mismatch" | "not_found">;
 }
 
 interface OperatorCopilotServiceDeps {
@@ -475,7 +476,7 @@ export class OperatorCopilotService {
     /** The authenticated MCP request's credential/grant-aware authorization. */
     readonly currentAuthorization: CopilotCurrentAuthorizationPort;
     readonly now?: Date;
-  }): Promise<CopilotClaimedProposalExecution | { status: "refused"; reason: string }> {
+  }): Promise<CopilotClaimedProposalExecution | { status: "refused"; reason: string } | { status: "approval_required"; approval: { url: string; expiresAt: string; effect: import("../../shared/domain/reviewedChangeEffect.js").ReviewedChangeEffect } }> {
     if (!input.currentAuthorization) throw new CopilotAuthorizationError();
     // The catalog gate is intentionally empty: authorization belongs to the target owner. Check
     // before claiming so a settled replay cannot disclose an old target outcome after access is revoked.
@@ -497,12 +498,28 @@ export class OperatorCopilotService {
       return claimed.outcome === "applied" ? { status: "applied", appliedRef: claimed.appliedRef, ...reason } : { status: claimed.outcome, ...reason };
     }
     if (claimed.status === "claim_held") return { status: "uncertain", reason: UNCONFIRMED_APPLY_REASON };
+    if (claimed.status === "approval_required" && existing?.expiresAt && existing.changeEffect) {
+      return { status: "approval_required", approval: { url: `/oauth/operator-mcp/proposal/${existing.id}`, expiresAt: existing.expiresAt.toISOString(), effect: existing.changeEffect } };
+    }
     if (claimed.status !== "claimed") return { status: "refused", reason: claimed.status };
     return this.executeClaimedProposal({
       input: { surface: "mcp", workspaceId: input.workspaceId, accountId: input.accountId, operatorUserId: input.operatorUserId, proposalId: input.proposalId, currentAuthorization: input.currentAuthorization },
       claim: claimed.claim,
       executionInvocationId: input.executionInvocationId,
     });
+  }
+
+  async approveReviewedProposal(input: { workspaceId: string; accountId: string; operatorUserId: string; proposalId: string; reviewDigest: string }): Promise<{ status: "approved" | "expired" | "not_pending" | "digest_mismatch" | "not_found" }> {
+    const proposal = await this.deps.repository.findProposal({ id: input.proposalId, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId });
+    if (!proposal) return { status: "not_found" };
+    await this.requireProposalAuthorization({ ...input, surface: "dashboard" }, proposal.targetType);
+    if (!this.deps.repository.approveMcpReviewedProposal) throw new Error("Reviewed proposal approval is unavailable");
+    const status = await this.deps.repository.approveMcpReviewedProposal({ ...input, now: this.deps.now?.() ?? new Date() });
+    if (status === "approved") {
+      await this.audit({ ...input, surface: "dashboard" }, { accountId: input.accountId, workspaceId: input.workspaceId, eventType: "copilot.proposal.approved", eventStatus: "success", metadata: { proposalId: proposal.id, targetType: proposal.targetType, requirement: proposal.confirmationRequirement, effect: proposal.changeEffect } });
+      this.deps.logger?.warn({ proposalId: proposal.id, targetType: proposal.targetType, requirement: proposal.confirmationRequirement }, "operator_copilot_reviewed_approval_recorded");
+    }
+    return { status };
   }
 
   async dismissProposal(input: { workspaceId: string; accountId: string; operatorUserId: string; surface: CopilotSurface; proposalId: string }): Promise<{ status: "dismissed" }> {

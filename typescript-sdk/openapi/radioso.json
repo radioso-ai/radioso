@@ -48567,6 +48567,75 @@
                           "stale"
                         ]
                       }
+                    },
+                    "reviewedOperation": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "requirement": {
+                          "type": "string",
+                          "enum": [
+                            "conversation",
+                            "signed_in_approval"
+                          ]
+                        },
+                        "effect": {
+                          "type": "object",
+                          "properties": {
+                            "exposure": {
+                              "type": "string",
+                              "enum": [
+                                "draft",
+                                "live"
+                              ]
+                            },
+                            "reversibility": {
+                              "type": "string",
+                              "enum": [
+                                "reversible",
+                                "irreversible"
+                              ]
+                            },
+                            "metered": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "exposure",
+                            "reversibility",
+                            "metered"
+                          ]
+                        },
+                        "reviewDigest": {
+                          "type": "string"
+                        },
+                        "reviewCode": {
+                          "type": "string"
+                        },
+                        "expiresAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "approvedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "review": {}
+                      },
+                      "required": [
+                        "requirement",
+                        "effect",
+                        "reviewDigest",
+                        "reviewCode",
+                        "expiresAt",
+                        "approvedAt"
+                      ]
                     }
                   },
                   "required": [
@@ -48578,7 +48647,8 @@
                     "status",
                     "preview",
                     "currentVersionMatches",
-                    "evidenceCases"
+                    "evidenceCases",
+                    "reviewedOperation"
                   ]
                 }
               }
@@ -48705,6 +48775,81 @@
           },
           "409": {
             "description": "Proposal is not pending"
+          }
+        }
+      }
+    },
+    "/api/v1/copilot/proposals/{proposalId}/approve": {
+      "post": {
+        "tags": [
+          "Copilot"
+        ],
+        "summary": "Approve a reviewed MCP operation",
+        "operationId": "approveCopilotProposal",
+        "security": [
+          {
+            "sessionCookie": [],
+            "workspaceSelection": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "proposalId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reviewDigest": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "reviewDigest"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Approval outcome",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "approved",
+                        "expired",
+                        "not_pending",
+                        "digest_mismatch"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
           }
         }
       }

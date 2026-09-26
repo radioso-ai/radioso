@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { ingestionSettingsChangeEffect, type IngestionSettingsFieldProposalPreparation, type IngestionSettingsProposalPatch, type IngestionSettingsProposalPort } from "../../settings/public.js";
+import { ingestionSettingsChangeEffect, ingestionSettingsReviewedEffect, type IngestionSettingsFieldProposalPreparation, type IngestionSettingsProposalPatch, type IngestionSettingsProposalPort } from "../../settings/public.js";
 import { copilotIngestionSettingsChangeSchema, copilotIngestionSettingsPayloadSchema } from "../contracts/ingestionSettingsAuthoring.js";
 import type { CopilotToolDescriptor } from "../contracts.js";
 import { requireCurrentCopilotPermissions } from "../authorization.js";
@@ -40,7 +40,7 @@ export const createIngestionSettingsReviewedPreparationTool = (deps: IngestionSe
     const payload = copilotIngestionSettingsPayloadSchema.parse({ name: "Ingestion settings", ...prepared.normalizedPatch, ...(rationale === undefined ? {} : { rationale }) });
     const versionToken = await deps.ingestionSettings.readFieldProposalVersion(context.workspaceId, prepared.expected);
     await requireCurrentCopilotPermissions(context, ["workspace.settings.manage"]);
-    const stored = await persistReviewedPreparation({ deps, context, targetType: "ingestion_settings", targetRef: { expectedFields: prepared.expected }, payload, versionToken, reviewSnapshot: review, operation: NAME });
+    const stored = await persistReviewedPreparation({ deps, context, targetType: "ingestion_settings", targetRef: { expectedFields: prepared.expected }, payload, versionToken, reviewSnapshot: review, operation: NAME, effect: ingestionSettingsReviewedEffect });
     return { proposalId: stored.proposal.id, reviewDigest: stored.reviewDigest, expiresAt: stored.expiresAt.toISOString(), review };
   } }),
 });

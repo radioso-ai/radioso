@@ -52,7 +52,7 @@ export const createAgentPublicationCopilotTools = (deps: AgentPublicationCopilot
       const payload = { expectedDraftGeneration: state.draft.generation, expectedPublishedRevisionId: state.draft.basePublishedRevisionId };
       const reviewSnapshot = { candidateRevisionId: candidate.id, draftGeneration: payload.expectedDraftGeneration, publishedRevisionId: payload.expectedPublishedRevisionId, validation: { status: "valid" as const } };
       await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
-      const stored = await persistReviewedPreparation({ deps, context, targetType: "agent_publication", targetRef, payload, versionToken: `${payload.expectedDraftGeneration}:${payload.expectedPublishedRevisionId ?? "none"}`, reviewSnapshot, operation: "prepare_agent_publication" });
+      const stored = await persistReviewedPreparation({ deps, context, targetType: "agent_publication", targetRef, payload, versionToken: `${payload.expectedDraftGeneration}:${payload.expectedPublishedRevisionId ?? "none"}`, reviewSnapshot, operation: "prepare_agent_publication", effect: { exposure: "live", reversibility: "reversible", metered: false } });
       return { proposalId: stored.proposal.id, reviewDigest: stored.reviewDigest, expiresAt: stored.expiresAt.toISOString(), ...reviewSnapshot };
     }}),
     describeEntity: (input, context) => ({ type: "agent", id: (input as { agentId?: string }).agentId ?? context?.pageContext.agentId ?? "" }),

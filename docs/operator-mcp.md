@@ -38,9 +38,11 @@ Recrawling, eval-suite runs, customer replies, credential administration, and pr
 
 When a routine or directive behaves differently in Test Chat than you expect, start from the session the operator ran. `test_chat_sessions` lists the agent's recent sessions with the revision each one ran and its first message, which is usually enough to find the right one and to see whether it ran the draft candidate or a published version. `test_chat_transcript` shows each turn's answer, failure code, and the stages it passed through, such as a routine activation that was skipped. `test_chat_turn_trace` returns that turn's full diagnostic spine, with each stage's inputs and outputs. To check a fix, send the same message with `send_test_chat_message`, either continuing the session or starting a new one on the revision you want to compare.
 
-## Conversational confirmation
+## Confirmation and approval
 
-The MCP client is responsible for asking the person to confirm a reviewed operation. Radioso binds execution to the prepared proposal, grant, client, workspace, principal, digest, expiry, and version fence, but it cannot independently prove that a person saw or approved the conversation. Grant `operator:write` only to clients you trust to honor that confirmation step.
+Draft, reversible changes use conversational confirmation in the MCP client. Changes that go live, cannot be undone, or use quota require approval in Radioso from the signed-in user who owns the MCP grant. The review link records approval against the exact digest and does not apply the change; call `execute_reviewed_proposal` afterwards.
+
+Prepared results include `confirmation`. For `signed_in_approval`, it includes the approval link. Calling execution before approval returns `approval_required` with that link. Approval expires with the 15-minute reviewed operation and cannot be transferred to another digest or user.
 
 Routine edits and publication are separate operations. Applying a routine or retrieval proposal changes the relevant draft according to its existing lifecycle; publishing requires a separately prepared candidate and confirmation. A changed draft, target, or expired review needs a fresh preparation.
 

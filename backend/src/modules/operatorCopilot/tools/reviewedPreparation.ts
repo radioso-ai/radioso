@@ -1,5 +1,7 @@
 import type { CopilotMcpProposalRecoveryPort, CopilotProposal, CopilotToolInvocationContext } from "../contracts.js";
 import { canonicalReviewedOperationDigest } from "../reviewedOperation.js";
+import { reviewedConfirmationRequirement } from "../reviewedOperation.js";
+import type { ReviewedChangeEffect } from "../../../shared/domain/reviewedChangeEffect.js";
 import { copilotProposalOrigin, recordProposalCreated, type CopilotProposalToolDependencies } from "./shared.js";
 
 export interface ReviewedPreparationDependencies extends CopilotProposalToolDependencies {
@@ -19,6 +21,7 @@ export const persistReviewedPreparation = async (input: {
   readonly reviewSnapshot: unknown;
   readonly operation: string;
   readonly metadata?: Record<string, unknown>;
+  readonly effect: ReviewedChangeEffect;
 }) => {
   const reviewDigest = canonicalReviewedOperationDigest({
     targetRef: input.targetRef,
@@ -28,6 +31,7 @@ export const persistReviewedPreparation = async (input: {
   });
   const now = input.deps.now?.() ?? new Date();
   const expiresAt = new Date(now.getTime() + (input.deps.reviewTtlMs ?? 15 * 60_000));
+  const confirmationRequirement = reviewedConfirmationRequirement(input.effect);
   const proposal = await input.deps.proposalRepository.createProposal({
     workspaceId: input.context.workspaceId,
     operatorUserId: input.context.operatorUserId,
@@ -40,13 +44,15 @@ export const persistReviewedPreparation = async (input: {
     reviewDigest,
     reviewSnapshot: input.reviewSnapshot,
     expiresAt,
+    confirmationRequirement,
+    changeEffect: input.effect,
   });
   await recordProposalCreated(input.deps.auditService, input.context, proposal, {
     reviewed: true,
     operation: input.operation,
     ...input.metadata,
   });
-  return { proposal, reviewDigest, expiresAt };
+  return { proposal, reviewDigest, expiresAt, confirmation: { requirement: confirmationRequirement, effect: input.effect } };
 };
 
 export const recoverReviewedPreparation = (input: {

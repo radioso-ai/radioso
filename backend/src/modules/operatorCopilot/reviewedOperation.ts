@@ -1,4 +1,23 @@
 import { createHash } from "node:crypto";
+import { z } from "zod";
+import type { ReviewedChangeEffect } from "../../shared/domain/reviewedChangeEffect.js";
+
+export type ReviewedConfirmationRequirement = "conversation" | "signed_in_approval";
+export const reviewedChangeEffectSchema = z.object({
+  exposure: z.enum(["draft", "live"]),
+  reversibility: z.enum(["reversible", "irreversible"]),
+  metered: z.boolean(),
+}).strict();
+export const reviewedApprovalStateSchema = z.object({
+  requirement: z.enum(["conversation", "signed_in_approval"]),
+  state: z.enum(["not_required", "awaiting", "approved"]),
+  approvedAt: z.string().datetime().nullable(),
+}).strict();
+
+export const reviewedConfirmationRequirement = (effect: ReviewedChangeEffect): ReviewedConfirmationRequirement =>
+  effect.exposure === "live" || effect.reversibility === "irreversible" || effect.metered
+    ? "signed_in_approval"
+    : "conversation";
 
 /** sha256's unpadded base64url encoding; shared by prepare output and execute input validation. */
 export const reviewedOperationDigestPattern = /^[A-Za-z0-9_-]{43}$/;

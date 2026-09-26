@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   DirectiveAuthorService,
+  DIRECTIVE_CREATE_FENCE,
   projectDirectiveAuthorProposalInput,
   type DirectiveAuthorTextGenerationPort,
 } from "../../src/modules/agents/services/directiveAuthorService.js";
@@ -269,7 +270,7 @@ describe("DirectiveAuthorService", () => {
     expect(textGenerationClient.calls).toEqual([]);
   });
 
-  it("reports a create's fence as the same agent version draftForProposal captured", async () => {
+  it("reports a create's fence as the owner's agent-exists constant, not the agent row's updatedAt", async () => {
     const textGenerationClient = new FakeTextClient([]);
     const { service, repository } = createService(textGenerationClient);
     const agentUpdatedAt = new Date("2026-09-26T10:00:00.000Z");
@@ -286,8 +287,26 @@ describe("DirectiveAuthorService", () => {
     });
     const fence = await service.readProposalFence(workspaceId, agentId, null);
 
-    expect(drafted.versionToken).toBe(agentUpdatedAt.toISOString());
-    expect(fence).toBe(drafted.versionToken);
+    // A create's fence must not move when the agent row does - an operator drafting a directive
+    // alongside unrelated agent-setting proposals must be able to apply each independently.
+    expect(drafted.versionToken).toBe(DIRECTIVE_CREATE_FENCE);
+    expect(fence).toBe(DIRECTIVE_CREATE_FENCE);
+
+    repository.findByIdAndWorkspaceId.mockResolvedValue({
+      id: agentId,
+      name: "Coachable assistant",
+      customInstruction: "Help operators explain booking policies.",
+      greetingInstruction: "Welcome visitors warmly.",
+      updatedAt: new Date("2026-09-26T12:00:00.000Z"),
+    });
+    await expect(service.readProposalFence(workspaceId, agentId, null)).resolves.toBe(DIRECTIVE_CREATE_FENCE);
+  });
+
+  it("refuses a create's fence read once the agent no longer exists", async () => {
+    const { service, repository } = createService(new FakeTextClient([]));
+    repository.findByIdAndWorkspaceId.mockResolvedValue(null);
+
+    await expect(service.readProposalFence(workspaceId, agentId, null)).rejects.toMatchObject({ statusCode: 404 });
   });
 
   it("reports an edit's fence as the same directive version draftForProposal captured", async () => {

@@ -14,6 +14,7 @@ import {
   readNotifyContactDelivery,
   agentReviewedSettingsPatchSchema,
   isDirectiveNameConflict,
+  DIRECTIVE_CREATE_FENCE,
   type AuthoredDirective,
   type AuthoredDirectiveInput,
   projectDirectiveAuthorProposalInput,
@@ -79,8 +80,6 @@ export interface AgentSkillMcpApplyPort {
 }
 
 const directiveTargetRefSchema = z.object({ agentId: z.string().uuid(), directiveId: z.string().uuid().nullable() }).strict();
-/** A directive create depends on the agent existing, not on unrelated agent-row mutations. */
-const directiveCreateToken = "agent-exists";
 const settingTargetRefSchema = z.object({
   agentId: z.string().uuid(),
   settingKey: z.string().min(1).max(200),
@@ -270,7 +269,7 @@ export const createDirectiveCopilotProposalAdapter = (deps: {
     if (!targetRef.directiveId) {
       return deps.directiveAuthorService.readProposalFence
         ? deps.directiveAuthorService.readProposalFence(workspaceId, targetRef.agentId, null)
-        : directiveCreateToken;
+        : DIRECTIVE_CREATE_FENCE;
     }
     const directive = await findDirectiveById(deps.authoredDirectiveService, workspaceId, targetRef.agentId, targetRef.directiveId);
     if (!directive) throw new Error("Directive no longer exists");
@@ -338,14 +337,15 @@ export const createDirectiveCopilotProposalAdapter = (deps: {
           workspaceId,
           targetRef.agentId,
           directivePayload(payload),
-          token === directiveCreateToken ? reviewedOptions : { expectedAgentUpdatedAt: versionDate(token), ...reviewedOptions },
+          token === DIRECTIVE_CREATE_FENCE ? reviewedOptions : { expectedAgentUpdatedAt: versionDate(token), ...reviewedOptions },
         )).directive;
       return { outcome: "applied" as const, appliedRef: { directiveId: directive.id } };
     } catch (error) {
       // A create or rename collision on the (agent_id, name) constraint is the directives owner's
-      // deliberate refusal, not a version fence losing. Both throw AppError "conflict", so the
-      // owner marks a name collision with a distinct detail the adapter reads instead of guessing
-      // from the token shape (which no longer holds once a create carries its real agent fence).
+      // deliberate refusal, not a version fence losing. Both a rename's CAS mismatch and a rename's
+      // name collision throw the same AppError "conflict", so the owner marks a name collision with
+      // a distinct detail the adapter reads here instead of guessing from the token shape - a guess
+      // that only ever covered creates and never an update's rename collision.
       if (isDirectiveNameConflict(error)) {
         return { outcome: "failed" as const, reason: error.message };
       }
@@ -362,8 +362,9 @@ export const createDirectiveCopilotProposalAdapter = (deps: {
     });
     const directive = directivePayload(draft.draft.directive);
     const summary = boundedSummary(describeDirectiveChange(directive, draft.draft.rationale));
-    // Creates and edits keep the owner snapshot fence. A create therefore becomes stale when
-    // another agent write lands between preparation and reviewed execution.
+    // An edit keeps the directive's own snapshot fence and goes stale if that directive changes
+    // before execution. A create carries the owner's DIRECTIVE_CREATE_FENCE instead, so unrelated
+    // agent writes between preparation and reviewed execution never invalidate it.
     return { payload: { ...directive, rationale: summary }, targetLabel: directive.name, summary, versionToken: draft.versionToken };
   },
   async reconcileMcpInterruptedApply() {

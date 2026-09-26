@@ -59,6 +59,7 @@ export {
 } from "./routineScopedReferenceGuard.js";
 export {
   DirectiveAuthorService,
+  DIRECTIVE_CREATE_FENCE,
   directiveAuthorDraftInputSchema,
   directiveAuthorProposalInputSchema,
   projectDirectiveAuthorProposalInput,

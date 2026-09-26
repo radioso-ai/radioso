@@ -421,8 +421,8 @@ describe("reviewed directives, prepared and executed through the operator MCP ca
     }) as { proposalId: string; reviewDigest: string };
     await fixture.invoke("execute_reviewed_proposal", { proposalId: firstPrepare.proposalId, reviewDigest: firstPrepare.reviewDigest });
 
-    // Prepared fresh, after the first create already bumped the agent row, so this one's own
-    // fence is current — only the (agent_id, name) collision can refuse it.
+    // A create's fence is the agent-exists constant regardless of when it was prepared, so only
+    // the (agent_id, name) collision - not a stale fence - can refuse this second create.
     const secondPrepare = await fixture.invoke("prepare_directive", {
       kind: "create", agentId: fixture.agentId, name: "dup-name", condition: { kind: "always" }, action: "Second.",
     }) as { proposalId: string; reviewDigest: string };
@@ -433,21 +433,24 @@ describe("reviewed directives, prepared and executed through the operator MCP ca
     expect(fixture.directiveRepository.directives.filter((directive) => directive.name === "dup-name")).toHaveLength(1);
   });
 
-  it("reports a create as stale, not failed, once another write on the agent lands before execute", async () => {
+  it("applies a create even after an unrelated write on the same agent lands before execute", async () => {
     const fixture = buildFixture();
     const prepared = await fixture.invoke("prepare_directive", {
-      kind: "create", agentId: fixture.agentId, name: "stale-create", condition: { kind: "always" }, action: "Should go stale.",
+      kind: "create", agentId: fixture.agentId, name: "survives-unrelated-write", condition: { kind: "always" }, action: "Should still apply.",
     }) as { proposalId: string; reviewDigest: string };
 
     // Bypasses the copilot layer entirely: an unrelated directive write on the same agent, which
-    // bumps agents.updated_at and moves the create's own fence out from under it.
+    // bumps agents.updated_at. A create's fence is the agent-exists constant, not that row version,
+    // so this must not invalidate the prepared create - the incident this behavior fixes was an
+    // operator drafting a directive alongside agent-setting proposals where applying one first
+    // used to invalidate the others.
     await new AuthoredDirectiveService({ repository: fixture.directiveRepository, coherenceChecker: fixture.checker, registeredCapabilityNames: new Set() })
       .create(workspaceId, fixture.agentId, { name: "unrelated", condition: { kind: "always" }, action: "Something else." }, { coherence: "skip" });
 
-    const executed = await fixture.invoke("execute_reviewed_proposal", { proposalId: prepared.proposalId, reviewDigest: prepared.reviewDigest }) as { status: string };
+    const executed = await fixture.invoke("execute_reviewed_proposal", { proposalId: prepared.proposalId, reviewDigest: prepared.reviewDigest }) as { status: string; appliedRef: unknown };
 
-    expect(executed.status).toBe("stale");
-    expect(fixture.directiveRepository.directives.find((directive) => directive.name === "stale-create")).toBeUndefined();
+    expect(executed.status).toBe("applied");
+    expect(fixture.directiveRepository.directives.find((directive) => directive.name === "survives-unrelated-write")).toBeDefined();
   });
 
   it("reports an edit as stale once the same directive changes before execute", async () => {

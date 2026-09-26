@@ -146,6 +146,8 @@ try {
   expectStatus(listed, 200, "authenticated tools/list");
   const tools = await listed.json() as { result?: { tools?: Array<{ name: string }> } };
   assert.ok(tools.result?.tools?.some((tool) => tool.name === "execute_reviewed_proposal"));
+  assert.ok(tools.result?.tools?.some((tool) => tool.name === "prepare_agent_settings"));
+  assert.ok(tools.result?.tools?.some((tool) => tool.name === "prepare_ingestion_settings"));
   const mcpCall = async (id: string, name: string, arguments_: Record<string, unknown>, operationId = id) => {
     const response = await fetch(resourceUrl, {
       method: "POST",
@@ -162,6 +164,77 @@ try {
       error?: unknown;
     }>;
   };
+  const baselinePublication = await mcpCall("mcp1150-settings-baseline-publication", "prepare_agent_publication", { agentId: agent.id });
+  const baselinePublicationReview = baselinePublication.result?.structuredContent;
+  const baselinePublished = await mcpCall("mcp1150-settings-baseline-publication-execute", "execute_reviewed_proposal", { proposalId: baselinePublicationReview!.proposalId, reviewDigest: baselinePublicationReview!.reviewDigest });
+  assert.equal(baselinePublished.result?.structuredContent?.status, "applied");
+  const baselinePublicationState = await mcpCall("mcp1150-settings-baseline-publication-state", "agent_publication_state", { agentId: agent.id });
+  const baselinePublishedRevisionId = baselinePublicationState.result?.structuredContent?.publishedRevisionId;
+  assert.equal(typeof baselinePublishedRevisionId, "string", "baseline publication must establish the live revision");
+
+  const agentSettings = await mcpCall("mcp1150-agent-settings-prepare", "prepare_agent_settings", {
+    agentId: agent.id,
+    patch: { name: "MCP reviewed settings", customInstruction: "Answer with the operator-approved policy." },
+  });
+  const agentSettingsReview = agentSettings.result?.structuredContent;
+  assert.equal(typeof agentSettingsReview?.proposalId, "string", "agent settings proposal id is required");
+  assert.equal(typeof agentSettingsReview?.reviewDigest, "string", "agent settings review digest is required");
+  const agentSettingsChanges = (agentSettingsReview?.review as { changes?: Array<{ key?: string; lifecycle?: string }> } | undefined)?.changes;
+  assert.equal(agentSettingsChanges?.find((change) => change.key === "name")?.lifecycle, "live");
+  assert.equal(agentSettingsChanges?.find((change) => change.key === "customInstruction")?.lifecycle, "agent_draft");
+  let agentSettingsExecuteCalls = 0;
+  const executeAgentSettingsIfConfirmed = async (decision: "confirmed" | "declined" | "absent") => {
+    if (decision !== "confirmed") return null;
+    agentSettingsExecuteCalls += 1;
+    return mcpCall("mcp1150-agent-settings-execute", "execute_reviewed_proposal", {
+      proposalId: agentSettingsReview!.proposalId,
+      reviewDigest: agentSettingsReview!.reviewDigest,
+    });
+  };
+  for (const decision of ["declined", "absent"] as const) {
+    assert.equal(await executeAgentSettingsIfConfirmed(decision), null);
+    assert.equal(agentSettingsExecuteCalls, 0);
+    const unchanged = await mcpCall(`mcp1150-agent-settings-${decision}`, "agent_configuration", { mode: "detail", agentId: agent.id });
+    assert.equal((unchanged.result?.structuredContent?.agent as { name?: string } | undefined)?.name, "MCP retrieval acceptance");
+  }
+  const agentSettingsExecuted = await executeAgentSettingsIfConfirmed("confirmed");
+  assert.equal(agentSettingsExecuteCalls, 1);
+  assert.equal(agentSettingsExecuted?.result?.structuredContent?.status, "applied");
+  const agentSettingsReadback = await mcpCall("mcp1150-agent-settings-readback", "agent_configuration", { mode: "detail", agentId: agent.id });
+  assert.equal((agentSettingsReadback.result?.structuredContent?.agent as { name?: string } | undefined)?.name, "MCP reviewed settings");
+  const draftOnlyState = await mcpCall("mcp1150-agent-settings-draft-state", "agent_publication_state", { agentId: agent.id });
+  assert.equal(draftOnlyState.result?.structuredContent?.publishedRevisionId, baselinePublishedRevisionId, "customInstruction remains draft-only until publication");
+  assert.ok((draftOnlyState.result?.structuredContent?.draftGeneration as number) > (baselinePublicationState.result?.structuredContent?.draftGeneration as number));
+
+  const ingestionBefore = await mcpCall("mcp1150-ingestion-settings-before", "workspace_settings", {});
+  const currentChunkSize = (ingestionBefore.result?.structuredContent?.ingestion as { fixedWindowChunkSize?: number } | undefined)?.fixedWindowChunkSize;
+  assert.equal(typeof currentChunkSize, "number", "workspace ingestion settings are required");
+  const nextChunkSize = currentChunkSize === 1_500 ? 1_600 : 1_500;
+  const ingestionSettings = await mcpCall("mcp1150-ingestion-settings-prepare", "prepare_ingestion_settings", { fixedWindowChunkSize: nextChunkSize });
+  const ingestionSettingsReview = ingestionSettings.result?.structuredContent;
+  assert.equal(typeof ingestionSettingsReview?.proposalId, "string", "ingestion settings proposal id is required");
+  assert.equal(typeof ingestionSettingsReview?.reviewDigest, "string", "ingestion settings review digest is required");
+  let ingestionSettingsExecuteCalls = 0;
+  const executeIngestionSettingsIfConfirmed = async (decision: "confirmed" | "declined" | "absent") => {
+    if (decision !== "confirmed") return null;
+    ingestionSettingsExecuteCalls += 1;
+    return mcpCall("mcp1150-ingestion-settings-execute", "execute_reviewed_proposal", {
+      proposalId: ingestionSettingsReview!.proposalId,
+      reviewDigest: ingestionSettingsReview!.reviewDigest,
+    });
+  };
+  for (const decision of ["declined", "absent"] as const) {
+    assert.equal(await executeIngestionSettingsIfConfirmed(decision), null);
+    assert.equal(ingestionSettingsExecuteCalls, 0);
+    const unchanged = await mcpCall(`mcp1150-ingestion-settings-${decision}`, "workspace_settings", {});
+    assert.equal((unchanged.result?.structuredContent?.ingestion as { fixedWindowChunkSize?: number } | undefined)?.fixedWindowChunkSize, currentChunkSize);
+  }
+  const ingestionSettingsExecuted = await executeIngestionSettingsIfConfirmed("confirmed");
+  assert.equal(ingestionSettingsExecuteCalls, 1);
+  assert.equal(ingestionSettingsExecuted?.result?.structuredContent?.status, "applied");
+  const ingestionSettingsReadback = await mcpCall("mcp1150-ingestion-settings-readback", "workspace_settings", {});
+  assert.equal((ingestionSettingsReadback.result?.structuredContent?.ingestion as { fixedWindowChunkSize?: number } | undefined)?.fixedWindowChunkSize, nextChunkSize);
+
   const inspected = await mcpCall("mcp1150-retrieval-read", "retrieval_settings", { agentId: agent.id });
   assert.ok(inspected.result?.structuredContent, `retrieval settings result is required: ${JSON.stringify(inspected)}`);
   const prepared = await mcpCall("mcp1150-retrieval-prepare", "prepare_retrieval_settings", { agentId: agent.id, patch: { vectorTopK: 17 } });

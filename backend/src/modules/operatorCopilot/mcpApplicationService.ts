@@ -25,7 +25,7 @@ import type { CopilotCurrentAuthorizationPort, CopilotToolInvocationContext } fr
 import { OperatorMcpCatalogError, OperatorMcpCatalogService } from "./mcpCatalog.js";
 import type { OperatorMcpInvocationRecord, OperatorMcpInvocationRepositoryPort } from "./mcpContracts.js";
 import { AppError } from "../../shared/domain/errors.js";
-import { toolRejectionDetail } from "./invalidArgumentDetails.js";
+import { toolRejectionDetail, type OperatorMcpRejectionDetail } from "./invalidArgumentDetails.js";
 
 const MAX_RESULT_BYTES = 256 * 1024;
 const PROOF_TTL_MS = 15_000;
@@ -40,7 +40,7 @@ export class OperatorMcpApplicationError extends Error {
     | "unknown_tool" | "invalid_arguments" | "missing_configuration" | "operation_conflict" | "budget_exhausted" | "result_too_large" | "invalid_result",
   readonly requiredScope?: OperatorMcpScope,
   /** Rejected argument paths, so a caller can correct the call instead of guessing. */
-  readonly details?: readonly string[]) {
+  readonly details?: readonly OperatorMcpRejectionDetail[]) {
     super(code);
   }
 }
@@ -119,18 +119,26 @@ const replayResponse = (invocation: OperatorMcpInvocationRecord): OperatorInvoca
 
 // Statuses a tool's own domain rejection can carry that are the caller's mistake to correct:
 // 400 bad input, 404 an id addressing nothing this credential can reach, 409 a collision with
-// current workspace state (e.g. naming a context variable that already exists). Everything else
-// (a plain dependency failure, an unrecognized AppError) is left unchanged so it keeps surfacing
-// as the outage it actually is.
+// current workspace state (e.g. naming a context variable that already exists). A 422 is only
+// caller-correctable when its stable domain code says so: other 422s can be authoring/model
+// failures and must remain visible as outages rather than directing the caller to alter input.
 const CALLER_REJECTION_STATUSES = new Set([400, 404, 409]);
+const CALLER_REJECTION_422_CODES = new Set(["revision_invalid"]);
 
 const toApplicationError = (rawError: unknown): unknown => {
   if (!(rawError instanceof AppError)) return rawError;
   if (rawError.code === "retrieval_not_configured") return new OperatorMcpApplicationError("missing_configuration");
-  if (CALLER_REJECTION_STATUSES.has(rawError.statusCode)) {
+  if (CALLER_REJECTION_STATUSES.has(rawError.statusCode)
+    || (rawError.statusCode === 422 && CALLER_REJECTION_422_CODES.has(rawError.code))) {
     // The tool's own rejection sentence is the only account of what was wrong with the call;
     // without it the caller reads the bare code and has to guess again.
-    return new OperatorMcpApplicationError("invalid_arguments", undefined, toolRejectionDetail(rawError.message));
+    const diagnostics = rawError.details && typeof rawError.details === "object" && !Array.isArray(rawError.details)
+      ? (rawError.details as { diagnostics?: unknown }).diagnostics
+      : undefined;
+    const legacyMessage = rawError.statusCode === 422 && rawError.code === "revision_invalid"
+      ? "The requested revision cannot be served. Use the diagnostic code and location to correct it."
+      : rawError.message;
+    return new OperatorMcpApplicationError("invalid_arguments", undefined, toolRejectionDetail(legacyMessage, diagnostics));
   }
   return rawError;
 };
@@ -462,6 +470,9 @@ export class OperatorMcpApplicationService {
           principal, invocationId: input.proof.invocationId, method: "tools/call", descriptorName: input.name,
           capabilityShape, eventStatus: "success", outcome: "replayed", reason: "operation_replay",
         });
+        if (replayed.safeOutcomeCode === "invalid_arguments") {
+          throw new OperatorMcpApplicationError("invalid_arguments", undefined, replayed.safeRejectionDetails);
+        }
         return replayResponse(replayed);
       }
       if (!readyToInvoke) throw new OperatorMcpApplicationError("operation_conflict");
@@ -510,6 +521,9 @@ export class OperatorMcpApplicationService {
         invocationId: input.proof.invocationId,
         status: refused ? "refused" : "failed",
         safeOutcomeCode: reason,
+        ...(error instanceof OperatorMcpApplicationError && error.code === "invalid_arguments" && error.details
+          ? { safeRejectionDetails: error.details }
+          : {}),
         now: this.now(),
       }).catch(() => undefined);
       await this.audit({

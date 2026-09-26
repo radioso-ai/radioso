@@ -8,7 +8,7 @@ const inputSchema = z.object({ proposalId: z.string().uuid() }).strict();
 const outputSchema = z.object({ proposalId: z.string().uuid(), status: z.literal("dismissed") }).strict();
 
 export interface CancelReviewedProposalPort {
-  cancelMcpReviewedProposal(input: { workspaceId: string; accountId: string; operatorUserId: string; grantId: string; clientId: string; proposalId: string; currentAuthorization: CopilotCurrentAuthorizationPort }): Promise<{ readonly status: "dismissed" | "not_found" | "not_cancellable" }>;
+  cancelMcpReviewedProposal(input: { workspaceId: string; accountId: string; operatorUserId: string; grantId: string; clientId: string; proposalId: string; currentAuthorization: CopilotCurrentAuthorizationPort }): Promise<{ readonly status: "dismissed" | "not_found" | "not_cancellable" | "dashboard_reviewed" }>;
 }
 
 const DESCRIPTION = "Cancel one pending reviewed operation a prepare_* tool created, bound to this MCP grant and client.";
@@ -32,6 +32,7 @@ const cancel = async (
     currentAuthorization: context.currentAuthorization,
   });
   if (result.status === "not_found") throw notFound(REVIEWED_OPERATION_NOT_FOUND);
+  if (result.status === "dashboard_reviewed") throw badRequest("This is a dashboard-reviewed proposal. Read it with proposal_detail.");
   if (result.status === "not_cancellable") throw badRequest(REVIEWED_OPERATION_NOT_CANCELLABLE);
   return { proposalId, status: result.status };
 };

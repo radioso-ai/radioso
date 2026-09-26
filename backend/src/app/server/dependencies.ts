@@ -849,7 +849,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     routines: {
       findCreateConflict: routineDefinitionService.findCreateConflict.bind(routineDefinitionService),
       get: routineDefinitionService.get.bind(routineDefinitionService),
-      validate: routineDefinitionService.validate.bind(routineDefinitionService),
+      validateForDraftMutation: routineDefinitionService.validateForDraftMutation.bind(routineDefinitionService),
     },
     scopedReferences: scopedRoutineReferences,
     reviewedProposalExecution: {
@@ -863,11 +863,21 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
         if (!operatorCopilotService) throw new Error("Operator Copilot execution service is not initialized");
         return operatorCopilotService.getMcpReviewedProposal(input);
       },
+      isDashboardReviewedProposal: async (input) => {
+        if (!operatorCopilotService) throw new Error("Operator Copilot proposal service is not initialized");
+        return operatorCopilotService.isDashboardReviewedProposal(input);
+      },
     },
     cancelReviewedProposal: {
       cancelMcpReviewedProposal: async (input) => {
         if (!operatorCopilotService) throw new Error("Operator Copilot execution service is not initialized");
         return operatorCopilotService.cancelMcpReviewedProposal(input);
+      },
+    },
+    proposalDetail: {
+      getProposalDetail: async (input) => {
+        if (!operatorCopilotService) throw new Error("Operator Copilot proposal service is not initialized");
+        return operatorCopilotService.getProposalDetail(input);
       },
     },
     retrievalAuthoring,

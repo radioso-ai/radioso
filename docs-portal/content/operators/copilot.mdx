@@ -1,7 +1,7 @@
 ---
 title: "Ray"
 description: "Use Ray in the dashboard to triage what needs attention, investigate agent behavior, edit routines, test a routine change before it ships, and review linked activity and proposals."
-last_updated: 2026-09-25
+last_updated: 2026-09-26
 ---
 
 # Ray
@@ -93,10 +93,10 @@ An MCP-compatible engine can use Ray's operator tools through **Settings → API
 
 The MCP catalog has this boundary:
 
-- `operator:read` — read workspace and agent state that the user can already access, including workspace settings.
+- `operator:read` — read workspace and agent state that the user can already access, including workspace settings and `proposal_detail`, which returns a dashboard-safe proposal preview and tells the client whether it is a reviewed operation.
 - `operator:probe` — run bounded diagnostics, including a retrieval probe against an agent's configured source scope and retrieval settings.
 - `operator:propose` — prepare a reviewable routine, retrieval, or publication change without applying it.
-- `operator:write` — execute, inspect the outcome of, or cancel one reviewed operation bound to the same grant and client. These tools reach only an operation a `prepare_*` tool created; a person approves or dismisses a `propose_*` proposal in the dashboard.
+- `operator:write` — execute, inspect the outcome of, or cancel one reviewed operation bound to the same grant and client. These tools reach only an operation a `prepare_*` tool created; a person approves or dismisses a `propose_*` proposal in the dashboard, which an external client reads with `proposal_detail`.
 - `operator:act` — set a version-fenced triage state.
 
 Use `propose_directive` with `name`, `condition`, `action`, `priority`, and `excludes` when an operator requires exact directive text. A new directive can omit `intent` only when `name`, `condition`, and `action` are present; otherwise the coach completes the missing fields. Supplied fields remain verbatim, and an edit keeps every field the request omits. `priority` ranges from 0 through 100. Each `excludes` entry must match a built-in or authored directive on that agent.

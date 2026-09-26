@@ -91,6 +91,7 @@ export const createDocumentCopilotProposalAdapter = (
 
   return {
     targetType: "document",
+    proposalDetailTargetRef: (rawTargetRef) => ({ documentId: copilotDocumentTargetRefSchema.parse(rawTargetRef).documentId }),
 
     async readVersionToken(workspaceId, rawTargetRef, rawPayload) {
       const targetRef = copilotDocumentTargetRefSchema.parse(rawTargetRef);

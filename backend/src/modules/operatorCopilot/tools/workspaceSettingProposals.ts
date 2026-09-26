@@ -18,7 +18,7 @@ const MANAGE_SETTINGS = ["workspace.settings.manage"] as const;
 const NAME = "propose_workspace_setting";
 const DESCRIPTION = "Propose a change to the workspace's assistant wording or its public channels — assistant name, greeting, default locale, custom instruction, the anonymous chat link, and the website embed's allowed origins and launcher — for the operator to review and apply. Name only the fields you want changed; the rest are carried over from the stored settings. Enabling the anonymous chat link, enabling the embed, or adding an allowed origin changes who can reach the agent, and the card says so. To change the behavior of one agent among several rather than the workspace's own surface, use propose_agent_setting.";
 
-export type WorkspaceSettingProposalCopilotToolDependencies = CopilotProposalToolDependencies;
+type WorkspaceSettingProposalCopilotToolDependencies = CopilotProposalToolDependencies;
 
 const stated = (value: unknown): string => {
   switch (typeof value) {
@@ -60,7 +60,7 @@ export const createWorkspaceSettingProposalCopilotTools = (
     uiLabel: "Drafting a workspace settings change",
     contributingModule: "settings",
     dashboardSubject: { type: "proposal" },
-    requiredPermissions: [...MANAGE_SETTINGS] as unknown as CopilotToolDescriptor["requiredPermissions"],
+    requiredPermissions: [...MANAGE_SETTINGS],
     createTool: (context) => ({
       ...shared,
       invoke: async (rawChange) => {

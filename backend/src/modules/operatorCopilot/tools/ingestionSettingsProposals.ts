@@ -45,7 +45,7 @@ export const createIngestionSettingsProposalCopilotTools = (
     uiLabel: "Drafting an ingestion settings change",
     contributingModule: "settings",
     dashboardSubject: { type: "proposal" },
-    requiredPermissions: [...MANAGE_SETTINGS] as unknown as CopilotToolDescriptor["requiredPermissions"],
+    requiredPermissions: [...MANAGE_SETTINGS],
     reconcileMcpInvocation: async ({ invocation, context, staleBefore, now }) => {
       if (!invocation.operationId) return { status: "conflict" };
       const recovery = await deps.proposalRecovery.recoverOperatorMcpProposal({

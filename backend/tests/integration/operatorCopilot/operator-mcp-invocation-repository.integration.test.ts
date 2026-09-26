@@ -148,8 +148,8 @@ describeIntegration("OperatorMcpInvocationRepository", () => {
     await expect(repository.admit(running)).resolves.toMatchObject({ status: "admitted" });
     await expect(repository.claimRunning({ invocationId: running.id, now: running.now })).resolves.toMatchObject({ status: "running" });
     await expect(repository.refundReservation({ invocationId: running.id, now: running.now })).resolves.toBe(false);
-    await expect(repository.recordOutcome({ invocationId: running.id, status: "completed", safeOutcomeCode: "ok", resultReference: "result-1", now: running.now })).resolves.toMatchObject({
-      status: "completed", safeOutcomeCode: "ok", resultReference: "result-1",
+    await expect(repository.recordOutcome({ invocationId: running.id, status: "completed", safeOutcomeCode: "ok", safeRejectionDetails: [{ routineId: running.id, code: "node_id_collision", location: "nodes[0].id", message: "Duplicate node" }], resultReference: "result-1", now: running.now })).resolves.toMatchObject({
+      status: "completed", safeOutcomeCode: "ok", resultReference: "result-1", safeRejectionDetails: [{ routineId: running.id, code: "node_id_collision", location: "nodes[0].id", message: "Duplicate node" }],
     });
   });
 

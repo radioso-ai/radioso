@@ -55,6 +55,8 @@ import { createAgentPublicationCopilotTools } from "./agentPublication.js";
 import type { AgentPublicationCopilotToolDependencies } from "./agentPublication.js";
 import { createRetrievalAuthoringCopilotTools } from "./retrievalAuthoring.js";
 import type { RetrievalAuthoringCopilotToolDependencies } from "./retrievalAuthoring.js";
+import { createProposalDetailTool } from "./proposalDetail.js";
+import type { CopilotProposalDetailReadPort } from "../service.js";
 
 export type CopilotAgentPort = CopilotAgentConfigurationPort & CopilotAgentSkillsAgentPort & CopilotContextVariablesAgentPort;
 
@@ -91,7 +93,7 @@ type CopilotToolCatalogDependencies = AgentConfigurationCopilotToolDependencies
   & RoutineStructuralPreparationDependencies
   & AgentPublicationCopilotToolDependencies
   & RetrievalAuthoringCopilotToolDependencies
-  & { readonly reviewedProposalExecution: ReviewedProposalExecutionPort; readonly reviewedProposalOutcome: ReviewedProposalOutcomePort; readonly cancelReviewedProposal: CancelReviewedProposalPort };
+  & { readonly reviewedProposalExecution: ReviewedProposalExecutionPort; readonly reviewedProposalOutcome: ReviewedProposalOutcomePort; readonly cancelReviewedProposal: CancelReviewedProposalPort; readonly proposalDetail: CopilotProposalDetailReadPort };
 
 /** Composition-only barrel; each descriptor remains published from its owner module. */
 export const createCopilotToolDescriptors = (
@@ -134,6 +136,7 @@ export const createCopilotToolDescriptors = (
   createRoutineStructuralPreparationTool(deps),
   ...createAgentPublicationCopilotTools(deps),
   ...createRetrievalAuthoringCopilotTools(deps),
+  createProposalDetailTool(deps.proposalDetail),
   createReviewedProposalExecutionTool(deps.reviewedProposalExecution),
   createReviewedProposalOutcomeTool(deps.reviewedProposalOutcome),
   createCancelReviewedProposalTool(deps.cancelReviewedProposal),

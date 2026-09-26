@@ -81,7 +81,7 @@ describe("createCopilotRoutes", () => {
   });
 
   it("resolves a proposal from its owning workspace instead of dashboard workspace state", async () => {
-    const resolveProposalWorkspace = vi.fn(async () => WORKSPACE_ID);
+    const resolveProposalWorkspaceForSession = vi.fn(async () => ({ kind: "found" as const, workspaceId: WORKSPACE_ID }));
     const getProposal = vi.fn(async () => ({
       proposal: {
         id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
@@ -119,7 +119,7 @@ describe("createCopilotRoutes", () => {
         hasPermission: vi.fn(async () => true),
       },
       llmCapabilityResolver: { async resolve() { return {}; } },
-      operatorCopilotService: { resolveProposalWorkspace, getProposal },
+      operatorCopilotService: { resolveProposalWorkspaceForSession, getProposal },
       copilotToolCatalog: [],
       abuseControlService: { enforce: vi.fn(async () => admittedAbuseControlDecision()) },
       auditService: { record: vi.fn(async () => {}) },
@@ -132,18 +132,45 @@ describe("createCopilotRoutes", () => {
 
     expect(response.status).toBe(200);
     expect(response.body.workspaceId).toBe(WORKSPACE_ID);
-    expect(resolveProposalWorkspace).toHaveBeenCalledWith({
+    expect(resolveProposalWorkspaceForSession).toHaveBeenCalledWith({
       accountId: ACCOUNT_ID,
       operatorUserId: USER_ID,
       proposalId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
     });
     expect(getProposal).toHaveBeenCalledWith({
       workspaceId: WORKSPACE_ID,
+      accountId: ACCOUNT_ID,
       operatorUserId: USER_ID,
       proposalId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
     });
-    expect(requirePermission).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: WORKSPACE_ID }));
+    expect(requirePermission).not.toHaveBeenCalled();
     expect(resolveDashboardWorkspace).not.toHaveBeenCalled();
+  });
+
+  it("offers an account switch only when the signed-in operator is an active member of the proposal account", async () => {
+    const app = express();
+    app.use(express.json());
+    app.use((req, _res, next) => {
+      req.cookies = Object.fromEntries((req.header("cookie") ?? "").split(";").map((part) => part.trim().split("=")).filter((part): part is [string, string] => part.length === 2));
+      next();
+    });
+    const resolveProposalWorkspaceForSession = vi.fn(async () => ({
+      kind: "other_account" as const, accountId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", accountName: "Other account", workspaceId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    }));
+    app.use("/api/v1/copilot", createCopilotRoutes({
+      env: { SESSION_COOKIE_NAME: "radioso_session" }, authService: { async authenticateSession() { return { accountId: ACCOUNT_ID, userId: USER_ID, sessionId: "session-id" }; } },
+      workspaceSessionService: {}, accountAccessService: { async requireActiveMembership() {}, async requirePermission() {}, hasPermission: vi.fn(async () => true) },
+      llmCapabilityResolver: {}, operatorCopilotService: { resolveProposalWorkspaceForSession }, copilotToolCatalog: [],
+      abuseControlService: { enforce: vi.fn(async () => admittedAbuseControlDecision()) }, auditService: { record: vi.fn(async () => {}) },
+    } as never));
+
+    const response = await request(app).get("/api/v1/copilot/proposals/eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee").set("Cookie", "radioso_session=valid-session");
+
+    expect(response.status).toBe(409);
+    expect(response.body.error).toEqual({
+      code: "proposal_account_mismatch", message: "This proposal belongs to another account.",
+      details: { accountId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", accountName: "Other account", workspaceId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb" },
+    });
   });
 
   it("lets a document manager apply a document proposal, without agent management", async () => {

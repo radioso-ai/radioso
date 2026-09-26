@@ -70,6 +70,23 @@ describe("operator backend adapter", () => {
     })).rejects.toMatchObject({ code: "invalid_arguments", status: 400, details: ["kind: invalid_enum_value", "x".repeat(300)] });
   });
 
+  it("forwards structured routine diagnostics while continuing to accept legacy string details", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
+      code: "invalid_arguments", details: [{ routineId: id, routineName: "Escalate", code: "node_id_collision", location: "nodes[0].id", message: "Duplicate node" }, "legacy detail"],
+    }), { status: 400 }));
+    await expect(createOperatorBackendAdapter({ baseUrl: "https://app.example", fetchImpl, internalSecret: "adapter-secret-key-12345678901234567890", requestTimeoutMs: 1_000 }).invoke({ proof, name: "prepare_routine_structure", arguments: {}, bodyDigest: sha256Digest("{}") }))
+      .rejects.toMatchObject({ details: [{ routineId: id, routineName: "Escalate", code: "node_id_collision", location: "nodes[0].id", message: "Duplicate node" }, "legacy detail"] });
+  });
+
+  it("keeps a canonical legacy detail for an origin/main edge during backend-first rollout", async () => {
+    const body = { code: "invalid_arguments", details: [{ routineId: id, code: "node_id_collision", location: "nodes[0].id", message: "A step identifier is reused." }, "The requested revision cannot be served. Use the diagnostic code and location to correct it."] };
+    // Exact origin/main parsing: objects are ignored and bounded strings survive.
+    const originMainDetails = (payload: object) => ("details" in payload && Array.isArray(payload.details)
+      ? payload.details.filter((entry): entry is string => typeof entry === "string").slice(0, 12).map((entry) => entry.slice(0, 300))
+      : []);
+    expect(originMainDetails(body)).toEqual(["The requested revision cannot be served. Use the diagnostic code and location to correct it."]);
+  });
+
   it("preserves an unknown tool as a safe client error", async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
       code: "unknown_tool",

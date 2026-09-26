@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createRoutineStructuralPreparationTool } from "../../../src/modules/operatorCopilot/tools/routineStructuralPreparation.js";
+import { createRoutineStructuralPreparationTool as createRoutineStructuralPreparationToolOwner } from "../../../src/modules/operatorCopilot/tools/routineStructuralPreparation.js";
 import { operatorMcpToolSchemas } from "../../../src/modules/operatorCopilot/mcpToolSchema.js";
 
 const context = {
@@ -18,9 +18,12 @@ const routine = {
   slots: [], transitions: [{ fromStep: "step_collect", toRef: "terminal_done", guardKind: "default", guardText: null, outcomeStatus: null, counterLimit: null, fieldRef: null, fieldOp: null, fieldValue: null, fieldValues: null, fieldUnit: null, ordinal: 0 }], createdAt: new Date("2026-08-01T00:00:00Z"), updatedAt: new Date("2026-09-01T00:00:00Z"),
 };
 
+const createRoutineStructuralPreparationTool = (dependencies: unknown) =>
+  createRoutineStructuralPreparationToolOwner(dependencies as never);
+
 describe("routine structural preparation", () => {
   const anyDescriptor = () => createRoutineStructuralPreparationTool({
-    routines: { get: vi.fn(), validate: vi.fn() },
+    routines: { get: vi.fn(), validateForDraftMutation: vi.fn() },
     proposalRepository: { createProposal: vi.fn() }, proposalRecovery: { recoverOperatorMcpProposal: vi.fn() },
     auditService: { record: vi.fn() }, scopedReferences: { assertNoScopedReferences: vi.fn() },
   });
@@ -80,7 +83,7 @@ describe("routine structural preparation", () => {
     const validate = vi.fn(async () => ({ ok: true, diagnostics: [] }));
     const scopedReferences = { assertNoScopedReferences: vi.fn() };
     const descriptor = createRoutineStructuralPreparationTool({
-      routines: { get, validate, findCreateConflict: vi.fn(async () => null) } as never,
+      routines: { get, validateForDraftMutation: validate, findCreateConflict: vi.fn(async () => null) } as never,
       proposalRepository: { createProposal }, proposalRecovery: { recoverOperatorMcpProposal: vi.fn() }, auditService: { record: vi.fn() }, scopedReferences,
     });
     const draft = { name: "Created", enabled: true, activation: { triggerDescription: "Handle returns", gateRef: null, priority: 0, reentryMode: "once_per_conversation" }, slots: [], steps: [{ stableStepId: "start", kind: "chat", instruction: "Start", toolRef: null, ordinal: 0, metadata: {} }], transitions: [{ fromStep: "start", toRef: "done", guardKind: "default", ordinal: 0 }], terminals: [{ stableStepId: "done", kind: "complete", instruction: "Done", ordinal: 0 }] };
@@ -97,7 +100,7 @@ describe("routine structural preparation", () => {
     const createProposal = vi.fn();
     const reviewSnapshot = { diagnostics: [], review: { before: {}, after: {}, truncated: false, detailAvailable: false, beforeConnections: [{ fromStep: "old", toRef: "done", guardKind: "default", ordinal: 0 }], afterConnections: [], connectionsTruncated: false, operations: [], operationsTruncated: false } };
     const descriptor = createRoutineStructuralPreparationTool({
-      routines: { get: vi.fn(async () => ({ ...routine, name: "Changed after prepare" })), validate: vi.fn() },
+      routines: { get: vi.fn(async () => ({ ...routine, name: "Changed after prepare" })), validateForDraftMutation: vi.fn() },
       proposalRepository: { createProposal },
       proposalRecovery: { recoverOperatorMcpProposal: vi.fn(async () => ({ status: "recovered", proposal: { id: "proposal-1", targetType: "routine", reviewDigest: "d".repeat(43), expiresAt: new Date("2026-09-13T00:15:00Z"), reviewSnapshot } })) },
       auditService: { record: vi.fn() }, scopedReferences: { assertNoScopedReferences: vi.fn() },
@@ -112,7 +115,7 @@ describe("routine structural preparation", () => {
     const assertNoScopedReferences = vi.fn();
     const createProposal = vi.fn(async () => ({ id: "proposal-1" }));
     const descriptor = createRoutineStructuralPreparationTool({
-      routines: { get, validate },
+      routines: { get, validateForDraftMutation: validate },
       proposalRepository: { createProposal }, proposalRecovery: { recoverOperatorMcpProposal: vi.fn() },
       auditService: { record: vi.fn() },
       scopedReferences: { assertNoScopedReferences },
@@ -124,7 +127,7 @@ describe("routine structural preparation", () => {
     }, {} as never);
 
     expect(assertNoScopedReferences).toHaveBeenCalledWith({ workspaceId: "workspace-1", agentId: "11111111-1111-4111-8111-111111111111", routineId: routine.id, removedNodeIds: [], removedSlotIds: [] });
-    expect(validate).toHaveBeenCalledWith("workspace-1", "11111111-1111-4111-8111-111111111111", expect.objectContaining({ input: expect.objectContaining({ transitions: [] }) }));
+    expect(validate).toHaveBeenCalledWith("workspace-1", "11111111-1111-4111-8111-111111111111", expect.objectContaining({ transitions: [] }));
     expect(createProposal).toHaveBeenCalledWith(expect.objectContaining({
       origin: { type: "operator_mcp_invocation", invocationId: "prepare-1" }, targetType: "routine",
       reviewDigest: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/), expiresAt: new Date("2026-09-13T00:15:00Z"),
@@ -135,17 +138,36 @@ describe("routine structural preparation", () => {
   it("refuses a graph draft with canonical owner diagnostics before it can be reviewed", async () => {
     const createProposal = vi.fn();
     const descriptor = createRoutineStructuralPreparationTool({
-      routines: { get: vi.fn(async () => routine), validate: vi.fn(async () => ({ ok: false, diagnostics: [{ code: "dangling", location: "step_collect", message: "Dangling" }] })) },
+      routines: { get: vi.fn(async () => routine), validateForDraftMutation: vi.fn(async () => ({ ok: false, diagnostics: [{ code: "dangling", location: "step_collect", message: "Dangling" }] })) },
       proposalRepository: { createProposal }, proposalRecovery: { recoverOperatorMcpProposal: vi.fn() }, auditService: { record: vi.fn() }, scopedReferences: { assertNoScopedReferences: vi.fn() },
     });
-    await expect(descriptor.createTool(context).invoke({ kind: "edit", agentId: "11111111-1111-4111-8111-111111111111", routineId: routine.id, operations: [{ kind: "set_enabled", enabled: false }] }, {} as never)).rejects.toThrow(/Dangling/);
+    await expect(descriptor.createTool(context).invoke({ kind: "edit", agentId: "11111111-1111-4111-8111-111111111111", routineId: routine.id, operations: [{ kind: "set_enabled", enabled: false }] }, {} as never)).rejects.toMatchObject({
+      statusCode: 422, code: "revision_invalid", details: { diagnostics: [{ routineId: routine.id, code: "dangling", location: "step_collect", message: "The routine structure is not valid for serving." }] },
+    });
+    expect(createProposal).not.toHaveBeenCalled();
+  });
+
+  it("does not misidentify a new routine as its agent when create validation fails", async () => {
+    const createProposal = vi.fn();
+    const agentId = "11111111-1111-4111-8111-111111111111";
+    const draft = { name: "Created", enabled: true, activation: routine.activation, slots: [], steps: routine.steps, transitions: routine.transitions, terminals: routine.terminals };
+    const descriptor = createRoutineStructuralPreparationTool({
+      routines: { get: vi.fn(), findCreateConflict: vi.fn(async () => null), validateForDraftMutation: vi.fn(async () => ({ ok: false, diagnostics: [{ code: "missing_terminal", location: "routine:Created", message: "No ending is reachable." }] })) },
+      proposalRepository: { createProposal }, proposalRecovery: { recoverOperatorMcpProposal: vi.fn() }, auditService: { record: vi.fn() }, scopedReferences: { assertNoScopedReferences: vi.fn() },
+    });
+
+    await expect(descriptor.createTool(context).invoke({ kind: "create", agentId, draft }, {} as never)).rejects.toMatchObject({
+      statusCode: 422,
+      code: "revision_invalid",
+      details: { diagnostics: [expect.objectContaining({ routineId: null, code: "missing_terminal" })] },
+    });
     expect(createProposal).not.toHaveBeenCalled();
   });
 
   it("rejects malformed commands before loading or mutating the routine", async () => {
     const get = vi.fn();
     const descriptor = createRoutineStructuralPreparationTool({
-      routines: { get, validate: vi.fn() }, proposalRepository: { createProposal: vi.fn() }, proposalRecovery: { recoverOperatorMcpProposal: vi.fn() }, auditService: { record: vi.fn() }, scopedReferences: { assertNoScopedReferences: vi.fn() },
+      routines: { get, validateForDraftMutation: vi.fn() }, proposalRepository: { createProposal: vi.fn() }, proposalRecovery: { recoverOperatorMcpProposal: vi.fn() }, auditService: { record: vi.fn() }, scopedReferences: { assertNoScopedReferences: vi.fn() },
     });
     await expect(descriptor.createTool(context).invoke({ kind: "edit", agentId: "11111111-1111-4111-8111-111111111111", routineId: routine.id, operations: [{ kind: "remove_everything" }] }, {} as never)).rejects.toThrow();
     expect(get).not.toHaveBeenCalled();
@@ -154,11 +176,11 @@ describe("routine structural preparation", () => {
   it("persists the owner authoring projection, not Date-bearing routine persistence metadata", async () => {
     const createProposal = vi.fn(async () => ({ id: "proposal-1" }));
     const descriptor = createRoutineStructuralPreparationTool({
-      routines: { get: vi.fn(async () => ({ ...routine, createdAt: new Date("2026-01-01T00:00:00Z"), updatedAt: new Date("2026-09-01T00:00:00Z") })), validate: vi.fn(async () => ({ ok: true, diagnostics: [] })) },
+      routines: { get: vi.fn(async () => ({ ...routine, createdAt: new Date("2026-01-01T00:00:00Z"), updatedAt: new Date("2026-09-01T00:00:00Z") })), validateForDraftMutation: vi.fn(async () => ({ ok: true, diagnostics: [] })) },
       proposalRepository: { createProposal }, proposalRecovery: { recoverOperatorMcpProposal: vi.fn() }, auditService: { record: vi.fn() }, scopedReferences: { assertNoScopedReferences: vi.fn() },
     });
     await expect(descriptor.createTool(context).invoke({ kind: "edit", agentId: "11111111-1111-4111-8111-111111111111", routineId: routine.id, operations: [{ kind: "set_enabled", enabled: false }] }, {} as never)).resolves.toMatchObject({ proposalId: "proposal-1" });
-    const payload = createProposal.mock.calls[0][0].payload;
+    const payload = (createProposal.mock.calls as unknown as Array<[{ payload: { draft: unknown } }]>)[0][0].payload;
     expect(payload.draft).not.toHaveProperty("createdAt");
     expect(payload.draft).not.toHaveProperty("updatedAt");
   });
@@ -168,12 +190,13 @@ describe("routine structural preparation", () => {
     const draft = { name: "Bounded", enabled: false, activation: routine.activation, slots: [{ stableSlotId: "slot_email", key: "email", type: "text", required: true, description: "Email", ordinal: 0 }], steps, transitions: [{ fromStep: "step_0", toRef: "done", guardKind: "field", fieldRef: "email", fieldOp: "is_present", ordinal: 0 }], terminals: [{ stableStepId: "done", kind: "complete", instruction: "Done", ordinal: 42 }] };
     const createProposal = vi.fn(async () => ({ id: "proposal-1" }));
     const descriptor = createRoutineStructuralPreparationTool({
-      routines: { get: vi.fn(), validate: vi.fn(async () => ({ ok: true, diagnostics: [] })), findCreateConflict: vi.fn(async () => null) },
+      routines: { get: vi.fn(), validateForDraftMutation: vi.fn(async () => ({ ok: true, diagnostics: [] })), findCreateConflict: vi.fn(async () => null) },
       proposalRepository: { createProposal }, proposalRecovery: { recoverOperatorMcpProposal: vi.fn() }, auditService: { record: vi.fn() }, scopedReferences: { assertNoScopedReferences: vi.fn() },
     });
     const output = await descriptor.createTool(context).invoke({ kind: "create", agentId: "11111111-1111-4111-8111-111111111111", draft }, {} as never);
     expect(output).toMatchObject({ review: { truncated: true, detailAvailable: true, after: { enabled: false, activation: { triggerDescription: "Handle returns" }, slots: { email: { required: true, description: "Email" } }, steps: { step_0: { instruction: "Ask 0" } }, transitions: { "step_0 → done": { guardKind: "field", fieldRef: "email" } } } } });
-    expect(createProposal.mock.calls[0][0].reviewSnapshot.fullReview.after.steps).toContainEqual(expect.objectContaining({ stableStepId: "step_40", instruction: "Ask 40" }));
-    expect(createProposal.mock.calls[0][0].reviewSnapshot.fullReview.after.slots).toContainEqual(expect.objectContaining({ stableSlotId: "slot_email" }));
+    const reviewSnapshot = (createProposal.mock.calls as unknown as Array<[{ reviewSnapshot: { fullReview: { after: { steps: unknown; slots: unknown } } } }]>)[0][0].reviewSnapshot;
+    expect(reviewSnapshot.fullReview.after.steps).toContainEqual(expect.objectContaining({ stableStepId: "step_40", instruction: "Ask 40" }));
+    expect(reviewSnapshot.fullReview.after.slots).toContainEqual(expect.objectContaining({ stableSlotId: "slot_email" }));
   });
 });

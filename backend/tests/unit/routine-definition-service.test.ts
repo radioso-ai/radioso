@@ -585,6 +585,26 @@ describe("RoutineDefinitionService", () => {
     expect(JSON.stringify(reEnabled.routine.steps)).toBe(JSON.stringify(created.routine.steps));
   });
 
+  it("parks an invalid authored draft when disabled but refuses the same draft when enabled", async () => {
+    const { service } = createService();
+    const invalid = { ...validDraft(), transitions: [] };
+
+    await expect(service.validateForDraftMutation(workspaceId, agentId, { ...invalid, enabled: false }))
+      .resolves.toEqual({ ok: true, diagnostics: [] });
+    await expect(service.validateForDraftMutation(workspaceId, agentId, { ...invalid, enabled: true }))
+      .resolves.toMatchObject({ ok: false });
+  });
+
+  it("keeps the copilot enable mutation at the routines owner boundary", async () => {
+    const { service } = createService();
+    const invalid = { ...validDraft(), enabled: false, transitions: [] };
+    const parked = await service.createDraft(workspaceId, agentId, invalid);
+
+    await expect(service.updateDraftForCopilotProposal(workspaceId, agentId, parked.routine.id, { ...invalid, enabled: true }))
+      .rejects.toMatchObject({ statusCode: 400, code: "bad_request", message: "The enabled routine cannot be served. Use validate_routine to correct it before enabling it." });
+    expect((await service.get(workspaceId, agentId, parked.routine.id)).enabled).toBe(false);
+  });
+
   it("keeps a disabled routine disabled through an unrelated content edit that omits enabled", async () => {
     // The plain update payload (form/document tab save) is a full draft shape that never
     // mentions `enabled` at all. Zod would otherwise default the omitted field back to

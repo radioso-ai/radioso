@@ -7,7 +7,7 @@ import { requireCurrentCopilotPermissions } from "../authorization.js";
 import { persistReviewedPreparation, recoverReviewedPreparation, type ReviewedPreparationDependencies } from "./reviewedPreparation.js";
 
 const NAME = "prepare_directive";
-const DESCRIPTION = "Prepare a directive create, edit, enablement change, or removal for digest-bound review. The coach and advisory coherence check run while preparing; execution writes this reviewed payload. Removing a directive is permanent, so consider disabling it instead. Execute a prepared create before preparing another change to the same agent.";
+const DESCRIPTION = "Prepare a directive create, edit, enablement change, or removal for digest-bound review. The coach and advisory coherence check run while preparing; execution writes this reviewed payload. Removing a directive is permanent, so consider disabling it instead. A prepared create is fenced only on its agent existing, so unrelated agent changes never invalidate it - preparing several changes for the same agent before executing any of them is safe.";
 const inputSchema = z.object({
   kind: z.enum(["create", "edit", "set_enabled", "remove"]), agentId: z.string().uuid(),
   directiveId: z.string().uuid().optional(),

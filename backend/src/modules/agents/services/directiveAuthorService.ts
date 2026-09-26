@@ -92,6 +92,15 @@ interface DirectiveAuthorServiceOptions {
 
 const PROMPT_PATH = "coach/draft-directive.md";
 
+/**
+ * A directive create's optimistic fence: whether the agent still exists, never the agent row's own
+ * `updatedAt`. Drafting several proposals together (a directive plus unrelated agent-setting
+ * changes) must not invalidate each other's creates when one applies first, so a create is fenced
+ * only on its agent, not on unrelated agent-row mutations. This exact string is persisted in
+ * pending copilot proposal version tokens, so it must not change.
+ */
+export const DIRECTIVE_CREATE_FENCE = "agent-exists";
+
 const cleanJsonCompletion = (raw: string): string =>
   raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/i, "").trim();
 
@@ -172,7 +181,9 @@ export class DirectiveAuthorService {
   /**
    * Produces a proposal draft and its optimistic fence from the same owner snapshots. An edit's
    * full payload is expanded from the directive row whose updatedAt supplies the fence; a create
-   * uses the agent row read before drafting. Consumers must persist this fence unchanged.
+   * carries the owner's `DIRECTIVE_CREATE_FENCE` constant instead of the agent row's updatedAt, so
+   * it survives unrelated agent writes made between drafting and apply. Consumers must persist this
+   * fence unchanged.
    */
   async draftForProposal(
     workspaceId: string,
@@ -183,8 +194,8 @@ export class DirectiveAuthorService {
   }
 
   async readProposalFence(workspaceId: string, agentId: string, directiveId: string | null): Promise<string> {
-    const agent = await this.requireAgent(workspaceId, agentId);
-    if (!directiveId) return agent.updatedAt.toISOString();
+    await this.requireAgent(workspaceId, agentId);
+    if (!directiveId) return DIRECTIVE_CREATE_FENCE;
     const directive = (await this.options.repository.listDirectives(agentId, workspaceId)).find((item) => item.id === directiveId);
     if (!directive) throw notFound("Directive not found");
     return directive.updatedAt.toISOString();
@@ -204,7 +215,7 @@ export class DirectiveAuthorService {
     if (parsedInput.directiveId && !existing) {
       throw notFound("Directive not found");
     }
-    const versionToken = (existing?.updatedAt ?? agent.updatedAt).toISOString();
+    const versionToken = existing ? existing.updatedAt.toISOString() : DIRECTIVE_CREATE_FENCE;
     const existingFields = existing ? {
       name: existing.name,
       condition: existing.condition,

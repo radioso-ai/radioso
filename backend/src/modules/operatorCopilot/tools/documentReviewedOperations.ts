@@ -7,8 +7,8 @@ import {
 import { documentMetadataRecordSchema } from "../../documents/public.js";
 import type { CopilotMcpProposalRecoveryPort, CopilotToolDescriptor } from "../contracts.js";
 import { requireCurrentCopilotPermissions } from "../authorization.js";
-import { canonicalReviewedOperationDigest } from "../reviewedOperation.js";
-import { copilotProposalOrigin, type CopilotProposalToolDependencies } from "./shared.js";
+import { persistReviewedPreparation, type ReviewedPreparationDependencies } from "./reviewedPreparation.js";
+import type { CopilotProposalToolDependencies } from "./shared.js";
 
 const MAX_DOCUMENTS = 100;
 const MAX_DOCUMENT_CONTENT = 20_000;
@@ -36,7 +36,7 @@ const outputSchema = z.object({
   review: z.object({ counts: z.object({ create: z.number().int(), replace: z.number().int(), unchanged: z.number().int() }).strict(), documents: z.array(reviewItem).max(40), documentsTruncated: z.boolean() }).strict(),
 }).strict();
 
-export interface DocumentReviewedOperationToolDependencies extends CopilotProposalToolDependencies {
+export interface DocumentReviewedOperationToolDependencies extends ReviewedPreparationDependencies, CopilotProposalToolDependencies {
   readonly proposalRecovery: CopilotMcpProposalRecoveryPort;
   readonly documents: DocumentReviewedOperationPreparationPort;
   readonly now?: () => Date;
@@ -76,12 +76,8 @@ export const createDocumentReviewedOperationTools = (deps: DocumentReviewedOpera
       const targetRef = { sourceId: input.sourceId ?? null };
       const versionToken = plan.fence;
       const reviewSnapshot = { review, fullReview };
-      const reviewDigest = canonicalReviewedOperationDigest({ targetRef, payload, versionToken, reviewSnapshot });
-      const now = deps.now?.() ?? new Date();
-      const expiresAt = new Date(now.getTime() + (deps.reviewTtlMs ?? 15 * 60_000));
-      const proposal = await deps.proposalRepository.createProposal({ workspaceId: context.workspaceId, operatorUserId: context.operatorUserId, origin: copilotProposalOrigin(context), targetType: "document_operation", targetRef, payload, versionToken, evidence: null, reviewDigest, reviewSnapshot, expiresAt });
-      await deps.auditService.record({ accountId: context.accountId, workspaceId: context.workspaceId, eventType: "copilot.proposal.created", eventStatus: "success", metadata: { proposalId: proposal.id, targetType: "document_operation", operation: "import", documentCount, operatorUserId: context.operatorUserId, surface: context.surface } });
-      return { proposalId: proposal.id, reviewDigest, expiresAt: expiresAt.toISOString(), review };
+      const stored = await persistReviewedPreparation({ deps, context, targetType: "document_operation", targetRef, payload, versionToken, reviewSnapshot, operation: "import", metadata: { documentCount } });
+      return { proposalId: stored.proposal.id, reviewDigest: stored.reviewDigest, expiresAt: stored.expiresAt.toISOString(), review };
     },
   }),
 }, createRemovalTool(deps), createReprocessTool(deps)];
@@ -120,11 +116,8 @@ function createRemovalTool(deps: DocumentReviewedOperationToolDependencies): Cop
       const payload = plan;
       const versionToken = plan.fence;
       const reviewSnapshot = { review, fullReview };
-      const reviewDigest = canonicalReviewedOperationDigest({ targetRef, payload, versionToken, reviewSnapshot });
-      const now = deps.now?.() ?? new Date(); const expiresAt = new Date(now.getTime() + (deps.reviewTtlMs ?? 15 * 60_000));
-      const proposal = await deps.proposalRepository.createProposal({ workspaceId: context.workspaceId, operatorUserId: context.operatorUserId, origin: copilotProposalOrigin(context), targetType: "document_operation", targetRef, payload, versionToken, evidence: null, reviewDigest, reviewSnapshot, expiresAt });
-      await deps.auditService.record({ accountId: context.accountId, workspaceId: context.workspaceId, eventType: "copilot.proposal.created", eventStatus: "success", metadata: { proposalId: proposal.id, targetType: "document_operation", operation: "removal", documentCount, operatorUserId: context.operatorUserId, surface: context.surface } });
-      return { proposalId: proposal.id, reviewDigest, expiresAt: expiresAt.toISOString(), review };
+      const stored = await persistReviewedPreparation({ deps, context, targetType: "document_operation", targetRef, payload, versionToken, reviewSnapshot, operation: "removal", metadata: { documentCount } });
+      return { proposalId: stored.proposal.id, reviewDigest: stored.reviewDigest, expiresAt: stored.expiresAt.toISOString(), review };
     } }),
   };
 }
@@ -160,11 +153,8 @@ function createReprocessTool(deps: DocumentReviewedOperationToolDependencies): C
       const targetRef = { sourceId: input.sourceId ?? null };
       const payload = plan;
       const versionToken = plan.fence; const reviewSnapshot = { review, fullReview: summary.fullReview };
-      const reviewDigest = canonicalReviewedOperationDigest({ targetRef, payload, versionToken, reviewSnapshot });
-      const now = deps.now?.() ?? new Date(); const expiresAt = new Date(now.getTime() + (deps.reviewTtlMs ?? 15 * 60_000));
-      const proposal = await deps.proposalRepository.createProposal({ workspaceId: context.workspaceId, operatorUserId: context.operatorUserId, origin: copilotProposalOrigin(context), targetType: "document_operation", targetRef, payload, versionToken, evidence: null, reviewDigest, reviewSnapshot, expiresAt });
-      await deps.auditService.record({ accountId: context.accountId, workspaceId: context.workspaceId, eventType: "copilot.proposal.created", eventStatus: "success", metadata: { proposalId: proposal.id, targetType: "document_operation", operation: "reprocess", kind: input.kind, eligible: summary.review.eligible, operatorUserId: context.operatorUserId, surface: context.surface } });
-      return { proposalId: proposal.id, reviewDigest, expiresAt: expiresAt.toISOString(), review };
+      const stored = await persistReviewedPreparation({ deps, context, targetType: "document_operation", targetRef, payload, versionToken, reviewSnapshot, operation: "reprocess", metadata: { kind: input.kind, eligible: summary.review.eligible } });
+      return { proposalId: stored.proposal.id, reviewDigest: stored.reviewDigest, expiresAt: stored.expiresAt.toISOString(), review };
     } }),
   };
 }

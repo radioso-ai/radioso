@@ -18,10 +18,9 @@ import type { CopilotToolDescriptor } from "../contracts.js";
 import type { CopilotMcpProposalRecoveryPort } from "../contracts.js";
 import type { CopilotRepositoryPort } from "../service.js";
 import { requireCurrentCopilotPermissions } from "../authorization.js";
-import { canonicalReviewedOperationDigest } from "../reviewedOperation.js";
 import { routineValidationRefusal } from "../routineValidationRefusal.js";
 import { badRequest } from "../../../shared/domain/errors.js";
-import { copilotProposalOrigin } from "./shared.js";
+import { persistReviewedPreparation, type ReviewedPreparationDependencies } from "./reviewedPreparation.js";
 
 /** The one message every blocking structural-validation failure states, whatever the caller is trying to do to the routine. */
 const ROUTINE_NOT_SERVABLE_MESSAGE = "The routine cannot be served. Disable it to park it, or use validate_routine to correct the reported diagnostics.";
@@ -150,14 +149,11 @@ const reviewOutput = (input: {
   review: input.snapshot.review,
 });
 
-export interface RoutineStructuralPreparationDependencies {
+export interface RoutineStructuralPreparationDependencies extends ReviewedPreparationDependencies {
   readonly routines: Pick<RoutineDefinitionService, "get" | "validateForDraftMutation"> & { readonly findCreateConflict?: RoutineDefinitionService["findCreateConflict"] };
   readonly scopedReferences: {
     assertNoScopedReferences(input: { readonly workspaceId: string; readonly agentId: string; readonly routineId: string; readonly removedNodeIds: readonly string[]; readonly removedSlotIds: readonly string[] }): Promise<void>;
   };
-  readonly proposalRepository: Pick<CopilotRepositoryPort, "createProposal">;
-  readonly proposalRecovery: CopilotMcpProposalRecoveryPort;
-  readonly auditService: { record(input: { accountId: string; workspaceId: string; eventType: string; eventStatus: "success" | "failure"; metadata: Record<string, unknown> }): Promise<void> };
   readonly now?: () => Date;
   readonly reviewTtlMs?: number;
 }
@@ -202,12 +198,8 @@ export const createRoutineStructuralPreparationTool = (
         const versionToken = blocking ? `blocked:${blocking.id}:${blocking.updatedAt.toISOString()}` : "open";
         const after = boundedRoutineReview(input.draft);
         const reviewSnapshot = storedReviewSnapshot({ diagnostics: validation.diagnostics.slice(0, reviewLimit), review: { before: {}, after: after.summary, truncated: after.truncated, detailAvailable: after.truncated, beforeConnections: [], afterConnections: connectionsForReview(input.draft.transitions ?? []), connectionsTruncated: (input.draft.transitions?.length ?? 0) > reviewLimit, operations: [{ kind: "create" }], operationsTruncated: false }, fullReview: { before: {}, after: after.full } });
-        const reviewDigest = canonicalReviewedOperationDigest({ targetRef, payload, versionToken, reviewSnapshot });
-        const now = deps.now?.() ?? new Date();
-        const expiresAt = new Date(now.getTime() + (deps.reviewTtlMs ?? 15 * 60_000));
-        const proposal = await deps.proposalRepository.createProposal({ workspaceId: context.workspaceId, operatorUserId: context.operatorUserId, origin: copilotProposalOrigin(context), targetType: "routine", targetRef, payload, versionToken, evidence: null, reviewDigest, reviewSnapshot, expiresAt });
-        await deps.auditService.record({ accountId: context.accountId, workspaceId: context.workspaceId, eventType: "copilot.proposal.created", eventStatus: "success", metadata: { proposalId: proposal.id, targetType: "routine", operatorUserId: context.operatorUserId, surface: context.surface } });
-        return reviewOutput({ proposalId: proposal.id, reviewDigest, expiresAt, snapshot: reviewSnapshot });
+        const stored = await persistReviewedPreparation({ deps, context, targetType: "routine", targetRef, payload, versionToken, reviewSnapshot, operation: "prepare_routine_structure", metadata: { kind: input.kind } });
+        return reviewOutput({ proposalId: stored.proposal.id, reviewDigest: stored.reviewDigest, expiresAt: stored.expiresAt, snapshot: reviewSnapshot });
       }
       const current = await deps.routines.get(context.workspaceId, input.agentId, input.routineId);
       if (input.kind === "delete") {
@@ -217,12 +209,8 @@ export const createRoutineStructuralPreparationTool = (
         const versionToken = current.updatedAt.toISOString();
         const before = boundedRoutineReview(current);
         const reviewSnapshot = storedReviewSnapshot({ diagnostics: [], review: { before: before.summary, after: {}, truncated: before.truncated, detailAvailable: before.truncated, beforeConnections: connectionsForReview(current.transitions ?? []), afterConnections: [], connectionsTruncated: (current.transitions?.length ?? 0) > reviewLimit, operations: [{ kind: "delete" }], operationsTruncated: false }, fullReview: { before: before.full, after: {} } });
-        const reviewDigest = canonicalReviewedOperationDigest({ targetRef, payload, versionToken, reviewSnapshot });
-        const now = deps.now?.() ?? new Date();
-        const expiresAt = new Date(now.getTime() + (deps.reviewTtlMs ?? 15 * 60_000));
-        const proposal = await deps.proposalRepository.createProposal({ workspaceId: context.workspaceId, operatorUserId: context.operatorUserId, origin: copilotProposalOrigin(context), targetType: "routine", targetRef, payload, versionToken, evidence: null, reviewDigest, reviewSnapshot, expiresAt });
-        await deps.auditService.record({ accountId: context.accountId, workspaceId: context.workspaceId, eventType: "copilot.proposal.created", eventStatus: "success", metadata: { proposalId: proposal.id, targetType: "routine", operatorUserId: context.operatorUserId, surface: context.surface } });
-        return reviewOutput({ proposalId: proposal.id, reviewDigest, expiresAt, snapshot: reviewSnapshot });
+        const stored = await persistReviewedPreparation({ deps, context, targetType: "routine", targetRef, payload, versionToken, reviewSnapshot, operation: "prepare_routine_structure", metadata: { kind: input.kind } });
+        return reviewOutput({ proposalId: stored.proposal.id, reviewDigest: stored.reviewDigest, expiresAt: stored.expiresAt, snapshot: reviewSnapshot });
       }
       const removedReferences: { current: { readonly removedNodeIds: readonly string[]; readonly removedSlotIds: readonly string[] } | null } = { current: null };
       const referenceGuard: OperatorMcpRoutineTransformReferenceGuard = {
@@ -259,24 +247,8 @@ export const createRoutineStructuralPreparationTool = (
       const before = boundedRoutineReview(current);
       const after = boundedRoutineReview(draft);
       const reviewSnapshot = storedReviewSnapshot({ diagnostics: validation.diagnostics.slice(0, 40), review: { before: before.summary, after: after.summary, truncated: before.truncated || after.truncated, detailAvailable: before.truncated || after.truncated, beforeConnections, afterConnections, connectionsTruncated: (current.transitions?.length ?? 0) > reviewLimit || (draft.transitions?.length ?? 0) > reviewLimit, operations: input.operations.slice(0, reviewLimit), operationsTruncated: input.operations.length > reviewLimit }, fullReview: { before: before.full, after: after.full } });
-      const reviewDigest = canonicalReviewedOperationDigest({ targetRef, payload, versionToken, reviewSnapshot });
-      const now = deps.now?.() ?? new Date();
-      const expiresAt = new Date(now.getTime() + (deps.reviewTtlMs ?? 15 * 60_000));
-      const proposal = await deps.proposalRepository.createProposal({
-        workspaceId: context.workspaceId,
-        operatorUserId: context.operatorUserId,
-        origin: copilotProposalOrigin(context),
-        targetType: "routine",
-        targetRef,
-        payload,
-        versionToken,
-        evidence: null,
-        reviewDigest,
-        reviewSnapshot,
-        expiresAt,
-      });
-      await deps.auditService.record({ accountId: context.accountId, workspaceId: context.workspaceId, eventType: "copilot.proposal.created", eventStatus: "success", metadata: { proposalId: proposal.id, targetType: "routine", operatorUserId: context.operatorUserId, surface: context.surface } });
-      return reviewOutput({ proposalId: proposal.id, reviewDigest, expiresAt, snapshot: reviewSnapshot });
+      const stored = await persistReviewedPreparation({ deps, context, targetType: "routine", targetRef, payload, versionToken, reviewSnapshot, operation: "prepare_routine_structure", metadata: { kind: input.kind } });
+      return reviewOutput({ proposalId: stored.proposal.id, reviewDigest: stored.reviewDigest, expiresAt: stored.expiresAt, snapshot: reviewSnapshot });
     },
   }),
 });

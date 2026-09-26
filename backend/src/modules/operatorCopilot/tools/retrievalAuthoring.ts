@@ -3,8 +3,8 @@ import { z } from "zod";
 import type { AgentRetrievalAuthoringPort } from "../../agentSkills/public.js";
 import type { CopilotMcpProposalRecoveryPort, CopilotToolDescriptor } from "../contracts.js";
 import { requireCurrentCopilotPermissions } from "../authorization.js";
-import { canonicalReviewedOperationDigest } from "../reviewedOperation.js";
-import { copilotProposalOrigin, recordProposalCreated, type CopilotProposalToolDependencies } from "./shared.js";
+import { persistReviewedPreparation, type ReviewedPreparationDependencies } from "./reviewedPreparation.js";
+import type { CopilotProposalToolDependencies } from "./shared.js";
 
 const id = z.string().uuid();
 const settingsPatch = z.object({
@@ -43,7 +43,7 @@ const prepareOutput = z.object({
   lifecycle: z.literal("agent_skill_draft"),
 });
 
-export interface RetrievalAuthoringCopilotToolDependencies extends CopilotProposalToolDependencies {
+export interface RetrievalAuthoringCopilotToolDependencies extends ReviewedPreparationDependencies, CopilotProposalToolDependencies {
   readonly proposalRecovery: CopilotMcpProposalRecoveryPort;
   readonly retrievalAuthoring: AgentRetrievalAuthoringPort;
   readonly now?: () => Date;
@@ -95,28 +95,12 @@ export const createRetrievalAuthoringCopilotTools = (
           settingsVersion: prepared.settingsVersion,
           lifecycle: "agent_skill_draft" as const,
         };
-        const reviewDigest = canonicalReviewedOperationDigest({ targetRef, payload, versionToken: prepared.settingsVersion, reviewSnapshot });
-        const now = deps.now?.() ?? new Date();
-        const expiresAt = new Date(now.getTime() + (deps.reviewTtlMs ?? 15 * 60_000));
         await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
-        const proposal = await deps.proposalRepository.createProposal({
-          workspaceId: context.workspaceId,
-          operatorUserId: context.operatorUserId,
-          origin: copilotProposalOrigin(context),
-          targetType: "agent_skill",
-          targetRef,
-          payload,
-          versionToken: prepared.settingsVersion,
-          evidence: null,
-          reviewDigest,
-          reviewSnapshot,
-          expiresAt,
-        });
-        await recordProposalCreated(deps.auditService, context, proposal);
+        const stored = await persistReviewedPreparation({ deps, context, targetType: "agent_skill", targetRef, payload, versionToken: prepared.settingsVersion, reviewSnapshot, operation: "prepare_retrieval_settings" });
         return {
-          proposalId: proposal.id,
-          reviewDigest,
-          expiresAt: expiresAt.toISOString(),
+          proposalId: stored.proposal.id,
+          reviewDigest: stored.reviewDigest,
+          expiresAt: stored.expiresAt.toISOString(),
           target: { agentId: prepared.agentId, skillId: prepared.skillId, skillName: prepared.skill.name },
           before: prepared.before,
           after: prepared.after,

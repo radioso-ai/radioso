@@ -7,7 +7,7 @@ import { OperatorMcpCatalogService } from "../../../src/modules/operatorCopilot/
 import { enrichCopilotToolCatalog } from "../../../src/modules/operatorCopilot/catalog.js";
 import { OperatorMcpAccessError, type OperatorMcpPrincipal } from "../../../src/modules/operatorMcpAuthorization/public.js";
 import type { CopilotToolDescriptor } from "../../../src/modules/operatorCopilot/public.js";
-import type { OperatorMcpInvocationRepositoryPort } from "../../../src/modules/operatorCopilot/mcpContracts.js";
+import type { OperatorMcpInvocationRecord, OperatorMcpInvocationRepositoryPort } from "../../../src/modules/operatorCopilot/mcpContracts.js";
 import { AppError, badRequest, conflict, notFound, serviceUnavailable } from "../../../src/shared/domain/errors.js";
 import { OperatorCopilotService, type CopilotRepositoryPort } from "../../../src/modules/operatorCopilot/service.js";
 import { operatorMcpDispositions } from "../../../src/modules/operatorCopilot/operatorMcpDisposition.js";
@@ -80,7 +80,7 @@ const build = (activeDescriptor: CopilotToolDescriptor = descriptor, activePrinc
     accountId: principal.accountId, workspaceId: principal.workspaceId, userId: principal.userId, clientId: principal.clientRecordId,
     method: "tools/list" as const, descriptorName: null, shape: null, operationId: null, inputDigest: "digest", verificationCost: 0,
     budgetReservedAt: null, proofNonceDigest: "nonce", proofConsumedAt: null, status: "admitted" as const,
-    safeOutcomeCode: null, resultReference: null, createdAt: now, completedAt: null, retainedUntil: new Date(now.getTime() + 86_400_000),
+    safeOutcomeCode: null, safeRejectionDetails: [], resultReference: null, createdAt: now, completedAt: null, retainedUntil: new Date(now.getTime() + 86_400_000),
   };
   let proofConsumed = false;
   const prepareInvocation = vi.fn<OperatorMcpInvocationRepositoryPort["prepareInvocation"]>(async () => ({
@@ -111,9 +111,9 @@ const build = (activeDescriptor: CopilotToolDescriptor = descriptor, activePrinc
 
 describe("OperatorMcpApplicationService", () => {
   it("routes an opted-in act replay through descriptor recovery with its original receipt", async () => {
-    const reconcileMcpInvocation = vi.fn(async ({ invocation, arguments: input }: { invocation: { id: string }; arguments: { section: string } }) => ({
+    const reconcileMcpInvocation = vi.fn(async ({ invocation, arguments: input }: { invocation: OperatorMcpInvocationRecord; arguments: unknown }) => ({
       status: "recovered" as const,
-      output: { section: `${input.section}:${invocation.id}` },
+      output: { section: `${(input as { section: string }).section}:${invocation.id}` },
     }));
     const recoveryDescriptor: CopilotToolDescriptor = {
       ...descriptor,
@@ -341,6 +341,47 @@ describe("OperatorMcpApplicationService", () => {
       eventStatus: "failure",
       metadata: expect.objectContaining({ outcome: "refused", reason: "invalid_arguments" }),
     }));
+  });
+
+  it("forwards bounded revision diagnostics as invalid_arguments rather than an unavailable runtime", async () => {
+    const rejectingDescriptor: CopilotToolDescriptor = {
+      ...descriptor,
+      createTool: () => ({
+        name: "workspace_settings", description: "Read settings",
+        inputSchema: z.object({ section: z.string() }), outputSchema: z.object({ section: z.string() }),
+        invoke: vi.fn(async () => { throw new AppError(422, "revision_invalid", "The routine cannot be served.", {
+          diagnostics: [{ safeDiagnostic: true, routineId: uuid("91"), code: "node_id_collision", location: "step:return", message: "A step or terminal identifier is used more than once." }],
+        }); }),
+      }),
+    };
+    const { service } = build(rejectingDescriptor);
+    const argumentsValue = { section: "retrieval" };
+    const bodyDigest = callDigest(argumentsValue);
+    const admitted = await service.admit({ accessToken: "operator-access", invocationId: uuid("12"), method: "tools/call", descriptorName: rejectingDescriptor.name, resource: principal.resource, timestamp: "1788480000", nonce: "edge-422", bodyDigest });
+
+    const rejection = await service.invoke({ proof: admitted.proof, name: rejectingDescriptor.name, arguments: argumentsValue, bodyDigest })
+      .then(() => null, (error: OperatorMcpApplicationError) => error);
+
+    expect(rejection).toMatchObject({ code: "invalid_arguments", details: [{ routineId: uuid("91"), code: "node_id_collision", location: "step:return", message: "A step or terminal identifier is used more than once." }, "The requested revision cannot be served. Use the diagnostic code and location to correct it."] });
+  });
+
+  it("replays a persisted caller rejection with its structured diagnostics", async () => {
+    const { service, invocations, invocation } = build();
+    const original = { ...invocation, method: "tools/call" as const, descriptorName: descriptor.name, shape: "read" as const, operationId: "operation-1", status: "refused" as const, safeOutcomeCode: "invalid_arguments", safeRejectionDetails: [{ routineId: uuid("91"), code: "node_id_collision", location: "nodes[0].id", message: "Duplicate node" }] };
+    invocations.prepareInvocation.mockResolvedValueOnce({ status: "replay", invocation: original });
+    const argumentsValue = { section: "retrieval" };
+    const bodyDigest = digestOperatorMcpCall({ name: descriptor.name, arguments: argumentsValue, operationId: "operation-1" });
+    const admitted = await service.admit({ accessToken: "operator-access", invocationId: uuid("13"), method: "tools/call", descriptorName: descriptor.name, resource: principal.resource, timestamp: "1788480000", nonce: "replay-diagnostic", bodyDigest });
+    await expect(service.invoke({ proof: admitted.proof, name: descriptor.name, arguments: argumentsValue, operationId: "operation-1", bodyDigest })).rejects.toMatchObject({ code: "invalid_arguments", details: original.safeRejectionDetails });
+  });
+
+  it("keeps an authoring-model 422 as a dependency failure", async () => {
+    const rejectingDescriptor: CopilotToolDescriptor = { ...descriptor, createTool: () => ({ name: descriptor.name, description: "Read settings", inputSchema: z.object({ section: z.string() }), outputSchema: z.object({ section: z.string() }), invoke: vi.fn(async () => { throw new AppError(422, "invalid_directive_draft", "Model output was invalid"); }) }) };
+    const { service } = build(rejectingDescriptor);
+    const argumentsValue = { section: "retrieval" };
+    const bodyDigest = callDigest(argumentsValue);
+    const admitted = await service.admit({ accessToken: "operator-access", invocationId: uuid("12"), method: "tools/call", descriptorName: rejectingDescriptor.name, resource: principal.resource, timestamp: "1788480000", nonce: "model-422", bodyDigest });
+    await expect(service.invoke({ proof: admitted.proof, name: rejectingDescriptor.name, arguments: argumentsValue, bodyDigest })).rejects.toMatchObject({ code: "invalid_directive_draft" });
   });
 
   it("reports a descriptor's own not-found rejection as a clean invalid_arguments refusal, not an opaque dependency failure", async () => {

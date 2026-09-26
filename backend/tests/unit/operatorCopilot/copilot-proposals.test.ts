@@ -28,6 +28,11 @@ import { createDirectiveProposalCopilotTools } from "../../../src/modules/operat
 import { createRoutineProposalCopilotTools } from "../../../src/modules/operatorCopilot/tools/routines.js";
 import { citedProposalEvidence } from "../../../src/modules/operatorCopilot/tools/shared.js";
 import { createAgentPublicationProposalAdapter } from "../../../src/modules/operatorCopilot/agentPublicationProposalAdapter.js";
+import { createCancelReviewedProposalTool } from "../../../src/modules/operatorCopilot/tools/cancelReviewedProposal.js";
+import { createReviewedProposalOutcomeTool } from "../../../src/modules/operatorCopilot/tools/reviewedProposalOutcome.js";
+import { REVIEWED_OPERATION_NOT_FOUND } from "../../../src/modules/operatorCopilot/reviewedOperation.js";
+import { OperatorMcpCatalogService } from "../../../src/modules/operatorCopilot/mcpCatalog.js";
+import { operatorMcpDispositions } from "../../../src/modules/operatorCopilot/operatorMcpDisposition.js";
 import { conflict } from "../../../src/shared/domain/errors.js";
 
 const workspaceId = randomUUID();
@@ -836,7 +841,68 @@ describe("US3 copilot proposals", () => {
     const service = reviewedOperationService(repository);
 
     await expect(service.cancelMcpReviewedProposal({ workspaceId, accountId, operatorUserId, ...mcpBinding, proposalId: proposal.id, currentAuthorization }))
-      .resolves.toEqual({ status: "not_found" });
+      .resolves.toEqual({ status: "dashboard_reviewed" });
+  });
+
+  /** Grants exactly the listed permissions; every other `requiredPermissions` check fails. */
+  const authorizedFor = (granted: readonly string[]) => ({
+    hasAllPermissions: vi.fn(async ({ requiredPermissions }: { requiredPermissions: readonly string[] }) =>
+      requiredPermissions.every((permission) => granted.includes(permission))),
+  });
+  const dashboardProposalContext = (granted: readonly string[]) => ({
+    workspaceId, accountId, operatorUserId, surface: "mcp" as const,
+    operatorMcpGrantId: mcpBinding.grantId, operatorMcpClientId: mcpBinding.clientId,
+    currentAuthorization: authorizedFor(granted),
+    pageContext: { view: null, agentId: null, conversationId: null, selection: null, entities: [] },
+  });
+  const createDashboardDocumentProposal = (repository: MemoryProposalRepository) => repository.createProposal({
+    workspaceId, operatorUserId, conversationId: "conversation-1", targetType: "document", targetRef: { documentId: null },
+    payload: { op: "create", name: "Handbook", content: "Operator-readable document text" }, versionToken: "create", evidence: null,
+  });
+  const dashboardReviewedMessage = "This is a dashboard-reviewed proposal. Read it with proposal_detail.";
+
+  it("through the MCP catalog, tells reviewed_proposal_outcome apart from a propose_document proposal only for a caller who can read documents", async () => {
+    const repository = new MemoryProposalRepository();
+    const documentProposal = await createDashboardDocumentProposal(repository);
+    const service = reviewedOperationService(repository);
+    const descriptor = {
+      ...createReviewedProposalOutcomeTool({
+        getMcpReviewedProposal: service.getMcpReviewedProposal.bind(service),
+        isDashboardReviewedProposal: service.isDashboardReviewedProposal.bind(service),
+      }),
+      mcpDisposition: { status: "eligible" as const, inputStrategy: "explicit" as const, scope: "operator:write" as const, retry: { effect: "none" as const, idempotent: true, operationIdentity: "client" as const } },
+    };
+    const catalog = new OperatorMcpCatalogService([descriptor]);
+    const invoke = (context: ReturnType<typeof dashboardProposalContext>) => catalog.invoke({
+      name: "reviewed_proposal_outcome", arguments: { proposalId: documentProposal.id }, context, scopes: new Set(["operator:write"]), signal: AbortSignal.timeout(1_000),
+    });
+
+    // Holds the tool's own gate (workspace.agents.manage) but not the document target's read
+    // permission: this id must read as unknown, not as "a dashboard-reviewed proposal exists here".
+    await expect(invoke(dashboardProposalContext(["workspace.agents.manage"])))
+      .rejects.toMatchObject({ statusCode: 404, message: REVIEWED_OPERATION_NOT_FOUND });
+    // Holding the document target's read permission earns the diagnosable refusal instead.
+    await expect(invoke(dashboardProposalContext(["workspace.agents.manage", "workspace.documents.read"])))
+      .rejects.toMatchObject({ statusCode: 400, message: dashboardReviewedMessage });
+  });
+
+  it("through the MCP catalog, tells cancel_reviewed_proposal apart from a propose_document proposal only for a caller who can read documents", async () => {
+    const repository = new MemoryProposalRepository();
+    const documentProposal = await createDashboardDocumentProposal(repository);
+    const service = reviewedOperationService(repository);
+    const descriptor = {
+      ...createCancelReviewedProposalTool({ cancelMcpReviewedProposal: service.cancelMcpReviewedProposal.bind(service) }),
+      mcpDisposition: { status: "eligible" as const, inputStrategy: "explicit" as const, scope: "operator:write" as const, retry: { effect: "act" as const, idempotent: true, operationIdentity: "client" as const } },
+    };
+    const catalog = new OperatorMcpCatalogService([descriptor]);
+    const invoke = (context: ReturnType<typeof dashboardProposalContext>) => catalog.invoke({
+      name: "cancel_reviewed_proposal", arguments: { proposalId: documentProposal.id }, context, scopes: new Set(["operator:write"]), signal: AbortSignal.timeout(1_000),
+    });
+
+    await expect(invoke(dashboardProposalContext(["workspace.agents.manage"])))
+      .rejects.toMatchObject({ statusCode: 404, message: REVIEWED_OPERATION_NOT_FOUND });
+    await expect(invoke(dashboardProposalContext(["workspace.agents.manage", "workspace.documents.read"])))
+      .rejects.toMatchObject({ statusCode: 400, message: dashboardReviewedMessage });
   });
 
   it("reports a cancellation that lost its race to a concurrent cancellation as dismissed", async () => {
@@ -2767,7 +2833,12 @@ describe("routine proposal adapter edits", () => {
     expect(ports.updateDraft).not.toHaveBeenCalled();
   });
 
-  it("refuses an edit that would break the routine, and names what it would break", async () => {
+  it("refuses an edit that would introduce a new diagnostic as a caller-correctable revision_invalid, never the raw diagnostic text", async () => {
+    // Regression coverage for a bare `Error` here: it becomes an MCP -32002 "runtime is
+    // unavailable" outage (nothing remaps a plain Error) instead of the caller-correctable
+    // refusal prepare_routine_structure already uses for the same class of failure. The raw
+    // diagnostic message ("No such information field: order_number.") also names a slot the
+    // operator typed, so it must never reach the caller verbatim.
     const ports = routineAdapterPorts();
     ports.validate
       .mockResolvedValueOnce({ ok: true, diagnostics: [] })
@@ -2775,7 +2846,67 @@ describe("routine proposal adapter edits", () => {
     const adapter = await routineAdapter(ports);
 
     await expect(adapter.draftEdit(workspaceId, targetRef, { steps: [{ stableStepId: "confirm", instruction: "Confirm {{slot.order_number}}." }] }))
-      .rejects.toThrow(/order_number/);
+      .rejects.toMatchObject({
+        statusCode: 422,
+        code: "revision_invalid",
+        message: "This edit would make support-intake invalid to serve. Use validate_routine to correct the reported diagnostics.",
+        details: {
+          diagnostics: [{
+            safeDiagnostic: true,
+            routineId: targetRef.routineId,
+            code: "unknown_slot_reference",
+            location: "steps.confirm",
+            message: "The routine structure is not valid for serving.",
+          }],
+        },
+      });
+  });
+
+  it("through the MCP catalog, refuses propose_routine_edit as invalid_arguments (safe diagnostics, no authored text) instead of an outage", async () => {
+    // copilot-proposals.test.ts's raw-adapter test above proves draftEdit itself throws the right
+    // shape; this proves that shape actually survives the tool/catalog boundary a real MCP client
+    // calls through. Before this fix, draftEdit's bare Error crossed unremapped and the caller saw
+    // a fake 503 dependency outage instead of a correctable revision_invalid.
+    const ports = routineAdapterPorts();
+    ports.validate
+      .mockResolvedValueOnce({ ok: true, diagnostics: [] })
+      .mockResolvedValueOnce({ ok: false, diagnostics: [{ code: "unknown_slot_reference", location: "steps.confirm", message: "No such information field: order_number." }] });
+    const adapter = await routineAdapter(ports);
+    const descriptors = createRoutineProposalCopilotTools({
+      proposalRepository: { createProposal: vi.fn() },
+      proposalEvidence: unmeasured(),
+      proposalAdapters: [adapter],
+      auditService: auditService(),
+    } as never);
+    const descriptor = { ...descriptors.find((candidate) => candidate.name === "propose_routine_edit")!, mcpDisposition: operatorMcpDispositions.propose_routine_edit };
+    const catalog = new OperatorMcpCatalogService([descriptor]);
+    const mcpContext = {
+      workspaceId, accountId, operatorUserId, surface: "mcp" as const,
+      operatorMcpGrantId: "grant-1", operatorMcpClientId: "client-1",
+      currentAuthorization,
+      pageContext: { view: null, agentId: null, conversationId: null, selection: null, entities: [] },
+    };
+
+    await expect(catalog.invoke({
+      name: "propose_routine_edit",
+      arguments: { agentId, routineId: targetRef.routineId, changes: { steps: [{ stableStepId: "confirm", instruction: "Confirm {{slot.order_number}}." }] } },
+      context: mcpContext,
+      scopes: new Set(["operator:propose"]),
+      signal: AbortSignal.timeout(1_000),
+    })).rejects.toMatchObject({
+      statusCode: 422,
+      code: "revision_invalid",
+      message: "This edit would make support-intake invalid to serve. Use validate_routine to correct the reported diagnostics.",
+      details: {
+        diagnostics: [{
+          safeDiagnostic: true,
+          routineId: targetRef.routineId,
+          code: "unknown_slot_reference",
+          location: "steps.confirm",
+          message: "The routine structure is not valid for serving.",
+        }],
+      },
+    });
   });
 
   it("lets a rename through when the routine already had a routine-level diagnostic", async () => {

@@ -7,6 +7,7 @@ import type {
   OperatorMcpInvocationRepositoryPort,
   OperatorMcpInvocationShape,
 } from "../../modules/operatorCopilot/mcpContracts.js";
+import { boundRejectionDetails } from "../../modules/operatorCopilot/invalidArgumentDetails.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 
 interface OperatorMcpInvocationRow {
@@ -29,6 +30,7 @@ interface OperatorMcpInvocationRow {
   proof_consumed_at: Date | null;
   status: "admitted" | "running" | "completed" | "refused" | "failed";
   safe_outcome_code: string | null;
+  safe_rejection_details: unknown;
   result_reference: string | null;
   created_at: Date;
   completed_at: Date | null;
@@ -39,7 +41,7 @@ const invocationColumns = sql<string>`
   id, credential_id, grant_id, grant_version::text AS grant_version,
   account_id, workspace_id, user_id, client_id, method, descriptor_name, shape,
   operation_id, input_digest, verification_cost, budget_reserved_at,
-  proof_nonce_digest, proof_consumed_at, status, safe_outcome_code, result_reference,
+  proof_nonce_digest, proof_consumed_at, status, safe_outcome_code, safe_rejection_details, result_reference,
   created_at, completed_at, retained_until
 `;
 
@@ -63,6 +65,7 @@ const mapInvocation = (row: OperatorMcpInvocationRow): OperatorMcpInvocationReco
   proofConsumedAt: row.proof_consumed_at ? new Date(row.proof_consumed_at) : null,
   status: row.status,
   safeOutcomeCode: row.safe_outcome_code,
+  safeRejectionDetails: boundRejectionDetails(row.safe_rejection_details),
   resultReference: row.result_reference,
   createdAt: new Date(row.created_at),
   completedAt: row.completed_at ? new Date(row.completed_at) : null,
@@ -216,15 +219,17 @@ export class OperatorMcpInvocationRepository implements OperatorMcpInvocationRep
     invocationId: string;
     status: "completed" | "refused" | "failed";
     safeOutcomeCode: string;
+    safeRejectionDetails?: readonly import("../../modules/operatorCopilot/invalidArgumentDetails.js").OperatorMcpRejectionDetail[];
     resultReference?: string | null;
     now: Date;
   }): Promise<OperatorMcpInvocationRecord | null> {
     const safeOutcomeCode = boundedString(input.safeOutcomeCode, "safe outcome code", 128);
     if (!safeOutcomeCode) throw new Error("safe outcome code is required");
     const resultReference = boundedString(input.resultReference, "result reference", 512);
+    const safeRejectionDetails = boundRejectionDetails(input.safeRejectionDetails);
     const updated = await sql<OperatorMcpInvocationRow>`
       UPDATE operator_mcp_invocations
-      SET status = ${input.status}, safe_outcome_code = ${safeOutcomeCode},
+      SET status = ${input.status}, safe_outcome_code = ${safeOutcomeCode}, safe_rejection_details = ${JSON.stringify(safeRejectionDetails)}::jsonb,
           result_reference = ${resultReference}, completed_at = ${input.now}
       WHERE id = ${input.invocationId}
         AND (

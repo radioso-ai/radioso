@@ -62,7 +62,8 @@ const applyInput = { workspaceId: "workspace-1", accountId: "account-1", operato
 describe("proposal authorization by target type", () => {
   it("names a required permission for every proposal target type", () => {
     for (const [targetType, permissions] of Object.entries(copilotProposalPermissions)) {
-      expect(permissions.length, `${targetType} names no permission`).toBeGreaterThan(0);
+      expect(permissions.read.length, `${targetType} names no read permission`).toBeGreaterThan(0);
+      expect(permissions.manage.length, `${targetType} names no manage permission`).toBeGreaterThan(0);
     }
   });
 

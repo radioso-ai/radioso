@@ -23831,6 +23831,28 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description Proposal belongs to another account the signed-in user can access */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            /** @enum {string} */
+                            code: "proposal_account_mismatch";
+                            message: string;
+                            details: {
+                                /** Format: uuid */
+                                accountId: string;
+                                accountName: string;
+                                /** Format: uuid */
+                                workspaceId: string;
+                            };
+                        };
+                    };
+                };
+            };
         };
     };
     applyCopilotProposal: {

@@ -17,6 +17,7 @@ type ProductionDescriptorName =
   | "workspace_settings" | "workspace_triage" | "prepare_routine_structure" | "execute_reviewed_proposal" | "reviewed_proposal_outcome" | "cancel_reviewed_proposal"
   | "agent_publication_state" | "prepare_agent_publication" | "agent_publication_candidate" | "agent_publication_candidate_change"
   | "retrieval_settings" | "prepare_retrieval_settings"
+  | "proposal_detail"
   | "test_chat_sessions" | "test_chat_transcript" | "test_chat_turn_trace" | "send_test_chat_message";
 
 const rayOnly = (reason: string) => ({ rayOnly: { reason } }) as const;
@@ -85,6 +86,7 @@ export const copilotCapabilityProvenance: Readonly<Record<ProductionDescriptorNa
   retrieval_probe: { backingOperationIds: ["searchRetrievalEvidence"], applicationPrimitiveIds: ["retrieval.evidence.probe"] },
   retrieval_settings: { backingOperationIds: ["getSettingsRetrievalDefaults", "listAgentSkills"], applicationPrimitiveIds: ["agents.configuration.read"] },
   prepare_retrieval_settings: { backingOperationIds: ["updateAgentSkill"], applicationPrimitiveIds: ["agentSkills.config.propose", "operatorCopilot.proposal.create"] },
+  proposal_detail: { backingOperationIds: ["getCopilotProposal"], applicationPrimitiveIds: ["operatorCopilot.proposal.create"], targetAwareAuthorization: true },
   routine_definition: { backingOperationIds: ["listAgentRoutines", "getAgentRoutine"], applicationPrimitiveIds: ["routines.definition.read"] },
   run_eval_suite: { backingOperationIds: ["runEvalCases"], applicationPrimitiveIds: ["eval.suite.run"] },
   set_triage_state: { backingOperationIds: ["setQualityTurnTriage"] },
@@ -163,7 +165,16 @@ export const assertCopilotCapabilityProvenance = (
     for (const operationId of operationIds) if (!publicOperationIds.has(operationId)) throw new Error(`Unknown public operation identity: ${operationId}`);
     // Supplementary owner primitives and Ray-only safety may explain composition, but never
     // weaken a descriptor's ordinary authorization when it represents one public operation.
-    if (operationIds.length === 1) {
+    if (provenance.targetAwareAuthorization && descriptor.requiredPermissions.length !== 0) {
+      throw new Error(`Copilot descriptor ${descriptor.name} declares target-aware authorization with static permissions`);
+    }
+    // The reverse must hold too: leaving requiredPermissions empty without declaring
+    // targetAwareAuthorization would list a descriptor to, and let it be invoked by, every caller
+    // with catalog access, on the strength of no static gate and no declared per-invocation one.
+    if (descriptor.requiredPermissions.length === 0 && !provenance.targetAwareAuthorization) {
+      throw new Error(`Copilot descriptor ${descriptor.name} has no required permissions and no target-aware authorization`);
+    }
+    if (operationIds.length === 1 && !provenance.targetAwareAuthorization) {
       const requiredByOperation = operationPermissions[operationIds[0]];
       if (!requiredByOperation) throw new Error(`Missing HTTP permission requirement for one-to-one operation: ${operationIds[0]}`);
       if (!requiredByOperation.every((permission) => descriptor.requiredPermissions.includes(permission as never))) {

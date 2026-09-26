@@ -49,6 +49,7 @@ import {
 import type { ContextVariable, AgentContextVariableEnablement } from "../context-variables/public.js";
 import type { ContextVariableService } from "../context-variables/public.js";
 import { isOwnerRefusal, isStale, staleReason, versionDate, versionToken } from "./proposalVersioning.js";
+import { routineValidationRefusal } from "./routineValidationRefusal.js";
 import { AppError, badRequest, conflict, notFound } from "../../shared/domain/errors.js";
 
 /** Composition-only atomic boundary for an existing agent-skill update and its MCP receipt. */
@@ -241,6 +242,10 @@ export const createDirectiveCopilotProposalAdapter = (deps: {
   readonly agentService: Pick<AgentService, "get">;
 }): CopilotDirectiveProposalAdapter => ({
   targetType: "directive",
+  proposalDetailTargetRef: (rawTargetRef) => {
+    const targetRef = directiveTargetRefSchema.parse(rawTargetRef);
+    return { agentId: targetRef.agentId, directiveId: targetRef.directiveId };
+  },
   async readVersionToken(workspaceId, rawTargetRef) {
     const targetRef = directiveTargetRefSchema.parse(rawTargetRef);
     if (!targetRef.directiveId) {
@@ -341,6 +346,10 @@ export const createAgentSettingCopilotProposalAdapter = (deps: {
   readonly agentService: Pick<AgentService, "prepareFieldProposal" | "readFieldProposalVersion" | "readFieldProposalDisplay" | "applyFieldProposal">;
 }): CopilotAgentSettingProposalAdapter => ({
   targetType: "agent_setting",
+  proposalDetailTargetRef: (rawTargetRef) => {
+    const targetRef = settingTargetRef(rawTargetRef);
+    return { agentId: targetRef.agentId, settingKey: targetRef.settingKey };
+  },
   async readVersionToken(workspaceId, rawTargetRef) {
     const targetRef = settingTargetRef(rawTargetRef);
     return deps.agentService.readFieldProposalVersion(workspaceId, targetRef.agentId,
@@ -425,6 +434,7 @@ export const createAgentGreetingCopilotProposalAdapter = (deps: {
   readonly agentRevisions: Pick<AgentRevisionService, "state">;
 }): CopilotAgentGreetingProposalAdapter => ({
   targetType: "agent_greeting",
+  proposalDetailTargetRef: (rawTargetRef) => ({ agentId: greetingTargetRefSchema.parse(rawTargetRef).agentId }),
   async readVersionToken(workspaceId, rawTargetRef) {
     const targetRef = greetingTargetRefSchema.parse(rawTargetRef);
     const state = await deps.agentRevisions.state(workspaceId, targetRef.agentId);
@@ -487,7 +497,7 @@ export const createAgentGreetingCopilotProposalAdapter = (deps: {
  */
 export const createAgentSkillCopilotProposalAdapter = (deps: {
   readonly agentService: Pick<AgentService, "get">;
-  readonly agentSkillsService: Pick<AgentSkillsService, "list" | "create" | "update" | "dryRunValidate">;
+  readonly agentSkillsService: Pick<AgentSkillsService, "list" | "create" | "update" | "dryRunValidate" | "projectForCopilot">;
   readonly skillCapabilityRegistry: SkillCapabilityRegistry;
   readonly atomicMcpApply?: AgentSkillMcpApplyPort;
   readonly retrievalAuthoring?: Pick<AgentRetrievalAuthoringPort, "validatePrepared">;
@@ -601,7 +611,7 @@ export const createAgentSkillCopilotProposalAdapter = (deps: {
    * preview diff shows only fields the proposal can actually change - not identity/audit columns
    * (id, createdAt, updatedAt, ...) that render as spurious "removed" rows next to a payload that
    * never carried them in the first place. */
-  const projectSkillForPreview = (skill: AgentSkillView) => ({
+  const projectSkillForPreview = (skill: AgentSkillView) => deps.agentSkillsService.projectForCopilot({
     name: skill.name,
     capability: skill.capability,
     target: skill.target,
@@ -616,17 +626,21 @@ export const createAgentSkillCopilotProposalAdapter = (deps: {
    * config value the proposal adds, the same class of leak already fixed for identity/audit
    * columns on the current side and for the untouched context-variable half (Finding 3, issue
    * triage next-ray-epic-issue). */
-  const projectSkillPayloadForPreview = (payload: z.infer<typeof skillConfigStoredPayloadSchema>) => ({
+  const projectSkillPayloadForPreview = (payload: z.infer<typeof skillConfigStoredPayloadSchema>) => deps.agentSkillsService.projectForCopilot({
     name: payload.name,
-    capability: payload.capability,
+    capability: payload.capability as SkillCapabilityId,
     target: payload.target,
     config: payload.config,
-    invocationMode: payload.invocationMode,
+    invocationMode: payload.invocationMode as AgentSkillInvocationMode,
     enabled: payload.enabled,
   });
 
   return {
     targetType: "agent_skill",
+    proposalDetailTargetRef: (rawTargetRef) => {
+      const targetRef = skillTargetRefSchema.parse(rawTargetRef);
+      return { agentId: targetRef.agentId, skillId: targetRef.skillId };
+    },
     async readVersionToken(workspaceId, rawTargetRef, rawPayload) {
       const targetRef = skillTargetRefSchema.parse(rawTargetRef);
       if (targetRef.skillId) {
@@ -742,7 +756,7 @@ export const createAgentSkillCopilotProposalAdapter = (deps: {
 export const createRoutineCopilotProposalAdapter = (deps: {
   readonly agentService: Pick<AgentService, "get">;
   readonly routineDraftAssistService: Pick<RoutineDraftAssistService, "draft">;
-  readonly routineDefinitionService: Pick<RoutineDefinitionService, "completeExternalDraftMutation" | "createDraft" | "deleteDraft" | "findCreateConflict" | "get" | "list" | "updateDraft" | "validate">;
+  readonly routineDefinitionService: Pick<RoutineDefinitionService, "completeExternalDraftMutation" | "createDraft" | "deleteDraft" | "findCreateConflict" | "get" | "list" | "updateDraft" | "updateDraftForCopilotProposal" | "validate" | "validateForDraftMutation">;
   readonly logger?: { warn(fields: Record<string, unknown>, message: string): void };
   readonly routineMcpApply?: RoutineMcpApplyPort;
   readonly scopedReferences?: {
@@ -785,6 +799,10 @@ export const createRoutineCopilotProposalAdapter = (deps: {
 
   return {
     targetType: "routine",
+    proposalDetailTargetRef: (rawTargetRef) => {
+      const targetRef = routineTargetRefSchema.parse(rawTargetRef);
+      return { agentId: targetRef.agentId, routineId: targetRef.routineId };
+    },
     async readVersionToken(workspaceId, rawTargetRef, rawPayload) {
       const targetRef = routineTargetRefSchema.parse(rawTargetRef);
       // See the comment on createRoutineVersionToken for why a new routine's token is not the
@@ -862,7 +880,7 @@ export const createRoutineCopilotProposalAdapter = (deps: {
           const draft = routineCreateDraft(rawPayload);
           if (context?.surface === "mcp" && context.proposalId && context.executionInvocationId && context.operatorUserId && context.applyClaimedAt && deps.routineMcpApply) {
             refusalWroteNothing = true;
-            const validation = await deps.routineDefinitionService.validate(workspaceId, targetRef.agentId, { input: draft });
+            const validation = await deps.routineDefinitionService.validateForDraftMutation(workspaceId, targetRef.agentId, draft);
             if (!validation.ok) return { outcome: "failed" as const, reason: diagnosticSummary(validation.diagnostics) || "Routine validation failed" };
             const settled = await deps.routineMcpApply.apply({ workspaceId, agentId: targetRef.agentId, operation: "create", draft, proposalId: context.proposalId, executionInvocationId: context.executionInvocationId, operatorUserId: context.operatorUserId, claimedAt: context.applyClaimedAt });
             refusalWroteNothing = false;
@@ -895,7 +913,7 @@ export const createRoutineCopilotProposalAdapter = (deps: {
             // Preparation validates the authored transform, but skills, action capability policy,
             // and context variables can move before confirmation. Re-run the owning validator
             // immediately before its fenced write; the CAS then proves this is the same routine.
-            const validation = await deps.routineDefinitionService.validate(workspaceId, targetRef.agentId, { input: payload.draft });
+            const validation = await deps.routineDefinitionService.validateForDraftMutation(workspaceId, targetRef.agentId, payload.draft);
             if (!validation.ok) {
               return { outcome: "failed" as const, reason: diagnosticSummary(validation.diagnostics) || "Routine validation failed" };
             }
@@ -925,13 +943,24 @@ export const createRoutineCopilotProposalAdapter = (deps: {
         const payload = routineEditPayloadSchema.parse(rawPayload);
         // The edit lands in the agent's private draft, the same as any other authoring write.
         // Nothing an operator applies here changes what customers see until Review & Publish.
-        await deps.routineDefinitionService.updateDraft(
-          workspaceId,
-          targetRef.agentId,
-          routine.id,
-          applyRoutineFieldPatch(routine, payload.changes),
-          { expectedUpdatedAt: routine.updatedAt },
-        );
+        const draft = applyRoutineFieldPatch(routine, payload.changes);
+        if (payload.changes.enabled === true && !routine.enabled) {
+          await deps.routineDefinitionService.updateDraftForCopilotProposal(
+            workspaceId,
+            targetRef.agentId,
+            routine.id,
+            draft,
+            { expectedUpdatedAt: routine.updatedAt },
+          );
+        } else {
+          await deps.routineDefinitionService.updateDraft(
+            workspaceId,
+            targetRef.agentId,
+            routine.id,
+            draft,
+            { expectedUpdatedAt: routine.updatedAt },
+          );
+        }
         return { outcome: "applied" as const, appliedRef: { agentId: targetRef.agentId, routineId: routine.id } };
       } catch (error) {
         if (isStale(error)) return { outcome: "stale" as const };
@@ -968,13 +997,30 @@ export const createRoutineCopilotProposalAdapter = (deps: {
       const routine = await routineFor(workspaceId, targetRef);
       const changes = resolveRoutineFieldPatch(routine, routineFieldPatchSchema.parse(rawChanges));
       const patched = applyRoutineFieldPatch(routine, changes);
+      // Parking an invalid routine stays possible, but taking it back into service must use the
+      // routines owner's serving rule. REST setEnabled intentionally remains a separate product
+      // decision; this is the copilot proposal's effective-draft validation boundary.
+      if (changes.enabled === true && !routine.enabled) {
+        const serving = await deps.routineDefinitionService.validateForDraftMutation(workspaceId, targetRef.agentId, patched);
+        if (!serving.ok) throw badRequest("The enabled routine cannot be served. Use validate_routine to correct it before proposing this change.");
+      }
       const before = await deps.routineDefinitionService.validate(workspaceId, targetRef.agentId, { id: routine.id });
       const after = await deps.routineDefinitionService.validate(workspaceId, targetRef.agentId, { input: patched });
       // Only diagnostics this edit *introduces* block it. A routine that was already failing
       // validation must stay editable, or the one change that would fix it cannot be proposed.
       const carried = new Set(before.diagnostics.map(diagnosticIdentity));
       const introduced = after.diagnostics.filter((diagnostic) => !carried.has(diagnosticIdentity(diagnostic)));
-      if (introduced.length > 0) throw new Error(`This edit would break ${routine.name}: ${diagnosticSummary(introduced)}`);
+      // Never the raw diagnostic sentence: RoutineValidationDiagnostic.message can embed authored
+      // content (e.g. a slot name typed by the operator). The same canonical revision_invalid shape
+      // prepare_routine_structure uses keeps this a caller-correctable refusal instead of a bare
+      // Error, which the MCP boundary has nothing to remap and reports as a fake outage.
+      if (introduced.length > 0) {
+        throw routineValidationRefusal(
+          `This edit would make ${routine.name} invalid to serve. Use validate_routine to correct the reported diagnostics.`,
+          targetRef.routineId,
+          introduced,
+        );
+      }
       const summary = withRationale(`Edit routine ${routine.name}: ${describeRoutineFieldPatch(changes)}.`, rationale);
       return {
         payload: { kind: "edit", name: routine.name, changes, rationale: summary },
@@ -1419,6 +1465,10 @@ export const createContextVariableCopilotProposalAdapter = (deps: {
 
   return {
     targetType: "context_variable",
+    proposalDetailTargetRef: (rawTargetRef) => {
+      const targetRef = contextVariableTargetRefSchema.parse(rawTargetRef);
+      return { agentId: targetRef.agentId, variableId: targetRef.variableId, includesDefinition: targetRef.includesDefinition ?? null, includesEnablement: targetRef.includesEnablement ?? null };
+    },
     async readVersionToken(workspaceId, rawTargetRef, rawPayload) {
       const targetRef = contextVariableTargetRefSchema.parse(rawTargetRef);
       if (!targetRef.variableId) {

@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { ingestionSettingsChangeEffect } from "../../settings/public.js";
+import { ingestionSettingsChangeEffect, type IngestionSettingsFieldProposalPreparation, type IngestionSettingsProposalPatch, type IngestionSettingsProposalPort } from "../../settings/public.js";
 import { copilotIngestionSettingsChangeSchema, copilotIngestionSettingsPayloadSchema } from "../contracts/ingestionSettingsAuthoring.js";
 import type { CopilotToolDescriptor } from "../contracts.js";
 import { requireCurrentCopilotPermissions } from "../authorization.js";
@@ -17,10 +17,7 @@ const outputSchema = z.object({
 }).strict();
 
 export interface IngestionSettingsReviewedPreparationDependencies extends ReviewedPreparationDependencies {
-  readonly ingestionSettings: {
-    prepareFieldProposal(workspaceId: string, patch: Record<string, unknown>): Promise<{ normalizedPatch: Record<string, unknown>; expected: Record<string, unknown>; display: { current: Record<string, unknown>; proposed: Record<string, unknown> } }>;
-    readFieldProposalVersion(workspaceId: string, expected: Record<string, unknown>): Promise<string>;
-  };
+  readonly ingestionSettings: Pick<IngestionSettingsProposalPort, "prepareFieldProposal" | "readFieldProposalVersion">;
 }
 
 export const createIngestionSettingsReviewedPreparationTool = (deps: IngestionSettingsReviewedPreparationDependencies): CopilotToolDescriptor<z.infer<typeof inputSchema>, z.infer<typeof outputSchema>> => ({
@@ -36,9 +33,10 @@ export const createIngestionSettingsReviewedPreparationTool = (deps: IngestionSe
   },
   createTool: (context) => ({ name: NAME, description: "Prepare an ingestion settings change for digest-bound review. It affects documents processed after execution; use prepare_document_reprocess for already indexed documents.", inputSchema, outputSchema, invoke: async (raw) => {
     const change = inputSchema.parse(raw); await requireCurrentCopilotPermissions(context, ["workspace.settings.manage"]);
-    const { rationale, ...patch } = change;
-    const prepared = await deps.ingestionSettings.prepareFieldProposal(context.workspaceId, patch);
-    const review = { changes: Object.keys(prepared.expected).map((field) => ({ field, before: prepared.expected[field], after: prepared.normalizedPatch[field] })), after: prepared.display.proposed, effect: ingestionSettingsChangeEffect };
+    const { rationale, ...rawPatch } = change;
+    const patch: IngestionSettingsProposalPatch = rawPatch;
+    const prepared: IngestionSettingsFieldProposalPreparation = await deps.ingestionSettings.prepareFieldProposal(context.workspaceId, patch);
+    const review = { changes: (Object.keys(prepared.expected) as Array<keyof typeof prepared.expected>).map((field) => ({ field, before: prepared.expected[field], after: prepared.normalizedPatch[field] })), after: prepared.display.proposed, effect: ingestionSettingsChangeEffect };
     const payload = copilotIngestionSettingsPayloadSchema.parse({ name: "Ingestion settings", ...prepared.normalizedPatch, ...(rationale === undefined ? {} : { rationale }) });
     const versionToken = await deps.ingestionSettings.readFieldProposalVersion(context.workspaceId, prepared.expected);
     await requireCurrentCopilotPermissions(context, ["workspace.settings.manage"]);

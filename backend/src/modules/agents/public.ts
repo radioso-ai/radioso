@@ -28,6 +28,7 @@ export {
   agentInputFieldSchemas,
   agentInputThemeSchema,
   agentReviewedSettingsPatchSchema,
+  type AgentReviewedSettingsPatch,
 } from "./agentInputSchema.js";
 export {
   describePublicAccessChange,
@@ -42,7 +43,11 @@ export {
 } from "./domain.js";
 export {
   AgentService,
+  type AgentFieldProposalApplyInput,
+  type AgentFieldProposalApplyOutcome,
+  type AgentFieldsProposalPreparation,
   type AgentSettingsResource,
+  type AgentSettingsProposalPort,
 } from "./services/agentService.js";
 export {
   AuthoredDirectiveService,

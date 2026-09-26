@@ -27,7 +27,7 @@ describe("reviewed settings preparation", () => {
       expectedFields: [{ key: "name", value: "Support" }, { key: "customInstruction", value: "" }],
       changes: [{ key: "name", current: "Support", proposed: "Help", lifecycle: "live" as const, reach: false }, { key: "customInstruction", current: "", proposed: "Be concise.", lifecycle: "agent_draft" as const, reach: false }], unchanged: [],
     }));
-    const descriptor = createAgentSettingsReviewedPreparationTool({ ...deps, agentSettings: { prepareFieldsProposal, readFieldProposalVersion: vi.fn(async () => "fields:agent") } });
+    const descriptor = createAgentSettingsReviewedPreparationTool({ ...deps, agentSettings: { prepareFieldsProposal, readFieldProposalVersion: vi.fn(async () => "fields:agent") } as never });
 
     const output = await descriptor.createTool(context).invoke({ agentId, patch: { name: "Help", customInstruction: "Be concise." } }, {} as never);
 
@@ -42,7 +42,7 @@ describe("reviewed settings preparation", () => {
       normalizedPatch: { chunkingStrategy: "fixed_window", fixedWindowChunkSize: 1_500, fixedWindowChunkOverlap: 100, structuredMinChunkSize: 200, structuredMaxChunkSize: 2_000 },
       expected: { fixedWindowChunkSize: 1_000 }, display: { current: { fixedWindowChunkSize: 1_000 }, proposed: { fixedWindowChunkSize: 1_500 } },
     }));
-    const descriptor = createIngestionSettingsReviewedPreparationTool({ ...deps, ingestionSettings: { prepareFieldProposal, readFieldProposalVersion: vi.fn(async () => "fields:ingestion") } });
+    const descriptor = createIngestionSettingsReviewedPreparationTool({ ...deps, ingestionSettings: { prepareFieldProposal, readFieldProposalVersion: vi.fn(async () => "fields:ingestion") } as never });
 
     const output = await descriptor.createTool(context).invoke({ fixedWindowChunkSize: 1_500 }, {} as never);
 

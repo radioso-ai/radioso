@@ -96,7 +96,8 @@ describeIntegration("reviewed directive changes, prepared and executed over the 
       workspaceId: fixture.workspace.id, operatorUserId: fixture.operatorUserId,
       origin: { type: "operator_mcp_invocation", invocationId: fixture.invocationId },
       targetType: "directive", targetRef: input.targetRef, payload: input.payload, versionToken: input.versionToken,
-      evidence: null, reviewDigest: "a".repeat(43), expiresAt: new Date(Date.now() + 60_000),
+      evidence: null, reviewDigest: "a".repeat(43), reviewSnapshot: {}, expiresAt: new Date(Date.now() + 60_000),
+      confirmationRequirement: "conversation", changeEffect: { exposure: "draft", reversibility: "reversible", metered: false },
     });
 
   const claim = async (fixture: Awaited<ReturnType<typeof createFixture>>, proposalId: string, executionInvocationId: string) => {

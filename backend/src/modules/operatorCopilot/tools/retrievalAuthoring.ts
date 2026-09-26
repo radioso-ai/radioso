@@ -3,7 +3,8 @@ import { z } from "zod";
 import type { AgentRetrievalAuthoringPort } from "../../agentSkills/public.js";
 import type { CopilotMcpProposalRecoveryPort, CopilotToolDescriptor } from "../contracts.js";
 import { requireCurrentCopilotPermissions } from "../authorization.js";
-import { persistReviewedPreparation, type ReviewedPreparationDependencies } from "./reviewedPreparation.js";
+import { reviewedConfirmationSchema } from "../reviewedOperation.js";
+import { persistReviewedPreparation, reviewedPreparationConfirmation, type ReviewedPreparationDependencies } from "./reviewedPreparation.js";
 import type { CopilotProposalToolDependencies } from "./shared.js";
 
 const id = z.string().uuid();
@@ -36,6 +37,7 @@ const prepareOutput = z.object({
   proposalId: id,
   reviewDigest: z.string(),
   expiresAt: z.string().datetime(),
+  confirmation: reviewedConfirmationSchema,
   target: z.object({ agentId: id, skillId: id, skillName: z.string() }).strict(),
   before: z.record(z.unknown()),
   after: z.record(z.unknown()),
@@ -75,8 +77,9 @@ export const createRetrievalAuthoringCopilotTools = (
       const recovered = await deps.proposalRecovery.recoverOperatorMcpProposal({ invocationId: invocation.id, grantId: invocation.grantId, workspaceId: context.workspaceId, operatorUserId: context.operatorUserId, operationId: invocation.operationId, descriptorName: "prepare_retrieval_settings", inputDigest: invocation.inputDigest, staleBefore, now });
       if (recovered.status !== "recovered" || recovered.proposal.targetType !== "agent_skill" || !recovered.proposal.reviewDigest || !recovered.proposal.expiresAt) return recovered.status === "recovered" ? { status: "conflict" } : recovered;
       const snapshot = z.object({ target: z.object({ agentId: id, skillId: id, skillName: z.string() }).strict(), before: z.record(z.unknown()), after: z.record(z.unknown()), settingsVersion: z.string().datetime(), lifecycle: z.literal("agent_skill_draft") }).safeParse(recovered.proposal.reviewSnapshot);
-      if (!snapshot.success) return { status: "conflict" };
-      return { status: "recovered", output: { proposalId: recovered.proposal.id, reviewDigest: recovered.proposal.reviewDigest, expiresAt: recovered.proposal.expiresAt.toISOString(), ...snapshot.data } };
+      const confirmation = reviewedPreparationConfirmation(deps, recovered.proposal);
+      if (!snapshot.success || !confirmation) return { status: "conflict" };
+      return { status: "recovered", output: { proposalId: recovered.proposal.id, reviewDigest: recovered.proposal.reviewDigest, expiresAt: recovered.proposal.expiresAt.toISOString(), confirmation, ...snapshot.data } };
     },
     createTool: (context) => ({
       name: "prepare_retrieval_settings", description: "Prepare an omission-preserving per-agent retrieval settings patch for review. It does not change retrieval behavior.", inputSchema: prepareInput, outputSchema: prepareOutput,
@@ -101,6 +104,7 @@ export const createRetrievalAuthoringCopilotTools = (
           proposalId: stored.proposal.id,
           reviewDigest: stored.reviewDigest,
           expiresAt: stored.expiresAt.toISOString(),
+          confirmation: stored.confirmation,
           target: { agentId: prepared.agentId, skillId: prepared.skillId, skillName: prepared.skill.name },
           before: prepared.before,
           after: prepared.after,

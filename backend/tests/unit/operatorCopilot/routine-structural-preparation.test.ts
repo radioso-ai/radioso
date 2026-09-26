@@ -102,7 +102,7 @@ describe("routine structural preparation", () => {
     const descriptor = createRoutineStructuralPreparationTool({
       routines: { get: vi.fn(async () => ({ ...routine, name: "Changed after prepare" })), validateForDraftMutation: vi.fn() },
       proposalRepository: { createProposal },
-      proposalRecovery: { recoverOperatorMcpProposal: vi.fn(async () => ({ status: "recovered", proposal: { id: "proposal-1", targetType: "routine", reviewDigest: "d".repeat(43), expiresAt: new Date("2026-09-13T00:15:00Z"), reviewSnapshot } })) },
+      proposalRecovery: { recoverOperatorMcpProposal: vi.fn(async () => ({ status: "recovered", proposal: { id: "proposal-1", targetType: "routine", reviewDigest: "d".repeat(43), expiresAt: new Date("2026-09-13T00:15:00Z"), reviewSnapshot, confirmationRequirement: "conversation", changeEffect: { exposure: "draft", reversibility: "reversible", metered: false } } })) },
       auditService: { record: vi.fn() }, scopedReferences: { assertNoScopedReferences: vi.fn() },
     });
     const recovered = await descriptor.reconcileMcpInvocation!({ invocation: { id: "invocation-1", grantId: "grant-1", operationId: "op-1", inputDigest: "digest" }, context, staleBefore: new Date(0), now: new Date() } as never);

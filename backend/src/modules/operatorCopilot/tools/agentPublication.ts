@@ -1,8 +1,10 @@
 import { z } from "zod";
 
+import { agentPublicationReviewedEffect } from "../../agents/public.js";
 import { requireCurrentCopilotPermissions } from "../authorization.js";
 import type { CopilotMcpProposalRecoveryPort, CopilotToolDescriptor } from "../contracts.js";
-import { persistReviewedPreparation, type ReviewedPreparationDependencies } from "./reviewedPreparation.js";
+import { reviewedConfirmationSchema } from "../reviewedOperation.js";
+import { persistReviewedPreparation, reviewedPreparationConfirmation, type ReviewedPreparationDependencies } from "./reviewedPreparation.js";
 import { requiredPageAgent, type CopilotProposalToolDependencies } from "./shared.js";
 import type { AgentPublicationRevisionPort } from "../agentPublicationProposalAdapter.js";
 
@@ -10,7 +12,7 @@ const id = z.string().uuid();
 const readInput = z.object({ agentId: id.optional() }).strict();
 const prepareInput = z.object({ agentId: id.optional() }).strict();
 const publicationStateOutput = z.object({ draftGeneration: z.number().int().nonnegative(), publishedRevisionId: z.string().uuid().nullable(), canPublish: z.boolean() });
-const publicationReviewOutput = z.object({ proposalId: z.string().uuid(), candidateRevisionId: z.string().uuid(), reviewDigest: z.string(), expiresAt: z.string().datetime(), draftGeneration: z.number().int().nonnegative(), publishedRevisionId: z.string().uuid().nullable(), validation: z.object({ status: z.literal("valid") }) });
+const publicationReviewOutput = z.object({ proposalId: z.string().uuid(), candidateRevisionId: z.string().uuid(), reviewDigest: z.string(), expiresAt: z.string().datetime(), confirmation: reviewedConfirmationSchema, draftGeneration: z.number().int().nonnegative(), publishedRevisionId: z.string().uuid().nullable(), validation: z.object({ status: z.literal("valid") }) });
 const candidateDetailInput = z.object({ agentId: id, candidateRevisionId: id, offset: z.number().int().min(0).optional() }).strict();
 const candidateDetailOutput = z.object({ candidateRevisionId: z.string().uuid(), basePublishedRevisionId: z.string().uuid().nullable(), validation: z.object({ status: z.literal("valid") }), changes: z.array(z.object({ field: z.string(), id: z.string(), before: z.string().nullable(), after: z.string().nullable(), truncated: z.boolean() })).max(40), truncated: z.boolean(), nextOffset: z.number().int().nonnegative().nullable() });
 const candidateChangeInput = z.object({ agentId: id, candidateRevisionId: id, field: z.enum(["customInstruction", "directives", "routines", "contextVariableEnablements", "agentSkills"]), id: z.string().min(1).max(200), side: z.enum(["before", "after"]), offset: z.number().int().min(0), limit: z.number().int().min(1).max(2000) }).strict();
@@ -39,8 +41,9 @@ export const createAgentPublicationCopilotTools = (deps: AgentPublicationCopilot
       const recovered = await deps.proposalRecovery.recoverOperatorMcpProposal({ invocationId: invocation.id, grantId: invocation.grantId, workspaceId: context.workspaceId, operatorUserId: context.operatorUserId, operationId: invocation.operationId, descriptorName: "prepare_agent_publication", inputDigest: invocation.inputDigest, staleBefore, now });
       if (recovered.status !== "recovered" || recovered.proposal.targetType !== "agent_publication" || !recovered.proposal.reviewDigest || !recovered.proposal.expiresAt) return recovered.status === "recovered" ? { status: "conflict" } : recovered;
       const snapshot = z.object({ candidateRevisionId: id, draftGeneration: z.number().int().nonnegative(), publishedRevisionId: id.nullable(), validation: z.object({ status: z.literal("valid") }) }).safeParse(recovered.proposal.reviewSnapshot);
-      if (!snapshot.success) return { status: "conflict" };
-      return { status: "recovered", output: { proposalId: recovered.proposal.id, reviewDigest: recovered.proposal.reviewDigest, expiresAt: recovered.proposal.expiresAt.toISOString(), ...snapshot.data } };
+      const confirmation = reviewedPreparationConfirmation(deps, recovered.proposal);
+      if (!snapshot.success || !confirmation) return { status: "conflict" };
+      return { status: "recovered", output: { proposalId: recovered.proposal.id, reviewDigest: recovered.proposal.reviewDigest, expiresAt: recovered.proposal.expiresAt.toISOString(), confirmation, ...snapshot.data } };
     },
     createTool: (context) => ({ name: "prepare_agent_publication", description: "Create an immutable publication candidate and reviewed proposal. It does not publish. If validation names a routine, use validate_routine or prepare_routine_structure before preparing publication again.", inputSchema: prepareInput, outputSchema: z.unknown(), invoke: async ({ agentId }) => {
       const selectedAgentId = agentId ?? requiredPageAgent(context.pageContext.agentId);
@@ -52,8 +55,8 @@ export const createAgentPublicationCopilotTools = (deps: AgentPublicationCopilot
       const payload = { expectedDraftGeneration: state.draft.generation, expectedPublishedRevisionId: state.draft.basePublishedRevisionId };
       const reviewSnapshot = { candidateRevisionId: candidate.id, draftGeneration: payload.expectedDraftGeneration, publishedRevisionId: payload.expectedPublishedRevisionId, validation: { status: "valid" as const } };
       await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
-      const stored = await persistReviewedPreparation({ deps, context, targetType: "agent_publication", targetRef, payload, versionToken: `${payload.expectedDraftGeneration}:${payload.expectedPublishedRevisionId ?? "none"}`, reviewSnapshot, operation: "prepare_agent_publication", effect: { exposure: "live", reversibility: "reversible", metered: false } });
-      return { proposalId: stored.proposal.id, reviewDigest: stored.reviewDigest, expiresAt: stored.expiresAt.toISOString(), ...reviewSnapshot };
+      const stored = await persistReviewedPreparation({ deps, context, targetType: "agent_publication", targetRef, payload, versionToken: `${payload.expectedDraftGeneration}:${payload.expectedPublishedRevisionId ?? "none"}`, reviewSnapshot, operation: "prepare_agent_publication", effect: agentPublicationReviewedEffect });
+      return { proposalId: stored.proposal.id, reviewDigest: stored.reviewDigest, expiresAt: stored.expiresAt.toISOString(), confirmation: stored.confirmation, ...reviewSnapshot };
     }}),
     describeEntity: (input, context) => ({ type: "agent", id: (input as { agentId?: string }).agentId ?? context?.pageContext.agentId ?? "" }),
   },

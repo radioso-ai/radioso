@@ -69,7 +69,7 @@ describeIntegration("operator MCP proposal origin", () => {
     const proposal = await proposals.createProposal({
       workspaceId, operatorUserId: userId, origin: { type: "operator_mcp_invocation", invocationId: reviewInvocationId },
       targetType: "ingestion_settings", targetRef: { workspaceId }, payload: { summary: "Reviewed" },
-      versionToken: "v1", evidence: null, reviewDigest: "a".repeat(64), expiresAt: new Date(Date.now() + 60_000),
+      versionToken: "v1", evidence: null, reviewDigest: "a".repeat(64), reviewSnapshot: {}, expiresAt: new Date(Date.now() + 60_000), confirmationRequirement: "conversation", changeEffect: { exposure: "draft", reversibility: "reversible", metered: false },
     });
     reviewedProposalId = proposal.id;
     const [first, second] = await Promise.all([
@@ -87,7 +87,7 @@ describeIntegration("operator MCP proposal origin", () => {
     const proposal = await proposals.createProposal({
       workspaceId, operatorUserId: userId, origin: { type: "operator_mcp_invocation", invocationId: recoveryReviewInvocationId },
       targetType: "ingestion_settings", targetRef: { workspaceId }, payload: { summary: "Recover uncertain effect" },
-      versionToken: "v1", evidence: null, reviewDigest: "f".repeat(64), expiresAt: new Date(Date.now() + 60_000),
+      versionToken: "v1", evidence: null, reviewDigest: "f".repeat(64), reviewSnapshot: {}, expiresAt: new Date(Date.now() + 60_000), confirmationRequirement: "conversation", changeEffect: { exposure: "draft", reversibility: "reversible", metered: false },
     });
     const claim = { proposalId: proposal.id, executionInvocationId: recoveryExecutionInvocationId, reviewDigest: "f".repeat(64), workspaceId, operatorUserId: userId, grantId, clientId, now: new Date(), claimTtlSeconds: 5 };
     await expect(proposals.claimMcpReviewedProposalApply(claim)).resolves.toMatchObject({ status: "claimed", claim: { previousAttemptStartedAt: null } });
@@ -108,7 +108,7 @@ describeIntegration("operator MCP proposal origin", () => {
     const proposal = await proposals.createProposal({
       workspaceId, operatorUserId: userId, origin: { type: "operator_mcp_invocation", invocationId: reviewId },
       targetType: "ingestion_settings", targetRef: { workspaceId }, payload: { summary: "Replay settled receipt" },
-      versionToken: "v1", evidence: null, reviewDigest: "5".repeat(64), expiresAt: new Date(Date.now() + 60_000),
+      versionToken: "v1", evidence: null, reviewDigest: "5".repeat(64), reviewSnapshot: {}, expiresAt: new Date(Date.now() + 60_000), confirmationRequirement: "conversation", changeEffect: { exposure: "draft", reversibility: "reversible", metered: false },
     });
     const input = { proposalId: proposal.id, executionInvocationId: executionId, reviewDigest: "5".repeat(64), workspaceId, operatorUserId: userId, grantId, clientId, now: new Date(), claimTtlSeconds: 300 };
     await expect(proposals.claimMcpReviewedProposalApply(input)).resolves.toMatchObject({ status: "claimed" });
@@ -129,7 +129,7 @@ describeIntegration("operator MCP proposal origin", () => {
     const proposal = await proposals.createProposal({
       workspaceId, operatorUserId: userId, origin: { type: "operator_mcp_invocation", invocationId: reviewId },
       targetType: "ingestion_settings", targetRef: { workspaceId }, payload: { summary: "Retry reserved receipt" },
-      versionToken: "v1", evidence: null, reviewDigest: "l".repeat(64), expiresAt: new Date(Date.now() + 60_000),
+      versionToken: "v1", evidence: null, reviewDigest: "l".repeat(64), reviewSnapshot: {}, expiresAt: new Date(Date.now() + 60_000), confirmationRequirement: "conversation", changeEffect: { exposure: "draft", reversibility: "reversible", metered: false },
     });
     const input = { proposalId: proposal.id, executionInvocationId: executionId, reviewDigest: "l".repeat(64), workspaceId, operatorUserId: userId, grantId, clientId, now: new Date(), claimTtlSeconds: 300 };
     const firstClaim = await proposals.claimMcpReviewedProposalApply(input);
@@ -148,6 +148,7 @@ describeIntegration("operator MCP proposal origin", () => {
       targetType: "routine", targetRef: { agentId: randomUUID(), routineId: randomUUID() }, payload: { kind: "structural" },
       versionToken: "v1", evidence: null, reviewDigest: "r".repeat(43), reviewSnapshot: snapshot,
       expiresAt: new Date(Date.now() - 1_000),
+      confirmationRequirement: "conversation", changeEffect: { exposure: "draft", reversibility: "reversible", metered: false },
     });
     await database.query("UPDATE copilot_proposals SET status = 'applied', applied_ref = $1::jsonb WHERE id = $2", [JSON.stringify({ routineId: "routine-1" }), proposal.id]);
 
@@ -171,7 +172,7 @@ describeIntegration("operator MCP proposal origin", () => {
     const proposal = await proposals.createProposal({
       workspaceId, operatorUserId: userId, origin: { type: "operator_mcp_invocation", invocationId: reviewId },
       targetType: "routine", targetRef: { agentId, routineId: original.id }, payload: { kind: "structural" },
-      versionToken: original.updatedAt.toISOString(), evidence: null, reviewDigest: "9".repeat(64), expiresAt: new Date(Date.now() + 60_000),
+      versionToken: original.updatedAt.toISOString(), evidence: null, reviewDigest: "9".repeat(64), reviewSnapshot: {}, expiresAt: new Date(Date.now() + 60_000), confirmationRequirement: "conversation", changeEffect: { exposure: "draft", reversibility: "reversible", metered: false },
     });
     const claim = await proposals.claimMcpReviewedProposalApply({ proposalId: proposal.id, executionInvocationId: executionId, reviewDigest: "9".repeat(64), workspaceId, operatorUserId: userId, grantId, clientId, now: new Date(), claimTtlSeconds: 300 });
     if (claim.status !== "claimed") throw new Error(`expected claim, got ${claim.status}`);
@@ -190,7 +191,7 @@ describeIntegration("operator MCP proposal origin", () => {
     const proposal = await proposals.createProposal({
       workspaceId, operatorUserId: userId, origin: { type: "operator_mcp_invocation", invocationId: reviewId },
       targetType: "routine", targetRef: { agentId, routineId: original.id }, payload: { kind: "structural" },
-      versionToken: original.updatedAt.toISOString(), evidence: null, reviewDigest: "7".repeat(64), expiresAt: new Date(Date.now() + 60_000),
+      versionToken: original.updatedAt.toISOString(), evidence: null, reviewDigest: "7".repeat(64), reviewSnapshot: {}, expiresAt: new Date(Date.now() + 60_000), confirmationRequirement: "conversation", changeEffect: { exposure: "draft", reversibility: "reversible", metered: false },
     });
     const input = { proposalId: proposal.id, executionInvocationId: executionId, reviewDigest: "7".repeat(64), workspaceId, operatorUserId: userId, grantId, clientId, now: new Date(), claimTtlSeconds: 5 };
     const first = await proposals.claimMcpReviewedProposalApply(input);
@@ -217,7 +218,7 @@ describeIntegration("operator MCP proposal origin", () => {
     const proposal = await proposals.createProposal({
       workspaceId, operatorUserId: userId, origin: { type: "operator_mcp_invocation", invocationId: reviewId },
       targetType: "routine", targetRef: { agentId, routineId: original.id }, payload: { kind: "structural" },
-      versionToken: original.updatedAt.toISOString(), evidence: null, reviewDigest: "8".repeat(64), expiresAt: new Date(Date.now() + 60_000),
+      versionToken: original.updatedAt.toISOString(), evidence: null, reviewDigest: "8".repeat(64), reviewSnapshot: {}, expiresAt: new Date(Date.now() + 60_000), confirmationRequirement: "conversation", changeEffect: { exposure: "draft", reversibility: "reversible", metered: false },
     });
     const claim = await proposals.claimMcpReviewedProposalApply({ proposalId: proposal.id, executionInvocationId: executionId, reviewDigest: "8".repeat(64), workspaceId, operatorUserId: userId, grantId, clientId, now: new Date(), claimTtlSeconds: 300 });
     if (claim.status !== "claimed") throw new Error(`expected claim, got ${claim.status}`);
@@ -235,7 +236,7 @@ describeIntegration("operator MCP proposal origin", () => {
     const proposal = await proposals.createProposal({
       workspaceId, operatorUserId: userId, origin: { type: "operator_mcp_invocation", invocationId: reviewId },
       targetType: "agent_skill", targetRef: { agentId, skillId: skill.id }, payload: { kind: "retrieve" },
-      versionToken: skill.updatedAt.toISOString(), evidence: null, reviewDigest: "6".repeat(64), expiresAt: new Date(Date.now() + 60_000),
+      versionToken: skill.updatedAt.toISOString(), evidence: null, reviewDigest: "6".repeat(64), reviewSnapshot: {}, expiresAt: new Date(Date.now() + 60_000), confirmationRequirement: "conversation", changeEffect: { exposure: "draft", reversibility: "reversible", metered: false },
     });
     const claim = await proposals.claimMcpReviewedProposalApply({ proposalId: proposal.id, executionInvocationId: executionId, reviewDigest: "6".repeat(64), workspaceId, operatorUserId: userId, grantId, clientId, now: new Date(), claimTtlSeconds: 300 });
     if (claim.status !== "claimed") throw new Error(`expected claim, got ${claim.status}`);

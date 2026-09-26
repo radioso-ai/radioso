@@ -528,4 +528,5 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
   getCopilotProposal: copilotUiOnly,
   applyCopilotProposal: copilotUiOnly,
   dismissCopilotProposal: copilotUiOnly,
+  approveCopilotProposal: permanent("Permanent exclusion: approving a signed-in-tier reviewed operation is human-only proof of consent; no Ray or MCP tool may record it."),
 };

@@ -190,7 +190,7 @@ describe("AuthoredDirectiveService", () => {
       { directiveId: referring.id, name: "referrer", relation: "excludes" },
       { directiveId: referring.id, name: "referrer", relation: "dependsOn" },
     ]);
-    expect(disabled.coherence).toBeNull();
+    expect(disabled.coherence.status).toBe("not_checked");
     expect(removal).toMatchObject({ before: { id: existing.id }, after: null, referencedBy: [{ name: "referrer", relation: "excludes" }, { name: "referrer", relation: "dependsOn" }] });
     expect(repository.created).toEqual([]);
     expect(repository.updated).toEqual([]);

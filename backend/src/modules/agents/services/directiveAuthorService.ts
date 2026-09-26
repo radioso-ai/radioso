@@ -81,6 +81,8 @@ const directiveAuthorDraftSchema = z.object({
 
 type DirectiveAuthorDraftInput = z.infer<typeof directiveAuthorDraftInputSchema>;
 type DirectiveAuthorDraftResult = z.infer<typeof directiveAuthorDraftSchema>;
+type DirectiveAuthorProposalDrafting = "verbatim" | "coach";
+type DirectiveAuthorProposalResult = { draft: DirectiveAuthorDraftResult; versionToken: string; current: import("../authoredDirectives.js").AuthoredDirective | null; drafting: DirectiveAuthorProposalDrafting };
 
 interface DirectiveAuthorServiceOptions {
   repository: Pick<AgentRepositoryPort, "findByIdAndWorkspaceId" | "listDirectives">;
@@ -189,7 +191,7 @@ export class DirectiveAuthorService {
     workspaceId: string,
     agentId: string,
     input: DirectiveAuthorDraftInput,
-  ): Promise<{ draft: DirectiveAuthorDraftResult; versionToken: string; current: import("../authoredDirectives.js").AuthoredDirective | null }> {
+  ): Promise<DirectiveAuthorProposalResult> {
     return this.draftWithFence(workspaceId, agentId, input);
   }
 
@@ -205,7 +207,7 @@ export class DirectiveAuthorService {
     workspaceId: string,
     agentId: string,
     input: DirectiveAuthorDraftInput,
-  ): Promise<{ draft: DirectiveAuthorDraftResult; versionToken: string; current: import("../authoredDirectives.js").AuthoredDirective | null }> {
+  ): Promise<DirectiveAuthorProposalResult> {
     const parsedInput = directiveAuthorDraftInputSchema.parse(input);
     const agent = await this.requireAgent(workspaceId, agentId);
     const existingDirectives = await this.options.repository.listDirectives(agentId, workspaceId);
@@ -239,7 +241,7 @@ export class DirectiveAuthorService {
         diagnosis: "directive_recommended",
       }, parsedInput);
       this.validateReplacementNames(result.directive.excludes ?? [], existingDirectives);
-      return { draft: result, versionToken, current: existing ?? null };
+      return { draft: result, versionToken, current: existing ?? null, drafting: "verbatim" };
     }
     if (!parsedInput.coachingText || !parsedInput.turn) {
       throw badRequest(`A directive without intent needs ${missing.join(" and ")}.`);
@@ -258,7 +260,7 @@ export class DirectiveAuthorService {
     if (primaryDraft) {
       const result = this.finalizeDraft(primaryDraft, parsedInput, suppliedFields);
       this.validateReplacementNames(result.directive.excludes ?? [], existingDirectives);
-      return { draft: result, versionToken, current: existing ?? null };
+      return { draft: result, versionToken, current: existing ?? null, drafting: "coach" };
     }
 
     const retry = await this.callLlm({
@@ -272,7 +274,7 @@ export class DirectiveAuthorService {
     if (retryDraft) {
       const result = this.finalizeDraft(retryDraft, parsedInput, suppliedFields);
       this.validateReplacementNames(result.directive.excludes ?? [], existingDirectives);
-      return { draft: result, versionToken, current: existing ?? null };
+      return { draft: result, versionToken, current: existing ?? null, drafting: "coach" };
     }
 
     throw invalidDraftError();

@@ -3,7 +3,7 @@ import { addressesSurface, effectiveSurfaces } from "../../../shared/domain/stee
 import type { DirectiveCoherenceChecker, DirectiveCoherenceVerdict } from "@radioso/conversation-contract";
 
 import type { AgentDirectiveUpdateOptions, AgentRepositoryPort } from "../../../db/repositories/agentRepository.js";
-import { badRequest, conflict, notFound } from "../../../shared/domain/errors.js";
+import { AppError, badRequest, conflict, notFound } from "../../../shared/domain/errors.js";
 import type { AgentSkillRepositoryPort } from "../../agentSkills/public.js";
 import { defaultAnswerDirectives } from "../../directives/public.js";
 import {
@@ -106,6 +106,18 @@ const coherenceSkippedVerdict = (): DirectiveCoherenceVerdict => ({
   rationale: "Coherence check skipped for deterministic reviewed execution.",
 });
 
+/**
+ * Whether `create`/`update` refused a write because the target name collides with another
+ * directive on the agent, as opposed to the optimistic-concurrency fence losing. Both throw an
+ * AppError coded `"conflict"` from the repository, so a caller distinguishing "the world moved"
+ * (stale) from "this name is taken" (a durable refusal) needs this dedicated signal rather than
+ * the shared error code.
+ */
+export const isDirectiveNameConflict = (error: unknown): error is AppError =>
+  error instanceof AppError
+  && error.code === "conflict"
+  && (error.details as { reason?: string } | undefined)?.reason === "duplicate_name";
+
 export class AuthoredDirectiveService {
   constructor(private readonly options: AuthoredDirectiveServiceOptions) {}
 
@@ -189,7 +201,7 @@ export class AuthoredDirectiveService {
     await this.validateBinding(workspaceId, agentId, after);
     this.validateReplacementNames(after.excludes, directives);
     if (change.kind === "set_enabled" && existing!.enabled === change.enabled) {
-      throw badRequest(`The directive \"${existing!.name}\" is already ${change.enabled ? "enabled" : "disabled"}.`);
+      throw badRequest(`The directive "${existing!.name}" is already ${change.enabled ? "enabled" : "disabled"}.`);
     }
     const comparisons = existing ? directives.filter((directive) => directive.id !== existing.id) : directives;
     return {

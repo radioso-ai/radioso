@@ -155,6 +155,8 @@ describe("OperatorMcpCatalogService", () => {
     await expect(invoke({ agentId, name: "quote-primary-source", condition: { kind: "always" }, action: "Quote first.", priority: 101 }))
       .rejects.toMatchObject({ code: "invalid_arguments" });
     expect(draftForProposal).toHaveBeenCalledTimes(1);
+  });
+
   it("lets a documents manager reach generic reviewed execution while target authorization remains owner-specific", async () => {
     const execution = createReviewedProposalExecutionTool({ executeMcpReviewedProposal: vi.fn(async () => ({ status: "applied" as const })) });
     const service = new OperatorMcpCatalogService([{ ...execution, mcpDisposition: operatorMcpDispositions.execute_reviewed_proposal }]);

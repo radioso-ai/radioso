@@ -151,21 +151,39 @@ describeIntegration("reviewed directive changes, prepared and executed over the 
     expect((await agentRepository.listDirectives(fixture.agent.id, fixture.workspace.id)).find((directive) => directive.name === "create-rolled-back")).toBeUndefined();
   });
 
-  it("documents the create fence: another write on the same agent makes a prepared create stale, matching the tool's execute-before-preparing-again guidance", async () => {
+  it("documents the create fence: another write on the same agent does not invalidate a prepared create", async () => {
     const fixture = await createFixture();
     const fence = await directiveAuthorService.readProposalFence(fixture.workspace.id, fixture.agent.id, null);
-    const proposal = await prepareProposal(fixture, { targetRef: { agentId: fixture.agent.id, directiveId: null }, payload: createDirectiveInput("fence-order-sensitive"), versionToken: fence });
+    const proposal = await prepareProposal(fixture, { targetRef: { agentId: fixture.agent.id, directiveId: null }, payload: createDirectiveInput("fence-order-insensitive"), versionToken: fence });
 
-    // A second, unrelated directive write on the same agent lands before the first is executed.
+    // A second, unrelated directive write on the same agent lands before the first is executed. A
+    // create is fenced only on the agent existing, not on this row's updatedAt, so it must still
+    // apply - this is the incident the fence fixes: an operator drafting a directive alongside
+    // agent-setting proposals must be able to apply each independently of write order.
     await authoredDirectiveService.create(fixture.workspace.id, fixture.agent.id, createDirectiveInput("unrelated-first"), { coherence: "skip" });
 
     const executionInvocationId = await createExecutionInvocation(fixture);
     const claimed = await claim(fixture, proposal.id, executionInvocationId);
     await expect(adapter.applyIfVersionMatches(
-      fixture.workspace.id, { agentId: fixture.agent.id, directiveId: null }, createDirectiveInput("fence-order-sensitive"), fence,
+      fixture.workspace.id, { agentId: fixture.agent.id, directiveId: null }, createDirectiveInput("fence-order-insensitive"), fence,
+      applyContext(fixture, proposal.id, executionInvocationId, claimed.claimedAt),
+    )).resolves.toMatchObject({ outcome: "applied" });
+    expect((await agentRepository.listDirectives(fixture.agent.id, fixture.workspace.id)).find((directive) => directive.name === "fence-order-insensitive")).toBeDefined();
+  });
+
+  it("reports a create as stale once its agent is deleted before execute", async () => {
+    const fixture = await createFixture();
+    const fence = await directiveAuthorService.readProposalFence(fixture.workspace.id, fixture.agent.id, null);
+    const proposal = await prepareProposal(fixture, { targetRef: { agentId: fixture.agent.id, directiveId: null }, payload: createDirectiveInput("agent-deleted-create"), versionToken: fence });
+
+    await agentRepository.deleteByIdAndWorkspaceId(fixture.agent.id, fixture.workspace.id);
+
+    const executionInvocationId = await createExecutionInvocation(fixture);
+    const claimed = await claim(fixture, proposal.id, executionInvocationId);
+    await expect(adapter.applyIfVersionMatches(
+      fixture.workspace.id, { agentId: fixture.agent.id, directiveId: null }, createDirectiveInput("agent-deleted-create"), fence,
       applyContext(fixture, proposal.id, executionInvocationId, claimed.claimedAt),
     )).resolves.toMatchObject({ outcome: "stale" });
-    expect((await agentRepository.listDirectives(fixture.agent.id, fixture.workspace.id)).find((directive) => directive.name === "fence-order-sensitive")).toBeUndefined();
   });
 
   it("commits a directive edit and its reviewed receipt together, then returns the original appliedRef after a lost response", async () => {

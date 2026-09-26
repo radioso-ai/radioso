@@ -269,6 +269,68 @@ describe("DirectiveAuthorService", () => {
     expect(textGenerationClient.calls).toEqual([]);
   });
 
+  it("reports a create's fence as the same agent version draftForProposal captured", async () => {
+    const textGenerationClient = new FakeTextClient([]);
+    const { service, repository } = createService(textGenerationClient);
+    const agentUpdatedAt = new Date("2026-09-26T10:00:00.000Z");
+    repository.findByIdAndWorkspaceId.mockResolvedValue({
+      id: agentId,
+      name: "Coachable assistant",
+      customInstruction: "Help operators explain booking policies.",
+      greetingInstruction: "Welcome visitors warmly.",
+      updatedAt: agentUpdatedAt,
+    });
+
+    const drafted = await service.draftForProposal(workspaceId, agentId, {
+      fields: { name: "quote-primary-source", condition: { kind: "always" }, action: "Quote the source." },
+    });
+    const fence = await service.readProposalFence(workspaceId, agentId, null);
+
+    expect(drafted.versionToken).toBe(agentUpdatedAt.toISOString());
+    expect(fence).toBe(drafted.versionToken);
+  });
+
+  it("reports an edit's fence as the same directive version draftForProposal captured", async () => {
+    const textGenerationClient = new FakeTextClient([]);
+    const { service, repository } = createService(textGenerationClient);
+    const directiveUpdatedAt = new Date("2026-09-26T11:00:00.000Z");
+    const directiveId = "33333333-3333-4333-8333-333333333333";
+    repository.listDirectives.mockResolvedValue([{
+      id: directiveId,
+      agentId,
+      name: "existing-rule",
+      condition: { kind: "always" },
+      action: "Keep this action.",
+      priority: 40,
+      excludes: [],
+      tags: [],
+      surfaces: [],
+      requiredCapabilities: [],
+      dependsOn: [],
+      routes: [],
+      description: null,
+      binding: null,
+      lifecycle: null,
+      enabled: true,
+      metadata: {},
+      createdAt: new Date(),
+      updatedAt: directiveUpdatedAt,
+    }]);
+
+    const drafted = await service.draftForProposal(workspaceId, agentId, { directiveId, fields: { priority: 90 } });
+    const fence = await service.readProposalFence(workspaceId, agentId, directiveId);
+
+    expect(drafted.versionToken).toBe(directiveUpdatedAt.toISOString());
+    expect(fence).toBe(drafted.versionToken);
+  });
+
+  it("refuses a fence read for a directive id that no longer exists", async () => {
+    const { service } = createService(new FakeTextClient([]));
+
+    await expect(service.readProposalFence(workspaceId, agentId, "99999999-9999-4999-8999-999999999999"))
+      .rejects.toMatchObject({ statusCode: 404 });
+  });
+
   it("refuses an unknown replacement and lists bounded valid names", async () => {
     const { service } = createService(new FakeTextClient([]));
 

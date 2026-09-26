@@ -2,8 +2,8 @@ import { z } from "zod";
 
 import { requireCurrentCopilotPermissions } from "../authorization.js";
 import type { CopilotMcpProposalRecoveryPort, CopilotToolDescriptor } from "../contracts.js";
-import { canonicalReviewedOperationDigest } from "../reviewedOperation.js";
-import { copilotProposalOrigin, recordProposalCreated, requiredPageAgent, type CopilotProposalToolDependencies } from "./shared.js";
+import { persistReviewedPreparation, type ReviewedPreparationDependencies } from "./reviewedPreparation.js";
+import { requiredPageAgent, type CopilotProposalToolDependencies } from "./shared.js";
 import type { AgentPublicationRevisionPort } from "../agentPublicationProposalAdapter.js";
 
 const id = z.string().uuid();
@@ -16,7 +16,7 @@ const candidateDetailOutput = z.object({ candidateRevisionId: z.string().uuid(),
 const candidateChangeInput = z.object({ agentId: id, candidateRevisionId: id, field: z.enum(["customInstruction", "directives", "routines", "contextVariableEnablements", "agentSkills"]), id: z.string().min(1).max(200), side: z.enum(["before", "after"]), offset: z.number().int().min(0), limit: z.number().int().min(1).max(2000) }).strict();
 const candidateChangeOutput = z.object({ text: z.string().max(2000).nullable(), nextOffset: z.number().int().nonnegative().nullable(), totalLength: z.number().int().nonnegative() });
 
-export interface AgentPublicationCopilotToolDependencies extends CopilotProposalToolDependencies {
+export interface AgentPublicationCopilotToolDependencies extends ReviewedPreparationDependencies, CopilotProposalToolDependencies {
   readonly proposalRecovery: CopilotMcpProposalRecoveryPort;
   readonly revisions: AgentPublicationRevisionPort;
   readonly now?: () => Date;
@@ -50,13 +50,10 @@ export const createAgentPublicationCopilotTools = (deps: AgentPublicationCopilot
       const candidate = await deps.revisions.createCandidate(context.workspaceId, selectedAgentId, state.draft.generation);
       const targetRef = { agentId: selectedAgentId, candidateRevisionId: candidate.id };
       const payload = { expectedDraftGeneration: state.draft.generation, expectedPublishedRevisionId: state.draft.basePublishedRevisionId };
-      const now = deps.now?.() ?? new Date(); const expiresAt = new Date(now.getTime() + (deps.reviewTtlMs ?? 15 * 60_000));
       const reviewSnapshot = { candidateRevisionId: candidate.id, draftGeneration: payload.expectedDraftGeneration, publishedRevisionId: payload.expectedPublishedRevisionId, validation: { status: "valid" as const } };
-      const reviewDigest = canonicalReviewedOperationDigest({ targetRef, payload, reviewSnapshot });
       await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
-      const proposal = await deps.proposalRepository.createProposal({ workspaceId: context.workspaceId, operatorUserId: context.operatorUserId, origin: copilotProposalOrigin(context), targetType: "agent_publication", targetRef, payload, versionToken: `${payload.expectedDraftGeneration}:${payload.expectedPublishedRevisionId ?? "none"}`, evidence: null, reviewDigest, reviewSnapshot, expiresAt });
-      await recordProposalCreated(deps.auditService, context, proposal);
-      return { proposalId: proposal.id, reviewDigest, expiresAt: expiresAt.toISOString(), ...reviewSnapshot };
+      const stored = await persistReviewedPreparation({ deps, context, targetType: "agent_publication", targetRef, payload, versionToken: `${payload.expectedDraftGeneration}:${payload.expectedPublishedRevisionId ?? "none"}`, reviewSnapshot, operation: "prepare_agent_publication" });
+      return { proposalId: stored.proposal.id, reviewDigest: stored.reviewDigest, expiresAt: stored.expiresAt.toISOString(), ...reviewSnapshot };
     }}),
     describeEntity: (input, context) => ({ type: "agent", id: (input as { agentId?: string }).agentId ?? context?.pageContext.agentId ?? "" }),
   },

@@ -29,6 +29,7 @@ import {
   agentReviewedSettingsPatchSchema,
   agentSettingProposalEffect,
   type AgentReviewedSettingsKey,
+  type AgentReviewedSettingsPatch,
 } from "../agentInputSchema.js";
 import { DEFAULT_AGENT_LOCALE_FALLBACK, type AgentGreetingSnapshot } from "../agentRevision.js";
 import { ensurePublicIdMintedForInput } from "./agentPublicIdentity.js";
@@ -39,16 +40,16 @@ export type AgentSettingsResource = Omit<AgentRecord, "authoredDirectives"> & {
   assistantBootstrapActive: boolean;
 };
 
-interface AgentFieldProposalPreparation {
+export interface AgentFieldProposalPreparation {
   readonly targetAgentId: string;
   readonly normalizedPatch: AgentInput;
   readonly expected: { readonly key: string; readonly value: unknown };
   readonly display: { readonly current: unknown; readonly proposed: unknown };
 }
-interface AgentFieldsProposalPreparation {
+export interface AgentFieldsProposalPreparation {
   readonly targetAgentId: string;
   readonly agentName: string;
-  readonly normalizedPatch: AgentInput;
+  readonly normalizedPatch: AgentReviewedSettingsPatch;
   readonly expectedFields: ReadonlyArray<{ readonly key: AgentReviewedSettingsKey; readonly value: unknown }>;
   readonly changes: ReadonlyArray<{
     readonly key: AgentReviewedSettingsKey;
@@ -59,16 +60,32 @@ interface AgentFieldsProposalPreparation {
   }>;
   readonly unchanged: readonly AgentReviewedSettingsKey[];
 }
-type AgentFieldProposalApplyInput = Pick<AgentFieldProposalPreparation, "targetAgentId" | "normalizedPatch"> & (
-  | { readonly expected: { readonly key: string; readonly value: unknown } }
-  | { readonly expectedFields: ReadonlyArray<{ readonly key: string; readonly value: unknown }> }
-  | { readonly expectedUpdatedAt: Date }
-);
-type AgentFieldProposalApplyOutcome =
+export type AgentFieldProposalApplyInput =
+  | (Pick<AgentFieldProposalPreparation, "targetAgentId" | "normalizedPatch"> & {
+    readonly expected: { readonly key: string; readonly value: unknown };
+  })
+  | {
+    readonly targetAgentId: string;
+    readonly normalizedPatch: AgentReviewedSettingsPatch;
+    readonly expectedFields: ReadonlyArray<{ readonly key: string; readonly value: unknown }>;
+  }
+  | (Pick<AgentFieldProposalPreparation, "targetAgentId" | "normalizedPatch"> & {
+    readonly expectedUpdatedAt: Date;
+  });
+export type AgentFieldProposalApplyOutcome =
   | { readonly status: "applied"; readonly followUp?: "side_effects_incomplete" }
   | { readonly status: "changed"; readonly fields: readonly string[] }
   | { readonly status: "target_changed" }
   | { readonly status: "target_deleted" };
+
+/** Narrow owner port for proposal adapters and reviewed MCP preparation. */
+export interface AgentSettingsProposalPort {
+  prepareFieldProposal(workspaceId: string, agentId: string, input: { readonly settingKey: string; readonly value: unknown }): Promise<AgentFieldProposalPreparation>;
+  prepareFieldsProposal(workspaceId: string, agentId: string, patch: AgentReviewedSettingsPatch): Promise<AgentFieldsProposalPreparation>;
+  readFieldProposalVersion(workspaceId: string, agentId: string, expected?: { readonly key: string } | { readonly keys: readonly string[] }): Promise<string>;
+  readFieldProposalDisplay(workspaceId: string, agentId: string, settingKey: string): Promise<unknown>;
+  applyFieldProposal(workspaceId: string, prepared: AgentFieldProposalApplyInput, options?: { readonly onCommitted?: OwnerCommitHook<{ readonly agentId: string }> }): Promise<AgentFieldProposalApplyOutcome>;
+}
 
 const proposalSettingPatch = (settingKey: string, value: unknown): AgentInput => {
   if (settingKey === "surfaceSettings") {
@@ -247,7 +264,7 @@ export class AgentService {
   async prepareFieldsProposal(
     workspaceId: string,
     agentId: string,
-    patch: Readonly<Record<string, unknown>>,
+    patch: AgentReviewedSettingsPatch,
   ): Promise<AgentFieldsProposalPreparation> {
     const requested = agentReviewedSettingsPatchSchema.parse(patch);
     const current = await this.get(workspaceId, agentId);

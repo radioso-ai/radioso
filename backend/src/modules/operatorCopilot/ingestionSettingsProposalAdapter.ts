@@ -8,15 +8,16 @@ import type { CopilotIngestionSettingsProposalAdapter, CopilotProposalApplyConte
 import type {
   IngestionSettingsFieldProposalApplyInput,
   IngestionSettingsFieldProposalApplyOutcome,
-  IngestionSettingsFieldProposalPreparation,
   IngestionSettingsProposalPatch,
-} from "../settings/contracts/services.js";
+  IngestionSettingsProposalPort,
+} from "../settings/public.js";
 import { reviewedApplyError, reviewedCommitHook } from "./reviewedAtomicApply.js";
 
 const label = "Ingestion settings" as const;
-const presentationKeys = new Set(["name", "rationale", "summary"]);
-const domainFields = (payload: CopilotIngestionSettingsPayload): Record<string, unknown> =>
-  Object.fromEntries(Object.entries(payload).filter(([key]) => !presentationKeys.has(key)));
+const domainFields = (payload: CopilotIngestionSettingsPayload): IngestionSettingsProposalPatch => {
+  const { name: _name, rationale: _rationale, summary: _summary, ...patch } = payload;
+  return patch;
+};
 const stale = (result: Exclude<IngestionSettingsFieldProposalApplyOutcome, { status: "applied" }>) => {
   if (result.status === "target_deleted") return { outcome: "stale" as const, reason: "Target deleted" };
   if (result.status === "target_changed") return { outcome: "stale" as const, reason: "Target changed" };
@@ -25,12 +26,7 @@ const stale = (result: Exclude<IngestionSettingsFieldProposalApplyOutcome, { sta
 };
 
 interface Dependencies {
-  readonly ingestionSettings: {
-    prepareFieldProposal(workspaceId: string, patch: IngestionSettingsProposalPatch): Promise<IngestionSettingsFieldProposalPreparation>;
-    readFieldProposalVersion(workspaceId: string, expected?: IngestionSettingsProposalPatch): Promise<string>;
-    readFieldProposalDisplay(workspaceId: string): Promise<Record<string, unknown>>;
-    applyFieldProposal(workspaceId: string, prepared: IngestionSettingsFieldProposalApplyInput, options?: { readonly onCommitted?: import("../../shared/infra/kysely/types.js").OwnerCommitHook<{ readonly workspaceId: string }> }): Promise<IngestionSettingsFieldProposalApplyOutcome>;
-  };
+  readonly ingestionSettings: IngestionSettingsProposalPort;
   readonly reviewedReceipt?: CopilotReviewedReceiptPort;
 }
 
@@ -51,13 +47,13 @@ export const createIngestionSettingsCopilotProposalAdapter = (deps: Dependencies
     const payload = copilotIngestionSettingsPayloadSchema.parse(rawPayload);
     const onCommitted = reviewedCommitHook(deps.reviewedReceipt, context, workspaceId, (committed: { workspaceId: string }) => committed);
     try {
-      const prepared = {
+      const prepared: IngestionSettingsFieldProposalApplyInput = {
         normalizedPatch: domainFields(payload),
         ...(targetRef.expectedFields
           ? { expected: targetRef.expectedFields }
           : { expectedUpdatedAt: new Date(token) }),
       };
-      const result = onCommitted
+      const result: IngestionSettingsFieldProposalApplyOutcome = onCommitted
         ? await deps.ingestionSettings.applyFieldProposal(workspaceId, prepared, { onCommitted })
         : await deps.ingestionSettings.applyFieldProposal(workspaceId, prepared);
       if (result.status === "applied") return { outcome: "applied" as const, appliedRef: { workspaceId } };

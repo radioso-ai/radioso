@@ -125,6 +125,7 @@ export const agentReviewedSettingsPatchSchema = z.object({
 });
 
 export type AgentReviewedSettingsKey = keyof z.infer<typeof agentReviewedSettingsPatchSchema>;
+export type AgentReviewedSettingsPatch = z.infer<typeof agentReviewedSettingsPatchSchema>;
 
 export const agentSettingProposalEffect = (key: AgentReviewedSettingsKey): {
   readonly lifecycle: "live" | "agent_draft";

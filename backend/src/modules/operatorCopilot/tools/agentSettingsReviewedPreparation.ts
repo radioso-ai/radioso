@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { agentReviewedSettingsPatchSchema } from "../../agents/public.js";
+import { agentReviewedSettingsPatchSchema, type AgentFieldsProposalPreparation, type AgentReviewedSettingsPatch, type AgentSettingsProposalPort } from "../../agents/public.js";
 import type { CopilotToolDescriptor } from "../contracts.js";
 import { requireCurrentCopilotPermissions } from "../authorization.js";
 import { persistReviewedPreparation, recoverReviewedPreparation, type ReviewedPreparationDependencies } from "./reviewedPreparation.js";
@@ -18,10 +18,7 @@ const outputSchema = z.object({
 }).strict();
 
 export interface AgentSettingsReviewedPreparationDependencies extends ReviewedPreparationDependencies {
-  readonly agentSettings: {
-    prepareFieldsProposal(workspaceId: string, agentId: string, patch: Record<string, unknown>): Promise<{ targetAgentId: string; agentName: string; normalizedPatch: Record<string, unknown>; expectedFields: ReadonlyArray<{ key: string; value: unknown }>; changes: ReadonlyArray<{ key: string; current: unknown; proposed: unknown; lifecycle: "live" | "agent_draft"; reach: boolean }>; unchanged: readonly string[] }>;
-    readFieldProposalVersion(workspaceId: string, agentId: string, expected: { keys: readonly string[] }): Promise<string>;
-  };
+  readonly agentSettings: Pick<AgentSettingsProposalPort, "prepareFieldsProposal" | "readFieldProposalVersion">;
 }
 
 export const createAgentSettingsReviewedPreparationTool = (deps: AgentSettingsReviewedPreparationDependencies): CopilotToolDescriptor<z.infer<typeof inputSchema>, z.infer<typeof outputSchema>> => ({
@@ -38,7 +35,8 @@ export const createAgentSettingsReviewedPreparationTool = (deps: AgentSettingsRe
   },
   createTool: (context) => ({ name: NAME, description: "Prepare several settings for one agent as one digest-bound operation. customInstruction is an agent draft and needs prepare_agent_publication before customers see it; other settings are live at execution.", inputSchema, outputSchema, invoke: async (raw) => {
     const input = inputSchema.parse(raw); await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
-    const prepared = await deps.agentSettings.prepareFieldsProposal(context.workspaceId, input.agentId, input.patch);
+    const patch: AgentReviewedSettingsPatch = input.patch;
+    const prepared: AgentFieldsProposalPreparation = await deps.agentSettings.prepareFieldsProposal(context.workspaceId, input.agentId, patch);
     const liveKeys = prepared.changes.filter((change) => change.lifecycle === "live").map((change) => change.key);
     const draftKeys = prepared.changes.filter((change) => change.lifecycle === "agent_draft").map((change) => change.key);
     const review = { target: { agentId: prepared.targetAgentId, agentName: prepared.agentName }, changes: prepared.changes.map((change) => ({ key: change.key, before: change.current, after: change.proposed, lifecycle: change.lifecycle, reach: change.reach })), unchanged: [...prepared.unchanged], effects: { liveKeys, draftKeys, publicationRequired: draftKeys.length > 0, reach: prepared.changes.some((change) => change.reach) } };

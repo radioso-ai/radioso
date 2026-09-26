@@ -4,6 +4,9 @@ import {
   AuthoredDirectiveService,
   DirectiveAuthorService,
   AgentService,
+  type AgentFieldProposalApplyInput,
+  type AgentFieldProposalApplyOutcome,
+  type AgentSettingsProposalPort,
   AgentRevisionService,
   DEFAULT_AGENT_LOCALE_FALLBACK,
   DEFAULT_CONTACT_REQUEST_DELIVERY,
@@ -357,7 +360,7 @@ export const createDirectiveCopilotProposalAdapter = (deps: {
 
 /** Composition adapter: forwards agent-setting proposals to AgentService's preparation and apply ports. */
 export const createAgentSettingCopilotProposalAdapter = (deps: {
-  readonly agentService: Pick<AgentService, "prepareFieldProposal" | "prepareFieldsProposal" | "readFieldProposalVersion" | "readFieldProposalDisplay" | "applyFieldProposal">;
+  readonly agentService: AgentSettingsProposalPort;
   readonly reviewedReceipt?: CopilotReviewedReceiptPort;
 }): CopilotAgentSettingProposalAdapter => ({
   targetType: "agent_setting",
@@ -389,11 +392,12 @@ export const createAgentSettingCopilotProposalAdapter = (deps: {
       const agentId = reviewed.data.agentId;
       const onCommitted = reviewedCommitHook(deps.reviewedReceipt, context, workspaceId, (committed: { agentId: string }) => committed);
       try {
-        const result = await deps.agentService.applyFieldProposal(workspaceId, {
+        const prepared: AgentFieldProposalApplyInput = {
           targetAgentId: agentId,
-          normalizedPatch: payload.patch as import("../agents/public.js").AgentInput,
+          normalizedPatch: payload.patch,
           expectedFields: reviewed.data.expectedFields as ReadonlyArray<{ readonly key: string; readonly value: unknown }>,
-        }, onCommitted ? { onCommitted } : undefined);
+        };
+        const result: AgentFieldProposalApplyOutcome = await deps.agentService.applyFieldProposal(workspaceId, prepared, onCommitted ? { onCommitted } : undefined);
         if (result.status === "applied") return {
           outcome: "applied" as const,
           appliedRef: { agentId },

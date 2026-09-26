@@ -188,7 +188,7 @@ describe("prepare_agent_settings through the operator MCP catalog", () => {
       unchanged: [],
     }));
     const readFieldProposalVersion = vi.fn(async () => "fields:agent:v1");
-    const descriptor = { ...createAgentSettingsReviewedPreparationTool({ ...deps, agentSettings: { prepareFieldsProposal, readFieldProposalVersion } }), mcpDisposition: operatorMcpDispositions.prepare_agent_settings };
+    const descriptor = { ...createAgentSettingsReviewedPreparationTool({ ...deps, agentSettings: { prepareFieldsProposal, readFieldProposalVersion } as never }), mcpDisposition: operatorMcpDispositions.prepare_agent_settings };
     const catalog = new OperatorMcpCatalogService([descriptor]);
 
     const output = await catalog.invoke({
@@ -209,7 +209,7 @@ describe("prepare_agent_settings through the operator MCP catalog", () => {
   it("refuses a caller without workspace.agents.manage before the owner is ever asked", async () => {
     const deps = proposalDependencies();
     const prepareFieldsProposal = vi.fn();
-    const descriptor = { ...createAgentSettingsReviewedPreparationTool({ ...deps, agentSettings: { prepareFieldsProposal, readFieldProposalVersion: vi.fn() } }), mcpDisposition: operatorMcpDispositions.prepare_agent_settings };
+    const descriptor = { ...createAgentSettingsReviewedPreparationTool({ ...deps, agentSettings: { prepareFieldsProposal, readFieldProposalVersion: vi.fn() } as never }), mcpDisposition: operatorMcpDispositions.prepare_agent_settings };
     const catalog = new OperatorMcpCatalogService([descriptor]);
 
     await expect(catalog.invoke({
@@ -224,7 +224,7 @@ describe("prepare_agent_settings through the operator MCP catalog", () => {
     const prepareFieldsProposal = vi.fn();
     const review = { target: { agentId, agentName: "Support" }, changes: [{ key: "name", before: "Support", after: "Help Desk", lifecycle: "live" as const, reach: false }], unchanged: [], effects: { liveKeys: ["name"], draftKeys: [], publicationRequired: false, reach: false } };
     const proposalRecovery = { recoverOperatorMcpProposal: vi.fn(async () => ({ status: "recovered" as const, proposal: { id: randomUUID(), targetType: "agent_setting" as const, reviewDigest: "d".repeat(43), expiresAt: new Date("2026-09-26T10:15:00.000Z"), reviewSnapshot: review } })) } as never;
-    const descriptor = { ...createAgentSettingsReviewedPreparationTool({ ...deps, proposalRecovery, agentSettings: { prepareFieldsProposal, readFieldProposalVersion: vi.fn() } }), mcpDisposition: operatorMcpDispositions.prepare_agent_settings };
+    const descriptor = { ...createAgentSettingsReviewedPreparationTool({ ...deps, proposalRecovery, agentSettings: { prepareFieldsProposal, readFieldProposalVersion: vi.fn() } as never }), mcpDisposition: operatorMcpDispositions.prepare_agent_settings };
     const catalog = new OperatorMcpCatalogService([descriptor]);
     const invocation = { id: randomUUID(), grantId, operationId: "op-1", inputDigest: "digest" } as never;
 
@@ -247,7 +247,7 @@ describe("prepare_ingestion_settings through the operator MCP catalog", () => {
       display: { current: { fixedWindowChunkSize: 1_000 }, proposed: { fixedWindowChunkSize: 1_500 } },
     }));
     const readFieldProposalVersion = vi.fn(async () => "fields:ingestion:v1");
-    const descriptor = { ...createIngestionSettingsReviewedPreparationTool({ ...deps, ingestionSettings: { prepareFieldProposal, readFieldProposalVersion } }), mcpDisposition: operatorMcpDispositions.prepare_ingestion_settings };
+    const descriptor = { ...createIngestionSettingsReviewedPreparationTool({ ...deps, ingestionSettings: { prepareFieldProposal, readFieldProposalVersion } as never }), mcpDisposition: operatorMcpDispositions.prepare_ingestion_settings };
     const catalog = new OperatorMcpCatalogService([descriptor]);
 
     const output = await catalog.invoke({
@@ -267,7 +267,7 @@ describe("prepare_ingestion_settings through the operator MCP catalog", () => {
   it("refuses a caller without workspace.settings.manage before the owner is ever asked", async () => {
     const deps = proposalDependencies();
     const prepareFieldProposal = vi.fn();
-    const descriptor = { ...createIngestionSettingsReviewedPreparationTool({ ...deps, ingestionSettings: { prepareFieldProposal, readFieldProposalVersion: vi.fn() } }), mcpDisposition: operatorMcpDispositions.prepare_ingestion_settings };
+    const descriptor = { ...createIngestionSettingsReviewedPreparationTool({ ...deps, ingestionSettings: { prepareFieldProposal, readFieldProposalVersion: vi.fn() } as never }), mcpDisposition: operatorMcpDispositions.prepare_ingestion_settings };
     const catalog = new OperatorMcpCatalogService([descriptor]);
 
     await expect(catalog.invoke({
@@ -282,7 +282,7 @@ describe("prepare_ingestion_settings through the operator MCP catalog", () => {
     const prepareFieldProposal = vi.fn();
     const review = { changes: [{ field: "fixedWindowChunkSize", before: 1_000, after: 1_500 }], after: { fixedWindowChunkSize: 1_500 }, effect: { appliesTo: "documents_processed_after_execution" as const, existingDocuments: "unchanged_until_reprocessed" as const, embeddingModel: "unchanged" as const } };
     const proposalRecovery = { recoverOperatorMcpProposal: vi.fn(async () => ({ status: "recovered" as const, proposal: { id: randomUUID(), targetType: "ingestion_settings" as const, reviewDigest: "e".repeat(43), expiresAt: new Date("2026-09-26T10:15:00.000Z"), reviewSnapshot: review } })) } as never;
-    const descriptor = { ...createIngestionSettingsReviewedPreparationTool({ ...deps, proposalRecovery, ingestionSettings: { prepareFieldProposal, readFieldProposalVersion: vi.fn() } }), mcpDisposition: operatorMcpDispositions.prepare_ingestion_settings };
+    const descriptor = { ...createIngestionSettingsReviewedPreparationTool({ ...deps, proposalRecovery, ingestionSettings: { prepareFieldProposal, readFieldProposalVersion: vi.fn() } as never }), mcpDisposition: operatorMcpDispositions.prepare_ingestion_settings };
     const catalog = new OperatorMcpCatalogService([descriptor]);
     const invocation = { id: randomUUID(), grantId, operationId: "op-1", inputDigest: "digest" } as never;
 
@@ -353,6 +353,23 @@ describe("executing a reviewed agent_setting operation", () => {
 
     expect(output).toMatchObject({ status: "stale", reason: "Fields changed: name, internalName" });
     expect(repository.rows.get(row.id)).toMatchObject({ status: "stale", appliedRef: null });
+  });
+
+  it("refuses a caller whose agent permission was revoked after preparation without writing", async () => {
+    const repository = new FakeReviewedRepository();
+    const row = repository.seed({ targetType: "agent_setting", targetRef, payload });
+    const applyFieldProposal = vi.fn();
+    const adapter = createAgentSettingCopilotProposalAdapter({ agentService: { applyFieldProposal } as never, reviewedReceipt: fakeReviewedReceipt(repository) as never });
+    const catalog = executionCatalog({ repository, adapters: [adapter], now: () => new Date() });
+    const revoked = { ...executeContext(), currentAuthorization: { hasAllPermissions: vi.fn(async () => false) } };
+
+    await expect(catalog.invoke({
+      name: "execute_reviewed_proposal", arguments: { proposalId: row.id, reviewDigest: row.reviewDigest },
+      context: revoked, scopes: new Set(["operator:write"]), signal: AbortSignal.timeout(1_000),
+    })).rejects.toMatchObject({ code: "forbidden" });
+
+    expect(applyFieldProposal).not.toHaveBeenCalled();
+    expect(repository.rows.get(row.id)).toMatchObject({ status: "pending", applyStartedAt: null });
   });
 
   it("settles a validation refusal from the owner as failed", async () => {

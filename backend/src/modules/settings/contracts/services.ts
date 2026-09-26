@@ -77,6 +77,14 @@ export type IngestionSettingsFieldProposalApplyOutcome =
   | { readonly status: "target_changed" }
   | { readonly status: "target_deleted" };
 
+/** Narrow owner port for proposal adapters and reviewed MCP preparation. */
+export interface IngestionSettingsProposalPort {
+  prepareFieldProposal(workspaceId: string, patch: IngestionSettingsProposalPatch): Promise<IngestionSettingsFieldProposalPreparation>;
+  readFieldProposalVersion(workspaceId: string, expected?: IngestionSettingsProposalPatch): Promise<string>;
+  readFieldProposalDisplay(workspaceId: string): Promise<Record<string, unknown>>;
+  applyFieldProposal(workspaceId: string, prepared: IngestionSettingsFieldProposalApplyInput, options?: { readonly onCommitted?: OwnerCommitHook<{ readonly workspaceId: string }> }): Promise<IngestionSettingsFieldProposalApplyOutcome>;
+}
+
 /** The workspace-settings owner's field-scoped proposal contract: what a copilot draft names and carries. */
 export type PlatformSettingsProposalPatch = Partial<Pick<PlatformSettingsResource["assistant"],
   "assistantName" | "greetingInstruction" | "assistantDefaultLocale" | "proactiveGreetingEnabled" | "suggestedQuestionsEnabled" | "customInstruction"

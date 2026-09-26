@@ -69,7 +69,12 @@ interface CopilotProposalDiffRow {
   kind: 'added' | 'changed' | 'removed'
 }
 
-const displayPath = (path: string) => path === '$' ? 'Value' : path.replace(/^\$\./, '')
+const displayPath = (path: string) => {
+  if (path === '$') return 'Value'
+  if (path === '$.excludes') return 'Replaces'
+  if (path === '$.priority') return 'Priority'
+  return path.replace(/^\$\./, '')
+}
 
 const valuesEqual = (left: unknown, right: unknown) => {
   if (Object.is(left, right)) return true

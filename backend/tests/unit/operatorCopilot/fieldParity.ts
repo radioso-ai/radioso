@@ -25,8 +25,8 @@ const contextVariableEnablementNesting = permanent(
   "Carried nested one level down, under the `enablement` object, using these exact field names (proposalInputSchema in tools/contextVariables.ts) — not a capability gap, just not a top-level match.",
 );
 
-const directiveIntentDrafted = permanent(
-  "propose_directive takes a free-text `intent`; directiveAdapter.draft() (proposalAdapters.ts) synthesizes the full structured directive from it server-side. Ray never supplies these fields directly, by design — the same intent-to-structured-draft pattern propose_routine and propose_agent use.",
+const directiveFieldsStayOwnerAuthored = permanent(
+  "propose_directive carries name, condition, action, priority, and excludes directly when an operator needs exact directive text, ordering, or replacements; its agent-owned authoring service fills omitted fields from `intent` when needed. The remaining directive fields stay owner-authored rather than expanding this proposal schema into a full directive editor.",
 );
 const directiveEnablementLeavesFieldsAlone = permanent(
   "propose_directive_enablement only flips `enabled` on an already-authored directive. Its structured fields (name, condition, action, ...) are untouched by this call and stay whatever the stored directive already has, so they have no place on this input.",
@@ -175,9 +175,9 @@ export const fieldExclusions: Record<string, Record<string, FieldParityExclusion
   },
   propose_directive: {
     ...fields([
-      "name", "condition", "action", "priority", "requiredCapabilities", "dependsOn", "excludes", "surfaces",
+      "requiredCapabilities", "dependsOn", "surfaces",
       "tags", "description", "binding", "lifecycle", "coverageCriteria", "enabled", "metadata",
-    ], directiveIntentDrafted),
+    ], directiveFieldsStayOwnerAuthored),
   },
   propose_directive_enablement: {
     ...fields([

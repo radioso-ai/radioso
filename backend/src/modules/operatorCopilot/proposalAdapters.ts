@@ -15,7 +15,9 @@ import {
   type AgentInput,
   type AuthoredDirective,
   type AuthoredDirectiveInput,
+  projectDirectiveAuthorProposalInput,
 } from "../agents/public.js";
+import { boundedSummary } from "./tools/shared.js";
 import { exactContentItemSchema, validateExactContentItem } from "../../shared/domain/exactContent.js";
 import {
   applyRoutineFieldPatch,
@@ -232,7 +234,7 @@ const contextVariableStoredPayloadSchema = z.object({
 /** Composition adapter: drafts through the existing coach and writes only through authored-directive management. */
 export const createDirectiveCopilotProposalAdapter = (deps: {
   readonly authoredDirectiveService: Pick<AuthoredDirectiveService, "list" | "create" | "update" | "delete">;
-  readonly directiveAuthorService: Pick<DirectiveAuthorService, "draft">;
+  readonly directiveAuthorService: Pick<DirectiveAuthorService, "draftForProposal">;
   readonly agentService: Pick<AgentService, "get">;
 }): CopilotDirectiveProposalAdapter => ({
   targetType: "directive",
@@ -303,15 +305,15 @@ export const createDirectiveCopilotProposalAdapter = (deps: {
       return { outcome: "failed" as const, reason: error instanceof Error ? error.message : "Directive apply failed" };
     }
   },
-  async draft(workspaceId, rawTargetRef, intent) {
+  async draft(workspaceId, rawTargetRef, rawInput) {
     const targetRef = directiveTargetRefSchema.parse(rawTargetRef);
-    const draft = await deps.directiveAuthorService.draft(workspaceId, targetRef.agentId, {
-      coachingText: intent,
-      turn: { userMessage: intent, assistantAnswer: intent },
+    const draft = await deps.directiveAuthorService.draftForProposal(workspaceId, targetRef.agentId, {
+      ...projectDirectiveAuthorProposalInput(rawInput),
+      ...(targetRef.directiveId ? { directiveId: targetRef.directiveId } : {}),
     });
-    const directive = directivePayload(draft.directive);
-    const summary = draft.rationale ?? directive.name;
-    return { payload: { ...directive, rationale: summary }, targetLabel: directive.name, summary };
+    const directive = directivePayload(draft.draft.directive);
+    const summary = boundedSummary(describeDirectiveChange(directive, draft.draft.rationale));
+    return { payload: { ...directive, rationale: summary }, targetLabel: directive.name, summary, versionToken: draft.versionToken };
   },
 });
 
@@ -1032,6 +1034,14 @@ const directivePayload = (value: unknown): AuthoredDirectiveInput => {
     metadata: z.record(z.unknown()).optional(),
   }).parse(value);
   return draft as AuthoredDirectiveInput;
+};
+
+const describeDirectiveChange = (directive: AuthoredDirectiveInput, rationale?: string): string => {
+  const details = [
+    directive.priority === null || directive.priority === undefined ? null : `Priority ${directive.priority}.`,
+    directive.excludes?.length ? `Replaces ${directive.excludes.join(", ")}.` : null,
+  ].filter((detail): detail is string => detail !== null);
+  return [rationale ?? directive.name, ...details].join(" ");
 };
 
 // Strips the draft-only rationale before the .strict() authoring schema, the

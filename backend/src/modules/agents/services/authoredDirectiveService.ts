@@ -8,6 +8,7 @@ import type { AgentSkillRepositoryPort } from "../../agentSkills/public.js";
 import { defaultAnswerDirectives } from "../../directives/public.js";
 import {
   authoredDirectiveInputSchema,
+  validateDirectiveReplacementNames,
   validateAuthoredDirectiveCapabilities,
   type AuthoredDirective,
   type AuthoredDirectiveInput,
@@ -98,6 +99,7 @@ export class AuthoredDirectiveService {
     const directive = this.validateInput(input);
     await this.validateBinding(workspaceId, agentId, directive);
     const existingDirectives = await this.options.repository.listDirectives(agentId, workspaceId);
+    this.validateReplacementNames(directive.excludes, existingDirectives);
     const coherence = await this.checkCoherence(workspaceId, agent, directive, existingDirectives);
     const saved = await this.options.repository.createDirective(agentId, workspaceId, {
       ...directive,
@@ -121,6 +123,7 @@ export class AuthoredDirectiveService {
     }
     const directive = this.validateInput(carryForwardAuthoredDirectiveInput(input, existing));
     await this.validateBinding(workspaceId, agentId, directive);
+    this.validateReplacementNames(directive.excludes, existingDirectives);
     const comparisonDirectives = existingDirectives.filter((directiveToCompare) => directiveToCompare.id !== directiveId);
     const coherence = await this.checkCoherence(workspaceId, agent, directive, comparisonDirectives);
     const saved = await this.options.repository.updateDirective(agentId, workspaceId, directiveId, {
@@ -167,6 +170,13 @@ export class AuthoredDirectiveService {
       }
     }
     return directive;
+  }
+
+  private validateReplacementNames(excludes: string[], existingDirectives: ReadonlyArray<AuthoredDirective>): void {
+    const validation = validateDirectiveReplacementNames(excludes, existingDirectives);
+    if (validation.unknown.length > 0) {
+      throw badRequest(`Unknown directive replacement ${validation.unknown.join(", ")}. Valid names: ${validation.validNames.slice(0, 20).join(", ")}.`);
+    }
   }
 
   private async validateBinding(workspaceId: string, agentId: string, directive: NormalizedAuthoredDirectiveInput): Promise<void> {

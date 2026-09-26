@@ -220,7 +220,7 @@ describe("US3 copilot proposals", () => {
           readVersionToken: vi.fn(async () => "directive-version"),
           preview: vi.fn(),
           applyIfVersionMatches: vi.fn(),
-          draft: vi.fn(async () => ({ payload: { name: "Avoid competitors" }, targetLabel: "Avoid competitors", summary: "Draft directive" })),
+          draft: vi.fn(async () => ({ payload: { name: "Avoid competitors" }, targetLabel: "Avoid competitors", summary: "Draft directive", versionToken: "directive-version" })),
         },
         {
           targetType: "agent_setting",
@@ -251,6 +251,45 @@ describe("US3 copilot proposals", () => {
     expect(createProposal).toHaveBeenCalledTimes(2);
     expect(createProposal.mock.calls[0]?.[0]).toMatchObject({ targetType: "directive", targetRef: { agentId, directiveId }, versionToken: "directive-version" });
     expect(createProposal.mock.calls[1]?.[0]).toMatchObject({ targetType: "agent_setting", targetRef: { agentId, settingKey: "retrievalEnabled" }, versionToken: "agent-version" });
+  });
+
+  it("forwards structured directive fields unchanged to the owner adapter", async () => {
+    const createProposal = vi.fn(async (input: Parameters<MemoryProposalRepository["createProposal"]>[0]) => ({ id: randomUUID(), ...input, ...proposalOriginFields(input), messageId: null, status: "pending" as const, appliedRef: null, createdAt: new Date(), updatedAt: new Date() }));
+    const draft = vi.fn(async () => ({
+      payload: { name: "quote-primary-source", condition: { kind: "always" }, action: "Quote first.", priority: 85, excludes: ["represent-organization"] },
+      targetLabel: "quote-primary-source",
+      summary: "quote-primary-source",
+      versionToken: "draft-snapshot-version",
+    }));
+    const readVersionToken = vi.fn(async () => "later-version");
+    const descriptors = createDirectiveProposalCopilotTools({
+      proposalRepository: { createProposal },
+      proposalEvidence: unmeasured(),
+      proposalRecovery: { recoverOperatorMcpProposal: vi.fn() },
+      proposalAdapters: [{ targetType: "directive", readVersionToken, draft, preview: vi.fn(), applyIfVersionMatches: vi.fn() }],
+      auditService: auditService(),
+    });
+    const context = { workspaceId, accountId, operatorUserId, surface: "dashboard" as const, copilotConversationId: "conversation-1", currentAuthorization, pageContext: { view: "agent" as const, agentId, conversationId: null, selection: null, entities: [] } };
+    const fields = { name: "quote-primary-source", condition: { kind: "always" as const }, action: "Quote first.", priority: 85, excludes: ["represent-organization"] };
+
+    await descriptors.find((descriptor) => descriptor.name === "propose_directive")?.createTool(context).invoke(fields, {} as never);
+
+    expect(draft).toHaveBeenCalledWith(workspaceId, { agentId, directiveId: null }, fields);
+    expect(readVersionToken).not.toHaveBeenCalled();
+    expect(createProposal).toHaveBeenCalledWith(expect.objectContaining({ versionToken: "draft-snapshot-version" }));
+  });
+
+  it("bounds structured directive priority and replacement names in the input schema", () => {
+    const descriptor = createDirectiveProposalCopilotTools({
+      proposalRepository: { createProposal: vi.fn() },
+      proposalEvidence: unmeasured(),
+      proposalRecovery: { recoverOperatorMcpProposal: vi.fn() },
+      proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), draft: vi.fn(async () => ({ payload: { name: "quote-primary-source" }, targetLabel: "quote-primary-source", summary: "quote-primary-source", versionToken: "directive-version" })), preview: vi.fn(), applyIfVersionMatches: vi.fn() }],
+      auditService: auditService(),
+    }).find((candidate) => candidate.name === "propose_directive")!;
+
+    expect(descriptor.inputSchema.safeParse({ name: "quote-primary-source", condition: { kind: "always" }, action: "Quote first.", priority: 101 }).success).toBe(false);
+    expect(descriptor.inputSchema.safeParse({ name: "quote-primary-source", condition: { kind: "always" }, action: "Quote first.", excludes: Array.from({ length: 101 }, (_, index) => `directive-${index}`) }).success).toBe(false);
   });
 
   it("creates a reversible directive enablement proposal after reading its version first", async () => {
@@ -422,7 +461,7 @@ describe("US3 copilot proposals", () => {
       createdAt: new Date(),
       updatedAt: new Date(),
     }));
-    const draft = vi.fn(async () => ({ payload: { name: "Avoid competitors" }, targetLabel: "Avoid competitors", summary: "Draft directive" }));
+    const draft = vi.fn(async () => ({ payload: { name: "Avoid competitors" }, targetLabel: "Avoid competitors", summary: "Draft directive", versionToken: "directive-version" }));
     const [descriptor] = createDirectiveProposalCopilotTools({
       proposalRepository: { createProposal },
       proposalEvidence: unmeasured(),
@@ -1112,7 +1151,7 @@ describe("directive proposal adapter payload mapping", () => {
     const create = vi.fn(async () => ({ directive: { id: "directive-1" }, coherence: null }));
     const adapter = createDirectiveCopilotProposalAdapter({
       authoredDirectiveService: { list: vi.fn(async () => []), create, update: vi.fn() } as never,
-      directiveAuthorService: { draft: vi.fn() },
+      directiveAuthorService: { draftForProposal: vi.fn() },
       agentService: { get: vi.fn(async () => ({ updatedAt: new Date(0) })) } as never,
     });
 
@@ -1145,7 +1184,7 @@ describe("directive proposal adapter payload mapping", () => {
     const deleteDirective = vi.fn();
     const adapter = createDirectiveCopilotProposalAdapter({
       authoredDirectiveService: { list: vi.fn(async () => [existing]), create: vi.fn(), update, delete: deleteDirective } as never,
-      directiveAuthorService: { draft: vi.fn() },
+      directiveAuthorService: { draftForProposal: vi.fn() },
       agentService: { get: vi.fn(async () => ({ updatedAt: new Date(0) })) } as never,
     });
 
@@ -1173,7 +1212,7 @@ describe("directive proposal adapter payload mapping", () => {
     });
     const adapter = createDirectiveCopilotProposalAdapter({
       authoredDirectiveService: { list: vi.fn(async () => []), create: vi.fn(), update: vi.fn(), delete: deleteDirective },
-      directiveAuthorService: { draft: vi.fn() },
+      directiveAuthorService: { draftForProposal: vi.fn() },
       agentService: { get: vi.fn(async () => ({ updatedAt: currentUpdatedAt })) } as never,
     });
     const targetRef = { agentId: "6a6a6a6a-1111-2222-3333-444444444444", directiveId: "6a6a6a6a-1111-2222-3333-444444444445" };
@@ -1191,7 +1230,7 @@ describe("directive proposal adapter payload mapping", () => {
     const existing = { id: "6a6a6a6a-1111-2222-3333-444444444445", agentId: "6a6a6a6a-1111-2222-3333-444444444444", name: "Avoid competitors", condition: { kind: "always" }, action: "Say nothing about rivals.", priority: null, requiredCapabilities: [], dependsOn: [], excludes: [], routes: [], tags: [], description: null, binding: null, lifecycle: null, metadata: {}, createdAt: new Date(0), updatedAt: new Date(0) };
     const adapter = createDirectiveCopilotProposalAdapter({
       authoredDirectiveService: { list: vi.fn(async () => [existing]), create: vi.fn(), update: vi.fn(), delete: vi.fn() } as never,
-      directiveAuthorService: { draft: vi.fn() },
+      directiveAuthorService: { draftForProposal: vi.fn() },
       agentService: { get: vi.fn() },
     });
 
@@ -1217,7 +1256,7 @@ describe("directive proposal adapter payload mapping", () => {
     const update = vi.fn(async () => ({ directive: { ...existing, enabled: false }, coherence: null }));
     const adapter = createDirectiveCopilotProposalAdapter({
       authoredDirectiveService: { list: vi.fn(async () => [existing]), create: vi.fn(), update, delete: vi.fn() } as never,
-      directiveAuthorService: { draft: vi.fn() },
+      directiveAuthorService: { draftForProposal: vi.fn() },
       agentService: { get: vi.fn() },
     });
     const targetRef = { agentId: existing.agentId, directiveId: existing.id };
@@ -1236,7 +1275,7 @@ describe("directive proposal adapter payload mapping", () => {
     const { createDirectiveCopilotProposalAdapter } = await import("../../../src/modules/operatorCopilot/proposalAdapters.js");
     const adapter = createDirectiveCopilotProposalAdapter({
       authoredDirectiveService: { list: vi.fn(async () => []), create: vi.fn(), update: vi.fn(), delete: vi.fn() },
-      directiveAuthorService: { draft: vi.fn() },
+      directiveAuthorService: { draftForProposal: vi.fn() },
       agentService: { get: vi.fn() },
     });
 
@@ -1260,7 +1299,7 @@ describe("directive proposal adapter payload mapping", () => {
       .mockRejectedValueOnce(new Error('Directive binding skill "order.lookup" is disabled'));
     const adapter = createDirectiveCopilotProposalAdapter({
       authoredDirectiveService: { list: vi.fn(async () => []), create: vi.fn(), update, delete: vi.fn() },
-      directiveAuthorService: { draft: vi.fn() },
+      directiveAuthorService: { draftForProposal: vi.fn() },
       agentService: { get: vi.fn() },
     });
 
@@ -2302,7 +2341,7 @@ describe("proposals carrying replay evidence", () => {
         {
           targetType: "directive" as const,
           readVersionToken: vi.fn(async () => "directive-version"),
-          draft: vi.fn(async () => ({ payload: { name: "Refund window" }, targetLabel: "Refund window", summary: "State the refund window" })),
+          draft: vi.fn(async () => ({ payload: { name: "Refund window" }, targetLabel: "Refund window", summary: "State the refund window", versionToken: "directive-version" })),
           preview: vi.fn(),
           applyIfVersionMatches: vi.fn(),
         },

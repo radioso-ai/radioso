@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { ReviewedChangeEffect } from "../../../shared/domain/reviewedChangeEffect.js";
 
 const reviewedImportDocumentSchema = z.object({
   externalDocumentId: z.string().min(1).max(240),
@@ -49,6 +50,14 @@ export type DocumentReviewedOperationTargetRef = z.infer<typeof documentReviewed
 export type DocumentReviewedImportPlan = z.infer<typeof documentReviewedImportPlanSchema>;
 export type DocumentReviewedRemovalPlan = z.infer<typeof documentReviewedRemovalPlanSchema>;
 export type DocumentReviewedReprocessPlan = z.infer<typeof documentReviewedReprocessPlanSchema>;
+
+/** Documents own the lifecycle and replacement facts for reviewed document work. */
+export const documentReviewedChangeEffect = (plan: DocumentReviewedOperationPlan): ReviewedChangeEffect =>
+  plan.operation === "import"
+    ? { exposure: "live", reversibility: plan.documents.some((document) => document.action === "replace") ? "irreversible" : "reversible", metered: true }
+    : plan.operation === "removal"
+      ? { exposure: "live", reversibility: "irreversible", metered: false }
+      : { exposure: "live", reversibility: "reversible", metered: true };
 
 /** Bounded review projection for transports; it does not re-decide document state. */
 export const describeDocumentReviewedOperationPlan = (plan: DocumentReviewedOperationPlan) => {

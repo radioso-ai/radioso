@@ -8,6 +8,11 @@ export const reviewedChangeEffectSchema = z.object({
   reversibility: z.enum(["reversible", "irreversible"]),
   metered: z.boolean(),
 }).strict();
+export const reviewedConfirmationSchema = z.object({
+  requirement: z.enum(["conversation", "signed_in_approval"]),
+  effect: reviewedChangeEffectSchema,
+  approvalUrl: z.string().url().max(2048).optional(),
+}).strict();
 export const reviewedApprovalStateSchema = z.object({
   requirement: z.enum(["conversation", "signed_in_approval"]),
   state: z.enum(["not_required", "awaiting", "approved"]),

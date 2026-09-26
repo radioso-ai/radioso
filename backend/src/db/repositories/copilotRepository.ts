@@ -473,6 +473,7 @@ export class CopilotRepository implements CopilotRepositoryPort, CopilotRetentio
         .where("id", "=", input.proposalId).where("workspace_id", "=", input.workspaceId)
         .where("operator_user_id", "=", input.operatorUserId).forUpdate().executeTakeFirst();
       if (!proposal) return { status: "missing" as const };
+      const lockedNow = (await trx.selectNoFrom(sql<Date>`clock_timestamp()`.as("now")).executeTakeFirstOrThrow()).now;
       const prepared = await trx.selectFrom("operator_mcp_invocations").select(["grant_id", "client_id", "workspace_id", "user_id"])
         .where("id", "=", proposal.operator_mcp_invocation_id!).executeTakeFirst();
       const execution = await trx.selectFrom("operator_mcp_invocations").select(["grant_id", "client_id", "workspace_id", "user_id"])
@@ -488,16 +489,17 @@ export class CopilotRepository implements CopilotRepositoryPort, CopilotRetentio
       }
       // Expiry denies a first or replacement execution, but cannot strand the one receipt that
       // already crossed the claim boundary: it may need owner reconciliation after a crash.
-      if (proposal.expires_at && proposal.expires_at <= input.now && proposal.execution_invocation_id !== input.executionInvocationId) return { status: "expired" as const };
+      if (proposal.expires_at && proposal.expires_at <= lockedNow && proposal.execution_invocation_id !== input.executionInvocationId) return { status: "expired" as const };
       if (proposal.status === "dismissed") return { status: "canceled" as const };
       if (proposal.status !== "pending") return { status: "not_prepared" as const };
       if (proposal.execution_invocation_id && proposal.execution_invocation_id !== input.executionInvocationId) return { status: "not_prepared" as const };
       if (proposal.confirmation_requirement === "signed_in_approval" && (proposal.approved_at === null || proposal.approval_digest !== proposal.review_digest)) return { status: "approval_required" as const };
-      const claimedAt = input.now;
+      const claimedAt = lockedNow;
       const previousAttemptStartedAt = proposal.apply_started_at;
       const claimed = await trx.updateTable("copilot_proposals")
         .set({ execution_invocation_id: input.executionInvocationId, apply_started_at: claimedAt, updated_at: claimedAt })
         .where("id", "=", input.proposalId).where("status", "=", "pending")
+        .where("expires_at", ">", lockedNow)
         .where((eb) => eb.or([eb("execution_invocation_id", "is", null), eb("execution_invocation_id", "=", input.executionInvocationId)]))
         .where((eb) => eb.or([eb("apply_started_at", "is", null), eb("apply_started_at", "<=", nowMinusSeconds(input.claimTtlSeconds))]))
         .returning(proposalColumns).executeTakeFirst();
@@ -527,13 +529,14 @@ export class CopilotRepository implements CopilotRepositoryPort, CopilotRetentio
     return this.db.transaction().execute(async (trx) => {
       const proposal = await trx.selectFrom("copilot_proposals").select(proposalColumns).where("id", "=", input.proposalId).where("workspace_id", "=", input.workspaceId).where("operator_user_id", "=", input.operatorUserId).forUpdate().executeTakeFirst();
       if (!proposal) return "not_found";
+      const lockedNow = (await trx.selectNoFrom(sql<Date>`clock_timestamp()`.as("now")).executeTakeFirstOrThrow()).now;
       if (proposal.review_digest !== input.reviewDigest) return "digest_mismatch";
       if (proposal.status !== "pending") return "not_pending";
-      if (!proposal.expires_at || proposal.expires_at <= input.now) return "expired";
+      if (!proposal.expires_at || proposal.expires_at <= lockedNow) return "expired";
       if (proposal.confirmation_requirement !== "signed_in_approval") return "not_pending";
       if (proposal.approved_at) return "approved";
-      await trx.updateTable("copilot_proposals").set({ approved_at: input.now, approved_by_user_id: input.operatorUserId, approval_digest: input.reviewDigest, updated_at: input.now }).where("id", "=", input.proposalId).execute();
-      return "approved";
+      const approved = await trx.updateTable("copilot_proposals").set({ approved_at: lockedNow, approved_by_user_id: input.operatorUserId, approval_digest: input.reviewDigest, updated_at: lockedNow }).where("id", "=", input.proposalId).where("status", "=", "pending").where("expires_at", ">", lockedNow).where("approved_at", "is", null).returning("id").executeTakeFirst();
+      return approved ? "approved" : "expired";
     });
   }
 }

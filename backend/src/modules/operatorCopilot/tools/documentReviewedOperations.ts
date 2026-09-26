@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import {
   describeDocumentReviewedOperationPlan,
+  documentReviewedChangeEffect,
   type DocumentReviewedOperationPreparationPort,
 } from "../../documents/contracts/index.js";
 import { documentMetadataRecordSchema } from "../../documents/public.js";
@@ -76,7 +77,7 @@ export const createDocumentReviewedOperationTools = (deps: DocumentReviewedOpera
       const targetRef = { sourceId: input.sourceId ?? null };
       const versionToken = plan.fence;
       const reviewSnapshot = { review, fullReview };
-      const stored = await persistReviewedPreparation({ deps, context, targetType: "document_operation", targetRef, payload, versionToken, reviewSnapshot, operation: "import", metadata: { documentCount }, effect: { exposure: "live", reversibility: (review.counts?.replace ?? 0) > 0 ? "irreversible" : "reversible", metered: true } });
+      const stored = await persistReviewedPreparation({ deps, context, targetType: "document_operation", targetRef, payload, versionToken, reviewSnapshot, operation: "import", metadata: { documentCount }, effect: documentReviewedChangeEffect(plan) });
       return { proposalId: stored.proposal.id, reviewDigest: stored.reviewDigest, expiresAt: stored.expiresAt.toISOString(), review };
     },
   }),
@@ -116,7 +117,7 @@ function createRemovalTool(deps: DocumentReviewedOperationToolDependencies): Cop
       const payload = plan;
       const versionToken = plan.fence;
       const reviewSnapshot = { review, fullReview };
-      const stored = await persistReviewedPreparation({ deps, context, targetType: "document_operation", targetRef, payload, versionToken, reviewSnapshot, operation: "removal", metadata: { documentCount }, effect: { exposure: "live", reversibility: "irreversible", metered: false } });
+      const stored = await persistReviewedPreparation({ deps, context, targetType: "document_operation", targetRef, payload, versionToken, reviewSnapshot, operation: "removal", metadata: { documentCount }, effect: documentReviewedChangeEffect(plan) });
       return { proposalId: stored.proposal.id, reviewDigest: stored.reviewDigest, expiresAt: stored.expiresAt.toISOString(), review };
     } }),
   };
@@ -153,7 +154,7 @@ function createReprocessTool(deps: DocumentReviewedOperationToolDependencies): C
       const targetRef = { sourceId: input.sourceId ?? null };
       const payload = plan;
       const versionToken = plan.fence; const reviewSnapshot = { review, fullReview: summary.fullReview };
-      const stored = await persistReviewedPreparation({ deps, context, targetType: "document_operation", targetRef, payload, versionToken, reviewSnapshot, operation: "reprocess", metadata: { kind: input.kind, eligible: summary.review.eligible }, effect: { exposure: "live", reversibility: "reversible", metered: true } });
+      const stored = await persistReviewedPreparation({ deps, context, targetType: "document_operation", targetRef, payload, versionToken, reviewSnapshot, operation: "reprocess", metadata: { kind: input.kind, eligible: summary.review.eligible }, effect: documentReviewedChangeEffect(plan) });
       return { proposalId: stored.proposal.id, reviewDigest: stored.reviewDigest, expiresAt: stored.expiresAt.toISOString(), review };
     } }),
   };

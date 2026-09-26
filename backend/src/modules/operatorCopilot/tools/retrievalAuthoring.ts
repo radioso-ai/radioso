@@ -96,7 +96,7 @@ export const createRetrievalAuthoringCopilotTools = (
           lifecycle: "agent_skill_draft" as const,
         };
         await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
-        const stored = await persistReviewedPreparation({ deps, context, targetType: "agent_skill", targetRef, payload, versionToken: prepared.settingsVersion, reviewSnapshot, operation: "prepare_retrieval_settings", effect: { exposure: "draft", reversibility: "reversible", metered: false } });
+        const stored = await persistReviewedPreparation({ deps, context, targetType: "agent_skill", targetRef, payload, versionToken: prepared.settingsVersion, reviewSnapshot, operation: "prepare_retrieval_settings", effect: prepared.effect });
         return {
           proposalId: stored.proposal.id,
           reviewDigest: stored.reviewDigest,

@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { type AgenticCapabilityRunner, type AgentTool, type AgentTraceEvent } from "../../shared/agent-runtime/index.js";
 import type { UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
 import { AppError } from "../../shared/domain/errors.js";
+import { buildAbsoluteOperatorMcpProposalLink } from "./dashboardLinks.js";
 import {
   copilotProposalPermissions,
   copilotProposalTargetTypes,
@@ -204,6 +205,7 @@ interface OperatorCopilotServiceDeps {
    * its audit carry no error, so this is where support finds it.
    */
   readonly logger?: { warn(fields: Record<string, unknown>, message: string): void };
+  readonly appBaseUrl?: string | null;
 }
 
 export class OperatorCopilotService {
@@ -499,7 +501,7 @@ export class OperatorCopilotService {
     }
     if (claimed.status === "claim_held") return { status: "uncertain", reason: UNCONFIRMED_APPLY_REASON };
     if (claimed.status === "approval_required" && existing?.expiresAt && existing.changeEffect) {
-      return { status: "approval_required", approval: { url: `/oauth/operator-mcp/proposal/${existing.id}`, expiresAt: existing.expiresAt.toISOString(), effect: existing.changeEffect } };
+      return { status: "approval_required", approval: { url: buildAbsoluteOperatorMcpProposalLink(existing.id, this.deps.appBaseUrl), expiresAt: existing.expiresAt.toISOString(), effect: existing.changeEffect } };
     }
     if (claimed.status !== "claimed") return { status: "refused", reason: claimed.status };
     return this.executeClaimedProposal({

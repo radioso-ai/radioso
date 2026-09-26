@@ -27,6 +27,7 @@ export {
 export {
   agentInputFieldSchemas,
   agentInputThemeSchema,
+  agentReviewedSettingsPatchSchema,
 } from "./agentInputSchema.js";
 export {
   describePublicAccessChange,

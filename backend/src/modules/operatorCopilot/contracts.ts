@@ -4,6 +4,7 @@ import type { OperatorMcpScope } from "@radioso/operator-mcp-contract";
 import type { AccountPermission } from "../account/public.js";
 import type { AgentTool } from "../../shared/agent-runtime/index.js";
 import type { OperatorMcpInvocationRecord } from "./mcpContracts.js";
+import type { OwnerCommitHook } from "../../shared/infra/kysely/types.js";
 
 /**
  * The single runtime list of page-context entity types a dashboard surface may report to the
@@ -326,6 +327,18 @@ export interface CopilotProposalApplyContext {
   readonly operatorUserId?: string;
 }
 
+/** Composition supplies receipt settlement; owners receive only its transaction callback. */
+export interface CopilotReviewedReceiptPort {
+  commitHook<TCommitted>(input: {
+    readonly proposalId: string;
+    readonly executionInvocationId: string;
+    readonly workspaceId: string;
+    readonly operatorUserId: string;
+    readonly claimedAt: Date;
+    readonly toAppliedRef: (committed: TCommitted) => unknown;
+  }): OwnerCommitHook<TCommitted>;
+}
+
 /**
  * An owner answers an interrupted MCP apply from its own durable effect record. `unknown` is
  * deliberately terminal: reapplying after a lost response is only safe when the owner can prove
@@ -543,6 +556,8 @@ export interface CopilotToolDescriptor<TInput = unknown, TOutput = unknown> {
   readonly contributingModule: string;
   /** Reviewed transport disposition attached during production catalog assembly. */
   readonly mcpDisposition?: CopilotMcpDisposition;
+  /** Omitted means every copilot surface; reviewed receipts are MCP-only. */
+  readonly surfaces?: readonly CopilotSurface[];
   /** Default dashboard handoff for this tool's collection or owning subject. */
   readonly dashboardSubject: CopilotEntityReference;
   createTool(context: CopilotToolInvocationContext): AgentTool<TInput, TOutput>;

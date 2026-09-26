@@ -24,9 +24,15 @@ import {
   type AgentInput,
   type AgentRecord,
 } from "../domain.js";
-import { agentInputFieldSchemas } from "../agentInputSchema.js";
+import {
+  agentInputFieldSchemas,
+  agentReviewedSettingsPatchSchema,
+  agentSettingProposalEffect,
+  type AgentReviewedSettingsKey,
+} from "../agentInputSchema.js";
 import { DEFAULT_AGENT_LOCALE_FALLBACK, type AgentGreetingSnapshot } from "../agentRevision.js";
 import { ensurePublicIdMintedForInput } from "./agentPublicIdentity.js";
+import type { OwnerCommitHook } from "../../../shared/infra/kysely/types.js";
 
 export type AgentSettingsResource = Omit<AgentRecord, "authoredDirectives"> & {
   isDefault: boolean;
@@ -39,12 +45,27 @@ interface AgentFieldProposalPreparation {
   readonly expected: { readonly key: string; readonly value: unknown };
   readonly display: { readonly current: unknown; readonly proposed: unknown };
 }
+interface AgentFieldsProposalPreparation {
+  readonly targetAgentId: string;
+  readonly agentName: string;
+  readonly normalizedPatch: AgentInput;
+  readonly expectedFields: ReadonlyArray<{ readonly key: AgentReviewedSettingsKey; readonly value: unknown }>;
+  readonly changes: ReadonlyArray<{
+    readonly key: AgentReviewedSettingsKey;
+    readonly current: unknown;
+    readonly proposed: unknown;
+    readonly lifecycle: "live" | "agent_draft";
+    readonly reach: boolean;
+  }>;
+  readonly unchanged: readonly AgentReviewedSettingsKey[];
+}
 type AgentFieldProposalApplyInput = Pick<AgentFieldProposalPreparation, "targetAgentId" | "normalizedPatch"> & (
   | { readonly expected: { readonly key: string; readonly value: unknown } }
+  | { readonly expectedFields: ReadonlyArray<{ readonly key: string; readonly value: unknown }> }
   | { readonly expectedUpdatedAt: Date }
 );
 type AgentFieldProposalApplyOutcome =
-  | { readonly status: "applied" }
+  | { readonly status: "applied"; readonly followUp?: "side_effects_incomplete" }
   | { readonly status: "changed"; readonly fields: readonly string[] }
   | { readonly status: "target_changed" }
   | { readonly status: "target_deleted" };
@@ -175,14 +196,21 @@ export class AgentService {
     agentId: string,
     input: AgentInput,
     guard: AgentProposalCasGuard,
-  ): Promise<AgentProposalCasOutcome> {
+  ): Promise<AgentProposalCasOutcome & { readonly followUp?: "side_effects_incomplete" }> {
     const workspace = await this.requireWorkspace(workspaceId);
     await this.validateSourceScope(workspaceId, input);
     const outcome = await this.agentRepository.applyProposalPatch(agentId, workspaceId, input, guard);
     if (outcome.outcome !== "applied") {
       return outcome;
     }
-    await this.afterAgentWrite(workspace, outcome.previous, outcome.agent);
+    try {
+      await this.afterAgentWrite(workspace, outcome.previous, outcome.agent);
+    } catch (error) {
+      // The receipt hook ran in the owner's transaction. A best-effort side effect cannot turn a
+      // committed reviewed mutation into an uncertain one.
+      if (guard.onCommitted) return { ...outcome, followUp: "side_effects_incomplete" };
+      throw error;
+    }
     return outcome;
   }
 
@@ -215,16 +243,45 @@ export class AgentService {
     };
   }
 
+  /** Prepares several reviewable settings as one owner-validated, field-fenced patch. */
+  async prepareFieldsProposal(
+    workspaceId: string,
+    agentId: string,
+    patch: Readonly<Record<string, unknown>>,
+  ): Promise<AgentFieldsProposalPreparation> {
+    const requested = agentReviewedSettingsPatchSchema.parse(patch);
+    const current = await this.get(workspaceId, agentId);
+    const keys = Object.keys(requested) as AgentReviewedSettingsKey[];
+    const normalized = validateAgentInput({ ...current, ...requested } as AgentInput);
+    const changes = keys.flatMap((key) => {
+      const currentValue = proposalSettingValue(current, key);
+      const proposed = proposalSettingValue(normalized, key);
+      return JSON.stringify(currentValue) === JSON.stringify(proposed)
+        ? []
+        : [{ key, current: currentValue, proposed, ...agentSettingProposalEffect(key) }];
+    });
+    if (changes.length === 0) throw badRequest("The agent settings already hold these values");
+    return {
+      targetAgentId: agentId,
+      agentName: current.name,
+      normalizedPatch: Object.fromEntries(changes.map((change) => [change.key, change.proposed])),
+      expectedFields: changes.map((change) => ({ key: change.key, value: change.current })),
+      changes,
+      unchanged: keys.filter((key) => !changes.some((change) => change.key === key)),
+    };
+  }
+
   async readFieldProposalVersion(
     workspaceId: string,
     agentId: string,
-    expected?: { readonly key: string },
+    expected?: { readonly key: string } | { readonly keys: readonly string[] },
   ): Promise<string> {
     const current = await this.get(workspaceId, agentId);
     if (!expected) return current.updatedAt.toISOString();
     // Validate the key on every entry point, including legacy-card preview/read paths.
-    proposalSettingPatch(expected.key, proposalSettingValue(current, expected.key));
-    return fieldProposalVersion({ [expected.key]: proposalSettingValue(current, expected.key) });
+    const keys = "key" in expected ? [expected.key] : expected.keys;
+    for (const key of keys) proposalSettingPatch(key, proposalSettingValue(current, key));
+    return fieldProposalVersion(Object.fromEntries(keys.map((key) => [key, proposalSettingValue(current, key)])));
   }
 
   async readFieldProposalDisplay(workspaceId: string, agentId: string, settingKey: string): Promise<unknown> {
@@ -237,22 +294,35 @@ export class AgentService {
   async applyFieldProposal(
     workspaceId: string,
     prepared: AgentFieldProposalApplyInput,
+    options?: { readonly onCommitted?: OwnerCommitHook<{ readonly agentId: string }> },
   ): Promise<AgentFieldProposalApplyOutcome> {
     const entries = Object.entries(prepared.normalizedPatch);
-    if (entries.length !== 1) {
+    if (entries.length !== 1 && !("expectedFields" in prepared)) {
       throw badRequest("An agent field proposal must name exactly one setting");
     }
-    const [settingKey, value] = entries[0];
-    const normalizedPatch = proposalSettingPatch(settingKey, value);
+    if (entries.length === 0) throw badRequest("An agent field proposal must name at least one setting");
+    const normalizedPatch = "expectedFields" in prepared
+      ? agentReviewedSettingsPatchSchema.parse(prepared.normalizedPatch) as AgentInput
+      : proposalSettingPatch(entries[0][0], entries[0][1]);
+    if ("expectedFields" in prepared) {
+      const patchKeys = Object.keys(normalizedPatch).sort();
+      const expectedKeys = prepared.expectedFields.map((field) => field.key).sort();
+      if (patchKeys.join("\u0000") !== expectedKeys.join("\u0000")) {
+        throw badRequest("An agent field proposal must fence exactly the settings it changes");
+      }
+    }
+    const guard = "expected" in prepared
+      ? { expectedFields: [prepared.expected] }
+      : "expectedFields" in prepared
+        ? { expectedFields: prepared.expectedFields }
+        : { expectedUpdatedAt: prepared.expectedUpdatedAt };
     const outcome = await this.applyProposalPatch(
       workspaceId,
       prepared.targetAgentId,
       normalizedPatch,
-      "expected" in prepared
-        ? { expectedFields: [prepared.expected] }
-        : { expectedUpdatedAt: prepared.expectedUpdatedAt },
+      { ...guard, ...(options?.onCommitted ? { onCommitted: options.onCommitted } : {}) },
     );
-    if (outcome.outcome === "applied") return { status: "applied" };
+    if (outcome.outcome === "applied") return { status: "applied", ...(outcome.followUp ? { followUp: outcome.followUp } : {}) };
     if (outcome.outcome === "targetDeleted") return { status: "target_deleted" };
     if (outcome.outcome === "changed" && outcome.fields.includes("target")) return { status: "target_changed" };
     return { status: "changed", fields: outcome.fields };

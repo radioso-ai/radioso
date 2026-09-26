@@ -1251,14 +1251,23 @@ describe("directive proposal adapter payload mapping", () => {
     const { createDirectiveCopilotProposalAdapter } = await import("../../../src/modules/operatorCopilot/proposalAdapters.js");
     const agentId = "6a6a6a6a-1111-2222-3333-444444444444";
     const create = vi.fn(async () => ({ directive: { id: "6a6a6a6a-1111-2222-3333-444444444445" } }));
+    const agentUpdatedAt = new Date("2026-09-26T10:00:00.000Z");
+    const draftForProposal = vi.fn(async () => ({
+      draft: { directive: { name: "locale", condition: { kind: "always" }, action: "Use Estonian." } },
+      versionToken: agentUpdatedAt.toISOString(),
+    }));
     const adapter = createDirectiveCopilotProposalAdapter({
       authoredDirectiveService: { list: vi.fn(async () => []), create, update: vi.fn(), delete: vi.fn() } as never,
-      directiveAuthorService: { draft: vi.fn() },
+      directiveAuthorService: { draftForProposal } as never,
       agentService: { get: vi.fn(async () => ({ updatedAt: new Date() })) } as never,
     });
     const targetRef = { agentId, directiveId: null };
 
-    expect(await adapter.readVersionToken("workspace-1", targetRef)).toBe("agent-exists");
+    // The drafted create carries the same fence readVersionToken reports, so the proposal reads as
+    // current rather than stale, and apply does not pin the agent row's updatedAt.
+    const drafted = await adapter.draft("workspace-1", targetRef, { name: "locale", condition: { kind: "always" }, action: "Use Estonian." });
+    expect(drafted.versionToken).toBe("agent-exists");
+    expect(await adapter.readVersionToken("workspace-1", targetRef)).toBe(drafted.versionToken);
     await expect(adapter.applyIfVersionMatches("workspace-1", targetRef, {
       name: "locale", condition: { kind: "always" }, action: "Use Estonian.",
     }, "agent-exists")).resolves.toMatchObject({ outcome: "applied" });

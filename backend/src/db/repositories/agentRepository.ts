@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { sql, type Transaction } from "kysely";
 
-import { conflict, notFound } from "../../shared/domain/errors.js";
+import { AppError, conflict, notFound } from "../../shared/domain/errors.js";
 import {
   mergeAgentSurfaceSettings,
   validateAgentInput,
@@ -130,8 +130,11 @@ const isAgentDirectiveNameUniqueViolation = (error: unknown): boolean => {
   );
 };
 
+// Carries a structured marker distinct from a bare `conflict()`: the copilot reviewed-execution
+// path must tell this deliberate refusal apart from an optimistic-concurrency mismatch, and both
+// throw the same AppError code ("conflict") from this repository, so the code alone can't do it.
 const directiveNameConflict = (name: string) =>
-  conflict(`A directive named "${name}" already exists for this agent.`);
+  new AppError(409, "conflict", `A directive named "${name}" already exists for this agent.`, { reason: "duplicate_name" });
 
 /**
  * The agent projection: the agents row plus two correlated subqueries that aggregate the

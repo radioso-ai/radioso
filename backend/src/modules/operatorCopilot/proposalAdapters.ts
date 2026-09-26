@@ -13,6 +13,7 @@ import {
   hasConfiguredContactDestination,
   readNotifyContactDelivery,
   agentReviewedSettingsPatchSchema,
+  isDirectiveNameConflict,
   type AuthoredDirective,
   type AuthoredDirectiveInput,
   projectDirectiveAuthorProposalInput,
@@ -57,7 +58,7 @@ import type { ContextVariable, AgentContextVariableEnablement } from "../context
 import type { ContextVariableService } from "../context-variables/public.js";
 import { isOwnerRefusal, isStale, staleReason, versionDate, versionToken } from "./proposalVersioning.js";
 import { routineValidationRefusal } from "./routineValidationRefusal.js";
-import { AppError, badRequest, conflict, notFound } from "../../shared/domain/errors.js";
+import { badRequest, conflict, notFound } from "../../shared/domain/errors.js";
 
 /** Composition-only atomic boundary for an existing agent-skill update and its MCP receipt. */
 export interface AgentSkillMcpApplyPort {
@@ -341,8 +342,11 @@ export const createDirectiveCopilotProposalAdapter = (deps: {
         )).directive;
       return { outcome: "applied" as const, appliedRef: { directiveId: directive.id } };
     } catch (error) {
-      // A create collision is the directives owner's refusal, not a version fence losing.
-      if (!targetRef.directiveId && token === directiveCreateToken && error instanceof AppError && error.code === "conflict") {
+      // A create or rename collision on the (agent_id, name) constraint is the directives owner's
+      // deliberate refusal, not a version fence losing. Both throw AppError "conflict", so the
+      // owner marks a name collision with a distinct detail the adapter reads instead of guessing
+      // from the token shape (which no longer holds once a create carries its real agent fence).
+      if (isDirectiveNameConflict(error)) {
         return { outcome: "failed" as const, reason: error.message };
       }
       if (context?.surface === "mcp") return reviewedApplyError(error, []);

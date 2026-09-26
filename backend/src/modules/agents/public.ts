@@ -51,6 +51,7 @@ export {
 } from "./services/agentService.js";
 export {
   AuthoredDirectiveService,
+  isDirectiveNameConflict,
   type AuthoredDirectiveServiceOptions,
 } from "./services/authoredDirectiveService.js";
 export {

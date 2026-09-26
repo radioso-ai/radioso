@@ -184,12 +184,73 @@ describe("AuthoredDirectiveService", () => {
     const removal = await service.previewChange(workspaceId, agentId, { kind: "remove", directiveId: existing.id });
 
     expect(create.after?.name).toBe("new-rule");
+    expect(create.referencedBy).toEqual([]);
     expect(edit.after?.action).toBe("Edited.");
+    expect(edit.referencedBy).toEqual([
+      { directiveId: referring.id, name: "referrer", relation: "excludes" },
+      { directiveId: referring.id, name: "referrer", relation: "dependsOn" },
+    ]);
     expect(disabled.coherence).toBeNull();
     expect(removal).toMatchObject({ before: { id: existing.id }, after: null, referencedBy: [{ name: "referrer", relation: "excludes" }, { name: "referrer", relation: "dependsOn" }] });
     expect(repository.created).toEqual([]);
     expect(repository.updated).toEqual([]);
+    // Only the two enabled previews (create, edit) run the advisory coherence checker; the
+    // disabled preview and the removal preview must not spend an LLM call on it.
+    expect(checker.checks).toHaveLength(2);
   });
+
+  it("refuses a set_enabled preview that would not change the directive's state", async () => {
+    const repository = new StubAgentRepository();
+    const existing = persistedDirective(directiveInput({ name: "already-enabled" }), { enabled: true });
+    repository.directives.push(existing);
+    const checker = new CapturingChecker();
+    const service = new AuthoredDirectiveService({ repository, coherenceChecker: checker, registeredCapabilityNames: new Set() });
+
+    await expect(service.previewChange(workspaceId, agentId, { kind: "set_enabled", directiveId: existing.id, enabled: true }))
+      .rejects.toMatchObject({ statusCode: 400, message: expect.stringContaining("already enabled") });
+    // A no-op refusal is cheap: it must not have spent a coherence check to discover it.
+    expect(checker.checks).toHaveLength(0);
+  });
+
+  it("skips the coherence checker when creating with coherence: \"skip\", for deterministic reviewed execution", async () => {
+    const repository = new StubAgentRepository();
+    const checker = new CapturingChecker();
+    const service = new AuthoredDirectiveService({ repository, coherenceChecker: checker, registeredCapabilityNames: new Set() });
+
+    const result = await service.create(workspaceId, agentId, directiveInput({ name: "verbatim-create" }), { coherence: "skip" });
+
+    expect(checker.checks).toHaveLength(0);
+    expect(result.coherence).toMatchObject({ coherent: true, rationale: expect.stringContaining("skipped") });
+    expect(repository.created).toHaveLength(1);
+  });
+
+  it("skips the coherence checker when updating with coherence: \"skip\", for deterministic reviewed execution", async () => {
+    const repository = new StubAgentRepository();
+    const existing = persistedDirective(directiveInput({ name: "verbatim-edit" }));
+    repository.directives.push(existing);
+    const checker = new CapturingChecker();
+    const service = new AuthoredDirectiveService({ repository, coherenceChecker: checker, registeredCapabilityNames: new Set() });
+
+    const result = await service.update(workspaceId, agentId, existing.id, { action: "Updated verbatim." }, { coherence: "skip" });
+
+    expect(checker.checks).toHaveLength(0);
+    expect(result.coherence).toMatchObject({ coherent: true, rationale: expect.stringContaining("skipped") });
+    expect(repository.updated).toHaveLength(1);
+  });
+
+  it("still runs the coherence checker on create and update when coherence is not skipped", async () => {
+    const repository = new StubAgentRepository();
+    const existing = persistedDirective(directiveInput({ name: "checked-edit" }));
+    repository.directives.push(existing);
+    const checker = new CapturingChecker();
+    const service = new AuthoredDirectiveService({ repository, coherenceChecker: checker, registeredCapabilityNames: new Set() });
+
+    await service.create(workspaceId, agentId, directiveInput({ name: "checked-create" }));
+    await service.update(workspaceId, agentId, existing.id, { action: "Checked update." });
+
+    expect(checker.checks).toHaveLength(2);
+  });
+
   it("refuses a replacement name that is absent from the agent and built-in catalog", async () => {
     const repository = new StubAgentRepository();
     const service = new AuthoredDirectiveService({

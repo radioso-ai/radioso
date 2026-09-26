@@ -19,6 +19,12 @@ export const createUsageLimitsApplicationModule = (): ApplicationModule => ({
     context.registerUsageLimitPolicy(({ database }) => {
       return new EnterpriseUsageLimitService(database);
     });
+    // The reviewed-operation import planner needs to explain document capacity before it plans
+    // a batch write; that read lives on its own narrow port so `registerUsageLimitPolicy`'s
+    // reservation fakes never have to stub it.
+    context.registerDocumentCapacityReader?.(({ database }) => {
+      return new EnterpriseUsageLimitService(database);
+    });
     context.registerOrganizationCreationGuard?.(({ database }) => {
       return new EnterpriseOrganizationCreationGuard(database);
     });

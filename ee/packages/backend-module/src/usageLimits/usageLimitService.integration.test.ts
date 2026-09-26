@@ -203,6 +203,21 @@ describeIfDatabase("EE usage limit service integration", () => {
     expect(rows[0].count).toBe("0");
   });
 
+  it("reads real document capacity from an assigned profile and leaves unassigned capacity unlimited", async () => {
+    const assigned = await seedAccountWorkspace();
+    await assignProfile(assigned.accountId, { storedDocumentLimit: 3, storedIndexedByteLimit: 100, monthlyIndexedByteLimit: 200 });
+    await seedDocument(assigned.workspaceId, { contentSizeBytes: 40 });
+    await seedDocument(assigned.workspaceId, { contentSizeBytes: 30 });
+    const service = new EnterpriseUsageLimitService(database);
+
+    await expect(service.getDocumentCapacityUsage({ accountId: assigned.accountId, workspaceId: assigned.workspaceId }))
+      .resolves.toMatchObject({ storedDocuments: { used: 2, limit: 3 }, storedIndexedBytes: { used: 70, limit: 100 }, monthlyIndexedBytes: { used: 0, limit: 200 } });
+
+    const unlimited = await seedAccountWorkspace();
+    await expect(service.getDocumentCapacityUsage({ accountId: unlimited.accountId, workspaceId: unlimited.workspaceId }))
+      .resolves.toMatchObject({ storedDocuments: { used: 0, limit: null }, storedIndexedBytes: { used: 0, limit: null }, monthlyIndexedBytes: { used: 0, limit: null } });
+  });
+
   it("reports persisted assistant messages for uncapped account usage", async () => {
     const { accountId, workspaceId } = await seedAccountWorkspace();
     await database.query(

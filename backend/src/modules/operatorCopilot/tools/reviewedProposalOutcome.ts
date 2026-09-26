@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import type { CopilotToolDescriptor } from "../contracts.js";
+import type { CopilotCurrentAuthorizationPort, CopilotToolDescriptor } from "../contracts.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import { REVIEWED_OPERATION_NOT_FOUND } from "../reviewedOperation.js";
 
@@ -35,6 +35,7 @@ export interface ReviewedProposalOutcomePort {
     readonly grantId: string;
     readonly clientId: string;
     readonly proposalId: string;
+    readonly currentAuthorization: CopilotCurrentAuthorizationPort;
   }): Promise<{
     readonly proposal: {
       readonly id: string;
@@ -64,7 +65,7 @@ export const createReviewedProposalOutcomeTool = (outcomes: ReviewedProposalOutc
   description: "Read the exact stored review and current outcome of one reviewed operation a prepare_* tool created. It does not execute or refresh the review.",
   contributingModule: "operatorCopilot",
   dashboardSubject: { type: "proposal" },
-  requiredPermissions: ["workspace.agents.manage"],
+  requiredPermissions: [],
   inputSchema,
   outputSchema,
   createTool: (context) => ({
@@ -84,6 +85,7 @@ export const createReviewedProposalOutcomeTool = (outcomes: ReviewedProposalOutc
         grantId: context.operatorMcpGrantId,
         clientId: context.operatorMcpClientId,
         proposalId: input.proposalId,
+        currentAuthorization: context.currentAuthorization,
       });
       if (!outcome || !outcome.proposal.reviewDigest || outcome.proposal.reviewSnapshot === null) {
         if (await outcomes.isDashboardReviewedProposal?.({

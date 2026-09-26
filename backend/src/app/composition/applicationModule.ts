@@ -17,7 +17,7 @@ import type { Database } from "../../shared/infra/database.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 import type { JobConsumerPort } from "../../shared/domain/jobConsumer.js";
 import type { OrganizationCreationGuard } from "../../shared/domain/organizationCreationGuard.js";
-import type { UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
+import type { DocumentCapacityReadPort, UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
 import type { ManagedModelPolicy } from "../../shared/domain/managedModelPolicy.js";
 import type { UsageEventRecorder } from "../../shared/domain/usageEventRecorder.js";
 import type { WebsiteEmbedIntegrationProvider } from "../../modules/settings/contracts/websiteEmbedIntegration.js";
@@ -86,6 +86,13 @@ type ApplicationUsageLimitPolicyRegistration =
       database: ApplicationDatabasePort;
       logger: AppLogger;
     }) => UsageLimitPolicy);
+
+type ApplicationDocumentCapacityReaderRegistration =
+  | DocumentCapacityReadPort
+  | ((context: {
+      database: ApplicationDatabasePort;
+      logger: AppLogger;
+    }) => DocumentCapacityReadPort);
 
 type ApplicationManagedModelPolicyRegistration =
   | ManagedModelPolicy
@@ -234,6 +241,7 @@ interface ApplicationExtensionRegistry {
   accountCreatedHooks: ApplicationAccountCreatedHook[];
   capabilityPolicy?: CapabilityPolicy;
   usageLimitPolicyRegistration?: ApplicationUsageLimitPolicyRegistration;
+  documentCapacityReaderRegistration?: ApplicationDocumentCapacityReaderRegistration;
   managedModelPolicyRegistration?: ApplicationManagedModelPolicyRegistration;
   organizationCreationGuardRegistration?: ApplicationOrganizationCreationGuardRegistration;
   usageEventRecorderRegistration?: ApplicationUsageEventRecorderRegistration;
@@ -282,6 +290,8 @@ export interface ApplicationModuleRegistrationContext {
   registerAccountCreatedHandler(handler: ApplicationAccountCreatedHook): void;
   registerCapabilityPolicy(policy: CapabilityPolicy): void;
   registerUsageLimitPolicy(policy: ApplicationUsageLimitPolicyRegistration): void;
+  /** Document capacity is a read only the documents reviewed-operation service consumes; kept off {@link UsageLimitPolicy} so its reservation fakes never need to stub it. */
+  registerDocumentCapacityReader(reader: ApplicationDocumentCapacityReaderRegistration): void;
   registerManagedModelPolicy(policy: ApplicationManagedModelPolicyRegistration): void;
   registerOrganizationCreationGuard(guard: ApplicationOrganizationCreationGuardRegistration): void;
   registerUsageEventRecorder(recorder: ApplicationUsageEventRecorderRegistration): void;
@@ -372,6 +382,9 @@ const createRegistrationContext = (registry: ApplicationExtensionRegistry): Appl
   },
   registerUsageLimitPolicy(policy) {
     registry.usageLimitPolicyRegistration = policy;
+  },
+  registerDocumentCapacityReader(reader) {
+    registry.documentCapacityReaderRegistration = reader;
   },
   registerManagedModelPolicy(policy) {
     registry.managedModelPolicyRegistration = policy;

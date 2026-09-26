@@ -262,6 +262,9 @@ describe("copilot catalog wiring", () => {
       { name: "propose_document", shape: "propose", requiredPermissions: ["workspace.documents.manage"] },
       { name: "propose_document_retrieval", shape: "propose", requiredPermissions: ["workspace.documents.manage"] },
       { name: "propose_document_removal", shape: "propose", requiredPermissions: ["workspace.documents.manage"] },
+      { name: "prepare_document_import", shape: "propose", requiredPermissions: ["workspace.documents.manage"] },
+      { name: "prepare_document_removal", shape: "propose", requiredPermissions: ["workspace.documents.manage"] },
+      { name: "prepare_document_reprocess", shape: "propose", requiredPermissions: ["workspace.documents.manage"] },
     ]);
   });
 

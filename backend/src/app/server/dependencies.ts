@@ -91,6 +91,8 @@ import { createAgentPublicationProposalAdapter } from "../../modules/operatorCop
 import { createRoutineMcpApplyPort } from "../composition/copilotRoutineAtomicApply.js";
 import { createAgentSkillMcpApplyPort } from "../composition/copilotAgentSkillAtomicApply.js";
 import { createDocumentCopilotProposalAdapter } from "../../modules/operatorCopilot/documentProposalAdapter.js";
+import { createDocumentReviewedOperationAdapter } from "../../modules/operatorCopilot/documentReviewedOperationAdapter.js";
+import { DocumentReviewedOperationService } from "../../modules/documents/composition.js";
 import { createIngestionSettingsCopilotProposalAdapter } from "../../modules/operatorCopilot/ingestionSettingsProposalAdapter.js";
 import { createWorkspaceSettingCopilotProposalAdapter } from "../../modules/operatorCopilot/workspaceSettingProposalAdapter.js";
 import { createWebsiteCrawlCopilotProposalAdapter } from "../../modules/operatorCopilot/websiteCrawlProposalAdapter.js";
@@ -564,6 +566,16 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       documentDeletion: documents.documentDeletionService,
       workspaceAccount: createCopilotWorkspaceAccountResolver({ workspaceRepository: repositories.workspaceRepository }),
     }),
+    createDocumentReviewedOperationAdapter({
+      operations: new DocumentReviewedOperationService(
+        repositories.documentRepository,
+        documents.documentIngestionService,
+        documents.documentDeletionService,
+        infrastructure.documentCapacityReader,
+        documents.documentSourceReprocessService,
+        documents.workspaceIngestionReprocessService,
+      ),
+    }),
     createIngestionSettingsCopilotProposalAdapter({ ingestionSettings: settings.ingestionSettingsService }),
     createWorkspaceSettingCopilotProposalAdapter({ workspaceSetting: createCopilotWorkspaceSettingPort(platformSettingsService) }),
     createWebsiteCrawlCopilotProposalAdapter({
@@ -881,6 +893,14 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       },
     },
     retrievalAuthoring,
+    documents: new DocumentReviewedOperationService(
+      repositories.documentRepository,
+      documents.documentIngestionService,
+      documents.documentDeletionService,
+      infrastructure.documentCapacityReader,
+      documents.documentSourceReprocessService,
+      documents.workspaceIngestionReprocessService,
+    ),
     logger,
   });
   const operatorCopilotService: OperatorCopilotService = new OperatorCopilotService({

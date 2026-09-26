@@ -32,6 +32,7 @@ import type { ReviewedProposalOutcomePort } from "../../modules/operatorCopilot/
 import type { AgentPublicationCopilotToolDependencies } from "../../modules/operatorCopilot/tools/agentPublication.js";
 import type { RetrievalAuthoringCopilotToolDependencies } from "../../modules/operatorCopilot/tools/retrievalAuthoring.js";
 import type { CopilotProposalDetailReadPort } from "../../modules/operatorCopilot/service.js";
+import type { DocumentReviewedOperationToolDependencies } from "../../modules/operatorCopilot/tools/documentReviewedOperations.js";
 import type {
   CopilotEvalCaseCapturePort,
   CopilotEvalCaseReplayPort,
@@ -184,6 +185,7 @@ export const createCopilotToolCatalog = (deps: {
   readonly cancelReviewedProposal: import("../../modules/operatorCopilot/tools/cancelReviewedProposal.js").CancelReviewedProposalPort;
   readonly proposalDetail: CopilotProposalDetailReadPort;
   readonly retrievalAuthoring: RetrievalAuthoringCopilotToolDependencies["retrievalAuthoring"];
+  readonly documents: DocumentReviewedOperationToolDependencies["documents"];
   /**
    * Tools contributed by application modules outside this repository's first-party catalog. They
    * are merged before governance and enrichment so permission filtering, authorization re-checks,

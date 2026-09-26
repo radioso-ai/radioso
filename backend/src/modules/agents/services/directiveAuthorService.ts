@@ -178,15 +178,23 @@ export class DirectiveAuthorService {
     workspaceId: string,
     agentId: string,
     input: DirectiveAuthorDraftInput,
-  ): Promise<{ draft: DirectiveAuthorDraftResult; versionToken: string }> {
+  ): Promise<{ draft: DirectiveAuthorDraftResult; versionToken: string; current: import("../authoredDirectives.js").AuthoredDirective | null }> {
     return this.draftWithFence(workspaceId, agentId, input);
+  }
+
+  async readProposalFence(workspaceId: string, agentId: string, directiveId: string | null): Promise<string> {
+    const agent = await this.requireAgent(workspaceId, agentId);
+    if (!directiveId) return agent.updatedAt.toISOString();
+    const directive = (await this.options.repository.listDirectives(agentId, workspaceId)).find((item) => item.id === directiveId);
+    if (!directive) throw notFound("Directive not found");
+    return directive.updatedAt.toISOString();
   }
 
   private async draftWithFence(
     workspaceId: string,
     agentId: string,
     input: DirectiveAuthorDraftInput,
-  ): Promise<{ draft: DirectiveAuthorDraftResult; versionToken: string }> {
+  ): Promise<{ draft: DirectiveAuthorDraftResult; versionToken: string; current: import("../authoredDirectives.js").AuthoredDirective | null }> {
     const parsedInput = directiveAuthorDraftInputSchema.parse(input);
     const agent = await this.requireAgent(workspaceId, agentId);
     const existingDirectives = await this.options.repository.listDirectives(agentId, workspaceId);
@@ -220,7 +228,7 @@ export class DirectiveAuthorService {
         diagnosis: "directive_recommended",
       }, parsedInput);
       this.validateReplacementNames(result.directive.excludes ?? [], existingDirectives);
-      return { draft: result, versionToken };
+      return { draft: result, versionToken, current: existing ?? null };
     }
     if (!parsedInput.coachingText || !parsedInput.turn) {
       throw badRequest(`A directive without intent needs ${missing.join(" and ")}.`);
@@ -239,7 +247,7 @@ export class DirectiveAuthorService {
     if (primaryDraft) {
       const result = this.finalizeDraft(primaryDraft, parsedInput, suppliedFields);
       this.validateReplacementNames(result.directive.excludes ?? [], existingDirectives);
-      return { draft: result, versionToken };
+      return { draft: result, versionToken, current: existing ?? null };
     }
 
     const retry = await this.callLlm({
@@ -253,7 +261,7 @@ export class DirectiveAuthorService {
     if (retryDraft) {
       const result = this.finalizeDraft(retryDraft, parsedInput, suppliedFields);
       this.validateReplacementNames(result.directive.excludes ?? [], existingDirectives);
-      return { draft: result, versionToken };
+      return { draft: result, versionToken, current: existing ?? null };
     }
 
     throw invalidDraftError();

@@ -170,6 +170,26 @@ class CapturingChecker implements DirectiveCoherenceChecker {
 }
 
 describe("AuthoredDirectiveService", () => {
+  it("previews directive saves, enablement, and removal through owner validation without writing", async () => {
+    const repository = new StubAgentRepository();
+    const existing = persistedDirective(directiveInput({ name: "existing" }));
+    const referring = persistedDirective(directiveInput({ name: "referrer", excludes: ["existing"], dependsOn: ["existing"] }));
+    repository.directives.push(existing, referring);
+    const checker = new CapturingChecker();
+    const service = new AuthoredDirectiveService({ repository, coherenceChecker: checker, registeredCapabilityNames: new Set() });
+
+    const create = await service.previewChange(workspaceId, agentId, { kind: "save", directiveId: null, input: directiveInput({ name: "new-rule" }) });
+    const edit = await service.previewChange(workspaceId, agentId, { kind: "save", directiveId: existing.id, input: { name: existing.name, condition: existing.condition, action: "Edited." } });
+    const disabled = await service.previewChange(workspaceId, agentId, { kind: "set_enabled", directiveId: existing.id, enabled: false });
+    const removal = await service.previewChange(workspaceId, agentId, { kind: "remove", directiveId: existing.id });
+
+    expect(create.after?.name).toBe("new-rule");
+    expect(edit.after?.action).toBe("Edited.");
+    expect(disabled.coherence).toBeNull();
+    expect(removal).toMatchObject({ before: { id: existing.id }, after: null, referencedBy: [{ name: "referrer", relation: "excludes" }, { name: "referrer", relation: "dependsOn" }] });
+    expect(repository.created).toEqual([]);
+    expect(repository.updated).toEqual([]);
+  });
   it("refuses a replacement name that is absent from the agent and built-in catalog", async () => {
     const repository = new StubAgentRepository();
     const service = new AuthoredDirectiveService({

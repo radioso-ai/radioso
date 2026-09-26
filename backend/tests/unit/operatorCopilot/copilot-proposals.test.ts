@@ -1324,20 +1324,19 @@ describe("directive proposal adapter payload mapping", () => {
     }));
     const adapter = createDirectiveCopilotProposalAdapter({
       authoredDirectiveService: { list: vi.fn(async () => []), create, update: vi.fn(), delete: vi.fn() } as never,
-      directiveAuthorService: { draftForProposal } as never,
+      directiveAuthorService: { draftForProposal, readProposalFence: vi.fn(async () => agentUpdatedAt.toISOString()) } as never,
       agentService: { get: vi.fn(async () => ({ updatedAt: new Date() })) } as never,
     });
     const targetRef = { agentId, directiveId: null };
 
-    // The drafted create carries the same fence readVersionToken reports, so the proposal reads as
-    // current rather than stale, and apply does not pin the agent row's updatedAt.
+    // The owner-defined create fence is the agent version observed while drafting.
     const drafted = await adapter.draft("workspace-1", targetRef, { name: "locale", condition: { kind: "always" }, action: "Use Estonian." });
-    expect(drafted.versionToken).toBe("agent-exists");
+    expect(drafted.versionToken).toBe(agentUpdatedAt.toISOString());
     expect(await adapter.readVersionToken("workspace-1", targetRef)).toBe(drafted.versionToken);
     await expect(adapter.applyIfVersionMatches("workspace-1", targetRef, {
       name: "locale", condition: { kind: "always" }, action: "Use Estonian.",
-    }, "agent-exists")).resolves.toMatchObject({ outcome: "applied" });
-    expect(create).toHaveBeenCalledWith("workspace-1", agentId, expect.objectContaining({ name: "locale" }), undefined);
+    }, agentUpdatedAt.toISOString())).resolves.toMatchObject({ outcome: "applied" });
+    expect(create).toHaveBeenCalledWith("workspace-1", agentId, expect.objectContaining({ name: "locale" }), { expectedAgentUpdatedAt: agentUpdatedAt });
   });
 
   it("previews and applies a set_enabled payload as a one-field partial update", async () => {

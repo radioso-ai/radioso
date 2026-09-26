@@ -123,13 +123,14 @@ export const recordProposalCreated = async (
   auditService: CopilotAuditPort,
   context: CopilotActor & { accountId: string; workspaceId: string },
   proposal: CopilotProposal,
+  metadata: Record<string, unknown> = {},
 ): Promise<void> => {
   await auditService.record({
     accountId: context.accountId,
     workspaceId: context.workspaceId,
     eventType: "copilot.proposal.created",
     eventStatus: "success",
-    metadata: withCopilotActor(context, { proposalId: proposal.id, targetType: proposal.targetType }),
+    metadata: withCopilotActor(context, { proposalId: proposal.id, targetType: proposal.targetType, ...metadata }),
   });
 };
 

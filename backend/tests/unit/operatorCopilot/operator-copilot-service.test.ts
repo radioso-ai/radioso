@@ -64,6 +64,40 @@ describe("OperatorCopilotService", () => {
     expect(repository.messages.at(-1)).toMatchObject({ role: "copilot", content: "Partial result", outcome: "budget_exhausted", activity: [{ tool: "Visible", outcome: "completed" }] });
   });
 
+  // prepare_agent_settings, prepare_ingestion_settings, and the three generic reviewed tools all
+  // declare `surfaces: ["mcp"]` (Q6 of the wave-2 design): they hand back a digest an MCP client
+  // must show and confirm, which the dashboard/Ray turn has no surface for. A turn run from Ray
+  // must never even offer one of these tools to the model.
+  it("keeps an MCP-only reviewed tool out of a Ray turn, and offers it on an MCP turn", async () => {
+    const runStreaming = vi.fn((_request: unknown, _tools: ReadonlyArray<{ name: string }>) => ({
+      events: (async function* () {})(),
+      result: Promise.resolve({ terminatedReason: "completed" as const, finalMessage: "Done", stepsTaken: 0, toolResultTokensUsed: 0, wallTimeMs: 1 }),
+    }));
+    const serviceFor = (repository: MemoryCopilotRepository) => new OperatorCopilotService({
+      repository,
+      capabilityRunner: { runStreaming },
+      usageLimitPolicy: { reserveAnswer: vi.fn(async () => ({ commit: vi.fn(async () => {}), release: vi.fn(async () => {}) })), reserveDocument: vi.fn(), reserveIndexedStorage: vi.fn(), reserveMonthlyIndexedContent: vi.fn() },
+      auditService: { record: vi.fn(async () => {}) },
+      prompt: "system",
+      workspaceRouteKeyResolver,
+      currentAuthorization,
+      tools: [
+        tool("visible", "workspace.agents.read", vi.fn(async () => ({ value: "safe" }))),
+        { ...tool("prepare_agent_settings", "workspace.agents.read", vi.fn(async () => ({ value: "safe" }))), surfaces: ["mcp"] as const },
+      ],
+      now: () => now,
+    });
+
+    const dashboardRepository = new MemoryCopilotRepository();
+    for await (const _event of serviceFor(dashboardRepository).runTurn({ surface: "dashboard", workspaceId: "workspace", accountId: "account", operatorUserId: "operator", conversationId: null, message: "Change a setting", pageContext: { view: "agent", agentId: null, conversationId: null, selection: null, entities: [] }, permissions: new Set(["workspace.agents.read"]) })) { /* drain */ }
+    expect(runStreaming.mock.calls[0][1].map((candidate: { name: string }) => candidate.name)).toEqual(["visible"]);
+
+    runStreaming.mockClear();
+    const mcpRepository = new MemoryCopilotRepository();
+    for await (const _event of serviceFor(mcpRepository).runTurn({ surface: "mcp", workspaceId: "workspace", accountId: "account", operatorUserId: "operator", conversationId: null, message: "Change a setting", pageContext: { view: "agent", agentId: null, conversationId: null, selection: null, entities: [] }, permissions: new Set(["workspace.agents.read"]) })) { /* drain */ }
+    expect(runStreaming.mock.calls[0][1].map((candidate: { name: string }) => candidate.name).sort()).toEqual(["prepare_agent_settings", "visible"]);
+  });
+
   it("threads a bounded prior transcript into follow-up turns", async () => {
     const repository = new MemoryCopilotRepository();
     const runStreaming = vi.fn((_request: { systemPrompt: string; userMessage: string }) => ({

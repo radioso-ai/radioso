@@ -4,11 +4,15 @@ import {
   AuthoredDirectiveService,
   DirectiveAuthorService,
   AgentService,
+  type AgentFieldProposalApplyInput,
+  type AgentFieldProposalApplyOutcome,
+  type AgentSettingsProposalPort,
   AgentRevisionService,
   DEFAULT_AGENT_LOCALE_FALLBACK,
   DEFAULT_CONTACT_REQUEST_DELIVERY,
   hasConfiguredContactDestination,
   readNotifyContactDelivery,
+  agentReviewedSettingsPatchSchema,
   type AuthoredDirective,
   type AuthoredDirectiveInput,
   projectDirectiveAuthorProposalInput,
@@ -45,7 +49,10 @@ import {
   type CopilotContextVariableProposalAdapter,
   type CopilotDirectiveProposalAdapter,
   type CopilotRoutineProposalAdapter,
+  type CopilotProposalApplyContext,
+  type CopilotReviewedReceiptPort,
 } from "./contracts.js";
+import { reviewedApplyError, reviewedCommitHook } from "./reviewedAtomicApply.js";
 import type { ContextVariable, AgentContextVariableEnablement } from "../context-variables/public.js";
 import type { ContextVariableService } from "../context-variables/public.js";
 import { isOwnerRefusal, isStale, staleReason, versionDate, versionToken } from "./proposalVersioning.js";
@@ -78,6 +85,16 @@ const settingTargetRefSchema = z.object({
   settingKey: z.string().min(1).max(200),
   /** Present on field-scoped proposals; absent means the pre-deploy timestamp fence. */
   expectedValue: z.unknown().optional(),
+}).strict();
+const reviewedSettingTargetRefSchema = z.object({
+  agentId: z.string().uuid(),
+  expectedFields: z.array(z.object({ key: z.string().min(1).max(200), value: z.unknown() }).strict()).min(1).max(25),
+}).strict();
+const reviewedSettingsPayloadSchema = z.object({
+  kind: z.literal("fields"),
+  patch: agentReviewedSettingsPatchSchema,
+  rationale: z.string().max(1_000).optional(),
+  summary: z.string().max(MAX_COPILOT_PROPOSAL_SUMMARY).optional(),
 }).strict();
 /**
  * An agent setting is addressed by one key, but `surfaceSettings` is a whole nested object holding
@@ -343,7 +360,8 @@ export const createDirectiveCopilotProposalAdapter = (deps: {
 
 /** Composition adapter: forwards agent-setting proposals to AgentService's preparation and apply ports. */
 export const createAgentSettingCopilotProposalAdapter = (deps: {
-  readonly agentService: Pick<AgentService, "prepareFieldProposal" | "readFieldProposalVersion" | "readFieldProposalDisplay" | "applyFieldProposal">;
+  readonly agentService: AgentSettingsProposalPort;
+  readonly reviewedReceipt?: CopilotReviewedReceiptPort;
 }): CopilotAgentSettingProposalAdapter => ({
   targetType: "agent_setting",
   proposalDetailTargetRef: (rawTargetRef) => {
@@ -351,16 +369,47 @@ export const createAgentSettingCopilotProposalAdapter = (deps: {
     return { agentId: targetRef.agentId, settingKey: targetRef.settingKey };
   },
   async readVersionToken(workspaceId, rawTargetRef) {
+    const reviewed = reviewedSettingTargetRefSchema.safeParse(rawTargetRef);
+    if (reviewed.success) return deps.agentService.readFieldProposalVersion(workspaceId, reviewed.data.agentId, { keys: reviewed.data.expectedFields.map((field) => field.key) });
     const targetRef = settingTargetRef(rawTargetRef);
     return deps.agentService.readFieldProposalVersion(workspaceId, targetRef.agentId,
       Object.hasOwn(targetRef, "expectedValue") ? { key: targetRef.settingKey } : undefined);
   },
   async preview(workspaceId, rawTargetRef, rawPayload) {
+    const reviewed = reviewedSettingTargetRefSchema.safeParse(rawTargetRef);
+    if (reviewed.success) {
+      const payload = reviewedSettingsPayloadSchema.parse(rawPayload);
+      return { targetLabel: "Agent settings", current: null, proposed: payload.patch };
+    }
     const targetRef = settingTargetRef(rawTargetRef);
     const payload = settingPayloadSchema.parse(rawPayload);
     return { targetLabel: targetRef.settingKey, current: await deps.agentService.readFieldProposalDisplay(workspaceId, targetRef.agentId, targetRef.settingKey), proposed: payload.value };
   },
-  async applyIfVersionMatches(workspaceId, rawTargetRef, rawPayload, token) {
+  async applyIfVersionMatches(workspaceId, rawTargetRef, rawPayload, token, context?: CopilotProposalApplyContext) {
+    const reviewed = reviewedSettingTargetRefSchema.safeParse(rawTargetRef);
+    if (reviewed.success) {
+      const payload = reviewedSettingsPayloadSchema.parse(rawPayload);
+      const agentId = reviewed.data.agentId;
+      const onCommitted = reviewedCommitHook(deps.reviewedReceipt, context, workspaceId, (committed: { agentId: string }) => committed);
+      try {
+        const prepared: AgentFieldProposalApplyInput = {
+          targetAgentId: agentId,
+          normalizedPatch: payload.patch,
+          expectedFields: reviewed.data.expectedFields as ReadonlyArray<{ readonly key: string; readonly value: unknown }>,
+        };
+        const result: AgentFieldProposalApplyOutcome = await deps.agentService.applyFieldProposal(workspaceId, prepared, onCommitted ? { onCommitted } : undefined);
+        if (result.status === "applied") return {
+          outcome: "applied" as const,
+          appliedRef: { agentId },
+          ...(result.followUp ? { reason: "Agent settings changed, but follow-up side effects need attention." } : {}),
+        };
+        if (result.status === "target_deleted" || result.status === "target_changed") return { outcome: "stale" as const, reason: "Target changed" };
+        return { outcome: "stale" as const, reason: result.fields.length === 1 ? `Field changed: ${result.fields[0]}` : `Fields changed: ${result.fields.join(", ")}` };
+      } catch (error) {
+        if (onCommitted) return reviewedApplyError(error);
+        return { outcome: "failed" as const, reason: error instanceof Error ? error.message : "Agent setting apply failed" };
+      }
+    }
     const targetRef = settingTargetRef(rawTargetRef);
     const payload = settingPayloadSchema.parse(rawPayload);
     try {
@@ -397,6 +446,9 @@ export const createAgentSettingCopilotProposalAdapter = (deps: {
       payload: { ...payload, value: prepared.display.proposed },
       versionToken: await deps.agentService.readFieldProposalVersion(workspaceId, targetRef.agentId, { key: prepared.expected.key }),
     };
+  },
+  async reconcileMcpInterruptedApply() {
+    return { outcome: "not_applied" as const };
   },
 });
 

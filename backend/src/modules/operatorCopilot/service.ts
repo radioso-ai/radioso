@@ -691,6 +691,7 @@ export class OperatorCopilotService {
   private resolveTools(input: { workspaceId: string; accountId: string; operatorUserId: string; surface: CopilotSurface; copilotConversationId: string; pageContext: CopilotPageContext; permissions: ReadonlySet<string> }, probeBudget: CopilotProbeBudget): ReadonlyArray<AgentTool> {
     return this.deps.tools
       .filter((descriptor) => hasAllCopilotToolPermissions(descriptor.requiredPermissions, input.permissions))
+      .filter((descriptor) => !descriptor.surfaces || descriptor.surfaces.includes(input.surface))
       .map((descriptor) => meteredCopilotTool(
         descriptor.createTool({ workspaceId: input.workspaceId, accountId: input.accountId, operatorUserId: input.operatorUserId, surface: input.surface, copilotConversationId: input.copilotConversationId, permissions: input.permissions, currentAuthorization: this.deps.currentAuthorization, pageContext: input.pageContext }),
         // Bound to its descriptor, not handed over bare: the contract declares a method, so a

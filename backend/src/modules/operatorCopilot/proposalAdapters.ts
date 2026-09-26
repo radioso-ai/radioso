@@ -255,8 +255,9 @@ const contextVariableStoredPayloadSchema = z.object({
 /** Composition adapter: drafts through the existing coach and writes only through authored-directive management. */
 export const createDirectiveCopilotProposalAdapter = (deps: {
   readonly authoredDirectiveService: Pick<AuthoredDirectiveService, "list" | "create" | "update" | "delete">;
-  readonly directiveAuthorService: Pick<DirectiveAuthorService, "draftForProposal">;
+  readonly directiveAuthorService: Pick<DirectiveAuthorService, "draftForProposal"> & Partial<Pick<DirectiveAuthorService, "readProposalFence">>;
   readonly agentService: Pick<AgentService, "get">;
+  readonly reviewedReceipt?: CopilotReviewedReceiptPort;
 }): CopilotDirectiveProposalAdapter => ({
   targetType: "directive",
   proposalDetailTargetRef: (rawTargetRef) => {
@@ -266,8 +267,9 @@ export const createDirectiveCopilotProposalAdapter = (deps: {
   async readVersionToken(workspaceId, rawTargetRef) {
     const targetRef = directiveTargetRefSchema.parse(rawTargetRef);
     if (!targetRef.directiveId) {
-      await deps.agentService.get(workspaceId, targetRef.agentId);
-      return directiveCreateToken;
+      return deps.directiveAuthorService.readProposalFence
+        ? deps.directiveAuthorService.readProposalFence(workspaceId, targetRef.agentId, null)
+        : directiveCreateToken;
     }
     const directive = await findDirectiveById(deps.authoredDirectiveService, workspaceId, targetRef.agentId, targetRef.directiveId);
     if (!directive) throw new Error("Directive no longer exists");
@@ -292,17 +294,21 @@ export const createDirectiveCopilotProposalAdapter = (deps: {
     const proposed = directivePayload(payload);
     return { targetLabel: proposed.name, current, proposed };
   },
-  async applyIfVersionMatches(workspaceId, rawTargetRef, payload, token) {
+  async applyIfVersionMatches(workspaceId, rawTargetRef, payload, token, context) {
     const targetRef = directiveTargetRefSchema.parse(rawTargetRef);
+    const reviewedHook = reviewedCommitHook<AuthoredDirective | { directiveId: string }>(deps.reviewedReceipt, context, workspaceId, (committed) =>
+      "directiveId" in committed ? { directiveId: committed.directiveId } : { directiveId: committed.id });
+    const reviewedOptions = context?.surface === "mcp" ? { coherence: "skip" as const, onCommitted: reviewedHook } : {};
     if (isDirectiveRemoval(payload)) {
       if (!targetRef.directiveId) return { outcome: "failed" as const, reason: "Directive removal requires an existing directive" };
       try {
         // The version check lives in the delete call itself (expectedUpdatedAt reaches the
         // repository's DELETE predicate), not in a read-then-compare here: a pre-read leaves a
         // window where a concurrent edit lands between the check and the delete and gets destroyed.
-        await deps.authoredDirectiveService.delete(workspaceId, targetRef.agentId, targetRef.directiveId, { expectedUpdatedAt: versionDate(token) });
+        await deps.authoredDirectiveService.delete(workspaceId, targetRef.agentId, targetRef.directiveId, { expectedUpdatedAt: versionDate(token), ...(reviewedHook ? { onCommitted: reviewedHook } : {}) });
         return { outcome: "applied" as const, appliedRef: { directiveId: targetRef.directiveId } };
       } catch (error) {
+        if (context?.surface === "mcp") return reviewedApplyError(error, ["directive"]);
         if (isStale(error)) return { outcome: "stale" as const, reason: staleReason(error, ["directive"]) };
         return { outcome: "failed" as const, reason: error instanceof Error ? error.message : "Directive removal failed" };
       }
@@ -315,22 +321,23 @@ export const createDirectiveCopilotProposalAdapter = (deps: {
           targetRef.agentId,
           targetRef.directiveId,
           { enabled: payload.enabled },
-          { expectedUpdatedAt: versionDate(token) },
+          { expectedUpdatedAt: versionDate(token), ...reviewedOptions },
         )).directive;
         return { outcome: "applied" as const, appliedRef: { directiveId: directive.id } };
       } catch (error) {
+        if (context?.surface === "mcp") return reviewedApplyError(error, ["directive"]);
         if (isStale(error)) return { outcome: "stale" as const, reason: staleReason(error, ["directive"]) };
         return { outcome: "failed" as const, reason: error instanceof Error ? error.message : "Directive enablement failed" };
       }
     }
     try {
       const directive = targetRef.directiveId
-        ? (await deps.authoredDirectiveService.update(workspaceId, targetRef.agentId, targetRef.directiveId, directivePayload(payload), { expectedUpdatedAt: versionDate(token) })).directive
+        ? (await deps.authoredDirectiveService.update(workspaceId, targetRef.agentId, targetRef.directiveId, directivePayload(payload), { expectedUpdatedAt: versionDate(token), ...reviewedOptions })).directive
         : (await deps.authoredDirectiveService.create(
           workspaceId,
           targetRef.agentId,
           directivePayload(payload),
-          token === directiveCreateToken ? undefined : { expectedAgentUpdatedAt: versionDate(token) },
+          token === directiveCreateToken ? reviewedOptions : { expectedAgentUpdatedAt: versionDate(token), ...reviewedOptions },
         )).directive;
       return { outcome: "applied" as const, appliedRef: { directiveId: directive.id } };
     } catch (error) {
@@ -338,6 +345,7 @@ export const createDirectiveCopilotProposalAdapter = (deps: {
       if (!targetRef.directiveId && token === directiveCreateToken && error instanceof AppError && error.code === "conflict") {
         return { outcome: "failed" as const, reason: error.message };
       }
+      if (context?.surface === "mcp") return reviewedApplyError(error, []);
       if (isStale(error)) return { outcome: "stale" as const, reason: staleReason(error, []) };
       return { outcome: "failed" as const, reason: error instanceof Error ? error.message : "Directive apply failed" };
     }
@@ -350,11 +358,12 @@ export const createDirectiveCopilotProposalAdapter = (deps: {
     });
     const directive = directivePayload(draft.draft.directive);
     const summary = boundedSummary(describeDirectiveChange(directive, draft.draft.rationale));
-    // A create is fenced on the agent existing, not on its row version (see readVersionToken), so an
-    // unrelated agent write between draft and apply cannot turn it stale; an edit keeps the owner's
-    // snapshot fence.
-    const versionToken = targetRef.directiveId ? draft.versionToken : directiveCreateToken;
-    return { payload: { ...directive, rationale: summary }, targetLabel: directive.name, summary, versionToken };
+    // Creates and edits keep the owner snapshot fence. A create therefore becomes stale when
+    // another agent write lands between preparation and reviewed execution.
+    return { payload: { ...directive, rationale: summary }, targetLabel: directive.name, summary, versionToken: draft.versionToken };
+  },
+  async reconcileMcpInterruptedApply() {
+    return { outcome: "not_applied" as const };
   },
 });
 

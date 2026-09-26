@@ -21,6 +21,7 @@ import {
 } from "../../../db/repositories/documentSourceRepository.js";
 import type {
   DocumentProcessingJobOptions,
+  DocumentReviewedWriteGuard,
   DocumentSourceSummary,
 } from "../contracts/documentContracts.js";
 import {
@@ -130,6 +131,7 @@ export class DocumentIngestionService implements DocumentInventoryPort {
     metadata?: Record<string, unknown>;
     indexedFields?: Record<string, IndexedFieldValue>;
     externalDocumentId?: string | null;
+    reviewedWriteGuard?: DocumentReviewedWriteGuard;
     source?: DocumentSourceResolverInput;
     documentEnrichmentOverride?: DocumentProcessingJobOptions["documentEnrichmentOverride"];
   }): Promise<{ documentId: string; status: string }> {
@@ -222,7 +224,7 @@ export class DocumentIngestionService implements DocumentInventoryPort {
         sourceSizeBytes: null,
         contentSizeBytes: indexedContent.contentSizeBytes,
         contentHash: indexedContent.contentHash,
-      }, buildDocumentProcessingOptions(input));
+      }, buildDocumentProcessingOptions(input), input.reviewedWriteGuard);
 
     } catch (error) {
       await usageReservation.release();
@@ -616,6 +618,7 @@ export class DocumentIngestionService implements DocumentInventoryPort {
     workspaceId: string;
     documentId: string;
     documentEnrichmentOverride?: DocumentProcessingJobOptions["documentEnrichmentOverride"];
+    expectedUpdatedAt?: Date;
   }): Promise<{
     documentId: string;
     status: "queued" | "noop";
@@ -628,6 +631,7 @@ export class DocumentIngestionService implements DocumentInventoryPort {
         input.documentId,
         input.workspaceId,
         buildDocumentProcessingOptions(input),
+        input.expectedUpdatedAt,
       );
     } catch (error) {
       await this.auditService.record({
@@ -1102,6 +1106,20 @@ const describeIndexedContent = (
     contentSizeBytes: Buffer.byteLength(normalizedMarkdown, "utf8"),
     contentHash: createHash("sha256").update(fingerprint, "utf8").digest("hex"),
   };
+};
+
+/** The identity-relevant projection shared by ingestion and owner-side import review. */
+export const describeInlineDocumentForIngestion = (input: {
+  readonly title: string;
+  readonly content: string;
+  readonly metadata?: Record<string, unknown>;
+}) => {
+  const sanitized = sanitizeInlineDocumentContent({
+    title: input.title,
+    sourceContent: input.content,
+    metadata: input.metadata,
+  });
+  return describeIndexedContent(sanitized.markdownContent, input.metadata);
 };
 
 const deriveWebsiteSourceName = (url: string): string => {

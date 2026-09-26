@@ -12,6 +12,7 @@ export { GcsDocumentStorage } from "./infra/gcsDocumentStorage.js";
 export { LocalDocumentStorage } from "./infra/localDocumentStorage.js";
 export { NoopDocumentJobDispatcher } from "./services/documentJobDispatcher.js";
 export { DocumentDeletionService } from "./services/documentDeletionService.js";
+export { DocumentReviewedOperationService } from "./services/documentReviewedOperationService.js";
 export {
   DocumentEnrichmentService,
   ModelDocumentEnrichmentGateway,

@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { z } from "zod";
 import { describe, expect, it, vi } from "vitest";
 
@@ -8,6 +10,11 @@ import { OperatorMcpCatalogService } from "../../../src/modules/operatorCopilot/
 import { operatorMcpDispositions } from "../../../src/modules/operatorCopilot/operatorMcpDisposition.js";
 import { createDirectiveCopilotProposalAdapter } from "../../../src/modules/operatorCopilot/proposalAdapters.js";
 import { createDirectiveProposalCopilotTools } from "../../../src/modules/operatorCopilot/tools/directives.js";
+import { createReviewedProposalExecutionTool } from "../../../src/modules/operatorCopilot/tools/reviewedProposalExecution.js";
+import { createReviewedProposalOutcomeTool } from "../../../src/modules/operatorCopilot/tools/reviewedProposalOutcome.js";
+import { createCancelReviewedProposalTool } from "../../../src/modules/operatorCopilot/tools/cancelReviewedProposal.js";
+import { OperatorCopilotService } from "../../../src/modules/operatorCopilot/service.js";
+import { copilotProposalTargetTypes } from "../../../src/modules/operatorCopilot/contracts.js";
 import { realCatalog } from "./realCatalogTestSupport.js";
 import type { CopilotToolDescriptor, CopilotToolInvocationContext } from "../../../src/modules/operatorCopilot/public.js";
 
@@ -148,6 +155,158 @@ describe("OperatorMcpCatalogService", () => {
     await expect(invoke({ agentId, name: "quote-primary-source", condition: { kind: "always" }, action: "Quote first.", priority: 101 }))
       .rejects.toMatchObject({ code: "invalid_arguments" });
     expect(draftForProposal).toHaveBeenCalledTimes(1);
+  it("lets a documents manager reach generic reviewed execution while target authorization remains owner-specific", async () => {
+    const execution = createReviewedProposalExecutionTool({ executeMcpReviewedProposal: vi.fn(async () => ({ status: "applied" as const })) });
+    const service = new OperatorMcpCatalogService([{ ...execution, mcpDisposition: operatorMcpDispositions.execute_reviewed_proposal }]);
+    const documentContext = { ...context, permissions: new Set(["workspace.documents.manage"]), currentAuthorization: { hasAllPermissions: vi.fn(async () => true) } };
+    await expect(service.list({ context: documentContext, scopes: new Set(["operator:write"]) })).resolves.toMatchObject([{ name: "execute_reviewed_proposal" }]);
+    expect(execution.requiredPermissions).toEqual([]);
+  });
+
+  /**
+   * A minimal but real `CopilotProposal` row. Fields the exercised paths never read (payload,
+   * targetRef, evidence, ...) are filled with inert placeholders.
+   */
+  const mcpProposalRow = (overrides: Record<string, unknown> = {}) => ({
+    id: randomUUID(),
+    workspaceId: "workspace",
+    operatorUserId: "user",
+    origin: { type: "operator_mcp_invocation" as const, invocationId: "00000000-0000-4000-8000-000000000001" },
+    conversationId: null,
+    operatorMcpInvocationId: "00000000-0000-4000-8000-000000000001",
+    messageId: null,
+    targetType: "document_operation" as const,
+    targetRef: {},
+    payload: {},
+    versionToken: "v1",
+    evidence: null,
+    reviewDigest: "a".repeat(43),
+    reviewSnapshot: { review: {} },
+    expiresAt: null,
+    executionInvocationId: null,
+    status: "pending" as const,
+    reason: null,
+    appliedRef: null,
+    createdAt: new Date("2026-09-01T00:00:00.000Z"),
+    updatedAt: new Date("2026-09-01T00:00:00.000Z"),
+    ...overrides,
+  });
+
+  /**
+   * A repository stub real enough to drive `OperatorCopilotService`'s own claim/cancel/settle
+   * state machine, so these tests exercise its per-target-type authorization
+   * (`requireProposalAuthorization` + `copilotProposalPermissions`) rather than a test-local
+   * reimplementation of that rule.
+   */
+  const mcpReviewedRepository = (initial: ReadonlyArray<Record<string, unknown>>) => {
+    const store = new Map(initial.map((proposal) => [proposal.id as string, proposal]));
+    return {
+      findMcpReviewedProposal: vi.fn(async ({ id }: { id: string }) => store.get(id) ?? null),
+      claimMcpReviewedProposalApply: vi.fn(async ({ proposalId }: { proposalId: string }) => {
+        const proposal = store.get(proposalId);
+        if (!proposal) return { status: "missing" as const };
+        return { status: "claimed" as const, claim: { proposal, claimedAt: new Date(), previousAttemptStartedAt: null } };
+      }),
+      cancelPendingProposal: vi.fn(async ({ id }: { id: string }) => {
+        const proposal = store.get(id) as { status: string } | undefined;
+        if (!proposal || proposal.status !== "pending") return null;
+        const dismissed = { ...proposal, status: "dismissed" };
+        store.set(id, dismissed);
+        return dismissed;
+      }),
+      updateProposalOutcome: vi.fn(async ({ id, status, appliedRef }: { id: string; status: string; appliedRef: unknown }) => {
+        const proposal = store.get(id);
+        if (!proposal) return null;
+        const updated = { ...proposal, status, appliedRef };
+        store.set(id, updated);
+        return updated;
+      }),
+      releaseProposalApplyClaim: vi.fn(async () => true),
+    };
+  };
+
+  /** One stub adapter per target type; only `document_operation`'s apply runs past authorization here. */
+  const mcpReviewedAdapters = () => copilotProposalTargetTypes.map((targetType) => ({
+    targetType,
+    readVersionToken: vi.fn(async () => "v1"),
+    preview: vi.fn(async () => ({ targetLabel: "target", current: null, proposed: null })),
+    applyIfVersionMatches: vi.fn(async () => targetType === "document_operation"
+      ? { outcome: "applied" as const, appliedRef: { documentId: "document" } }
+      : { outcome: "failed" as const, reason: "not exercised" }),
+  }));
+
+  const authorizationHolding = (held: readonly string[]) => ({
+    hasAllPermissions: vi.fn(async ({ requiredPermissions }: { requiredPermissions: readonly string[] }) =>
+      requiredPermissions.every((permission) => held.includes(permission))),
+  });
+
+  const mcpReviewedService = (initial: ReadonlyArray<Record<string, unknown>>) => new OperatorCopilotService({
+    repository: mcpReviewedRepository(initial),
+    proposalAdapters: mcpReviewedAdapters(),
+    auditService: { record: vi.fn(async () => undefined) },
+    currentAuthorization: { hasAllPermissions: vi.fn(async () => true) },
+  } as never);
+
+  const mcpReviewedCatalog = (service: OperatorCopilotService) => new OperatorMcpCatalogService([
+    { ...createReviewedProposalExecutionTool(service), mcpDisposition: operatorMcpDispositions.execute_reviewed_proposal },
+    { ...createReviewedProposalOutcomeTool(service), mcpDisposition: operatorMcpDispositions.reviewed_proposal_outcome },
+    { ...createCancelReviewedProposalTool(service), mcpDisposition: operatorMcpDispositions.cancel_reviewed_proposal },
+  ]);
+
+  // Each denied caller holds only the *other* domain's permission, not nothing: a documents
+  // manager reaching for an agent-scoped target, and an agent manager reaching for a document one.
+  const deniedTargets = [
+    { preparedBy: "prepare_retrieval_settings", targetType: "agent_skill" as const, heldByCaller: ["workspace.documents.manage"] },
+    { preparedBy: "prepare_routine_structure", targetType: "routine" as const, heldByCaller: ["workspace.documents.manage"] },
+    { preparedBy: "prepare_agent_publication", targetType: "agent_publication" as const, heldByCaller: ["workspace.documents.manage"] },
+    { preparedBy: "prepare_document_import", targetType: "document_operation" as const, heldByCaller: ["workspace.agents.manage"] },
+  ];
+
+  it.each(deniedTargets)(
+    "refuses every reviewed path for $preparedBy's target when the caller's current authorization lacks it, including a settled replay",
+    async ({ targetType, heldByCaller }) => {
+      const pending = mcpProposalRow({ targetType, status: "pending" });
+      const settled = mcpProposalRow({ targetType, status: "applied", appliedRef: { mustNotLeak: true } });
+      const catalog = mcpReviewedCatalog(mcpReviewedService([pending, settled]));
+      const deniedContext = {
+        ...context,
+        operatorMcpGrantId: "grant",
+        operatorMcpClientId: "client",
+        currentAuthorization: authorizationHolding(heldByCaller),
+      };
+      const invoke = (name: string, arguments_: unknown) =>
+        catalog.invoke({ name, arguments: arguments_, context: deniedContext, scopes: new Set(["operator:write"]), signal: AbortSignal.timeout(1_000) });
+
+      await expect(invoke("execute_reviewed_proposal", { proposalId: pending.id, reviewDigest: pending.reviewDigest }), "pending execute")
+        .rejects.toMatchObject({ code: "target_permission_denied" });
+      await expect(invoke("execute_reviewed_proposal", { proposalId: settled.id, reviewDigest: settled.reviewDigest }), "settled replay")
+        .rejects.toMatchObject({ code: "target_permission_denied" });
+      await expect(invoke("reviewed_proposal_outcome", { proposalId: settled.id }), "outcome")
+        .rejects.toMatchObject({ code: "target_permission_denied" });
+      await expect(invoke("cancel_reviewed_proposal", { proposalId: pending.id }), "cancel")
+        .rejects.toMatchObject({ code: "target_permission_denied" });
+    },
+  );
+
+  it("allows a documents-only manager to execute, read, and cancel a document operation", async () => {
+    const toExecute = mcpProposalRow({ targetType: "document_operation", status: "pending" });
+    const toRead = mcpProposalRow({ targetType: "document_operation", status: "applied", appliedRef: { documentId: "document" } });
+    const toCancel = mcpProposalRow({ targetType: "document_operation", status: "pending" });
+    const catalog = mcpReviewedCatalog(mcpReviewedService([toExecute, toRead, toCancel]));
+    const documentContext = {
+      ...context,
+      operatorMcpGrantId: "grant",
+      operatorMcpClientId: "client",
+      permissions: new Set(["workspace.documents.manage"]),
+      currentAuthorization: authorizationHolding(["workspace.documents.manage"]),
+    };
+    const invoke = (name: string, arguments_: unknown) =>
+      catalog.invoke({ name, arguments: arguments_, context: documentContext, scopes: new Set(["operator:write"]), signal: AbortSignal.timeout(1_000) });
+
+    await expect(invoke("execute_reviewed_proposal", { proposalId: toExecute.id, reviewDigest: toExecute.reviewDigest }))
+      .resolves.toMatchObject({ status: "applied", appliedRef: { documentId: "document" } });
+    await expect(invoke("reviewed_proposal_outcome", { proposalId: toRead.id })).resolves.toMatchObject({ appliedRef: { documentId: "document" } });
+    await expect(invoke("cancel_reviewed_proposal", { proposalId: toCancel.id })).resolves.toMatchObject({ status: "dismissed" });
   });
 });
 

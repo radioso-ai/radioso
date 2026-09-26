@@ -48,6 +48,7 @@ import {
   AgentService,
   AgentSurfaceExtensionRegistry,
   AuthoredDirectiveService,
+  createRoutineScopedReferenceGuard,
   DirectiveAuthorService,
   serializeAuthoredDirectivesWithIds,
   type AgentRecord,
@@ -66,6 +67,7 @@ import {
 import { ChatHistoryService } from "../../src/modules/chat/services/chatHistoryService.js";
 import { DocumentDeletionService } from "../../src/modules/documents/services/documentDeletionService.js";
 import { DocumentIngestionService } from "../../src/modules/documents/services/documentIngestionService.js";
+import { DocumentReviewedOperationService } from "../../src/modules/documents/services/documentReviewedOperationService.js";
 import { DocumentImportService } from "../../src/modules/documents/services/documentImportService.js";
 import { DocumentSearchHistoryService } from "../../src/modules/documents/services/documentSearchHistoryService.js";
 import { DocumentSearchService } from "../../src/modules/documents/services/documentSearchService.js";
@@ -166,7 +168,7 @@ import { InMemorySlackSkillDefinitionRepository } from "./inMemorySlackSkillDefi
 import { InMemoryAgentSkillRepository } from "./inMemoryAgentSkills.js";
 import { SlackSkillDefinitionService } from "../../src/modules/slackSkills/public.js";
 import { OperatorReplyService } from "../../src/modules/handoff/public.js";
-import { AgentSkillsService } from "../../src/modules/agentSkills/public.js";
+import { AgentRetrievalAuthoringService, AgentSkillsService } from "../../src/modules/agentSkills/public.js";
 import { createDefaultSkillCapabilityRegistry } from "../../src/modules/skills/capabilityRegistry.js";
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../src/modules/documents/contracts/index.js";
 import {
@@ -246,7 +248,7 @@ import {
   createSystemRetrievalDefaultsProvider,
 } from "../../src/app/composition/index.js";
 import { DefaultAllowCapabilityPolicy, registeredCapabilityNames } from "../../src/shared/domain/capabilityPolicy.js";
-import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../src/shared/domain/usageLimitPolicy.js";
+import { NoopDocumentCapacityReadPort, NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../src/shared/domain/usageLimitPolicy.js";
 import { NoopManagedModelPolicy, type ManagedModelPolicy } from "../../src/shared/domain/managedModelPolicy.js";
 import { WorkspaceLlmCapabilityResolver } from "../../src/app/composition/workspaceLlmCapabilityResolver.js";
 import { resolveLlmConfig } from "../../src/shared/infra/llm/providerConfig.js";
@@ -2174,6 +2176,16 @@ export const createTestDependencies = (overrides: {
     runtime: new DefaultAgentRuntime({ gateway: new TextRoutedToolCallingGateway(chatInferencePipeline) }),
   });
   const copilotPrompt = loadPromptTemplate("copilot/system.md");
+  const scopedRoutineReferences = createRoutineScopedReferenceGuard({
+    listDirectiveTags: async ({ workspaceId, agentId }) =>
+      (await authoredDirectiveService.list(workspaceId, agentId)).map((directive) => directive.tags),
+    buildStepScopeTag: scopeTag.step,
+  });
+  const retrievalAuthoring = new AgentRetrievalAuthoringService({
+    agentSkills: agentSkillsService,
+    defaults: retrievalDefaultsProvider,
+    documentSources: documentSourceRepository,
+  });
   const copilotToolCatalog = createCopilotToolCatalog({
     agentService: {
       get: agentService.get.bind(agentService),
@@ -2294,8 +2306,44 @@ export const createTestDependencies = (overrides: {
     auditService,
     productDocs: new ProductDocsService(),
     workspaceRouteKeyResolver: copilotWorkspaceRouteKeyResolver,
+    revisions: agentRevisionService,
+    routines: {
+      get: routineDefinitionService.get.bind(routineDefinitionService),
+      validate: routineDefinitionService.validate.bind(routineDefinitionService),
+    },
+    scopedReferences: scopedRoutineReferences,
+    reviewedProposalExecution: {
+      executeMcpReviewedProposal: async (input) => {
+        if (!operatorCopilotService) throw new Error("Operator Copilot execution service is not initialized");
+        return operatorCopilotService.executeMcpReviewedProposal(input);
+      },
+    },
+    reviewedProposalOutcome: {
+      getMcpReviewedProposal: async (input) => {
+        if (!operatorCopilotService) throw new Error("Operator Copilot execution service is not initialized");
+        return operatorCopilotService.getMcpReviewedProposal(input);
+      },
+    },
+    cancelReviewedProposal: {
+      cancelMcpReviewedProposal: async (input) => {
+        if (!operatorCopilotService) throw new Error("Operator Copilot execution service is not initialized");
+        return operatorCopilotService.cancelMcpReviewedProposal(input);
+      },
+    },
+    retrievalAuthoring,
+    documents: new DocumentReviewedOperationService(
+      documentRepository,
+      documentIngestionService,
+      documentDeletionService,
+      new NoopDocumentCapacityReadPort(),
+      documentSourceReprocessService,
+      workspaceIngestionReprocessService,
+    ),
   });
-  const operatorCopilotService = new OperatorCopilotService({
+  // `copilotToolCatalog` and `operatorCopilotService` are mutually dependent (its reviewed-proposal
+  // tools call back into this service; the service runs the tools), so the closures above reference
+  // this `const` ahead of its declaration, mirroring production wiring in `app/server/dependencies.ts`.
+  const operatorCopilotService: OperatorCopilotService = new OperatorCopilotService({
     repository: copilotRepository,
     capabilityRunner: copilotCapabilityRunner,
     usageLimitPolicy,

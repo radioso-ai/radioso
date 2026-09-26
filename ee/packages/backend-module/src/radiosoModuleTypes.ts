@@ -21,6 +21,7 @@ export interface ApplicationModuleRegistrationContext {
   registerDatabaseMigrator(migrator: ApplicationDatabaseMigrator): void;
   registerRouteMount(mount: ApplicationRouteMount): void;
   registerUsageLimitPolicy(policy: ApplicationUsageLimitPolicyRegistration): void;
+  registerDocumentCapacityReader?(reader: ApplicationDocumentCapacityReaderRegistration): void;
   registerManagedModelPolicy?(policy: ApplicationManagedModelPolicyRegistration): void;
   registerOrganizationCreationGuard?(guard: ApplicationOrganizationCreationGuardRegistration): void;
   registerUsageEventRecorder?(recorder: ApplicationUsageEventRecorderRegistration): void;
@@ -273,6 +274,24 @@ export type AnswerUsageKind =
   | "copilot_turn"
   | "test_run"
   | "pulse_report";
+
+/**
+ * Mirrors OSS's `DocumentCapacityUsage` (in `backend/src/shared/domain/usageLimitPolicy.ts`).
+ */
+export interface DocumentCapacityUsage {
+  storedDocuments: { used: number; limit: number | null };
+  storedIndexedBytes: { used: number; limit: number | null };
+  monthlyIndexedBytes: { used: number; limit: number | null };
+}
+
+/**
+ * Mirrors OSS's `DocumentCapacityReadPort` (in `backend/src/shared/domain/usageLimitPolicy.ts`).
+ * A narrow read consumed only by the documents reviewed-operation service, kept off
+ * `UsageLimitPolicy` so its reservation fakes never need to stub it.
+ */
+export interface DocumentCapacityReadPort {
+  getDocumentCapacityUsage(input: { accountId?: string | null; workspaceId: string }): Promise<DocumentCapacityUsage>;
+}
 
 export interface UsageLimitPolicy {
   reserveAnswer(input: {
@@ -636,6 +655,15 @@ export type ApplicationUsageLimitPolicyRegistration =
         error(entry: unknown, message?: string): void;
       };
     }) => UsageLimitPolicy);
+
+export type ApplicationDocumentCapacityReaderRegistration =
+  | DocumentCapacityReadPort
+  | ((context: {
+      database: UsageLimitDatabasePort;
+      logger: {
+        error(entry: unknown, message?: string): void;
+      };
+    }) => DocumentCapacityReadPort);
 
 /**
  * Mirrors OSS's `ManagedModelPolicy` (`backend/src/shared/domain/managedModelPolicy.ts`): the

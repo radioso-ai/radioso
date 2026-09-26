@@ -7,6 +7,8 @@ import { PLAN_CATALOG, type UsageCountKind } from "@radioso/plan-catalog";
 import { createEeKysely, type EeDb } from "../db/eeSchema.js";
 import type {
   AnswerUsageKind,
+  DocumentCapacityReadPort,
+  DocumentCapacityUsage,
   IndexedStorageReservationInput,
   MonthlyIndexedContentReservationInput,
   UsageLimitDatabasePort,
@@ -180,7 +182,7 @@ const mapProfile = (row: {
   updatedAt: row.updated_at.toISOString(),
 });
 
-export class EnterpriseUsageLimitService implements UsageLimitPolicy {
+export class EnterpriseUsageLimitService implements UsageLimitPolicy, DocumentCapacityReadPort {
   private readonly db: EeDb;
 
   constructor(private readonly database: UsageLimitDatabasePort) {
@@ -344,6 +346,12 @@ export class EnterpriseUsageLimitService implements UsageLimitPolicy {
       },
       monthlyConversations: profile ? await this.readConversationUsage(accountId, profile, periodStart) : null,
     };
+  }
+
+  async getDocumentCapacityUsage(input: { accountId?: string | null; workspaceId: string }): Promise<DocumentCapacityUsage> {
+    if (!input.accountId) return { storedDocuments: { used: 0, limit: null }, storedIndexedBytes: { used: 0, limit: null }, monthlyIndexedBytes: { used: 0, limit: null } };
+    const usage = await this.getAccountUsage(input.accountId);
+    return { storedDocuments: usage.storedDocuments, storedIndexedBytes: usage.storedIndexedBytes, monthlyIndexedBytes: usage.monthlyIndexedBytes };
   }
 
   async reserveAnswer(input: {

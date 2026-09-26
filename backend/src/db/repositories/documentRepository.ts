@@ -9,6 +9,7 @@ import type {
   DocumentInventoryListInput,
   DocumentRetrievalSettingsInput,
   DocumentProcessingJobOptions,
+  DocumentReviewedWriteGuard,
   DocumentQueueUpdateInput,
   DocumentRecord,
   DocumentRepositoryPort,
@@ -141,6 +142,17 @@ const withInventoryFilters = <O>(
   .$if(input.retrievalEnabled !== undefined, (qb) => qb.where("retrieval_enabled", "=", input.retrievalEnabled!));
 
 export class DocumentRepository implements DocumentRepositoryPort {
+  async countReprocessCandidates(input: { workspaceId: string; sourceId?: string | null; documentIds?: readonly string[] }): Promise<{ eligible: number; skipped: number }> {
+    const query = this.db.selectFrom("documents").select([
+      sql<string>`COUNT(*) FILTER (WHERE status NOT IN ('queued', 'processing'))::text`.as("eligible_count"),
+      sql<string>`COUNT(*) FILTER (WHERE status IN ('queued', 'processing'))::text`.as("skipped_count"),
+    ]).where("workspace_id", "=", input.workspaceId);
+    const scoped = input.documentIds
+      ? query.where("id", "in", [...input.documentIds])
+      : input.sourceId === undefined ? query : input.sourceId === null ? query.where("source_id", "is", null) : query.where("source_id", "=", input.sourceId);
+    const counts = await scoped.executeTakeFirst();
+    return { eligible: Number(counts?.eligible_count ?? "0"), skipped: Number(counts?.skipped_count ?? "0") };
+  }
   constructor(private readonly db: Db) {}
 
   async summarizeWorkspace(workspaceId: string): Promise<DocumentWorkspaceSummaryRecord> {
@@ -196,7 +208,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
       .map(([field, inferredType]) => ({ field, inferredType }));
   }
 
-  async createAndQueue(input: DocumentCreateInput, options?: DocumentProcessingJobOptions | null): Promise<DocumentRecord> {
+  async createAndQueue(input: DocumentCreateInput, options?: DocumentProcessingJobOptions | null, guard?: DocumentReviewedWriteGuard): Promise<DocumentRecord> {
     return this.db.transaction().execute(async (trx) => {
       const documentId = randomUUID();
       // ON CONFLICT target depends on whether the document is sourced: a sourced page keys
@@ -234,8 +246,10 @@ export class DocumentRepository implements DocumentRepositoryPort {
           content_size_bytes: input.contentSizeBytes ?? null,
           content_hash: input.contentHash ?? null,
         })
-        .onConflict((oc) =>
-          oc.columns(conflictColumns).where(conflictPredicate).doUpdateSet((eb) => ({
+        .onConflict((oc) => {
+          const target = oc.columns(conflictColumns).where(conflictPredicate);
+          if (guard?.expectedDocumentId === null) return target.doNothing();
+          const update = target.doUpdateSet((eb) => ({
             title: eb.ref("excluded.title"),
             source_content: eb.ref("excluded.source_content"),
             markdown_content: eb.ref("excluded.markdown_content"),
@@ -259,13 +273,16 @@ export class DocumentRepository implements DocumentRepositoryPort {
             source_size_bytes: eb.ref("excluded.source_size_bytes"),
             content_size_bytes: eb.ref("excluded.content_size_bytes"),
             content_hash: eb.ref("excluded.content_hash"),
-          })).where(sql<boolean>`documents.source_kind = excluded.source_kind`),
-        )
+          })).where(sql<boolean>`documents.source_kind = excluded.source_kind`);
+          return guard
+            ? update.where("documents.id", "=", guard.expectedDocumentId).where("documents.revision", "=", guard.expectedRevision!).where(sql<boolean>`documents.content_hash IS NOT DISTINCT FROM ${guard.expectedContentHash}`)
+            : update;
+        })
         .returning(documentSelectColumns)
         .executeTakeFirst()) as DocumentRow | undefined;
 
       if (!documentRow) {
-        throw conflict("Imported documents cannot be updated through the inline document API");
+        throw conflict(guard ? "Document changed before the reviewed write could be applied" : "Imported documents cannot be updated through the inline document API");
       }
 
       await this.insertProcessingJob(trx, documentRow.id, input.workspaceId, documentRow.revision, options);
@@ -749,6 +766,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
     documentId: string,
     workspaceId: string,
     options?: DocumentProcessingJobOptions | null,
+    expectedUpdatedAt?: Date,
   ): Promise<{ document: DocumentRecord; queued: boolean }> {
     return this.db.transaction().execute(async (trx) => {
       const documentRow = (await trx
@@ -763,6 +781,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
         .where("id", "=", documentId)
         .where("workspace_id", "=", workspaceId)
         .where("status", "not in", ["queued", "processing"])
+        .$if(expectedUpdatedAt !== undefined, (qb) => qb.where(sql<boolean>`updated_at >= ${expectedUpdatedAt!} AND updated_at < ${new Date(expectedUpdatedAt!.getTime() + 1)}`))
         .returning(documentSelectColumns)
         .executeTakeFirst()) as DocumentRow | undefined;
 
@@ -1093,14 +1112,40 @@ export class DocumentRepository implements DocumentRepositoryPort {
     contentSizeBytes: number | null;
     contentHash: string | null;
   } | null> {
+    return this.findPageStateByStatus(input, true);
+  }
+
+  async findPageState(input: {
+    workspaceId: string;
+    sourceId?: string | null;
+    externalDocumentId: string;
+  }): Promise<{
+    documentId: string;
+    revision: number;
+    contentSizeBytes: number | null;
+    contentHash: string | null;
+  } | null> {
+    return this.findPageStateByStatus(input, false);
+  }
+
+  private async findPageStateByStatus(input: {
+    workspaceId: string;
+    sourceId?: string | null;
+    externalDocumentId: string;
+  }, activeOnly: boolean): Promise<{
+    documentId: string;
+    revision: number;
+    contentSizeBytes: number | null;
+    contentHash: string | null;
+  } | null> {
     const sourceId = input.sourceId ?? null;
 
     let query = this.db
       .selectFrom("documents")
       .select(["id", "revision", "content_size_bytes", "content_hash"])
       .where("workspace_id", "=", input.workspaceId)
-      .where("external_document_id", "=", input.externalDocumentId)
-      .where("status", "<>", "failed");
+      .where("external_document_id", "=", input.externalDocumentId);
+    if (activeOnly) query = query.where("status", "<>", "failed");
     query = sourceId === null ? query.where("source_id", "is", null) : query.where("source_id", "=", sourceId);
 
     const row = await query.limit(1).executeTakeFirst();

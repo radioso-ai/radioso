@@ -99,6 +99,7 @@ export interface ApplicationComposition {
   websiteEmbedIntegration?: ReturnType<typeof createApplicationExtensionRegistry>["websiteEmbedIntegration"];
   facetExtraction?: ReturnType<typeof createApplicationExtensionRegistry>["facetExtraction"];
   usageLimitPolicyRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["usageLimitPolicyRegistration"];
+  documentCapacityReaderRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["documentCapacityReaderRegistration"];
   managedModelPolicyRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["managedModelPolicyRegistration"];
   organizationCreationGuardRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["organizationCreationGuardRegistration"];
   usageEventRecorderRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["usageEventRecorderRegistration"];
@@ -178,6 +179,7 @@ export const createDefaultApplicationComposition = (options: {
     websiteEmbedIntegration: registry.websiteEmbedIntegration,
     facetExtraction: registry.facetExtraction,
     usageLimitPolicyRegistration: registry.usageLimitPolicyRegistration,
+    documentCapacityReaderRegistration: registry.documentCapacityReaderRegistration,
     managedModelPolicyRegistration: registry.managedModelPolicyRegistration,
     organizationCreationGuardRegistration: registry.organizationCreationGuardRegistration,
     usageEventRecorderRegistration: registry.usageEventRecorderRegistration,

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { describe, expect, it, vi } from "vitest";
+import type { DirectiveCoherenceVerdict } from "@radioso/conversation-defaults";
 
 import {
   OperatorCopilotService,
@@ -297,7 +298,7 @@ const buildFixture = () => {
   const agentId = randomUUID();
   const now = new Date("2026-09-26T10:00:00.000Z");
   const directiveRepository = new FakeDirectiveRepository(agentId, now);
-  const checker = { check: vi.fn(async () => ({ coherent: true, conflicts: [], rationale: "Coherent." })) };
+  const checker = { check: vi.fn(async (): Promise<DirectiveCoherenceVerdict> => ({ coherent: true, conflicts: [], rationale: "Coherent." })) };
   const textGenerationClient = { complete: vi.fn(async () => { throw new Error("the coach must not run for a verbatim structured directive request"); }) };
   const authoredDirectiveService = new AuthoredDirectiveService({ repository: directiveRepository, coherenceChecker: checker, registeredCapabilityNames: new Set() });
   const directiveAuthorService = new DirectiveAuthorService({
@@ -373,6 +374,24 @@ describe("reviewed directives, prepared and executed through the operator MCP ca
     }) as { review: { coherence: { status: string } } };
 
     expect(prepared.review.coherence.status).toBe("unavailable");
+  });
+
+  it("bounds oversized coherence text before persisting a readable review", async () => {
+    const fixture = buildFixture();
+    fixture.checker.check.mockResolvedValueOnce({
+      coherent: false,
+      conflicts: [{ directiveName: "n".repeat(201), reason: "r".repeat(1_001) }],
+      rationale: "a".repeat(2_001),
+    });
+
+    const prepared = await fixture.invoke("prepare_directive", {
+      kind: "create", agentId: fixture.agentId, name: "long-coherence", condition: { kind: "always" }, action: "Use the supplied instruction.",
+    }) as { proposalId: string; review: { coherence: { conflicts: Array<{ directiveName: string; reason: string }>; rationale: string } } };
+
+    expect(prepared.review.coherence.conflicts[0]).toMatchObject({ directiveName: "n".repeat(200), reason: "r".repeat(1_000) });
+    expect(prepared.review.coherence.rationale).toBe("a".repeat(2_000));
+    expect(fixture.proposalRepository.proposals.find((proposal) => proposal.id === prepared.proposalId)?.reviewSnapshot)
+      .toMatchObject({ coherence: prepared.review.coherence });
   });
 
   it("bounds removal references before persisting its readable review", async () => {
@@ -504,11 +523,33 @@ describe("reviewed directives, prepared and executed through the operator MCP ca
 
     await new AuthoredDirectiveService({ repository: fixture.directiveRepository, coherenceChecker: fixture.checker, registeredCapabilityNames: new Set() })
       .update(workspaceId, fixture.agentId, existing.id, { action: "Someone else edited this first." }, { coherence: "skip" });
+    const writesBeforeExecute = fixture.directiveRepository.updateCalls + fixture.directiveRepository.deleteCalls;
 
     const executed = await fixture.invoke("execute_reviewed_proposal", { proposalId: prepared.proposalId, reviewDigest: prepared.reviewDigest }) as { status: string };
 
     expect(executed.status).toBe("stale");
+    expect(fixture.directiveRepository.updateCalls + fixture.directiveRepository.deleteCalls).toBe(writesBeforeExecute);
     expect(fixture.directiveRepository.directives.find((directive) => directive.id === existing.id)?.action).toBe("Someone else edited this first.");
+  });
+
+  it.each([
+    { kind: "set_enabled" as const, input: (directiveId: string) => ({ directiveId, enabled: false }) },
+    { kind: "remove" as const, input: (directiveId: string) => ({ directiveId }) },
+  ])("reports $kind as stale when the reviewed directive changes before execute", async ({ kind, input }) => {
+    const fixture = buildFixture();
+    const existing = await seedExisting(fixture, `${kind}-target`);
+    const prepared = await fixture.invoke("prepare_directive", {
+      kind, agentId: fixture.agentId, ...input(existing.id),
+    }) as { proposalId: string; reviewDigest: string };
+
+    await new AuthoredDirectiveService({ repository: fixture.directiveRepository, coherenceChecker: fixture.checker, registeredCapabilityNames: new Set() })
+      .update(workspaceId, fixture.agentId, existing.id, { action: "Someone else edited this first." }, { coherence: "skip" });
+
+    const executed = await fixture.invoke("execute_reviewed_proposal", { proposalId: prepared.proposalId, reviewDigest: prepared.reviewDigest }) as { status: string };
+
+    expect(executed.status).toBe("stale");
+    expect(fixture.directiveRepository.directives.find((directive) => directive.id === existing.id))
+      .toMatchObject({ action: "Someone else edited this first.", enabled: true });
   });
 
   it("reconciles an interrupted claim to not_applied, then applies exactly once", async () => {

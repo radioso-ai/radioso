@@ -5,7 +5,7 @@ import type { AgentRepositoryPort } from "../../../db/repositories/agentReposito
 import type { ModelCallUsageContext } from "../../../shared/domain/modelCallUsageContext.js";
 import { AppError, badRequest, notFound } from "../../../shared/domain/errors.js";
 import { loadPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
-import { authoredDirectiveInputSchema, authoredDirectiveSurfaceValues, validateDirectiveReplacementNames } from "../authoredDirectives.js";
+import { DIRECTIVE_CREATE_FENCE, authoredDirectiveInputSchema, authoredDirectiveSurfaceValues, validateDirectiveReplacementNames } from "../authoredDirectives.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import { traceOperation } from "../../../shared/observability/tracing/operations.js";
 import type { TelemetryService } from "../../../shared/observability/telemetry/telemetryService.js";
@@ -101,7 +101,7 @@ const PROMPT_PATH = "coach/draft-directive.md";
  * only on its agent, not on unrelated agent-row mutations. This exact string is persisted in
  * pending copilot proposal version tokens, so it must not change.
  */
-export const DIRECTIVE_CREATE_FENCE = "agent-exists";
+export { DIRECTIVE_CREATE_FENCE } from "../authoredDirectives.js";
 
 const cleanJsonCompletion = (raw: string): string =>
   raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/i, "").trim();

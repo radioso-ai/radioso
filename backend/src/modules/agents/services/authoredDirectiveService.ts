@@ -8,6 +8,7 @@ import type { AgentSkillRepositoryPort } from "../../agentSkills/public.js";
 import { defaultAnswerDirectives } from "../../directives/public.js";
 import {
   authoredDirectiveInputSchema,
+  DIRECTIVE_CREATE_FENCE,
   validateDirectiveReplacementNames,
   validateAuthoredDirectiveCapabilities,
   type AuthoredDirective,
@@ -28,7 +29,7 @@ type AuthoredDirectiveVersionOptions = AgentDirectiveUpdateOptions & {
 };
 
 type AuthoredDirectivePreviewChange =
-  | { kind: "save"; directiveId: string | null; input: AuthoredDirectiveInput }
+  | { kind: "save"; directiveId: string | null; input: AuthoredDirectiveInput; versionToken: string }
   | { kind: "set_enabled"; directiveId: string; enabled: boolean }
   | { kind: "remove"; directiveId: string };
 
@@ -40,6 +41,7 @@ interface AuthoredDirectivePreview {
   readonly referencedByTotal: number;
   readonly drafting: "verbatim";
   readonly irreversible: boolean;
+  readonly versionToken: string;
 }
 
 // Every key the input schema declares, read from the schema itself rather than hand-listed, so a
@@ -192,9 +194,13 @@ export class AuthoredDirectiveService {
         ? directives.find((directive) => directive.id === change.directiveId) ?? null
         : null;
     if ((change.kind !== "save" || change.directiveId) && !existing) throw notFound("Directive not found");
+    const versionToken = existing ? existing.updatedAt.toISOString() : DIRECTIVE_CREATE_FENCE;
+    if (change.kind === "save" && change.versionToken !== versionToken) {
+      throw conflict("Directive changed while it was being prepared; prepare it again before review.");
+    }
     if (change.kind === "remove") {
       const referencedBy = this.referencedBy(existing!.name, directives, existing!.id);
-      return { before: existing, after: null, coherence: { status: "not_checked", conflicts: [], rationale: "Coherence is not checked for a removal." }, referencedBy, referencedByTotal: referencedBy.length, drafting: "verbatim", irreversible: true };
+      return { before: existing, after: null, coherence: { status: "not_checked", conflicts: [], rationale: "Coherence is not checked for a removal." }, referencedBy, referencedByTotal: referencedBy.length, drafting: "verbatim", irreversible: true, versionToken };
     }
     const raw = change.kind === "set_enabled"
       ? carryForwardAuthoredDirectiveInput({ enabled: change.enabled }, existing!)
@@ -217,6 +223,7 @@ export class AuthoredDirectiveService {
       referencedByTotal: referencedBy.length,
       drafting: "verbatim",
       irreversible: false,
+      versionToken,
     };
   }
 

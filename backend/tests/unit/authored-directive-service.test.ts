@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 
-import { AuthoredDirectiveService } from "../../src/modules/agents/public.js";
+import { AuthoredDirectiveService, DIRECTIVE_CREATE_FENCE } from "../../src/modules/agents/public.js";
 import type { AuthoredDirective, AuthoredDirectiveInput, AuthoredDirectiveServiceOptions } from "../../src/modules/agents/public.js";
 import type { AgentSkillSpine } from "../../src/modules/agentSkills/public.js";
 import { defaultAnswerDirectives } from "../../src/modules/directives/public.js";
@@ -178,14 +178,16 @@ describe("AuthoredDirectiveService", () => {
     const checker = new CapturingChecker();
     const service = new AuthoredDirectiveService({ repository, coherenceChecker: checker, registeredCapabilityNames: new Set() });
 
-    const create = await service.previewChange(workspaceId, agentId, { kind: "save", directiveId: null, input: directiveInput({ name: "new-rule" }) });
-    const edit = await service.previewChange(workspaceId, agentId, { kind: "save", directiveId: existing.id, input: { name: existing.name, condition: existing.condition, action: "Edited." } });
+    const create = await service.previewChange(workspaceId, agentId, { kind: "save", directiveId: null, input: directiveInput({ name: "new-rule" }), versionToken: DIRECTIVE_CREATE_FENCE });
+    const edit = await service.previewChange(workspaceId, agentId, { kind: "save", directiveId: existing.id, input: { name: existing.name, condition: existing.condition, action: "Edited." }, versionToken: existing.updatedAt.toISOString() });
     const disabled = await service.previewChange(workspaceId, agentId, { kind: "set_enabled", directiveId: existing.id, enabled: false });
     const removal = await service.previewChange(workspaceId, agentId, { kind: "remove", directiveId: existing.id });
 
     expect(create.after?.name).toBe("new-rule");
+    expect(create.versionToken).toBe(DIRECTIVE_CREATE_FENCE);
     expect(create.referencedBy).toEqual([]);
     expect(edit.after?.action).toBe("Edited.");
+    expect(edit.versionToken).toBe(existing.updatedAt.toISOString());
     expect(edit.referencedBy).toEqual([
       { directiveId: referring.id, name: "referrer", relation: "excludes" },
       { directiveId: referring.id, name: "referrer", relation: "dependsOn" },

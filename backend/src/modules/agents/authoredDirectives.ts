@@ -61,7 +61,7 @@ const uniqueTextArray = (maxItemLength: number) =>
     .default([])
     .transform((values) => [...new Set(values)]);
 
-const authoredDirectiveConditionSchema = z.discriminatedUnion("kind", [
+export const authoredDirectiveConditionSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("always"),
   }).strict(),
@@ -70,6 +70,9 @@ const authoredDirectiveConditionSchema = z.discriminatedUnion("kind", [
     description: trimmedText(AUTHORED_DIRECTIVE_LIMITS.conditionDescription),
   }).strict(),
 ]);
+
+/** Create proposals only require that their agent still exists. */
+export const DIRECTIVE_CREATE_FENCE = "agent-exists";
 
 const authoredDirectiveBindingSchema = z.object({
   kind: z.literal("skill"),

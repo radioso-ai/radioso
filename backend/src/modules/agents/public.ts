@@ -124,6 +124,7 @@ export {
 } from "./services/embedConfigCacheInvalidator.js";
 export {
   AUTHORED_DIRECTIVE_ENABLED_DEFAULT,
+  authoredDirectiveConditionSchema,
   authoredDirectiveInputSchema,
   authoredDirectiveRouteValues,
   authoredDirectiveSurfaceValues,

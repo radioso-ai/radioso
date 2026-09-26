@@ -43,7 +43,7 @@ export const createReviewedProposalExecutionTool = (
   description: "Apply a previously prepared operation after the MCP client has shown and confirmed its exact review digest.",
   contributingModule: "operatorCopilot",
   dashboardSubject: { type: "proposal" },
-  requiredPermissions: ["workspace.agents.manage"],
+  requiredPermissions: [],
   inputSchema,
   outputSchema,
   reconcileMcpInvocation: async ({ invocation, arguments: rawInput, context, staleBefore }) => {

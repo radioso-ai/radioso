@@ -30967,6 +30967,7 @@ paths:
                         - agent_skill
                         - context_variable
                         - document
+                        - document_operation
                         - ingestion_settings
                         - website_crawl
                         - workspace_setting

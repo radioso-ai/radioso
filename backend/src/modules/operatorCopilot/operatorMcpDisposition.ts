@@ -7,7 +7,7 @@ const deferredRead = excluded("Read descriptor awaits a separate bounded-output 
 const deferredProposal = excluded("Proposal descriptor awaits transport-neutral evidence and target-specific MCP review after the limited rollout.");
 const unsafeAct = excluded("Act has no owner-approved lost-response, reconciliation, cancellation, and multi-instance MCP contract; GA gate remains closed.");
 const customerReply = excluded("Customer reply drafting remains conversation-context behavior and is not part of the initial direct-tool catalog.");
-const irreversibleDocumentRemoval = excluded("Applying this proposal permanently deletes the document and cannot be undone; it awaits its own reviewed-execution confirmation contract before the stateless operator transport can apply it.");
+const irreversibleDocumentRemoval = excluded("Applying this proposal permanently deletes the document and cannot be undone; use prepare_document_removal for the digest-bound reviewed execution flow.");
 
 /** A read whose args are already explicit, target-scoped, and cleanly-throwing with no entity id: reviewed and widened together. */
 const eligibleRead: CopilotMcpDisposition = {
@@ -86,6 +86,9 @@ export const operatorMcpDispositions: Readonly<Record<string, CopilotMcpDisposit
   retrieval_settings: eligibleRead,
   prepare_retrieval_settings: eligibleProposal,
   proposal_detail: eligibleRead,
+  prepare_document_import: eligibleProposal,
+  prepare_document_removal: eligibleProposal,
+  prepare_document_reprocess: eligibleProposal,
   prepare_routine_structure: {
     status: "eligible",
     inputStrategy: "explicit",

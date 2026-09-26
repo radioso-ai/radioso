@@ -22,6 +22,7 @@ export const copilotApplicationPrimitiveRegistry = {
   "chat.conversation.identity.read": { owningModule: "chat", exportedPort: "ChatHistoryService" },
   "chat.reply-draft.probe": { owningModule: "chat", exportedPort: "ReplyDraftRunner" },
   "documents.authoring.propose": { owningModule: "documents", exportedPort: "DocumentIngestionService" },
+  "documents.reviewed-operation": { owningModule: "documents", exportedPort: "DocumentReviewedOperationService" },
   "documents.deletion.propose": { owningModule: "documents", exportedPort: "DocumentDeletionService" },
   "documents.status.read": { owningModule: "documents", exportedPort: "DocumentIngestionService" },
   "documents.inventory.read": { owningModule: "documents", exportedPort: "DocumentIngestionService" },

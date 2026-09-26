@@ -57,6 +57,8 @@ import { createRetrievalAuthoringCopilotTools } from "./retrievalAuthoring.js";
 import type { RetrievalAuthoringCopilotToolDependencies } from "./retrievalAuthoring.js";
 import { createProposalDetailTool } from "./proposalDetail.js";
 import type { CopilotProposalDetailReadPort } from "../service.js";
+import { createDocumentReviewedOperationTools } from "./documentReviewedOperations.js";
+import type { DocumentReviewedOperationToolDependencies } from "./documentReviewedOperations.js";
 
 export type CopilotAgentPort = CopilotAgentConfigurationPort & CopilotAgentSkillsAgentPort & CopilotContextVariablesAgentPort;
 
@@ -93,6 +95,7 @@ type CopilotToolCatalogDependencies = AgentConfigurationCopilotToolDependencies
   & RoutineStructuralPreparationDependencies
   & AgentPublicationCopilotToolDependencies
   & RetrievalAuthoringCopilotToolDependencies
+  & DocumentReviewedOperationToolDependencies
   & { readonly reviewedProposalExecution: ReviewedProposalExecutionPort; readonly reviewedProposalOutcome: ReviewedProposalOutcomePort; readonly cancelReviewedProposal: CancelReviewedProposalPort; readonly proposalDetail: CopilotProposalDetailReadPort };
 
 /** Composition-only barrel; each descriptor remains published from its owner module. */
@@ -130,6 +133,7 @@ export const createCopilotToolDescriptors = (
   ...createWebsiteAnalysisProbeCopilotTools(deps),
   ...createAgentProposalCopilotTools(deps),
   ...createDocumentProposalCopilotTools(deps),
+  ...createDocumentReviewedOperationTools(deps),
   ...createIngestionSettingsProposalCopilotTools(deps),
   ...createWorkspaceSettingProposalCopilotTools(deps),
   ...createWebsiteCrawlProposalCopilotTools(deps),

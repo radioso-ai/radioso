@@ -145,7 +145,7 @@ export const withCopilotActor = (
  * tool-output zod enums) must derive from this array rather than repeating its own OR-chain or
  * literal enum, so adding a target type cannot silently miss one of those sites again.
  */
-export const copilotProposalTargetTypes = ["directive", "agent", "agent_setting", "routine", "agent_skill", "context_variable", "document", "ingestion_settings", "website_crawl", "workspace_setting", "agent_publication", "agent_greeting"] as const;
+export const copilotProposalTargetTypes = ["directive", "agent", "agent_setting", "routine", "agent_skill", "context_variable", "document", "document_operation", "ingestion_settings", "website_crawl", "workspace_setting", "agent_publication", "agent_greeting"] as const;
 export type CopilotProposalTargetType = (typeof copilotProposalTargetTypes)[number];
 /**
  * The permission an operator needs to apply a proposal, by what it changes. Applying is a write to
@@ -163,6 +163,7 @@ export const copilotProposalPermissions = {
   agent_skill: { read: ["workspace.agents.read"], manage: ["workspace.agents.manage"] },
   context_variable: { read: ["workspace.agents.read"], manage: ["workspace.agents.manage"] },
   document: { read: ["workspace.documents.read"], manage: ["workspace.documents.manage"] },
+  document_operation: { read: ["workspace.documents.read"], manage: ["workspace.documents.manage"] },
   ingestion_settings: { read: ["workspace.settings.read"], manage: ["workspace.settings.manage"] },
   website_crawl: { read: ["workspace.documents.read"], manage: ["workspace.documents.manage"] },
   workspace_setting: { read: ["workspace.settings.read"], manage: ["workspace.settings.manage"] },
@@ -460,6 +461,10 @@ export interface CopilotAgentPublicationProposalAdapter extends CopilotProposalA
   validatePayload(workspaceId: string, targetRef: unknown, payload: unknown): Promise<{ targetRef: unknown; payload: unknown; versionToken: string }>;
 }
 
+export interface CopilotDocumentOperationProposalAdapter extends CopilotProposalAdapter {
+  readonly targetType: "document_operation";
+}
+
 /**
  * Every adapter a tool factory may be handed, discriminated by `targetType`. One declaration so a
  * new target type reaches every proposal tool at once instead of being added to each one by hand.
@@ -472,6 +477,7 @@ export type CopilotAnyProposalAdapter =
   | CopilotAgentSkillProposalAdapter
   | CopilotContextVariableProposalAdapter
   | CopilotDocumentProposalAdapter
+  | CopilotDocumentOperationProposalAdapter
   | CopilotIngestionSettingsProposalAdapter
   | CopilotWebsiteCrawlProposalAdapter
   | CopilotWorkspaceSettingProposalAdapter
@@ -527,7 +533,7 @@ export interface CopilotToolDescriptor<TInput = unknown, TOutput = unknown> {
   readonly inputSchema: ZodType<TInput>;
   readonly outputSchema: ZodType<TOutput>;
   /** Every permission is required; descriptors use all-of semantics. */
-  /** Empty only for descriptors whose stored target determines the permission at invocation. */
+  /** Empty only for descriptors whose stored target determines the permission at invocation: proposal_detail and the generic reviewed-flow tools. */
   readonly requiredPermissions: readonly AccountPermission[];
   /**
    * Production catalog assembly attaches a reviewed declaration here. Factories

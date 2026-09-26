@@ -40,7 +40,7 @@ const cancel = async (
 export const createCancelReviewedProposalTool = (canceller: CancelReviewedProposalPort): CopilotToolDescriptor => ({
   name: "cancel_reviewed_proposal", shape: "act", verificationCost: () => 0,
   uiLabel: "Cancelling reviewed operation", description: DESCRIPTION,
-  contributingModule: "operatorCopilot", dashboardSubject: { type: "proposal" }, requiredPermissions: ["workspace.agents.manage"], inputSchema, outputSchema,
+  contributingModule: "operatorCopilot", dashboardSubject: { type: "proposal" }, requiredPermissions: [], inputSchema, outputSchema,
   // Cancellation stamps no receipt on the proposal, so a replay asks the owner again under the fresh
   // request's authority. The owner answers an already-dismissed proposal with its dismissed outcome.
   reconcileMcpInvocation: async ({ arguments: rawInput, context }) => {

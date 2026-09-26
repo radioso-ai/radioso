@@ -2502,6 +2502,15 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
     this.jobRepository = jobRepository;
   }
 
+  async countReprocessCandidates(input: { workspaceId: string; sourceId?: string | null; documentIds?: readonly string[] }) {
+    const documents = [...this.items.values()].filter((document) => document.workspaceId === input.workspaceId)
+      .filter((document) => input.documentIds ? input.documentIds.includes(document.id) : input.sourceId === undefined || document.sourceId === input.sourceId);
+    return {
+      eligible: documents.filter((document) => document.status !== "queued" && document.status !== "processing").length,
+      skipped: documents.filter((document) => document.status === "queued" || document.status === "processing").length,
+    };
+  }
+
   async summarizeWorkspace(workspaceId: string) {
     const documents = [...this.items.values()].filter((item) => item.workspaceId === workspaceId);
     const sampleDocuments = documents.filter((item) => item.metadata.sampleDocument === true);
@@ -3263,6 +3272,34 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
       doc.workspaceId === input.workspaceId &&
       doc.externalDocumentId === input.externalDocumentId &&
       doc.status !== "failed" &&
+      (sourceId === null ? !doc.sourceId : doc.sourceId === sourceId),
+    );
+    if (!match) {
+      return null;
+    }
+    return {
+      documentId: match.id,
+      revision: match.revision,
+      contentSizeBytes: match.contentSizeBytes ?? null,
+      contentHash: match.contentHash ?? null,
+    };
+  }
+
+  /** Includes failed rows, unlike {@link findActivePageState}; mirrors DocumentRepository.findPageState. */
+  async findPageState(input: {
+    workspaceId: string;
+    sourceId?: string | null;
+    externalDocumentId: string;
+  }): Promise<{
+    documentId: string;
+    revision: number;
+    contentSizeBytes: number | null;
+    contentHash: string | null;
+  } | null> {
+    const sourceId = input.sourceId ?? null;
+    const match = [...this.items.values()].find((doc) =>
+      doc.workspaceId === input.workspaceId &&
+      doc.externalDocumentId === input.externalDocumentId &&
       (sourceId === null ? !doc.sourceId : doc.sourceId === sourceId),
     );
     if (!match) {

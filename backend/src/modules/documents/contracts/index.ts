@@ -19,6 +19,9 @@ export type {
   DocumentRecord,
   DocumentRepositoryPort,
   DocumentProcessingJobOptions,
+  DocumentReviewedOperationApplyPort,
+  DocumentReviewedOperationPreparationPort,
+  DocumentReviewedWriteGuard,
   DocumentRetrievalSettingsResult,
   DocumentSourceResolverInput,
   DocumentSourceSummary,
@@ -42,6 +45,11 @@ export type {
   DocumentStoragePort,
 } from "./storage.js";
 export { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../domain/sourceConstants.js";
+export {
+  describeDocumentReviewedOperationPlan,
+  documentReviewedOperationPlanSchema,
+  documentReviewedOperationTargetRefSchema,
+} from "../services/documentReviewedOperationPlan.js";
 
 export interface DocumentIngestionPort {
   ingest(input: {

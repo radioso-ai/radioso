@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { type AgenticCapabilityRunner, type AgentTool, type AgentTraceEvent } from "../../shared/agent-runtime/index.js";
 import type { UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
+import { AppError } from "../../shared/domain/errors.js";
 import {
   copilotProposalPermissions,
   copilotProposalTargetTypes,
@@ -279,6 +280,8 @@ export class OperatorCopilotService {
     grantId: string;
     clientId: string;
     proposalId: string;
+    /** The authenticated MCP request's credential/grant-aware authorization. */
+    currentAuthorization?: CopilotCurrentAuthorizationPort;
   }): Promise<{ proposal: CopilotProposal; currentVersionMatches: boolean } | null> {
     const proposal = await this.deps.repository.findMcpReviewedProposal({
       id: input.proposalId,
@@ -294,6 +297,7 @@ export class OperatorCopilotService {
       operatorUserId: input.operatorUserId,
       surface: "mcp",
       proposalId: input.proposalId,
+      currentAuthorization: input.currentAuthorization,
     }, proposal.targetType);
     const adapter = this.adapterFor(proposal.targetType);
     const currentVersionMatches = await adapter.readVersionToken(input.workspaceId, proposal.targetRef, proposal.payload)
@@ -473,6 +477,10 @@ export class OperatorCopilotService {
     readonly now?: Date;
   }): Promise<CopilotClaimedProposalExecution | { status: "refused"; reason: string }> {
     if (!input.currentAuthorization) throw new CopilotAuthorizationError();
+    // The catalog gate is intentionally empty: authorization belongs to the target owner. Check
+    // before claiming so a settled replay cannot disclose an old target outcome after access is revoked.
+    const existing = await this.deps.repository.findMcpReviewedProposal({ id: input.proposalId, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId, grantId: input.grantId, clientId: input.clientId });
+    if (existing) await this.requireProposalAuthorization({ workspaceId: input.workspaceId, accountId: input.accountId, operatorUserId: input.operatorUserId, surface: "mcp", proposalId: input.proposalId, currentAuthorization: input.currentAuthorization }, existing.targetType);
     const claimed = await this.deps.repository.claimMcpReviewedProposalApply({
       proposalId: input.proposalId,
       executionInvocationId: input.executionInvocationId,
@@ -841,4 +849,7 @@ const titleFor = (message: string): string => message.slice(0, TITLE_MAX_LENGTH)
 
 export class CopilotConflictError extends Error {}
 export class CopilotNotFoundError extends Error {}
-export class CopilotAuthorizationError extends Error {}
+/** A caller refusal, deliberately 400 so the MCP edge does not report an OAuth-scope outage. */
+export class CopilotAuthorizationError extends AppError {
+  constructor() { super(400, "target_permission_denied", "You no longer have permission for this reviewed operation target."); }
+}

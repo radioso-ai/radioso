@@ -1,5 +1,12 @@
 import type { EmbeddingSpaceRef } from "../../embeddingProfiles/contracts/embeddingConsumers.js";
 import type { DocumentEnrichmentProvenance } from "../domain/enrichment/documentEnrichmentContract.js";
+import type {
+  DocumentReviewedImportPlan,
+  DocumentReviewedOperationPlan,
+  DocumentReviewedOperationTargetRef,
+  DocumentReviewedRemovalPlan,
+  DocumentReviewedReprocessPlan,
+} from "../services/documentReviewedOperationPlan.js";
 
 export type DocumentSourceKind = "inline_text" | "uploaded_file";
 
@@ -7,6 +14,35 @@ export type DocumentProcessingJobEnrichmentOverride = "on" | "off";
 
 export interface DocumentProcessingJobOptions {
   documentEnrichmentOverride?: DocumentProcessingJobEnrichmentOverride;
+}
+
+export interface DocumentReviewedWriteGuard {
+  readonly expectedDocumentId: string | null;
+  readonly expectedRevision: number | null;
+  readonly expectedContentHash: string | null;
+}
+
+/** What the copilot/MCP reviewed-operation tools need to draft a document import, removal, or reprocess plan. */
+export interface DocumentReviewedOperationPreparationPort {
+  prepareImport(input: {
+    readonly workspaceId: string;
+    readonly accountId: string;
+    readonly sourceId: string | null;
+    readonly documents: readonly { readonly externalDocumentId: string; readonly title: string; readonly content: string; readonly metadata?: Record<string, unknown> }[];
+  }): Promise<DocumentReviewedImportPlan>;
+  prepareRemoval(input: { readonly workspaceId: string; readonly documentIds: readonly string[]; readonly externalDocumentIds: readonly string[]; readonly sourceId: string | null }): Promise<DocumentReviewedRemovalPlan>;
+  prepareReprocess(input: { readonly workspaceId: string; readonly kind: "documents" | "source" | "all"; readonly documentIds?: readonly string[]; readonly sourceId?: string | null }): Promise<DocumentReviewedReprocessPlan>;
+}
+
+/** What the copilot/MCP reviewed-operation adapter needs to fence, apply, and reconcile a prepared plan; it never redefines the plan's shape or limits. */
+export interface DocumentReviewedOperationApplyPort {
+  applyReviewedPlan(input: { readonly workspaceId: string; readonly accountId: string; readonly targetRef: DocumentReviewedOperationTargetRef; readonly plan: DocumentReviewedOperationPlan }): Promise<{ readonly outcome: "applied"; readonly appliedRef: unknown; readonly reason?: string }>;
+  reconcileInterruptedApply(input: {
+    readonly workspaceId: string;
+    readonly targetRef: DocumentReviewedOperationTargetRef;
+    readonly plan: DocumentReviewedOperationPlan;
+  }): Promise<{ readonly outcome: "applied"; readonly appliedRef: unknown } | { readonly outcome: "not_applied" } | { readonly outcome: "unknown"; readonly reason: string }>;
+  readReviewedPlanFence(input: { readonly workspaceId: string; readonly targetRef: DocumentReviewedOperationTargetRef; readonly plan: DocumentReviewedOperationPlan }): Promise<string>;
 }
 
 export interface DocumentSourceSummary {
@@ -207,7 +243,8 @@ export interface DocumentEnrichmentMetadataUpdateInput {
 }
 
 export interface DocumentRepositoryPort {
-  createAndQueue(input: DocumentCreateInput, options?: DocumentProcessingJobOptions | null): Promise<DocumentRecord>;
+  countReprocessCandidates(input: { workspaceId: string; sourceId?: string | null; documentIds?: readonly string[] }): Promise<{ eligible: number; skipped: number }>;
+  createAndQueue(input: DocumentCreateInput, options?: DocumentProcessingJobOptions | null, guard?: DocumentReviewedWriteGuard): Promise<DocumentRecord>;
   create(input: DocumentCreateInput & { status: string }): Promise<DocumentRecord>;
   summarizeWorkspace(workspaceId: string): Promise<DocumentWorkspaceSummaryRecord>;
   setStatus(input: {
@@ -262,6 +299,7 @@ export interface DocumentRepositoryPort {
     documentId: string,
     workspaceId: string,
     options?: DocumentProcessingJobOptions | null,
+    expectedUpdatedAt?: Date,
   ): Promise<{ document: DocumentRecord; queued: boolean }>;
   requeueAllEligibleAndQueue(workspaceId: string, options?: DocumentProcessingJobOptions | null): Promise<{
     queuedDocumentCount: number;
@@ -289,6 +327,17 @@ export interface DocumentRepositoryPort {
     storageRefs: Array<{ bucket: string; objectPath: string; generation: string | null }>;
   }>;
   findActivePageState(input: {
+    workspaceId: string;
+    sourceId?: string | null;
+    externalDocumentId: string;
+  }): Promise<{
+    documentId: string;
+    revision: number;
+    contentSizeBytes: number | null;
+    contentHash: string | null;
+  } | null>;
+  /** Includes failed rows so reviewed import can fence the same upsert target as normal ingestion. */
+  findPageState(input: {
     workspaceId: string;
     sourceId?: string | null;
     externalDocumentId: string;

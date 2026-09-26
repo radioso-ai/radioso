@@ -3,6 +3,28 @@ export interface UsageLimitReservation {
   release(): Promise<void>;
 }
 
+/** A bounded read used by owners to explain document capacity before a batch writes. */
+interface StoredDocumentUsage {
+  readonly used: number;
+  readonly limit: number | null;
+}
+
+export interface DocumentCapacityUsage {
+  readonly storedDocuments: StoredDocumentUsage;
+  readonly storedIndexedBytes: StoredDocumentUsage;
+  readonly monthlyIndexedBytes: StoredDocumentUsage;
+}
+
+/**
+ * A narrow read used only by the documents reviewed-operation service, to explain capacity
+ * before it plans a batch write. Kept separate from {@link UsageLimitPolicy} because it is a
+ * read with a single consumer, not a reservation: bundling it into the reservation port would
+ * force every reservation fake across the test suite to also stub a read none of them exercise.
+ */
+export interface DocumentCapacityReadPort {
+  getDocumentCapacityUsage(input: { accountId?: string | null; workspaceId: string }): Promise<DocumentCapacityUsage>;
+}
+
 /** What an answer reservation is, for metering. Callers declare it; the EE policy prices it. */
 export type AnswerUsageKind =
   | "conversation_reply" // a reply in a customer conversation; metered per block of replies
@@ -86,5 +108,12 @@ export class NoopUsageLimitPolicy implements UsageLimitPolicy {
 
   async reserveMonthlyIndexedContent(_input: MonthlyIndexedContentReservationInput): Promise<UsageLimitReservation> {
     return noopReservation;
+  }
+}
+
+/** OSS default for {@link DocumentCapacityReadPort}: unbounded, until a module (EE) registers a metered reader. */
+export class NoopDocumentCapacityReadPort implements DocumentCapacityReadPort {
+  async getDocumentCapacityUsage(): Promise<DocumentCapacityUsage> {
+    return { storedDocuments: { used: 0, limit: null }, storedIndexedBytes: { used: 0, limit: null }, monthlyIndexedBytes: { used: 0, limit: null } };
   }
 }

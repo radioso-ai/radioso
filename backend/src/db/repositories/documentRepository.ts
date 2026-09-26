@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
 
-import { sql, type ExpressionBuilder } from "kysely";
+import { sql, type ExpressionBuilder, type SelectQueryBuilder } from "kysely";
 
 import type {
   DocumentCreateInput,
   DocumentDerivedContentUpdateInput,
   DocumentEnrichmentMetadataUpdateInput,
+  DocumentInventoryListInput,
   DocumentRetrievalSettingsInput,
   DocumentProcessingJobOptions,
   DocumentQueueUpdateInput,
@@ -122,6 +123,22 @@ const documentSummarySelectColumns = [
 ] as const;
 
 const documentCursorCreatedAtExpression = sql<Date>`date_trunc('milliseconds', created_at)`;
+
+// Structural ILIKE escaping: caller-provided title text matches % and _ literally.
+const titleContainsPattern = (value: string): string => `%${value.replace(/[\\%_]/g, (match) => `\\${match}`)}%`;
+
+const withInventoryFilters = <O>(
+  query: SelectQueryBuilder<DB, "documents", O>,
+  input: DocumentInventoryListInput,
+): SelectQueryBuilder<DB, "documents", O> => query
+  .$if(input.sourceId !== undefined, (qb) => qb.where("source_id", "=", input.sourceId!))
+  .$if(input.status !== undefined, (qb) => qb.where("status", "=", input.status!))
+  .$if((input.externalDocumentIds?.length ?? 0) > 0, (qb) =>
+    qb.where("external_document_id", "in", [...input.externalDocumentIds!]))
+  .$if(input.titleContains !== undefined, (qb) =>
+    qb.where(sql<boolean>`title ILIKE ${titleContainsPattern(input.titleContains!)}`))
+  .$if(input.metadata !== undefined, (qb) => qb.where(sql<boolean>`metadata @> ${toJsonb(input.metadata)}`))
+  .$if(input.retrievalEnabled !== undefined, (qb) => qb.where("retrieval_enabled", "=", input.retrievalEnabled!));
 
 export class DocumentRepository implements DocumentRepositoryPort {
   constructor(private readonly db: Db) {}
@@ -457,6 +474,41 @@ export class DocumentRepository implements DocumentRepositoryPort {
               total,
             )
           : null,
+      hasMore,
+    };
+  }
+
+  async listInventoryPageByWorkspaceId(
+    workspaceId: string,
+    input: DocumentInventoryListInput,
+  ): Promise<{ documents: DocumentSummaryRecord[]; total: number; nextCursor: string | null; hasMore: boolean }> {
+    const cursor = input.cursor ? decodeCursorWithKeys(input.cursor, ["createdAt", "id"]) : null;
+    const total = Number((await withInventoryFilters(
+          this.db.selectFrom("documents").select(sql<string>`COUNT(*)::text`.as("count")).where("workspace_id", "=", workspaceId),
+          input,
+        ).executeTakeFirst())?.count ?? "0");
+
+    const rows = (await withInventoryFilters(
+      this.db.selectFrom("documents").select(documentSummarySelectColumns).where("workspace_id", "=", workspaceId),
+      input,
+    ).$if(Boolean(cursor), (qb) =>
+      qb.where((eb) => eb.or([
+        eb(documentCursorCreatedAtExpression, "<", sql<Date>`${cursor!.keys.createdAt}::timestamptz`),
+        eb.and([
+          eb(documentCursorCreatedAtExpression, "=", sql<Date>`${cursor!.keys.createdAt}::timestamptz`),
+          eb("id", "<", sql<string>`${cursor!.keys.id}::uuid`),
+        ]),
+      ])),
+    ).orderBy(documentCursorCreatedAtExpression, "desc").orderBy("id", "desc").limit(input.limit + 1).execute()) as DocumentRow[];
+    const documents = rows.slice(0, input.limit).map(mapDocumentSummary);
+    const hasMore = rows.length > input.limit;
+    const lastDocument = documents.at(-1);
+    return {
+      documents,
+      total,
+      nextCursor: hasMore && lastDocument
+        ? encodeCursor({ createdAt: lastDocument.createdAt.toISOString(), id: lastDocument.id }, total)
+        : null,
       hasMore,
     };
   }

@@ -24,6 +24,17 @@ import { createLogger } from "../../src/shared/observability/logger.js";
 import { createDocumentEmbeddingPort } from "../support/embeddingPorts.js";
 
 describe("document ingestion", () => {
+  it("refuses a malformed inventory cursor before it can reach the repository seek cast", async () => {
+    const service = new DocumentIngestionService(new InMemoryDocumentRepository(), createAuditService());
+    const cursor = Buffer.from(JSON.stringify({
+      version: 1,
+      keys: { createdAt: "not-a-date", id: "11111111-1111-4111-8111-111111111111" },
+    })).toString("base64url");
+
+    await expect(service.listInventoryForWorkspace("workspace-1", { limit: 1, cursor }))
+      .rejects.toMatchObject({ code: "bad_request" });
+  });
+
   it("queues new documents instead of processing them inline", async () => {
     const documentRepository = new InMemoryDocumentRepository();
     const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);

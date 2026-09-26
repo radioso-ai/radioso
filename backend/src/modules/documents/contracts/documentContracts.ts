@@ -241,6 +241,10 @@ export interface DocumentRepositoryPort {
     workspaceId: string,
     input: { limit: number; offset?: number; cursor?: string },
   ): Promise<{ documents: DocumentSummaryRecord[]; total: number; nextCursor: string | null; hasMore: boolean }>;
+  listInventoryPageByWorkspaceId(
+    workspaceId: string,
+    input: DocumentInventoryListInput,
+  ): Promise<{ documents: DocumentSummaryRecord[]; total: number; nextCursor: string | null; hasMore: boolean }>;
   update(input: DocumentUpdateInput): Promise<DocumentRecord>;
   updateAndQueue(input: DocumentQueueUpdateInput, options?: DocumentProcessingJobOptions | null): Promise<DocumentRecord>;
   updateDerivedContentForRevision(input: DocumentDerivedContentUpdateInput): Promise<DocumentRecord | null>;
@@ -414,6 +418,26 @@ export interface DocumentListPage {
   total: number;
   nextCursor: string | null;
   hasMore: boolean;
+}
+
+/** A bounded, content-free inventory query for operator surfaces. */
+export const documentInventoryStatuses = ["queued", "processing", "ready", "indexed", "failed"] as const;
+export type DocumentInventoryStatus = (typeof documentInventoryStatuses)[number];
+
+export interface DocumentInventoryListInput {
+  sourceId?: string;
+  status?: DocumentInventoryStatus;
+  externalDocumentIds?: readonly string[];
+  titleContains?: string;
+  metadata?: Record<string, string | number | boolean | null>;
+  retrievalEnabled?: boolean;
+  cursor?: string;
+  limit: number;
+}
+
+/** Content-free inventory read owned by documents and consumed by operator surfaces. */
+export interface DocumentInventoryPort {
+  listInventoryForWorkspace(workspaceId: string, input: DocumentInventoryListInput): Promise<DocumentListPage>;
 }
 
 export interface EmbeddingCoverageReconciliationPort {

@@ -771,6 +771,9 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     chatHistoryService: chat.chatHistoryService,
     agentTurnProbe: agentTurnProbeService,
     documentSearchService: retrieval.documentSearchService,
+    documentInventory: {
+      listInventoryForWorkspace: documents.documentIngestionService.listInventoryForWorkspace.bind(documents.documentIngestionService),
+    },
     documentChunks: repositories.chunkRepository,
     documentMaintenance: {
       reprocessDocument: documents.documentIngestionService.reprocessEligible.bind(documents.documentIngestionService),

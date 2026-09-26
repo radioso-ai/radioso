@@ -63,7 +63,7 @@ describe("Operator MCP retrieval authoring", () => {
     const snapshot = { target: { agentId: randomUUID(), skillId: randomUUID(), skillName: "answer_with_sources" }, before: { vectorTopK: 12 }, after: { vectorTopK: 36 }, settingsVersion: "2026-09-13T00:00:00.000Z", lifecycle: "agent_skill_draft" as const };
     const [_, prepare] = createRetrievalAuthoringCopilotTools({
       retrievalAuthoring: {} as never, proposalRepository: { createProposal }, proposalAdapters: [], auditService: { record: vi.fn() },
-      proposalRecovery: { recoverOperatorMcpProposal: vi.fn(async () => ({ status: "recovered", proposal: { id: randomUUID(), targetType: "agent_skill", reviewDigest: "d".repeat(43), expiresAt: new Date("2026-09-13T00:15:00Z"), reviewSnapshot: snapshot } })) },
+      proposalRecovery: { recoverOperatorMcpProposal: vi.fn(async () => ({ status: "recovered", proposal: { id: randomUUID(), targetType: "agent_skill", reviewDigest: "d".repeat(43), expiresAt: new Date("2026-09-13T00:15:00Z"), reviewSnapshot: snapshot, confirmationRequirement: "conversation", changeEffect: { exposure: "draft", reversibility: "reversible", metered: false } } })) },
     });
     const recovered = await prepare.reconcileMcpInvocation!({ invocation: { id: "invocation", grantId: "grant", operationId: "operation", inputDigest: "digest" }, context: { workspaceId: "workspace", operatorUserId: "user" }, staleBefore: new Date(0), now: new Date() } as never);
     expect(recovered).toMatchObject({ status: "recovered", output: { reviewDigest: "d".repeat(43), expiresAt: "2026-09-13T00:15:00.000Z", ...snapshot } });
@@ -82,6 +82,7 @@ describe("Operator MCP retrieval authoring", () => {
       before: { citationHoldEnabled: true },
       after: { citationHoldEnabled: input.patch.citationHoldEnabled },
       settingsVersion: "2026-09-13T00:00:00.000Z",
+      effect: { exposure: "draft" as const, reversibility: "reversible" as const, metered: false },
     }));
     const createProposal = vi.fn(async () => ({ id: randomUUID() }) as never);
     const [, prepare] = createRetrievalAuthoringCopilotTools({

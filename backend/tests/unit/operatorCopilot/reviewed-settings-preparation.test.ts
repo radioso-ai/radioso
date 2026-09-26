@@ -26,6 +26,7 @@ describe("reviewed settings preparation", () => {
       targetAgentId: agentId, agentName: "Support", normalizedPatch: { name: "Help", customInstruction: "Be concise." },
       expectedFields: [{ key: "name", value: "Support" }, { key: "customInstruction", value: "" }],
       changes: [{ key: "name", current: "Support", proposed: "Help", lifecycle: "live" as const, reach: false }, { key: "customInstruction", current: "", proposed: "Be concise.", lifecycle: "agent_draft" as const, reach: false }], unchanged: [],
+      effect: { exposure: "live" as const, reversibility: "reversible" as const, metered: false },
     }));
     const descriptor = createAgentSettingsReviewedPreparationTool({ ...deps, agentSettings: { prepareFieldsProposal, readFieldProposalVersion: vi.fn(async () => "fields:agent") } as never });
 

@@ -8,7 +8,8 @@ import {
 import { documentMetadataRecordSchema } from "../../documents/public.js";
 import type { CopilotMcpProposalRecoveryPort, CopilotToolDescriptor } from "../contracts.js";
 import { requireCurrentCopilotPermissions } from "../authorization.js";
-import { persistReviewedPreparation, type ReviewedPreparationDependencies } from "./reviewedPreparation.js";
+import { reviewedConfirmationSchema } from "../reviewedOperation.js";
+import { persistReviewedPreparation, reviewedPreparationConfirmation, type ReviewedPreparationDependencies } from "./reviewedPreparation.js";
 import type { CopilotProposalToolDependencies } from "./shared.js";
 
 const MAX_DOCUMENTS = 100;
@@ -34,6 +35,7 @@ const outputSchema = z.object({
   proposalId: z.string().uuid(),
   reviewDigest: z.string(),
   expiresAt: z.string().datetime(),
+  confirmation: reviewedConfirmationSchema,
   review: z.object({ counts: z.object({ create: z.number().int(), replace: z.number().int(), unchanged: z.number().int() }).strict(), documents: z.array(reviewItem).max(40), documentsTruncated: z.boolean() }).strict(),
 }).strict();
 
@@ -63,8 +65,9 @@ export const createDocumentReviewedOperationTools = (deps: DocumentReviewedOpera
     const recovered = await deps.proposalRecovery.recoverOperatorMcpProposal({ invocationId: invocation.id, grantId: invocation.grantId, workspaceId: context.workspaceId, operatorUserId: context.operatorUserId, operationId: invocation.operationId, descriptorName: NAME, inputDigest: invocation.inputDigest, staleBefore, now });
     if (recovered.status !== "recovered" || recovered.proposal.targetType !== "document_operation" || !recovered.proposal.reviewDigest || !recovered.proposal.expiresAt) return recovered.status === "recovered" ? { status: "conflict" } : recovered;
     const snapshot = z.object({ review: outputSchema.shape.review }).safeParse(recovered.proposal.reviewSnapshot);
-    if (!snapshot.success) return { status: "conflict" };
-    return { status: "recovered", output: { proposalId: recovered.proposal.id, reviewDigest: recovered.proposal.reviewDigest, expiresAt: recovered.proposal.expiresAt.toISOString(), ...snapshot.data } };
+    const confirmation = reviewedPreparationConfirmation(deps, recovered.proposal);
+    if (!snapshot.success || !confirmation) return { status: "conflict" };
+    return { status: "recovered", output: { proposalId: recovered.proposal.id, reviewDigest: recovered.proposal.reviewDigest, expiresAt: recovered.proposal.expiresAt.toISOString(), confirmation, ...snapshot.data } };
   },
   createTool: (context) => ({
     name: NAME, description: DESCRIPTION, inputSchema, outputSchema,
@@ -78,7 +81,7 @@ export const createDocumentReviewedOperationTools = (deps: DocumentReviewedOpera
       const versionToken = plan.fence;
       const reviewSnapshot = { review, fullReview };
       const stored = await persistReviewedPreparation({ deps, context, targetType: "document_operation", targetRef, payload, versionToken, reviewSnapshot, operation: "import", metadata: { documentCount }, effect: documentReviewedChangeEffect(plan) });
-      return { proposalId: stored.proposal.id, reviewDigest: stored.reviewDigest, expiresAt: stored.expiresAt.toISOString(), review };
+      return { proposalId: stored.proposal.id, reviewDigest: stored.reviewDigest, expiresAt: stored.expiresAt.toISOString(), confirmation: stored.confirmation, review };
     },
   }),
 }, createRemovalTool(deps), createReprocessTool(deps)];
@@ -93,7 +96,7 @@ const removalInputSchema = z.object({
   if (input.sourceId && !input.externalDocumentIds?.length) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "sourceId is only used with externalDocumentIds." });
 });
 const removalReview = z.object({ documents: z.array(z.object({ id: z.string().uuid(), title, updatedAt: z.string().datetime() }).strict()).max(40), unknownIds: z.array(z.string()).max(200), documentsTruncated: z.boolean() }).strict();
-const removalOutputSchema = z.object({ proposalId: z.string().uuid(), reviewDigest: z.string(), expiresAt: z.string().datetime(), review: removalReview }).strict();
+const removalOutputSchema = z.object({ proposalId: z.string().uuid(), reviewDigest: z.string(), expiresAt: z.string().datetime(), confirmation: reviewedConfirmationSchema, review: removalReview }).strict();
 const REMOVAL_NAME = "prepare_document_removal";
 const REMOVAL_DESCRIPTION = "Prepare an exact, reviewed permanent document removal. Unknown ids are returned in the review and no document is deleted until execute_reviewed_proposal receives the confirmed digest.";
 
@@ -106,7 +109,8 @@ function createRemovalTool(deps: DocumentReviewedOperationToolDependencies): Cop
       const recovered = await deps.proposalRecovery.recoverOperatorMcpProposal({ invocationId: invocation.id, grantId: invocation.grantId, workspaceId: context.workspaceId, operatorUserId: context.operatorUserId, operationId: invocation.operationId, descriptorName: REMOVAL_NAME, inputDigest: invocation.inputDigest, staleBefore, now });
       if (recovered.status !== "recovered" || recovered.proposal.targetType !== "document_operation" || !recovered.proposal.reviewDigest || !recovered.proposal.expiresAt) return recovered.status === "recovered" ? { status: "conflict" } : recovered;
       const snapshot = z.object({ review: removalReview }).safeParse(recovered.proposal.reviewSnapshot);
-      return snapshot.success ? { status: "recovered", output: { proposalId: recovered.proposal.id, reviewDigest: recovered.proposal.reviewDigest, expiresAt: recovered.proposal.expiresAt.toISOString(), ...snapshot.data } } : { status: "conflict" };
+      const confirmation = reviewedPreparationConfirmation(deps, recovered.proposal);
+      return snapshot.success && confirmation ? { status: "recovered", output: { proposalId: recovered.proposal.id, reviewDigest: recovered.proposal.reviewDigest, expiresAt: recovered.proposal.expiresAt.toISOString(), confirmation, ...snapshot.data } } : { status: "conflict" };
     },
     createTool: (context) => ({ name: REMOVAL_NAME, description: REMOVAL_DESCRIPTION, inputSchema: removalInputSchema, outputSchema: removalOutputSchema, invoke: async (rawInput) => {
       const input = removalInputSchema.parse(rawInput);
@@ -118,7 +122,7 @@ function createRemovalTool(deps: DocumentReviewedOperationToolDependencies): Cop
       const versionToken = plan.fence;
       const reviewSnapshot = { review, fullReview };
       const stored = await persistReviewedPreparation({ deps, context, targetType: "document_operation", targetRef, payload, versionToken, reviewSnapshot, operation: "removal", metadata: { documentCount }, effect: documentReviewedChangeEffect(plan) });
-      return { proposalId: stored.proposal.id, reviewDigest: stored.reviewDigest, expiresAt: stored.expiresAt.toISOString(), review };
+      return { proposalId: stored.proposal.id, reviewDigest: stored.reviewDigest, expiresAt: stored.expiresAt.toISOString(), confirmation: stored.confirmation, review };
     } }),
   };
 }
@@ -129,7 +133,7 @@ const reprocessInputSchema = z.object({ kind: z.enum(["documents", "source", "al
   if (input.kind !== "documents" && input.documentIds !== undefined || input.kind !== "source" && input.sourceId !== undefined || input.kind !== "all" && input.all !== undefined) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Only the selector matching kind may be supplied." });
 });
 const reprocessReview = z.object({ kind: z.enum(["documents", "source", "all"]), eligible: z.number().int().nonnegative(), skipped: z.number().int().nonnegative() }).strict();
-const reprocessOutputSchema = z.object({ proposalId: z.string().uuid(), reviewDigest: z.string(), expiresAt: z.string().datetime(), review: reprocessReview }).strict();
+const reprocessOutputSchema = z.object({ proposalId: z.string().uuid(), reviewDigest: z.string(), expiresAt: z.string().datetime(), confirmation: reviewedConfirmationSchema, review: reprocessReview }).strict();
 const REPROCESS_NAME = "prepare_document_reprocess";
 const REPROCESS_DESCRIPTION = "Prepare a reviewed document reprocess. Set kind to documents with documentIds, source with sourceId, or all with all: true. Execution queues eligible documents and reports queued and skipped counts.";
 
@@ -142,7 +146,8 @@ function createReprocessTool(deps: DocumentReviewedOperationToolDependencies): C
       const recovered = await deps.proposalRecovery.recoverOperatorMcpProposal({ invocationId: invocation.id, grantId: invocation.grantId, workspaceId: context.workspaceId, operatorUserId: context.operatorUserId, operationId: invocation.operationId, descriptorName: REPROCESS_NAME, inputDigest: invocation.inputDigest, staleBefore, now });
       if (recovered.status !== "recovered" || recovered.proposal.targetType !== "document_operation" || !recovered.proposal.reviewDigest || !recovered.proposal.expiresAt) return recovered.status === "recovered" ? { status: "conflict" } : recovered;
       const snapshot = z.object({ review: reprocessReview }).safeParse(recovered.proposal.reviewSnapshot);
-      return snapshot.success ? { status: "recovered", output: { proposalId: recovered.proposal.id, reviewDigest: recovered.proposal.reviewDigest, expiresAt: recovered.proposal.expiresAt.toISOString(), ...snapshot.data } } : { status: "conflict" };
+      const confirmation = reviewedPreparationConfirmation(deps, recovered.proposal);
+      return snapshot.success && confirmation ? { status: "recovered", output: { proposalId: recovered.proposal.id, reviewDigest: recovered.proposal.reviewDigest, expiresAt: recovered.proposal.expiresAt.toISOString(), confirmation, ...snapshot.data } } : { status: "conflict" };
     },
     createTool: (context) => ({ name: REPROCESS_NAME, description: REPROCESS_DESCRIPTION, inputSchema: reprocessInputSchema, outputSchema: reprocessOutputSchema, invoke: async (rawInput) => {
       const input = reprocessInputSchema.parse(rawInput);
@@ -155,7 +160,7 @@ function createReprocessTool(deps: DocumentReviewedOperationToolDependencies): C
       const payload = plan;
       const versionToken = plan.fence; const reviewSnapshot = { review, fullReview: summary.fullReview };
       const stored = await persistReviewedPreparation({ deps, context, targetType: "document_operation", targetRef, payload, versionToken, reviewSnapshot, operation: "reprocess", metadata: { kind: input.kind, eligible: summary.review.eligible }, effect: documentReviewedChangeEffect(plan) });
-      return { proposalId: stored.proposal.id, reviewDigest: stored.reviewDigest, expiresAt: stored.expiresAt.toISOString(), review };
+      return { proposalId: stored.proposal.id, reviewDigest: stored.reviewDigest, expiresAt: stored.expiresAt.toISOString(), confirmation: stored.confirmation, review };
     } }),
   };
 }

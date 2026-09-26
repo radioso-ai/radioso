@@ -99,6 +99,7 @@ export {
 export { createWebsiteEmbedSurfaceExtension } from "./services/websiteEmbedSurfaceExtension.js";
 export {
   AgentRevisionService,
+  agentPublicationReviewedEffect,
   assertCandidateSnapshotIsRunnable,
   DEFAULT_AGENT_LOCALE_FALLBACK,
   equalScopedAuthoringSnapshots,

@@ -141,7 +141,7 @@ describeIntegration("reviewed document operations (Postgres)", () => {
     const { review, fullReview } = describeDocumentReviewedOperationPlan(plan);
     const reviewSnapshot = { review, fullReview };
     const digest = canonicalReviewedOperationDigest({ targetRef, payload, versionToken: plan.fence, reviewSnapshot });
-    const proposal = await copilotRepository.createProposal({ workspaceId, operatorUserId, origin: { type: "operator_mcp_invocation", invocationId: preparationId }, targetType: "document_operation", targetRef, payload, versionToken: plan.fence, evidence: null, reviewDigest: digest, reviewSnapshot, expiresAt: new Date(Date.now() + 60_000) });
+    const proposal = await copilotRepository.createProposal({ workspaceId, operatorUserId, origin: { type: "operator_mcp_invocation", invocationId: preparationId }, targetType: "document_operation", targetRef, payload, versionToken: plan.fence, evidence: null, reviewDigest: digest, reviewSnapshot, confirmationRequirement: "conversation", changeEffect: { exposure: "draft", reversibility: "reversible", metered: false }, expiresAt: new Date(Date.now() + 60_000) });
     // Simulate the first target landing before the transport dies. The reviewed execute must
     // recognize that guarded target as already applied and write only the remaining two.
     await operations.import({ workspaceId, accountId, sourceId: null, documents: [plan.documents[0]] });
@@ -209,7 +209,7 @@ describeIntegration("reviewed document operations (Postgres)", () => {
     const targetRef = { sourceId: null }; const payload = { operation: "reprocess" as const, documents: plan.documents, fence: plan.fence };
     const reviewSnapshot = { review: { kind: "documents", eligible: 3, skipped: 0 }, fullReview: { documents: plan.documents } };
     const digest = canonicalReviewedOperationDigest({ targetRef, payload, versionToken: plan.fence, reviewSnapshot });
-    const proposal = await copilotRepository.createProposal({ workspaceId, operatorUserId, origin: { type: "operator_mcp_invocation", invocationId: preparationId }, targetType: "document_operation", targetRef, payload, versionToken: plan.fence, evidence: null, reviewDigest: digest, reviewSnapshot, expiresAt: new Date(Date.now() + 60_000) });
+    const proposal = await copilotRepository.createProposal({ workspaceId, operatorUserId, origin: { type: "operator_mcp_invocation", invocationId: preparationId }, targetType: "document_operation", targetRef, payload, versionToken: plan.fence, evidence: null, reviewDigest: digest, reviewSnapshot, confirmationRequirement: "conversation", changeEffect: { exposure: "draft", reversibility: "reversible", metered: false }, expiresAt: new Date(Date.now() + 60_000) });
     await expect(copilot.executeMcpReviewedProposal({ workspaceId, accountId, operatorUserId, proposalId: proposal.id, reviewDigest: digest, executionInvocationId: executionId, grantId, clientId: clientRecordId, currentAuthorization: authorization, now: new Date() }))
       .resolves.toMatchObject({ status: "applied", appliedRef: { queued: 2, skipped: 1, failed: 0 } });
     const outcome = await copilot.getMcpReviewedProposal({ workspaceId, accountId, operatorUserId, grantId, clientId: clientRecordId, proposalId: proposal.id });

@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { AppError, notFound } from "../../shared/domain/errors.js";
+import type { ReviewedChangeEffect } from "../../shared/domain/reviewedChangeEffect.js";
 import {
   exactContentItemSchema,
   validateExactContentItem,
@@ -18,6 +19,13 @@ import { describeCandidateReleaseDiff, type CandidateReleaseChange } from "./can
  * time (`AgentRevisionRepository`) — so the two checks never disagree with each other.
  */
 export const DEFAULT_AGENT_LOCALE_FALLBACK = "en";
+
+/**
+ * Publishing a candidate makes the draft's current content the one customers see, and an earlier
+ * publication remains reachable only by publishing again — never by this candidate's own undo. This
+ * module owns that fact; the reviewed-confirmation boundary only reads it.
+ */
+export const agentPublicationReviewedEffect: ReviewedChangeEffect = { exposure: "live", reversibility: "reversible", metered: false };
 
 const persistedDate = z.coerce.date();
 const safeRevisionDiagnostic = (diagnostic: { readonly routineId: string | null; readonly code: string; readonly location: string }): { readonly safeDiagnostic: true; readonly routineId: string | null; readonly code: string; readonly location: string; readonly message: string } => ({

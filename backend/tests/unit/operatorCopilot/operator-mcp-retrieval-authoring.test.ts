@@ -66,7 +66,7 @@ describe("Operator MCP retrieval authoring", () => {
       proposalRecovery: { recoverOperatorMcpProposal: vi.fn(async () => ({ status: "recovered", proposal: { id: randomUUID(), targetType: "agent_skill", reviewDigest: "d".repeat(43), expiresAt: new Date("2026-09-13T00:15:00Z"), reviewSnapshot: snapshot, confirmationRequirement: "conversation", changeEffect: { exposure: "draft", reversibility: "reversible", metered: false } } })) },
     });
     const recovered = await prepare.reconcileMcpInvocation!({ invocation: { id: "invocation", grantId: "grant", operationId: "operation", inputDigest: "digest" }, context: { workspaceId: "workspace", operatorUserId: "user" }, staleBefore: new Date(0), now: new Date() } as never);
-    expect(recovered).toMatchObject({ status: "recovered", output: { reviewDigest: "d".repeat(43), expiresAt: "2026-09-13T00:15:00.000Z", ...snapshot } });
+    expect(recovered).toMatchObject({ status: "recovered", output: { reviewDigest: "d".repeat(43), expiresAt: "2026-09-13T00:15:00.000Z", confirmation: { requirement: "conversation" }, ...snapshot } });
     expect(createProposal).not.toHaveBeenCalled();
   });
   it("accepts citationHoldEnabled in the MCP-facing patch schema (#1260 review F6)", async () => {
@@ -102,9 +102,11 @@ describe("Operator MCP retrieval authoring", () => {
     // Before the fix, `settingsPatch` is `.strict()` and does not list
     // `citationHoldEnabled`, so `prepareInput.parse` throws "Unrecognized
     // key(s)" here — Ray cannot even submit the patch, let alone have it applied.
-    await prepare.createTool(context as never).invoke({ agentId, patch: { citationHoldEnabled: false } }, {} as never);
+    const output = await prepare.createTool(context as never).invoke({ agentId, patch: { citationHoldEnabled: false } }, {} as never) as { confirmation: { requirement: string } };
 
     expect(preparePatch).toHaveBeenCalledWith({ workspaceId, agentId, patch: { citationHoldEnabled: false } });
+    // Retrieval settings stay a draft until publication, so chat confirmation is enough.
+    expect(output.confirmation).toEqual({ requirement: "conversation", effect: { exposure: "draft", reversibility: "reversible", metered: false } });
   });
 
   it("presents code-owned defaults separately from the existing agent retrieval override", async () => {

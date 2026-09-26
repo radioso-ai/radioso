@@ -16,8 +16,6 @@ import {
   type OperatorMcpRoutineTransformReferenceGuard,
 } from "../../routines/public.js";
 import type { CopilotToolDescriptor } from "../contracts.js";
-import type { CopilotMcpProposalRecoveryPort } from "../contracts.js";
-import type { CopilotRepositoryPort } from "../service.js";
 import { requireCurrentCopilotPermissions } from "../authorization.js";
 import { routineValidationRefusal } from "../routineValidationRefusal.js";
 import { badRequest } from "../../../shared/domain/errors.js";

@@ -28,7 +28,7 @@ describe("reviewed document operations through the MCP catalog", () => {
       documents: operations,
       proposalRecovery: { recoverOperatorMcpProposal: vi.fn() },
       proposalRepository: { createProposal: vi.fn(async () => ({ id: proposalId })) } as never,
-      proposalAdapters: [], auditService: { record: vi.fn() }, now: () => now,
+      proposalAdapters: [], auditService: { record: vi.fn() }, now: () => now, appBaseUrl: "https://app.radioso.ai",
     }).map((descriptor) => ({ ...descriptor, mcpDisposition: operatorMcpDispositions[descriptor.name] }));
     const outcome = createReviewedProposalOutcomeTool({
       getMcpReviewedProposal: vi.fn(async () => ({ proposal: { id: proposalId, status: "applied" as const, reviewDigest: "digest", expiresAt: now, appliedRef: { counts: { created: 1, replaced: 0, unchanged: 0, failed: 1 }, failures: [{ externalDocumentId: "law-2", code: "usage_limit_exceeded" }] }, reviewSnapshot: { review: { counts: {} }, fullReview: { documents: [] } } }, currentVersionMatches: true })),
@@ -36,9 +36,12 @@ describe("reviewed document operations through the MCP catalog", () => {
     const catalog = new OperatorMcpCatalogService([...prepare, { ...outcome, mcpDisposition: operatorMcpDispositions.reviewed_proposal_outcome }]);
     const invoke = (name: string, arguments_: unknown) => catalog.invoke({ name, arguments: arguments_, context, scopes: new Set(["operator:propose", "operator:write"]), signal: AbortSignal.timeout(1_000) });
 
-    await expect(invoke("prepare_document_import", { documents: [{ externalDocumentId: "law-1", title: "Law", content: "text" }] })).resolves.toMatchObject({ proposalId });
-    await expect(invoke("prepare_document_removal", { documentIds: [randomUUID()] })).resolves.toMatchObject({ proposalId });
-    await expect(invoke("prepare_document_reprocess", { kind: "all", all: true })).resolves.toMatchObject({ proposalId });
+    // Every document operation is live and at least metered at execution, so all three require
+    // the signed-in approval the documents owner declares — never a copilot-side literal.
+    const approvalRequired = { confirmation: { requirement: "signed_in_approval", approvalUrl: expect.stringMatching(/^https:\/\/app\.radioso\.ai\/oauth\/operator-mcp\/proposal\//) } };
+    await expect(invoke("prepare_document_import", { documents: [{ externalDocumentId: "law-1", title: "Law", content: "text" }] })).resolves.toMatchObject({ proposalId, ...approvalRequired });
+    await expect(invoke("prepare_document_removal", { documentIds: [randomUUID()] })).resolves.toMatchObject({ proposalId, ...approvalRequired });
+    await expect(invoke("prepare_document_reprocess", { kind: "all", all: true })).resolves.toMatchObject({ proposalId, ...approvalRequired });
     await expect(invoke("reviewed_proposal_outcome", { proposalId })).resolves.toMatchObject({ appliedRef: { counts: { failed: 1 }, failures: [{ code: "usage_limit_exceeded" }] } });
   });
 });

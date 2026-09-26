@@ -19,13 +19,17 @@ describe("agent publication MCP tools", () => {
     const createCandidate = vi.fn().mockResolvedValue({ id: "candidate-1" });
     const createProposal = vi.fn().mockResolvedValue({ id: "proposal-1" });
     const readCandidateReleaseChange = vi.fn().mockResolvedValue({ text: "b".repeat(200), nextOffset: 200, totalLength: 300 });
-    const tools = createAgentPublicationCopilotTools({ revisions: { state, createCandidate, detail: vi.fn(), describeCandidateRelease: vi.fn(), readCandidateReleaseChange, publish: vi.fn() }, proposalRepository: { createProposal }, proposalRecovery: { recoverOperatorMcpProposal: vi.fn() }, proposalAdapters: [], auditService: { record: vi.fn() }, now: () => new Date("2026-09-13T00:00:00Z") });
+    const tools = createAgentPublicationCopilotTools({ revisions: { state, createCandidate, detail: vi.fn(), describeCandidateRelease: vi.fn(), readCandidateReleaseChange, publish: vi.fn() }, proposalRepository: { createProposal }, proposalRecovery: { recoverOperatorMcpProposal: vi.fn() }, proposalAdapters: [], auditService: { record: vi.fn() }, now: () => new Date("2026-09-13T00:00:00Z"), appBaseUrl: "https://app.radioso.ai" });
     const read = tools.find((tool) => tool.name === "agent_publication_state")!;
     const prepare = tools.find((tool) => tool.name === "prepare_agent_publication")!;
     await expect(read.createTool(context).invoke({}, {} as never)).resolves.toMatchObject({ draftGeneration: 4, publishedRevisionId: null });
-    const output = await prepare.createTool(context).invoke({}, {} as never) as { reviewDigest: string; expiresAt: string };
+    const output = await prepare.createTool(context).invoke({}, {} as never) as { reviewDigest: string; expiresAt: string; confirmation: { requirement: string; approvalUrl?: string } };
     expect(createProposal).toHaveBeenCalledWith(expect.objectContaining({ targetType: "agent_publication", targetRef: { agentId: "agent-1", candidateRevisionId: "candidate-1" }, payload: { expectedDraftGeneration: 4, expectedPublishedRevisionId: "published-3" }, reviewDigest: expect.any(String), expiresAt: expect.any(Date), origin: { type: "operator_mcp_invocation", invocationId: "invocation-1" } }));
     expect(output.reviewDigest).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    // Publishing always goes live at execution: the requirement is signed-in approval with an
+    // absolute link, unconditionally, not something the copilot layer decides per-call.
+    expect(output.confirmation).toMatchObject({ requirement: "signed_in_approval" });
+    expect(output.confirmation.approvalUrl).toMatch(/^https:\/\/app\.radioso\.ai\/oauth\/operator-mcp\/proposal\//);
     expect(createReviewedProposalExecutionTool({ executeMcpReviewedProposal: vi.fn() }).inputSchema.safeParse({ proposalId: "11111111-1111-4111-8111-111111111111", reviewDigest: output.reviewDigest }).success).toBe(true);
     expect(output.expiresAt).toBe("2026-09-13T00:15:00.000Z");
     const detail = tools.find((tool) => tool.name === "agent_publication_candidate_change")!;

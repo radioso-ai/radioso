@@ -24,6 +24,15 @@ export const reviewedConfirmationRequirement = (effect: ReviewedChangeEffect): R
     ? "signed_in_approval"
     : "conversation";
 
+/** The stored full review stays available only through the bounded, paged outcome surface. */
+export const presentReviewedOperationSnapshot = (value: unknown): { readonly visible: unknown; readonly full: unknown } | null => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const snapshot = value as Record<string, unknown>;
+  if (!("fullReview" in snapshot)) return null;
+  const { fullReview, ...visible } = snapshot;
+  return { visible, full: fullReview };
+};
+
 /** sha256's unpadded base64url encoding; shared by prepare output and execute input validation. */
 export const reviewedOperationDigestPattern = /^[A-Za-z0-9_-]{43}$/;
 

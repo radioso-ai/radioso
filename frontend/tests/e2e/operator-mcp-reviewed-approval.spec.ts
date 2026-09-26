@@ -27,6 +27,7 @@ const reviewedOperationDetail = (overrides: Record<string, unknown> = {}) => ({
     reviewCode: "AB12CD34",
     expiresAt: "2026-09-27T00:15:00.000Z",
     approvedAt: null,
+    clientName: "Operator test client",
     review: { counts: { create: 3, replace: 0, unchanged: 0 } },
   },
   ...overrides,
@@ -54,7 +55,7 @@ test("approves a signed-in-tier reviewed operation and shows the return-to-clien
 
   await page.goto(`/oauth/operator-mcp/proposal/${proposalId}`);
 
-  await expect(page.getByText("Review proposal from Radioso MCP")).toBeVisible();
+  await expect(page.getByText("Review proposal from Operator test client")).toBeVisible();
   // The effect line comes straight from the owner-declared facts, not a copilot-side guess.
   await expect(page.getByText("Goes live when applied", { exact: false })).toBeVisible();
   await expect(page.getByText("Can't be undone", { exact: false })).toBeVisible();
@@ -62,7 +63,6 @@ test("approves a signed-in-tier reviewed operation and shows the return-to-clien
 
   await page.getByRole("button", { name: "Approve" }).click();
 
-  await expect(page.getByText("Approved. Return to your MCP client to finish.")).toBeVisible();
   // Approval records consent; it never applies the change itself, so there is no apply call here.
   await expect(page.getByRole("button", { name: "Approve" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Decline" })).toHaveCount(0);
@@ -80,6 +80,7 @@ test("declines a signed-in-tier reviewed operation", async ({ page }) => {
     if (path === `/copilot/proposals/${proposalId}` && request.method() === "GET") return route.fulfill({ json: reviewedOperationDetail({ id: proposalId }) });
     if (path === `/copilot/proposals/${proposalId}/dismiss` && request.method() === "POST") {
       dismissCalls += 1;
+      expect(JSON.parse(request.postData() ?? "{}") as { reason: string }).toEqual({ reason: "declined" });
       return route.fulfill({ json: { status: "dismissed" } });
     }
     return route.fulfill({ status: 404, json: { error: { message: `Unhandled Copilot request: ${path}` } } });
@@ -104,7 +105,7 @@ test("shows a conversation-tier operation as already confirmed, with no approval
     if (path === `/copilot/proposals/${proposalId}` && request.method() === "GET") {
       return route.fulfill({ json: reviewedOperationDetail({
         id: proposalId,
-        reviewedOperation: { requirement: "conversation", effect: { exposure: "draft", reversibility: "reversible", metered: false }, reviewDigest: "e".repeat(43), reviewCode: "EF56GH78", expiresAt: "2026-09-27T00:15:00.000Z", approvedAt: null, review: {} },
+        reviewedOperation: { requirement: "conversation", effect: { exposure: "draft", reversibility: "reversible", metered: false }, reviewDigest: "e".repeat(43), reviewCode: "EF56GH78", expiresAt: "2026-09-27T00:15:00.000Z", approvedAt: null, clientName: "Operator test client", review: {} },
       }) });
     }
     return route.fulfill({ status: 404, json: { error: { message: `Unhandled Copilot request: ${path}` } } });

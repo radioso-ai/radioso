@@ -16,6 +16,7 @@ import { copilotTurnRequestSchema, type CopilotConversation, type CopilotMessage
 import type { AccountPermission } from "../account/public.js";
 import type { OperatorCopilotService } from "./public.js";
 import { hasAllCopilotToolPermissions } from "./catalog.js";
+import { presentReviewedOperationSnapshot } from "./reviewedOperation.js";
 
 /**
  * These routes are the dashboard panel and nothing else — they reject bearer auth and require a
@@ -26,6 +27,7 @@ const DASHBOARD_SURFACE = "dashboard" as const;
 const conversationParamsSchema = z.object({ conversationId: z.string().uuid() });
 const proposalParamsSchema = z.object({ proposalId: z.string().uuid() });
 const approveProposalSchema = z.object({ reviewDigest: z.string().min(1).max(200) }).strict();
+const dismissProposalSchema = z.object({ reason: z.literal("declined").optional() }).strict();
 /**
  * The permissions this module knows a turn needs beyond what the assembled catalog declares:
  * `workspace_triage` gates individual digest sections on permissions no descriptor requires, and a
@@ -111,6 +113,9 @@ export const createCopilotRoutes = (dependencies: CopilotRouteDependencies): Rou
       const { proposalId } = proposalParamsSchema.parse(req.params);
       const result = await dependencies.operatorCopilotService.getProposal({ workspaceId, accountId, operatorUserId: userId, proposalId });
       if (!result) throw notFound("Copilot proposal not found");
+      const client = result.proposal.reviewDigest
+        ? await dependencies.operatorCopilotService.describeReviewedProposalClient({ workspaceId, operatorUserId: userId, proposal: result.proposal })
+        : null;
       res.status(200).json({
         id: result.proposal.id,
         workspaceId,
@@ -132,7 +137,8 @@ export const createCopilotRoutes = (dependencies: CopilotRouteDependencies): Rou
           reviewCode: result.proposal.reviewDigest.slice(0, 8),
           expiresAt: result.proposal.expiresAt?.toISOString() ?? null,
           approvedAt: result.proposal.approvedAt?.toISOString() ?? null,
-          review: result.proposal.reviewSnapshot,
+          clientName: client?.clientName ?? null,
+          review: presentReviewedOperationSnapshot(result.proposal.reviewSnapshot)?.visible ?? result.proposal.reviewSnapshot,
         } : null,
       });
     } catch (error) { if (error instanceof CopilotAuthorizationError) { next(notFound("Copilot proposal not found")); return; } next(error); }
@@ -179,7 +185,8 @@ export const createCopilotRoutes = (dependencies: CopilotRouteDependencies): Rou
     try {
       const { workspaceId, accountId, userId } = sessionLocals(res);
       const { proposalId } = proposalParamsSchema.parse(req.params);
-      res.status(200).json(await dependencies.operatorCopilotService.dismissProposal({ workspaceId, accountId, operatorUserId: userId, surface: DASHBOARD_SURFACE, proposalId }));
+      const reason = req.body === undefined ? undefined : dismissProposalSchema.parse(req.body).reason;
+      res.status(200).json(await dependencies.operatorCopilotService.dismissProposal({ workspaceId, accountId, operatorUserId: userId, surface: DASHBOARD_SURFACE, proposalId, reason }));
     } catch (error) {
       if (error instanceof CopilotConflictError) { res.status(409).json({ code: "conflict" }); return; }
       if (error instanceof CopilotNotFoundError) { next(notFound("Copilot proposal not found")); return; }

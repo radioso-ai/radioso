@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   DirectiveAuthorService,
+  projectDirectiveAuthorProposalInput,
   type DirectiveAuthorTextGenerationPort,
 } from "../../src/modules/agents/services/directiveAuthorService.js";
 
@@ -38,7 +39,9 @@ const createRepository = () => ({
     name: "Coachable assistant",
     customInstruction: "Help operators explain booking policies.",
     greetingInstruction: "Welcome visitors warmly.",
+    updatedAt: new Date("2026-09-26T10:00:00.000Z"),
   }),
+  listDirectives: vi.fn().mockResolvedValue([]),
 });
 
 const createService = (textGenerationClient: FakeTextClient) => {
@@ -102,6 +105,195 @@ describe("DirectiveAuthorService", () => {
       tags: expect.objectContaining({ status: "success", diagnosis: "directive_recommended" }),
       metrics: expect.objectContaining({ durationMs: expect.any(Number) }),
     }));
+  });
+
+  it("keeps complete caller-supplied fields verbatim without calling the coach", async () => {
+    const textGenerationClient = new FakeTextClient([]);
+    const { service } = createService(textGenerationClient);
+    const action = "Start with a blockquote. On the next line write `PS § 12 lg 1`; then write **Decision**.";
+
+    const result = await service.draft(workspaceId, agentId, {
+      fields: {
+        name: "quote-primary-source",
+        condition: { kind: "always" },
+        action,
+        priority: 85,
+        excludes: ["represent-organization"],
+      },
+    });
+
+    expect(textGenerationClient.calls).toEqual([]);
+    expect(result.directive).toMatchObject({
+      name: "quote-primary-source",
+      condition: { kind: "always" },
+      action,
+      priority: 85,
+      excludes: ["represent-organization"],
+    });
+  });
+
+  it("overrides coached fields with caller-supplied fixed fields", async () => {
+    const textGenerationClient = new FakeTextClient([validDraft({
+      directive: {
+        name: "coach-name",
+        condition: { kind: "always" },
+        action: "Coach wording that must not survive.",
+        tags: [],
+      },
+    })]);
+    const { service } = createService(textGenerationClient);
+
+    const result = await service.draft(workspaceId, agentId, {
+      ...draftInput(),
+      fields: { action: "Use this exact action, including **formatting**." },
+    });
+
+    expect(textGenerationClient.calls).toHaveLength(1);
+    expect(textGenerationClient.calls[0]?.prompt).toContain("Use this exact action, including **formatting**.");
+    expect(result.directive.action).toBe("Use this exact action, including **formatting**.");
+  });
+
+  it("preserves unspecified existing fields for a structured edit without calling the coach", async () => {
+    const textGenerationClient = new FakeTextClient([]);
+    const { service, repository } = createService(textGenerationClient);
+    repository.listDirectives.mockResolvedValue([{
+      id: "33333333-3333-4333-8333-333333333333",
+      agentId,
+      name: "existing-rule",
+      condition: { kind: "always" },
+      action: "Keep this action.",
+      priority: 40,
+      excludes: ["represent-organization"],
+      tags: [],
+      surfaces: [],
+      requiredCapabilities: [],
+      dependsOn: [],
+      routes: [],
+      description: null,
+      binding: null,
+      lifecycle: null,
+      enabled: true,
+      metadata: {},
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }]);
+
+    const result = await service.draft(workspaceId, agentId, {
+      directiveId: "33333333-3333-4333-8333-333333333333",
+      fields: { priority: 90 },
+    });
+
+    expect(textGenerationClient.calls).toEqual([]);
+    expect(result.directive).toMatchObject({
+      name: "existing-rule",
+      action: "Keep this action.",
+      priority: 90,
+      excludes: ["represent-organization"],
+    });
+  });
+
+  it("coaches an intent-only edit instead of returning the inherited directive unchanged", async () => {
+    const textGenerationClient = new FakeTextClient([validDraft({
+      directive: {
+        name: "cite-sources-first",
+        condition: { kind: "always" },
+        action: "Require a source citation before explaining the answer.",
+        tags: [],
+      },
+    })]);
+    const { service, repository } = createService(textGenerationClient);
+    repository.listDirectives.mockResolvedValue([{
+      id: "33333333-3333-4333-8333-333333333333",
+      agentId,
+      name: "existing-rule",
+      condition: { kind: "always" },
+      action: "Keep this action.",
+      priority: 40,
+      excludes: [],
+      tags: [],
+      surfaces: [],
+      requiredCapabilities: [],
+      dependsOn: [],
+      routes: [],
+      description: null,
+      binding: null,
+      lifecycle: null,
+      enabled: true,
+      metadata: {},
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }]);
+
+    const result = await service.draftForProposal(workspaceId, agentId, {
+      directiveId: "33333333-3333-4333-8333-333333333333",
+      ...projectDirectiveAuthorProposalInput({ intent: "Require a source citation first." }),
+    });
+
+    expect(textGenerationClient.calls).toHaveLength(1);
+    expect(result.draft.directive.action).toBe("Require a source citation before explaining the answer.");
+  });
+
+  it("returns an edit fence from the directive snapshot used to expand its payload", async () => {
+    const textGenerationClient = new FakeTextClient([]);
+    const { service, repository } = createService(textGenerationClient);
+    const directiveUpdatedAt = new Date("2026-09-26T11:00:00.000Z");
+    repository.listDirectives.mockResolvedValue([{
+      id: "33333333-3333-4333-8333-333333333333",
+      agentId,
+      name: "existing-rule",
+      condition: { kind: "always" },
+      action: "Keep this action.",
+      priority: 40,
+      excludes: ["represent-organization"],
+      tags: [],
+      surfaces: [],
+      requiredCapabilities: [],
+      dependsOn: [],
+      routes: [],
+      description: null,
+      binding: null,
+      lifecycle: null,
+      enabled: true,
+      metadata: {},
+      createdAt: new Date(),
+      updatedAt: directiveUpdatedAt,
+    }]);
+
+    const result = await service.draftForProposal(workspaceId, agentId, {
+      directiveId: "33333333-3333-4333-8333-333333333333",
+      fields: { priority: 90 },
+    });
+
+    expect(result.versionToken).toBe(directiveUpdatedAt.toISOString());
+    expect(result.draft.directive).toMatchObject({ action: "Keep this action.", priority: 90 });
+    expect(textGenerationClient.calls).toEqual([]);
+  });
+
+  it("refuses an unknown replacement and lists bounded valid names", async () => {
+    const { service } = createService(new FakeTextClient([]));
+
+    await expect(service.draft(workspaceId, agentId, {
+      fields: {
+        name: "quote-primary-source",
+        condition: { kind: "always" },
+        action: "Quote the governing source first.",
+        excludes: ["not-a-directive"],
+      },
+    })).rejects.toMatchObject({
+      statusCode: 400,
+      message: expect.stringContaining("represent-organization"),
+    });
+  });
+
+  it("refuses an incomplete new structured directive without intent", async () => {
+    const { service } = createService(new FakeTextClient([]));
+
+    await expect(service.draft(workspaceId, agentId, {
+      fields: { name: "quote-primary-source" },
+    })).rejects.toMatchObject({
+      statusCode: 400,
+      message: "A directive without intent needs condition and action.",
+    });
   });
 
   it("defaults an unscoped draft to the active step tag when step context is present", async () => {

@@ -46,6 +46,13 @@ export interface ReviewedProposalOutcomePort {
     };
     readonly currentVersionMatches: boolean;
   } | null>;
+  isDashboardReviewedProposal?(input: {
+    readonly workspaceId: string;
+    readonly accountId: string;
+    readonly operatorUserId: string;
+    readonly proposalId: string;
+    readonly currentAuthorization: import("../contracts.js").CopilotCurrentAuthorizationPort;
+  }): Promise<boolean>;
 }
 
 /** Reconciles the exact stored review and outcome; a proposal id alone never grants access. */
@@ -78,7 +85,13 @@ export const createReviewedProposalOutcomeTool = (outcomes: ReviewedProposalOutc
         clientId: context.operatorMcpClientId,
         proposalId: input.proposalId,
       });
-      if (!outcome || !outcome.proposal.reviewDigest || outcome.proposal.reviewSnapshot === null) throw notFound(REVIEWED_OPERATION_NOT_FOUND);
+      if (!outcome || !outcome.proposal.reviewDigest || outcome.proposal.reviewSnapshot === null) {
+        if (await outcomes.isDashboardReviewedProposal?.({
+          workspaceId: context.workspaceId, accountId: context.accountId, operatorUserId: context.operatorUserId,
+          proposalId: input.proposalId, currentAuthorization: context.currentAuthorization,
+        })) throw badRequest("This is a dashboard-reviewed proposal. Read it with proposal_detail.");
+        throw notFound(REVIEWED_OPERATION_NOT_FOUND);
+      }
       const bounded = boundedSnapshot(outcome.proposal.reviewSnapshot);
       if (input.reviewDetail && !bounded) throw badRequest("Complete review detail is not available for this reviewed operation.");
       const full = input.reviewDetail && bounded ? JSON.stringify(bounded.full) : null;

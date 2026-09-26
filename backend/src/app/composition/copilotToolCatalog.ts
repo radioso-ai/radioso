@@ -31,6 +31,7 @@ import type { ReviewedProposalExecutionPort } from "../../modules/operatorCopilo
 import type { ReviewedProposalOutcomePort } from "../../modules/operatorCopilot/tools/reviewedProposalOutcome.js";
 import type { AgentPublicationCopilotToolDependencies } from "../../modules/operatorCopilot/tools/agentPublication.js";
 import type { RetrievalAuthoringCopilotToolDependencies } from "../../modules/operatorCopilot/tools/retrievalAuthoring.js";
+import type { CopilotProposalDetailReadPort } from "../../modules/operatorCopilot/service.js";
 import type {
   CopilotEvalCaseCapturePort,
   CopilotEvalCaseReplayPort,
@@ -181,6 +182,7 @@ export const createCopilotToolCatalog = (deps: {
   readonly reviewedProposalExecution: ReviewedProposalExecutionPort;
   readonly reviewedProposalOutcome: ReviewedProposalOutcomePort;
   readonly cancelReviewedProposal: import("../../modules/operatorCopilot/tools/cancelReviewedProposal.js").CancelReviewedProposalPort;
+  readonly proposalDetail: CopilotProposalDetailReadPort;
   readonly retrievalAuthoring: RetrievalAuthoringCopilotToolDependencies["retrievalAuthoring"];
   /**
    * Tools contributed by application modules outside this repository's first-party catalog. They

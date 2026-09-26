@@ -39,7 +39,7 @@ export class OperatorBackendAdapterError extends Error {
     readonly code: OperatorBackendAdapterErrorCode,
     readonly requiredScope?: string,
     /** Backend-reported argument paths for a rejected call, so the caller can correct it. */
-    readonly details?: readonly string[],
+    readonly details?: readonly OperatorBackendErrorDetail[],
   ) {
     super(message);
     this.name = "OperatorBackendAdapterError";
@@ -92,20 +92,40 @@ const SAFE_BACKEND_ERROR_CODES = new Set<OperatorBackendAdapterErrorCode>([
 const MAX_FORWARDED_DETAILS = 12;
 const MAX_FORWARDED_DETAIL_LENGTH = 300;
 
+type OperatorBackendDiagnostic = {
+  readonly routineId: string | null;
+  readonly routineName?: string;
+  readonly code: string;
+  readonly location: string;
+  readonly message: string;
+};
+type OperatorBackendErrorDetail = string | OperatorBackendDiagnostic;
+
 /** Only bounded strings travel: the backend states what was rejected, this relays it verbatim. */
-const safeBackendErrorDetails = (payload: object): readonly string[] | undefined => {
+const safeBackendErrorDetails = (payload: object): readonly OperatorBackendErrorDetail[] | undefined => {
   const details = "details" in payload ? payload.details : undefined;
   if (!Array.isArray(details)) return undefined;
   const bounded = details
-    .filter((entry): entry is string => typeof entry === "string")
+    .flatMap((entry): OperatorBackendErrorDetail[] => {
+      if (typeof entry === "string") return [entry.slice(0, MAX_FORWARDED_DETAIL_LENGTH)];
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
+      const diagnostic = entry as Record<string, unknown>;
+      if (typeof diagnostic.code !== "string" || typeof diagnostic.location !== "string" || typeof diagnostic.message !== "string") return [];
+      return [{
+        routineId: typeof diagnostic.routineId === "string" ? diagnostic.routineId.slice(0, MAX_FORWARDED_DETAIL_LENGTH) : null,
+        ...(typeof diagnostic.routineName === "string" ? { routineName: diagnostic.routineName.slice(0, MAX_FORWARDED_DETAIL_LENGTH) } : {}),
+        code: diagnostic.code.slice(0, MAX_FORWARDED_DETAIL_LENGTH),
+        location: diagnostic.location.slice(0, MAX_FORWARDED_DETAIL_LENGTH),
+        message: diagnostic.message.slice(0, MAX_FORWARDED_DETAIL_LENGTH),
+      }];
+    })
     .slice(0, MAX_FORWARDED_DETAILS)
-    .map((entry) => entry.slice(0, MAX_FORWARDED_DETAIL_LENGTH));
   return bounded.length > 0 ? bounded : undefined;
 };
 
 interface SafeBackendError {
   readonly code: OperatorBackendAdapterErrorCode | null;
-  readonly details?: readonly string[];
+  readonly details?: readonly OperatorBackendErrorDetail[];
 }
 
 const readSafeBackendError = async (response: Response): Promise<SafeBackendError> => {

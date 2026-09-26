@@ -156,19 +156,22 @@ export type CopilotProposalTargetType = (typeof copilotProposalTargetTypes)[numb
  * omission.
  */
 export const copilotProposalPermissions = {
-  directive: ["workspace.agents.manage"],
-  agent: ["workspace.agents.manage"],
-  agent_setting: ["workspace.agents.manage"],
-  routine: ["workspace.agents.manage"],
-  agent_skill: ["workspace.agents.manage"],
-  context_variable: ["workspace.agents.manage"],
-  document: ["workspace.documents.manage"],
-  ingestion_settings: ["workspace.settings.manage"],
-  website_crawl: ["workspace.documents.manage"],
-  workspace_setting: ["workspace.settings.manage"],
-  agent_publication: ["workspace.agents.manage"],
-  agent_greeting: ["workspace.agents.manage"],
-} as const satisfies Record<CopilotProposalTargetType, readonly [AccountPermission, ...AccountPermission[]]>;
+  directive: { read: ["workspace.agents.read"], manage: ["workspace.agents.manage"] },
+  agent: { read: ["workspace.agents.read"], manage: ["workspace.agents.manage"] },
+  agent_setting: { read: ["workspace.agents.read"], manage: ["workspace.agents.manage"] },
+  routine: { read: ["workspace.agents.read"], manage: ["workspace.agents.manage"] },
+  agent_skill: { read: ["workspace.agents.read"], manage: ["workspace.agents.manage"] },
+  context_variable: { read: ["workspace.agents.read"], manage: ["workspace.agents.manage"] },
+  document: { read: ["workspace.documents.read"], manage: ["workspace.documents.manage"] },
+  ingestion_settings: { read: ["workspace.settings.read"], manage: ["workspace.settings.manage"] },
+  website_crawl: { read: ["workspace.documents.read"], manage: ["workspace.documents.manage"] },
+  workspace_setting: { read: ["workspace.settings.read"], manage: ["workspace.settings.manage"] },
+  agent_publication: { read: ["workspace.agents.read"], manage: ["workspace.agents.manage"] },
+  agent_greeting: { read: ["workspace.agents.read"], manage: ["workspace.agents.manage"] },
+} as const satisfies Record<CopilotProposalTargetType, {
+  readonly read: readonly [AccountPermission, ...AccountPermission[]];
+  readonly manage: readonly [AccountPermission, ...AccountPermission[]];
+}>;
 
 /**
  * How long the sentence a proposal card states may be. Enforced on the composed sentence rather than
@@ -263,6 +266,8 @@ export interface CopilotProposalAdapter {
    * addresses an existing row ignore it.
    */
   readVersionToken(workspaceId: string, targetRef: unknown, payload?: unknown): Promise<string>;
+  /** A target-owned, safe identifier projection for external proposal read-back. */
+  proposalDetailTargetRef?(targetRef: unknown): Record<string, string | boolean | null>;
   preview(workspaceId: string, targetRef: unknown, payload: unknown): Promise<{ targetLabel: string; current: unknown; proposed: unknown }>;
   applyIfVersionMatches(workspaceId: string, targetRef: unknown, payload: unknown, versionToken: string, context?: CopilotProposalApplyContext): Promise<
     /**
@@ -522,7 +527,8 @@ export interface CopilotToolDescriptor<TInput = unknown, TOutput = unknown> {
   readonly inputSchema: ZodType<TInput>;
   readonly outputSchema: ZodType<TOutput>;
   /** Every permission is required; descriptors use all-of semantics. */
-  readonly requiredPermissions: readonly [AccountPermission, ...AccountPermission[]];
+  /** Empty only for descriptors whose stored target determines the permission at invocation. */
+  readonly requiredPermissions: readonly AccountPermission[];
   /**
    * Production catalog assembly attaches a reviewed declaration here. Factories
    * intentionally stay unaware of the HTTP registry and owner-port registry.
@@ -594,6 +600,12 @@ export interface CopilotCapabilityProvenance {
   readonly backingOperationIds?: readonly [string, ...string[]];
   readonly applicationPrimitiveIds?: readonly [string, ...string[]];
   readonly rayOnly?: CopilotRayOnlyDisposition;
+  /**
+   * The stored target determines the permission. The descriptor starts without a static
+   * permission so a document-only reader is not incorrectly gated on agent read; its owner
+   * checks the target's policy before projecting anything.
+   */
+  readonly targetAwareAuthorization?: true;
 }
 
 /**

@@ -284,6 +284,22 @@ export class CopilotRepository implements CopilotRepositoryPort, CopilotRetentio
       .executeTakeFirst();
     return row?.workspace_id ?? null;
   }
+  async findProposalWorkspaceInAnotherMemberAccount(input: { id: string; accountId: string; operatorUserId: string }): Promise<{ workspaceId: string; accountId: string; accountName: string } | null> {
+    const row = await this.db
+      .selectFrom("copilot_proposals as proposal")
+      .innerJoin("workspaces as workspace", "workspace.id", "proposal.workspace_id")
+      .innerJoin("account_memberships as membership", (join) => join
+        .onRef("membership.account_id", "=", "workspace.account_id")
+        .on("membership.user_id", "=", input.operatorUserId)
+        .on("membership.status", "=", "active"))
+      .innerJoin("accounts as account", "account.id", "workspace.account_id")
+      .select(["proposal.workspace_id as workspace_id", "workspace.account_id as account_id", "account.name as account_name"])
+      .where("proposal.id", "=", input.id)
+      .where("proposal.operator_user_id", "=", input.operatorUserId)
+      .where("workspace.account_id", "!=", input.accountId)
+      .executeTakeFirst();
+    return row ? { workspaceId: row.workspace_id, accountId: row.account_id, accountName: row.account_name } : null;
+  }
   async attachProposalsToMessage(input: { proposalIds: ReadonlyArray<string>; messageId: string; conversationId: string }): Promise<void> { if (input.proposalIds.length === 0) return; await this.db.updateTable("copilot_proposals").set({ message_id: input.messageId, updated_at: new Date() }).where("id", "in", input.proposalIds).where("conversation_id", "=", input.conversationId).execute(); }
   async updateProposalOutcome(input: { id: string; workspaceId: string; operatorUserId: string; status: CopilotProposal["status"]; appliedRef?: unknown; reason?: string | null; applyClaimGuard: CopilotProposalApplyClaimGuard }): Promise<CopilotProposal | null> {
     let query = this.db.updateTable("copilot_proposals")

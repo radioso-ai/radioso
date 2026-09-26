@@ -20,7 +20,7 @@ describe("structural routine proposal adapter", () => {
     const adapter = createRoutineCopilotProposalAdapter({
       agentService: { get: vi.fn(async () => ({ updatedAt: new Date() })) } as never,
       routineDraftAssistService: {} as never,
-      routineDefinitionService: { get: vi.fn(async () => routine), createDraft, deleteDraft, findCreateConflict: vi.fn(async () => null), validate, completeExternalDraftMutation: vi.fn() } as never,
+      routineDefinitionService: { get: vi.fn(async () => routine), createDraft, deleteDraft, findCreateConflict: vi.fn(async () => null), validateForDraftMutation: validate, completeExternalDraftMutation: vi.fn() } as never,
       routineMcpApply: { apply },
       scopedReferences: { assertNoScopedReferences: vi.fn() },
     });
@@ -60,7 +60,7 @@ describe("structural routine proposal adapter", () => {
     const adapter = createRoutineCopilotProposalAdapter({
       agentService: { get: vi.fn() },
       routineDraftAssistService: {} as never,
-      routineDefinitionService: { get: vi.fn(async () => routine), validate: vi.fn(async () => ({ ok: true, diagnostics: [] })) } as never,
+      routineDefinitionService: { get: vi.fn(async () => routine), validateForDraftMutation: vi.fn(async () => ({ ok: true, diagnostics: [] })) } as never,
       routineMcpApply: { apply }, scopedReferences: { assertNoScopedReferences },
     });
     const context = { surface: "mcp" as const, proposalId: "proposal-1", executionInvocationId: "receipt-1", operatorUserId: "operator-1", applyClaimedAt: new Date("2026-09-02T00:00:00Z") };
@@ -76,7 +76,7 @@ describe("structural routine proposal adapter", () => {
     const adapter = createRoutineCopilotProposalAdapter({
       agentService: { get: vi.fn(async () => ({ updatedAt: new Date() })) } as never,
       routineDraftAssistService: {} as never,
-      routineDefinitionService: { validate: vi.fn(async () => ({ ok: true, diagnostics: [] })) } as never,
+      routineDefinitionService: { validateForDraftMutation: vi.fn(async () => ({ ok: true, diagnostics: [] })) } as never,
       routineMcpApply: { apply },
     });
     const context = { surface: "mcp" as const, accountId: "account-1", proposalId: "proposal-1", executionInvocationId: "receipt-1", operatorUserId: "operator-1", applyClaimedAt: new Date("2026-09-02T00:00:00Z") };
@@ -90,7 +90,7 @@ describe("structural routine proposal adapter", () => {
     const adapter = createRoutineCopilotProposalAdapter({
       agentService: { get: vi.fn(async () => ({ updatedAt: new Date() })) } as never,
       routineDraftAssistService: {} as never,
-      routineDefinitionService: { validate: vi.fn(async () => ({ ok: true, diagnostics: [] })) } as never,
+      routineDefinitionService: { validateForDraftMutation: vi.fn(async () => ({ ok: true, diagnostics: [] })) } as never,
       routineMcpApply: { apply },
     });
     const context = { surface: "mcp" as const, accountId: "account-1", proposalId: "proposal-1", executionInvocationId: "receipt-1", operatorUserId: "operator-1", applyClaimedAt: new Date("2026-09-02T00:00:00Z") };
@@ -123,7 +123,7 @@ describe("structural routine proposal adapter", () => {
     const adapter = createRoutineCopilotProposalAdapter({
       agentService: { get: vi.fn(async () => ({ updatedAt: new Date() })) } as never,
       routineDraftAssistService: {} as never,
-      routineDefinitionService: { validate: vi.fn(async () => ({ ok: true, diagnostics: [] })), completeExternalDraftMutation } as never,
+      routineDefinitionService: { validateForDraftMutation: vi.fn(async () => ({ ok: true, diagnostics: [] })), completeExternalDraftMutation } as never,
       routineMcpApply: { apply },
     });
     const context = { surface: "mcp" as const, accountId: "account-1", proposalId: "proposal-1", executionInvocationId: "receipt-1", operatorUserId: "operator-1", applyClaimedAt: new Date("2026-09-02T00:00:00Z") };

@@ -435,6 +435,13 @@ describe("operator MCP stateless request handler", () => {
     });
   });
 
+  it("carries structured routine diagnostics back to the caller", async () => {
+    const handler = createOperatorMcpRequestHandler({ ...dependencies, call: vi.fn(async () => { throw new OperatorBackendAdapterError("rejected", 400, "invalid_arguments", undefined, [{ routineId: "11111111-1111-4111-8111-111111111111", routineName: "Escalate", code: "node_id_collision", location: "nodes[0].id", message: "Duplicate node" }]); }) });
+    dependencies.admit.mockResolvedValue({ proof: { ...proof, method: "tools/call" } });
+    const response = await handler(operatorRequest({ id: "structured-validation-detail", jsonrpc: "2.0", method: "tools/call", params: { name: "prepare_routine_structure" } }));
+    await expect(response.json()).resolves.toMatchObject({ error: { code: -32602, data: [{ routineName: "Escalate", code: "node_id_collision", location: "nodes[0].id" }] } });
+  });
+
   it("returns a tool removed after admission as a safe invalid-params response", async () => {
     const handler = createOperatorMcpRequestHandler({
       ...dependencies,

@@ -33,7 +33,7 @@ export const createAgentPublicationCopilotTools = (deps: AgentPublicationCopilot
   },
   {
     name: "prepare_agent_publication", shape: "propose", verificationCost: () => 0, uiLabel: "Preparing agent publication", contributingModule: "agentPublication", dashboardSubject: { type: "agent" }, requiredPermissions: ["workspace.agents.manage"],
-    description: "Create an immutable publication candidate and reviewed proposal. It does not publish.", inputSchema: prepareInput, outputSchema: publicationReviewOutput,
+    description: "Create an immutable publication candidate and reviewed proposal. It does not publish. If validation names a routine, use validate_routine or prepare_routine_structure before preparing publication again.", inputSchema: prepareInput, outputSchema: publicationReviewOutput,
     reconcileMcpInvocation: async ({ invocation, context, staleBefore, now }) => {
       if (!invocation.operationId) return { status: "conflict" };
       const recovered = await deps.proposalRecovery.recoverOperatorMcpProposal({ invocationId: invocation.id, grantId: invocation.grantId, workspaceId: context.workspaceId, operatorUserId: context.operatorUserId, operationId: invocation.operationId, descriptorName: "prepare_agent_publication", inputDigest: invocation.inputDigest, staleBefore, now });
@@ -42,7 +42,7 @@ export const createAgentPublicationCopilotTools = (deps: AgentPublicationCopilot
       if (!snapshot.success) return { status: "conflict" };
       return { status: "recovered", output: { proposalId: recovered.proposal.id, reviewDigest: recovered.proposal.reviewDigest, expiresAt: recovered.proposal.expiresAt.toISOString(), ...snapshot.data } };
     },
-    createTool: (context) => ({ name: "prepare_agent_publication", description: "Create an immutable publication candidate and reviewed proposal. It does not publish.", inputSchema: prepareInput, outputSchema: z.unknown(), invoke: async ({ agentId }) => {
+    createTool: (context) => ({ name: "prepare_agent_publication", description: "Create an immutable publication candidate and reviewed proposal. It does not publish. If validation names a routine, use validate_routine or prepare_routine_structure before preparing publication again.", inputSchema: prepareInput, outputSchema: z.unknown(), invoke: async ({ agentId }) => {
       const selectedAgentId = agentId ?? requiredPageAgent(context.pageContext.agentId);
       await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
       const state = await deps.revisions.state(context.workspaceId, selectedAgentId);

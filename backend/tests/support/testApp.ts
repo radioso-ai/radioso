@@ -2143,7 +2143,7 @@ export const createTestDependencies = (overrides: {
       workspaceAccount: createCopilotWorkspaceAccountResolver({ workspaceRepository }),
     }),
     createIngestionSettingsCopilotProposalAdapter({ ingestionSettings: ingestionSettingsService }),
-    createWorkspaceSettingCopilotProposalAdapter({ workspaceSetting: createCopilotWorkspaceSettingPort(platformSettingsService, createCopilotWorkspaceAccountResolver({ workspaceRepository })) }),
+    createWorkspaceSettingCopilotProposalAdapter({ workspaceSetting: createCopilotWorkspaceSettingPort(platformSettingsService) }),
     createAgentCopilotProposalAdapter({
       agentCreation: { createFromWizard: (input) => agentWizardService.createAgentFromWizard(input) },
       workspaceAccount: createCopilotWorkspaceAccountResolver({ workspaceRepository }),

@@ -1219,7 +1219,7 @@ describe("directive proposal adapter payload mapping", () => {
 
     // A stale token races an edit made after the proposal drafted. Deleting here would discard
     // whatever changed the directive between drafting and apply, so it must be refused outright.
-    expect(await adapter.applyIfVersionMatches("workspace-1", targetRef, { op: "remove" }, new Date(0).toISOString())).toEqual({ outcome: "stale" });
+    expect(await adapter.applyIfVersionMatches("workspace-1", targetRef, { op: "remove" }, new Date(0).toISOString())).toEqual({ outcome: "stale", reason: "Field changed: directive" });
 
     expect(await adapter.applyIfVersionMatches("workspace-1", targetRef, { op: "remove" }, new Date(5).toISOString())).toEqual({ outcome: "applied", appliedRef: { directiveId: "6a6a6a6a-1111-2222-3333-444444444445" } });
     expect(deleteDirective).toHaveBeenCalledWith("workspace-1", targetRef.agentId, "6a6a6a6a-1111-2222-3333-444444444445", { expectedUpdatedAt: new Date(5) });
@@ -1245,6 +1245,33 @@ describe("directive proposal adapter payload mapping", () => {
     expect(preview.proposed).not.toBeUndefined();
     expect(typeof preview.proposed).toBe("string");
     expect(preview.proposed as string).toMatch(/remov/i);
+  });
+
+  it("creates a new directive after an unrelated agent-row change", async () => {
+    const { createDirectiveCopilotProposalAdapter } = await import("../../../src/modules/operatorCopilot/proposalAdapters.js");
+    const agentId = "6a6a6a6a-1111-2222-3333-444444444444";
+    const create = vi.fn(async () => ({ directive: { id: "6a6a6a6a-1111-2222-3333-444444444445" } }));
+    const agentUpdatedAt = new Date("2026-09-26T10:00:00.000Z");
+    const draftForProposal = vi.fn(async () => ({
+      draft: { directive: { name: "locale", condition: { kind: "always" }, action: "Use Estonian." } },
+      versionToken: agentUpdatedAt.toISOString(),
+    }));
+    const adapter = createDirectiveCopilotProposalAdapter({
+      authoredDirectiveService: { list: vi.fn(async () => []), create, update: vi.fn(), delete: vi.fn() } as never,
+      directiveAuthorService: { draftForProposal } as never,
+      agentService: { get: vi.fn(async () => ({ updatedAt: new Date() })) } as never,
+    });
+    const targetRef = { agentId, directiveId: null };
+
+    // The drafted create carries the same fence readVersionToken reports, so the proposal reads as
+    // current rather than stale, and apply does not pin the agent row's updatedAt.
+    const drafted = await adapter.draft("workspace-1", targetRef, { name: "locale", condition: { kind: "always" }, action: "Use Estonian." });
+    expect(drafted.versionToken).toBe("agent-exists");
+    expect(await adapter.readVersionToken("workspace-1", targetRef)).toBe(drafted.versionToken);
+    await expect(adapter.applyIfVersionMatches("workspace-1", targetRef, {
+      name: "locale", condition: { kind: "always" }, action: "Use Estonian.",
+    }, "agent-exists")).resolves.toMatchObject({ outcome: "applied" });
+    expect(create).toHaveBeenCalledWith("workspace-1", agentId, expect.objectContaining({ name: "locale" }), undefined);
   });
 
   it("previews and applies a set_enabled payload as a one-field partial update", async () => {
@@ -1304,7 +1331,7 @@ describe("directive proposal adapter payload mapping", () => {
     });
 
     await expect(adapter.applyIfVersionMatches("workspace-1", targetRef, { op: "set_enabled", enabled: false }, new Date(0).toISOString()))
-      .resolves.toEqual({ outcome: "stale" });
+      .resolves.toEqual({ outcome: "stale", reason: "Field changed: directive" });
     await expect(adapter.applyIfVersionMatches("workspace-1", targetRef, { op: "set_enabled", enabled: false }, new Date(0).toISOString()))
       .resolves.toEqual({ outcome: "applied", appliedRef: { directiveId: targetRef.directiveId } });
     await expect(adapter.applyIfVersionMatches("workspace-1", targetRef, { op: "set_enabled", enabled: true }, new Date(0).toISOString()))

@@ -27,6 +27,15 @@ export const versionInstant = (token: string): Date | null => {
 export const isStale = (error: unknown): boolean =>
   error instanceof AppError && (error.code === "conflict" || error.code === "not_found");
 
+/** A stale card needs an actionable explanation without echoing authored content. */
+export const staleReason = (error: unknown, fields: ReadonlyArray<string>): string => {
+  if (error instanceof AppError && error.code === "not_found") return "Target deleted";
+  if (fields.length === 0) return "Target changed";
+  return fields.length === 1
+    ? `Field changed: ${fields[0]}`
+    : `Fields changed: ${fields.join(", ")}`;
+};
+
 /**
  * Whether a throw is the owner's deliberate refusal to make the requested change, as opposed to an
  * infrastructure fault. An adapter may report this as a durable `failed` outcome only once it has

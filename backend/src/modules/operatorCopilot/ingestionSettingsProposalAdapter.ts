@@ -2,147 +2,78 @@ import {
   copilotIngestionSettingsChangeSchema,
   copilotIngestionSettingsPayloadSchema,
   copilotIngestionSettingsTargetRefSchema,
-  type CopilotIngestionSettingsChange,
   type CopilotIngestionSettingsPayload,
-  type CopilotIngestionSettingsPort,
-  type CopilotIngestionSettingsSnapshot,
 } from "./contracts/ingestionSettingsAuthoring.js";
 import type { CopilotIngestionSettingsProposalAdapter } from "./contracts.js";
-import { isStale, versionInstant, versionToken } from "./proposalVersioning.js";
-import { validateIngestionSettings } from "../settings/public.js";
-import { AppError, badRequest } from "../../shared/domain/errors.js";
+import type {
+  IngestionSettingsFieldProposalApplyInput,
+  IngestionSettingsFieldProposalApplyOutcome,
+  IngestionSettingsFieldProposalPreparation,
+  IngestionSettingsProposalPatch,
+} from "../settings/contracts/services.js";
 
-/** See the document adapter: a read that failed is not a target that vanished. */
-const readOrMissing = async <T>(read: Promise<T>): Promise<T | null> => {
-  try {
-    return await read;
-  } catch (error) {
-    if (error instanceof AppError && error.code === "not_found") return null;
-    throw error;
-  }
+const label = "Ingestion settings" as const;
+const presentationKeys = new Set(["name", "rationale", "summary"]);
+const domainFields = (payload: CopilotIngestionSettingsPayload): Record<string, unknown> =>
+  Object.fromEntries(Object.entries(payload).filter(([key]) => !presentationKeys.has(key)));
+const stale = (result: Exclude<IngestionSettingsFieldProposalApplyOutcome, { status: "applied" }>) => {
+  if (result.status === "target_deleted") return { outcome: "stale" as const, reason: "Target deleted" };
+  if (result.status === "target_changed") return { outcome: "stale" as const, reason: "Target changed" };
+  return { outcome: "stale" as const, reason: result.fields.length === 1
+    ? `Field changed: ${result.fields[0]}` : `Fields changed: ${result.fields.join(", ")}` };
 };
 
-/** The card's own presentation fields are not settings, so a diff must not list them as changes. */
-const domainFields = (payload: CopilotIngestionSettingsPayload): Record<string, unknown> => {
-  const { name: _name, rationale: _rationale, summary: _summary, ...fields } = payload;
-  return fields;
-};
-
-const INGESTION_SETTINGS_LABEL = "Ingestion settings" as const;
-const TARGET_LABEL = INGESTION_SETTINGS_LABEL;
-
-export interface IngestionSettingsCopilotProposalAdapterDependencies {
-  readonly ingestionSettings: CopilotIngestionSettingsPort;
+interface Dependencies {
+  readonly ingestionSettings: {
+    prepareFieldProposal(workspaceId: string, patch: IngestionSettingsProposalPatch): Promise<IngestionSettingsFieldProposalPreparation>;
+    readFieldProposalVersion(workspaceId: string, expected?: IngestionSettingsProposalPatch): Promise<string>;
+    readFieldProposalDisplay(workspaceId: string): Promise<Record<string, unknown>>;
+    applyFieldProposal(workspaceId: string, prepared: IngestionSettingsFieldProposalApplyInput): Promise<IngestionSettingsFieldProposalApplyOutcome>;
+  };
 }
 
-/** The stored settings as the payload states them, so current and proposed compare field for field. */
-const settled = (settings: CopilotIngestionSettingsSnapshot): CopilotIngestionSettingsPayload =>
-  copilotIngestionSettingsPayloadSchema.parse({
-    name: INGESTION_SETTINGS_LABEL,
-    chunkingStrategy: settings.chunkingStrategy,
-    fixedWindowChunkSize: settings.fixedWindowChunkSize,
-    fixedWindowChunkOverlap: settings.fixedWindowChunkOverlap,
-    structuredMinChunkSize: settings.structuredMinChunkSize,
-    structuredMaxChunkSize: settings.structuredMaxChunkSize,
-    ...(settings.documentEnrichmentEnabled !== undefined ? { documentEnrichmentEnabled: settings.documentEnrichmentEnabled } : {}),
-    ...(settings.manualDocumentEnrichmentOverride !== undefined ? { manualDocumentEnrichmentOverride: settings.manualDocumentEnrichmentOverride } : {}),
-  });
-
-/**
- * The write replaces every ingestion field at once, so a proposal that named one has to carry the
- * rest. Merging only the keys the change actually names keeps an absent field meaning "leave it
- * alone" rather than "reset it to whatever the payload happens to hold".
- */
-const merged = (
-  settings: CopilotIngestionSettingsSnapshot,
-  change: CopilotIngestionSettingsChange,
-): CopilotIngestionSettingsPayload => {
-  const { rationale: _rationale, ...fields } = change;
-  const named = Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== undefined));
-  return copilotIngestionSettingsPayloadSchema.parse({
-    ...settled(settings),
-    ...named,
-    name: INGESTION_SETTINGS_LABEL,
-    ...(change.rationale !== undefined ? { rationale: change.rationale } : {}),
-  });
-};
-
-/** The fields a payload states differently from what is stored. */
-export const changedIngestionSettingKeys = (
-  settings: CopilotIngestionSettingsSnapshot,
-  payload: CopilotIngestionSettingsPayload,
-): ReadonlyArray<string> => {
-  const current = settled(settings) as Record<string, unknown>;
-  return Object.entries(payload)
-    .filter(([key, value]) => key !== "rationale" && key !== "name" && value !== current[key])
-    .map(([key]) => key);
-};
-
-export const createIngestionSettingsCopilotProposalAdapter = (
-  deps: IngestionSettingsCopilotProposalAdapterDependencies,
-): CopilotIngestionSettingsProposalAdapter => ({
+/** Thin persistence/presentation adapter; ingestion validation, merge, and CAS stay with the owner. */
+export const createIngestionSettingsCopilotProposalAdapter = (deps: Dependencies): CopilotIngestionSettingsProposalAdapter => ({
   targetType: "ingestion_settings",
-
   async readVersionToken(workspaceId, rawTargetRef) {
-    copilotIngestionSettingsTargetRefSchema.parse(rawTargetRef);
-    return versionToken((await deps.ingestionSettings.getForWorkspace(workspaceId)).updatedAt);
+    const targetRef = copilotIngestionSettingsTargetRefSchema.parse(rawTargetRef);
+    return deps.ingestionSettings.readFieldProposalVersion(workspaceId, targetRef.expectedFields);
   },
-
   async preview(workspaceId, rawTargetRef, rawPayload) {
     copilotIngestionSettingsTargetRefSchema.parse(rawTargetRef);
     const payload = copilotIngestionSettingsPayloadSchema.parse(rawPayload);
-    const settings = await readOrMissing(deps.ingestionSettings.getForWorkspace(workspaceId));
-    return {
-      targetLabel: TARGET_LABEL,
-      current: settings ? domainFields(settled(settings)) : null,
-      proposed: domainFields(payload),
-    };
+    return { targetLabel: label, current: await deps.ingestionSettings.readFieldProposalDisplay(workspaceId), proposed: domainFields(payload) };
   },
-
   async applyIfVersionMatches(workspaceId, rawTargetRef, rawPayload, token) {
-    copilotIngestionSettingsTargetRefSchema.parse(rawTargetRef);
-    // Parsing before the write is what strips anything the payload should not carry — an embedding
-    // model above all, whose absence is the reason applying this can never start a re-embed.
+    const targetRef = copilotIngestionSettingsTargetRefSchema.parse(rawTargetRef);
     const payload = copilotIngestionSettingsPayloadSchema.parse(rawPayload);
     try {
-      // A conditional update, not read-compare-then-write: the drafted version reaches the write's
-      // own predicate, so a settings row that moved in between is refused there rather than
-      // replaced by the whole-object values this payload has been carrying since the draft.
-      const expectedUpdatedAt = versionInstant(token);
-      if (!expectedUpdatedAt) return { outcome: "stale" as const };
-      await deps.ingestionSettings.updateForWorkspace(workspaceId, payload, { expectedUpdatedAt });
-      return { outcome: "applied" as const, appliedRef: { workspaceId } };
+      const result = await deps.ingestionSettings.applyFieldProposal(workspaceId, {
+        normalizedPatch: domainFields(payload),
+        ...(targetRef.expectedFields
+          ? { expected: targetRef.expectedFields }
+          : { expectedUpdatedAt: new Date(token) }),
+      });
+      if (result.status === "applied") return { outcome: "applied" as const, appliedRef: { workspaceId } };
+      return stale(result);
     } catch (error) {
-      if (isStale(error)) return { outcome: "stale" as const };
       return { outcome: "failed" as const, reason: error instanceof Error ? error.message : "Ingestion settings apply failed" };
     }
   },
-
   async validatePayload(workspaceId, rawTargetRef, rawChange) {
     copilotIngestionSettingsTargetRefSchema.parse(rawTargetRef);
     const change = copilotIngestionSettingsChangeSchema.parse(rawChange);
-    const { rationale: _rationale, ...fields } = change;
-    if (Object.values(fields).every((value) => value === undefined)) {
-      throw badRequest("Name at least one ingestion setting to change");
-    }
-    // The token comes from this same read: the merge is built from it, and pairing that merge with
-    // a later token would let an edit that landed in between pass the apply-time version check.
-    const settings = await deps.ingestionSettings.getForWorkspace(workspaceId);
-    const payload = merged(settings, change);
-    if (changedIngestionSettingKeys(settings, payload).length === 0) {
-      throw badRequest("The ingestion settings already hold these values");
-    }
-    // The settings domain owns the rules a single field cannot express - an overlap smaller than the
-    // window it overlaps, a minimum below its maximum. Checking here rather than restating them
-    // means a combination that could only fail on Apply never reaches an operator's card. The
-    // result is discarded: it settles an embedding model, which this proposal must never carry.
-    validateIngestionSettings({
-      chunkingStrategy: payload.chunkingStrategy,
-      fixedWindowChunkSize: payload.fixedWindowChunkSize,
-      fixedWindowChunkOverlap: payload.fixedWindowChunkOverlap,
-      structuredMinChunkSize: payload.structuredMinChunkSize,
-      structuredMaxChunkSize: payload.structuredMaxChunkSize,
+    const { rationale, ...patch } = change;
+    const prepared = await deps.ingestionSettings.prepareFieldProposal(workspaceId, patch);
+    const payload = copilotIngestionSettingsPayloadSchema.parse({
+      name: label,
+      ...prepared.normalizedPatch,
+      ...(rationale === undefined ? {} : { rationale }),
     });
-    return { targetRef: {}, payload, versionToken: versionToken(settings.updatedAt) };
+    return {
+      targetRef: { expectedFields: prepared.expected },
+      payload,
+      versionToken: await deps.ingestionSettings.readFieldProposalVersion(workspaceId, prepared.expected),
+    };
   },
 });

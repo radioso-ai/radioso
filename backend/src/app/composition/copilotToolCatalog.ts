@@ -33,6 +33,8 @@ import type { AgentPublicationCopilotToolDependencies } from "../../modules/oper
 import type { RetrievalAuthoringCopilotToolDependencies } from "../../modules/operatorCopilot/tools/retrievalAuthoring.js";
 import type { CopilotProposalDetailReadPort } from "../../modules/operatorCopilot/service.js";
 import type { DocumentReviewedOperationToolDependencies } from "../../modules/operatorCopilot/tools/documentReviewedOperations.js";
+import type { AgentSettingsReviewedPreparationDependencies } from "../../modules/operatorCopilot/tools/agentSettingsReviewedPreparation.js";
+import type { IngestionSettingsReviewedPreparationDependencies } from "../../modules/operatorCopilot/tools/ingestionSettingsReviewedPreparation.js";
 import type {
   CopilotEvalCaseCapturePort,
   CopilotEvalCaseReplayPort,
@@ -186,6 +188,8 @@ export const createCopilotToolCatalog = (deps: {
   readonly proposalDetail: CopilotProposalDetailReadPort;
   readonly retrievalAuthoring: RetrievalAuthoringCopilotToolDependencies["retrievalAuthoring"];
   readonly documents: DocumentReviewedOperationToolDependencies["documents"];
+  readonly agentSettings: AgentSettingsReviewedPreparationDependencies["agentSettings"];
+  readonly ingestionSettings: IngestionSettingsReviewedPreparationDependencies["ingestionSettings"];
   /**
    * Tools contributed by application modules outside this repository's first-party catalog. They
    * are merged before governance and enrichment so permission filtering, authorization re-checks,

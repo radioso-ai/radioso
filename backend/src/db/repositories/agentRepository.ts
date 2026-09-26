@@ -31,7 +31,7 @@ import { parseDirectiveLifecycle } from "../../modules/directives/public.js";
 import { answerCoverageCriteriaSchema } from "../../modules/answerCoverage/public.js";
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../modules/documents/contracts/index.js";
 import { currentTimestamp, optionalTimestampMatch, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
-import type { DB, Db } from "../../shared/infra/kysely/types.js";
+import type { DB, Db, OwnerCommitHook } from "../../shared/infra/kysely/types.js";
 import type { LlmProviderName } from "../../shared/infra/llm/providerTypes.js";
 import { withAgentDraftMutation } from "./agentDraftMutation.js";
 
@@ -593,8 +593,8 @@ export type AgentProposalCasOutcome =
   | { readonly outcome: "targetDeleted" };
 
 export type AgentProposalCasGuard =
-  | { readonly expectedFields: ReadonlyArray<{ key: string; value: unknown }>; readonly expectedDefaultAgentId?: string; readonly normalizeLocked?: (current: AgentRecord) => AgentInput }
-  | { readonly expectedUpdatedAt: Date; readonly expectedDefaultAgentId?: string; readonly normalizeLocked?: (current: AgentRecord) => AgentInput };
+  | { readonly expectedFields: ReadonlyArray<{ key: string; value: unknown }>; readonly expectedDefaultAgentId?: string; readonly normalizeLocked?: (current: AgentRecord) => AgentInput; readonly onCommitted?: OwnerCommitHook<{ readonly agentId: string }> }
+  | { readonly expectedUpdatedAt: Date; readonly expectedDefaultAgentId?: string; readonly normalizeLocked?: (current: AgentRecord) => AgentInput; readonly onCommitted?: OwnerCommitHook<{ readonly agentId: string }> };
 
 const proposalFieldValue = (agent: AgentRecord, key: string): unknown => {
   if (key === "anonymousChatEnabled") return agent.surfaceSettings.anonymousChat.enabled;
@@ -865,6 +865,7 @@ export class AgentRepository implements AgentRepositoryPort {
             snapshot: { ...snapshot, customInstruction: normalized.customInstruction },
           }))
         : await this.updateLiveAgent(trx, agentId, workspaceId, normalized, previous.updatedAt, lockedInput.sourceScope !== undefined);
+      await guard.onCommitted?.(trx, { agentId });
       return { outcome: "applied", previous, agent };
     });
   }

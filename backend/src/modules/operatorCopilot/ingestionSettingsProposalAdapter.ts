@@ -4,13 +4,14 @@ import {
   copilotIngestionSettingsTargetRefSchema,
   type CopilotIngestionSettingsPayload,
 } from "./contracts/ingestionSettingsAuthoring.js";
-import type { CopilotIngestionSettingsProposalAdapter } from "./contracts.js";
+import type { CopilotIngestionSettingsProposalAdapter, CopilotProposalApplyContext, CopilotReviewedReceiptPort } from "./contracts.js";
 import type {
   IngestionSettingsFieldProposalApplyInput,
   IngestionSettingsFieldProposalApplyOutcome,
   IngestionSettingsFieldProposalPreparation,
   IngestionSettingsProposalPatch,
 } from "../settings/contracts/services.js";
+import { reviewedApplyError, reviewedCommitHook } from "./reviewedAtomicApply.js";
 
 const label = "Ingestion settings" as const;
 const presentationKeys = new Set(["name", "rationale", "summary"]);
@@ -28,8 +29,9 @@ interface Dependencies {
     prepareFieldProposal(workspaceId: string, patch: IngestionSettingsProposalPatch): Promise<IngestionSettingsFieldProposalPreparation>;
     readFieldProposalVersion(workspaceId: string, expected?: IngestionSettingsProposalPatch): Promise<string>;
     readFieldProposalDisplay(workspaceId: string): Promise<Record<string, unknown>>;
-    applyFieldProposal(workspaceId: string, prepared: IngestionSettingsFieldProposalApplyInput): Promise<IngestionSettingsFieldProposalApplyOutcome>;
+    applyFieldProposal(workspaceId: string, prepared: IngestionSettingsFieldProposalApplyInput, options?: { readonly onCommitted?: import("../../shared/infra/kysely/types.js").OwnerCommitHook<{ readonly workspaceId: string }> }): Promise<IngestionSettingsFieldProposalApplyOutcome>;
   };
+  readonly reviewedReceipt?: CopilotReviewedReceiptPort;
 }
 
 /** Thin persistence/presentation adapter; ingestion validation, merge, and CAS stay with the owner. */
@@ -44,19 +46,24 @@ export const createIngestionSettingsCopilotProposalAdapter = (deps: Dependencies
     const payload = copilotIngestionSettingsPayloadSchema.parse(rawPayload);
     return { targetLabel: label, current: await deps.ingestionSettings.readFieldProposalDisplay(workspaceId), proposed: domainFields(payload) };
   },
-  async applyIfVersionMatches(workspaceId, rawTargetRef, rawPayload, token) {
+  async applyIfVersionMatches(workspaceId, rawTargetRef, rawPayload, token, context?: CopilotProposalApplyContext) {
     const targetRef = copilotIngestionSettingsTargetRefSchema.parse(rawTargetRef);
     const payload = copilotIngestionSettingsPayloadSchema.parse(rawPayload);
+    const onCommitted = reviewedCommitHook(deps.reviewedReceipt, context, workspaceId, (committed: { workspaceId: string }) => committed);
     try {
-      const result = await deps.ingestionSettings.applyFieldProposal(workspaceId, {
+      const prepared = {
         normalizedPatch: domainFields(payload),
         ...(targetRef.expectedFields
           ? { expected: targetRef.expectedFields }
           : { expectedUpdatedAt: new Date(token) }),
-      });
+      };
+      const result = onCommitted
+        ? await deps.ingestionSettings.applyFieldProposal(workspaceId, prepared, { onCommitted })
+        : await deps.ingestionSettings.applyFieldProposal(workspaceId, prepared);
       if (result.status === "applied") return { outcome: "applied" as const, appliedRef: { workspaceId } };
       return stale(result);
     } catch (error) {
+      if (onCommitted) return reviewedApplyError(error);
       return { outcome: "failed" as const, reason: error instanceof Error ? error.message : "Ingestion settings apply failed" };
     }
   },
@@ -75,5 +82,10 @@ export const createIngestionSettingsCopilotProposalAdapter = (deps: Dependencies
       payload,
       versionToken: await deps.ingestionSettings.readFieldProposalVersion(workspaceId, prepared.expected),
     };
+  },
+  async reconcileMcpInterruptedApply() {
+    // The owner write and receipt settlement share one transaction; a reclaimed pending receipt
+    // proves the earlier claim committed neither side.
+    return { outcome: "not_applied" as const };
   },
 });

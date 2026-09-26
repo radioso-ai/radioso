@@ -98,3 +98,38 @@ export const agentInputFieldSchemas = {
    * discovery key or quietly re-point one that is already in the wild.
    */
 } satisfies Record<Exclude<keyof AgentInput, "publicId">, ZodType>;
+
+/** The reviewed-operation surface deliberately excludes channel, retrieval, model, asset, and
+ * skill settings because those owners have dedicated authoring flows. */
+export const agentReviewedSettingsPatchSchema = z.object({
+  name: agentInputFieldSchemas.name,
+  internalName: agentInputFieldSchemas.internalName,
+  customInstruction: agentInputFieldSchemas.customInstruction,
+  greetingInstruction: agentInputFieldSchemas.greetingInstruction,
+  assistantDefaultLocale: agentInputFieldSchemas.assistantDefaultLocale,
+  proactiveGreetingEnabled: agentInputFieldSchemas.proactiveGreetingEnabled,
+  citationDisplayEnabled: agentInputFieldSchemas.citationDisplayEnabled,
+  assistantLinkUtmEnabled: agentInputFieldSchemas.assistantLinkUtmEnabled,
+  handoffOnRetrievalMiss: agentInputFieldSchemas.handoffOnRetrievalMiss,
+  contactRequestsEnabled: agentInputFieldSchemas.contactRequestsEnabled,
+  contactRequestDelivery: agentInputFieldSchemas.contactRequestDelivery,
+  webhookExportsEnabled: agentInputFieldSchemas.webhookExportsEnabled,
+  publicDescription: agentInputFieldSchemas.publicDescription,
+  theme: agentInputFieldSchemas.theme,
+  branding: agentInputFieldSchemas.branding,
+  walkInConversationsPerHour: agentInputFieldSchemas.walkInConversationsPerHour,
+  agentCardEnabled: agentInputFieldSchemas.agentCardEnabled,
+  publicAgentAccessEnabled: agentInputFieldSchemas.publicAgentAccessEnabled,
+}).partial().strict().refine((patch) => Object.keys(patch).length > 0, {
+  message: "At least one reviewable agent setting must be provided",
+});
+
+export type AgentReviewedSettingsKey = keyof z.infer<typeof agentReviewedSettingsPatchSchema>;
+
+export const agentSettingProposalEffect = (key: AgentReviewedSettingsKey): {
+  readonly lifecycle: "live" | "agent_draft";
+  readonly reach: boolean;
+} => ({
+  lifecycle: key === "customInstruction" ? "agent_draft" : "live",
+  reach: key === "agentCardEnabled" || key === "publicAgentAccessEnabled",
+});

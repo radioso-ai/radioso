@@ -7,7 +7,7 @@ import {
 import type { IngestionSettingsRepositoryPort } from "../../modules/settings/contracts/services.js";
 import { conflict } from "../../shared/domain/errors.js";
 import { currentTimestamp, optionalTimestampMatch } from "../../shared/infra/kysely/sqlHelpers.js";
-import type { Db } from "../../shared/infra/kysely/types.js";
+import type { Db, OwnerCommitHook } from "../../shared/infra/kysely/types.js";
 
 interface IngestionSettingsRow {
   workspace_id: string;
@@ -110,6 +110,7 @@ export class IngestionSettingsRepository implements IngestionSettingsRepositoryP
     readonly workspaceId: string;
     readonly patch: Partial<ValidatedIngestionSettingsInput>;
     readonly validateMerged: (current: IngestionSettingsRecord) => ValidatedIngestionSettingsInput;
+    readonly onCommitted?: OwnerCommitHook<{ readonly workspaceId: string }>;
   } & (
     | { readonly expected: Partial<ValidatedIngestionSettingsInput> }
     | { readonly expectedUpdatedAt: Date }
@@ -139,6 +140,7 @@ export class IngestionSettingsRepository implements IngestionSettingsRepositoryP
       }));
       await trx.updateTable("ingestion_settings").set((eb) => ({ ...patch, revision: eb("revision", "+", "1"), updated_at: currentTimestamp() }))
         .where("workspace_id", "=", input.workspaceId).execute();
+      await input.onCommitted?.(trx, { workspaceId: input.workspaceId });
       return { outcome: "applied" };
     });
   }

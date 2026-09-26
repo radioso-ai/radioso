@@ -10,6 +10,7 @@ import type {
 } from "./llmCapability.js";
 import type { DeclaredMetadataField, MetadataFieldSuggestion } from "./retrieval.js";
 import type { PlatformSettingsResource } from "../domain/platformSettings.js";
+import type { OwnerCommitHook } from "../../../shared/infra/kysely/types.js";
 
 export type FieldScopedCasOutcome =
   | { readonly outcome: "applied" }
@@ -41,6 +42,7 @@ export interface IngestionSettingsRepositoryPort {
     readonly patch: Partial<ValidatedIngestionSettingsInput>;
     /** Runs under the row lock so coupled-field validation sees the current merged state. */
     readonly validateMerged: (current: IngestionSettingsRecord) => ValidatedIngestionSettingsInput;
+    readonly onCommitted?: OwnerCommitHook<{ readonly workspaceId: string }>;
   } & (
     | { readonly expected: Partial<ValidatedIngestionSettingsInput> }
     | { readonly expectedUpdatedAt: Date }

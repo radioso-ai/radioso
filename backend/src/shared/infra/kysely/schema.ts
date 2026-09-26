@@ -639,6 +639,11 @@ export interface CopilotMessages {
 export interface CopilotProposals {
   applied_ref: Json | null;
   apply_started_at: Timestamp | null;
+  approval_digest: string | null;
+  approved_at: Timestamp | null;
+  approved_by_user_id: string | null;
+  change_effect: Json | null;
+  confirmation_requirement: string | null;
   conversation_id: string | null;
   created_at: Generated<Timestamp>;
   evidence: Json | null;

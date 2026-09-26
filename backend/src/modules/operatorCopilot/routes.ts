@@ -25,6 +25,7 @@ const DASHBOARD_SURFACE = "dashboard" as const;
 
 const conversationParamsSchema = z.object({ conversationId: z.string().uuid() });
 const proposalParamsSchema = z.object({ proposalId: z.string().uuid() });
+const approveProposalSchema = z.object({ reviewDigest: z.string().min(1).max(200) }).strict();
 /**
  * The permissions this module knows a turn needs beyond what the assembled catalog declares:
  * `workspace_triage` gates individual digest sections on permissions no descriptor requires, and a
@@ -124,7 +125,25 @@ export const createCopilotRoutes = (dependencies: CopilotRouteDependencies): Rou
         appliedRef: result.proposal.appliedRef,
         evidence: result.proposal.evidence ? summarizeProposalEvidence(result.proposal.evidence) : undefined,
         evidenceCases: result.proposal.evidence?.cases ?? null,
+        reviewedOperation: result.proposal.reviewDigest && result.proposal.confirmationRequirement && result.proposal.changeEffect ? {
+          requirement: result.proposal.confirmationRequirement,
+          effect: result.proposal.changeEffect,
+          reviewDigest: result.proposal.reviewDigest,
+          reviewCode: result.proposal.reviewDigest.slice(0, 8),
+          expiresAt: result.proposal.expiresAt?.toISOString() ?? null,
+          approvedAt: result.proposal.approvedAt?.toISOString() ?? null,
+          review: result.proposal.reviewSnapshot,
+        } : null,
       });
+    } catch (error) { if (error instanceof CopilotAuthorizationError) { next(notFound("Copilot proposal not found")); return; } next(error); }
+  });
+  router.post("/proposals/:proposalId/approve", proposalSession, sessionOnly, proposalWorkspace, validateBody(approveProposalSchema), async (req, res, next) => {
+    try {
+      const { workspaceId, accountId, userId } = sessionLocals(res);
+      const { proposalId } = proposalParamsSchema.parse(req.params);
+      const result = await dependencies.operatorCopilotService.approveReviewedProposal({ workspaceId, accountId, operatorUserId: userId, proposalId, reviewDigest: req.body.reviewDigest });
+      if (result.status === "not_found") throw notFound("Copilot proposal not found");
+      res.status(200).json(result);
     } catch (error) { if (error instanceof CopilotAuthorizationError) { next(notFound("Copilot proposal not found")); return; } next(error); }
   });
   router.use(workspaceSession, sessionOnly, agentRead);

@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import type { CopilotCurrentAuthorizationPort, CopilotToolDescriptor } from "../contracts.js";
-import { reviewedOperationDigestPattern } from "../reviewedOperation.js";
+import { reviewedChangeEffectSchema, reviewedOperationDigestPattern } from "../reviewedOperation.js";
 
 const inputSchema = z.object({
   proposalId: z.string().uuid(),
@@ -10,9 +10,10 @@ const inputSchema = z.object({
 
 const outputSchema = z.object({
   proposalId: z.string().uuid(),
-  status: z.enum(["applied", "stale", "failed", "refused", "uncertain"]),
+  status: z.enum(["applied", "stale", "failed", "refused", "uncertain", "approval_required"]),
   appliedRef: z.unknown().optional(),
   reason: z.string().optional(),
+  approval: z.object({ url: z.string().max(2048), expiresAt: z.string().datetime(), effect: reviewedChangeEffectSchema }).strict().optional(),
 }).strict();
 
 type ReviewedProposalExecutionResult = Omit<z.infer<typeof outputSchema>, "proposalId">;
@@ -40,7 +41,7 @@ export const createReviewedProposalExecutionTool = (
   shape: "act",
   verificationCost: () => 0,
   uiLabel: "Applying reviewed operation",
-  description: "Apply a previously prepared operation after the MCP client has shown and confirmed its exact review digest.",
+  description: "Apply a previously prepared operation after the MCP client has shown and confirmed its exact review digest. Operations that go live, cannot be undone, or spend quota return approval_required until their owner approves the exact review in Radioso.",
   contributingModule: "operatorCopilot",
   dashboardSubject: { type: "proposal" },
   surfaces: ["mcp"],
@@ -77,7 +78,7 @@ export const createReviewedProposalExecutionTool = (
   },
   createTool: (context) => ({
     name: "execute_reviewed_proposal",
-    description: "Apply a previously prepared operation after the MCP client has shown and confirmed its exact review digest.",
+    description: "Apply a previously prepared operation after the MCP client has shown and confirmed its exact review digest. Operations that go live, cannot be undone, or spend quota return approval_required until their owner approves the exact review in Radioso.",
     inputSchema,
     outputSchema,
     invoke: async (rawInput) => {

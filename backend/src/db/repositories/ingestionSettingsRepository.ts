@@ -106,10 +106,49 @@ export class IngestionSettingsRepository implements IngestionSettingsRepositoryP
     };
   }
 
+  async applyProposalPatch(input: {
+    readonly workspaceId: string;
+    readonly patch: Partial<ValidatedIngestionSettingsInput>;
+    readonly validateMerged: (current: IngestionSettingsRecord) => ValidatedIngestionSettingsInput;
+  } & (
+    | { readonly expected: Partial<ValidatedIngestionSettingsInput> }
+    | { readonly expectedUpdatedAt: Date }
+  )): Promise<import("../../modules/settings/contracts/services.js").FieldScopedCasOutcome> {
+    return this.db.transaction().execute(async (trx) => {
+      const row = await trx.selectFrom("ingestion_settings").select(ingestionSettingsColumns)
+        .where("workspace_id", "=", input.workspaceId).forUpdate().executeTakeFirst();
+      if (!row) return { outcome: "targetDeleted" };
+      const current = mapSettings(row as IngestionSettingsRow);
+      const changed = "expected" in input
+        ? Object.entries(input.expected)
+          .filter(([field, value]) => JSON.stringify((current as unknown as Record<string, unknown>)[field]) !== JSON.stringify(value))
+          .map(([field]) => field)
+        : current.updatedAt.getTime() === input.expectedUpdatedAt.getTime() ? [] : ["target"];
+      if (changed.length) return { outcome: "changed", fields: changed };
+      const next = input.validateMerged(current);
+      const values = settingsColumnValues(next);
+      const columns = {
+        chunkingStrategy: "chunking_strategy", fixedWindowChunkSize: "fixed_window_chunk_size",
+        fixedWindowChunkOverlap: "fixed_window_chunk_overlap", structuredMinChunkSize: "structured_min_chunk_size",
+        structuredMaxChunkSize: "structured_max_chunk_size", documentEnrichmentEnabled: "document_enrichment_enabled",
+        manualDocumentEnrichmentOverride: "manual_document_enrichment_override",
+      } as const;
+      const patch = Object.fromEntries(Object.keys(input.patch).flatMap((field) => {
+        const column = columns[field as keyof typeof columns];
+        return column ? [[column, values[column as keyof typeof values]]] : [];
+      }));
+      await trx.updateTable("ingestion_settings").set((eb) => ({ ...patch, revision: eb("revision", "+", "1"), updated_at: currentTimestamp() }))
+        .where("workspace_id", "=", input.workspaceId).execute();
+      return { outcome: "applied" };
+    });
+  }
+
   async upsert(
     workspaceId: string,
     input: ValidatedIngestionSettingsInput,
-    options?: { expectedUpdatedAt?: Date },
+    options?: {
+      expectedUpdatedAt?: Date;
+    },
   ): Promise<IngestionSettingsRecord> {
     // A caller that read a row before deciding gets a conditional update, not an upsert: the
     // insert branch would write over the absence of the row whose version it claimed to know.

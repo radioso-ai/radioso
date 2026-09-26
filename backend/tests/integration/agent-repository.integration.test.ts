@@ -4,14 +4,17 @@ import { afterAll, beforeAll, expect, it } from "vitest";
 
 import { createDefaultAgentSkillSettingsRegistry } from "../../src/app/composition/skillSettingsResolver.js";
 import { AgentRepository } from "../../src/db/repositories/agentRepository.js";
+import { WorkspaceRepository } from "../../src/db/repositories/workspaceRepository.js";
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../src/modules/documents/contracts/index.js";
 import {
+  AgentService,
   AgentSurfaceExtensionRegistry,
   defaultAgentEmbedTheme,
   getWebsiteEmbedSurfaceSettings,
   mintPublicId,
   type WebsiteEmbedSurfaceSettings,
 } from "../../src/modules/agents/public.js";
+import { PlatformSettingsService } from "../../src/modules/settings/services/platformSettingsService.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 
@@ -288,6 +291,77 @@ describeIntegration("AgentRepository (Postgres)", () => {
         expectedUpdatedAt: new Date(created.updatedAt.getTime() - 60_000),
       }),
     ).rejects.toThrow();
+  });
+
+  it("compares only proposal fields while holding the agent row", async () => {
+    const agent = await repository.create(workspaceId, { name: "Field-scoped proposal", assistantDefaultLocale: "en" });
+    // Directives deliberately touch agents.updated_at; that must not stale a locale proposal.
+    await repository.createDirective(agent.id, workspaceId, {
+      name: `touch-${randomUUID().slice(0, 8)}`,
+      condition: { kind: "always" },
+      action: "Use the configured locale.",
+    });
+    const applied = await repository.applyProposalPatch(agent.id, workspaceId, { assistantDefaultLocale: "et" }, {
+      expectedFields: [{ key: "assistantDefaultLocale", value: "en" }],
+    });
+    expect(applied).toMatchObject({ outcome: "applied", agent: { assistantDefaultLocale: "et" } });
+
+    await expect(repository.applyProposalPatch(agent.id, workspaceId, { assistantDefaultLocale: "fi" }, {
+      expectedFields: [{ key: "assistantDefaultLocale", value: "en" }],
+    })).resolves.toEqual({ outcome: "changed", fields: ["assistantDefaultLocale"] });
+  });
+
+  it("keeps timestamp-era proposal writes as a row-version fence", async () => {
+    const agent = await repository.create(workspaceId, { name: "Legacy proposal", assistantDefaultLocale: "en" });
+    const applied = await repository.applyProposalPatch(agent.id, workspaceId, { assistantDefaultLocale: "et" }, {
+      expectedUpdatedAt: agent.updatedAt,
+    });
+    expect(applied).toMatchObject({ outcome: "applied", agent: { assistantDefaultLocale: "et" } });
+
+    await expect(repository.applyProposalPatch(agent.id, workspaceId, { assistantDefaultLocale: "fi" }, {
+      expectedUpdatedAt: agent.updatedAt,
+    })).resolves.toEqual({ outcome: "changed", fields: ["target"] });
+  });
+
+  it("refuses a workspace-settings proposal when its drafted default agent changed", async () => {
+    const drafted = await repository.create(workspaceId, { name: "Drafted default" });
+    const replacement = await repository.create(workspaceId, { name: "Replacement default" });
+    await repository.setDefault(workspaceId, replacement.id);
+
+    await expect(repository.applyProposalPatch(drafted.id, workspaceId, { name: "Renamed" }, {
+      expectedFields: [{ key: "name", value: "Drafted default" }],
+      expectedDefaultAgentId: drafted.id,
+    })).resolves.toEqual({ outcome: "changed", fields: ["target"] });
+  });
+
+  it("refuses a website-embed enable proposal when a concurrent write clears its allowed origins", async () => {
+    // PlatformSettingsService.applyProposalPatch's normalizeLocked closure (agentInputForPatch)
+    // re-runs the enabled/allowedOrigins coupling check against the row this repository locks
+    // FOR UPDATE, so a writer that clears the origins between draft and apply must be refused
+    // before commit rather than have the proposal's draft-time origins paper over it.
+    const workspaceRepository = new WorkspaceRepository(database.kysely);
+    const agentService = new AgentService(repository, workspaceRepository);
+    const platformSettingsService = new PlatformSettingsService({ workspaceRepository, agentService });
+
+    const agent = await repository.create(workspaceId, {
+      name: "Embed race",
+      surfaceSettings: { websiteEmbed: { enabled: false, allowedOrigins: ["https://example.com"] } },
+    });
+    await repository.setDefault(workspaceId, agent.id);
+
+    const prepared = await platformSettingsService.prepareFieldProposal(workspaceId, { websiteEmbedEnabled: true });
+
+    // A second writer clears the allowed origins after the proposal was drafted.
+    await repository.update(agent.id, workspaceId, {
+      surfaceSettings: { websiteEmbed: { allowedOrigins: [] } },
+    });
+
+    await expect(platformSettingsService.applyFieldProposal(workspaceId, prepared))
+      .rejects.toThrow(/allowed origin/i);
+
+    await expect(repository.findByIdAndWorkspaceId(agent.id, workspaceId)).resolves.toMatchObject({
+      surfaceSettings: { websiteEmbed: { enabled: false, allowedOrigins: [] } },
+    });
   });
 
   it("supports the full directive CRUD lifecycle with ordering preserved", async () => {

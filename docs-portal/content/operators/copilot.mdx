@@ -360,11 +360,12 @@ the decision the card exists to support is whether the trade is worth making. A
 proposal Ray drafted without replaying anything carries no evidence section, so
 an unmeasured change never reads as a verified one.
 
-Each proposal is checked against the target version captured while it was
-drafted. If the target changed in the meantime, the card becomes **Stale** and
-explains that the change was not applied. Ask Ray to draft the change again
-so the proposal reflects the current configuration. Applied proposals link to
-the target entity, while failed proposals show the reason returned by the
+Each proposal is checked against the configuration it changes. A change to an
+unrelated setting does not block it. If one of its own fields changed, the card
+becomes **Stale**, names that field, and leaves the configuration untouched. If
+the target was removed, the card says so. Ask Ray to draft the change again so
+the proposal reflects the current configuration. Applied proposals link to the
+target entity, while failed proposals show the reason returned by the
 management service.
 
 ## Create an agent
@@ -657,8 +658,9 @@ the change should have moved, read the result, then ask for the next batch.
 - **A source cannot be recrawled** — recrawl accepts an existing website source
   with a stored URL. Uploaded, API, and connector sources use their own refresh
   paths in the Knowledge Base.
-- **A proposal is stale** — the target changed after Ray drafted it. Ask Ray
-  to prepare the change again and review the updated diff.
+- **A proposal is stale** — the card names the changed field or says that the
+  target was removed. Ask Ray to prepare the change again and review the
+  updated diff.
 - **Apply or Dismiss says conflict** — another apply on that proposal is
   already running, or one never finished. Wait a few minutes and try again;
   an apply that never finished releases its hold on its own, after which the

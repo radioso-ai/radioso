@@ -373,8 +373,8 @@ export class OperatorCopilotService {
       return { status: "applied", appliedRef: result.appliedRef, ...(result.reason ? { reason: result.reason } : {}) };
     }
     const status = result.outcome === "stale" ? "stale" : "failed";
-    await this.updateProposalAndAudit(input.input, proposal, status, null, "copilot.proposal.apply_failed", "failure", result.outcome, claimGuard, result.outcome === "failed" ? result.reason : null);
-    return result.outcome === "failed" ? { status, reason: result.reason } : { status };
+    await this.updateProposalAndAudit(input.input, proposal, status, null, "copilot.proposal.apply_failed", "failure", result.outcome, claimGuard, result.reason ?? null);
+    return result.outcome === "failed" || result.reason ? { status, reason: result.reason } : { status };
   }
 
   /** Claims a digest-bound MCP review receipt, then uses the same post-claim executor as dashboard Apply. */

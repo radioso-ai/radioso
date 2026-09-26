@@ -5,14 +5,10 @@ import {
   DirectiveAuthorService,
   AgentService,
   AgentRevisionService,
-  agentInputFieldSchemas,
-  mergeAgentSurfaceSettings,
-  validateAgentInput,
   DEFAULT_AGENT_LOCALE_FALLBACK,
   DEFAULT_CONTACT_REQUEST_DELIVERY,
   hasConfiguredContactDestination,
   readNotifyContactDelivery,
-  type AgentInput,
   type AuthoredDirective,
   type AuthoredDirectiveInput,
   projectDirectiveAuthorProposalInput,
@@ -52,8 +48,8 @@ import {
 } from "./contracts.js";
 import type { ContextVariable, AgentContextVariableEnablement } from "../context-variables/public.js";
 import type { ContextVariableService } from "../context-variables/public.js";
-import { isOwnerRefusal, isStale, versionDate, versionToken } from "./proposalVersioning.js";
-import { badRequest, conflict, notFound } from "../../shared/domain/errors.js";
+import { isOwnerRefusal, isStale, staleReason, versionDate, versionToken } from "./proposalVersioning.js";
+import { AppError, badRequest, conflict, notFound } from "../../shared/domain/errors.js";
 
 /** Composition-only atomic boundary for an existing agent-skill update and its MCP receipt. */
 export interface AgentSkillMcpApplyPort {
@@ -74,7 +70,14 @@ export interface AgentSkillMcpApplyPort {
 }
 
 const directiveTargetRefSchema = z.object({ agentId: z.string().uuid(), directiveId: z.string().uuid().nullable() }).strict();
-const settingTargetRefSchema = z.object({ agentId: z.string().uuid(), settingKey: z.string().min(1).max(200) }).strict();
+/** A directive create depends on the agent existing, not on unrelated agent-row mutations. */
+const directiveCreateToken = "agent-exists";
+const settingTargetRefSchema = z.object({
+  agentId: z.string().uuid(),
+  settingKey: z.string().min(1).max(200),
+  /** Present on field-scoped proposals; absent means the pre-deploy timestamp fence. */
+  expectedValue: z.unknown().optional(),
+}).strict();
 /**
  * An agent setting is addressed by one key, but `surfaceSettings` is a whole nested object holding
  * the anonymous-chat and embed surfaces - their enablement, their allowed origins, and their
@@ -240,7 +243,10 @@ export const createDirectiveCopilotProposalAdapter = (deps: {
   targetType: "directive",
   async readVersionToken(workspaceId, rawTargetRef) {
     const targetRef = directiveTargetRefSchema.parse(rawTargetRef);
-    if (!targetRef.directiveId) return versionToken((await deps.agentService.get(workspaceId, targetRef.agentId)).updatedAt);
+    if (!targetRef.directiveId) {
+      await deps.agentService.get(workspaceId, targetRef.agentId);
+      return directiveCreateToken;
+    }
     const directive = await findDirectiveById(deps.authoredDirectiveService, workspaceId, targetRef.agentId, targetRef.directiveId);
     if (!directive) throw new Error("Directive no longer exists");
     return versionToken(directive.updatedAt);
@@ -275,7 +281,7 @@ export const createDirectiveCopilotProposalAdapter = (deps: {
         await deps.authoredDirectiveService.delete(workspaceId, targetRef.agentId, targetRef.directiveId, { expectedUpdatedAt: versionDate(token) });
         return { outcome: "applied" as const, appliedRef: { directiveId: targetRef.directiveId } };
       } catch (error) {
-        if (isStale(error)) return { outcome: "stale" as const };
+        if (isStale(error)) return { outcome: "stale" as const, reason: staleReason(error, ["directive"]) };
         return { outcome: "failed" as const, reason: error instanceof Error ? error.message : "Directive removal failed" };
       }
     }
@@ -291,17 +297,26 @@ export const createDirectiveCopilotProposalAdapter = (deps: {
         )).directive;
         return { outcome: "applied" as const, appliedRef: { directiveId: directive.id } };
       } catch (error) {
-        if (isStale(error)) return { outcome: "stale" as const };
+        if (isStale(error)) return { outcome: "stale" as const, reason: staleReason(error, ["directive"]) };
         return { outcome: "failed" as const, reason: error instanceof Error ? error.message : "Directive enablement failed" };
       }
     }
     try {
       const directive = targetRef.directiveId
         ? (await deps.authoredDirectiveService.update(workspaceId, targetRef.agentId, targetRef.directiveId, directivePayload(payload), { expectedUpdatedAt: versionDate(token) })).directive
-        : (await deps.authoredDirectiveService.create(workspaceId, targetRef.agentId, directivePayload(payload), { expectedAgentUpdatedAt: versionDate(token) })).directive;
+        : (await deps.authoredDirectiveService.create(
+          workspaceId,
+          targetRef.agentId,
+          directivePayload(payload),
+          token === directiveCreateToken ? undefined : { expectedAgentUpdatedAt: versionDate(token) },
+        )).directive;
       return { outcome: "applied" as const, appliedRef: { directiveId: directive.id } };
     } catch (error) {
-      if (isStale(error)) return { outcome: "stale" as const };
+      // A create collision is the directives owner's refusal, not a version fence losing.
+      if (!targetRef.directiveId && token === directiveCreateToken && error instanceof AppError && error.code === "conflict") {
+        return { outcome: "failed" as const, reason: error.message };
+      }
+      if (isStale(error)) return { outcome: "stale" as const, reason: staleReason(error, []) };
       return { outcome: "failed" as const, reason: error instanceof Error ? error.message : "Directive apply failed" };
     }
   },
@@ -313,49 +328,66 @@ export const createDirectiveCopilotProposalAdapter = (deps: {
     });
     const directive = directivePayload(draft.draft.directive);
     const summary = boundedSummary(describeDirectiveChange(directive, draft.draft.rationale));
-    return { payload: { ...directive, rationale: summary }, targetLabel: directive.name, summary, versionToken: draft.versionToken };
+    // A create is fenced on the agent existing, not on its row version (see readVersionToken), so an
+    // unrelated agent write between draft and apply cannot turn it stale; an edit keeps the owner's
+    // snapshot fence.
+    const versionToken = targetRef.directiveId ? draft.versionToken : directiveCreateToken;
+    return { payload: { ...directive, rationale: summary }, targetLabel: directive.name, summary, versionToken };
   },
 });
 
-/** Composition adapter: validates proposal values with the existing agent settings normalizer and applies through AgentService. */
+/** Composition adapter: forwards agent-setting proposals to AgentService's preparation and apply ports. */
 export const createAgentSettingCopilotProposalAdapter = (deps: {
-  readonly agentService: Pick<AgentService, "get" | "update">;
+  readonly agentService: Pick<AgentService, "prepareFieldProposal" | "readFieldProposalVersion" | "readFieldProposalDisplay" | "applyFieldProposal">;
 }): CopilotAgentSettingProposalAdapter => ({
   targetType: "agent_setting",
   async readVersionToken(workspaceId, rawTargetRef) {
     const targetRef = settingTargetRef(rawTargetRef);
-    return versionToken((await deps.agentService.get(workspaceId, targetRef.agentId)).updatedAt);
+    return deps.agentService.readFieldProposalVersion(workspaceId, targetRef.agentId,
+      Object.hasOwn(targetRef, "expectedValue") ? { key: targetRef.settingKey } : undefined);
   },
   async preview(workspaceId, rawTargetRef, rawPayload) {
     const targetRef = settingTargetRef(rawTargetRef);
     const payload = settingPayloadSchema.parse(rawPayload);
-    const current = await deps.agentService.get(workspaceId, targetRef.agentId).catch(() => null);
-    return { targetLabel: targetRef.settingKey, current: current ? settingValue(current, targetRef.settingKey) : null, proposed: payload.value };
+    return { targetLabel: targetRef.settingKey, current: await deps.agentService.readFieldProposalDisplay(workspaceId, targetRef.agentId, targetRef.settingKey), proposed: payload.value };
   },
   async applyIfVersionMatches(workspaceId, rawTargetRef, rawPayload, token) {
     const targetRef = settingTargetRef(rawTargetRef);
     const payload = settingPayloadSchema.parse(rawPayload);
     try {
-      await deps.agentService.update(workspaceId, targetRef.agentId, settingPatch(targetRef.settingKey, payload.value), { expectedUpdatedAt: versionDate(token) });
+      const result = await deps.agentService.applyFieldProposal(workspaceId, {
+        targetAgentId: targetRef.agentId,
+        normalizedPatch: { [targetRef.settingKey]: payload.value },
+        ...(Object.hasOwn(targetRef, "expectedValue")
+          ? { expected: { key: targetRef.settingKey, value: targetRef.expectedValue } }
+          : { expectedUpdatedAt: versionDate(token) }),
+      });
+      if (result.status === "target_deleted") return { outcome: "stale" as const, reason: "Target deleted" };
+      if (result.status === "target_changed") return { outcome: "stale" as const, reason: "Target changed" };
+      if (result.status === "changed") {
+        return {
+          outcome: "stale" as const,
+          reason: result.fields[0] === "target"
+            ? "Target changed"
+            : result.fields.length === 1
+              ? `Field changed: ${result.fields[0]}`
+              : `Fields changed: ${result.fields.join(", ")}`,
+        };
+      }
       return { outcome: "applied" as const, appliedRef: { agentId: targetRef.agentId } };
     } catch (error) {
-      if (isStale(error)) return { outcome: "stale" as const };
       return { outcome: "failed" as const, reason: error instanceof Error ? error.message : "Agent setting apply failed" };
     }
   },
   async validatePayload(workspaceId, rawTargetRef, rawPayload) {
     const targetRef = settingTargetRef(rawTargetRef);
     const payload = settingPayloadSchema.parse(rawPayload);
-    // The version token is derived from this same read, not a follow-up readVersionToken call: a
-    // concurrent edit landing between two separate reads could pair a merge built from the first
-    // (now stale) read with the second read's fresher token, letting a lost update pass its
-    // version check on Apply.
-    const current = await deps.agentService.get(workspaceId, targetRef.agentId);
-    const patch = settingPatch(targetRef.settingKey, payload.value);
-    const merged = { ...current, ...patch, surfaceSettings: patch.surfaceSettings ? mergeAgentSurfaceSettings(current.surfaceSettings, patch.surfaceSettings) : current.surfaceSettings };
-    const normalized = validateAgentInput(merged);
-    if (!Object.hasOwn(normalized, targetRef.settingKey)) throw new Error("Unknown agent setting");
-    return { targetRef, payload: { ...payload, value: settingValue(normalized, targetRef.settingKey) }, versionToken: versionToken(current.updatedAt) };
+    const prepared = await deps.agentService.prepareFieldProposal(workspaceId, targetRef.agentId, { settingKey: targetRef.settingKey, value: payload.value });
+    return {
+      targetRef: { ...targetRef, expectedValue: prepared.expected.value },
+      payload: { ...payload, value: prepared.display.proposed },
+      versionToken: await deps.agentService.readFieldProposalVersion(workspaceId, targetRef.agentId, { key: prepared.expected.key }),
+    };
   },
 });
 
@@ -1057,15 +1089,6 @@ const routineCreateDraft = (value: unknown) => {
   const parsed = routineCreatePayloadSchema.safeParse(value);
   return parsed.success ? parsed.data.draft : routinePayload(value);
 };
-
-const settingPatch = (settingKey: string, value: unknown): AgentInput => {
-  const schema = agentInputFieldSchemas[settingKey as keyof typeof agentInputFieldSchemas];
-  if (!schema) throw badRequest(`Unknown agent setting: ${settingKey}`);
-  const parsed = schema.safeParse(value);
-  if (!parsed.success) throw badRequest(`Invalid ${settingKey} setting value`);
-  return { [settingKey]: parsed.data };
-};
-const settingValue = (settings: object, settingKey: string): unknown => Object.hasOwn(settings, settingKey) ? (settings as Record<string, unknown>)[settingKey] : undefined;
 
 /**
  * A context-variable proposal's version token encodes two independently-versioned timestamps

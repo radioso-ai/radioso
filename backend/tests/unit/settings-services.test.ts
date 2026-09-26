@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { defaultAssistantBootstrapSettings, validateAssistantBootstrapSettings } from "../../src/modules/settings/domain/assistantBootstrapSettings.js";
 import type { AccessGrant } from "../../src/modules/accessGrants/public.js";
-import type { AgentRecord } from "../../src/modules/agents/public.js";
+import { AgentService, type AgentRecord } from "../../src/modules/agents/public.js";
 import { defaultIngestionSettings } from "../../src/modules/settings/domain/ingestionSettings.js";
 import type {
   EmbeddingModelTransitionPort,
@@ -139,6 +139,7 @@ describe("settings services", () => {
       updatedAt: new Date("2026-01-02T00:00:00.000Z"),
     })),
     withRotatedTokens: vi.fn((_agent: AgentRecord, input: Partial<AgentRecord>) => input),
+    applyProposalPatch: vi.fn(async () => ({ outcome: "applied" as const, previous: agent, agent })) as ReturnType<typeof vi.fn>,
   });
 
   const createPublicLaunchGrant = (overrides: Partial<AccessGrant> = {}): AccessGrant => ({
@@ -252,6 +253,62 @@ describe("settings services", () => {
       undefined,
     );
     expect(workspaceRepository.updateGeneralSettings).not.toHaveBeenCalled();
+  });
+
+  it("maps only the agents owner's exact proposal-CAS outcome and records channel audit events", async () => {
+    const workspace = {
+      id: "workspace-1", accountId: "account-1", name: "Workspace", assistantName: "Nora", greetingInstruction: "",
+      assistantDefaultLocale: null, proactiveGreetingEnabled: false, anonymousChatEnabled: false, anonymousChatToken: "public-token",
+      anonymousRateLimit: 10, websiteEmbedEnabled: false, websiteEmbedToken: null, websiteEmbedAllowedOrigins: [],
+      websiteEmbedLauncherLabel: "Ask Nora", websiteEmbedLauncherPosition: "bottom-right" as const,
+    };
+    const previous = createAgent(workspace);
+    const applied = {
+      ...previous,
+      surfaceSettings: { ...previous.surfaceSettings, anonymousChat: { ...previous.surfaceSettings.anonymousChat, enabled: true } },
+    };
+    const agentService = createAgentService(previous);
+    agentService.applyProposalPatch.mockResolvedValueOnce({ outcome: "applied", previous, agent: applied });
+    const record = vi.fn();
+    const service = new PlatformSettingsService({
+      workspaceRepository: { findById: vi.fn().mockResolvedValue(workspace), updateGeneralSettings: vi.fn() },
+      agentService,
+      auditService: { record },
+    } as never);
+
+    await expect(service.applyProposalPatch({
+      workspaceId: "workspace-1",
+      patch: { anonymousChatEnabled: true },
+      expected: { anonymousChatEnabled: false },
+    })).resolves.toEqual({ outcome: "applied" });
+    expect(record).toHaveBeenCalledWith(expect.objectContaining({
+      accountId: "account-1", eventType: "anonymous_chat.enabled", eventStatus: "success",
+    }));
+
+    agentService.applyProposalPatch.mockResolvedValueOnce({ outcome: "changed", fields: ["customInstruction"] });
+    await expect(service.applyProposalPatch({
+      workspaceId: "workspace-1",
+      patch: { customInstruction: "Be concise." },
+      expected: { customInstruction: "" },
+    })).resolves.toEqual({ outcome: "changed", fields: ["customInstruction"] });
+  });
+
+  it("maps platform field-proposal apply outcomes without exposing repository outcomes", async () => {
+    const workspace = {
+      id: "workspace-1", accountId: "account-1", name: "Workspace", assistantName: "Nora", greetingInstruction: "",
+      assistantDefaultLocale: null, proactiveGreetingEnabled: false, anonymousChatEnabled: false, anonymousChatToken: "public-token",
+      anonymousRateLimit: 10, websiteEmbedEnabled: false, websiteEmbedToken: null, websiteEmbedAllowedOrigins: [],
+      websiteEmbedLauncherLabel: "Ask Nora", websiteEmbedLauncherPosition: "bottom-right" as const,
+    };
+    const agentService = createAgentService(createAgent(workspace));
+    const service = new PlatformSettingsService({ workspaceRepository: { findById: vi.fn().mockResolvedValue(workspace) }, agentService } as never);
+    const prepared = { normalizedPatch: { customInstruction: "Be concise." }, expected: { customInstruction: "" } } as const;
+    agentService.applyProposalPatch.mockResolvedValueOnce({ outcome: "changed", fields: ["customInstruction"] });
+    await expect(service.applyFieldProposal("workspace-1", prepared)).resolves.toEqual({ status: "changed", fields: ["customInstruction"] });
+    agentService.applyProposalPatch.mockResolvedValueOnce({ outcome: "changed", fields: ["target"] });
+    await expect(service.applyFieldProposal("workspace-1", prepared)).resolves.toEqual({ status: "target_changed" });
+    agentService.applyProposalPatch.mockResolvedValueOnce({ outcome: "targetDeleted" });
+    await expect(service.applyFieldProposal("workspace-1", prepared)).resolves.toEqual({ status: "target_deleted" });
   });
 
   it("returns the saved settings even when a channel audit event cannot be recorded", async () => {
@@ -581,6 +638,7 @@ describe("settings services", () => {
   it("returns saved ingestion settings even when success audit logging fails", async () => {
     const settings = defaultIngestionSettings("workspace-1");
     const repository = {
+      applyProposalPatch: vi.fn(),
       findByWorkspaceId: vi.fn(),
       upsert: vi.fn().mockResolvedValue(settings),
     };
@@ -602,6 +660,7 @@ describe("settings services", () => {
   it("carries the caller's expected version into the ingestion settings write", async () => {
     const settings = defaultIngestionSettings("workspace-1");
     const repository = {
+      applyProposalPatch: vi.fn(),
       findByWorkspaceId: vi.fn().mockResolvedValue(settings),
       upsert: vi.fn().mockResolvedValue(settings),
     };
@@ -617,12 +676,63 @@ describe("settings services", () => {
     );
   });
 
+  it("validates a proposal patch against the row locked by the ingestion owner", async () => {
+    const drafted = defaultIngestionSettings("workspace-1");
+    const current = { ...drafted, fixedWindowChunkOverlap: 1_300 };
+    const applyProposalPatch = vi.fn(async (input: {
+      validateMerged: (settings: typeof current) => unknown;
+    }) => {
+      input.validateMerged(current);
+      return { outcome: "applied" as const };
+    });
+    const service = new IngestionSettingsService({
+      findByWorkspaceId: vi.fn(),
+      upsert: vi.fn(),
+      applyProposalPatch,
+    }, { record: vi.fn() } as never);
+
+    await expect(service.applyProposalPatch({
+      workspaceId: "workspace-1",
+      patch: { fixedWindowChunkSize: 1_200 },
+      expected: { fixedWindowChunkSize: drafted.fixedWindowChunkSize },
+    })).rejects.toThrow(/overlap/i);
+  });
+
+  it("maps ingestion field-proposal apply outcomes through the owner port", async () => {
+    const settings = defaultIngestionSettings("workspace-1");
+    const applyProposalPatch = vi.fn();
+    const service = new IngestionSettingsService({ findByWorkspaceId: vi.fn(), upsert: vi.fn(), applyProposalPatch }, { record: vi.fn() } as never);
+    const prepared = { normalizedPatch: { fixedWindowChunkSize: 1_500 }, expected: { fixedWindowChunkSize: 1_000 } } as const;
+    applyProposalPatch.mockResolvedValueOnce({ outcome: "applied" });
+    await expect(service.applyFieldProposal("workspace-1", prepared)).resolves.toEqual({ status: "applied" });
+    applyProposalPatch.mockResolvedValueOnce({ outcome: "changed", fields: ["fixedWindowChunkSize"] });
+    await expect(service.applyFieldProposal("workspace-1", prepared)).resolves.toEqual({ status: "changed", fields: ["fixedWindowChunkSize"] });
+    applyProposalPatch.mockResolvedValueOnce({ outcome: "targetDeleted" });
+    await expect(service.applyFieldProposal("workspace-1", prepared)).resolves.toEqual({ status: "target_deleted" });
+    expect(settings.workspaceId).toBe("workspace-1");
+  });
+
+  it("maps agent field-proposal apply outcomes through AgentService", async () => {
+    const service = new AgentService({} as never, {} as never);
+    const apply = vi.spyOn(service, "applyProposalPatch");
+    const prepared = { targetAgentId: "agent-1", normalizedPatch: { retrievalEnabled: false }, expected: { key: "retrievalEnabled", value: true } } as const;
+    apply.mockResolvedValueOnce({ outcome: "applied", previous: {} as AgentRecord, agent: {} as AgentRecord });
+    await expect(service.applyFieldProposal("workspace-1", prepared)).resolves.toEqual({ status: "applied" });
+    apply.mockResolvedValueOnce({ outcome: "changed", fields: ["retrievalEnabled"] });
+    await expect(service.applyFieldProposal("workspace-1", prepared)).resolves.toEqual({ status: "changed", fields: ["retrievalEnabled"] });
+    apply.mockResolvedValueOnce({ outcome: "changed", fields: ["target"] });
+    await expect(service.applyFieldProposal("workspace-1", prepared)).resolves.toEqual({ status: "target_changed" });
+    apply.mockResolvedValueOnce({ outcome: "targetDeleted" });
+    await expect(service.applyFieldProposal("workspace-1", prepared)).resolves.toEqual({ status: "target_deleted" });
+  });
+
   it("preserves the saved embedding model when older ingestion clients omit it", async () => {
     const existing = {
       ...defaultIngestionSettings("workspace-1"),
       embeddingModel: "text-embedding-3-large" as const,
     };
     const repository = {
+      applyProposalPatch: vi.fn(),
       findByWorkspaceId: vi.fn().mockResolvedValue(existing),
       upsert: vi.fn(async (_workspaceId: string, input: typeof existing) => ({
         ...existing,
@@ -660,6 +770,7 @@ describe("settings services", () => {
       embeddingModel: legacyModel,
     } as unknown as ReturnType<typeof defaultIngestionSettings>;
     const repository = {
+      applyProposalPatch: vi.fn(),
       findByWorkspaceId: vi.fn().mockResolvedValue(existing),
       upsert: vi.fn(async (_workspaceId: string, input: typeof existing) => ({
         ...existing,
@@ -696,6 +807,7 @@ describe("settings services", () => {
       embeddingModel: legacyModel,
     } as unknown as ReturnType<typeof defaultIngestionSettings>;
     const repository = {
+      applyProposalPatch: vi.fn(),
       findByWorkspaceId: vi.fn().mockResolvedValue(existing),
       upsert: vi.fn(),
     };
@@ -735,6 +847,7 @@ describe("settings services", () => {
   it("delegates embedding model changes to the internal transition port", async () => {
     const existing = defaultIngestionSettings("workspace-1");
     const repository = {
+      applyProposalPatch: vi.fn(),
       findByWorkspaceId: vi.fn().mockResolvedValue(existing),
       upsert: vi.fn(async (_workspaceId: string, input: typeof existing) => ({
         ...existing,
@@ -774,6 +887,7 @@ describe("settings services", () => {
   it("does not persist a pending setting when transition startup fails", async () => {
     const existing = defaultIngestionSettings("workspace-1");
     const repository = {
+      applyProposalPatch: vi.fn(),
       findByWorkspaceId: vi.fn().mockResolvedValue(existing),
       upsert: vi.fn(async (_workspaceId: string, input: typeof existing) => ({
         ...existing,
@@ -808,6 +922,7 @@ describe("settings services", () => {
   it("fails safely when the internal transition coordinator is not composed", async () => {
     const existing = defaultIngestionSettings("workspace-1");
     const repository = {
+      applyProposalPatch: vi.fn(),
       findByWorkspaceId: vi.fn().mockResolvedValue(existing),
       upsert: vi.fn(),
     };
@@ -836,6 +951,7 @@ describe("settings services", () => {
       pendingEmbeddingModel: "text-embedding-3-large" as const,
     };
     const repository = {
+      applyProposalPatch: vi.fn(),
       findByWorkspaceId: vi.fn().mockResolvedValue(existing),
       upsert: vi.fn(),
     };
@@ -861,6 +977,7 @@ describe("settings services", () => {
       pendingEmbeddingModel: "text-embedding-3-large" as const,
     };
     const repository = {
+      applyProposalPatch: vi.fn(),
       findByWorkspaceId: vi.fn().mockResolvedValue(pending),
       upsert: vi.fn(),
     };
@@ -918,6 +1035,7 @@ describe("settings services", () => {
       },
     );
     const repository = {
+      applyProposalPatch: vi.fn(),
       findByWorkspaceId: vi.fn(async () => stored),
       findVersionedByWorkspaceId: vi.fn(async () => ({
         settings: stored,
@@ -1007,6 +1125,7 @@ describe("settings services", () => {
       },
     );
     const repository = {
+      applyProposalPatch: vi.fn(),
       findByWorkspaceId: vi.fn(async () => stored),
       findVersionedByWorkspaceId: vi.fn(async () => ({
         settings: stored,
@@ -1096,6 +1215,7 @@ describe("settings services", () => {
         findVersionedByWorkspaceId,
         clearPendingEmbeddingModel,
         upsert: vi.fn(),
+        applyProposalPatch: vi.fn(),
       },
       { record: vi.fn() } as never,
       undefined,
@@ -1121,6 +1241,7 @@ describe("settings services", () => {
   it("keeps persisted settings when no internal profile has been materialized", async () => {
     const existing = defaultIngestionSettings("workspace-1");
     const repository = {
+      applyProposalPatch: vi.fn(),
       findByWorkspaceId: vi.fn().mockResolvedValue(existing),
       upsert: vi.fn(),
     };
@@ -1148,6 +1269,7 @@ describe("settings services", () => {
       pendingEmbeddingModel: "text-embedding-3-large" as const,
     };
     const repository = {
+      applyProposalPatch: vi.fn(),
       findByWorkspaceId: vi.fn().mockResolvedValue(existing),
       upsert: vi.fn(),
     };
@@ -1191,6 +1313,7 @@ describe("settings services", () => {
       {
         findByWorkspaceId: vi.fn().mockResolvedValue(existing),
         upsert: vi.fn(),
+        applyProposalPatch: vi.fn(),
       },
       { record: vi.fn() } as never,
       undefined,
@@ -1212,6 +1335,7 @@ describe("settings services", () => {
       pendingEmbeddingModel: "text-embedding-3-large" as const,
     };
     const repository = {
+      applyProposalPatch: vi.fn(),
       findByWorkspaceId: vi.fn().mockResolvedValue(existing),
       upsert: vi.fn(async (_workspaceId: string, input: typeof existing) => ({
         ...existing,
@@ -1251,6 +1375,7 @@ describe("settings services", () => {
   it("rejects switching to an embedding model without a configured provider", async () => {
     const existing = defaultIngestionSettings("workspace-1");
     const repository = {
+      applyProposalPatch: vi.fn(),
       findByWorkspaceId: vi.fn().mockResolvedValue(existing),
       upsert: vi.fn(),
     };
@@ -1277,6 +1402,7 @@ describe("settings services", () => {
   it("accepts an immediately promoted transition result for an empty workspace", async () => {
     const existing = defaultIngestionSettings("workspace-1");
     const repository = {
+      applyProposalPatch: vi.fn(),
       findByWorkspaceId: vi.fn().mockResolvedValue(existing),
       upsert: vi.fn(async (_workspaceId: string, input: typeof existing) => ({
         ...existing,
@@ -1315,6 +1441,7 @@ describe("settings services", () => {
   it("rethrows the original ingestion save error when failure audit logging also fails", async () => {
     const writeError = new Error("write failed");
     const repository = {
+      applyProposalPatch: vi.fn(),
       findByWorkspaceId: vi.fn(),
       upsert: vi.fn().mockRejectedValue(writeError),
     };

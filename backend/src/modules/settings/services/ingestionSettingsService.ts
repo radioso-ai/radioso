@@ -14,17 +14,37 @@ import type { AuditService } from "../../audit/contracts/index.js";
 import type {
   EmbeddingModelTransitionPort,
   EmbeddingModelTransitionState,
+  IngestionSettingsFieldProposalApplyInput,
+  IngestionSettingsFieldProposalApplyOutcome,
+  IngestionSettingsFieldProposalPreparation,
+  IngestionSettingsProposalPatch,
   IngestionSettingsRepositoryPort,
 } from "../contracts/services.js";
+import type { FieldScopedCasOutcome } from "../contracts/services.js";
 import {
   badRequest,
   serviceUnavailable,
 } from "../../../shared/domain/errors.js";
+import { fieldProposalVersion } from "../../../shared/domain/fieldProposalVersion.js";
 
 interface IngestionSettingsSnapshot {
   settings: IngestionSettingsRecord;
   revision: string | null;
 }
+
+const ingestionProposalFields = [
+  "chunkingStrategy", "fixedWindowChunkSize", "fixedWindowChunkOverlap", "structuredMinChunkSize",
+  "structuredMaxChunkSize", "documentEnrichmentEnabled", "manualDocumentEnrichmentOverride",
+] as const;
+const ingestionProposalSurface = (settings: IngestionSettingsRecord): Record<string, unknown> => ({
+  chunkingStrategy: settings.chunkingStrategy,
+  fixedWindowChunkSize: settings.fixedWindowChunkSize,
+  fixedWindowChunkOverlap: settings.fixedWindowChunkOverlap,
+  structuredMinChunkSize: settings.structuredMinChunkSize,
+  structuredMaxChunkSize: settings.structuredMaxChunkSize,
+  ...(settings.documentEnrichmentEnabled !== undefined ? { documentEnrichmentEnabled: settings.documentEnrichmentEnabled } : {}),
+  ...(settings.manualDocumentEnrichmentOverride !== undefined ? { manualDocumentEnrichmentOverride: settings.manualDocumentEnrichmentOverride } : {}),
+});
 
 export class IngestionSettingsService {
   constructor(
@@ -136,7 +156,9 @@ export class IngestionSettingsService {
   async updateForWorkspace(
     workspaceId: string,
     input: IngestionSettingsWriteInput,
-    options?: { expectedUpdatedAt?: Date },
+    options?: {
+      expectedUpdatedAt?: Date;
+    },
   ): Promise<IngestionSettingsRecord> {
     try {
       const existing = await this.findSettingsSnapshot(workspaceId);
@@ -195,6 +217,83 @@ export class IngestionSettingsService {
       }
       throw error;
     }
+  }
+
+  async applyProposalPatch(input: {
+    readonly workspaceId: string;
+    readonly patch: Partial<ValidatedIngestionSettingsInput>;
+  } & (
+    | { readonly expected: Partial<ValidatedIngestionSettingsInput> }
+    | { readonly expectedUpdatedAt: Date }
+  )): Promise<FieldScopedCasOutcome> {
+    const outcome = await this.repository.applyProposalPatch({
+      ...input,
+      validateMerged: (current) => this.validateWithPreservedActiveModel({
+        ...current,
+        ...input.patch,
+      }, current.embeddingModel),
+    });
+    if (outcome.outcome === "applied") {
+      try { await this.auditService.record({ workspaceId: input.workspaceId, eventType: "ingestion_settings.update", eventStatus: "success" }); } catch { /* preserve owner outcome */ }
+    }
+    return outcome;
+  }
+
+  /** The ingestion owner prepares the merged surface and its field-scoped CAS fence. */
+  async prepareFieldProposal(
+    workspaceId: string,
+    patch: IngestionSettingsProposalPatch,
+  ): Promise<IngestionSettingsFieldProposalPreparation> {
+    if (Object.values(patch).every((value) => value === undefined)) {
+      throw badRequest("Name at least one ingestion setting to change");
+    }
+    const currentSettings = await this.getForWorkspace(workspaceId);
+    const current = ingestionProposalSurface(currentSettings);
+    const named = Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined));
+    const normalized = this.validateWithPreservedActiveModel({
+      ...currentSettings,
+      ...named,
+    }, currentSettings.embeddingModel);
+    const proposed = ingestionProposalSurface({ ...currentSettings, ...normalized });
+    const changed = ingestionProposalFields.filter((field) => current[field] !== proposed[field]);
+    if (changed.length === 0) {
+      throw badRequest("The ingestion settings already hold these values");
+    }
+    return {
+      normalizedPatch: proposed,
+      expected: Object.fromEntries(changed.map((field) => [field, current[field]])),
+      display: { current, proposed },
+    };
+  }
+
+  async readFieldProposalVersion(
+    workspaceId: string,
+    expected?: IngestionSettingsProposalPatch,
+  ): Promise<string> {
+    const current = await this.getForWorkspace(workspaceId);
+    if (!expected) return current.updatedAt.toISOString();
+    const surface = ingestionProposalSurface(current);
+    return fieldProposalVersion(Object.fromEntries(Object.keys(expected).map((field) => [field, surface[field]])));
+  }
+
+  async readFieldProposalDisplay(workspaceId: string): Promise<Record<string, unknown>> {
+    return ingestionProposalSurface(await this.getForWorkspace(workspaceId));
+  }
+
+  /** Applies prepared settings in the repository's single locked compare-and-write operation. */
+  async applyFieldProposal(
+    workspaceId: string,
+    prepared: IngestionSettingsFieldProposalApplyInput,
+  ): Promise<IngestionSettingsFieldProposalApplyOutcome> {
+    const patch = "expected" in prepared
+      ? Object.fromEntries(Object.keys(prepared.expected).map((field) => [field, prepared.normalizedPatch[field as keyof IngestionSettingsProposalPatch]])) as IngestionSettingsProposalPatch
+      : prepared.normalizedPatch;
+    const outcome = await this.applyProposalPatch({ workspaceId, patch, ...("expected" in prepared
+      ? { expected: prepared.expected }
+      : { expectedUpdatedAt: prepared.expectedUpdatedAt }) });
+    if (outcome.outcome === "applied") return { status: "applied" };
+    if (outcome.outcome === "targetDeleted") return { status: "target_deleted" };
+    return { status: "changed", fields: outcome.fields };
   }
 
   async promotePendingEmbeddingModelIfReady(workspaceId: string): Promise<IngestionSettingsRecord | null> {

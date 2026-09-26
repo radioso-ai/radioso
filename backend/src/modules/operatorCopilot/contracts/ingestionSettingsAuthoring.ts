@@ -5,6 +5,12 @@ import { MAX_COPILOT_PROPOSAL_SUMMARY } from "../contracts.js";
 import { chunkingStrategyIds } from "../../retrieval/public.js";
 import { manualDocumentEnrichmentOverrides } from "../../settings/public.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
+import type {
+  IngestionSettingsFieldProposalApplyInput,
+  IngestionSettingsFieldProposalApplyOutcome,
+  IngestionSettingsFieldProposalPreparation,
+  IngestionSettingsProposalPatch,
+} from "../../settings/contracts/services.js";
 
 const chunking = RETRIEVAL_BEHAVIOR.chunking;
 
@@ -57,32 +63,16 @@ export const copilotIngestionSettingsPayloadSchema = z.object({
 }).strict();
 
 /** Ingestion settings are one row per workspace, and the workspace is already the call's scope. */
-export const copilotIngestionSettingsTargetRefSchema = z.object({}).strict();
+export const copilotIngestionSettingsTargetRefSchema = z.object({
+  /** Exact draft-time values for the fields this proposal writes. Absent on timestamp-era cards. */
+  expectedFields: z.record(z.unknown()).optional(),
+}).strict();
 
-export type CopilotIngestionSettingsChange = z.infer<typeof copilotIngestionSettingsChangeSchema>;
 export type CopilotIngestionSettingsPayload = z.infer<typeof copilotIngestionSettingsPayloadSchema>;
 
-export interface CopilotIngestionSettingsSnapshot {
-  readonly chunkingStrategy: string;
-  readonly fixedWindowChunkSize: number;
-  readonly fixedWindowChunkOverlap: number;
-  readonly structuredMinChunkSize: number;
-  readonly structuredMaxChunkSize: number;
-  readonly documentEnrichmentEnabled?: boolean;
-  readonly manualDocumentEnrichmentOverride?: string;
-  readonly updatedAt: Date;
-}
-
 export interface CopilotIngestionSettingsPort {
-  getForWorkspace(workspaceId: string): Promise<CopilotIngestionSettingsSnapshot>;
-  /**
-   * `expectedUpdatedAt` carries the version the card was drafted against into the write's own
-   * predicate, so a settings row edited since the draft is refused rather than replaced wholesale
-   * by the values this payload has been holding.
-   */
-  updateForWorkspace(
-    workspaceId: string,
-    input: CopilotIngestionSettingsPayload,
-    options?: { expectedUpdatedAt?: Date },
-  ): Promise<unknown>;
+  prepareFieldProposal(workspaceId: string, patch: IngestionSettingsProposalPatch): Promise<IngestionSettingsFieldProposalPreparation>;
+  readFieldProposalVersion(workspaceId: string, expected?: IngestionSettingsProposalPatch): Promise<string>;
+  readFieldProposalDisplay(workspaceId: string): Promise<Record<string, unknown>>;
+  applyFieldProposal(workspaceId: string, prepared: IngestionSettingsFieldProposalApplyInput): Promise<IngestionSettingsFieldProposalApplyOutcome>;
 }

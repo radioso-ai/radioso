@@ -527,18 +527,24 @@ export class CopilotRepository implements CopilotRepositoryPort, CopilotRetentio
     });
   }
 
-  async approveMcpReviewedProposal(input: { proposalId: string; workspaceId: string; operatorUserId: string; reviewDigest: string; now: Date }): Promise<"approved" | "expired" | "not_pending" | "digest_mismatch" | "not_found"> {
+  async approveMcpReviewedProposal(input: { proposalId: string; workspaceId: string; operatorUserId: string; reviewDigest: string; now: Date }): Promise<
+    | { readonly status: "approved"; readonly approvedAt: Date; readonly newlyRecorded: boolean }
+    | { readonly status: "expired" | "not_pending" | "digest_mismatch" | "not_found" }
+  > {
     return this.db.transaction().execute(async (trx) => {
       const proposal = await trx.selectFrom("copilot_proposals").select(proposalColumns).where("id", "=", input.proposalId).where("workspace_id", "=", input.workspaceId).where("operator_user_id", "=", input.operatorUserId).forUpdate().executeTakeFirst();
-      if (!proposal) return "not_found";
+      if (!proposal) return { status: "not_found" as const };
       const lockedNow = (await trx.selectNoFrom(sql<Date>`clock_timestamp()`.as("now")).executeTakeFirstOrThrow()).now;
-      if (proposal.review_digest !== input.reviewDigest) return "digest_mismatch";
-      if (proposal.status !== "pending") return "not_pending";
-      if (!proposal.expires_at || proposal.expires_at <= lockedNow) return "expired";
-      if (proposal.confirmation_requirement !== "signed_in_approval") return "not_pending";
-      if (proposal.approved_at) return "approved";
+      if (proposal.review_digest !== input.reviewDigest) return { status: "digest_mismatch" as const };
+      if (proposal.status !== "pending") return { status: "not_pending" as const };
+      if (!proposal.expires_at || proposal.expires_at <= lockedNow) return { status: "expired" as const };
+      if (proposal.confirmation_requirement !== "signed_in_approval") return { status: "not_pending" as const };
+      // Idempotent: a repeat of an already-recorded approval returns the row's original timestamp
+      // rather than moving it, so the caller can tell a replay from the first recording and audit
+      // only the transition.
+      if (proposal.approved_at) return { status: "approved" as const, approvedAt: proposal.approved_at, newlyRecorded: false };
       const approved = await trx.updateTable("copilot_proposals").set({ approved_at: lockedNow, approved_by_user_id: input.operatorUserId, approval_digest: input.reviewDigest, updated_at: lockedNow }).where("id", "=", input.proposalId).where("status", "=", "pending").where("expires_at", ">", lockedNow).where("approved_at", "is", null).returning("id").executeTakeFirst();
-      return approved ? "approved" : "expired";
+      return approved ? { status: "approved" as const, approvedAt: lockedNow, newlyRecorded: true } : { status: "expired" as const };
     });
   }
 }

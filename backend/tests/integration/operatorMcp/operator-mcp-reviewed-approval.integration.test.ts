@@ -120,7 +120,7 @@ describeIntegration("the reviewed approval gate, proven against Postgres's row l
 
     // Whichever transaction's row lock won the race, approval always lands (nothing about claiming
     // blocks it), and the claim result is exactly what its own ordering allows.
-    expect(approveResult).toBe("approved");
+    expect(approveResult).toMatchObject({ status: "approved" });
     expect(["claimed", "approval_required"]).toContain(claimResult.status);
 
     if (claimResult.status === "approval_required") {
@@ -130,6 +130,21 @@ describeIntegration("the reviewed approval gate, proven against Postgres's row l
     } else {
       expect(claimResult).toMatchObject({ status: "claimed" });
     }
+  });
+
+  it("repeats an idempotent approval without moving its recorded timestamp", async () => {
+    const fixture = await createFixture();
+    const existing = await agentRepository.createDirective(fixture.agent.id, fixture.workspace.id, createDirectiveInput("idempotent-approve"));
+    const proposal = await prepareSignedInProposal(fixture, { targetRef: { agentId: fixture.agent.id, directiveId: existing.id }, payload: { name: "idempotent-approve", condition: { kind: "always" }, action: "Approved twice." }, versionToken: existing.updatedAt.toISOString() });
+
+    const first = await approve(fixture, proposal.id);
+    expect(first).toMatchObject({ status: "approved", newlyRecorded: true });
+    if (first.status !== "approved") throw new Error(`expected approved, got ${first.status}`);
+
+    // A repeat of the exact same digest must not move `approved_at`: the caller learns nothing was
+    // newly recorded, so it can skip auditing a transition that never happened.
+    const second = await approve(fixture, proposal.id);
+    expect(second).toEqual({ status: "approved", approvedAt: first.approvedAt, newlyRecorded: false });
   });
 
   it("refuses a claim that started before expiry but only reaches the row lock after it, using database time rather than its own stale timestamp", async () => {
@@ -173,7 +188,7 @@ describeIntegration("the reviewed approval gate, proven against Postgres's row l
       const approvePromise = approve(fixture, proposal.id);
       await new Promise((resolve) => setTimeout(resolve, 500));
       await lockClient.query("COMMIT");
-      await expect(approvePromise).resolves.toBe("expired");
+      await expect(approvePromise).resolves.toEqual({ status: "expired" });
     } finally {
       lockClient.release();
     }
@@ -184,7 +199,7 @@ describeIntegration("the reviewed approval gate, proven against Postgres's row l
     const existing = await agentRepository.createDirective(fixture.agent.id, fixture.workspace.id, createDirectiveInput("replay-after-approval"));
     const payload = { name: "replay-after-approval", condition: { kind: "always" }, action: "Applied once." };
     const proposal = await prepareSignedInProposal(fixture, { targetRef: { agentId: fixture.agent.id, directiveId: existing.id }, payload, versionToken: existing.updatedAt.toISOString() });
-    await expect(approve(fixture, proposal.id)).resolves.toBe("approved");
+    await expect(approve(fixture, proposal.id)).resolves.toMatchObject({ status: "approved" });
     const executionInvocationId = await createExecutionInvocation(fixture);
     const claimed = await proposals.claimMcpReviewedProposalApply(claimInput(fixture, proposal.id, executionInvocationId));
     if (claimed.status !== "claimed") throw new Error(`expected claim, got ${claimed.status}`);
@@ -207,7 +222,7 @@ describeIntegration("the reviewed approval gate, proven against Postgres's row l
     const staleVersionToken = existing.updatedAt.toISOString();
     const payload = { name: "approved-then-changed", condition: { kind: "always" }, action: "Should be stale." };
     const proposal = await prepareSignedInProposal(fixture, { targetRef: { agentId: fixture.agent.id, directiveId: existing.id }, payload, versionToken: staleVersionToken });
-    await expect(approve(fixture, proposal.id)).resolves.toBe("approved");
+    await expect(approve(fixture, proposal.id)).resolves.toMatchObject({ status: "approved" });
 
     // The directive changes after the operator approved this exact review; approval recorded
     // consent for that review, not a promise that the target would stay still.

@@ -14,6 +14,13 @@ handling, auth/session state, audit output, and backend conversation calls
 through `converseApiAdapter.ts`. The `operator/` directory owns only protected-
 resource transport, signed admission calls, rate controls, and safe observations;
 Operator Copilot owns catalog eligibility and invocation behavior in the backend.
+The transport stays stateless across every request, including a reviewed
+operation's `approval_required` outcome: `requestHandler.ts` recognizes it by
+shape and, for a client that declared URL-mode elicitation on protocol
+`2026-07-28`, answers with the 2026-07-28 multi-round-trip `input_required`
+result instead of calling anything backend-specific; the client's retry lands
+on any instance because the approval it waits for lives on the backend's own
+proposal row.
 
 It should not own backend product behavior. If a tool needs new product
 behavior, add or change the backend API contract first, then update this package

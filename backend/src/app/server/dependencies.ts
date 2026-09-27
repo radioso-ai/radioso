@@ -533,7 +533,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     buildStepScopeTag: scopeTag.step,
   });
   const copilotProposalAdapters = [
-    createDirectiveCopilotProposalAdapter({ authoredDirectiveService, directiveAuthorService, agentService }),
+    createDirectiveCopilotProposalAdapter({ authoredDirectiveService, directiveAuthorService, agentService, reviewedReceipt: createReviewedReceiptSettlement(infrastructure.database.kysely) }),
     createAgentSettingCopilotProposalAdapter({ agentService, reviewedReceipt: createReviewedReceiptSettlement(infrastructure.database.kysely) }),
     createAgentGreetingCopilotProposalAdapter({ agentService, agentRevisions: agentRevisionService }),
     createAgentCopilotProposalAdapter({
@@ -896,6 +896,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     retrievalAuthoring,
     agentSettings: agentService,
     ingestionSettings: settings.ingestionSettingsService,
+    directiveAuthor: directiveAuthorService,
+    directives: authoredDirectiveService,
     documents: new DocumentReviewedOperationService(
       repositories.documentRepository,
       documents.documentIngestionService,

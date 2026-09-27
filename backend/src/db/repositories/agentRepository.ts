@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { sql, type Transaction } from "kysely";
 
-import { conflict, notFound } from "../../shared/domain/errors.js";
+import { AppError, conflict, notFound } from "../../shared/domain/errors.js";
 import {
   mergeAgentSurfaceSettings,
   validateAgentInput,
@@ -130,8 +130,11 @@ const isAgentDirectiveNameUniqueViolation = (error: unknown): boolean => {
   );
 };
 
+// Carries a structured marker distinct from a bare `conflict()`: the copilot reviewed-execution
+// path must tell this deliberate refusal apart from an optimistic-concurrency mismatch, and both
+// throw the same AppError code ("conflict") from this repository, so the code alone can't do it.
 const directiveNameConflict = (name: string) =>
-  conflict(`A directive named "${name}" already exists for this agent.`);
+  new AppError(409, "conflict", `A directive named "${name}" already exists for this agent.`, { reason: "duplicate_name" });
 
 /**
  * The agent projection: the agents row plus two correlated subqueries that aggregate the
@@ -608,6 +611,7 @@ const proposalFieldValue = (agent: AgentRecord, key: string): unknown => {
 export interface AgentDirectiveUpdateOptions {
   expectedUpdatedAt?: Date;
   expectedAgentUpdatedAt?: Date;
+  onCommitted?: OwnerCommitHook<AuthoredDirective | { readonly directiveId: string }>;
 }
 
 export interface AgentGreetingUpdateOptions {
@@ -1049,6 +1053,7 @@ export class AgentRepository implements AgentRepositoryPort {
           ...snapshot,
           directives: [...snapshot.directives.filter((existing) => existing.id !== saved.id), saved],
         },
+        ...(options.onCommitted ? { onCommitted: (transaction: Db) => options.onCommitted!(transaction, saved) } : {}),
       };
     });
   }
@@ -1151,6 +1156,7 @@ export class AgentRepository implements AgentRepositoryPort {
           ...snapshot,
           directives: [...snapshot.directives.filter((current) => current.id !== saved.id), saved],
         },
+        ...(options.onCommitted ? { onCommitted: (transaction: Db) => options.onCommitted!(transaction, saved) } : {}),
       };
     });
   }
@@ -1184,6 +1190,7 @@ export class AgentRepository implements AgentRepositoryPort {
               ...snapshot,
               directives: snapshot.directives.filter((directive) => directive.id !== directiveId),
             },
+            ...(options.onCommitted ? { onCommitted: (transaction: Db) => options.onCommitted!(transaction, { directiveId }) } : {}),
           }
         : { result: false, unchanged: true };
     });

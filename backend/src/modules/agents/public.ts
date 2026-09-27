@@ -51,6 +51,7 @@ export {
 } from "./services/agentService.js";
 export {
   AuthoredDirectiveService,
+  isDirectiveNameConflict,
   type AuthoredDirectiveServiceOptions,
 } from "./services/authoredDirectiveService.js";
 export {
@@ -58,6 +59,7 @@ export {
 } from "./routineScopedReferenceGuard.js";
 export {
   DirectiveAuthorService,
+  DIRECTIVE_CREATE_FENCE,
   directiveAuthorDraftInputSchema,
   directiveAuthorProposalInputSchema,
   projectDirectiveAuthorProposalInput,
@@ -122,6 +124,7 @@ export {
 } from "./services/embedConfigCacheInvalidator.js";
 export {
   AUTHORED_DIRECTIVE_ENABLED_DEFAULT,
+  authoredDirectiveConditionSchema,
   authoredDirectiveInputSchema,
   authoredDirectiveRouteValues,
   authoredDirectiveSurfaceValues,

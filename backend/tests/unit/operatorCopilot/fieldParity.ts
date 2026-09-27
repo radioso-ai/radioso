@@ -185,6 +185,9 @@ export const fieldExclusions: Record<string, Record<string, FieldParityExclusion
       "tags", "description", "binding", "lifecycle", "coverageCriteria", "enabled", "metadata",
     ], directiveFieldsStayOwnerAuthored),
   },
+  prepare_directive: {
+    ...fields(["requiredCapabilities", "dependsOn", "surfaces", "tags", "description", "binding", "lifecycle", "coverageCriteria", "metadata"], directiveFieldsStayOwnerAuthored),
+  },
   propose_directive_enablement: {
     ...fields([
       "name", "condition", "action", "priority", "requiredCapabilities", "dependsOn", "excludes", "surfaces",

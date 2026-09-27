@@ -27,6 +27,7 @@ import type { OperatorMcpInvocationRecord, OperatorMcpInvocationRepositoryPort }
 import { AppError } from "../../shared/domain/errors.js";
 import { toolRejectionDetail, type OperatorMcpRejectionDetail } from "./invalidArgumentDetails.js";
 import { REVIEWED_APPROVAL_ACCEPT_WAIT_MS } from "./reviewedOperation.js";
+import { replayKeyFor } from "./operatorMcpDisposition.js";
 
 const MAX_RESULT_BYTES = 256 * 1024;
 const PROOF_TTL_MS = 15_000;
@@ -121,10 +122,35 @@ const resultReference = (output: unknown, preferProposalId: boolean): string | n
   return null;
 };
 
-const replayResponse = (invocation: OperatorMcpInvocationRecord): OperatorInvocationResponse => ({
-  content: [],
-  isError: invocation.status === "failed" || invocation.status === "refused",
-  safeOutcomeCode: invocation.safeOutcomeCode ?? (invocation.status === "completed" ? "completed" : "in_progress"),
+/**
+ * Protocol error text, not conversational assistant copy: it is the tool-error message a caller's
+ * MCP client sees for a call it cannot yet act on, never an LLM-authored answer.
+ */
+const IN_PROGRESS_REPLAY_MESSAGE = "An earlier attempt at this call is still running. Retry the same call in a moment.";
+const NOT_RETAINED_REPLAY_MESSAGE = "This call already ran and its result is not retained. Retry with a new operation id.";
+
+/**
+ * An in-progress replay must never look like a completed call with nothing in it: `isError` plus
+ * this text is what lets a caller on either protocol version (the legacy translation forwards both
+ * verbatim) tell "still running" apart from "done, no result."
+ */
+const inProgressReplayResponse = (): OperatorInvocationResponse => ({
+  content: [{ type: "text", text: IN_PROGRESS_REPLAY_MESSAGE }],
+  isError: true,
+  safeOutcomeCode: "in_progress",
+});
+
+/**
+ * A terminal replay this descriptor cannot reconstruct a result for -- a domain refusal, a
+ * completed non-idempotent probe, or a completed/failed attempt with no recovery hook to answer
+ * from. Answering with the stored outcome code and an actionable error, instead of a bare empty
+ * `content: []`, is what lets a caller distinguish "already ran, nothing to show" from a silent
+ * empty success.
+ */
+const notRetainedReplayResponse = (invocation: OperatorMcpInvocationRecord): OperatorInvocationResponse => ({
+  content: [{ type: "text", text: NOT_RETAINED_REPLAY_MESSAGE }],
+  isError: true,
+  safeOutcomeCode: invocation.safeOutcomeCode ?? "failed",
   ...(invocation.resultReference ? { resultReference: invocation.resultReference } : {}),
 });
 
@@ -214,6 +240,49 @@ export class OperatorMcpApplicationService {
         reason: input.reason,
       },
     }).catch(() => undefined);
+  }
+
+  /** Closes the current receipt as a replay and reports the earlier attempt as still running. */
+  private async recordInProgressReplay(input: {
+    principal: OperatorMcpPrincipal;
+    invocationId: string;
+    descriptorName: string;
+    capabilityShape: "read" | "probe" | "act" | "propose" | null;
+  }): Promise<void> {
+    await this.dependencies.invocations.recordOutcome({
+      invocationId: input.invocationId, status: "completed", safeOutcomeCode: "replayed", now: this.now(),
+    });
+    await this.audit({
+      principal: input.principal, invocationId: input.invocationId, method: "tools/call", descriptorName: input.descriptorName,
+      capabilityShape: input.capabilityShape, eventStatus: "success", outcome: "replayed", reason: "operation_in_progress",
+    });
+  }
+
+  /**
+   * Closes the current receipt as a replay of a terminal attempt this descriptor cannot reconstruct
+   * a result for. `operation_not_retained` is its own audit reason -- distinct from the ordinary
+   * `operation_replay` a fully-reconstructed rejection replay still reports -- so a support reviewer
+   * can tell "we told the caller their call already ran with nothing to show" apart from a plain
+   * repeated answer.
+   */
+  private async recordNotRetainedReplay(input: {
+    principal: OperatorMcpPrincipal;
+    invocationId: string;
+    descriptorName: string;
+    capabilityShape: "read" | "probe" | "act" | "propose" | null;
+    replayed: OperatorMcpInvocationRecord;
+  }): Promise<void> {
+    await this.dependencies.invocations.recordOutcome({
+      invocationId: input.invocationId,
+      status: "completed",
+      safeOutcomeCode: "replayed",
+      ...(input.replayed.resultReference ? { resultReference: input.replayed.resultReference } : {}),
+      now: this.now(),
+    });
+    await this.audit({
+      principal: input.principal, invocationId: input.invocationId, method: "tools/call", descriptorName: input.descriptorName,
+      capabilityShape: input.capabilityShape, eventStatus: "success", outcome: "replayed", reason: "operation_not_retained",
+    });
   }
 
   private async currentProofPrincipal(proof: OperatorMcpProof, expectedMethod: OperatorMcpProof["method"]): Promise<OperatorMcpPrincipal> {
@@ -369,8 +438,7 @@ export class OperatorMcpApplicationService {
         descriptorVersion: "1",
         value: parsed.data,
       });
-      const operationId = input.operationId
-        ?? (disposition.retry.operationIdentity === "input" ? inputDigest : null);
+      const operationId = replayKeyFor(descriptor, input.operationId ?? null, inputDigest);
       const awaitApprovalMs = awaitApprovalMsFor(input.approvalResponse);
       // Shared by the reconciled-retry and fresh-execution branches below so a wait triggered by
       // an accepted elicitation retry is bounded by the same deadline either path would already
@@ -401,10 +469,10 @@ export class OperatorMcpApplicationService {
           && disposition.retry.idempotent
           && (disposition.retry.effect === "proposal" || disposition.retry.effect === "act")
           && operationId
-          // `completed` can be an acknowledged `uncertain` owner result. The descriptor reads
-          // its durable subject state before deciding whether it is terminal or recoverable.
-          && (replayed.status === "admitted" || replayed.status === "running" || replayed.status === "failed"
-            || (disposition.retry.effect === "act" && replayed.status === "completed"));
+          // `completed` covers both an acknowledged `uncertain` owner result and a proposal-creating
+          // call whose committed row this same descriptor's hook can look up. Only `refused` -- the
+          // caller's own domain rejection -- has nothing a reconcile hook can recover.
+          && replayed.status !== "refused";
         if (recoverableAttempt) {
           const recoveryNow = this.now();
           const reconciliation = await this.dependencies.catalog.reconcileInvocation({
@@ -455,42 +523,49 @@ export class OperatorMcpApplicationService {
           }
           if (reconciliation.status === "conflict") throw new OperatorMcpApplicationError("operation_conflict");
           if (reconciliation.status === "retry_prepare") {
-            // A terminal failure with no proposal is the authoritative prior outcome. Only an
-            // active, effect-free attempt may be released and prepared again.
+            // A completed call the descriptor's hook found no committed subject for has nothing
+            // left to prepare again -- that is the authoritative prior outcome, answered below as
+            // not retained rather than looped into a conflict. Only an active, effect-free `failed`
+            // attempt may be released and prepared again.
+            if (replayed.status === "completed") {
+              await this.recordNotRetainedReplay({ principal, invocationId: input.proof.invocationId, descriptorName: input.name, capabilityShape, replayed });
+              return notRetainedReplayResponse(replayed);
+            }
             if (replayed.status !== "failed") {
               if (attempt + 1 < MAX_PREPARE_ATTEMPTS) continue;
               throw new OperatorMcpApplicationError("operation_conflict");
             }
           } else {
-            await this.dependencies.invocations.recordOutcome({
-              invocationId: input.proof.invocationId,
-              status: "completed",
-              safeOutcomeCode: "replayed",
-              now: this.now(),
-            });
-            await this.audit({
-              principal, invocationId: input.proof.invocationId, method: "tools/call", descriptorName: input.name,
-              capabilityShape, eventStatus: "success", outcome: "replayed", reason: "operation_in_progress",
-            });
-            return { content: [], safeOutcomeCode: "in_progress" };
+            await this.recordInProgressReplay({ principal, invocationId: input.proof.invocationId, descriptorName: input.name, capabilityShape });
+            return inProgressReplayResponse();
           }
         }
 
-        await this.dependencies.invocations.recordOutcome({
-          invocationId: input.proof.invocationId,
-          status: "completed",
-          safeOutcomeCode: "replayed",
-          ...(replayed.resultReference ? { resultReference: replayed.resultReference } : {}),
-          now: this.now(),
-        });
-        await this.audit({
-          principal, invocationId: input.proof.invocationId, method: "tools/call", descriptorName: input.name,
-          capabilityShape, eventStatus: "success", outcome: "replayed", reason: "operation_replay",
-        });
+        // Reached whenever the attempt above did not answer: no recovery hook applies (a read, a
+        // probe, or an idempotent tool never keyed in the first place would not even get here), or
+        // the hook was skipped because the receipt is `refused` -- a domain rejection with nothing
+        // to reconcile. A still-open receipt (a probe's first attempt has not finished) is reported
+        // as in progress rather than replayed as if it were terminal.
+        if (replayed.status === "admitted" || replayed.status === "running") {
+          await this.recordInProgressReplay({ principal, invocationId: input.proof.invocationId, descriptorName: input.name, capabilityShape });
+          return inProgressReplayResponse();
+        }
         if (replayed.safeOutcomeCode === "invalid_arguments") {
+          await this.dependencies.invocations.recordOutcome({
+            invocationId: input.proof.invocationId,
+            status: "completed",
+            safeOutcomeCode: "replayed",
+            ...(replayed.resultReference ? { resultReference: replayed.resultReference } : {}),
+            now: this.now(),
+          });
+          await this.audit({
+            principal, invocationId: input.proof.invocationId, method: "tools/call", descriptorName: input.name,
+            capabilityShape, eventStatus: "success", outcome: "replayed", reason: "operation_replay",
+          });
           throw new OperatorMcpApplicationError("invalid_arguments", undefined, replayed.safeRejectionDetails);
         }
-        return replayResponse(replayed);
+        await this.recordNotRetainedReplay({ principal, invocationId: input.proof.invocationId, descriptorName: input.name, capabilityShape, replayed });
+        return notRetainedReplayResponse(replayed);
       }
       if (!readyToInvoke) throw new OperatorMcpApplicationError("operation_conflict");
       const claimed = await this.dependencies.invocations.claimRunning({ invocationId: input.proof.invocationId, now: this.now() });

@@ -2,16 +2,20 @@ import { randomUUID } from "node:crypto";
 import { readFile, readdir } from "node:fs/promises";
 
 import { afterAll, beforeAll, expect, it } from "vitest";
+import { digestOperatorMcpInput } from "@radioso/operator-mcp-contract";
 
 import { AccountRepository } from "../../../src/db/repositories/accountRepository.js";
 import { AgentRepository } from "../../../src/db/repositories/agentRepository.js";
 import { WorkspaceRepository } from "../../../src/db/repositories/workspaceRepository.js";
 import { CopilotRepository } from "../../../src/db/repositories/copilotRepository.js";
+import { OperatorMcpInvocationRepository } from "../../../src/db/repositories/operatorMcpInvocationRepository.js";
 import { createReviewedReceiptSettlement } from "../../../src/app/composition/copilotReviewedReceiptSettlement.js";
 import { createDirectiveCopilotProposalAdapter } from "../../../src/modules/operatorCopilot/proposalAdapters.js";
 import { OperatorCopilotService } from "../../../src/modules/operatorCopilot/service.js";
 import { AuthoredDirectiveService, type AuthoredDirectiveInput } from "../../../src/modules/agents/public.js";
 import type { CopilotProposalApplyContext } from "../../../src/modules/operatorCopilot/contracts.js";
+import { replayKeyFor } from "../../../src/modules/operatorCopilot/operatorMcpDisposition.js";
+import { operatorMcpDispositions } from "../../../src/modules/operatorCopilot/operatorMcpDisposition.js";
 import { NoopUsageLimitPolicy } from "../../../src/shared/domain/usageLimitPolicy.js";
 import { Database } from "../../../src/shared/infra/database.js";
 import { resolveIntegrationDatabase } from "../support/integrationDatabase.js";
@@ -24,6 +28,7 @@ describeIntegration("the reviewed approval gate, proven against Postgres's row l
   const workspaceRepository = new WorkspaceRepository(database.kysely);
   const agentRepository = new AgentRepository(database.kysely);
   const proposals = new CopilotRepository(database.kysely);
+  const invocationsRepo = new OperatorMcpInvocationRepository(database.kysely);
   const coherenceChecker = { check: async () => ({ coherent: true as const, conflicts: [], rationale: "Coherent." }) };
   const authoredDirectiveService = new AuthoredDirectiveService({ repository: agentRepository, coherenceChecker, registeredCapabilityNames: new Set() });
   const adapter = createDirectiveCopilotProposalAdapter({
@@ -228,6 +233,88 @@ describeIntegration("the reviewed approval gate, proven against Postgres's row l
     // confirmation requirement nor asks whether the operation is still approved.
     const replay = await proposals.claimMcpReviewedProposalApply(claimInput(fixture, proposal.id, executionInvocationId));
     expect(replay).toEqual({ status: "settled", outcome: "applied", appliedRef: { directiveId: existing.id } });
+  });
+
+  /**
+   * Issue #1324's key-switch fix: `execute_reviewed_proposal` is `operationIdentity: "input"`, so
+   * `replayKeyFor` keys every call by its input digest and ignores any client-sent operation id --
+   * a first call that carries one and a retry that omits it (or the reverse) must land on the exact
+   * same key. Proven here against the real invocation and proposal repositories: two distinct
+   * `operator_mcp_invocations` rows (as two separate admissions would produce), one real
+   * `prepareInvocation` dedup lookup recognizing the second as a replay of the first, and one real
+   * `OperatorCopilotService.executeMcpReviewedProposal` settlement reused by the replay.
+   */
+  it("reconciles execute_reviewed_proposal onto one receipt whichever call carries the client's operation id", async () => {
+    const fixture = await createFixture();
+    const existing = await agentRepository.createDirective(fixture.agent.id, fixture.workspace.id, createDirectiveInput("key-switch"));
+    const payload = { name: "key-switch", condition: { kind: "always" }, action: "Applied once, however the retry is keyed." };
+    const proposal = await proposals.createProposal({
+      workspaceId: fixture.workspace.id, operatorUserId: fixture.operatorUserId,
+      origin: { type: "operator_mcp_invocation", invocationId: fixture.invocationId },
+      targetType: "directive", targetRef: { agentId: fixture.agent.id, directiveId: existing.id }, payload,
+      versionToken: existing.updatedAt.toISOString(), evidence: null, reviewDigest: REVIEW_DIGEST, reviewSnapshot: {},
+      expiresAt: new Date(Date.now() + 60_000), confirmationRequirement: "conversation",
+      changeEffect: { exposure: "draft", reversibility: "reversible", metered: false },
+    });
+    const args = { proposalId: proposal.id, reviewDigest: REVIEW_DIGEST };
+    const inputDigest = digestOperatorMcpInput({ secret: "integration-test-secret-at-least-32-bytes-long", descriptorName: "execute_reviewed_proposal", descriptorVersion: "1", value: args });
+    // Both directions of the switch collapse to the identical key -- this is the pure fact the
+    // repository-level reconciliation below depends on.
+    expect(replayKeyFor({ mcpDisposition: operatorMcpDispositions.execute_reviewed_proposal }, "client-sent-operation-id", inputDigest)).toBe(inputDigest);
+    expect(replayKeyFor({ mcpDisposition: operatorMcpDispositions.execute_reviewed_proposal }, null, inputDigest)).toBe(inputDigest);
+
+    const admitExecutionInvocation = async () => {
+      const id = randomUUID();
+      await database.query(
+        "INSERT INTO operator_mcp_invocations (id, credential_id, grant_id, grant_version, account_id, workspace_id, user_id, client_id, method, descriptor_name, shape, operation_id, input_digest, proof_nonce_digest, status, retained_until) VALUES ($1, $2, $3, 1, $4, $5, $6, $7, 'tools/call', 'execute_reviewed_proposal', 'act', NULL, 'unset', $8, 'admitted', NOW() + INTERVAL '30 days')",
+        [id, fixture.credentialId, fixture.grantId, fixture.account.id, fixture.workspace.id, fixture.operatorUserId, fixture.clientId, `nonce-${id}`],
+      );
+      return id;
+    };
+
+    const firstInvocationId = await admitExecutionInvocation();
+    await expect(invocationsRepo.prepareInvocation({
+      invocationId: firstInvocationId, operationId: inputDigest, descriptorName: "execute_reviewed_proposal", shape: "act", inputDigest, verificationCost: 0, now: new Date(),
+    })).resolves.toMatchObject({ status: "prepared" });
+
+    const first = await copilot.executeMcpReviewedProposal({
+      workspaceId: fixture.workspace.id, accountId: fixture.account.id, operatorUserId: fixture.operatorUserId,
+      proposalId: proposal.id, reviewDigest: REVIEW_DIGEST, executionInvocationId: firstInvocationId,
+      grantId: fixture.grantId, clientId: fixture.clientId, currentAuthorization: authorization,
+    });
+    expect(first).toMatchObject({ status: "applied", appliedRef: { directiveId: existing.id } });
+    await invocationsRepo.recordOutcome({ invocationId: firstInvocationId, status: "completed", safeOutcomeCode: "completed", now: new Date() });
+
+    // A retry admits its own, distinct invocation row. Its `prepareInvocation` call carries the same
+    // input-derived key regardless of whether this particular call happened to send a client
+    // operation id, so Postgres's own dedup -- scoped by grant and operation id -- finds the first
+    // row instead of preparing a fresh one.
+    const retryInvocationId = await admitExecutionInvocation();
+    await expect(invocationsRepo.prepareInvocation({
+      invocationId: retryInvocationId, operationId: inputDigest, descriptorName: "execute_reviewed_proposal", shape: "act", inputDigest, verificationCost: 0, now: new Date(),
+    })).resolves.toMatchObject({ status: "replay", invocation: { id: firstInvocationId, status: "completed" } });
+
+    // The reconcile hook always uses the ORIGINAL invocation's id as the execution receipt -- exactly
+    // what `mcpApplicationService` passes on a replay -- so the retry settles through the one bound
+    // receipt and applies nothing a second time.
+    const replay = await copilot.executeMcpReviewedProposal({
+      workspaceId: fixture.workspace.id, accountId: fixture.account.id, operatorUserId: fixture.operatorUserId,
+      proposalId: proposal.id, reviewDigest: REVIEW_DIGEST, executionInvocationId: firstInvocationId,
+      grantId: fixture.grantId, clientId: fixture.clientId, currentAuthorization: authorization,
+    });
+    expect(replay).toEqual(first);
+
+    // The retry's OWN invocation id -- exactly what the old client-id-first key rule would have left
+    // as the executing receipt for an unkeyed retry after a keyed first call -- is refused rather
+    // than silently re-applying under a second receipt.
+    await expect(copilot.executeMcpReviewedProposal({
+      workspaceId: fixture.workspace.id, accountId: fixture.account.id, operatorUserId: fixture.operatorUserId,
+      proposalId: proposal.id, reviewDigest: REVIEW_DIGEST, executionInvocationId: retryInvocationId,
+      grantId: fixture.grantId, clientId: fixture.clientId, currentAuthorization: authorization,
+    })).resolves.toMatchObject({ status: "refused", reason: "not_prepared" });
+
+    const directives = await authoredDirectiveService.list(fixture.workspace.id, fixture.agent.id);
+    expect(directives.filter((directive) => directive.id === existing.id)).toHaveLength(1);
   });
 
   it("reports stale once the target changed after approval, so approving never bypasses the version fence", async () => {

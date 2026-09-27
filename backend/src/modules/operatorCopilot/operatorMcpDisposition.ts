@@ -181,6 +181,38 @@ export const assertOperatorMcpOperationIdentities = (descriptors: ReadonlyArray<
   }
 };
 
+/** The two descriptor fields {@link replayKeyFor} needs, kept narrow so it stays a pure function of data already on hand rather than depending on the full generic descriptor shape. */
+interface OperatorMcpReplayKeySource {
+  readonly mcpDisposition?: CopilotMcpDisposition;
+  readonly reconcileMcpInvocation?: unknown;
+}
+
+/**
+ * The replay key `mcpApplicationService` prepares this call under. `null` means the call is never
+ * deduplicated against an earlier attempt -- a fresh admission always runs it again.
+ *
+ * - `operationIdentity: "input"`: always the input digest, even when the client also sends an
+ *   operation id. The owner recovers only through the receipt bound to the first attempt it saw, so
+ *   honoring a client id here would let one logical retry split across two receipts the owner has
+ *   no way to reconcile between.
+ * - Idempotent with no `reconcileMcpInvocation` hook: never keyed, regardless of what the client
+ *   sends. There is nothing to recover a replay's result from, so answering from a durable receipt
+ *   here can only mean an empty or stale answer; running the call again is cheaper and correct.
+ * - Everything else: the client's own operation id when it sends one, unkeyed otherwise -- unchanged
+ *   from today.
+ */
+export const replayKeyFor = (
+  descriptor: OperatorMcpReplayKeySource,
+  clientOperationId: string | null,
+  inputDigest: string,
+): string | null => {
+  const disposition = descriptor.mcpDisposition;
+  if (disposition?.status !== "eligible") return clientOperationId;
+  if (disposition.retry.operationIdentity === "input") return inputDigest;
+  if (disposition.retry.idempotent && !descriptor.reconcileMcpInvocation) return null;
+  return clientOperationId;
+};
+
 export const attachOperatorMcpDispositions = (
   descriptors: ReadonlyArray<CopilotToolDescriptor>,
 ): ReadonlyArray<CopilotToolDescriptor> => {

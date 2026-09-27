@@ -6,11 +6,8 @@ import { chunkingStrategyIds } from "../../retrieval/public.js";
 import { manualDocumentEnrichmentOverrides } from "../../settings/public.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import type {
-  IngestionSettingsFieldProposalApplyInput,
-  IngestionSettingsFieldProposalApplyOutcome,
-  IngestionSettingsFieldProposalPreparation,
-  IngestionSettingsProposalPatch,
-} from "../../settings/contracts/services.js";
+  IngestionSettingsProposalPort,
+} from "../../settings/public.js";
 
 const chunking = RETRIEVAL_BEHAVIOR.chunking;
 
@@ -70,9 +67,5 @@ export const copilotIngestionSettingsTargetRefSchema = z.object({
 
 export type CopilotIngestionSettingsPayload = z.infer<typeof copilotIngestionSettingsPayloadSchema>;
 
-export interface CopilotIngestionSettingsPort {
-  prepareFieldProposal(workspaceId: string, patch: IngestionSettingsProposalPatch): Promise<IngestionSettingsFieldProposalPreparation>;
-  readFieldProposalVersion(workspaceId: string, expected?: IngestionSettingsProposalPatch): Promise<string>;
-  readFieldProposalDisplay(workspaceId: string): Promise<Record<string, unknown>>;
-  applyFieldProposal(workspaceId: string, prepared: IngestionSettingsFieldProposalApplyInput): Promise<IngestionSettingsFieldProposalApplyOutcome>;
-}
+/** Compatibility name for existing copilot tests; the owner owns this contract. */
+export type CopilotIngestionSettingsPort = IngestionSettingsProposalPort;

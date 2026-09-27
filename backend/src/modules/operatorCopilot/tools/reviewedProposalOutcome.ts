@@ -65,6 +65,7 @@ export const createReviewedProposalOutcomeTool = (outcomes: ReviewedProposalOutc
   description: "Read the exact stored review and current outcome of one reviewed operation a prepare_* tool created. It does not execute or refresh the review.",
   contributingModule: "operatorCopilot",
   dashboardSubject: { type: "proposal" },
+  surfaces: ["mcp"],
   requiredPermissions: [],
   inputSchema,
   outputSchema,

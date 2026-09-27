@@ -20,6 +20,12 @@ const documentSearchUnreviewedMetadataFilter = deferred(
 const agentSettingGenericKeyValue = permanent(
   "propose_agent_setting changes one agent setting at a time through a generic settingKey/value pair rather than one schema field per settable property. settingKey is validated against agentInputFieldSchemas (modules/agents/agentInputSchema.ts), which covers every one of updateAgent's fields, so each is reachable by name through value rather than through a same-named top-level input field.",
 );
+const reviewedAgentSettingsPatch = permanent(
+  "Carried under the owner-approved `patch` object. The agent service validates and normalizes the named fields together before it persists a digest-bound review.",
+);
+const reviewedAgentSettingsDedicatedOwnerFlow = permanent(
+  "This setting belongs to a dedicated owner flow: retrieval-scoped settings use prepare_retrieval_settings, surface settings use propose_workspace_setting, and model or skill configuration stays outside this reviewed agent-settings surface.",
+);
 
 const contextVariableEnablementNesting = permanent(
   "Carried nested one level down, under the `enablement` object, using these exact field names (proposalInputSchema in tools/contextVariables.ts) — not a capability gap, just not a top-level match.",
@@ -236,6 +242,13 @@ export const fieldExclusions: Record<string, Record<string, FieldParityExclusion
   },
   prepare_retrieval_settings: {
     ...fields(["target", "config", "replaceConfig", "invocationMode", "enabled"], retrievalSettingsOnlyPatchesTheDefaultSkill),
+  },
+  prepare_ingestion_settings: {
+    ...fields(["embeddingModel"], ingestionEmbeddingModelNeverList),
+  },
+  prepare_agent_settings: {
+    ...fields(["name", "internalName", "customInstruction", "assistantLinkUtmEnabled", "citationDisplayEnabled", "contactRequestsEnabled", "webhookExportsEnabled", "handoffOnRetrievalMiss", "contactRequestDelivery", "theme", "branding", "greetingInstruction", "assistantDefaultLocale", "proactiveGreetingEnabled", "publicDescription", "agentCardEnabled", "publicAgentAccessEnabled", "walkInConversationsPerHour"], reviewedAgentSettingsPatch),
+    ...fields(["suggestedQuestionsEnabled", "retrievalEnabled", "sourceScope", "chatModelOverride", "skillSettings", "surfaceSettings"], reviewedAgentSettingsDedicatedOwnerFlow),
   },
   send_test_chat_message: {
     ...fields(["expectedDraftGeneration"], testChatDraftFenceIsReadFresh),

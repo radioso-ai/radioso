@@ -262,6 +262,8 @@ describe("OperatorMcpCatalogService", () => {
     { preparedBy: "prepare_routine_structure", targetType: "routine" as const, heldByCaller: ["workspace.documents.manage"] },
     { preparedBy: "prepare_agent_publication", targetType: "agent_publication" as const, heldByCaller: ["workspace.documents.manage"] },
     { preparedBy: "prepare_document_import", targetType: "document_operation" as const, heldByCaller: ["workspace.agents.manage"] },
+    { preparedBy: "prepare_agent_settings", targetType: "agent_setting" as const, heldByCaller: ["workspace.documents.manage"] },
+    { preparedBy: "prepare_ingestion_settings", targetType: "ingestion_settings" as const, heldByCaller: ["workspace.agents.manage"] },
   ];
 
   it.each(deniedTargets)(

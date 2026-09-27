@@ -90,6 +90,7 @@ import { createAgentGreetingCopilotProposalAdapter, createAgentSettingCopilotPro
 import { createAgentPublicationProposalAdapter } from "../../modules/operatorCopilot/agentPublicationProposalAdapter.js";
 import { createRoutineMcpApplyPort } from "../composition/copilotRoutineAtomicApply.js";
 import { createAgentSkillMcpApplyPort } from "../composition/copilotAgentSkillAtomicApply.js";
+import { createReviewedReceiptSettlement } from "../composition/copilotReviewedReceiptSettlement.js";
 import { createDocumentCopilotProposalAdapter } from "../../modules/operatorCopilot/documentProposalAdapter.js";
 import { createDocumentReviewedOperationAdapter } from "../../modules/operatorCopilot/documentReviewedOperationAdapter.js";
 import { DocumentReviewedOperationService } from "../../modules/documents/composition.js";
@@ -533,7 +534,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   });
   const copilotProposalAdapters = [
     createDirectiveCopilotProposalAdapter({ authoredDirectiveService, directiveAuthorService, agentService }),
-    createAgentSettingCopilotProposalAdapter({ agentService }),
+    createAgentSettingCopilotProposalAdapter({ agentService, reviewedReceipt: createReviewedReceiptSettlement(infrastructure.database.kysely) }),
     createAgentGreetingCopilotProposalAdapter({ agentService, agentRevisions: agentRevisionService }),
     createAgentCopilotProposalAdapter({
       agentCreation: { createFromWizard: (input) => agentWizardService.createAgentFromWizard(input) },
@@ -576,7 +577,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
         documents.workspaceIngestionReprocessService,
       ),
     }),
-    createIngestionSettingsCopilotProposalAdapter({ ingestionSettings: settings.ingestionSettingsService }),
+    createIngestionSettingsCopilotProposalAdapter({ ingestionSettings: settings.ingestionSettingsService, reviewedReceipt: createReviewedReceiptSettlement(infrastructure.database.kysely) }),
     createWorkspaceSettingCopilotProposalAdapter({ workspaceSetting: createCopilotWorkspaceSettingPort(platformSettingsService) }),
     createWebsiteCrawlCopilotProposalAdapter({
       websiteCrawl: { assertCrawlUrlAllowed: assertPublicWebsiteUrl, normalizeCrawlUrl: normalizeBaseUrl, enqueue: documents.websiteCrawlJobService.enqueue.bind(documents.websiteCrawlJobService) },
@@ -893,6 +894,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       },
     },
     retrievalAuthoring,
+    agentSettings: agentService,
+    ingestionSettings: settings.ingestionSettingsService,
     documents: new DocumentReviewedOperationService(
       repositories.documentRepository,
       documents.documentIngestionService,

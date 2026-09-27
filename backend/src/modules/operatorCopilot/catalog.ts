@@ -94,6 +94,7 @@ const enrichSuccessfulOutput = (input: {
   const outputEntity = input.descriptor.describeOutputEntity?.(input.output) ?? null;
   const proposalId = input.context.surface === "mcp"
     && input.descriptor.dashboardSubject.type === "proposal"
+    && typeof input.output.reviewDigest !== "string"
     && typeof input.output.proposalId === "string"
     ? input.output.proposalId
     : null;

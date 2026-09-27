@@ -712,6 +712,19 @@ describe("settings services", () => {
     expect(settings.workspaceId).toBe("workspace-1");
   });
 
+  it("passes the reviewed commit hook to the ingestion repository only for an applied proposal", async () => {
+    const settings = defaultIngestionSettings("workspace-1");
+    const applyProposalPatch = vi.fn(async () => ({ outcome: "applied" as const }));
+    const service = new IngestionSettingsService({ findByWorkspaceId: vi.fn(), upsert: vi.fn(), applyProposalPatch }, { record: vi.fn() } as never);
+    const hook = vi.fn();
+
+    await service.applyFieldProposal("workspace-1", {
+      normalizedPatch: { fixedWindowChunkSize: 1_500 }, expected: { fixedWindowChunkSize: settings.fixedWindowChunkSize },
+    }, { onCommitted: hook });
+
+    expect(applyProposalPatch).toHaveBeenCalledWith(expect.objectContaining({ onCommitted: hook }));
+  });
+
   it("maps agent field-proposal apply outcomes through AgentService", async () => {
     const service = new AgentService({} as never, {} as never);
     const apply = vi.spyOn(service, "applyProposalPatch");

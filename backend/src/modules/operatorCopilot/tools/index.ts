@@ -25,6 +25,10 @@ import { createDocumentProposalCopilotTools } from "./documentProposals.js";
 import { createWebsiteCrawlProposalCopilotTools } from "./websiteCrawlProposals.js";
 import { createIngestionSettingsProposalCopilotTools } from "./ingestionSettingsProposals.js";
 import type { IngestionSettingsProposalCopilotToolDependencies } from "./ingestionSettingsProposals.js";
+import { createIngestionSettingsReviewedPreparationTool } from "./ingestionSettingsReviewedPreparation.js";
+import type { IngestionSettingsReviewedPreparationDependencies } from "./ingestionSettingsReviewedPreparation.js";
+import { createAgentSettingsReviewedPreparationTool } from "./agentSettingsReviewedPreparation.js";
+import type { AgentSettingsReviewedPreparationDependencies } from "./agentSettingsReviewedPreparation.js";
 import { createWorkspaceSettingProposalCopilotTools } from "./workspaceSettingProposals.js";
 import { createEvalCopilotTools, createEvalVerificationCopilotTools } from "./eval.js";
 import type { EvalCopilotToolDependencies, EvalVerificationCopilotToolDependencies } from "./eval.js";
@@ -91,6 +95,8 @@ type CopilotToolCatalogDependencies = AgentConfigurationCopilotToolDependencies
   & AgentProposalCopilotToolDependencies
   & WebsiteAnalysisProbeCopilotToolDependencies
   & IngestionSettingsProposalCopilotToolDependencies
+  & Omit<IngestionSettingsReviewedPreparationDependencies, keyof IngestionSettingsProposalCopilotToolDependencies>
+  & Omit<AgentSettingsReviewedPreparationDependencies, keyof IngestionSettingsProposalCopilotToolDependencies>
   & ProductDocsCopilotToolDependencies
   & RoutineStructuralPreparationDependencies
   & AgentPublicationCopilotToolDependencies
@@ -135,6 +141,8 @@ export const createCopilotToolDescriptors = (
   ...createDocumentProposalCopilotTools(deps),
   ...createDocumentReviewedOperationTools(deps),
   ...createIngestionSettingsProposalCopilotTools(deps),
+  createIngestionSettingsReviewedPreparationTool(deps),
+  createAgentSettingsReviewedPreparationTool(deps),
   ...createWorkspaceSettingProposalCopilotTools(deps),
   ...createWebsiteCrawlProposalCopilotTools(deps),
   createRoutineStructuralPreparationTool(deps),

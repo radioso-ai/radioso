@@ -183,7 +183,11 @@ export const createCopilotRoutes = (dependencies: CopilotRouteDependencies): Rou
       next(error);
     }
   });
-  router.post("/proposals/:proposalId/dismiss", async (req, res, next) => {
+  // Decline on the standalone approval page reuses this route (Finding: it must carry the same
+  // CSRF/JSON-only protections as Approve, since both are cookie-session POSTs a forged cross-site
+  // form could otherwise replay). Every frontend caller — the dashboard proposal card and the
+  // approval page's Decline button — sends the CSRF header and a JSON body.
+  router.post("/proposals/:proposalId/dismiss", requireApiAccessCsrf, requireJsonContentType, async (req, res, next) => {
     try {
       const { workspaceId, accountId, userId } = sessionLocals(res);
       const { proposalId } = proposalParamsSchema.parse(req.params);

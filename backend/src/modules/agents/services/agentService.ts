@@ -59,6 +59,7 @@ export interface AgentFieldsProposalPreparation {
     readonly reach: boolean;
   }>;
   readonly unchanged: readonly AgentReviewedSettingsKey[];
+  readonly effect: { readonly exposure: "draft" | "live"; readonly reversibility: "reversible"; readonly metered: false };
 }
 export type AgentFieldProposalApplyInput =
   | (Pick<AgentFieldProposalPreparation, "targetAgentId" | "normalizedPatch"> & {
@@ -285,6 +286,7 @@ export class AgentService {
       expectedFields: changes.map((change) => ({ key: change.key, value: change.current })),
       changes,
       unchanged: keys.filter((key) => !changes.some((change) => change.key === key)),
+      effect: { exposure: changes.some((change) => change.lifecycle === "live") ? "live" : "draft", reversibility: "reversible", metered: false },
     };
   }
 

@@ -4,7 +4,7 @@ import type { AgentRevisionService } from "../agents/public.js";
 import type { CopilotAgentPublicationProposalAdapter, CopilotProposalApplyContext } from "./contracts.js";
 import { isOwnerRefusal } from "./proposalVersioning.js";
 
-export type AgentPublicationRevisionPort = Pick<AgentRevisionService, "state" | "createCandidate" | "detail" | "describeCandidateRelease" | "readCandidateReleaseChange" | "publish">;
+export type AgentPublicationRevisionPort = Pick<AgentRevisionService, "state" | "createCandidate" | "detail" | "describeCandidateRelease" | "describeCandidatePublicationReview" | "readCandidateReleaseChange" | "publish">;
 
 const targetSchema = z.object({ agentId: z.string().uuid(), candidateRevisionId: z.string().uuid() }).strict();
 const payloadSchema = z.object({ expectedDraftGeneration: z.number().int().nonnegative(), expectedPublishedRevisionId: z.string().uuid().nullable() }).strict();

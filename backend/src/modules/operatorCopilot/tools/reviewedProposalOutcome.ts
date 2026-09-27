@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import type { CopilotCurrentAuthorizationPort, CopilotToolDescriptor } from "../contracts.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
-import { REVIEWED_OPERATION_NOT_FOUND } from "../reviewedOperation.js";
+import { REVIEWED_OPERATION_NOT_FOUND, presentReviewedOperationSnapshot, reviewedApprovalStateSchema } from "../reviewedOperation.js";
 
 const inputSchema = z.object({
   proposalId: z.string().uuid(),
@@ -17,15 +17,8 @@ const outputSchema = z.object({
   appliedRef: z.unknown(),
   review: z.unknown(),
   reviewDetail: z.object({ text: z.string(), nextOffset: z.number().int().nullable(), totalLength: z.number().int().nonnegative() }).strict().optional(),
+  approval: reviewedApprovalStateSchema,
 }).strict();
-
-const boundedSnapshot = (value: unknown): { readonly visible: unknown; readonly full: unknown } | null => {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const snapshot = value as Record<string, unknown>;
-  if (!("fullReview" in snapshot)) return null;
-  const { fullReview, ...visible } = snapshot;
-  return { visible, full: fullReview };
-};
 
 export interface ReviewedProposalOutcomePort {
   getMcpReviewedProposal(input: {
@@ -44,6 +37,8 @@ export interface ReviewedProposalOutcomePort {
       readonly expiresAt: Date | null;
       readonly appliedRef: unknown;
       readonly reviewSnapshot: unknown;
+      readonly confirmationRequirement?: "conversation" | "signed_in_approval" | null;
+      readonly approvedAt?: Date | null;
     };
     readonly currentVersionMatches: boolean;
   } | null>;
@@ -95,7 +90,7 @@ export const createReviewedProposalOutcomeTool = (outcomes: ReviewedProposalOutc
         })) throw badRequest("This is a dashboard-reviewed proposal. Read it with proposal_detail.");
         throw notFound(REVIEWED_OPERATION_NOT_FOUND);
       }
-      const bounded = boundedSnapshot(outcome.proposal.reviewSnapshot);
+      const bounded = presentReviewedOperationSnapshot(outcome.proposal.reviewSnapshot);
       if (input.reviewDetail && !bounded) throw badRequest("Complete review detail is not available for this reviewed operation.");
       const full = input.reviewDetail && bounded ? JSON.stringify(bounded.full) : null;
       const reviewDetail = full === null ? undefined : {
@@ -112,6 +107,9 @@ export const createReviewedProposalOutcomeTool = (outcomes: ReviewedProposalOutc
         appliedRef: outcome.proposal.appliedRef,
         review: bounded?.visible ?? outcome.proposal.reviewSnapshot,
         ...(reviewDetail ? { reviewDetail } : {}),
+        approval: outcome.proposal.confirmationRequirement === "signed_in_approval"
+          ? { requirement: "signed_in_approval", state: outcome.proposal.approvedAt ? "approved" : "awaiting", approvedAt: outcome.proposal.approvedAt?.toISOString() ?? null }
+          : { requirement: "conversation", state: "not_required", approvedAt: null },
       });
     },
   }),

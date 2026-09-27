@@ -24,6 +24,10 @@ export class InMemoryCopilotRepository implements CopilotRepositoryPort, Copilot
   // (only claiming/finalizing needs it), the same narrowing the real repository does by not
   // including the column in `proposalColumns`.
   private readonly applyClaims = new Map<string, Date>();
+  // Mirrors the grant/client an `operator_mcp_invocations` row binds a reviewed preparation to.
+  // A proposal whose origin invocation was never registered here has no binding to check, which
+  // keeps every existing non-MCP test that never calls this working unchanged.
+  private readonly mcpPreparationBindings = new Map<string, { grantId: string; clientId: string }>();
 
   /** Mirrors the real sweep, including the cascade the FKs perform on the owning conversation. */
   async deleteConversationsUpdatedBefore(input: { cutoff: Date; limit: number }): Promise<number> {
@@ -119,13 +123,67 @@ export class InMemoryCopilotRepository implements CopilotRepositoryPort, Copilot
   async createProposal(input: CopilotProposalDraft): Promise<CopilotProposal> {
     const createdAt = new Date();
     const origin = input.origin ?? { type: "conversation", conversationId: input.conversationId } as const;
-    const proposal: CopilotProposal = { ...input, origin, conversationId: origin.type === "conversation" ? origin.conversationId : null, operatorMcpInvocationId: origin.type === "operator_mcp_invocation" ? origin.invocationId : null, id: randomUUID(), executionInvocationId: null, messageId: null, reviewDigest: input.reviewDigest ?? null, expiresAt: input.expiresAt ?? null, status: "pending", reason: null, appliedRef: null, createdAt, updatedAt: createdAt };
+    const proposal: CopilotProposal = { ...input, origin, conversationId: origin.type === "conversation" ? origin.conversationId : null, operatorMcpInvocationId: origin.type === "operator_mcp_invocation" ? origin.invocationId : null, id: randomUUID(), executionInvocationId: null, messageId: null, reviewDigest: input.reviewDigest ?? null, reviewSnapshot: input.reviewSnapshot ?? null, expiresAt: input.expiresAt ?? null, confirmationRequirement: input.confirmationRequirement ?? null, changeEffect: input.changeEffect ?? null, approvedAt: null, approvedByUserId: null, approvalDigest: null, status: "pending", reason: null, appliedRef: null, createdAt, updatedAt: createdAt };
     this.proposals.push(proposal);
     return proposal;
   }
 
   async findProposal(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotProposal | null> {
     return this.proposals.find((proposal) => proposal.id === input.id && proposal.workspaceId === input.workspaceId && proposal.operatorUserId === input.operatorUserId) ?? null;
+  }
+
+  /** Registers the grant/client a reviewed preparation's origin invocation was bound to, mirroring `operator_mcp_invocations`. */
+  bindMcpPreparation(invocationId: string, binding: { grantId: string; clientId: string }): void {
+    this.mcpPreparationBindings.set(invocationId, binding);
+  }
+
+  private mcpBindingMatches(proposal: CopilotProposal, grantId: string, clientId: string): boolean {
+    const binding = proposal.operatorMcpInvocationId ? this.mcpPreparationBindings.get(proposal.operatorMcpInvocationId) : undefined;
+    return !binding || (binding.grantId === grantId && binding.clientId === clientId);
+  }
+
+  async findMcpReviewedProposal(input: { id: string; workspaceId: string; operatorUserId: string; grantId: string; clientId: string }): Promise<CopilotProposal | null> {
+    const proposal = await this.findProposal(input);
+    if (!proposal || !proposal.reviewDigest) return null;
+    return this.mcpBindingMatches(proposal, input.grantId, input.clientId) ? proposal : null;
+  }
+
+  async claimMcpReviewedProposalApply(input: { proposalId: string; executionInvocationId: string; reviewDigest: string; workspaceId: string; operatorUserId: string; grantId: string; clientId: string; now: Date; claimTtlSeconds: number }): ReturnType<CopilotRepositoryPort["claimMcpReviewedProposalApply"]> {
+    const proposal = await this.findProposal({ id: input.proposalId, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId });
+    if (!proposal) return { status: "missing" as const };
+    if (!this.mcpBindingMatches(proposal, input.grantId, input.clientId)) return { status: "binding_mismatch" as const };
+    if (!proposal.reviewDigest || !proposal.expiresAt || proposal.reviewDigest !== input.reviewDigest) return { status: "digest_mismatch" as const };
+    if (proposal.executionInvocationId === input.executionInvocationId && (proposal.status === "applied" || proposal.status === "stale" || proposal.status === "failed")) {
+      return { status: "settled" as const, outcome: proposal.status, appliedRef: proposal.appliedRef, ...(proposal.reason ? { reason: proposal.reason } : {}) };
+    }
+    if (proposal.expiresAt <= input.now && proposal.executionInvocationId !== input.executionInvocationId) return { status: "expired" as const };
+    if (proposal.status === "dismissed") return { status: "canceled" as const };
+    if (proposal.status !== "pending") return { status: "not_prepared" as const };
+    if (proposal.executionInvocationId && proposal.executionInvocationId !== input.executionInvocationId) return { status: "not_prepared" as const };
+    if (proposal.confirmationRequirement === "signed_in_approval" && (proposal.approvedAt == null || proposal.approvalDigest !== proposal.reviewDigest)) return { status: "approval_required" as const };
+    if (!this.isClaimFree(proposal.id, input.claimTtlSeconds) && proposal.executionInvocationId !== input.executionInvocationId) return { status: "claim_held" as const };
+    const claimedAt = input.now;
+    const previousAttemptStartedAt = this.applyClaims.get(proposal.id) ?? null;
+    this.applyClaims.set(proposal.id, claimedAt);
+    const claimed = { ...proposal, executionInvocationId: input.executionInvocationId, updatedAt: claimedAt };
+    this.proposals[this.proposals.indexOf(proposal)] = claimed;
+    return { status: "claimed" as const, claim: { proposal: claimed, claimedAt, previousAttemptStartedAt } };
+  }
+
+  async approveMcpReviewedProposal(input: { proposalId: string; workspaceId: string; operatorUserId: string; reviewDigest: string; now: Date }): Promise<
+    | { readonly status: "approved"; readonly approvedAt: Date; readonly newlyRecorded: boolean }
+    | { readonly status: "expired" | "not_pending" | "digest_mismatch" | "not_found" }
+  > {
+    const proposal = await this.findProposal({ id: input.proposalId, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId });
+    if (!proposal) return { status: "not_found" };
+    if (proposal.reviewDigest !== input.reviewDigest) return { status: "digest_mismatch" };
+    if (proposal.status !== "pending") return { status: "not_pending" };
+    if (!proposal.expiresAt || proposal.expiresAt <= input.now) return { status: "expired" };
+    if (proposal.confirmationRequirement !== "signed_in_approval") return { status: "not_pending" };
+    if (proposal.approvedAt) return { status: "approved", approvedAt: proposal.approvedAt, newlyRecorded: false };
+    const updated = { ...proposal, approvedAt: input.now, approvedByUserId: input.operatorUserId, approvalDigest: input.reviewDigest, updatedAt: input.now };
+    this.proposals[this.proposals.indexOf(proposal)] = updated;
+    return { status: "approved", approvedAt: input.now, newlyRecorded: true };
   }
 
   async findProposalWorkspace(input: { id: string; accountId: string; operatorUserId: string }): Promise<string | null> {

@@ -69,7 +69,8 @@ describeIntegration("reviewed agent settings and ingestion settings execution (P
     const proposal = await proposals.createProposal({
       workspaceId, operatorUserId: userId, origin: { type: "operator_mcp_invocation", invocationId: reviewId },
       targetType: input.targetType, targetRef: input.targetRef, payload: input.payload,
-      versionToken: "unused", evidence: null, reviewDigest, expiresAt: new Date(Date.now() + 60_000),
+      versionToken: "unused", evidence: null, reviewDigest, reviewSnapshot: {}, expiresAt: new Date(Date.now() + 60_000),
+      confirmationRequirement: "conversation", changeEffect: { exposure: "draft", reversibility: "reversible", metered: false },
     });
     const claimTtlSeconds = input.claimTtlSeconds ?? 300;
     const claim = await proposals.claimMcpReviewedProposalApply({ proposalId: proposal.id, executionInvocationId, reviewDigest, workspaceId, operatorUserId: userId, grantId, clientId, now: new Date(), claimTtlSeconds });

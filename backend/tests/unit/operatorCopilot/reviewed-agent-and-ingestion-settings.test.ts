@@ -186,6 +186,7 @@ describe("prepare_agent_settings through the operator MCP catalog", () => {
       expectedFields: [{ key: "name", value: "Support" }],
       changes: [{ key: "name", current: "Support", proposed: "Help Desk", lifecycle: "live" as const, reach: false }],
       unchanged: [],
+      effect: { exposure: "live" as const, reversibility: "reversible" as const, metered: false },
     }));
     const readFieldProposalVersion = vi.fn(async () => "fields:agent:v1");
     const descriptor = { ...createAgentSettingsReviewedPreparationTool({ ...deps, agentSettings: { prepareFieldsProposal, readFieldProposalVersion } as never }), mcpDisposition: operatorMcpDispositions.prepare_agent_settings };
@@ -223,7 +224,7 @@ describe("prepare_agent_settings through the operator MCP catalog", () => {
     const deps = proposalDependencies();
     const prepareFieldsProposal = vi.fn();
     const review = { target: { agentId, agentName: "Support" }, changes: [{ key: "name", before: "Support", after: "Help Desk", lifecycle: "live" as const, reach: false }], unchanged: [], effects: { liveKeys: ["name"], draftKeys: [], publicationRequired: false, reach: false } };
-    const proposalRecovery = { recoverOperatorMcpProposal: vi.fn(async () => ({ status: "recovered" as const, proposal: { id: randomUUID(), targetType: "agent_setting" as const, reviewDigest: "d".repeat(43), expiresAt: new Date("2026-09-26T10:15:00.000Z"), reviewSnapshot: review } })) } as never;
+    const proposalRecovery = { recoverOperatorMcpProposal: vi.fn(async () => ({ status: "recovered" as const, proposal: { id: randomUUID(), targetType: "agent_setting" as const, reviewDigest: "d".repeat(43), expiresAt: new Date("2026-09-26T10:15:00.000Z"), reviewSnapshot: review, confirmationRequirement: "signed_in_approval" as const, changeEffect: { exposure: "live" as const, reversibility: "reversible" as const, metered: false } } })) } as never;
     const descriptor = { ...createAgentSettingsReviewedPreparationTool({ ...deps, proposalRecovery, agentSettings: { prepareFieldsProposal, readFieldProposalVersion: vi.fn() } }), mcpDisposition: operatorMcpDispositions.prepare_agent_settings };
     const catalog = new OperatorMcpCatalogService([descriptor]);
     const invocation = { id: randomUUID(), grantId, operationId: "op-1", inputDigest: "digest" } as never;
@@ -281,7 +282,7 @@ describe("prepare_ingestion_settings through the operator MCP catalog", () => {
     const deps = proposalDependencies();
     const prepareFieldProposal = vi.fn();
     const review = { changes: [{ field: "fixedWindowChunkSize", before: 1_000, after: 1_500 }], after: { fixedWindowChunkSize: 1_500 }, effect: { appliesTo: "documents_processed_after_execution" as const, existingDocuments: "unchanged_until_reprocessed" as const, embeddingModel: "unchanged" as const } };
-    const proposalRecovery = { recoverOperatorMcpProposal: vi.fn(async () => ({ status: "recovered" as const, proposal: { id: randomUUID(), targetType: "ingestion_settings" as const, reviewDigest: "e".repeat(43), expiresAt: new Date("2026-09-26T10:15:00.000Z"), reviewSnapshot: review } })) } as never;
+    const proposalRecovery = { recoverOperatorMcpProposal: vi.fn(async () => ({ status: "recovered" as const, proposal: { id: randomUUID(), targetType: "ingestion_settings" as const, reviewDigest: "e".repeat(43), expiresAt: new Date("2026-09-26T10:15:00.000Z"), reviewSnapshot: review, confirmationRequirement: "signed_in_approval" as const, changeEffect: { exposure: "live" as const, reversibility: "reversible" as const, metered: false } } })) } as never;
     const descriptor = { ...createIngestionSettingsReviewedPreparationTool({ ...deps, proposalRecovery, ingestionSettings: { prepareFieldProposal, readFieldProposalVersion: vi.fn() } }), mcpDisposition: operatorMcpDispositions.prepare_ingestion_settings };
     const catalog = new OperatorMcpCatalogService([descriptor]);
     const invocation = { id: randomUUID(), grantId, operationId: "op-1", inputDigest: "digest" } as never;

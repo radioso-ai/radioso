@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 
 import { AuthPage } from '@/components/auth/auth-page'
 import { CopilotProposalCard } from '@/components/dashboard/copilot-proposal-card'
+import { ReviewedOperationApproval } from '@/components/operator-mcp/reviewed-operation-approval'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Spinner } from '@/components/ui/spinner'
 import { copilotApi, type CopilotAvailability, type CopilotProposalDetail } from '@/lib/api-copilot'
@@ -90,14 +91,14 @@ export default function OperatorMcpProposalPage() {
   return (
     <ProposalShell>
       <Card className="w-full max-w-2xl">
-        <CardHeader><CardTitle>Review proposal from Radioso MCP</CardTitle></CardHeader>
+        <CardHeader><CardTitle>Review proposal from {proposal.reviewedOperation?.clientName ?? 'Radioso MCP'}</CardTitle></CardHeader>
         <CardContent>
-          <CopilotProposalCard
+          {proposal.reviewedOperation ? <ReviewedOperationApproval proposal={proposal} /> : <CopilotProposalCard
             proposal={proposal}
             canApply={availability.available && (availability.applyableProposalTargets ?? []).includes(proposal.targetType)}
             workspaceId={proposal.workspaceId}
             onOpenEntity={() => undefined}
-          />
+          />}
         </CardContent>
       </Card>
     </ProposalShell>

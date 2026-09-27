@@ -81,6 +81,16 @@ const proposalOriginFields = (input: CopilotProposalDraft) => {
     origin,
     conversationId: origin.type === "conversation" ? origin.conversationId : null,
     operatorMcpInvocationId: origin.type === "operator_mcp_invocation" ? origin.invocationId : null,
+    executionInvocationId: null,
+    reviewDigest: input.reviewDigest ?? null,
+    reviewSnapshot: input.reviewSnapshot ?? null,
+    expiresAt: input.expiresAt ?? null,
+    confirmationRequirement: input.confirmationRequirement ?? null,
+    changeEffect: input.changeEffect ?? null,
+    approvedAt: null,
+    approvedByUserId: null,
+    approvalDigest: null,
+    reason: null,
   };
 };
 
@@ -686,7 +696,7 @@ describe("US3 copilot proposals", () => {
     repository.expireApplyClaim(proposal.id);
     const recoveredClaim = (await repository.claimProposalApply({ id: proposal.id, workspaceId, operatorUserId, claimTtlSeconds: 300 }))!;
     const publish = vi.fn(async () => ({ publicationId: randomUUID(), revisionId: candidateRevisionId, publishedAt: new Date(), idempotentReplay: true }));
-    const adapter = createAgentPublicationProposalAdapter({ revisions: { state: vi.fn(), detail: vi.fn(), publish } });
+    const adapter = createAgentPublicationProposalAdapter({ revisions: { state: vi.fn(), detail: vi.fn(), publish, createCandidate: vi.fn(), describeCandidateRelease: vi.fn(), describeCandidatePublicationReview: vi.fn(), readCandidateReleaseChange: vi.fn() } });
     const service = new OperatorCopilotService({
       repository, capabilityRunner: { runStreaming: vi.fn() }, usageLimitPolicy: noLimitPolicy(), auditService: auditService(), prompt: "system", workspaceRouteKeyResolver, currentAuthorization, tools: [], proposalAdapters: [adapter],
     });
@@ -1115,7 +1125,8 @@ const createMcpReviewedProposal = async (repository: MemoryProposalRepository): 
   repository.bindMcpPreparation(preparationId, mcpBinding);
   return repository.createProposal({
     workspaceId, operatorUserId, origin: { type: "operator_mcp_invocation", invocationId: preparationId }, targetType: "directive", targetRef: { agentId, directiveId },
-    payload: { name: "Updated" }, versionToken: "current", evidence: null, reviewDigest: "a".repeat(43), expiresAt: new Date(Date.now() + 60_000),
+    payload: { name: "Updated" }, versionToken: "current", evidence: null, reviewDigest: "a".repeat(43), reviewSnapshot: { name: "Updated" }, expiresAt: new Date(Date.now() + 60_000),
+    confirmationRequirement: "conversation", changeEffect: { exposure: "draft", reversibility: "reversible", metered: false },
   });
 };
 const reviewedOperationService = (
@@ -1144,7 +1155,7 @@ class MemoryProposalRepository implements CopilotRepositoryPort {
   async listMessages(input: { conversationId: string }): Promise<ReadonlyArray<CopilotMessage>> { return this.messages.filter((item) => item.conversationId === input.conversationId).map((message) => ({ ...message, proposals: this.proposals.filter((proposal) => proposal.messageId === message.id).map(presentProposal) })); }
   async acquireTurn(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotConversation | "running" | null> { const conversation = await this.findConversation(input); if (!conversation || conversation.status === "running") return conversation ? "running" : null; const next = { ...conversation, status: "running" as const }; this.conversations[this.conversations.indexOf(conversation)] = next; return next; }
   async finishTurn(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<void> { const conversation = await this.findConversation(input); if (conversation) this.conversations[this.conversations.indexOf(conversation)] = { ...conversation, status: "idle" }; }
-  async createProposal(input: CopilotProposalDraft): Promise<CopilotProposal> { const createdAt = new Date(); const origin = input.origin ?? { type: "conversation" as const, conversationId: input.conversationId }; const proposal: CopilotProposal = { ...input, origin, conversationId: origin.type === "conversation" ? origin.conversationId : null, operatorMcpInvocationId: origin.type === "operator_mcp_invocation" ? origin.invocationId : null, id: randomUUID(), messageId: null, reviewDigest: input.reviewDigest ?? null, reviewSnapshot: input.reviewSnapshot ?? null, expiresAt: input.expiresAt ?? null, executionInvocationId: null, status: "pending", reason: null, appliedRef: null, createdAt, updatedAt: createdAt }; this.proposals.push(proposal); return proposal; }
+  async createProposal(input: CopilotProposalDraft): Promise<CopilotProposal> { const createdAt = new Date(); const origin = input.origin ?? { type: "conversation" as const, conversationId: input.conversationId }; const proposal: CopilotProposal = { ...input, origin, conversationId: origin.type === "conversation" ? origin.conversationId : null, operatorMcpInvocationId: origin.type === "operator_mcp_invocation" ? origin.invocationId : null, id: randomUUID(), messageId: null, reviewDigest: input.reviewDigest ?? null, reviewSnapshot: input.reviewSnapshot ?? null, expiresAt: input.expiresAt ?? null, confirmationRequirement: input.confirmationRequirement ?? null, changeEffect: input.changeEffect ?? null, approvedAt: null, approvedByUserId: null, approvalDigest: null, executionInvocationId: null, status: "pending", reason: null, appliedRef: null, createdAt, updatedAt: createdAt }; this.proposals.push(proposal); return proposal; }
   async findProposal(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotProposal | null> { return this.proposals.find((item) => item.id === input.id && item.workspaceId === input.workspaceId && item.operatorUserId === input.operatorUserId) ?? null; }
   async findMcpReviewedProposal(input: { id: string; workspaceId: string; operatorUserId: string; grantId: string; clientId: string }): Promise<CopilotProposal | null> {
     const proposal = await this.findProposal(input);
@@ -2323,7 +2334,7 @@ describe("proposal card presentation", () => {
   it("keeps a routine proposal's drafted summary across a reload", async () => {
     const { presentProposalCard } = await import("../../../src/db/repositories/copilotRepository.js");
     const base = {
-      id: "proposal-1", workspaceId: "workspace-1", operatorUserId: "user-1", origin: { type: "conversation" as const, conversationId: "conversation-1" }, conversationId: "conversation-1", operatorMcpInvocationId: null, messageId: "message-1",
+      id: "proposal-1", workspaceId: "workspace-1", operatorUserId: "user-1", origin: { type: "conversation" as const, conversationId: "conversation-1" }, conversationId: "conversation-1", operatorMcpInvocationId: null, messageId: "message-1", reviewDigest: null, reviewSnapshot: null, expiresAt: null, executionInvocationId: null,
       targetType: "routine" as const, targetRef: { agentId: "agent-1", routineId: null }, versionToken: "v1", evidence: null,
       status: "pending" as const, reason: null, appliedRef: null, createdAt: new Date(0), updatedAt: new Date(0),
     };
@@ -2341,7 +2352,7 @@ describe("proposal card presentation", () => {
   it("marks a reloaded directive removal proposal's card with removal: true", async () => {
     const { presentProposalCard } = await import("../../../src/db/repositories/copilotRepository.js");
     const base = {
-      id: "proposal-1", workspaceId: "workspace-1", operatorUserId: "user-1", origin: { type: "conversation" as const, conversationId: "conversation-1" }, conversationId: "conversation-1", operatorMcpInvocationId: null, messageId: "message-1",
+      id: "proposal-1", workspaceId: "workspace-1", operatorUserId: "user-1", origin: { type: "conversation" as const, conversationId: "conversation-1" }, conversationId: "conversation-1", operatorMcpInvocationId: null, messageId: "message-1", reviewDigest: null, reviewSnapshot: null, expiresAt: null, executionInvocationId: null,
       targetType: "directive" as const, targetRef: { agentId: "agent-1", directiveId: "directive-1" }, versionToken: "v1", evidence: null,
       status: "pending" as const, reason: null, appliedRef: null, createdAt: new Date(0), updatedAt: new Date(0),
     };
@@ -2353,7 +2364,7 @@ describe("proposal card presentation", () => {
   it("does not mark an ordinary directive save proposal's card as a removal", async () => {
     const { presentProposalCard } = await import("../../../src/db/repositories/copilotRepository.js");
     const base = {
-      id: "proposal-1", workspaceId: "workspace-1", operatorUserId: "user-1", origin: { type: "conversation" as const, conversationId: "conversation-1" }, conversationId: "conversation-1", operatorMcpInvocationId: null, messageId: "message-1",
+      id: "proposal-1", workspaceId: "workspace-1", operatorUserId: "user-1", origin: { type: "conversation" as const, conversationId: "conversation-1" }, conversationId: "conversation-1", operatorMcpInvocationId: null, messageId: "message-1", reviewDigest: null, reviewSnapshot: null, expiresAt: null, executionInvocationId: null,
       targetType: "directive" as const, targetRef: { agentId: "agent-1", directiveId: "directive-1" }, versionToken: "v1", evidence: null,
       status: "pending" as const, reason: null, appliedRef: null, createdAt: new Date(0), updatedAt: new Date(0),
     };
@@ -2377,7 +2388,7 @@ describe("proposal card evidence", () => {
   const card = async (evidence: CopilotProposal["evidence"]) => {
     const { presentProposalCard } = await import("../../../src/db/repositories/copilotRepository.js");
     return presentProposalCard({
-      id: "proposal-1", workspaceId: "workspace-1", operatorUserId: "user-1", origin: { type: "conversation", conversationId: "conversation-1" }, conversationId: "conversation-1", operatorMcpInvocationId: null, messageId: "message-1",
+      id: "proposal-1", workspaceId: "workspace-1", operatorUserId: "user-1", origin: { type: "conversation", conversationId: "conversation-1" }, conversationId: "conversation-1", operatorMcpInvocationId: null, messageId: "message-1", reviewDigest: null, reviewSnapshot: null, expiresAt: null, executionInvocationId: null,
       targetType: "directive", targetRef: { agentId: "agent-1", directiveId: null }, payload: { name: "Refund window", rationale: "State it" },
       versionToken: "v1", evidence, status: "pending", reason: null, appliedRef: null, createdAt: new Date(0), updatedAt: new Date(0),
     });
@@ -3023,6 +3034,10 @@ describe("operator MCP proposal reconciliation", () => {
     targetRef: null,
     versionToken: "recovered-version",
     evidence: null,
+    reviewDigest: null,
+    reviewSnapshot: null,
+    expiresAt: null,
+    executionInvocationId: null,
     status: "pending",
     reason: null,
     appliedRef: null,
@@ -3045,7 +3060,7 @@ describe("operator MCP proposal reconciliation", () => {
       auditService: auditService(),
     });
 
-    await expect(descriptor.reconcileMcpInvocation!({ invocation, context: mcpContext, now, staleBefore }))
+    await expect(descriptor.reconcileMcpInvocation!({ invocation, arguments: {}, context: mcpContext, now, staleBefore }))
       .resolves.toEqual({
         status: "recovered",
         output: { proposalId: "proposal-1", targetType: "directive", targetLabel: "Avoid competitors", summary: "Draft directive" },
@@ -3072,7 +3087,7 @@ describe("operator MCP proposal reconciliation", () => {
       auditService: auditService(),
     });
 
-    await expect(descriptor.reconcileMcpInvocation!({ invocation, context: mcpContext, now, staleBefore }))
+    await expect(descriptor.reconcileMcpInvocation!({ invocation, arguments: {}, context: mcpContext, now, staleBefore }))
       .resolves.toEqual({ status: "conflict" });
   });
 
@@ -3090,7 +3105,7 @@ describe("operator MCP proposal reconciliation", () => {
     });
     const descriptor = descriptors.find((candidate) => candidate.name === "propose_directive_removal")!;
 
-    await expect(descriptor.reconcileMcpInvocation!({ invocation, context: mcpContext, now, staleBefore }))
+    await expect(descriptor.reconcileMcpInvocation!({ invocation, arguments: {}, context: mcpContext, now, staleBefore }))
       .resolves.toEqual({
         status: "recovered",
         output: {
@@ -3121,7 +3136,7 @@ describe("operator MCP proposal reconciliation", () => {
       auditService: auditService(),
     });
 
-    await expect(descriptor.reconcileMcpInvocation!({ invocation, context: mcpContext, now, staleBefore }))
+    await expect(descriptor.reconcileMcpInvocation!({ invocation, arguments: {}, context: mcpContext, now, staleBefore }))
       .resolves.toEqual({
         status: "recovered",
         output: { proposalId: "proposal-3", targetType: "agent_setting", targetLabel: "retrievalEnabled", summary: "Turn retrieval off for this agent." },
@@ -3145,7 +3160,7 @@ describe("operator MCP proposal reconciliation", () => {
       auditService: auditService(),
     });
 
-    await expect(descriptor.reconcileMcpInvocation!({ invocation, context: mcpContext, now, staleBefore }))
+    await expect(descriptor.reconcileMcpInvocation!({ invocation, arguments: {}, context: mcpContext, now, staleBefore }))
       .resolves.toEqual({
         status: "recovered",
         output: { proposalId: "proposal-5", targetType: "agent_greeting", targetLabel: "Greeting", summary: "Turn on Exact words for the greeting." },
@@ -3170,7 +3185,7 @@ describe("operator MCP proposal reconciliation", () => {
     });
     const descriptor = descriptors.find((candidate) => candidate.name === "propose_routine_edit")!;
 
-    await expect(descriptor.reconcileMcpInvocation!({ invocation, context: mcpContext, now, staleBefore }))
+    await expect(descriptor.reconcileMcpInvocation!({ invocation, arguments: {}, context: mcpContext, now, staleBefore }))
       .resolves.toEqual({
         status: "recovered",
         output: {
@@ -3201,7 +3216,7 @@ describe("operator MCP proposal reconciliation", () => {
     });
     const descriptor = descriptors.find((candidate) => candidate.name === "propose_routine_edit")!;
 
-    await expect(descriptor.reconcileMcpInvocation!({ invocation, context: mcpContext, now, staleBefore }))
+    await expect(descriptor.reconcileMcpInvocation!({ invocation, arguments: {}, context: mcpContext, now, staleBefore }))
       .resolves.toEqual({ status: "conflict" });
   });
 
@@ -3215,7 +3230,7 @@ describe("operator MCP proposal reconciliation", () => {
       auditService: auditService(),
     });
 
-    await expect(descriptor.reconcileMcpInvocation!({ invocation, context: mcpContext, now, staleBefore }))
+    await expect(descriptor.reconcileMcpInvocation!({ invocation, arguments: {}, context: mcpContext, now, staleBefore }))
       .resolves.toEqual({ status: "retry_prepare" });
   });
 
@@ -3230,7 +3245,7 @@ describe("operator MCP proposal reconciliation", () => {
     });
     const invocationWithoutOperationId = { ...invocationRaw, operationId: undefined } as never;
 
-    await expect(descriptor.reconcileMcpInvocation!({ invocation: invocationWithoutOperationId, context: mcpContext, now, staleBefore }))
+    await expect(descriptor.reconcileMcpInvocation!({ invocation: invocationWithoutOperationId, arguments: {}, context: mcpContext, now, staleBefore }))
       .resolves.toEqual({ status: "conflict" });
     expect(recoverOperatorMcpProposal).not.toHaveBeenCalled();
   });

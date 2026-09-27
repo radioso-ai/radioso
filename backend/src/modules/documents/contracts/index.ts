@@ -47,6 +47,7 @@ export type {
 export { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../domain/sourceConstants.js";
 export {
   describeDocumentReviewedOperationPlan,
+  documentReviewedChangeEffect,
   documentReviewedOperationPlanSchema,
   documentReviewedOperationTargetRefSchema,
 } from "../services/documentReviewedOperationPlan.js";

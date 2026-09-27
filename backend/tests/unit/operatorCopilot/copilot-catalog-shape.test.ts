@@ -444,3 +444,43 @@ describe("verification cost declarations", () => {
     }
   });
 });
+
+describe("reviewed operations stay MCP-only", () => {
+  // A reviewed proposal is bound to an MCP execution receipt (execute_reviewed_proposal claims it
+  // by grant/client/digest). Ray's dashboard surface has no such receipt, so a reviewed descriptor
+  // resolving there would let Ray create a proposal only an MCP client could ever complete. Every
+  // `prepare_*` descriptor's output schema carries `reviewDigest`, and so does
+  // `reviewed_proposal_outcome`'s; `execute_reviewed_proposal` and `cancel_reviewed_proposal` are
+  // named explicitly because they consume or retire a digest rather than minting one.
+  const GENERIC_REVIEWED_TOOLS = ["execute_reviewed_proposal", "reviewed_proposal_outcome", "cancel_reviewed_proposal"];
+  const outputsAReviewDigest = (descriptor: { outputSchema: unknown }): boolean => {
+    const shape = (descriptor.outputSchema as { shape?: Record<string, unknown> } | null)?.shape;
+    return shape !== undefined && "reviewDigest" in shape;
+  };
+
+  it("keeps every reviewed-preparation and generic reviewed tool unresolvable on the dashboard surface", () => {
+    const reviewed = realCatalog().filter((descriptor) => outputsAReviewDigest(descriptor) || GENERIC_REVIEWED_TOOLS.includes(descriptor.name));
+    // A regression on this list itself: if nothing matches, the shape-based detection broke and
+    // the assertion below would vacuously pass.
+    expect(reviewed.map((descriptor) => descriptor.name).sort()).toEqual([
+      "cancel_reviewed_proposal",
+      "execute_reviewed_proposal",
+      "prepare_agent_publication",
+      "prepare_agent_settings",
+      "prepare_directive",
+      "prepare_document_import",
+      "prepare_document_removal",
+      "prepare_document_reprocess",
+      "prepare_ingestion_settings",
+      "prepare_retrieval_settings",
+      "prepare_routine_structure",
+      "reviewed_proposal_outcome",
+    ]);
+
+    const dashboardVisible = reviewed.filter((descriptor) => !descriptor.surfaces || descriptor.surfaces.includes("dashboard"));
+    expect(dashboardVisible.map((descriptor) => descriptor.name)).toEqual([]);
+    for (const descriptor of reviewed) {
+      expect(descriptor.surfaces, `${descriptor.name} must declare surfaces: ["mcp"]`).toEqual(["mcp"]);
+    }
+  });
+});

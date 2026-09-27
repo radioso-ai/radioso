@@ -3316,6 +3316,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/copilot/proposals/{proposalId}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve a reviewed MCP operation */
+        post: operations["approveCopilotProposal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/copilot/proposals/{proposalId}/dismiss": {
         parameters: {
             query?: never;
@@ -23816,6 +23833,23 @@ export interface operations {
                             after: "pass" | "fail" | "error" | "recorded";
                             stale: boolean;
                         }[] | null;
+                        reviewedOperation: {
+                            /** @enum {string} */
+                            requirement: "conversation" | "signed_in_approval";
+                            effect: {
+                                /** @enum {string} */
+                                exposure: "draft" | "live";
+                                /** @enum {string} */
+                                reversibility: "reversible" | "irreversible";
+                                metered: boolean;
+                            };
+                            reviewDigest: string;
+                            reviewCode: string;
+                            expiresAt: string | null;
+                            approvedAt: string | null;
+                            clientName: string | null;
+                            review?: unknown;
+                        } | null;
                     };
                 };
             };
@@ -23884,6 +23918,44 @@ export interface operations {
             };
             /** @description Proposal is not pending */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    approveCopilotProposal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proposalId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    reviewDigest: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Approval outcome */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        status: "approved" | "expired" | "not_pending" | "digest_mismatch";
+                    };
+                };
+            };
+            /** @description Not found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -3,12 +3,14 @@ import { z } from "zod";
 import { agentReviewedSettingsPatchSchema, type AgentFieldsProposalPreparation, type AgentReviewedSettingsPatch, type AgentSettingsProposalPort } from "../../agents/public.js";
 import type { CopilotToolDescriptor } from "../contracts.js";
 import { requireCurrentCopilotPermissions } from "../authorization.js";
-import { persistReviewedPreparation, recoverReviewedPreparation, type ReviewedPreparationDependencies } from "./reviewedPreparation.js";
+import { persistReviewedPreparation, recoverReviewedPreparation, reviewedPreparationConfirmation, type ReviewedPreparationDependencies } from "./reviewedPreparation.js";
+import { reviewedConfirmationSchema } from "../reviewedOperation.js";
 
 const NAME = "prepare_agent_settings";
 const inputSchema = z.object({ agentId: z.string().uuid(), patch: agentReviewedSettingsPatchSchema, rationale: z.string().min(1).max(1_000).optional() }).strict();
 const outputSchema = z.object({
   proposalId: z.string().uuid(), reviewDigest: z.string().min(1).max(200), expiresAt: z.string().datetime(),
+  confirmation: reviewedConfirmationSchema,
   review: z.object({
     target: z.object({ agentId: z.string().uuid(), agentName: z.string().max(200) }).strict(),
     changes: z.array(z.object({ key: z.string().max(200), before: z.unknown(), after: z.unknown(), lifecycle: z.enum(["live", "agent_draft"]), reach: z.boolean() }).strict()).max(25),
@@ -31,7 +33,8 @@ export const createAgentSettingsReviewedPreparationTool = (deps: AgentSettingsRe
     if (recovered.status !== "recovered") return recovered;
     if (recovered.proposal.targetType !== "agent_setting" || !recovered.proposal.reviewDigest || !recovered.proposal.expiresAt) return { status: "conflict" as const };
     const review = outputSchema.shape.review.safeParse(recovered.proposal.reviewSnapshot);
-    return review.success ? { status: "recovered" as const, output: { proposalId: recovered.proposal.id, reviewDigest: recovered.proposal.reviewDigest, expiresAt: recovered.proposal.expiresAt.toISOString(), review: review.data } } : { status: "conflict" as const };
+    const confirmation = reviewedPreparationConfirmation(deps, recovered.proposal);
+    return review.success && confirmation ? { status: "recovered" as const, output: { proposalId: recovered.proposal.id, reviewDigest: recovered.proposal.reviewDigest, expiresAt: recovered.proposal.expiresAt.toISOString(), confirmation, review: review.data } } : { status: "conflict" as const };
   },
   createTool: (context) => ({ name: NAME, description: "Prepare several settings for one agent as one digest-bound operation. customInstruction is an agent draft and needs prepare_agent_publication before customers see it; other settings are live at execution.", inputSchema, outputSchema, invoke: async (raw) => {
     const input = inputSchema.parse(raw); await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
@@ -43,7 +46,7 @@ export const createAgentSettingsReviewedPreparationTool = (deps: AgentSettingsRe
     const payload = { kind: "fields" as const, patch: prepared.normalizedPatch, ...(input.rationale === undefined ? {} : { rationale: input.rationale }) };
     const versionToken = await deps.agentSettings.readFieldProposalVersion(context.workspaceId, input.agentId, { keys: prepared.expectedFields.map((field) => field.key) });
     await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
-    const stored = await persistReviewedPreparation({ deps, context, targetType: "agent_setting", targetRef: { agentId: input.agentId, expectedFields: prepared.expectedFields }, payload, versionToken, reviewSnapshot: review, operation: NAME });
-    return { proposalId: stored.proposal.id, reviewDigest: stored.reviewDigest, expiresAt: stored.expiresAt.toISOString(), review };
+    const stored = await persistReviewedPreparation({ deps, context, targetType: "agent_setting", targetRef: { agentId: input.agentId, expectedFields: prepared.expectedFields }, payload, versionToken, reviewSnapshot: review, operation: NAME, effect: prepared.effect });
+    return { proposalId: stored.proposal.id, reviewDigest: stored.reviewDigest, expiresAt: stored.expiresAt.toISOString(), confirmation: stored.confirmation, review };
   } }),
 });

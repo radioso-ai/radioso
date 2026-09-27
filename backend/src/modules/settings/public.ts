@@ -11,5 +11,6 @@ export const ingestionSettingsChangeEffect = {
   existingDocuments: "unchanged_until_reprocessed",
   embeddingModel: "unchanged",
 } as const;
+export const ingestionSettingsReviewedEffect = { exposure: "live", reversibility: "reversible", metered: false } as const;
 export { websiteEmbedLauncherPositions } from "./domain/websiteEmbedSettings.js";
 export * from "./copilotPrimitiveRegistry.js";

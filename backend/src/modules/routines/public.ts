@@ -23,6 +23,7 @@ export {
   type RoutineTerminalKind,
 } from "./domain.js";
 export { compileRoutineDefinition, legacyCompiledRoutineId, routineCanActivate } from "./compiler.js";
+export { routineDraftChangeEffect } from "./reviewedChangeEffect.js";
 export { selectCanonicalRoutineDefinitions } from "./draftProjection.js";
 export {
   applyRoutineFieldPatch,

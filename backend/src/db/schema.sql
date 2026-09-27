@@ -2137,8 +2137,16 @@ CREATE TABLE public.copilot_proposals (
     review_snapshot jsonb,
     expires_at timestamp with time zone,
     execution_invocation_id uuid,
+    confirmation_requirement text,
+    change_effect jsonb,
+    approved_at timestamp with time zone,
+    approved_by_user_id uuid,
+    approval_digest text,
+    CONSTRAINT copilot_proposals_approval_shape_check CHECK ((((approved_at IS NULL) = (approved_by_user_id IS NULL)) AND ((approved_at IS NULL) = (approval_digest IS NULL)) AND ((approved_at IS NULL) OR ((confirmation_requirement = 'signed_in_approval'::text) AND (approval_digest = review_digest))))),
+    CONSTRAINT copilot_proposals_confirmation_requirement_check CHECK ((confirmation_requirement = ANY (ARRAY['conversation'::text, 'signed_in_approval'::text]))),
     CONSTRAINT copilot_proposals_exactly_one_origin_check CHECK (((conversation_id IS NOT NULL) <> (operator_mcp_invocation_id IS NOT NULL))),
     CONSTRAINT copilot_proposals_message_requires_conversation_check CHECK (((message_id IS NULL) OR (conversation_id IS NOT NULL))),
+    CONSTRAINT copilot_proposals_reviewed_requirement_check CHECK (((review_digest IS NULL) OR (confirmation_requirement IS NOT NULL))),
     CONSTRAINT copilot_proposals_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'applied'::text, 'dismissed'::text, 'failed'::text, 'stale'::text]))),
     CONSTRAINT copilot_proposals_target_type_check CHECK ((target_type = ANY (ARRAY['directive'::text, 'agent'::text, 'agent_setting'::text, 'routine'::text, 'agent_skill'::text, 'context_variable'::text, 'document'::text, 'document_operation'::text, 'ingestion_settings'::text, 'website_crawl'::text, 'workspace_setting'::text, 'agent_publication'::text, 'agent_greeting'::text])))
 );

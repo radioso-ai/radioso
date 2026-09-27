@@ -17,6 +17,7 @@ const proposalDependencies = () => ({
   proposalRepository: { createProposal: vi.fn(async (input) => ({ id: randomUUID(), ...input })) },
   proposalRecovery: { recoverOperatorMcpProposal: vi.fn() },
   proposalAdapters: [], auditService: { record: vi.fn() }, now: () => new Date("2026-09-26T10:00:00.000Z"),
+  appBaseUrl: "https://app.radioso.ai",
 });
 
 describe("reviewed settings preparation", () => {
@@ -26,6 +27,7 @@ describe("reviewed settings preparation", () => {
       targetAgentId: agentId, agentName: "Support", normalizedPatch: { name: "Help", customInstruction: "Be concise." },
       expectedFields: [{ key: "name", value: "Support" }, { key: "customInstruction", value: "" }],
       changes: [{ key: "name", current: "Support", proposed: "Help", lifecycle: "live" as const, reach: false }, { key: "customInstruction", current: "", proposed: "Be concise.", lifecycle: "agent_draft" as const, reach: false }], unchanged: [],
+      effect: { exposure: "live" as const, reversibility: "reversible" as const, metered: false },
     }));
     const descriptor = createAgentSettingsReviewedPreparationTool({ ...deps, agentSettings: { prepareFieldsProposal, readFieldProposalVersion: vi.fn(async () => "fields:agent") } as never });
 
@@ -34,6 +36,9 @@ describe("reviewed settings preparation", () => {
     expect(prepareFieldsProposal).toHaveBeenCalledWith(context.workspaceId, agentId, { name: "Help", customInstruction: "Be concise." });
     expect(output).toMatchObject({ review: { effects: { publicationRequired: true, liveKeys: ["name"], draftKeys: ["customInstruction"] } } });
     expect(deps.proposalRepository.createProposal).toHaveBeenCalledWith(expect.objectContaining({ targetType: "agent_setting", targetRef: { agentId, expectedFields: expect.any(Array) }, reviewDigest: expect.any(String), expiresAt: new Date("2026-09-26T10:15:00.000Z") }));
+    // A patch touching any live field takes the whole operation to signed-in approval, from the
+    // owner's combined effect, not a copilot-side rule over the field list.
+    expect(output).toMatchObject({ confirmation: { requirement: "signed_in_approval", approvalUrl: expect.stringMatching(/^https:\/\/app\.radioso\.ai\/oauth\/operator-mcp\/proposal\//) } });
   });
 
   it("persists ingestion review from the owner's normalized surface and changed-field fence", async () => {
@@ -48,5 +53,8 @@ describe("reviewed settings preparation", () => {
 
     expect(output).toMatchObject({ review: { changes: [{ field: "fixedWindowChunkSize", before: 1_000, after: 1_500 }], effect: { existingDocuments: "unchanged_until_reprocessed" } } });
     expect(deps.proposalRepository.createProposal).toHaveBeenCalledWith(expect.objectContaining({ targetType: "ingestion_settings", targetRef: { expectedFields: { fixedWindowChunkSize: 1_000 } }, reviewDigest: expect.any(String) }));
+    // Ingestion settings apply to the next upload with no publication step, so the owner declares
+    // them signed-in-approval even though nothing else about the change is irreversible.
+    expect(output).toMatchObject({ confirmation: { requirement: "signed_in_approval", approvalUrl: expect.stringMatching(/^https:\/\/app\.radioso\.ai\/oauth\/operator-mcp\/proposal\//) } });
   });
 });

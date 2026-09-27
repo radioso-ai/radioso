@@ -136,7 +136,7 @@ describe("OperatorMcpApplicationService", () => {
     expect(invocations.claimRunning).not.toHaveBeenCalled();
   });
 
-  it("keeps a completed idempotent act without a recovery hook as a terminal replay", async () => {
+  it("answers a completed act replay with no recovery hook as a not-retained tool error, not a silent success", async () => {
     const terminalAct: CopilotToolDescriptor = {
       ...descriptor,
       name: "terminal_act",
@@ -149,8 +149,11 @@ describe("OperatorMcpApplicationService", () => {
     const bodyDigest = digestOperatorMcpCall({ name: terminalAct.name, arguments: argumentsValue, operationId: "operation-1" });
     const admitted = await service.admit({ accessToken: "operator-access", invocationId: uuid("13"), method: "tools/call", descriptorName: terminalAct.name, resource: principal.resource, timestamp: "1788480000", nonce: "edge-terminal", bodyDigest });
 
-    await expect(service.invoke({ proof: admitted.proof, name: terminalAct.name, arguments: argumentsValue, operationId: "operation-1", bodyDigest }))
-      .resolves.toMatchObject({ safeOutcomeCode: "completed" });
+    const response = await service.invoke({ proof: admitted.proof, name: terminalAct.name, arguments: argumentsValue, operationId: "operation-1", bodyDigest });
+
+    expect(response).toMatchObject({ isError: true, safeOutcomeCode: "completed" });
+    expect(response).not.toHaveProperty("structuredContent");
+    expect(response.content).toEqual([{ type: "text", text: expect.any(String) }]);
     expect(invocations.claimRunning).not.toHaveBeenCalled();
   });
 
@@ -168,8 +171,10 @@ describe("OperatorMcpApplicationService", () => {
     const bodyDigest = digestOperatorMcpCall({ name: activeAct.name, arguments: argumentsValue, operationId: "operation-1" });
     const admitted = await service.admit({ accessToken: "operator-access", invocationId: uuid("13"), method: "tools/call", descriptorName: activeAct.name, resource: principal.resource, timestamp: "1788480000", nonce: "edge-active", bodyDigest });
 
-    await expect(service.invoke({ proof: admitted.proof, name: activeAct.name, arguments: argumentsValue, operationId: "operation-1", bodyDigest }))
-      .resolves.toMatchObject({ safeOutcomeCode: "in_progress" });
+    const response = await service.invoke({ proof: admitted.proof, name: activeAct.name, arguments: argumentsValue, operationId: "operation-1", bodyDigest });
+
+    expect(response).toMatchObject({ isError: true, safeOutcomeCode: "in_progress" });
+    expect(response.content).toEqual([{ type: "text", text: expect.any(String) }]);
     expect(invocations.recordOutcome).not.toHaveBeenCalledWith(expect.objectContaining({ invocationId: original.id }));
     expect(invocations.claimRunning).not.toHaveBeenCalled();
   });
@@ -508,8 +513,8 @@ describe("OperatorMcpApplicationService", () => {
     expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ eventStatus: "failure", metadata: expect.objectContaining({ outcome: "refused", reason: "missing_configuration" }) }));
   });
 
-  it("closes a new receipt when a stable operation reconciles to an earlier result", async () => {
-    const { service, invocations, invocation } = build();
+  it("re-runs a read fresh even when the client repeats an earlier operation id", async () => {
+    const { service, invocations } = build();
     const operationId = "stable-operation";
     const argumentsValue = { section: "retrieval" };
     const bodyDigest = callDigest(argumentsValue, operationId);
@@ -517,10 +522,8 @@ describe("OperatorMcpApplicationService", () => {
       accessToken: "operator-access", invocationId: uuid("12"), method: "tools/call", descriptorName: descriptor.name,
       resource: principal.resource, timestamp: "1788480000", nonce: "edge", bodyDigest,
     });
-    invocations.prepareInvocation.mockResolvedValueOnce({
-      status: "replay",
-      invocation: { ...invocation, id: uuid("13"), status: "completed", safeOutcomeCode: "completed", resultReference: "proposal-1" },
-    });
+    // A read is idempotent with no recovery hook, so it is never keyed: the client's own operation
+    // id must not make the second call a dedup replay of the first's (possibly stale) answer.
 
     await expect(service.invoke({
       proof: admitted.proof,
@@ -528,13 +531,12 @@ describe("OperatorMcpApplicationService", () => {
       arguments: argumentsValue,
       operationId,
       bodyDigest,
-    })).resolves.toMatchObject({ safeOutcomeCode: "completed", resultReference: "proposal-1" });
-    expect(invocations.recordOutcome).toHaveBeenCalledWith(expect.objectContaining({
-      invocationId: uuid("12"), status: "completed", safeOutcomeCode: "replayed", resultReference: "proposal-1",
-    }));
+    })).resolves.toMatchObject({ structuredContent: argumentsValue, safeOutcomeCode: "completed" });
+    expect(invocations.prepareInvocation).toHaveBeenCalledWith(expect.objectContaining({ operationId: null }));
+    expect(invocations.claimRunning).toHaveBeenCalledOnce();
   });
 
-  it.each(["running", "failed"] as const)("recovers a proposal committed before its original %s invocation outcome", async (priorStatus) => {
+  it.each(["running", "failed", "completed"] as const)("recovers a proposal committed before its original %s invocation outcome", async (priorStatus) => {
     proposalReconciliation.mockReset();
     proposalInvoke.mockClear();
     proposalReconciliation.mockResolvedValueOnce({
@@ -656,6 +658,108 @@ describe("OperatorMcpApplicationService", () => {
     expect(invocations.prepareInvocation).toHaveBeenCalledOnce();
     expect(invocations.claimRunning).not.toHaveBeenCalled();
     expect(proposalInvoke).not.toHaveBeenCalled();
+  });
+
+  it("answers a completed proposal replay as not retained, not a conflict, when reconciliation proves no proposal committed", async () => {
+    proposalReconciliation.mockReset();
+    proposalInvoke.mockClear();
+    proposalReconciliation.mockResolvedValueOnce({ status: "retry_prepare" });
+    const enriched = enrichCopilotToolCatalog([rawProposalDescriptor], { resolveWorkspaceKey: async () => "workspace-key" })[0];
+    const { service, invocations, invocation } = build(enriched);
+    const operationId = "completed-before-proposal";
+    const argumentsValue = { section: "retrieval" };
+    const bodyDigest = digestOperatorMcpCall({ name: enriched.name, arguments: argumentsValue, operationId });
+    const admitted = await service.admit({
+      accessToken: "operator-access", invocationId: uuid("12"), method: "tools/call", descriptorName: enriched.name,
+      resource: principal.resource, timestamp: "1788480000", nonce: "edge", bodyDigest,
+    });
+    invocations.prepareInvocation.mockResolvedValueOnce({
+      status: "replay",
+      invocation: { ...invocation, id: uuid("13"), status: "completed", safeOutcomeCode: "completed", descriptorName: enriched.name, shape: "propose", operationId },
+    });
+
+    const response = await service.invoke({ proof: admitted.proof, name: enriched.name, arguments: argumentsValue, operationId, bodyDigest });
+
+    expect(response).toMatchObject({ isError: true, safeOutcomeCode: "completed" });
+    expect(response).not.toHaveProperty("structuredContent");
+    expect(proposalInvoke).not.toHaveBeenCalled();
+  });
+
+  it("answers a completed probe replay as not retained instead of spending another probe", async () => {
+    const probeInvoke = vi.fn(async () => ({ section: "retrieval" }));
+    const probeDescriptor: CopilotToolDescriptor = {
+      ...descriptor,
+      name: "retrieval_probe",
+      mcpDisposition: operatorMcpDispositions.retrieval_probe,
+      createTool: () => ({ name: "retrieval_probe", description: "probe", inputSchema: descriptor.inputSchema, outputSchema: descriptor.outputSchema, invoke: probeInvoke }),
+    };
+    const { service, invocations, invocation } = build(probeDescriptor, { ...principal, currentToolScopes: ["operator:probe"] });
+    const operationId = "probe-once";
+    const argumentsValue = { section: "retrieval" };
+    const bodyDigest = digestOperatorMcpCall({ name: probeDescriptor.name, arguments: argumentsValue, operationId });
+    const admitted = await service.admit({
+      accessToken: "operator-access", invocationId: uuid("12"), method: "tools/call", descriptorName: probeDescriptor.name,
+      resource: principal.resource, timestamp: "1788480000", nonce: "edge-probe", bodyDigest,
+    });
+    invocations.prepareInvocation.mockResolvedValueOnce({
+      status: "replay",
+      invocation: { ...invocation, id: uuid("13"), status: "completed", safeOutcomeCode: "completed", descriptorName: probeDescriptor.name, shape: "probe", operationId },
+    });
+
+    const response = await service.invoke({ proof: admitted.proof, name: probeDescriptor.name, arguments: argumentsValue, operationId, bodyDigest });
+
+    expect(response).toMatchObject({ isError: true, safeOutcomeCode: "completed" });
+    expect(probeInvoke).not.toHaveBeenCalled();
+  });
+
+  it("answers a still-running probe replay as in progress without spending another probe", async () => {
+    const probeInvoke = vi.fn();
+    const probeDescriptor: CopilotToolDescriptor = {
+      ...descriptor,
+      name: "retrieval_probe",
+      mcpDisposition: operatorMcpDispositions.retrieval_probe,
+      createTool: () => ({ name: "retrieval_probe", description: "probe", inputSchema: descriptor.inputSchema, outputSchema: descriptor.outputSchema, invoke: probeInvoke }),
+    };
+    const { service, invocations, invocation } = build(probeDescriptor, { ...principal, currentToolScopes: ["operator:probe"] });
+    const operationId = "probe-running";
+    const argumentsValue = { section: "retrieval" };
+    const bodyDigest = digestOperatorMcpCall({ name: probeDescriptor.name, arguments: argumentsValue, operationId });
+    const admitted = await service.admit({
+      accessToken: "operator-access", invocationId: uuid("12"), method: "tools/call", descriptorName: probeDescriptor.name,
+      resource: principal.resource, timestamp: "1788480000", nonce: "edge-probe-running", bodyDigest,
+    });
+    invocations.prepareInvocation.mockResolvedValueOnce({
+      status: "replay",
+      invocation: { ...invocation, id: uuid("13"), status: "running", descriptorName: probeDescriptor.name, shape: "probe", operationId },
+    });
+
+    const response = await service.invoke({ proof: admitted.proof, name: probeDescriptor.name, arguments: argumentsValue, operationId, bodyDigest });
+
+    expect(response).toMatchObject({ isError: true, safeOutcomeCode: "in_progress" });
+    expect(probeInvoke).not.toHaveBeenCalled();
+  });
+
+  it("answers a refused replay as not retained without invoking reconciliation", async () => {
+    proposalReconciliation.mockReset();
+    proposalInvoke.mockClear();
+    const enriched = enrichCopilotToolCatalog([rawProposalDescriptor], { resolveWorkspaceKey: async () => "workspace-key" })[0];
+    const { service, invocations, invocation } = build(enriched);
+    const operationId = "refused-once";
+    const argumentsValue = { section: "retrieval" };
+    const bodyDigest = digestOperatorMcpCall({ name: enriched.name, arguments: argumentsValue, operationId });
+    const admitted = await service.admit({
+      accessToken: "operator-access", invocationId: uuid("12"), method: "tools/call", descriptorName: enriched.name,
+      resource: principal.resource, timestamp: "1788480000", nonce: "edge-refused", bodyDigest,
+    });
+    invocations.prepareInvocation.mockResolvedValueOnce({
+      status: "replay",
+      invocation: { ...invocation, id: uuid("13"), status: "refused", safeOutcomeCode: "operation_conflict", descriptorName: enriched.name, shape: "propose", operationId },
+    });
+
+    const response = await service.invoke({ proof: admitted.proof, name: enriched.name, arguments: argumentsValue, operationId, bodyDigest });
+
+    expect(response).toMatchObject({ isError: true, safeOutcomeCode: "operation_conflict" });
+    expect(proposalReconciliation).not.toHaveBeenCalled();
   });
 
   it("does not invoke a descriptor after losing the admitted-to-running claim", async () => {
@@ -816,7 +920,7 @@ describe("operator MCP operation identity", () => {
     expect(retry.invocations.claimRunning).not.toHaveBeenCalled();
   });
 
-  it("keys an input-identity act by a client-sent operation id when one is present", async () => {
+  it("ignores a client-sent operation id for an input-identity act, keying by its input digest instead", async () => {
     const act = inputKeyedAct(vi.fn());
     const { service, invocations } = build(act);
     const argumentsValue = { section: "retrieval" };
@@ -825,7 +929,37 @@ describe("operator MCP operation identity", () => {
 
     await expect(service.invoke({ proof: admitted.proof, name: act.name, arguments: argumentsValue, operationId: "client-operation", bodyDigest }))
       .resolves.toMatchObject({ safeOutcomeCode: "completed" });
-    expect(invocations.prepareInvocation).toHaveBeenCalledWith(expect.objectContaining({ operationId: "client-operation" }));
+    const prepared = invocations.prepareInvocation.mock.calls[0][0];
+    expect(prepared.operationId).toBe(prepared.inputDigest);
+    expect(prepared.operationId).not.toBe("client-operation");
+  });
+
+  it("shares one receipt for execute_reviewed_proposal whether or not the client sends an operation id", async () => {
+    const proposalId = uuid("55");
+    const execution: CopilotToolDescriptor = {
+      ...descriptor,
+      name: "execute_reviewed_proposal",
+      shape: "act",
+      inputSchema: z.object({ proposalId: z.string().uuid() }).strict(),
+      outputSchema: z.object({ proposalId: z.string().uuid(), status: z.literal("applied") }).strict(),
+      mcpDisposition: { status: "eligible", inputStrategy: "explicit", scope: "operator:read", retry: { effect: "act", idempotent: true, operationIdentity: "input" } },
+      createTool: () => ({ name: "execute_reviewed_proposal", description: "execute", inputSchema: z.object({ proposalId: z.string().uuid() }), outputSchema: z.unknown(), invoke: vi.fn(async () => ({ proposalId, status: "applied" as const })) }),
+    };
+    const { service, invocations } = build(execution);
+    const args = { proposalId };
+
+    const keyedDigest = digestOperatorMcpCall({ name: execution.name, arguments: args, operationId: "client-op" });
+    const keyedAdmit = await service.admit({ accessToken: "operator-access", invocationId: uuid("12"), method: "tools/call", descriptorName: execution.name, resource: principal.resource, timestamp: "1788480000", nonce: "share-1", bodyDigest: keyedDigest });
+    await service.invoke({ proof: keyedAdmit.proof, name: execution.name, arguments: args, operationId: "client-op", bodyDigest: keyedDigest });
+    const keyedKey = invocations.prepareInvocation.mock.calls[0][0].operationId;
+
+    invocations.consumeProof.mockResolvedValueOnce("consumed");
+    const unkeyedDigest = digestOperatorMcpCall({ name: execution.name, arguments: args });
+    const unkeyedAdmit = await service.admit({ accessToken: "operator-access", invocationId: uuid("13"), method: "tools/call", descriptorName: execution.name, resource: principal.resource, timestamp: "1788480000", nonce: "share-2", bodyDigest: unkeyedDigest });
+    await service.invoke({ proof: unkeyedAdmit.proof, name: execution.name, arguments: args, bodyDigest: unkeyedDigest });
+    const unkeyedKey = invocations.prepareInvocation.mock.calls[1][0].operationId;
+
+    expect(unkeyedKey).toBe(keyedKey);
   });
 
   const eligibleCatalog = realCatalog().filter((candidate) => candidate.mcpDisposition?.status === "eligible");
@@ -856,7 +990,10 @@ describe("operator MCP operation identity", () => {
     const response = await unkeyedCall(service, act.name, { section: "retrieval" });
 
     expect(response).toMatchObject({ safeOutcomeCode: "in_progress" });
-    expect(response.isError).not.toBe(true);
+    // A caller cannot act on an in-progress answer it cannot tell apart from success -- both
+    // protocol versions must see this as a retryable error, not a completed empty result.
+    expect(response.isError).toBe(true);
+    expect(response.content).toEqual([{ type: "text", text: expect.any(String) }]);
     expect(response).not.toHaveProperty("structuredContent");
     expect(invocations.recordOutcome).not.toHaveBeenCalledWith(expect.objectContaining({ invocationId: original.id }));
   });

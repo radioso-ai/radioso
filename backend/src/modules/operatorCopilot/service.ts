@@ -574,11 +574,22 @@ export class OperatorCopilotService {
       return { status: "approval_required", approval: { url: buildAbsoluteOperatorMcpProposalLink(existing.id, this.deps.appBaseUrl), expiresAt: existing.expiresAt.toISOString(), effect: existing.changeEffect } };
     }
     if (claimed.status !== "claimed") return { status: "refused", reason: claimed.status };
-    const execution = await this.executeClaimedProposal({
-      input: { surface: "mcp", workspaceId: input.workspaceId, accountId: input.accountId, operatorUserId: input.operatorUserId, proposalId: input.proposalId, currentAuthorization: input.currentAuthorization },
-      claim: claimed.claim,
-      executionInvocationId: input.executionInvocationId,
-    });
+    let execution: CopilotClaimedProposalExecution;
+    try {
+      execution = await this.executeClaimedProposal({
+        input: { surface: "mcp", workspaceId: input.workspaceId, accountId: input.accountId, operatorUserId: input.operatorUserId, proposalId: input.proposalId, currentAuthorization: input.currentAuthorization },
+        claim: claimed.claim,
+        executionInvocationId: input.executionInvocationId,
+      });
+    } catch (error) {
+      if (!(error instanceof CopilotConflictError)) throw error;
+      // The owner call itself may have applied the change; only the receipt write lost its race to
+      // record that outcome (another replica settling the same receipt concurrently). Reporting
+      // uncertain -- not a thrown conflict -- lets this same execution receipt retry and reconcile
+      // from durable state instead of surfacing an opaque MCP runtime error the caller cannot act on.
+      this.logUnconfirmedMcpAttempt({ error, proposalId: input.proposalId, executionInvocationId: input.executionInvocationId, targetType: existing?.targetType ?? "unknown", workspaceId: input.workspaceId });
+      return { status: "uncertain", reason: UNCONFIRMED_APPLY_REASON };
+    }
     if (execution.status === "applied" && existing?.approvedAt) {
       this.recordReviewedApprovalMetric(existing.confirmationRequirement ?? "signed_in_approval", "applied_after_approval");
     }

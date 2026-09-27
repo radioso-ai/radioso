@@ -140,26 +140,29 @@ describe("operator MCP reviewed-approval URL elicitation", () => {
     expect(retryBody.result.resultType).toBe("complete");
     expect(retryBody.result.structuredContent).toEqual(appliedResult.structuredContent);
 
-    // The retry replays the same logical call: identical name/arguments/bodyDigest, and nothing
-    // about the elicitation travels to the backend -- the edge is a pure protocol adapter.
+    // The retry replays the same logical call: identical name/arguments/bodyDigest. The only
+    // thing that travels beyond that is the bare accepted consent action -- finding 1 of the
+    // stacked review -- so the backend's reviewed-execution boundary can wait briefly for the
+    // approval instead of relaying `approval_required` again immediately. It is not covered by
+    // the digest: this is a retry of the exact same logical call, not a different one.
     const expectedBodyDigest = digestOperatorMcpCall({ arguments: CALL_ARGUMENTS, name: TOOL_NAME });
     expect(call).toHaveBeenCalledTimes(2);
     expect(call).toHaveBeenNthCalledWith(1, expect.objectContaining({
       arguments: CALL_ARGUMENTS, name: TOOL_NAME, bodyDigest: expectedBodyDigest,
     }));
     expect(call).toHaveBeenNthCalledWith(2, expect.objectContaining({
-      arguments: CALL_ARGUMENTS, name: TOOL_NAME, bodyDigest: expectedBodyDigest,
+      arguments: CALL_ARGUMENTS, name: TOOL_NAME, bodyDigest: expectedBodyDigest, approvalResponse: { action: "accept" },
     }));
-    for (const [args] of call.mock.calls) {
-      expect(args).not.toHaveProperty("inputResponses");
-      expect(args).not.toHaveProperty("elicitation");
-    }
+    const [freshArgs] = call.mock.calls[0];
+    expect(freshArgs).not.toHaveProperty("inputResponses");
+    expect(freshArgs).not.toHaveProperty("approvalResponse");
   });
 
   it("(a2) an accept retry with no dashboard approval yet still gets the backend's real approval_required, passed through and not treated as approval", async () => {
     // `accept` means only that the person agreed to open the page (per spec, URL-mode consent is
-    // not consent to the change). If they retry before actually approving on the dashboard, the
-    // backend re-checks the same proposal row and finds it still unapproved.
+    // not consent to the change). If the backend's own bounded wait (finding 1) still finds no
+    // approval, it answers approval_required again, and the edge relays that as-is -- it never
+    // treats the retry itself as the approval.
     const call = vi.fn()
       .mockResolvedValueOnce(approvalRequiredResult)
       .mockResolvedValueOnce(approvalRequiredResult);
@@ -178,6 +181,32 @@ describe("operator MCP reviewed-approval URL elicitation", () => {
     expect(body.result.resultType).toBe("complete");
     expect(body.result.structuredContent).toEqual(approvalRequiredResult.structuredContent);
     expect(call).toHaveBeenCalledTimes(2);
+    expect(call).toHaveBeenNthCalledWith(2, expect.objectContaining({ approvalResponse: { action: "accept" } }));
+  });
+
+  it("(a3) deploy skew: an older backend that ignores approvalResponse still gets served, just without a wait", async () => {
+    // The edge only ever *sends* the field; it neither depends on nor inspects what the backend
+    // does with it. An older backend's copy of the internal contract does not know the field
+    // exists (it is optional and not `.strict()` there for exactly this), so it answers exactly
+    // as it always has -- the edge relays that unchanged.
+    const call = vi.fn(async (input: Record<string, unknown>) => {
+      const { approvalResponse: _ignoredByOldBackend, ...rest } = input;
+      void rest;
+      return approvalRequiredResult;
+    });
+    const dependencies = buildDependencies(call);
+    const handler = createOperatorMcpRequestHandler(dependencies);
+
+    await handler(modernRequest({ clientCapabilities: urlCapableMeta }));
+    const retry = await handler(modernRequest({
+      clientCapabilities: urlCapableMeta,
+      inputResponses: { [OPERATOR_MCP_URL_ELICITATION_KEY]: { action: "accept" } },
+    }));
+
+    expect(retry.status).toBe(200);
+    const body = await retry.json() as { result: Record<string, unknown> };
+    expect(body.result.resultType).toBe("complete");
+    expect(body.result.structuredContent).toEqual(approvalRequiredResult.structuredContent);
   });
 
   it("(b) leaves the plain link result unchanged for a client that never declared URL elicitation", async () => {
@@ -215,7 +244,7 @@ describe("operator MCP reviewed-approval URL elicitation", () => {
     expect(body.result.structuredContent).toEqual(approvalRequiredResult.structuredContent);
   });
 
-  it("(c) maps a decline or cancel retry to the backend's own refusal-shaped outcome, never an outage", async () => {
+  it("(c) maps a decline or cancel retry to the backend's own refusal-shaped outcome, never an outage, and never asks the backend to wait", async () => {
     for (const action of ["decline", "cancel"] as const) {
       const call = vi.fn()
         .mockResolvedValueOnce(approvalRequiredResult)
@@ -238,6 +267,10 @@ describe("operator MCP reviewed-approval URL elicitation", () => {
       const result = body.result as Record<string, unknown>;
       expect(result.resultType).toBe("complete");
       expect(result.structuredContent).toEqual({ proposalId: CALL_ARGUMENTS.proposalId, reason: "canceled", status: "refused" });
+      // A decline or cancel means the person did not even open the page, so there is nothing
+      // worth telling the backend's wait about -- only an accepted retry ever does.
+      const [, retryArgs] = call.mock.calls;
+      expect(retryArgs[0]).not.toHaveProperty("approvalResponse");
     }
   });
 

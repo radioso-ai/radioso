@@ -232,7 +232,7 @@ describe("prepare_agent_settings through the operator MCP catalog", () => {
     const recovered = await catalog.reconcileInvocation({
       name: "prepare_agent_settings", arguments: { agentId, patch: { name: "Help Desk" } }, invocation,
       context: contextWithPermissions(["workspace.agents.manage"]), scopes: new Set(["operator:propose"]),
-      staleBefore: new Date(0), now: new Date(),
+      staleBefore: new Date(0), now: new Date(), signal: AbortSignal.timeout(1_000),
     });
 
     expect(recovered).toMatchObject({ status: "recovered", output: { reviewDigest: "d".repeat(43), review } });
@@ -290,7 +290,7 @@ describe("prepare_ingestion_settings through the operator MCP catalog", () => {
     const recovered = await catalog.reconcileInvocation({
       name: "prepare_ingestion_settings", arguments: { fixedWindowChunkSize: 1_500 }, invocation,
       context: contextWithPermissions(["workspace.settings.manage"]), scopes: new Set(["operator:propose"]),
-      staleBefore: new Date(0), now: new Date(),
+      staleBefore: new Date(0), now: new Date(), signal: AbortSignal.timeout(1_000),
     });
 
     expect(recovered).toMatchObject({ status: "recovered", output: { reviewDigest: "e".repeat(43), review } });

@@ -150,13 +150,44 @@ export const OperatorCatalogResponseSchema = z.object({
 }).strict();
 export type OperatorCatalogResponse = z.infer<typeof OperatorCatalogResponseSchema>;
 
+/**
+ * The client's bare answer to a `radioso_approval` URL-mode elicitation retry (2026-07-28 MRTR,
+ * SEP-2322): `accept` means only that the person agreed to open the approval URL, not that they
+ * approved the change -- the approval itself lives on the backend's proposal row. Declared ahead
+ * of {@link OperatorInvocationRequestSchema} because the internal edge-to-backend invocation
+ * carries the same bare action, so the reviewed-execution boundary can decide whether to wait
+ * briefly for that approval before answering.
+ */
+const operatorMcpElicitationActionSchema = z.enum(["accept", "decline", "cancel"]);
+export type OperatorMcpElicitationAction = z.infer<typeof operatorMcpElicitationActionSchema>;
+export const OperatorMcpElicitationResultSchema = z.object({ action: operatorMcpElicitationActionSchema }).strict();
+
+/**
+ * The edge-to-backend invocation contract. Deliberately not `.strict()`, unlike its siblings: the
+ * standalone MCP edge and the backend run as separate Cloud Run services built from the same
+ * image (infra/terraform/compute.tf), so a rolling deploy can briefly run a newer edge against an
+ * older backend. An older backend's copy of this schema does not know about a field added later;
+ * stripping an unrecognized key instead of rejecting the whole request lets that pairing keep
+ * serving calls (an older backend simply never waits), while every field this schema does declare
+ * stays fully validated either way.
+ */
 export const OperatorInvocationRequestSchema = z.object({
   proof: OperatorMcpProofSchema,
   name: boundedText(128),
   arguments: z.record(z.string(), z.unknown()).default({}),
   operationId: boundedText(256).optional(),
   bodyDigest: digest,
-}).strict();
+  /**
+   * Present only on a 2026-07-28 MRTR retry of the `radioso_approval` elicitation this same
+   * invocation earlier answered with `approval_required`. Deliberately excluded from
+   * {@link digestOperatorMcpCall}'s canonical hash: it never changes what gets authorized or
+   * executed (`claimMcpReviewedProposalApply` alone still gates the approval), only how long the
+   * reviewed-execution boundary waits before re-checking it, so binding it to the admission proof
+   * would make every invocation's digest -- not just retries' -- break across the same
+   * rolling-deploy skew this schema's laxness exists to survive.
+   */
+  approvalResponse: OperatorMcpElicitationResultSchema.optional(),
+});
 export type OperatorInvocationRequest = z.infer<typeof OperatorInvocationRequestSchema>;
 
 export const OperatorInvocationResponseSchema = z.object({
@@ -287,18 +318,6 @@ export const canonicalizeOperatorResource = (resource: string): string | null =>
 // when approval is required -- that stays a backend policy the edge only transports.
 
 export const OPERATOR_MCP_URL_ELICITATION_KEY = "radioso_approval" as const;
-
-const operatorMcpElicitationActionSchema = z.enum(["accept", "decline", "cancel"]);
-export type OperatorMcpElicitationAction = z.infer<typeof operatorMcpElicitationActionSchema>;
-
-/**
- * The client's bare answer to the `radioso_approval` URL-mode elicitation, carried in a
- * 2026-07-28 MRTR retry's `inputResponses`. URL mode carries no form content, so only the
- * consent action travels: `accept` means the person agreed to open the URL, not that they
- * approved the change. The approval itself lives on the backend's proposal row, which execution
- * re-checks on the retry -- the edge never records or infers approval.
- */
-export const OperatorMcpElicitationResultSchema = z.object({ action: operatorMcpElicitationActionSchema }).strict();
 
 const MAX_INPUT_RESPONSE_KEYS = 4;
 const MAX_INPUT_RESPONSES_BYTES = 1_024;

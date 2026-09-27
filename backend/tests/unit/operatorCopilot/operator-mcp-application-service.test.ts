@@ -7,12 +7,14 @@ import { OperatorMcpCatalogService } from "../../../src/modules/operatorCopilot/
 import { enrichCopilotToolCatalog } from "../../../src/modules/operatorCopilot/catalog.js";
 import { OperatorMcpAccessError, type OperatorMcpPrincipal } from "../../../src/modules/operatorMcpAuthorization/public.js";
 import type { CopilotToolDescriptor } from "../../../src/modules/operatorCopilot/public.js";
+import type { CopilotToolInvocationContext } from "../../../src/modules/operatorCopilot/contracts.js";
 import type { OperatorMcpInvocationRecord, OperatorMcpInvocationRepositoryPort } from "../../../src/modules/operatorCopilot/mcpContracts.js";
 import { AppError, badRequest, conflict, notFound, serviceUnavailable } from "../../../src/shared/domain/errors.js";
 import { OperatorCopilotService, type CopilotRepositoryPort } from "../../../src/modules/operatorCopilot/service.js";
 import { operatorMcpDispositions } from "../../../src/modules/operatorCopilot/operatorMcpDisposition.js";
 import { createCancelReviewedProposalTool } from "../../../src/modules/operatorCopilot/tools/cancelReviewedProposal.js";
 import { createReviewedProposalExecutionTool } from "../../../src/modules/operatorCopilot/tools/reviewedProposalExecution.js";
+import { REVIEWED_APPROVAL_ACCEPT_WAIT_MS } from "../../../src/modules/operatorCopilot/reviewedOperation.js";
 import { realCatalog } from "./realCatalogTestSupport.js";
 
 const uuid = (suffix: string) => `00000000-0000-4000-8000-${suffix.padStart(12, "0")}`;
@@ -694,6 +696,69 @@ describe("OperatorMcpApplicationService", () => {
     invocations.consumeProof.mockResolvedValueOnce("consumed");
     const retry = await service.admit({ accessToken: "operator-access", invocationId: uuid("13"), method: "tools/call", descriptorName: execution.name, resource: principal.resource, timestamp: "1788480000", nonce: "retry", bodyDigest });
     await expect(service.invoke({ proof: retry.proof, name: execution.name, arguments: args, operationId, bodyDigest })).resolves.toMatchObject({ safeOutcomeCode: "completed", resultReference: proposalId });
+  });
+
+  /**
+   * Finding 1 of the stacked review: only an accepted URL-elicitation retry should ask a reviewed
+   * descriptor to wait for approval. This is generic plumbing at the application-service boundary
+   * -- it derives a plain context field from the transport's `approvalResponse`, with no opinion
+   * about what a descriptor does with it (`execute_reviewed_proposal`'s own use of it is covered in
+   * reviewed-approval-gate.test.ts).
+   */
+  describe("the accepted-retry wait budget", () => {
+    it("sets awaitApprovalMs on a fresh call's context only for an accepted elicitation response", async () => {
+      const createToolSpy = vi.fn((_context: CopilotToolInvocationContext) => ({ name: descriptor.name, description: descriptor.description, inputSchema: descriptor.inputSchema, outputSchema: descriptor.outputSchema, invoke: vi.fn(async (value: { section: string }) => value) }));
+      const waitDescriptor: CopilotToolDescriptor = { ...descriptor, createTool: createToolSpy };
+      const { service } = build(waitDescriptor);
+      const argumentsValue = { section: "retrieval" };
+      const bodyDigest = digestOperatorMcpCall({ name: waitDescriptor.name, arguments: argumentsValue });
+      const admitted = await service.admit({ accessToken: "operator-access", invocationId: uuid("20"), method: "tools/call", descriptorName: waitDescriptor.name, resource: principal.resource, timestamp: "1788480000", nonce: "accept-nonce", bodyDigest });
+
+      await service.invoke({ proof: admitted.proof, name: waitDescriptor.name, arguments: argumentsValue, bodyDigest, approvalResponse: { action: "accept" } });
+
+      expect(createToolSpy).toHaveBeenCalledWith(expect.objectContaining({ awaitApprovalMs: REVIEWED_APPROVAL_ACCEPT_WAIT_MS }));
+    });
+
+    it.each([
+      { label: "no elicitation response at all", approvalResponse: undefined },
+      { label: "a decline", approvalResponse: { action: "decline" as const } },
+      { label: "a cancel", approvalResponse: { action: "cancel" as const } },
+    ])("leaves awaitApprovalMs unset for $label", async ({ approvalResponse }) => {
+      const createToolSpy = vi.fn((_context: CopilotToolInvocationContext) => ({ name: descriptor.name, description: descriptor.description, inputSchema: descriptor.inputSchema, outputSchema: descriptor.outputSchema, invoke: vi.fn(async (value: { section: string }) => value) }));
+      const waitDescriptor: CopilotToolDescriptor = { ...descriptor, createTool: createToolSpy };
+      const { service } = build(waitDescriptor);
+      const argumentsValue = { section: "retrieval" };
+      const bodyDigest = digestOperatorMcpCall({ name: waitDescriptor.name, arguments: argumentsValue });
+      const admitted = await service.admit({ accessToken: "operator-access", invocationId: uuid("21"), method: "tools/call", descriptorName: waitDescriptor.name, resource: principal.resource, timestamp: "1788480000", nonce: `nonce-${String(approvalResponse?.action ?? "absent")}`, bodyDigest });
+
+      await service.invoke({ proof: admitted.proof, name: waitDescriptor.name, arguments: argumentsValue, bodyDigest, ...(approvalResponse ? { approvalResponse } : {}) });
+
+      const [context] = createToolSpy.mock.calls[0];
+      expect(context.awaitApprovalMs).toBeUndefined();
+    });
+
+    it("threads the same wait budget and a bounded signal into a reconciled retry's context", async () => {
+      const reconcileMcpInvocation = vi.fn(async () => ({ status: "recovered" as const, output: { section: "retrieval" } }));
+      const recoveryDescriptor: CopilotToolDescriptor = {
+        ...descriptor,
+        name: "reviewed_act_wait",
+        mcpDisposition: { status: "eligible", inputStrategy: "explicit", scope: "operator:read", retry: { effect: "act", idempotent: true, operationIdentity: "input" } },
+        reconcileMcpInvocation,
+      };
+      const { service, invocations, invocation } = build(recoveryDescriptor);
+      const original = { ...invocation, method: "tools/call" as const, descriptorName: recoveryDescriptor.name, shape: "act" as const, operationId: "operation-wait", status: "failed" as const };
+      invocations.prepareInvocation.mockResolvedValueOnce({ status: "replay", invocation: original });
+      const argumentsValue = { section: "retrieval" };
+      const bodyDigest = digestOperatorMcpCall({ name: recoveryDescriptor.name, arguments: argumentsValue, operationId: "operation-wait" });
+      const admitted = await service.admit({ accessToken: "operator-access", invocationId: uuid("22"), method: "tools/call", descriptorName: recoveryDescriptor.name, resource: principal.resource, timestamp: "1788480000", nonce: "accept-retry", bodyDigest });
+
+      await service.invoke({ proof: admitted.proof, name: recoveryDescriptor.name, arguments: argumentsValue, operationId: "operation-wait", bodyDigest, approvalResponse: { action: "accept" } });
+
+      expect(reconcileMcpInvocation).toHaveBeenCalledWith(expect.objectContaining({
+        context: expect.objectContaining({ awaitApprovalMs: REVIEWED_APPROVAL_ACCEPT_WAIT_MS }),
+        signal: expect.any(AbortSignal),
+      }));
+    });
   });
 });
 

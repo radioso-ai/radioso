@@ -232,6 +232,58 @@ describe("reviewed proposal execution tool", () => {
     expect((rejection as AppError).message).toBe(REVIEWED_OPERATION_NOT_CANCELLABLE);
   });
 
+  it("forwards the context's accepted-retry wait budget and the call's own abort signal to a fresh execute", async () => {
+    const executeMcpReviewedProposal = vi.fn(async () => ({ status: "applied" as const, appliedRef: { routineId: "routine-1" } }));
+    const descriptor = createReviewedProposalExecutionTool({ executeMcpReviewedProposal });
+    const currentAuthorization = { hasAllPermissions: vi.fn() };
+    const tool = descriptor.createTool({
+      workspaceId: "workspace-1", accountId: "account-1", operatorUserId: "user-1", surface: "mcp",
+      operatorMcpInvocationId: "execution-1", operatorMcpGrantId: "grant-1", operatorMcpClientId: "client-1",
+      currentAuthorization, pageContext: { view: null, agentId: null, conversationId: null, selection: null, entities: [] },
+      awaitApprovalMs: 25_000,
+    });
+    const signal = AbortSignal.timeout(1_000);
+
+    await tool.invoke({ proposalId: "11111111-1111-4111-8111-111111111111", reviewDigest: "a".repeat(43) }, { signal, callId: "call-1", stepIndex: 0 });
+
+    expect(executeMcpReviewedProposal).toHaveBeenCalledWith(expect.objectContaining({ awaitApprovalMs: 25_000, signal }));
+  });
+
+  it("leaves the wait budget unset when the context carries none", async () => {
+    const executeMcpReviewedProposal = vi.fn(async () => ({ status: "applied" as const, appliedRef: { routineId: "routine-1" } }));
+    const descriptor = createReviewedProposalExecutionTool({ executeMcpReviewedProposal });
+    const tool = descriptor.createTool({
+      workspaceId: "workspace-1", accountId: "account-1", operatorUserId: "user-1", surface: "mcp",
+      operatorMcpInvocationId: "execution-1", operatorMcpGrantId: "grant-1", operatorMcpClientId: "client-1",
+      currentAuthorization: { hasAllPermissions: vi.fn() }, pageContext: { view: null, agentId: null, conversationId: null, selection: null, entities: [] },
+    });
+
+    await tool.invoke({ proposalId: "11111111-1111-4111-8111-111111111111", reviewDigest: "a".repeat(43) }, {} as never);
+
+    expect(executeMcpReviewedProposal).toHaveBeenCalledWith(expect.objectContaining({ awaitApprovalMs: undefined }));
+  });
+
+  it("forwards the context's accepted-retry wait budget to a reconciled retry too", async () => {
+    const executeMcpReviewedProposal = vi.fn(async () => ({ status: "applied" as const, appliedRef: { routineId: "routine-1" } }));
+    const descriptor = createReviewedProposalExecutionTool({ executeMcpReviewedProposal });
+    const currentAuthorization = { hasAllPermissions: vi.fn() };
+    const signal = AbortSignal.timeout(1_000);
+
+    await descriptor.reconcileMcpInvocation?.({
+      invocation: { id: "original-receipt" } as never,
+      arguments: { proposalId: "11111111-1111-4111-8111-111111111111", reviewDigest: "a".repeat(43) },
+      context: {
+        workspaceId: "workspace-1", accountId: "account-1", operatorUserId: "user-1", surface: "mcp",
+        operatorMcpInvocationId: "fresh-retry", operatorMcpGrantId: "grant-1", operatorMcpClientId: "client-1",
+        currentAuthorization, pageContext: { view: null, agentId: null, conversationId: null, selection: null, entities: [] },
+        awaitApprovalMs: 25_000,
+      },
+      staleBefore: new Date(), now: new Date(), signal,
+    });
+
+    expect(executeMcpReviewedProposal).toHaveBeenCalledWith(expect.objectContaining({ awaitApprovalMs: 25_000, signal }));
+  });
+
   it("refuses a non-MCP invocation instead of accepting an unbound execution", async () => {
     const descriptor = createReviewedProposalExecutionTool({ executeMcpReviewedProposal: vi.fn() });
     const tool = descriptor.createTool({

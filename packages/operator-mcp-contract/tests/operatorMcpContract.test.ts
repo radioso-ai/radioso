@@ -154,6 +154,14 @@ describe("2026-07-28 URL-mode elicitation for reviewed approval", () => {
     expect(clientDeclaresUrlElicitation({ elicitation: null })).toBe(false);
   });
 
+  it("requires `url` itself to be a non-null, non-array object, not merely present", () => {
+    expect(clientDeclaresUrlElicitation({ elicitation: { url: false } })).toBe(false);
+    expect(clientDeclaresUrlElicitation({ elicitation: { url: null } })).toBe(false);
+    expect(clientDeclaresUrlElicitation({ elicitation: { url: [] } })).toBe(false);
+    expect(clientDeclaresUrlElicitation({ elicitation: { url: "yes" } })).toBe(false);
+    expect(clientDeclaresUrlElicitation({ elicitation: [] })).toBe(false);
+  });
+
   it("builds the MRTR input-required request keyed by the shared elicitation key", () => {
     const requests = buildOperatorMcpUrlElicitationRequests({ message: "Approve it.", url: "https://app.example/approve" });
     expect(requests).toEqual({

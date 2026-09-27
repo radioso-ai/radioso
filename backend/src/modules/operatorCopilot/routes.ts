@@ -18,7 +18,7 @@ import { copilotTurnRequestSchema, type CopilotConversation, type CopilotMessage
 import type { AccountPermission } from "../account/public.js";
 import type { OperatorCopilotService } from "./public.js";
 import { hasAllCopilotToolPermissions } from "./catalog.js";
-import { presentReviewedOperationSnapshot } from "./reviewedOperation.js";
+import { presentReviewedOperationSnapshot, reviewCodeFor } from "./reviewedOperation.js";
 
 /**
  * These routes are the dashboard panel and nothing else — they reject bearer auth and require a
@@ -136,7 +136,7 @@ export const createCopilotRoutes = (dependencies: CopilotRouteDependencies): Rou
           requirement: result.proposal.confirmationRequirement,
           effect: result.proposal.changeEffect,
           reviewDigest: result.proposal.reviewDigest,
-          reviewCode: result.proposal.reviewDigest.slice(0, 8),
+          reviewCode: reviewCodeFor(result.proposal.reviewDigest),
           expiresAt: result.proposal.expiresAt?.toISOString() ?? null,
           approvedAt: result.proposal.approvedAt?.toISOString() ?? null,
           clientName: client?.clientName ?? null,

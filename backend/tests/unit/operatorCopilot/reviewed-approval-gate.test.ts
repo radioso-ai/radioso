@@ -140,20 +140,37 @@ describe("execute_reviewed_proposal through the operator MCP catalog, driven by 
       name: "execute_reviewed_proposal", arguments: { proposalId: proposal.id, reviewDigest },
       context: mcpContext(firstExecutionInvocationId), scopes: new Set(["operator:write"]), signal: AbortSignal.timeout(1_000),
     })).resolves.toMatchObject({ status: "approval_required" });
-    // Non-secret join keys an incident reviewer needs: which digest and requirement the refusal
-    // was against, and which client, grant, and execution attempt asked for it.
+    // Non-secret join keys an incident reviewer needs: the review code (never the full digest -
+    // design §5.6/§14) and requirement the refusal was against, and which client, grant, and
+    // execution attempt asked for it.
+    const reviewCode = reviewDigest.slice(0, 8);
     expect(auditService.record).toHaveBeenCalledWith(expect.objectContaining({
       eventType: "copilot.proposal.apply_denied", eventStatus: "failure",
-      metadata: expect.objectContaining({ reason: "approval_required", reviewDigest, confirmationRequirement: "signed_in_approval", clientId, grantId, executionInvocationId: firstExecutionInvocationId }),
+      metadata: expect.objectContaining({ reason: "approval_required", reviewCode, confirmationRequirement: "signed_in_approval", clientId, grantId, executionInvocationId: firstExecutionInvocationId }),
     }));
     expect(metrics.incrementCounter).toHaveBeenCalledWith("operator_mcp_reviewed_approval_total", expect.objectContaining({ labels: { requirement: "signed_in_approval", outcome: "required_at_execute" } }));
 
     await expect(service.approveReviewedProposal({ workspaceId, accountId, operatorUserId, proposalId: proposal.id, reviewDigest })).resolves.toEqual({ status: "approved" });
     expect(auditService.record).toHaveBeenCalledWith(expect.objectContaining({
       eventType: "copilot.proposal.approved",
-      metadata: expect.objectContaining({ reviewDigest, approvedAt: expect.any(String), clientId: "client-record-1", grantId: "grant-record-1" }),
+      metadata: expect.objectContaining({ reviewCode, approvedAt: expect.any(String), clientId: "client-record-1", grantId: "grant-record-1" }),
     }));
     expect(metrics.observeHistogram).toHaveBeenCalledWith("operator_mcp_reviewed_approval_latency_seconds", expect.objectContaining({ buckets: expect.any(Array) }));
+    // No event this test wrote ever carries the full, replayable digest - only its 8-char code.
+    for (const call of auditService.record.mock.calls) {
+      const metadata = call[0].metadata;
+      expect(metadata).not.toHaveProperty("reviewDigest");
+      expect(JSON.stringify(metadata)).not.toContain(reviewDigest);
+    }
+
+    // Repeating the exact same approval is idempotent server-side (§5.4): it must not write a
+    // second `copilot.proposal.approved` event with a fresh timestamp.
+    const approvedEventCount = () => auditService.record.mock.calls.filter((call) => call[0].eventType === "copilot.proposal.approved").length;
+    const approvedAuditCallsBeforeRepeat = approvedEventCount();
+    const observeHistogramCallsBeforeRepeat = (metrics.observeHistogram as ReturnType<typeof vi.fn>).mock.calls.length;
+    await expect(service.approveReviewedProposal({ workspaceId, accountId, operatorUserId, proposalId: proposal.id, reviewDigest })).resolves.toEqual({ status: "approved" });
+    expect(approvedEventCount()).toBe(approvedAuditCallsBeforeRepeat);
+    expect((metrics.observeHistogram as ReturnType<typeof vi.fn>).mock.calls.length).toBe(observeHistogramCallsBeforeRepeat);
 
     // Applying after approval carries the same join keys, plus the execution receipt that
     // actually committed the change and the approval time the approve event already recorded.
@@ -164,7 +181,7 @@ describe("execute_reviewed_proposal through the operator MCP catalog, driven by 
     })).resolves.toMatchObject({ status: "applied" });
     expect(auditService.record).toHaveBeenCalledWith(expect.objectContaining({
       eventType: "copilot.proposal.applied",
-      metadata: expect.objectContaining({ reviewDigest, confirmationRequirement: "signed_in_approval", approvedAt: expect.any(String), clientId: "client-record-1", grantId: "grant-record-1", executionInvocationId: secondExecutionInvocationId }),
+      metadata: expect.objectContaining({ reviewCode, confirmationRequirement: "signed_in_approval", approvedAt: expect.any(String), clientId: "client-record-1", grantId: "grant-record-1", executionInvocationId: secondExecutionInvocationId }),
     }));
 
     const declined = await seedReviewedProposal(repository);
@@ -173,7 +190,7 @@ describe("execute_reviewed_proposal through the operator MCP catalog, driven by 
       eventType: "copilot.proposal.dismissed",
       // A declined operation was never approved, so it carries the review's join keys but no
       // approvedAt - the field is absent entirely rather than a misleading null.
-      metadata: expect.objectContaining({ outcome: "declined", reason: "declined", reviewDigest: declined.reviewDigest, confirmationRequirement: "signed_in_approval", clientId: "client-record-1", grantId: "grant-record-1" }),
+      metadata: expect.objectContaining({ outcome: "declined", reason: "declined", reviewCode: declined.reviewDigest.slice(0, 8), confirmationRequirement: "signed_in_approval", clientId: "client-record-1", grantId: "grant-record-1" }),
     }));
     expect(auditService.record).toHaveBeenCalledWith(expect.objectContaining({
       eventType: "copilot.proposal.dismissed",

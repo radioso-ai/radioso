@@ -47,3 +47,10 @@ export const REVIEWED_OPERATION_NOT_CANCELLABLE =
   "Only a pending reviewed operation that has not started executing can be cancelled. Read its outcome with reviewed_proposal_outcome.";
 
 export const canonicalReviewedOperationDigest = (review: unknown): string => canonicalContentHash(review);
+
+/**
+ * The non-secret join key shown to a person (as "review code") and the only digest-derived value
+ * audit metadata may carry (design §5.6/§14: "no full digests"). A reviewer can match an audit
+ * entry to what the approver saw without the record ever holding the full, replayable digest.
+ */
+export const reviewCodeFor = (reviewDigest: string): string => reviewDigest.slice(0, 8);

@@ -170,17 +170,20 @@ export class InMemoryCopilotRepository implements CopilotRepositoryPort, Copilot
     return { status: "claimed" as const, claim: { proposal: claimed, claimedAt, previousAttemptStartedAt } };
   }
 
-  async approveMcpReviewedProposal(input: { proposalId: string; workspaceId: string; operatorUserId: string; reviewDigest: string; now: Date }): Promise<"approved" | "expired" | "not_pending" | "digest_mismatch" | "not_found"> {
+  async approveMcpReviewedProposal(input: { proposalId: string; workspaceId: string; operatorUserId: string; reviewDigest: string; now: Date }): Promise<
+    | { readonly status: "approved"; readonly approvedAt: Date; readonly newlyRecorded: boolean }
+    | { readonly status: "expired" | "not_pending" | "digest_mismatch" | "not_found" }
+  > {
     const proposal = await this.findProposal({ id: input.proposalId, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId });
-    if (!proposal) return "not_found";
-    if (proposal.reviewDigest !== input.reviewDigest) return "digest_mismatch";
-    if (proposal.status !== "pending") return "not_pending";
-    if (!proposal.expiresAt || proposal.expiresAt <= input.now) return "expired";
-    if (proposal.confirmationRequirement !== "signed_in_approval") return "not_pending";
-    if (proposal.approvedAt) return "approved";
+    if (!proposal) return { status: "not_found" };
+    if (proposal.reviewDigest !== input.reviewDigest) return { status: "digest_mismatch" };
+    if (proposal.status !== "pending") return { status: "not_pending" };
+    if (!proposal.expiresAt || proposal.expiresAt <= input.now) return { status: "expired" };
+    if (proposal.confirmationRequirement !== "signed_in_approval") return { status: "not_pending" };
+    if (proposal.approvedAt) return { status: "approved", approvedAt: proposal.approvedAt, newlyRecorded: false };
     const updated = { ...proposal, approvedAt: input.now, approvedByUserId: input.operatorUserId, approvalDigest: input.reviewDigest, updatedAt: input.now };
     this.proposals[this.proposals.indexOf(proposal)] = updated;
-    return "approved";
+    return { status: "approved", approvedAt: input.now, newlyRecorded: true };
   }
 
   async findProposalWorkspace(input: { id: string; accountId: string; operatorUserId: string }): Promise<string | null> {

@@ -33,6 +33,7 @@ import { COPILOT_TURN_BUDGET } from "./turnBudget.js";
 import { hasAllCopilotToolPermissions, hasCurrentCopilotToolPermissions } from "./catalog.js";
 import { buildCopilotNeverListContext } from "./neverList.js";
 import { compactForBudget } from "./payloadCompaction.js";
+import { reviewCodeFor } from "./reviewedOperation.js";
 import type { OperatorMcpBoundGrantClientDescriptionPort } from "../operatorMcpAuthorization/contracts.js";
 
 const TITLE_MAX_LENGTH = 120;
@@ -190,7 +191,15 @@ export interface CopilotRepositoryPort {
     | { readonly status: "claim_held" }
     | { readonly status: "missing" | "binding_mismatch" | "digest_mismatch" | "expired" | "canceled" | "not_prepared" | "approval_required" }
   >;
-  approveMcpReviewedProposal?(input: { proposalId: string; workspaceId: string; operatorUserId: string; reviewDigest: string; now: Date }): Promise<"approved" | "expired" | "not_pending" | "digest_mismatch" | "not_found">;
+  /**
+   * Idempotent: repeating an already-recorded approval must not move `approved_at`, so the caller
+   * gets `newlyRecorded: false` and the row's original timestamp back, and audits nothing a second
+   * time for the same digest.
+   */
+  approveMcpReviewedProposal?(input: { proposalId: string; workspaceId: string; operatorUserId: string; reviewDigest: string; now: Date }): Promise<
+    | { readonly status: "approved"; readonly approvedAt: Date; readonly newlyRecorded: boolean }
+    | { readonly status: "expired" | "not_pending" | "digest_mismatch" | "not_found" }
+  >;
 }
 
 interface OperatorCopilotServiceDeps {
@@ -522,7 +531,7 @@ export class OperatorCopilotService {
     if (claimed.status === "claim_held") return { status: "uncertain", reason: UNCONFIRMED_APPLY_REASON };
     if (claimed.status === "approval_required" && existing?.expiresAt && existing.changeEffect) {
       this.recordReviewedApprovalMetric(existing.confirmationRequirement ?? "signed_in_approval", "required_at_execute");
-      await this.audit({ ...input, surface: "mcp" }, { accountId: input.accountId, workspaceId: input.workspaceId, eventType: "copilot.proposal.apply_denied", eventStatus: "failure", metadata: { proposalId: existing.id, targetType: existing.targetType, outcome: "approval_required", reason: "approval_required", reviewDigest: existing.reviewDigest, confirmationRequirement: existing.confirmationRequirement ?? null, clientId: input.clientId, grantId: input.grantId, executionInvocationId: input.executionInvocationId } });
+      await this.audit({ ...input, surface: "mcp" }, { accountId: input.accountId, workspaceId: input.workspaceId, eventType: "copilot.proposal.apply_denied", eventStatus: "failure", metadata: { proposalId: existing.id, targetType: existing.targetType, outcome: "approval_required", reason: "approval_required", reviewCode: existing.reviewDigest ? reviewCodeFor(existing.reviewDigest) : null, confirmationRequirement: existing.confirmationRequirement ?? null, clientId: input.clientId, grantId: input.grantId, executionInvocationId: input.executionInvocationId } });
       return { status: "approval_required", approval: { url: buildAbsoluteOperatorMcpProposalLink(existing.id, this.deps.appBaseUrl), expiresAt: existing.expiresAt.toISOString(), effect: existing.changeEffect } };
     }
     if (claimed.status !== "claimed") return { status: "refused", reason: claimed.status };
@@ -543,15 +552,18 @@ export class OperatorCopilotService {
     await this.requireProposalAuthorization({ ...input, surface: "dashboard" }, proposal.targetType);
     if (!this.deps.repository.approveMcpReviewedProposal) throw new Error("Reviewed proposal approval is unavailable");
     const now = this.deps.now?.() ?? new Date();
-    const status = await this.deps.repository.approveMcpReviewedProposal({ ...input, now });
-    if (status === "approved") {
+    const result = await this.deps.repository.approveMcpReviewedProposal({ ...input, now });
+    // Approval is idempotent (§5.4): repeating it must not write a second
+    // `copilot.proposal.approved` event with a fresh timestamp, so audit, log, and metrics only
+    // fire on the transition the repository actually recorded.
+    if (result.status === "approved" && result.newlyRecorded) {
       const boundClient = await this.describeReviewedProposalClient({ workspaceId: input.workspaceId, operatorUserId: input.operatorUserId, proposal });
-      await this.audit({ ...input, surface: "dashboard" }, { accountId: input.accountId, workspaceId: input.workspaceId, eventType: "copilot.proposal.approved", eventStatus: "success", metadata: { proposalId: proposal.id, targetType: proposal.targetType, requirement: proposal.confirmationRequirement, effect: proposal.changeEffect, reviewDigest: input.reviewDigest, approvedAt: now.toISOString(), clientId: boundClient?.clientId ?? null, grantId: boundClient?.grantId ?? null } });
+      await this.audit({ ...input, surface: "dashboard" }, { accountId: input.accountId, workspaceId: input.workspaceId, eventType: "copilot.proposal.approved", eventStatus: "success", metadata: { proposalId: proposal.id, targetType: proposal.targetType, requirement: proposal.confirmationRequirement, effect: proposal.changeEffect, reviewCode: reviewCodeFor(input.reviewDigest), approvedAt: result.approvedAt.toISOString(), clientId: boundClient?.clientId ?? null, grantId: boundClient?.grantId ?? null } });
       this.deps.logger?.warn({ proposalId: proposal.id, targetType: proposal.targetType, requirement: proposal.confirmationRequirement }, "operator_copilot_reviewed_approval_recorded");
       this.recordReviewedApprovalMetric(proposal.confirmationRequirement ?? "signed_in_approval", "approved");
-      this.deps.reviewedApprovalMetrics?.observeHistogram("operator_mcp_reviewed_approval_latency_seconds", { help: "Seconds from reviewed preparation to approval", value: Math.max(0, (now.getTime() - proposal.createdAt.getTime()) / 1_000), buckets: [1, 5, 15, 30, 60, 120, 300, 600, 900] });
+      this.deps.reviewedApprovalMetrics?.observeHistogram("operator_mcp_reviewed_approval_latency_seconds", { help: "Seconds from reviewed preparation to approval", value: Math.max(0, (result.approvedAt.getTime() - proposal.createdAt.getTime()) / 1_000), buckets: [1, 5, 15, 30, 60, 120, 300, 600, 900] });
     }
-    return { status };
+    return { status: result.status };
   }
 
   async dismissProposal(input: { workspaceId: string; accountId: string; operatorUserId: string; surface: CopilotSurface; proposalId: string; reason?: "declined" }): Promise<{ status: "dismissed" }> {
@@ -851,9 +863,11 @@ export class OperatorCopilotService {
 
   /**
    * Non-secret join keys an incident reviewer needs to establish that a particular live
-   * application followed approval of the exact review: the digest and requirement the person saw,
-   * when they approved it, and the client/grant/execution receipt bound to this attempt. Absent
-   * entirely for an ordinary (non-reviewed) dashboard proposal, which has no review digest at all.
+   * application followed approval of the exact review: the review code and requirement the person
+   * saw, when they approved it, and the client/grant/execution receipt bound to this attempt.
+   * Absent entirely for an ordinary (non-reviewed) dashboard proposal, which has no review digest
+   * at all. Never the full digest itself (design §5.6/§14) — `reviewCode` is the same bounded
+   * prefix the approval page shows, enough to correlate without recording a replayable secret.
    */
   private async reviewedAuditMetadata(proposal: CopilotProposal, executionInvocationId?: string): Promise<Record<string, unknown>> {
     if (!proposal.reviewDigest) return {};
@@ -861,7 +875,7 @@ export class OperatorCopilotService {
       ? await this.describeReviewedProposalClient({ workspaceId: proposal.workspaceId, operatorUserId: proposal.operatorUserId, proposal })
       : null;
     return {
-      reviewDigest: proposal.reviewDigest,
+      reviewCode: reviewCodeFor(proposal.reviewDigest),
       confirmationRequirement: proposal.confirmationRequirement ?? null,
       ...(proposal.approvedAt ? { approvedAt: proposal.approvedAt.toISOString() } : {}),
       ...(boundClient ? { clientId: boundClient.clientId, grantId: boundClient.grantId } : {}),

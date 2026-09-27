@@ -331,12 +331,15 @@ export const parseOperatorMcpUrlElicitationResponse = (inputResponses: unknown):
 /**
  * Whether the client declared 2026-07-28 URL-mode elicitation support in its per-request
  * capabilities (`_meta["io.modelcontextprotocol/clientCapabilities"]`). A bare `elicitation: {}`
- * is the pre-mode (form-only) declaration and does not count -- the client must name `url`.
+ * is the pre-mode (form-only) declaration and does not count -- the client must name `url`, and
+ * name it as an object (the spec's `url: {}` shape): `url: false`, `null`, or an array is not a
+ * capability declaration and must not enable URL elicitation.
  */
 export const clientDeclaresUrlElicitation = (clientCapabilities: Record<string, unknown>): boolean => {
   const elicitation = clientCapabilities.elicitation;
   if (!elicitation || typeof elicitation !== "object" || Array.isArray(elicitation)) return false;
-  return Object.hasOwn(elicitation, "url");
+  const url = (elicitation as Record<string, unknown>).url;
+  return Boolean(url) && typeof url === "object" && !Array.isArray(url);
 };
 
 export interface OperatorMcpElicitCreateInputRequest {

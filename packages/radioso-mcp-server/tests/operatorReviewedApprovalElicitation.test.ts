@@ -111,9 +111,11 @@ const buildDependencies = (
 });
 
 describe("operator MCP reviewed-approval URL elicitation", () => {
-  it("(a) offers a URL-mode elicitation to a 2026-07-28 client that declared it, and a retry after approval passes through to the backend", async () => {
+  it("(a) offers a URL-mode elicitation to a 2026-07-28 client that declared it, and an accept retry after the backend has recorded a dashboard approval passes through applied", async () => {
     const call = vi.fn()
       .mockResolvedValueOnce(approvalRequiredResult)
+      // Standing in for the backend re-checking the proposal row after the person approved on
+      // the dashboard page in between these two calls -- the edge itself never records approval.
       .mockResolvedValueOnce(appliedResult);
     const dependencies = buildDependencies(call);
     const handler = createOperatorMcpRequestHandler(dependencies);
@@ -154,6 +156,30 @@ describe("operator MCP reviewed-approval URL elicitation", () => {
     }
   });
 
+  it("(a2) an accept retry with no dashboard approval yet still gets the backend's real approval_required, passed through and not treated as approval", async () => {
+    // `accept` means only that the person agreed to open the page (per spec, URL-mode consent is
+    // not consent to the change). If they retry before actually approving on the dashboard, the
+    // backend re-checks the same proposal row and finds it still unapproved.
+    const call = vi.fn()
+      .mockResolvedValueOnce(approvalRequiredResult)
+      .mockResolvedValueOnce(approvalRequiredResult);
+    const dependencies = buildDependencies(call);
+    const handler = createOperatorMcpRequestHandler(dependencies);
+
+    await handler(modernRequest({ clientCapabilities: urlCapableMeta }));
+    const retry = await handler(modernRequest({
+      clientCapabilities: urlCapableMeta,
+      inputResponses: { [OPERATOR_MCP_URL_ELICITATION_KEY]: { action: "accept" } },
+    }));
+
+    expect(retry.status).toBe(200);
+    const body = await retry.json() as { result: Record<string, unknown> };
+    // Passed through as the complete result, not re-wrapped in a second elicitation.
+    expect(body.result.resultType).toBe("complete");
+    expect(body.result.structuredContent).toEqual(approvalRequiredResult.structuredContent);
+    expect(call).toHaveBeenCalledTimes(2);
+  });
+
   it("(b) leaves the plain link result unchanged for a client that never declared URL elicitation", async () => {
     const dependencies = buildDependencies(async () => approvalRequiredResult);
     const handler = createOperatorMcpRequestHandler(dependencies);
@@ -163,6 +189,19 @@ describe("operator MCP reviewed-approval URL elicitation", () => {
     const body = await response.json() as { result: Record<string, unknown> };
     expect(body.result.resultType).toBe("complete");
     expect(body.result.structuredContent).toEqual(approvalRequiredResult.structuredContent);
+  });
+
+  it("(b) leaves the plain link result unchanged for a client that declares `url` as false, null, or an array", async () => {
+    for (const malformedUrl of [false, null, []]) {
+      const dependencies = buildDependencies(async () => approvalRequiredResult);
+      const handler = createOperatorMcpRequestHandler(dependencies);
+
+      const response = await handler(modernRequest({ clientCapabilities: { elicitation: { url: malformedUrl } } }));
+      expect(response.status).toBe(200);
+      const body = await response.json() as { result: Record<string, unknown> };
+      expect(body.result.resultType).toBe("complete");
+      expect(body.result.structuredContent).toEqual(approvalRequiredResult.structuredContent);
+    }
   });
 
   it("(b) leaves the plain link result unchanged for a client on an older protocol version", async () => {

@@ -12,6 +12,8 @@ export interface OperatorMcpAuditObservation {
   readonly descriptorName?: string;
   readonly shape?: OperatorMcpShape;
   readonly reason?: OperatorMcpReason;
+  /** Set only when a `tools/call` answer became a URL-mode elicitation instead of a complete result. */
+  readonly elicited?: true;
   /** Transport/auth data is accepted for call-site ergonomics but intentionally never emitted. */
   readonly accessToken?: unknown;
   readonly arguments?: unknown;
@@ -30,6 +32,7 @@ const safeAuditMetadata = (input: OperatorMcpAuditObservation): Record<string, s
   if (input.descriptorName && SAFE_DESCRIPTOR.test(input.descriptorName)) metadata.descriptorName = input.descriptorName;
   if (input.shape) metadata.shape = input.shape;
   if (input.reason) metadata.reason = input.reason;
+  if (input.elicited) metadata.elicited = "true";
   return metadata;
 };
 

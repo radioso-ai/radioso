@@ -278,3 +278,82 @@ export const canonicalizeOperatorResource = (resource: string): string | null =>
     return null;
   }
 };
+
+// --- 2026-07-28 multi-round-trip (MRTR) URL-mode elicitation (SEP-2322) ---
+//
+// The operator edge is stateless and multi-instance: the approval a URL-mode elicitation waits
+// for lives on the backend's own durable row, never on the edge. These helpers only shape the
+// wire vocabulary (the elicitation key, its request/response schema); they carry no opinion about
+// when approval is required -- that stays a backend policy the edge only transports.
+
+export const OPERATOR_MCP_URL_ELICITATION_KEY = "radioso_approval" as const;
+
+const operatorMcpElicitationActionSchema = z.enum(["accept", "decline", "cancel"]);
+export type OperatorMcpElicitationAction = z.infer<typeof operatorMcpElicitationActionSchema>;
+
+/**
+ * The client's bare answer to the `radioso_approval` URL-mode elicitation, carried in a
+ * 2026-07-28 MRTR retry's `inputResponses`. URL mode carries no form content, so only the
+ * consent action travels: `accept` means the person agreed to open the URL, not that they
+ * approved the change. The approval itself lives on the backend's proposal row, which execution
+ * re-checks on the retry -- the edge never records or infers approval.
+ */
+export const OperatorMcpElicitationResultSchema = z.object({ action: operatorMcpElicitationActionSchema }).strict();
+
+const MAX_INPUT_RESPONSE_KEYS = 4;
+const MAX_INPUT_RESPONSES_BYTES = 1_024;
+
+export type OperatorMcpUrlElicitationResponse =
+  | { readonly kind: "absent" }
+  | { readonly kind: "invalid" }
+  | { readonly kind: "action"; readonly action: OperatorMcpElicitationAction };
+
+/**
+ * Reads the `radioso_approval` entry out of a retried `tools/call`'s `inputResponses`, bounding
+ * the whole map first -- a retry channel embedded in a request MUST NOT become a bulk data path.
+ * `"absent"` covers both a missing map and a map without this key, since both mean "not a retry
+ * of an elicitation we sent"; a caller only needs to branch on `"invalid"` to reject the call.
+ */
+export const parseOperatorMcpUrlElicitationResponse = (inputResponses: unknown): OperatorMcpUrlElicitationResponse => {
+  if (inputResponses === undefined) return { kind: "absent" };
+  if (!inputResponses || typeof inputResponses !== "object" || Array.isArray(inputResponses)) return { kind: "invalid" };
+  const record = inputResponses as Record<string, unknown>;
+  if (Object.keys(record).length > MAX_INPUT_RESPONSE_KEYS) return { kind: "invalid" };
+  let encodedBytes: number;
+  try { encodedBytes = new TextEncoder().encode(JSON.stringify(record)).byteLength; } catch { return { kind: "invalid" }; }
+  if (encodedBytes > MAX_INPUT_RESPONSES_BYTES) return { kind: "invalid" };
+  const entry = record[OPERATOR_MCP_URL_ELICITATION_KEY];
+  if (entry === undefined) return { kind: "absent" };
+  const parsed = OperatorMcpElicitationResultSchema.safeParse(entry);
+  return parsed.success ? { kind: "action", action: parsed.data.action } : { kind: "invalid" };
+};
+
+/**
+ * Whether the client declared 2026-07-28 URL-mode elicitation support in its per-request
+ * capabilities (`_meta["io.modelcontextprotocol/clientCapabilities"]`). A bare `elicitation: {}`
+ * is the pre-mode (form-only) declaration and does not count -- the client must name `url`.
+ */
+export const clientDeclaresUrlElicitation = (clientCapabilities: Record<string, unknown>): boolean => {
+  const elicitation = clientCapabilities.elicitation;
+  if (!elicitation || typeof elicitation !== "object" || Array.isArray(elicitation)) return false;
+  return Object.hasOwn(elicitation, "url");
+};
+
+export interface OperatorMcpElicitCreateInputRequest {
+  readonly method: "elicitation/create";
+  readonly params: { readonly mode: "url"; readonly url: string; readonly message: string };
+}
+
+/**
+ * Builds the 2026-07-28 MRTR `InputRequiredResult.inputRequests` map for one URL-mode approval
+ * elicitation, keyed by {@linkcode OPERATOR_MCP_URL_ELICITATION_KEY}.
+ */
+export const buildOperatorMcpUrlElicitationRequests = (request: {
+  readonly url: string;
+  readonly message: string;
+}): Record<string, OperatorMcpElicitCreateInputRequest> => ({
+  [OPERATOR_MCP_URL_ELICITATION_KEY]: {
+    method: "elicitation/create",
+    params: { mode: "url", url: request.url, message: request.message },
+  },
+});

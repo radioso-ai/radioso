@@ -1,9 +1,12 @@
 import {
   OPERATOR_MCP_PROTOCOL_VERSION,
   OperatorMcpRequestSchema,
+  buildOperatorMcpUrlElicitationRequests,
+  clientDeclaresUrlElicitation,
   describeOperatorMcpRejection,
   digestOperatorMcpCall,
   isOperatorMcpMethod,
+  parseOperatorMcpUrlElicitationResponse,
   type OperatorMcpProof,
 } from "@radioso/operator-mcp-contract";
 import { OperatorBackendAdapterError } from "./backendAdapter.js";
@@ -114,6 +117,21 @@ const decodedHeaderValue = (value: string): string | null => {
 const SERVER_INFO = { name: "radioso-operator-mcp", version: "0.1.0" } as const;
 const resultMetadata = { "io.modelcontextprotocol/serverInfo": SERVER_INFO } as const;
 
+const REVIEWED_APPROVAL_ELICITATION_MESSAGE = "Approve this change in Radioso before it can be applied.";
+
+/**
+ * Recognizes a reviewed-execution `approval_required` outcome by shape, not by tool name: any
+ * current or future reviewed tool the backend adds is covered without an edge change. The edge
+ * only relays the URL the backend already computed -- it never decides whether approval is
+ * required, and it never mints or rewrites the link.
+ */
+const reviewedApprovalUrl = (structuredContent: Record<string, unknown> | null): string | null => {
+  if (!structuredContent || structuredContent.status !== "approval_required") return null;
+  const approval = objectParams(structuredContent.approval);
+  const url = approval?.url;
+  return typeof url === "string" && url.length > 0 ? url : null;
+};
+
 const reportOutcome = (dependencies: OperatorMcpRequestHandlerDependencies, observation: OperatorMcpAuditObservation): void => {
   try { void Promise.resolve(dependencies.onOutcome?.(observation)).catch(() => undefined); } catch { /* telemetry cannot affect protocol */ }
 };
@@ -198,6 +216,7 @@ const createModernOperatorMcpRequestHandler = (dependencies: OperatorMcpRequestH
   }
 
   const { method } = parsed.data;
+  const clientCapabilities = parsed.data.params._meta["io.modelcontextprotocol/clientCapabilities"];
   if (method === "server/discover") {
     return Response.json({
       id,
@@ -214,10 +233,16 @@ const createModernOperatorMcpRequestHandler = (dependencies: OperatorMcpRequestH
   }
 
   let call: { name: string; arguments: Record<string, unknown>; operationId?: string } | null = null;
+  // A retry of an elicitation we sent carries any `radioso_approval` answer -- accept, decline, or
+  // cancel all mean the same thing here: the call is mid-round-trip, so its outcome (applied,
+  // still `approval_required`, or refused) is the one thing worth relaying, and it must never be
+  // wrapped in a second elicitation. Only "absent" leaves this call eligible for a fresh one.
+  let isElicitationRetry = false;
   if (method === "tools/call") {
     const callParams = objectParams(parameterObject);
     const argumentsValue = callParams?.arguments === undefined ? {} : objectParams(callParams.arguments);
     const operationId = callParams?.operationId;
+    const elicitationResponse = parseOperatorMcpUrlElicitationResponse(callParams?.inputResponses);
     if (
       !callParams
       || typeof callParams.name !== "string"
@@ -225,11 +250,13 @@ const createModernOperatorMcpRequestHandler = (dependencies: OperatorMcpRequestH
       || callParams.name.length > 128
       || !argumentsValue
       || (operationId !== undefined && (typeof operationId !== "string" || operationId.length === 0 || operationId.length > 256))
+      || elicitationResponse.kind === "invalid"
     ) {
       reportOutcome(dependencies, { method, outcome: "error", reason: "invalid_request" });
       return rpcError(id, -32602, "Invalid params");
     }
     call = { name: callParams.name, arguments: argumentsValue, ...(operationId === undefined ? {} : { operationId }) };
+    isElicitationRetry = elicitationResponse.kind === "action";
   }
   const descriptorName = call?.name;
   const bodyDigest = call ? digestOperatorMcpCall(call) : sha256Digest(body);
@@ -279,14 +306,34 @@ const createModernOperatorMcpRequestHandler = (dependencies: OperatorMcpRequestH
       bodyDigest,
     });
     const resultObject = objectParams(result);
-    const responseResult = resultObject
-      ? { ...resultObject, _meta: resultMetadata, resultType: "complete" }
-      : null;
-    if (!responseResult || !responseIsBounded(responseResult)) {
+    if (!resultObject) {
       reportOutcome(dependencies, { method, outcome: "error", descriptorName, shape: shapeForScope(admission.requiredScope), reason: "runtime_unavailable" });
       return rpcError(id, -32603, "Internal error");
     }
-    reportOutcome(dependencies, { method, outcome: "success", descriptorName, shape: shapeForScope(admission.requiredScope) });
+
+    // A fresh call (never `isElicitationRetry`) from a client that declared URL-mode elicitation
+    // gets the review offered as an input-required request instead of the plain link, per the
+    // 2026-07-28 MRTR (SEP-2322): the tool call resolves once the client retries with
+    // `inputResponses`. No session or in-memory state backs this -- any instance can serve the
+    // retry, because the approval it waits for lives on the backend's proposal row.
+    const approvalUrl = !isElicitationRetry && clientDeclaresUrlElicitation(clientCapabilities)
+      ? reviewedApprovalUrl(objectParams(resultObject.structuredContent))
+      : null;
+    const responseResult = approvalUrl
+      ? {
+        _meta: resultMetadata,
+        inputRequests: buildOperatorMcpUrlElicitationRequests({ message: REVIEWED_APPROVAL_ELICITATION_MESSAGE, url: approvalUrl }),
+        resultType: "input_required",
+      }
+      : { ...resultObject, _meta: resultMetadata, resultType: "complete" };
+    if (!responseIsBounded(responseResult)) {
+      reportOutcome(dependencies, { method, outcome: "error", descriptorName, shape: shapeForScope(admission.requiredScope), reason: "runtime_unavailable" });
+      return rpcError(id, -32603, "Internal error");
+    }
+    reportOutcome(dependencies, {
+      method, outcome: "success", descriptorName, shape: shapeForScope(admission.requiredScope),
+      ...(approvalUrl ? { elicited: true } : {}),
+    });
     return Response.json({ id, jsonrpc: "2.0", result: responseResult });
   } catch (error) {
     // Never serialize dependency errors: they can contain credentials or

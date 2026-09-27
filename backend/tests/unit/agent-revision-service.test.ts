@@ -334,4 +334,66 @@ describe("AgentRevisionService", () => {
     const chunk = await service.readCandidateReleaseChange(workspaceId, agentId, "candidate-skill", { field: "agentSkills", id: skill.id, side: "before", offset: 0, limit: 2000 });
     expect(JSON.stringify(review)).not.toContain("SECRET_SENTINEL"); expect(JSON.stringify(chunk)).not.toContain("SECRET_SENTINEL"); expect(JSON.stringify(review)).toContain("configRedacted");
   });
+
+  describe("describeCandidatePublicationReview", () => {
+    it("summarizes the same redacted diff describeCandidateRelease uses, plus a content hash of the candidate", async () => {
+      const repository = new InMemoryRevisionRepository();
+      repository.revisions.set("published-1", snapshot("base instruction"));
+      repository.draft = { ...repository.draft, snapshot: snapshot("candidate instruction") };
+      const service = new AgentRevisionService(repository, () => "candidate-1");
+      await service.createCandidate(workspaceId, agentId, 2);
+
+      const review = await service.describeCandidatePublicationReview(workspaceId, agentId, "candidate-1");
+
+      expect(review).toMatchObject({
+        changeCount: 1,
+        changes: [expect.objectContaining({ field: "customInstruction", before: "base instruction", after: "candidate instruction" })],
+        changesTruncated: false,
+      });
+      expect(review.contentHash).toEqual(expect.any(String));
+      expect(review.contentHash.length).toBeGreaterThan(0);
+    });
+
+    it("hashes identically on a second read of the same immutable candidate, and differently for a candidate with different content", async () => {
+      const repository = new InMemoryRevisionRepository();
+      repository.revisions.set("candidate-a", snapshot("instruction A"));
+      repository.revisions.set("candidate-b", snapshot("instruction B"));
+      const service = new AgentRevisionService(repository, () => "candidate-1");
+
+      const firstRead = await service.describeCandidatePublicationReview(workspaceId, agentId, "candidate-a");
+      const secondRead = await service.describeCandidatePublicationReview(workspaceId, agentId, "candidate-a");
+      const other = await service.describeCandidatePublicationReview(workspaceId, agentId, "candidate-b");
+
+      // The candidate row never changes after creation, so an approver's consent to this hash
+      // stays valid for as long as the digest it is bound into does; a re-read never drifts.
+      expect(secondRead.contentHash).toBe(firstRead.contentHash);
+      expect(other.contentHash).not.toBe(firstRead.contentHash);
+    });
+
+    it("redacts agent skill config from the publication change summary", async () => {
+      const repository = new InMemoryRevisionRepository();
+      const skill = { id: "33333333-3333-4333-8333-333333333333", agentId, workspaceId, skillName: "retrieval.answer", kind: "tool", invocationMode: "manual", enabled: true, config: { token: "SECRET_SENTINEL" }, createdAt: new Date(), updatedAt: new Date() };
+      repository.revisions.set("published-1", { ...snapshot("base"), agentSkills: [skill] });
+      repository.revisions.set("candidate-skill", { ...snapshot("candidate"), agentSkills: [{ ...skill, config: { token: "OTHER" } }] });
+      const service = new AgentRevisionService(repository, () => "candidate-1");
+
+      const review = await service.describeCandidatePublicationReview(workspaceId, agentId, "candidate-skill");
+
+      expect(JSON.stringify(review)).not.toContain("SECRET_SENTINEL");
+    });
+
+    it("bounds the visible change list while still reporting the true count", async () => {
+      const repository = new InMemoryRevisionRepository();
+      const many = Array.from({ length: 25 }, (_, index) => routine(true, `44444444-4444-4444-4444-4444444444${String(index).padStart(2, "0")}`, `55555555-5555-5555-5555-5555555555${String(index).padStart(2, "0")}`));
+      repository.revisions.set("published-1", snapshot("same instruction"));
+      repository.revisions.set("candidate-many", { ...snapshot("same instruction"), routines: many });
+      const service = new AgentRevisionService(repository, () => "candidate-1");
+
+      const review = await service.describeCandidatePublicationReview(workspaceId, agentId, "candidate-many");
+
+      expect(review.changeCount).toBe(25);
+      expect(review.changes.length).toBe(20);
+      expect(review.changesTruncated).toBe(true);
+    });
+  });
 });

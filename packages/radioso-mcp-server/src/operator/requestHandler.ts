@@ -7,6 +7,7 @@ import {
   digestOperatorMcpCall,
   isOperatorMcpMethod,
   parseOperatorMcpUrlElicitationResponse,
+  type OperatorMcpElicitationAction,
   type OperatorMcpProof,
 } from "@radioso/operator-mcp-contract";
 import { OperatorBackendAdapterError } from "./backendAdapter.js";
@@ -38,6 +39,13 @@ export interface OperatorMcpRequestHandlerDependencies {
     arguments: Record<string, unknown>;
     operationId?: string;
     bodyDigest: string;
+    /**
+     * Present only when this call is a retry of a `radioso_approval` URL-mode elicitation this
+     * edge sent. The backend reads it to decide whether to wait briefly for the approval it
+     * describes before answering; the edge only relays the client's bare consent action and
+     * never records or infers approval itself.
+     */
+    approvalResponse?: { action: OperatorMcpElicitationAction };
   }): Promise<unknown>;
   principalRateLimit?: OperatorRequestRateLimit;
   resourceMetadataUrl?: string;
@@ -232,7 +240,7 @@ const createModernOperatorMcpRequestHandler = (dependencies: OperatorMcpRequestH
     });
   }
 
-  let call: { name: string; arguments: Record<string, unknown>; operationId?: string } | null = null;
+  let call: { name: string; arguments: Record<string, unknown>; operationId?: string; approvalResponse?: { action: OperatorMcpElicitationAction } } | null = null;
   // A retry of an elicitation we sent carries any `radioso_approval` answer -- accept, decline, or
   // cancel all mean the same thing here: the call is mid-round-trip, so its outcome (applied,
   // still `approval_required`, or refused) is the one thing worth relaying, and it must never be
@@ -255,7 +263,18 @@ const createModernOperatorMcpRequestHandler = (dependencies: OperatorMcpRequestH
       reportOutcome(dependencies, { method, outcome: "error", reason: "invalid_request" });
       return rpcError(id, -32602, "Invalid params");
     }
-    call = { name: callParams.name, arguments: argumentsValue, ...(operationId === undefined ? {} : { operationId }) };
+    call = {
+      name: callParams.name,
+      arguments: argumentsValue,
+      ...(operationId === undefined ? {} : { operationId }),
+      // Only "accept" is worth telling the backend about: a decline or cancel means the person
+      // did not even open the approval page, so there is nothing worth waiting for, and the
+      // backend's reviewed-execution boundary only ever reads this field to decide whether to
+      // wait -- it never trusts it to mean the change itself was approved.
+      ...(elicitationResponse.kind === "action" && elicitationResponse.action === "accept"
+        ? { approvalResponse: { action: elicitationResponse.action } }
+        : {}),
+    };
     isElicitationRetry = elicitationResponse.kind === "action";
   }
   const descriptorName = call?.name;
@@ -301,7 +320,8 @@ const createModernOperatorMcpRequestHandler = (dependencies: OperatorMcpRequestH
     const result = await dependencies.call({
       arguments: call!.arguments,
       name: call!.name,
-      operationId: call!.operationId,
+      ...(call!.operationId === undefined ? {} : { operationId: call!.operationId }),
+      ...(call!.approvalResponse === undefined ? {} : { approvalResponse: call!.approvalResponse }),
       proof: admission.proof,
       bodyDigest,
     });

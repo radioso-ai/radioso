@@ -26,6 +26,7 @@ import { OperatorMcpCatalogError, OperatorMcpCatalogService } from "./mcpCatalog
 import type { OperatorMcpInvocationRecord, OperatorMcpInvocationRepositoryPort } from "./mcpContracts.js";
 import { AppError } from "../../shared/domain/errors.js";
 import { toolRejectionDetail, type OperatorMcpRejectionDetail } from "./invalidArgumentDetails.js";
+import { REVIEWED_APPROVAL_ACCEPT_WAIT_MS } from "./reviewedOperation.js";
 
 const MAX_RESULT_BYTES = 256 * 1024;
 const PROOF_TTL_MS = 15_000;
@@ -84,6 +85,7 @@ const contextFor = (
   principal: OperatorMcpPrincipal,
   invocationId: string,
   currentAuthorization: CopilotCurrentAuthorizationPort,
+  awaitApprovalMs?: number,
 ): CopilotToolInvocationContext => ({
   workspaceId: principal.workspaceId,
   accountId: principal.accountId,
@@ -95,7 +97,16 @@ const contextFor = (
   operatorMcpGrantId: principal.grantId,
   operatorMcpClientId: principal.clientRecordId,
   pageContext: { view: null, agentId: null, conversationId: null, selection: null, entities: [] },
+  ...(awaitApprovalMs === undefined ? {} : { awaitApprovalMs }),
 });
+
+/**
+ * Only an accepted retry ("the person agreed to open the URL") is worth a bounded wait; a decline
+ * or cancel means the person did not even open the approval page, so waiting would only add
+ * latency to an answer that is not going to change.
+ */
+const awaitApprovalMsFor = (approvalResponse: OperatorInvocationRequest["approvalResponse"]): number | undefined =>
+  approvalResponse?.action === "accept" ? REVIEWED_APPROVAL_ACCEPT_WAIT_MS : undefined;
 
 const resultReference = (output: unknown, preferProposalId: boolean): string | null => {
   if (!output || typeof output !== "object" || Array.isArray(output)) return null;
@@ -360,6 +371,11 @@ export class OperatorMcpApplicationService {
       });
       const operationId = input.operationId
         ?? (disposition.retry.operationIdentity === "input" ? inputDigest : null);
+      const awaitApprovalMs = awaitApprovalMsFor(input.approvalResponse);
+      // Shared by the reconciled-retry and fresh-execution branches below so a wait triggered by
+      // an accepted elicitation retry is bounded by the same deadline either path would already
+      // enforce, rather than only the fresh-execution branch that used to create this alone.
+      const signal = AbortSignal.timeout(OPERATOR_MCP_EXECUTION_TIMEOUT_MS);
       let readyToInvoke = false;
       for (let attempt = 0; attempt < MAX_PREPARE_ATTEMPTS; attempt += 1) {
         const prepared = await this.dependencies.invocations.prepareInvocation({
@@ -395,10 +411,11 @@ export class OperatorMcpApplicationService {
             name: input.name,
             arguments: parsed.data,
             invocation: replayed,
-            context: contextFor(principal, input.proof.invocationId, this.currentAuthorizationFor(principal)),
+            context: contextFor(principal, input.proof.invocationId, this.currentAuthorizationFor(principal), awaitApprovalMs),
             scopes: new Set(principal.currentToolScopes),
             staleBefore: new Date(recoveryNow.getTime() - PROPOSAL_RECOVERY_LEASE_MS),
             now: recoveryNow,
+            signal,
           });
           if (reconciliation.status === "recovered" || reconciliation.status === "unconfirmed") {
             const serialized = JSON.stringify(reconciliation.output);
@@ -481,9 +498,9 @@ export class OperatorMcpApplicationService {
       const output = await this.dependencies.catalog.invoke({
         name: input.name,
         arguments: parsed.data,
-        context: contextFor(principal, input.proof.invocationId, this.currentAuthorizationFor(principal)),
+        context: contextFor(principal, input.proof.invocationId, this.currentAuthorizationFor(principal), awaitApprovalMs),
         scopes: new Set(principal.currentToolScopes),
-        signal: AbortSignal.timeout(OPERATOR_MCP_EXECUTION_TIMEOUT_MS),
+        signal,
       });
       const serialized = JSON.stringify(output);
       if (Buffer.byteLength(serialized, "utf8") > MAX_RESULT_BYTES) throw new OperatorMcpApplicationError("result_too_large");

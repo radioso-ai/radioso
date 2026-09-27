@@ -48,6 +48,8 @@ const buildService = (
     auditService?: CopilotAuditPort;
     metrics?: ApprovalMetrics;
     reviewedGrantClient?: OperatorMcpBoundGrantClientDescriptionPort;
+    now?: () => Date;
+    sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
   } = {},
 ) => new OperatorCopilotService({
   repository,
@@ -62,7 +64,28 @@ const buildService = (
   appBaseUrl,
   reviewedApprovalMetrics: options.metrics,
   reviewedGrantClient: options.reviewedGrantClient,
+  now: options.now,
+  sleep: options.sleep,
 });
+
+/**
+ * A deterministic stand-in for the real clock and the real bounded wait's `setTimeout`: `sleep`
+ * advances the virtual clock by exactly the requested delay instead of waiting in real time, so a
+ * test can drive a 25-second wait in milliseconds. `onSleep` runs before each tick advances the
+ * clock, letting a test record an approval "during" the wait, simulating the grant's user clicking
+ * Approve on the page while an accepted retry is mid-poll.
+ */
+const virtualApprovalClock = (onSleep?: (tick: number) => void | Promise<void>, startedAt = new Date("2026-01-01T00:00:00.000Z")) => {
+  let now = startedAt.getTime();
+  let tick = 0;
+  const sleep = vi.fn(async (ms: number, signal?: AbortSignal) => {
+    tick += 1;
+    await onSleep?.(tick);
+    if (signal?.aborted) return;
+    now += ms;
+  });
+  return { now: () => new Date(now), sleep };
+};
 
 const executeCatalog = (service: OperatorCopilotService) => new OperatorMcpCatalogService([
   { ...createReviewedProposalExecutionTool(service), mcpDisposition: operatorMcpDispositions.execute_reviewed_proposal },
@@ -301,5 +324,142 @@ describe("execute_reviewed_proposal through the operator MCP catalog, driven by 
     await expect(service.applyProposal({ workspaceId, accountId, operatorUserId, surface: "dashboard", proposalId: proposal.id }))
       .resolves.toMatchObject({ status: "applied", appliedRef: { directiveId: "directive-1" } });
     expect(adapter.applyIfVersionMatches).toHaveBeenCalledOnce();
+  });
+});
+
+/**
+ * Finding 1 of the stacked review: an MCP client's accepted URL-elicitation retry ("open URL ->
+ * approve") must not just relay `approval_required` again immediately -- it asks execution to wait
+ * briefly for the person's approval first (design §6 flow B). `context.awaitApprovalMs` is exactly
+ * what `mcpApplicationService` sets on an accepted retry; these tests drive it directly over the
+ * same real service and descriptor the gate tests above use, with a virtual clock standing in for
+ * the real 1-second poll and 25-second budget.
+ */
+describe("execute_reviewed_proposal's bounded wait for an accepted elicitation retry", () => {
+  const mcpContextAwaiting = (invocationId: string, awaitApprovalMs: number) => ({ ...mcpContext(invocationId), awaitApprovalMs });
+
+  it("executes once the wait observes an approval recorded mid-poll, with a single claim attempt", async () => {
+    const repository = new InMemoryCopilotRepository();
+    const adapter = directiveAdapter();
+    const holder: { service?: OperatorCopilotService } = {};
+    const clock = virtualApprovalClock(async (tick) => {
+      // The grant's own user approves while the third poll is in flight -- the next check must see it.
+      if (tick === 3) await holder.service!.approveReviewedProposal({ workspaceId, accountId, operatorUserId, proposalId: proposal.id, reviewDigest });
+    });
+    const service = buildService(repository, adapter, { now: clock.now, sleep: clock.sleep });
+    holder.service = service;
+    const catalog = executeCatalog(service);
+    const { proposal, reviewDigest } = await seedReviewedProposal(repository);
+
+    const output = await catalog.invoke({
+      name: "execute_reviewed_proposal", arguments: { proposalId: proposal.id, reviewDigest },
+      context: mcpContextAwaiting(randomUUID(), 25_000), scopes: new Set(["operator:write"]), signal: AbortSignal.timeout(60_000),
+    });
+
+    expect(output).toMatchObject({ status: "applied", appliedRef: { directiveId: "directive-1" } });
+    expect(adapter.applyIfVersionMatches).toHaveBeenCalledOnce();
+    expect(clock.sleep).toHaveBeenCalledTimes(3);
+  });
+
+  it("answers approval_required after the full bounded wait when nobody approves, and never applies the change", async () => {
+    const repository = new InMemoryCopilotRepository();
+    const adapter = directiveAdapter();
+    const metrics: ApprovalMetrics = { incrementCounter: vi.fn(), observeHistogram: vi.fn() };
+    const clock = virtualApprovalClock();
+    const service = buildService(repository, adapter, { now: clock.now, sleep: clock.sleep, metrics });
+    const catalog = executeCatalog(service);
+    const { proposal, reviewDigest } = await seedReviewedProposal(repository);
+
+    const output = await catalog.invoke({
+      name: "execute_reviewed_proposal", arguments: { proposalId: proposal.id, reviewDigest },
+      context: mcpContextAwaiting(randomUUID(), 25_000), scopes: new Set(["operator:write"]), signal: AbortSignal.timeout(60_000),
+    });
+
+    expect(output).toMatchObject({ status: "approval_required" });
+    // The wait never records or implies approval -- polling out the whole budget with nobody
+    // approving must never reach the owner's apply.
+    expect(adapter.applyIfVersionMatches).not.toHaveBeenCalled();
+    expect(clock.sleep).toHaveBeenCalledTimes(25);
+    expect(metrics.incrementCounter).toHaveBeenCalledWith("operator_mcp_reviewed_approval_wait_total", expect.objectContaining({ labels: { outcome: "timed_out" } }));
+    expect(metrics.observeHistogram).toHaveBeenCalledWith("operator_mcp_reviewed_approval_wait_ms", expect.objectContaining({ value: 25_000 }));
+  });
+
+  it("does not wait at all when the caller never asked to (a declined or cancelled retry never sets it)", async () => {
+    const repository = new InMemoryCopilotRepository();
+    const adapter = directiveAdapter();
+    const clock = virtualApprovalClock();
+    const service = buildService(repository, adapter, { now: clock.now, sleep: clock.sleep });
+    const catalog = executeCatalog(service);
+    const { proposal, reviewDigest } = await seedReviewedProposal(repository);
+
+    const output = await catalog.invoke({
+      name: "execute_reviewed_proposal", arguments: { proposalId: proposal.id, reviewDigest },
+      // No awaitApprovalMs on the context: exactly what a decline, a cancel, or an ordinary first
+      // call looks like to the service.
+      context: mcpContext(randomUUID()), scopes: new Set(["operator:write"]), signal: AbortSignal.timeout(1_000),
+    });
+
+    expect(output).toMatchObject({ status: "approval_required" });
+    expect(clock.sleep).not.toHaveBeenCalled();
+  });
+
+  it("ends the wait as soon as the request's own signal aborts, without polling out the full budget", async () => {
+    const repository = new InMemoryCopilotRepository();
+    const adapter = directiveAdapter();
+    const controller = new AbortController();
+    const clock = virtualApprovalClock((tick) => { if (tick === 2) controller.abort(); });
+    const service = buildService(repository, adapter, { now: clock.now, sleep: clock.sleep });
+    const catalog = executeCatalog(service);
+    const { proposal, reviewDigest } = await seedReviewedProposal(repository);
+
+    const output = await catalog.invoke({
+      name: "execute_reviewed_proposal", arguments: { proposalId: proposal.id, reviewDigest },
+      context: mcpContextAwaiting(randomUUID(), 25_000), scopes: new Set(["operator:write"]), signal: controller.signal,
+    });
+
+    expect(output).toMatchObject({ status: "approval_required" });
+    expect(adapter.applyIfVersionMatches).not.toHaveBeenCalled();
+    // Aborted on the second tick, so it never reaches anywhere near the 25 polls a full wait takes.
+    expect(clock.sleep).toHaveBeenCalledTimes(2);
+  });
+
+  it("refuses as expired when the operation's own expiry lands during the wait", async () => {
+    const repository = new InMemoryCopilotRepository();
+    const adapter = directiveAdapter();
+    const clock = virtualApprovalClock();
+    const service = buildService(repository, adapter, { now: clock.now, sleep: clock.sleep });
+    const catalog = executeCatalog(service);
+    // Expires in 2.5s -- well inside the 25s accept-wait budget, but the wait must not blow past it.
+    const { proposal, reviewDigest } = await seedReviewedProposal(repository, { expiresAt: new Date(clock.now().getTime() + 2_500) });
+
+    const output = await catalog.invoke({
+      name: "execute_reviewed_proposal", arguments: { proposalId: proposal.id, reviewDigest },
+      context: mcpContextAwaiting(randomUUID(), 25_000), scopes: new Set(["operator:write"]), signal: AbortSignal.timeout(60_000),
+    });
+
+    expect(output).toMatchObject({ status: "refused", reason: "expired" });
+    expect(adapter.applyIfVersionMatches).not.toHaveBeenCalled();
+    expect(clock.sleep).toHaveBeenCalledTimes(3);
+  });
+
+  it("still refuses a declined operation after waiting, exactly as an immediate execute already does", async () => {
+    const repository = new InMemoryCopilotRepository();
+    const adapter = directiveAdapter();
+    const holder: { service?: OperatorCopilotService } = {};
+    const clock = virtualApprovalClock(async (tick) => {
+      if (tick === 2) await holder.service!.dismissProposal({ workspaceId, accountId, operatorUserId, surface: "dashboard", proposalId: proposal.id, reason: "declined" });
+    });
+    const service = buildService(repository, adapter, { now: clock.now, sleep: clock.sleep });
+    holder.service = service;
+    const catalog = executeCatalog(service);
+    const { proposal, reviewDigest } = await seedReviewedProposal(repository);
+
+    const output = await catalog.invoke({
+      name: "execute_reviewed_proposal", arguments: { proposalId: proposal.id, reviewDigest },
+      context: mcpContextAwaiting(randomUUID(), 25_000), scopes: new Set(["operator:write"]), signal: AbortSignal.timeout(60_000),
+    });
+
+    expect(output).toMatchObject({ status: "refused", reason: "canceled" });
+    expect(adapter.applyIfVersionMatches).not.toHaveBeenCalled();
   });
 });

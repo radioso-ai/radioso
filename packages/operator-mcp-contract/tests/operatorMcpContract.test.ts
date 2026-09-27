@@ -143,6 +143,42 @@ describe("operator MCP contract", () => {
       arguments: { query: "safe" },
     })).toThrow();
   });
+
+  it("carries an accepted elicitation retry's approvalResponse without binding it to the call digest", () => {
+    const argumentsValue = { query: "safe" };
+    const bodyDigest = digestOperatorMcpCall({ name: "retrieval_probe", arguments: argumentsValue });
+    const proof = createOperatorMcpProof({ ...base, method: "tools/call", descriptorName: "retrieval_probe", bodyDigest, secret: "a-secure-test-key" });
+
+    const accepted = OperatorInvocationRequestSchema.parse({ proof, name: "retrieval_probe", arguments: argumentsValue, bodyDigest, approvalResponse: { action: "accept" } });
+    expect(accepted.approvalResponse).toEqual({ action: "accept" });
+    // A fresh call and its accepted retry present the exact same digest: the wait it asks for
+    // never changes what gets authorized, only how long the boundary waits before answering.
+    expect(digestOperatorMcpCall({ name: "retrieval_probe", arguments: argumentsValue })).toBe(bodyDigest);
+  });
+
+  it("rejects a malformed approvalResponse action", () => {
+    const argumentsValue = { query: "safe" };
+    const bodyDigest = digestOperatorMcpCall({ name: "retrieval_probe", arguments: argumentsValue });
+    const proof = createOperatorMcpProof({ ...base, method: "tools/call", descriptorName: "retrieval_probe", bodyDigest, secret: "a-secure-test-key" });
+
+    expect(() => OperatorInvocationRequestSchema.parse({ proof, name: "retrieval_probe", arguments: argumentsValue, bodyDigest, approvalResponse: { action: "maybe" } })).toThrow();
+  });
+
+  it("strips a field this schema has never heard of instead of rejecting the whole request", () => {
+    // Deploy skew: the standalone MCP edge and the backend run as separate Cloud Run services
+    // built from the same image, so a rolling deploy can briefly run a newer edge against an
+    // older backend. An older backend's copy of this schema must still serve the call -- it just
+    // never sees whatever new field a future edge starts sending.
+    const argumentsValue = { query: "safe" };
+    const bodyDigest = digestOperatorMcpCall({ name: "retrieval_probe", arguments: argumentsValue });
+    const proof = createOperatorMcpProof({ ...base, method: "tools/call", descriptorName: "retrieval_probe", bodyDigest, secret: "a-secure-test-key" });
+
+    const parsed = OperatorInvocationRequestSchema.parse({
+      proof, name: "retrieval_probe", arguments: argumentsValue, bodyDigest,
+      aFieldThisSchemaHasNeverHeardOf: "value",
+    });
+    expect(parsed).not.toHaveProperty("aFieldThisSchemaHasNeverHeardOf");
+  });
 });
 
 describe("2026-07-28 URL-mode elicitation for reviewed approval", () => {

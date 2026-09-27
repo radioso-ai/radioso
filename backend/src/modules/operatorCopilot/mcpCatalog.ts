@@ -77,6 +77,7 @@ export class OperatorMcpCatalogService {
     scopes: ReadonlySet<OperatorMcpScope>;
     staleBefore: Date;
     now: Date;
+    signal: AbortSignal;
   }): Promise<CopilotMcpInvocationReconciliation<unknown>> {
     const descriptor = this.descriptors.get(input.name);
     if (!descriptor) throw new OperatorMcpCatalogError("unknown_tool");
@@ -96,6 +97,7 @@ export class OperatorMcpCatalogService {
       context: input.context,
       staleBefore: input.staleBefore,
       now: input.now,
+      signal: input.signal,
     });
     if (reconciliation.status !== "recovered" && reconciliation.status !== "unconfirmed") return reconciliation;
     if (!(await hasCurrentCopilotToolPermissions(descriptor, input.context))) {

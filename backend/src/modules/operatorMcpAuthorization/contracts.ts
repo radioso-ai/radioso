@@ -211,10 +211,11 @@ export interface OperatorMcpGrantRepositoryPort {
 
 export interface OperatorMcpBoundGrantClientDescriptionPort {
   /**
-   * Describes the client bound to an admitted MCP invocation.  Consumers deliberately receive no
-   * grant state: this port is for attribution and consent presentation, not authorization.
+   * Describes the client and grant bound to an admitted MCP invocation. Consumers deliberately
+   * receive no grant *state* (active, revoked, expiry): this port is for attribution, consent
+   * presentation, and audit metadata, not authorization. `grantId` is an identifier, not state.
    */
-  describeBoundGrantClient(input: { workspaceId: string; operatorUserId: string; invocationId: string }): Promise<{ clientId: string; clientName: string } | null>;
+  describeBoundGrantClient(input: { workspaceId: string; operatorUserId: string; invocationId: string }): Promise<{ clientId: string; clientName: string; grantId: string } | null>;
 }
 
 export interface PersistedOperatorMcpClient {

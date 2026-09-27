@@ -617,9 +617,9 @@ export class OperatorMcpAuthorizationRepository implements OperatorMcpAuthorizat
     return rows[0] ?? null;
   }
 
-  async describeBoundGrantClient(input: { workspaceId: string; operatorUserId: string; invocationId: string }): Promise<{ clientId: string; clientName: string } | null> {
-    const result = await sql<{ client_id: string; client_name: string }>`
-      SELECT client.client_id, client.display_name AS client_name
+  async describeBoundGrantClient(input: { workspaceId: string; operatorUserId: string; invocationId: string }): Promise<{ clientId: string; clientName: string; grantId: string } | null> {
+    const result = await sql<{ client_id: string; client_name: string; grant_id: string }>`
+      SELECT client.client_id, client.display_name AS client_name, oauth_grant.id AS grant_id
       FROM operator_mcp_invocations invocation
       JOIN operator_mcp_grants oauth_grant ON oauth_grant.id = invocation.grant_id
       JOIN operator_mcp_clients client ON client.id = oauth_grant.client_id
@@ -628,7 +628,7 @@ export class OperatorMcpAuthorizationRepository implements OperatorMcpAuthorizat
         AND invocation.user_id = ${input.operatorUserId}
     `.execute(this.db);
     const client = result.rows[0];
-    return client ? { clientId: client.client_id, clientName: client.client_name } : null;
+    return client ? { clientId: client.client_id, clientName: client.client_name, grantId: client.grant_id } : null;
   }
 
   async persistClientSnapshot(snapshot: OperatorMcpClientSnapshot): Promise<PersistedOperatorMcpClient> {

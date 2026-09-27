@@ -69,6 +69,13 @@ export interface CopilotToolInvocationContext {
   /** Receipt bindings carried only by the authenticated Operator MCP transport. */
   readonly operatorMcpGrantId?: string;
   readonly operatorMcpClientId?: string;
+  /**
+   * Set only for an accepted 2026-07-28 MRTR retry of the `radioso_approval` URL-mode elicitation
+   * (design §6 flow B). A reviewed-execution descriptor may poll for this many milliseconds before
+   * answering, so "open URL -> approve" usually resolves without a second elicitation round trip.
+   * Absent on every other call, including one from an edge that predates this field.
+   */
+  readonly awaitApprovalMs?: number;
   readonly pageContext: CopilotPageContext;
 }
 
@@ -601,6 +608,8 @@ export interface CopilotToolDescriptor<TInput = unknown, TOutput = unknown> {
     readonly context: CopilotToolInvocationContext;
     readonly staleBefore: Date;
     readonly now: Date;
+    /** The retry's own execution deadline; a descriptor that waits on `context.awaitApprovalMs` bounds it by this too. */
+    readonly signal?: AbortSignal;
   }): Promise<CopilotMcpInvocationReconciliation<TOutput>>;
 }
 

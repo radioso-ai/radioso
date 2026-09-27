@@ -150,13 +150,44 @@ export const OperatorCatalogResponseSchema = z.object({
 }).strict();
 export type OperatorCatalogResponse = z.infer<typeof OperatorCatalogResponseSchema>;
 
+/**
+ * The client's bare answer to a `radioso_approval` URL-mode elicitation retry (2026-07-28 MRTR,
+ * SEP-2322): `accept` means only that the person agreed to open the approval URL, not that they
+ * approved the change -- the approval itself lives on the backend's proposal row. Declared ahead
+ * of {@link OperatorInvocationRequestSchema} because the internal edge-to-backend invocation
+ * carries the same bare action, so the reviewed-execution boundary can decide whether to wait
+ * briefly for that approval before answering.
+ */
+const operatorMcpElicitationActionSchema = z.enum(["accept", "decline", "cancel"]);
+export type OperatorMcpElicitationAction = z.infer<typeof operatorMcpElicitationActionSchema>;
+export const OperatorMcpElicitationResultSchema = z.object({ action: operatorMcpElicitationActionSchema }).strict();
+
+/**
+ * The edge-to-backend invocation contract. Deliberately not `.strict()`, unlike its siblings: the
+ * standalone MCP edge and the backend run as separate Cloud Run services built from the same
+ * image (infra/terraform/compute.tf), so a rolling deploy can briefly run a newer edge against an
+ * older backend. An older backend's copy of this schema does not know about a field added later;
+ * stripping an unrecognized key instead of rejecting the whole request lets that pairing keep
+ * serving calls (an older backend simply never waits), while every field this schema does declare
+ * stays fully validated either way.
+ */
 export const OperatorInvocationRequestSchema = z.object({
   proof: OperatorMcpProofSchema,
   name: boundedText(128),
   arguments: z.record(z.string(), z.unknown()).default({}),
   operationId: boundedText(256).optional(),
   bodyDigest: digest,
-}).strict();
+  /**
+   * Present only on a 2026-07-28 MRTR retry of the `radioso_approval` elicitation this same
+   * invocation earlier answered with `approval_required`. Deliberately excluded from
+   * {@link digestOperatorMcpCall}'s canonical hash: it never changes what gets authorized or
+   * executed (`claimMcpReviewedProposalApply` alone still gates the approval), only how long the
+   * reviewed-execution boundary waits before re-checking it, so binding it to the admission proof
+   * would make every invocation's digest -- not just retries' -- break across the same
+   * rolling-deploy skew this schema's laxness exists to survive.
+   */
+  approvalResponse: OperatorMcpElicitationResultSchema.optional(),
+});
 export type OperatorInvocationRequest = z.infer<typeof OperatorInvocationRequestSchema>;
 
 export const OperatorInvocationResponseSchema = z.object({
@@ -278,3 +309,73 @@ export const canonicalizeOperatorResource = (resource: string): string | null =>
     return null;
   }
 };
+
+// --- 2026-07-28 multi-round-trip (MRTR) URL-mode elicitation (SEP-2322) ---
+//
+// The operator edge is stateless and multi-instance: the approval a URL-mode elicitation waits
+// for lives on the backend's own durable row, never on the edge. These helpers only shape the
+// wire vocabulary (the elicitation key, its request/response schema); they carry no opinion about
+// when approval is required -- that stays a backend policy the edge only transports.
+
+export const OPERATOR_MCP_URL_ELICITATION_KEY = "radioso_approval" as const;
+
+const MAX_INPUT_RESPONSE_KEYS = 4;
+const MAX_INPUT_RESPONSES_BYTES = 1_024;
+
+export type OperatorMcpUrlElicitationResponse =
+  | { readonly kind: "absent" }
+  | { readonly kind: "invalid" }
+  | { readonly kind: "action"; readonly action: OperatorMcpElicitationAction };
+
+/**
+ * Reads the `radioso_approval` entry out of a retried `tools/call`'s `inputResponses`, bounding
+ * the whole map first -- a retry channel embedded in a request MUST NOT become a bulk data path.
+ * `"absent"` covers both a missing map and a map without this key, since both mean "not a retry
+ * of an elicitation we sent"; a caller only needs to branch on `"invalid"` to reject the call.
+ */
+export const parseOperatorMcpUrlElicitationResponse = (inputResponses: unknown): OperatorMcpUrlElicitationResponse => {
+  if (inputResponses === undefined) return { kind: "absent" };
+  if (!inputResponses || typeof inputResponses !== "object" || Array.isArray(inputResponses)) return { kind: "invalid" };
+  const record = inputResponses as Record<string, unknown>;
+  if (Object.keys(record).length > MAX_INPUT_RESPONSE_KEYS) return { kind: "invalid" };
+  let encodedBytes: number;
+  try { encodedBytes = new TextEncoder().encode(JSON.stringify(record)).byteLength; } catch { return { kind: "invalid" }; }
+  if (encodedBytes > MAX_INPUT_RESPONSES_BYTES) return { kind: "invalid" };
+  const entry = record[OPERATOR_MCP_URL_ELICITATION_KEY];
+  if (entry === undefined) return { kind: "absent" };
+  const parsed = OperatorMcpElicitationResultSchema.safeParse(entry);
+  return parsed.success ? { kind: "action", action: parsed.data.action } : { kind: "invalid" };
+};
+
+/**
+ * Whether the client declared 2026-07-28 URL-mode elicitation support in its per-request
+ * capabilities (`_meta["io.modelcontextprotocol/clientCapabilities"]`). A bare `elicitation: {}`
+ * is the pre-mode (form-only) declaration and does not count -- the client must name `url`, and
+ * name it as an object (the spec's `url: {}` shape): `url: false`, `null`, or an array is not a
+ * capability declaration and must not enable URL elicitation.
+ */
+export const clientDeclaresUrlElicitation = (clientCapabilities: Record<string, unknown>): boolean => {
+  const elicitation = clientCapabilities.elicitation;
+  if (!elicitation || typeof elicitation !== "object" || Array.isArray(elicitation)) return false;
+  const url = (elicitation as Record<string, unknown>).url;
+  return Boolean(url) && typeof url === "object" && !Array.isArray(url);
+};
+
+export interface OperatorMcpElicitCreateInputRequest {
+  readonly method: "elicitation/create";
+  readonly params: { readonly mode: "url"; readonly url: string; readonly message: string };
+}
+
+/**
+ * Builds the 2026-07-28 MRTR `InputRequiredResult.inputRequests` map for one URL-mode approval
+ * elicitation, keyed by {@linkcode OPERATOR_MCP_URL_ELICITATION_KEY}.
+ */
+export const buildOperatorMcpUrlElicitationRequests = (request: {
+  readonly url: string;
+  readonly message: string;
+}): Record<string, OperatorMcpElicitCreateInputRequest> => ({
+  [OPERATOR_MCP_URL_ELICITATION_KEY]: {
+    method: "elicitation/create",
+    params: { mode: "url", url: request.url, message: request.message },
+  },
+});

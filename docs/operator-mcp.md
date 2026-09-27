@@ -1,7 +1,7 @@
 ---
 title: "Operator MCP OAuth Access"
 description: "Connect an OAuth-capable MCP client to Ray's governed workspace tools and manage its access."
-last_updated: 2026-09-26
+last_updated: 2026-09-27
 ---
 
 # Operator MCP OAuth Access
@@ -42,7 +42,9 @@ When a routine or directive behaves differently in Test Chat than you expect, st
 
 Draft, reversible changes use conversational confirmation in the MCP client. Changes that go live, cannot be undone, or use quota require approval in Radioso from the signed-in user who owns the MCP grant. The review link records approval against the exact digest and does not apply the change; call `execute_reviewed_proposal` afterwards.
 
-Prepared results include `confirmation`. For `signed_in_approval`, it includes the approval link. Calling execution before approval returns `approval_required` with that link. Approval expires with the 15-minute reviewed operation and cannot be transferred to another digest or user.
+A client that declares URL-mode elicitation on protocol `2026-07-28` opens the approval page for the person as part of the call: `execute_reviewed_proposal` answers with an elicitation carrying the link, the client shows the link and asks the person to open it, and it retries the same call once they respond. Responding means only that they agreed to open the page, not that they approved the change, so that retry waits briefly — up to about 25 seconds, polling roughly once a second — for the approval to land before answering. If it arrives during that wait, the retry applies the change directly; if not, it still answers `approval_required`, and the next retry waits again. Every other client, including one on an older protocol version, gets the same link in the result text and shows it as a step for the person to complete before asking the agent to call execution again.
+
+Prepared results include `confirmation`. For `signed_in_approval`, it includes the approval link. Calling execution before approval returns `approval_required` with that link, delivered as a URL elicitation to a client that declared it. Approval expires with the 15-minute reviewed operation and cannot be transferred to another digest or user.
 
 Routine edits and publication are separate operations. Applying a routine or retrieval proposal changes the relevant draft according to its existing lifecycle; publishing requires a separately prepared candidate and confirmation. A changed draft, target, or expired review needs a fresh preparation.
 

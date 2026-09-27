@@ -395,7 +395,10 @@ describe("OperatorCopilotService proposal apply-claim recovery", () => {
       versionToken: "v1",
       evidence: null,
       reviewDigest: "review-digest",
+      reviewSnapshot: {},
       expiresAt: new Date("2026-08-11T00:15:00.000Z"),
+      confirmationRequirement: "conversation",
+      changeEffect: { exposure: "draft", reversibility: "reversible", metered: false },
     });
     const applyIfVersionMatches = vi.fn(async () => ({ outcome: "applied" as const, appliedRef: {} }));
     const service = buildService(repository, applyIfVersionMatches);

@@ -179,6 +179,7 @@ export const createCopilotToolCatalog = (deps: {
   readonly proposalAdapters: CopilotProposalAdapterRegistry;
   readonly auditService: CopilotAuditPort;
   readonly workspaceRouteKeyResolver: CopilotWorkspaceRouteKeyResolver;
+  readonly appBaseUrl?: string | null;
   readonly logger?: CopilotTriageLogPort;
   readonly routines: RoutineStructuralPreparationDependencies["routines"];
   readonly scopedReferences: RoutineStructuralPreparationDependencies["scopedReferences"];

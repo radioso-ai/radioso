@@ -5,6 +5,7 @@ import {
   type RetrievalDefaultsProvider,
 } from "../retrieval/public.js";
 import type { AgentSkillView, AgentSkillsService } from "./service.js";
+import type { ReviewedChangeEffect } from "../../shared/domain/reviewedChangeEffect.js";
 
 /**
  * The supported writable portion of the default-answer retrieve skill. This
@@ -19,7 +20,7 @@ const supportedAgentRetrievalPatchSchema = retrieveSkillConfigSchema
   .refine((patch) => Object.keys(patch).length > 0, "At least one retrieval setting must be provided");
 
 
-interface PreparedAgentRetrievalPatch {
+export interface PreparedAgentRetrievalPatch {
   readonly agentId: string;
   readonly skillId: string;
   /** `updatedAt` is the existing agent-skill lifecycle's optimistic fence. */
@@ -29,6 +30,7 @@ interface PreparedAgentRetrievalPatch {
   /** Full persisted config, normalized by the same capability validator as ordinary edits. */
   readonly config: Record<string, unknown>;
   readonly skill: Pick<AgentSkillView, "name" | "capability" | "target" | "invocationMode" | "enabled">;
+  readonly effect: ReviewedChangeEffect;
 }
 
 export interface AgentRetrievalAuthoringPort {
@@ -110,6 +112,7 @@ export class AgentRetrievalAuthoringService implements AgentRetrievalAuthoringPo
         invocationMode: skill.invocationMode,
         enabled: skill.enabled,
       },
+      effect: { exposure: "draft", reversibility: "reversible", metered: false },
     };
   }
 

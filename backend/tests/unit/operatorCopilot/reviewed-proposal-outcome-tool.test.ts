@@ -27,6 +27,7 @@ describe("reviewed proposal outcome tool", () => {
       proposalId: "11111111-1111-4111-8111-111111111111", status: "applied", reviewDigest: "a".repeat(43),
       expiresAt: "2026-09-13T00:15:00.000Z", currentVersionMatches: false, appliedRef: { agentId: "agent-1" },
       review: { before: { enabled: true }, after: { enabled: false } },
+      approval: { requirement: "conversation", state: "not_required", approvedAt: null },
     });
     expect(getMcpReviewedProposal).toHaveBeenCalledWith(expect.objectContaining({ grantId: "grant-1", clientId: "client-1", workspaceId: "workspace-1", operatorUserId: "user-1" }));
   });

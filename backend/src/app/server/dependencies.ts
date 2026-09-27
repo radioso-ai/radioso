@@ -34,6 +34,7 @@ import { resolveEmbedConfigCacheInvalidator } from "../composition/builtIn/cloud
 import { createRewriteTierStructuredInferenceFactory } from "../../shared/infra/llm/contextualGateways.js";
 import type { EvalRunOverrides } from "../../modules/eval/composition.js";
 import { CopilotReplayEvidenceRepository } from "../../db/repositories/copilotReplayEvidenceRepository.js";
+import { OperatorMcpAuthorizationRepository } from "../../db/repositories/operatorMcpAuthorizationRepository.js";
 import type { AppDependencies } from "./types.js";
 import {
   buildInfrastructure,
@@ -770,6 +771,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       ? registration({ database: infrastructure.database, logger, auditService: infrastructure.auditService })
       : registration);
   const copilotToolCatalog = createCopilotToolCatalog({
+    appBaseUrl: env.APP_BASE_URL,
     toolContributions: copilotToolContributions,
     agentService: {
       get: agentService.get.bind(agentService),
@@ -918,6 +920,9 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     prompt: copilotPrompt,
     tools: copilotToolCatalog,
     probeBudgetPerTurn: env.COPILOT_PROBE_BUDGET_PER_TURN,
+    appBaseUrl: env.APP_BASE_URL,
+    reviewedGrantClient: new OperatorMcpAuthorizationRepository(infrastructure.database.kysely),
+    reviewedApprovalMetrics: infrastructure.metricsRegistry,
     logger,
     currentAuthorization: {
       hasAllPermissions: ({ workspaceId, accountId, operatorUserId, requiredPermissions }) =>

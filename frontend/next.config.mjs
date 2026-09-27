@@ -125,6 +125,18 @@ const nextConfig = {
           { key: "X-Frame-Options", value: "DENY" },
         ],
       },
+      {
+        // The reviewed-operation approval page records a signed-in approval decision, the same
+        // kind of consequential, single-use action as the OAuth consent screen above, so it gets
+        // the same anti-framing and no-cache treatment.
+        source: "/oauth/operator-mcp/proposal/:proposalId",
+        headers: [
+          { key: "Content-Security-Policy", value: buildCspDirectives({ frameAncestors: "frame-ancestors 'none'" }) },
+          { key: "Referrer-Policy", value: "no-referrer" },
+          { key: "Cache-Control", value: "no-store" },
+          { key: "X-Frame-Options", value: "DENY" },
+        ],
+      },
     ];
   },
   webpack(config) {

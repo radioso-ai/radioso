@@ -5,6 +5,8 @@ import type { AccountPermission } from "../account/public.js";
 import type { AgentTool } from "../../shared/agent-runtime/index.js";
 import type { OperatorMcpInvocationRecord } from "./mcpContracts.js";
 import type { OwnerCommitHook } from "../../shared/infra/kysely/types.js";
+import type { ReviewedChangeEffect } from "../../shared/domain/reviewedChangeEffect.js";
+import type { ReviewedConfirmationRequirement } from "./reviewedOperation.js";
 
 /**
  * The single runtime list of page-context entity types a dashboard surface may report to the
@@ -206,6 +208,11 @@ export interface CopilotProposal {
   readonly reviewDigest: string | null;
   readonly reviewSnapshot: unknown;
   readonly expiresAt: Date | null;
+  readonly confirmationRequirement?: ReviewedConfirmationRequirement | null;
+  readonly changeEffect?: ReviewedChangeEffect | null;
+  readonly approvedAt?: Date | null;
+  readonly approvedByUserId?: string | null;
+  readonly approvalDigest?: string | null;
   readonly executionInvocationId: string | null;
   readonly status: CopilotProposalStatus;
   readonly reason?: string | null;
@@ -216,16 +223,29 @@ export interface CopilotProposal {
 
 type CopilotProposalDraftFields = Omit<
   CopilotProposal,
-  "id" | "origin" | "conversationId" | "operatorMcpInvocationId" | "executionInvocationId" | "messageId" | "reviewDigest" | "reviewSnapshot" | "expiresAt" | "status" | "appliedRef" | "createdAt" | "updatedAt"
+  "id" | "origin" | "conversationId" | "operatorMcpInvocationId" | "executionInvocationId" | "messageId" | "reviewDigest" | "reviewSnapshot" | "expiresAt" | "confirmationRequirement" | "changeEffect" | "approvedAt" | "approvedByUserId" | "approvalDigest" | "status" | "appliedRef" | "createdAt" | "updatedAt"
 >;
 
-export type CopilotProposalDraft = CopilotProposalDraftFields & {
-  readonly reviewDigest?: string;
-  readonly reviewSnapshot?: unknown;
-  readonly expiresAt?: Date;
-} & (
+type CopilotProposalOriginDraft = (
   | { readonly origin: CopilotProposalOrigin; readonly conversationId?: never }
   | { readonly origin?: never; readonly conversationId: string }
+);
+
+export type CopilotProposalDraft = CopilotProposalDraftFields & CopilotProposalOriginDraft & (
+  | {
+      readonly reviewDigest: string;
+      readonly reviewSnapshot: unknown;
+      readonly expiresAt: Date;
+      readonly confirmationRequirement: ReviewedConfirmationRequirement;
+      readonly changeEffect: ReviewedChangeEffect;
+    }
+  | {
+      readonly reviewDigest?: never;
+      readonly reviewSnapshot?: never;
+      readonly expiresAt?: never;
+      readonly confirmationRequirement?: never;
+      readonly changeEffect?: never;
+    }
 );
 
 export interface CopilotProposalCard {

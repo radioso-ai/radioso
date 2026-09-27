@@ -4,6 +4,7 @@ import type { DirectiveCoherenceChecker, DirectiveCoherenceVerdict } from "@radi
 
 import type { AgentDirectiveUpdateOptions, AgentRepositoryPort } from "../../../db/repositories/agentRepository.js";
 import { AppError, badRequest, conflict, notFound } from "../../../shared/domain/errors.js";
+import type { ReviewedChangeEffect } from "../../../shared/domain/reviewedChangeEffect.js";
 import type { AgentSkillRepositoryPort } from "../../agentSkills/public.js";
 import { defaultAnswerDirectives } from "../../directives/public.js";
 import {
@@ -41,6 +42,8 @@ interface AuthoredDirectivePreview {
   readonly referencedByTotal: number;
   readonly drafting: "verbatim";
   readonly irreversible: boolean;
+  /** This module owns the reviewed-confirmation facts for a directive change; the copilot layer never re-derives them. */
+  readonly effect: ReviewedChangeEffect;
   readonly versionToken: string;
 }
 
@@ -200,7 +203,7 @@ export class AuthoredDirectiveService {
     }
     if (change.kind === "remove") {
       const referencedBy = this.referencedBy(existing!.name, directives, existing!.id);
-      return { before: existing, after: null, coherence: { status: "not_checked", conflicts: [], rationale: "Coherence is not checked for a removal." }, referencedBy, referencedByTotal: referencedBy.length, drafting: "verbatim", irreversible: true, versionToken };
+      return { before: existing, after: null, coherence: { status: "not_checked", conflicts: [], rationale: "Coherence is not checked for a removal." }, referencedBy, referencedByTotal: referencedBy.length, drafting: "verbatim", irreversible: true, effect: { exposure: "draft", reversibility: "irreversible", metered: false }, versionToken };
     }
     const raw = change.kind === "set_enabled"
       ? carryForwardAuthoredDirectiveInput({ enabled: change.enabled }, existing!)
@@ -223,6 +226,7 @@ export class AuthoredDirectiveService {
       referencedByTotal: referencedBy.length,
       drafting: "verbatim",
       irreversible: false,
+      effect: { exposure: "draft", reversibility: "reversible", metered: false },
       versionToken,
     };
   }

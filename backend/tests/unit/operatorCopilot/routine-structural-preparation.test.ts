@@ -96,13 +96,32 @@ describe("routine structural preparation", () => {
     expect(scopedReferences.assertNoScopedReferences).toHaveBeenCalledWith(expect.objectContaining({ routineId: routine.id, removedNodeIds: ["step_collect", "terminal_done"] }));
   });
 
+  it("carries the owner-declared confirmation fragment: conversation for an edit, signed-in approval with an absolute link for a delete", async () => {
+    const get = vi.fn(async () => routine);
+    const validate = vi.fn(async () => ({ ok: true, diagnostics: [] }));
+    const descriptor = createRoutineStructuralPreparationTool({
+      routines: { get, validateForDraftMutation: validate },
+      proposalRepository: { createProposal: vi.fn(async (input) => ({ id: "proposal-1", ...input })) },
+      proposalRecovery: { recoverOperatorMcpProposal: vi.fn() }, auditService: { record: vi.fn() },
+      scopedReferences: { assertNoScopedReferences: vi.fn() }, appBaseUrl: "https://app.radioso.ai",
+    });
+
+    const edited = await descriptor.createTool(context).invoke({ kind: "edit", agentId: routine.agentId, routineId: routine.id, operations: [{ kind: "set_enabled", enabled: false }] }, {} as never) as { confirmation: { requirement: string; approvalUrl?: string } };
+    expect(edited.confirmation).toMatchObject({ requirement: "conversation" });
+    expect(edited.confirmation.approvalUrl).toBeUndefined();
+
+    const deleted = await descriptor.createTool(context).invoke({ kind: "delete", agentId: routine.agentId, routineId: routine.id }, {} as never) as { confirmation: { requirement: string; approvalUrl?: string } };
+    expect(deleted.confirmation).toMatchObject({ requirement: "signed_in_approval" });
+    expect(deleted.confirmation.approvalUrl).toMatch(/^https:\/\/app\.radioso\.ai\/oauth\/operator-mcp\/proposal\//);
+  });
+
   it("recovers the original immutable review after a lost response without drafting again", async () => {
     const createProposal = vi.fn();
     const reviewSnapshot = { diagnostics: [], review: { before: {}, after: {}, truncated: false, detailAvailable: false, beforeConnections: [{ fromStep: "old", toRef: "done", guardKind: "default", ordinal: 0 }], afterConnections: [], connectionsTruncated: false, operations: [], operationsTruncated: false } };
     const descriptor = createRoutineStructuralPreparationTool({
       routines: { get: vi.fn(async () => ({ ...routine, name: "Changed after prepare" })), validateForDraftMutation: vi.fn() },
       proposalRepository: { createProposal },
-      proposalRecovery: { recoverOperatorMcpProposal: vi.fn(async () => ({ status: "recovered", proposal: { id: "proposal-1", targetType: "routine", reviewDigest: "d".repeat(43), expiresAt: new Date("2026-09-13T00:15:00Z"), reviewSnapshot } })) },
+      proposalRecovery: { recoverOperatorMcpProposal: vi.fn(async () => ({ status: "recovered", proposal: { id: "proposal-1", targetType: "routine", reviewDigest: "d".repeat(43), expiresAt: new Date("2026-09-13T00:15:00Z"), reviewSnapshot, confirmationRequirement: "conversation", changeEffect: { exposure: "draft", reversibility: "reversible", metered: false } } })) },
       auditService: { record: vi.fn() }, scopedReferences: { assertNoScopedReferences: vi.fn() },
     });
     const recovered = await descriptor.reconcileMcpInvocation!({ invocation: { id: "invocation-1", grantId: "grant-1", operationId: "op-1", inputDigest: "digest" }, context, staleBefore: new Date(0), now: new Date() } as never);

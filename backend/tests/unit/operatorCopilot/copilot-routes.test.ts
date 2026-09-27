@@ -248,6 +248,89 @@ describe("createCopilotRoutes", () => {
     });
   });
 
+  describe("POST /proposals/:proposalId/dismiss", () => {
+    const buildDismissApp = (dismissProposal: ReturnType<typeof vi.fn>) => {
+      const app = express();
+      app.use(express.json());
+      app.use(express.urlencoded({ extended: false }));
+      app.use((req, _res, next) => {
+        req.cookies = Object.fromEntries((req.header("cookie") ?? "").split(";").map((part) => part.trim().split("=")).filter((part): part is [string, string] => part.length === 2));
+        next();
+      });
+      app.use("/api/v1/copilot", createCopilotRoutes({
+        env: { SESSION_COOKIE_NAME: "radioso_session" },
+        authService: { async authenticateSession() { return { accountId: ACCOUNT_ID, userId: USER_ID, sessionId: "session-id" }; } },
+        workspaceSessionService: { async resolve() { return { accountId: ACCOUNT_ID, workspaceId: WORKSPACE_ID }; } },
+        accountAccessService: { async requireActiveMembership() {}, async requirePermission() {}, hasPermission: vi.fn(async () => true) },
+        llmCapabilityResolver: {},
+        operatorCopilotService: { dismissProposal },
+        copilotToolCatalog: [],
+        abuseControlService: { enforce: vi.fn(async () => admittedAbuseControlDecision()) },
+        auditService: { record: vi.fn(async () => {}) },
+      } as never));
+      app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+        const appError = error as { statusCode?: number; code?: string };
+        res.status(appError.statusCode ?? 500).json({ error: { code: appError.code ?? "internal_error" } });
+      });
+      return app;
+    };
+    const proposalId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+
+    // The standalone approval page's Decline button reuses this same route (with reason:
+    // "declined"), so it must carry the CSRF/JSON protections Approve has — a forged cross-site
+    // form POST must not be able to dismiss a pending reviewed operation using a signed-in
+    // session's cookie.
+    it("dismisses once the CSRF header is present on a JSON body, as the approval page's Decline sends it", async () => {
+      const dismissProposal = vi.fn(async () => ({ status: "dismissed" as const }));
+      const response = await request(buildDismissApp(dismissProposal))
+        .post(`/api/v1/copilot/proposals/${proposalId}/dismiss`)
+        .set("Cookie", "radioso_session=valid-session")
+        .set("X-Radioso-CSRF", "1")
+        .send({ reason: "declined" });
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ status: "dismissed" });
+      expect(dismissProposal).toHaveBeenCalledWith(expect.objectContaining({ proposalId, reason: "declined" }));
+    });
+
+    it("still dismisses the ordinary dashboard proposal card with no reason, as long as it sends the CSRF header and a JSON body", async () => {
+      const dismissProposal = vi.fn(async () => ({ status: "dismissed" as const }));
+      const response = await request(buildDismissApp(dismissProposal))
+        .post(`/api/v1/copilot/proposals/${proposalId}/dismiss`)
+        .set("Cookie", "radioso_session=valid-session")
+        .set("X-Radioso-CSRF", "1")
+        .send({});
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ status: "dismissed" });
+      expect(dismissProposal).toHaveBeenCalledWith(expect.objectContaining({ proposalId, reason: undefined }));
+    });
+
+    it("refuses a forged decline with no CSRF header, as a same-site form submission would arrive", async () => {
+      const dismissProposal = vi.fn(async () => ({ status: "dismissed" as const }));
+      const response = await request(buildDismissApp(dismissProposal))
+        .post(`/api/v1/copilot/proposals/${proposalId}/dismiss`)
+        .set("Cookie", "radioso_session=valid-session")
+        .send({ reason: "declined" });
+
+      expect(response.status).toBe(403);
+      expect(dismissProposal).not.toHaveBeenCalled();
+    });
+
+    it("refuses a form-encoded decline body even when a CSRF header is set", async () => {
+      const dismissProposal = vi.fn(async () => ({ status: "dismissed" as const }));
+      const response = await request(buildDismissApp(dismissProposal))
+        .post(`/api/v1/copilot/proposals/${proposalId}/dismiss`)
+        .set("Cookie", "radioso_session=valid-session")
+        .set("X-Radioso-CSRF", "1")
+        .type("form")
+        .send({ reason: "declined" });
+
+      expect(response.status).toBe(400);
+      expect(dismissProposal).not.toHaveBeenCalled();
+    });
+  });
+
   it("offers an account switch only when the signed-in operator is an active member of the proposal account", async () => {
     const app = express();
     app.use(express.json());

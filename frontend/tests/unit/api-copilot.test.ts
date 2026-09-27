@@ -70,7 +70,7 @@ describe('copilotApi', () => {
     expect(requestMock).toHaveBeenNthCalledWith(
       6,
       '/copilot/proposals/proposal-1/dismiss',
-      { method: 'POST' },
+      { method: 'POST', body: JSON.stringify({}), headers: { 'Content-Type': 'application/json', 'X-Radioso-CSRF': '1' } },
       { withSession: true },
     )
     expect(requestMock).toHaveBeenNthCalledWith(
@@ -91,6 +91,20 @@ describe('copilotApi', () => {
     expect(requestMock).toHaveBeenCalledWith(
       '/copilot/proposals/proposal-1/approve',
       { method: 'POST', body: JSON.stringify({ reviewDigest: 'a'.repeat(43) }), headers: { 'Content-Type': 'application/json', 'X-Radioso-CSRF': '1' } },
+      { withSession: true },
+    )
+  })
+
+  it('sends the CSRF header when declining a reviewed proposal on the approval page', async () => {
+    requestMock.mockResolvedValueOnce({ status: 'dismissed' })
+
+    const { copilotApi } = await import('@/lib/api-copilot')
+
+    await copilotApi.dismissProposal('proposal-1', 'workspace-1', 'declined')
+
+    expect(requestMock).toHaveBeenCalledWith(
+      '/copilot/proposals/proposal-1/dismiss',
+      { method: 'POST', body: JSON.stringify({ reason: 'declined' }), headers: { 'Content-Type': 'application/json', 'X-Radioso-CSRF': '1', 'X-Workspace-Id': 'workspace-1' } },
       { withSession: true },
     )
   })

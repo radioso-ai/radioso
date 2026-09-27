@@ -443,7 +443,8 @@ export const copilotApi = {
   dismissProposal(proposalId: string, workspaceId?: string, reason?: 'declined'): Promise<{ status: 'dismissed' }> {
     return request(copilotPath(`/proposals/${encodeURIComponent(proposalId)}/dismiss`), {
       method: 'POST',
-      ...(reason ? { body: JSON.stringify({ reason }), headers: { 'Content-Type': 'application/json', ...(workspaceId ? { 'X-Workspace-Id': workspaceId } : {}) } } : { headers: workspaceId ? { 'X-Workspace-Id': workspaceId } : undefined }),
+      body: JSON.stringify(reason ? { reason } : {}),
+      headers: { 'Content-Type': 'application/json', 'X-Radioso-CSRF': '1', ...(workspaceId ? { 'X-Workspace-Id': workspaceId } : {}) },
     }, { withSession: true })
   },
 

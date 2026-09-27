@@ -321,6 +321,7 @@ const declarations: readonly PolicyDeclaration[] = [
     ["DELETE", "/api/v1/copilot/conversations/:conversationId", "workspace.agents.read"],
     ["GET", "/api/v1/copilot/proposals/:proposalId", "workspace.agents.read"],
     ["POST", "/api/v1/copilot/proposals/:proposalId/apply", "workspace.agents.manage"],
+    ["POST", "/api/v1/copilot/proposals/:proposalId/approve", "workspace.agents.read"],
     ["POST", "/api/v1/copilot/proposals/:proposalId/dismiss", "workspace.agents.read"],
     ["POST", "/api/v1/copilot/turns", "workspace.chat.use"],
   ].map(([method, path, permission]) => sessionOnly(method, path, permission)),

@@ -34,7 +34,7 @@ import { hasAllCopilotToolPermissions, hasCurrentCopilotToolPermissions } from "
 import { buildCopilotNeverListContext } from "./neverList.js";
 import { compactForBudget } from "./payloadCompaction.js";
 import { reviewCodeFor } from "./reviewedOperation.js";
-import type { OperatorMcpBoundGrantClientDescriptionPort } from "../operatorMcpAuthorization/contracts.js";
+import type { OperatorMcpBoundGrantClientDescriptionPort } from "../operatorMcpAuthorization/public.js";
 
 const TITLE_MAX_LENGTH = 120;
 const isMcpReviewedProposal = (proposal: CopilotProposal): boolean =>

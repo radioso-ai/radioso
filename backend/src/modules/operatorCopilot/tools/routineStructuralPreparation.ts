@@ -173,6 +173,7 @@ export const createRoutineStructuralPreparationTool = (
   contributingModule: "routines",
   dashboardSubject: { type: "proposal" },
   requiredPermissions: ["workspace.agents.manage"],
+  surfaces: ["mcp"],
   inputSchema,
   outputSchema,
   reconcileMcpInvocation: async ({ invocation, context, staleBefore, now }) => {

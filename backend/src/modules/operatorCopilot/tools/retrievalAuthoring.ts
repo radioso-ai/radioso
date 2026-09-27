@@ -70,7 +70,7 @@ export const createRetrievalAuthoringCopilotTools = (
     describeEntity: (input) => ({ type: "agent", id: (input as { agentId: string }).agentId }),
   },
   {
-    name: "prepare_retrieval_settings", shape: "propose", verificationCost: () => 0, uiLabel: "Preparing retrieval settings", contributingModule: "agentSkills", dashboardSubject: { type: "proposal" }, requiredPermissions: ["workspace.agents.manage"],
+    name: "prepare_retrieval_settings", shape: "propose", verificationCost: () => 0, uiLabel: "Preparing retrieval settings", contributingModule: "agentSkills", dashboardSubject: { type: "proposal" }, requiredPermissions: ["workspace.agents.manage"], surfaces: ["mcp"],
     description: "Prepare an omission-preserving per-agent retrieval settings patch for review. It does not change retrieval behavior.", inputSchema: prepareInput, outputSchema: prepareOutput,
     reconcileMcpInvocation: async ({ invocation, context, staleBefore, now }) => {
       if (!invocation.operationId) return { status: "conflict" };

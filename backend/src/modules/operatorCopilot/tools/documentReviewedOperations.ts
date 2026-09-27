@@ -58,6 +58,7 @@ export const createDocumentReviewedOperationTools = (deps: DocumentReviewedOpera
   contributingModule: "documents",
   dashboardSubject: { type: "proposal" },
   requiredPermissions: ["workspace.documents.manage"],
+  surfaces: ["mcp"],
   inputSchema,
   outputSchema,
   reconcileMcpInvocation: async ({ invocation, context, staleBefore, now }) => {
@@ -103,7 +104,7 @@ const REMOVAL_DESCRIPTION = "Prepare an exact, reviewed permanent document remov
 function createRemovalTool(deps: DocumentReviewedOperationToolDependencies): CopilotToolDescriptor {
   return {
     name: REMOVAL_NAME, shape: "propose", verificationCost: () => 0, uiLabel: "Preparing document removal", description: REMOVAL_DESCRIPTION,
-    contributingModule: "documents", dashboardSubject: { type: "proposal" }, requiredPermissions: ["workspace.documents.manage"], inputSchema: removalInputSchema, outputSchema: removalOutputSchema,
+    contributingModule: "documents", dashboardSubject: { type: "proposal" }, requiredPermissions: ["workspace.documents.manage"], surfaces: ["mcp"], inputSchema: removalInputSchema, outputSchema: removalOutputSchema,
     reconcileMcpInvocation: async ({ invocation, context, staleBefore, now }) => {
       if (!invocation.operationId) return { status: "conflict" };
       const recovered = await deps.proposalRecovery.recoverOperatorMcpProposal({ invocationId: invocation.id, grantId: invocation.grantId, workspaceId: context.workspaceId, operatorUserId: context.operatorUserId, operationId: invocation.operationId, descriptorName: REMOVAL_NAME, inputDigest: invocation.inputDigest, staleBefore, now });
@@ -140,7 +141,7 @@ const REPROCESS_DESCRIPTION = "Prepare a reviewed document reprocess. Set kind t
 function createReprocessTool(deps: DocumentReviewedOperationToolDependencies): CopilotToolDescriptor {
   return {
     name: REPROCESS_NAME, shape: "propose", verificationCost: () => 0, uiLabel: "Preparing document reprocess", description: REPROCESS_DESCRIPTION,
-    contributingModule: "documents", dashboardSubject: { type: "proposal" }, requiredPermissions: ["workspace.documents.manage"], inputSchema: reprocessInputSchema, outputSchema: reprocessOutputSchema,
+    contributingModule: "documents", dashboardSubject: { type: "proposal" }, requiredPermissions: ["workspace.documents.manage"], surfaces: ["mcp"], inputSchema: reprocessInputSchema, outputSchema: reprocessOutputSchema,
     reconcileMcpInvocation: async ({ invocation, context, staleBefore, now }) => {
       if (!invocation.operationId) return { status: "conflict" };
       const recovered = await deps.proposalRecovery.recoverOperatorMcpProposal({ invocationId: invocation.id, grantId: invocation.grantId, workspaceId: context.workspaceId, operatorUserId: context.operatorUserId, operationId: invocation.operationId, descriptorName: REPROCESS_NAME, inputDigest: invocation.inputDigest, staleBefore, now });

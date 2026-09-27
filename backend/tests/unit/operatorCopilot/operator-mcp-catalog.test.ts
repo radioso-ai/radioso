@@ -110,6 +110,8 @@ describe("OperatorMcpCatalogService", () => {
         diagnosis: "directive_recommended" as const,
       },
       versionToken: "2026-09-26T11:00:00.000Z",
+      current: null,
+      drafting: "verbatim" as const,
     }));
     const createProposal = vi.fn(async () => ({ id: "22222222-2222-4222-8222-222222222222" }));
     const adapter = createDirectiveCopilotProposalAdapter({
@@ -148,8 +150,7 @@ describe("OperatorMcpCatalogService", () => {
     expect(output).toMatchObject({ targetLabel: "quote-primary-source", summary: expect.any(String) });
     expect((output as { summary: string }).summary).toHaveLength(2_000);
     expect(createProposal).toHaveBeenCalledWith(expect.objectContaining({
-      // A create is fenced on the agent existing, not on the owner snapshot's agent updatedAt.
-      versionToken: "agent-exists",
+      versionToken: "2026-09-26T11:00:00.000Z",
       payload: expect.objectContaining({ rationale: (output as { summary: string }).summary }),
     }));
     await expect(invoke({ agentId, name: "quote-primary-source", condition: { kind: "always" }, action: "Quote first.", priority: 101 }))

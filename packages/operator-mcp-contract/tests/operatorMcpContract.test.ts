@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
+  OPERATOR_MCP_URL_ELICITATION_KEY,
   OperatorAdmissionRequestSchema,
   OperatorAdmissionResponseSchema,
   OperatorCatalogResponseSchema,
@@ -8,10 +9,13 @@ import {
   OperatorMcpRequestSchema,
   OPERATOR_MCP_EXECUTION_TIMEOUT_MS,
   OPERATOR_MCP_PROTOCOL_VERSION,
+  buildOperatorMcpUrlElicitationRequests,
+  clientDeclaresUrlElicitation,
   createOperatorMcpProof,
   canonicalizeOperatorResource,
   describeOperatorMcpRejection,
   digestOperatorMcpCall,
+  parseOperatorMcpUrlElicitationResponse,
   verifyOperatorMcpProof,
   sha256Digest,
 } from "../src/index.js";
@@ -138,6 +142,91 @@ describe("operator MCP contract", () => {
       name: "retrieval_probe",
       arguments: { query: "safe" },
     })).toThrow();
+  });
+
+  it("carries an accepted elicitation retry's approvalResponse without binding it to the call digest", () => {
+    const argumentsValue = { query: "safe" };
+    const bodyDigest = digestOperatorMcpCall({ name: "retrieval_probe", arguments: argumentsValue });
+    const proof = createOperatorMcpProof({ ...base, method: "tools/call", descriptorName: "retrieval_probe", bodyDigest, secret: "a-secure-test-key" });
+
+    const accepted = OperatorInvocationRequestSchema.parse({ proof, name: "retrieval_probe", arguments: argumentsValue, bodyDigest, approvalResponse: { action: "accept" } });
+    expect(accepted.approvalResponse).toEqual({ action: "accept" });
+    // A fresh call and its accepted retry present the exact same digest: the wait it asks for
+    // never changes what gets authorized, only how long the boundary waits before answering.
+    expect(digestOperatorMcpCall({ name: "retrieval_probe", arguments: argumentsValue })).toBe(bodyDigest);
+  });
+
+  it("rejects a malformed approvalResponse action", () => {
+    const argumentsValue = { query: "safe" };
+    const bodyDigest = digestOperatorMcpCall({ name: "retrieval_probe", arguments: argumentsValue });
+    const proof = createOperatorMcpProof({ ...base, method: "tools/call", descriptorName: "retrieval_probe", bodyDigest, secret: "a-secure-test-key" });
+
+    expect(() => OperatorInvocationRequestSchema.parse({ proof, name: "retrieval_probe", arguments: argumentsValue, bodyDigest, approvalResponse: { action: "maybe" } })).toThrow();
+  });
+
+  it("strips a field this schema has never heard of instead of rejecting the whole request", () => {
+    // Deploy skew: the standalone MCP edge and the backend run as separate Cloud Run services
+    // built from the same image, so a rolling deploy can briefly run a newer edge against an
+    // older backend. An older backend's copy of this schema must still serve the call -- it just
+    // never sees whatever new field a future edge starts sending.
+    const argumentsValue = { query: "safe" };
+    const bodyDigest = digestOperatorMcpCall({ name: "retrieval_probe", arguments: argumentsValue });
+    const proof = createOperatorMcpProof({ ...base, method: "tools/call", descriptorName: "retrieval_probe", bodyDigest, secret: "a-secure-test-key" });
+
+    const parsed = OperatorInvocationRequestSchema.parse({
+      proof, name: "retrieval_probe", arguments: argumentsValue, bodyDigest,
+      aFieldThisSchemaHasNeverHeardOf: "value",
+    });
+    expect(parsed).not.toHaveProperty("aFieldThisSchemaHasNeverHeardOf");
+  });
+});
+
+describe("2026-07-28 URL-mode elicitation for reviewed approval", () => {
+  it("only counts a named `url` sub-capability, not a bare form-only declaration", () => {
+    expect(clientDeclaresUrlElicitation({ elicitation: { url: {} } })).toBe(true);
+    expect(clientDeclaresUrlElicitation({ elicitation: {} })).toBe(false);
+    expect(clientDeclaresUrlElicitation({ elicitation: { form: {} } })).toBe(false);
+    expect(clientDeclaresUrlElicitation({})).toBe(false);
+    expect(clientDeclaresUrlElicitation({ elicitation: null })).toBe(false);
+  });
+
+  it("requires `url` itself to be a non-null, non-array object, not merely present", () => {
+    expect(clientDeclaresUrlElicitation({ elicitation: { url: false } })).toBe(false);
+    expect(clientDeclaresUrlElicitation({ elicitation: { url: null } })).toBe(false);
+    expect(clientDeclaresUrlElicitation({ elicitation: { url: [] } })).toBe(false);
+    expect(clientDeclaresUrlElicitation({ elicitation: { url: "yes" } })).toBe(false);
+    expect(clientDeclaresUrlElicitation({ elicitation: [] })).toBe(false);
+  });
+
+  it("builds the MRTR input-required request keyed by the shared elicitation key", () => {
+    const requests = buildOperatorMcpUrlElicitationRequests({ message: "Approve it.", url: "https://app.example/approve" });
+    expect(requests).toEqual({
+      [OPERATOR_MCP_URL_ELICITATION_KEY]: {
+        method: "elicitation/create",
+        params: { mode: "url", url: "https://app.example/approve", message: "Approve it." },
+      },
+    });
+  });
+
+  it("reads a retried request's bare elicitation answer and tells absent from invalid", () => {
+    expect(parseOperatorMcpUrlElicitationResponse(undefined)).toEqual({ kind: "absent" });
+    expect(parseOperatorMcpUrlElicitationResponse({})).toEqual({ kind: "absent" });
+    expect(parseOperatorMcpUrlElicitationResponse({ [OPERATOR_MCP_URL_ELICITATION_KEY]: { action: "accept" } }))
+      .toEqual({ kind: "action", action: "accept" });
+    expect(parseOperatorMcpUrlElicitationResponse({ [OPERATOR_MCP_URL_ELICITATION_KEY]: { action: "decline" } }))
+      .toEqual({ kind: "action", action: "decline" });
+    expect(parseOperatorMcpUrlElicitationResponse({ [OPERATOR_MCP_URL_ELICITATION_KEY]: { action: "cancel" } }))
+      .toEqual({ kind: "action", action: "cancel" });
+  });
+
+  it("rejects a malformed, unknown-shaped, or oversized elicitation answer as invalid, not absent", () => {
+    expect(parseOperatorMcpUrlElicitationResponse("not-a-map")).toEqual({ kind: "invalid" });
+    expect(parseOperatorMcpUrlElicitationResponse([])).toEqual({ kind: "invalid" });
+    expect(parseOperatorMcpUrlElicitationResponse({ [OPERATOR_MCP_URL_ELICITATION_KEY]: { action: "maybe" } })).toEqual({ kind: "invalid" });
+    expect(parseOperatorMcpUrlElicitationResponse({ [OPERATOR_MCP_URL_ELICITATION_KEY]: { action: "accept", content: {} } })).toEqual({ kind: "invalid" });
+    expect(parseOperatorMcpUrlElicitationResponse({ a: {}, b: {}, c: {}, d: {}, e: {} })).toEqual({ kind: "invalid" });
+    expect(parseOperatorMcpUrlElicitationResponse({ [OPERATOR_MCP_URL_ELICITATION_KEY]: { action: "accept", padding: "x".repeat(2_000) } }))
+      .toEqual({ kind: "invalid" });
   });
 });
 

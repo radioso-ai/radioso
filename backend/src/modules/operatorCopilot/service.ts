@@ -33,8 +33,20 @@ import { COPILOT_TURN_BUDGET } from "./turnBudget.js";
 import { hasAllCopilotToolPermissions, hasCurrentCopilotToolPermissions } from "./catalog.js";
 import { buildCopilotNeverListContext } from "./neverList.js";
 import { compactForBudget } from "./payloadCompaction.js";
-import { reviewCodeFor } from "./reviewedOperation.js";
+import {
+  awaitReviewedApproval,
+  reviewCodeFor,
+  reviewedApprovalOutstanding,
+  REVIEWED_APPROVAL_POLL_INTERVAL_MS,
+  type ReviewedApprovalWaitResult,
+} from "./reviewedOperation.js";
 import type { OperatorMcpBoundGrantClientDescriptionPort } from "../operatorMcpAuthorization/public.js";
+
+/** Resolves once `ms` elapses or `signal` aborts, whichever comes first; never rejects. */
+const realReviewedApprovalSleep = (ms: number, signal?: AbortSignal): Promise<void> => new Promise((resolve) => {
+  const timer = setTimeout(resolve, ms);
+  signal?.addEventListener("abort", () => { clearTimeout(timer); resolve(); }, { once: true });
+});
 
 const TITLE_MAX_LENGTH = 120;
 const isMcpReviewedProposal = (proposal: CopilotProposal): boolean =>
@@ -225,6 +237,8 @@ interface OperatorCopilotServiceDeps {
   /** Consent attribution is resolved by the OAuth owner, never from proposal payloads. */
   readonly reviewedGrantClient?: OperatorMcpBoundGrantClientDescriptionPort | null;
   readonly reviewedApprovalMetrics?: ReviewedApprovalMetricsPort | null;
+  /** Defaults to a real abortable timer; tests inject a deterministic one instead of waiting in real time. */
+  readonly sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
 }
 
 export class OperatorCopilotService {
@@ -507,12 +521,37 @@ export class OperatorCopilotService {
     /** The authenticated MCP request's credential/grant-aware authorization. */
     readonly currentAuthorization: CopilotCurrentAuthorizationPort;
     readonly now?: Date;
+    /**
+     * Set only for an accepted URL-elicitation retry (design §6 flow B). Bounds a read-only poll
+     * of this proposal's own approval state before the single claim attempt below, so "open URL ->
+     * approve" usually resolves in the retry that follows instead of relaying `approval_required`
+     * to a client that just told the person to approve.
+     */
+    readonly awaitApprovalMs?: number;
+    readonly signal?: AbortSignal;
   }): Promise<CopilotClaimedProposalExecution | { status: "refused"; reason: string } | { status: "approval_required"; approval: { url: string; expiresAt: string; effect: import("../../shared/domain/reviewedChangeEffect.js").ReviewedChangeEffect } }> {
     if (!input.currentAuthorization) throw new CopilotAuthorizationError();
     // The catalog gate is intentionally empty: authorization belongs to the target owner. Check
     // before claiming so a settled replay cannot disclose an old target outcome after access is revoked.
     const existing = await this.deps.repository.findMcpReviewedProposal({ id: input.proposalId, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId, grantId: input.grantId, clientId: input.clientId });
     if (existing) await this.requireProposalAuthorization({ workspaceId: input.workspaceId, accountId: input.accountId, operatorUserId: input.operatorUserId, surface: "mcp", proposalId: input.proposalId, currentAuthorization: input.currentAuthorization }, existing.targetType);
+    if (input.awaitApprovalMs && existing && reviewedApprovalOutstanding(existing, input.reviewDigest)) {
+      const wait = await awaitReviewedApproval({
+        checkApproval: async () => {
+          const current = await this.deps.repository.findMcpReviewedProposal({ id: input.proposalId, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId, grantId: input.grantId, clientId: input.clientId });
+          if (!current) return "expired";
+          if (current.status === "dismissed") return "declined";
+          const now = this.deps.now?.() ?? new Date();
+          if (current.expiresAt && current.expiresAt.getTime() <= now.getTime()) return "expired";
+          return reviewedApprovalOutstanding(current, input.reviewDigest) ? "pending" : "approved";
+        },
+        timeoutMs: input.awaitApprovalMs,
+        pollIntervalMs: REVIEWED_APPROVAL_POLL_INTERVAL_MS,
+        expiresAt: existing.expiresAt,
+        signal: input.signal,
+      }, { now: () => this.deps.now?.() ?? new Date(), sleep: this.deps.sleep ?? realReviewedApprovalSleep });
+      this.recordReviewedApprovalWait(wait);
+    }
     const claimed = await this.deps.repository.claimMcpReviewedProposalApply({
       proposalId: input.proposalId,
       executionInvocationId: input.executionInvocationId,
@@ -575,6 +614,12 @@ export class OperatorCopilotService {
 
   private recordReviewedApprovalMetric(requirement: "conversation" | "signed_in_approval", outcome: "required_at_execute" | "approved" | "declined" | "applied_after_approval"): void {
     this.deps.reviewedApprovalMetrics?.incrementCounter("operator_mcp_reviewed_approval_total", { help: "Reviewed-operation approval outcomes", labels: { requirement, outcome } });
+  }
+
+  /** Low-cardinality observability for the bounded accept-retry wait: its outcome and duration, never which proposal or workspace. */
+  private recordReviewedApprovalWait(wait: ReviewedApprovalWaitResult): void {
+    this.deps.reviewedApprovalMetrics?.incrementCounter("operator_mcp_reviewed_approval_wait_total", { help: "Outcomes of the bounded wait an accepted elicitation retry spends for its approval before execute_reviewed_proposal answers", labels: { outcome: wait.outcome } });
+    this.deps.reviewedApprovalMetrics?.observeHistogram("operator_mcp_reviewed_approval_wait_ms", { help: "Milliseconds an accepted elicitation retry waited for its approval before execute_reviewed_proposal answered", value: wait.waitedMs, buckets: [250, 500, 1_000, 2_000, 5_000, 10_000, 15_000, 20_000, 25_000] });
   }
 
   async cancelMcpReviewedProposal(input: { workspaceId: string; accountId: string; operatorUserId: string; grantId: string; clientId: string; proposalId: string; currentAuthorization: CopilotCurrentAuthorizationPort }): Promise<{ status: "dismissed" | "not_found" | "not_cancellable" | "dashboard_reviewed" }> {

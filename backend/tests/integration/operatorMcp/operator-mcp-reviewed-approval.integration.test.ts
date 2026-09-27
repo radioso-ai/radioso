@@ -9,8 +9,10 @@ import { WorkspaceRepository } from "../../../src/db/repositories/workspaceRepos
 import { CopilotRepository } from "../../../src/db/repositories/copilotRepository.js";
 import { createReviewedReceiptSettlement } from "../../../src/app/composition/copilotReviewedReceiptSettlement.js";
 import { createDirectiveCopilotProposalAdapter } from "../../../src/modules/operatorCopilot/proposalAdapters.js";
+import { OperatorCopilotService } from "../../../src/modules/operatorCopilot/service.js";
 import { AuthoredDirectiveService, type AuthoredDirectiveInput } from "../../../src/modules/agents/public.js";
 import type { CopilotProposalApplyContext } from "../../../src/modules/operatorCopilot/contracts.js";
+import { NoopUsageLimitPolicy } from "../../../src/shared/domain/usageLimitPolicy.js";
 import { Database } from "../../../src/shared/infra/database.js";
 import { resolveIntegrationDatabase } from "../support/integrationDatabase.js";
 
@@ -29,6 +31,18 @@ describeIntegration("the reviewed approval gate, proven against Postgres's row l
     directiveAuthorService: { draftForProposal: async () => { throw new Error("not exercised by these tests"); } },
     agentService: { get: async (workspaceId: string, agentId: string) => (await agentRepository.findByIdAndWorkspaceId(agentId, workspaceId))! } as never,
     reviewedReceipt: createReviewedReceiptSettlement(database.kysely),
+  });
+  const authorization = { hasAllPermissions: async () => true };
+  const copilot = new OperatorCopilotService({
+    repository: proposals,
+    capabilityRunner: { runStreaming: async function* () {} } as never,
+    usageLimitPolicy: new NoopUsageLimitPolicy(),
+    auditService: { record: async () => undefined },
+    workspaceRouteKeyResolver: { resolveWorkspaceKey: async () => "reviewed-approval" },
+    prompt: "test",
+    tools: [],
+    currentAuthorization: authorization,
+    proposalAdapters: [adapter],
   });
 
   const accountIds: string[] = [];
@@ -238,6 +252,51 @@ describeIntegration("the reviewed approval gate, proven against Postgres's row l
     );
     expect(result).toMatchObject({ outcome: "stale" });
   });
+
+  /**
+   * Finding 1 of the stacked review, proven end to end through the real `OperatorCopilotService`
+   * over Postgres: an accepted URL-elicitation retry's bounded wait must observe an approval a
+   * *different* connection commits mid-poll (real read-committed visibility, not merely something
+   * held in the same in-flight transaction), and the operation must apply exactly once through the
+   * one locked claim path -- the wait itself never records or implies approval.
+   */
+  it("observes an approval committed by another connection mid-wait and applies exactly once", async () => {
+    const fixture = await createFixture();
+    const existing = await agentRepository.createDirective(fixture.agent.id, fixture.workspace.id, createDirectiveInput("accepted-retry-wait"));
+    const payload = { name: "accepted-retry-wait", condition: { kind: "always" }, action: "Applied after the wait observed approval." };
+    const proposal = await prepareSignedInProposal(fixture, { targetRef: { agentId: fixture.agent.id, directiveId: existing.id }, payload, versionToken: existing.updatedAt.toISOString() });
+    const executionInvocationId = await createExecutionInvocation(fixture);
+
+    // A second, independent call through the same pool -- exactly the "another connection" the
+    // wait must observe rather than anything the executing call itself wrote -- commits the
+    // approval partway through the wait's real, un-mocked 1-second poll.
+    const approvalAfterADelay = new Promise<void>((resolve) => {
+      setTimeout(() => { approve(fixture, proposal.id).then(() => resolve()).catch(() => resolve()); }, 1_500);
+    });
+
+    const [execution] = await Promise.all([
+      copilot.executeMcpReviewedProposal({
+        workspaceId: fixture.workspace.id, accountId: fixture.account.id, operatorUserId: fixture.operatorUserId,
+        proposalId: proposal.id, reviewDigest: REVIEW_DIGEST, executionInvocationId, grantId: fixture.grantId, clientId: fixture.clientId,
+        currentAuthorization: authorization, awaitApprovalMs: 4_000,
+      }),
+      approvalAfterADelay,
+    ]);
+
+    expect(execution).toMatchObject({ status: "applied", appliedRef: { directiveId: existing.id } });
+
+    // The same execution receipt retried afterward replays the one settled outcome -- the wait
+    // and the apply it led to both happened exactly once.
+    const replay = await copilot.executeMcpReviewedProposal({
+      workspaceId: fixture.workspace.id, accountId: fixture.account.id, operatorUserId: fixture.operatorUserId,
+      proposalId: proposal.id, reviewDigest: REVIEW_DIGEST, executionInvocationId, grantId: fixture.grantId, clientId: fixture.clientId,
+      currentAuthorization: authorization,
+    });
+    expect(replay).toMatchObject({ status: "applied", appliedRef: { directiveId: existing.id } });
+
+    const directives = await authoredDirectiveService.list(fixture.workspace.id, fixture.agent.id);
+    expect(directives.find((directive) => directive.id === existing.id)).toMatchObject({ action: "Applied after the wait observed approval." });
+  }, 10_000);
 });
 
 describeIntegration("migration 200_copilot_reviewed_approval settles pre-existing pending reviewed rows", () => {

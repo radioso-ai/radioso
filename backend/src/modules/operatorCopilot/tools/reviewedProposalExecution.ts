@@ -30,6 +30,9 @@ export interface ReviewedProposalExecutionPort {
     readonly clientId: string;
     /** Request-bound MCP credential/grant authorization, rechecked by the owner before mutation. */
     readonly currentAuthorization: CopilotCurrentAuthorizationPort;
+    /** Set only for an accepted elicitation retry; bounds a wait for the approval before answering. */
+    readonly awaitApprovalMs?: number;
+    readonly signal?: AbortSignal;
   }): Promise<ReviewedProposalExecutionResult>;
 }
 
@@ -48,7 +51,7 @@ export const createReviewedProposalExecutionTool = (
   requiredPermissions: [],
   inputSchema,
   outputSchema,
-  reconcileMcpInvocation: async ({ invocation, arguments: rawInput, context, staleBefore }) => {
+  reconcileMcpInvocation: async ({ invocation, arguments: rawInput, context, staleBefore, signal }) => {
     const input = inputSchema.parse(rawInput);
     if (!context.operatorMcpGrantId || !context.operatorMcpClientId) return { status: "conflict" };
     // An open receipt whose proof is inside the recovery lease belongs to its first runner: a
@@ -69,6 +72,8 @@ export const createReviewedProposalExecutionTool = (
       grantId: context.operatorMcpGrantId,
       clientId: context.operatorMcpClientId,
       currentAuthorization: context.currentAuthorization,
+      awaitApprovalMs: context.awaitApprovalMs,
+      signal,
     });
     // `recovered` settles the original receipt, so only a durable outcome may take that path. The
     // snapshot above can be stale: a concurrent retry's claim may have reopened the receipt, and
@@ -81,7 +86,7 @@ export const createReviewedProposalExecutionTool = (
     description: "Apply a previously prepared operation after the MCP client has shown and confirmed its exact review digest. Operations that go live, cannot be undone, or spend quota return approval_required until their owner approves the exact review in Radioso.",
     inputSchema,
     outputSchema,
-    invoke: async (rawInput) => {
+    invoke: async (rawInput, options) => {
       const input = inputSchema.parse(rawInput);
       if (context.surface !== "mcp" || !context.operatorMcpInvocationId || !context.operatorMcpGrantId || !context.operatorMcpClientId) {
         throw new Error("MCP execution receipt is required");
@@ -96,6 +101,8 @@ export const createReviewedProposalExecutionTool = (
         grantId: context.operatorMcpGrantId,
         clientId: context.operatorMcpClientId,
         currentAuthorization: context.currentAuthorization,
+        awaitApprovalMs: context.awaitApprovalMs,
+        signal: options?.signal,
       });
       return { proposalId: input.proposalId, ...result };
     },

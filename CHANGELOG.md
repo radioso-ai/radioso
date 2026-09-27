@@ -9,6 +9,23 @@ Cut a release with the **Cut Release** workflow. It reads the commits since the 
 tag, writes the entry above this line, tags the commit, and publishes a GitHub Release. A
 deploy then ships a release that already exists; it never mints one.
 
+## [1.8.0] - 2026-09-27
+
+### Added
+
+- **operator-mcp:** open the approval page through URL elicitation ([#1337](https://github.com/radioso-ai/radioso/pull/1337))
+- **operator-mcp:** require signed-in approval for live and irreversible reviewed changes ([#1336](https://github.com/radioso-ai/radioso/pull/1336))
+- **operator-mcp:** prepare and execute reviewed directive changes ([#1335](https://github.com/radioso-ai/radioso/pull/1335))
+- **operator-mcp:** prepare and execute reviewed ingestion and agent settings changes ([#1334](https://github.com/radioso-ai/radioso/pull/1334))
+
+### Database migrations
+
+This release adds 1 migration. They run at service startup, so deploy one stack at a time; overlapping deploys contend on the same DDL lock and stall until one gives up.
+
+- `200_copilot_reviewed_approval.sql`
+
+[1.8.0]: https://github.com/radioso-ai/radioso/compare/v1.7.0...v1.8.0
+
 ## [1.7.0] - 2026-09-26
 
 ### Added

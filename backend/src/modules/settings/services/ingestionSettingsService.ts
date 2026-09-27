@@ -20,6 +20,7 @@ import type {
   IngestionSettingsProposalPatch,
   IngestionSettingsRepositoryPort,
 } from "../contracts/services.js";
+import type { OwnerCommitHook } from "../../../shared/infra/kysely/types.js";
 import type { FieldScopedCasOutcome } from "../contracts/services.js";
 import {
   badRequest,
@@ -284,13 +285,14 @@ export class IngestionSettingsService {
   async applyFieldProposal(
     workspaceId: string,
     prepared: IngestionSettingsFieldProposalApplyInput,
+    options?: { readonly onCommitted?: OwnerCommitHook<{ readonly workspaceId: string }> },
   ): Promise<IngestionSettingsFieldProposalApplyOutcome> {
     const patch = "expected" in prepared
       ? Object.fromEntries(Object.keys(prepared.expected).map((field) => [field, prepared.normalizedPatch[field as keyof IngestionSettingsProposalPatch]])) as IngestionSettingsProposalPatch
       : prepared.normalizedPatch;
     const outcome = await this.applyProposalPatch({ workspaceId, patch, ...("expected" in prepared
       ? { expected: prepared.expected }
-      : { expectedUpdatedAt: prepared.expectedUpdatedAt }) });
+      : { expectedUpdatedAt: prepared.expectedUpdatedAt }), ...(options?.onCommitted ? { onCommitted: options.onCommitted } : {}) });
     if (outcome.outcome === "applied") return { status: "applied" };
     if (outcome.outcome === "targetDeleted") return { status: "target_deleted" };
     return { status: "changed", fields: outcome.fields };

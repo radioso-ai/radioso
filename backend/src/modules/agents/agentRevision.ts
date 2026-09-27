@@ -9,6 +9,21 @@ import {
 import { routineDefinitionSchema, toSafeRoutineValidationDiagnostic, validateExposureAcrossSnapshot, validateRoutineDefinition, type RoutineDefinition, type RoutineValidationResult } from "../routines/public.js";
 import { authoredDirectiveInputSchema } from "./authoredDirectives.js";
 import { describeCandidateReleaseDiff, type CandidateReleaseChange } from "./candidateReleaseReview.js";
+import { canonicalContentHash } from "../../shared/domain/canonicalContentHash.js";
+
+/**
+ * How many changed items the publication approval page shows by name. Bounded and redacted like
+ * every other reviewed preview; `changeCount` still reports the true total so a reviewer knows
+ * when the list was cut.
+ */
+const PUBLICATION_REVIEW_CHANGE_LIMIT = 20;
+interface CandidatePublicationReview {
+  readonly changeCount: number;
+  readonly changes: ReadonlyArray<CandidateReleaseChange>;
+  readonly changesTruncated: boolean;
+  /** Deterministic content hash of the immutable candidate snapshot this review describes. */
+  readonly contentHash: string;
+}
 
 /**
  * Bootstrap never resolves `resolveChatLocale` to a hardcoded language (it returns `null`
@@ -345,6 +360,28 @@ export class AgentRevisionService {
     assertCandidateSnapshotIsRunnable(candidate.snapshot);
     const base = candidate.sourceBasePublishedRevisionId ? await this.detail(workspaceId, agentId, candidate.sourceBasePublishedRevisionId) : null;
     return { candidateRevisionId: candidate.id, basePublishedRevisionId: candidate.sourceBasePublishedRevisionId, validation: { status: "valid" }, ...describeCandidateReleaseDiff(base?.snapshot ?? null, candidate.snapshot, page) };
+  }
+  /**
+   * A bounded, redacted change summary plus a content hash of the exact immutable candidate a
+   * publication review binds to. Reuses `describeCandidateReleaseDiff`'s existing per-field
+   * redaction (it already strips `agentSkills` config and clips long text) rather than the
+   * reviewed-operation boundary re-deriving a diff of its own from the raw snapshot.
+   */
+  async describeCandidatePublicationReview(workspaceId: string, agentId: string, revisionId: string): Promise<CandidatePublicationReview> {
+    const candidate = await this.detail(workspaceId, agentId, revisionId);
+    assertCandidateSnapshotIsRunnable(candidate.snapshot);
+    const base = candidate.sourceBasePublishedRevisionId ? await this.detail(workspaceId, agentId, candidate.sourceBasePublishedRevisionId) : null;
+    const all = describeCandidateReleaseDiff(base?.snapshot ?? null, candidate.snapshot, { limit: Number.MAX_SAFE_INTEGER });
+    const changes = all.changes.slice(0, PUBLICATION_REVIEW_CHANGE_LIMIT);
+    return {
+      changeCount: all.changes.length,
+      changes,
+      changesTruncated: all.changes.length > PUBLICATION_REVIEW_CHANGE_LIMIT || all.truncated,
+      // The snapshot may carry live `Date` values (e.g. directive/routine `createdAt`); round-trip
+      // through JSON first so the hash commits to the same plain values `JSON.stringify` would
+      // already reduce them to, rather than teaching the canonical hasher about domain types.
+      contentHash: canonicalContentHash(JSON.parse(JSON.stringify(candidate.snapshot)) as unknown),
+    };
   }
   async readCandidateReleaseChange(workspaceId: string, agentId: string, revisionId: string, input: { field: "customInstruction" | "directives" | "routines" | "contextVariableEnablements" | "agentSkills"; id: string; side: "before" | "after"; offset: number; limit: number }): Promise<{ text: string | null; nextOffset: number | null; totalLength: number }> {
     if (!Number.isInteger(input.offset) || input.offset < 0 || !Number.isInteger(input.limit) || input.limit < 1 || input.limit > 2000) throw new AppError(400, "invalid_release_review_chunk", "Invalid release review chunk range.");

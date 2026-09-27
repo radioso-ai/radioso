@@ -73,6 +73,16 @@ describe('next security headers', () => {
     expect(values.get('X-Frame-Options')).toBe('DENY')
   })
 
+  it('hardens the reviewed-operation approval page against framing, referrers, and caching', async () => {
+    const routes = await getHeaderRoutes()
+    const approvalHeaders = routes.find((route) => route.source === '/oauth/operator-mcp/proposal/:proposalId')?.headers ?? []
+    const values = new Map(approvalHeaders.map((header) => [header.key, header.value]))
+    expect(values.get('Content-Security-Policy')).toContain("frame-ancestors 'none'")
+    expect(values.get('Referrer-Policy')).toBe('no-referrer')
+    expect(values.get('Cache-Control')).toBe('no-store')
+    expect(values.get('X-Frame-Options')).toBe('DENY')
+  })
+
   it('proxies the legacy widget hostname to the primary EU frontend', async () => {
     const routes = await getRewriteRoutes()
 

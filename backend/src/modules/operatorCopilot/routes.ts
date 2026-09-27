@@ -6,6 +6,8 @@ import { requireWorkspaceSession } from "../../app/http/middleware/requireWorksp
 import type { WorkspaceSessionDependencies } from "../../app/http/middleware/requireWorkspaceSession.js";
 import { requireSession } from "../../app/http/middleware/requireSession.js";
 import { requireWorkspacePermission } from "../../app/http/middleware/requirePermission.js";
+import { requireApiAccessCsrf } from "../../app/http/middleware/requireApiAccessCsrf.js";
+import { requireJsonContentType } from "../../app/http/middleware/requireJsonContentType.js";
 import { createRateLimitMiddleware, type RateLimitAbuseControlPort, type RateLimitAuditPort } from "../../app/http/middleware/rateLimit.js";
 import { validateBody } from "../../app/http/middleware/validate.js";
 import { forbidden, notFound } from "../../shared/domain/errors.js";
@@ -143,7 +145,7 @@ export const createCopilotRoutes = (dependencies: CopilotRouteDependencies): Rou
       });
     } catch (error) { if (error instanceof CopilotAuthorizationError) { next(notFound("Copilot proposal not found")); return; } next(error); }
   });
-  router.post("/proposals/:proposalId/approve", proposalSession, sessionOnly, proposalWorkspace, validateBody(approveProposalSchema), async (req, res, next) => {
+  router.post("/proposals/:proposalId/approve", proposalSession, sessionOnly, proposalWorkspace, requireApiAccessCsrf, requireJsonContentType, validateBody(approveProposalSchema), async (req, res, next) => {
     try {
       const { workspaceId, accountId, userId } = sessionLocals(res);
       const { proposalId } = proposalParamsSchema.parse(req.params);

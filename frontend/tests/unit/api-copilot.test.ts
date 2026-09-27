@@ -81,6 +81,20 @@ describe('copilotApi', () => {
     )
   })
 
+  it('sends the CSRF header when approving a reviewed proposal', async () => {
+    requestMock.mockResolvedValueOnce({ status: 'approved' })
+
+    const { copilotApi } = await import('@/lib/api-copilot')
+
+    await copilotApi.approveProposal('proposal-1', 'a'.repeat(43))
+
+    expect(requestMock).toHaveBeenCalledWith(
+      '/copilot/proposals/proposal-1/approve',
+      { method: 'POST', body: JSON.stringify({ reviewDigest: 'a'.repeat(43) }), headers: { 'Content-Type': 'application/json', 'X-Radioso-CSRF': '1' } },
+      { withSession: true },
+    )
+  })
+
   it('posts the fixed turn body without a bearer token', async () => {
     const response = new Response(
       'event: conversation\ndata: {"conversationId":"conversation-1","turnId":"turn-1"}\n\n' +

@@ -436,7 +436,7 @@ export const copilotApi = {
 
   approveProposal(proposalId: string, reviewDigest: string, workspaceId?: string): Promise<{ status: 'approved' | 'expired' | 'not_pending' | 'digest_mismatch' }> {
     return request(copilotPath(`/proposals/${encodeURIComponent(proposalId)}/approve`), {
-      method: 'POST', body: JSON.stringify({ reviewDigest }), headers: { 'Content-Type': 'application/json', ...(workspaceId ? { 'X-Workspace-Id': workspaceId } : {}) },
+      method: 'POST', body: JSON.stringify({ reviewDigest }), headers: { 'Content-Type': 'application/json', 'X-Radioso-CSRF': '1', ...(workspaceId ? { 'X-Workspace-Id': workspaceId } : {}) },
     }, { withSession: true })
   },
 

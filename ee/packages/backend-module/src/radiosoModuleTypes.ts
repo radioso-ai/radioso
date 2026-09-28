@@ -1,4 +1,4 @@
-import type { RequestHandler, Router } from "express";
+import type { Request, RequestHandler, Response, Router } from "express";
 import type { Pool } from "pg";
 import type { ZodType } from "zod";
 
@@ -395,6 +395,15 @@ export interface ApplicationRouteMount {
       OPERATOR_MCP_OAUTH_SOURCE_RATE_LIMIT_MAX_ATTEMPTS?: number;
     };
     apiPrincipalRouteInventory: ApiPrincipalRouteInventory;
+    /**
+     * The host's resolved client source for a request, as an opaque, stable
+     * digest for rate-limit subject keys. OSS resolves forwarded addresses once
+     * per request against its own proxy configuration; `req.ip` is always the
+     * socket peer, so a limiter keyed on it budgets the proxy, not the caller.
+     */
+    requestSource: {
+      digest(req: Request, res: Response): string;
+    };
     abuseControlService: {
       enforce(input: {
         scope: string;

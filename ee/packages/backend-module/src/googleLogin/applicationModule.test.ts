@@ -99,6 +99,7 @@ describe("createGoogleLoginApplicationModule", () => {
       authService: { federatedLogin: dependencies.federatedLogin ?? vi.fn() },
       auditService: { record: vi.fn() },
       abuseControlService: { enforce: vi.fn() },
+      requestSource: { digest: vi.fn(() => "host-source-digest") },
     } as unknown as Parameters<ApplicationRouteMount["createRouter"]>[0]);
     const app = express();
     app.use(mount.path, router);

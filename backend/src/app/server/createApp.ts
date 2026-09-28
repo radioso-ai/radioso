@@ -8,6 +8,7 @@ import { badRequest, payloadTooLarge } from "../../shared/domain/errors.js";
 import { createErrorHandler } from "../http/middleware/errorHandler.js";
 import { createHttpTracingMiddleware } from "../http/middleware/tracingMiddleware.js";
 import { createRequestAuditContextMiddleware } from "../http/middleware/requestAuditContextMiddleware.js";
+import { createRequestSourceMiddleware } from "../http/middleware/requestSource.js";
 import { createOpenApiDocument } from "../http/openapi/openApiDocument.js";
 import { createApiRouter } from "../http/routes/index.js";
 import type { AppDependencies } from "./types.js";
@@ -73,17 +74,17 @@ export const captureRequestBody = async (req: express.Request, _res: express.Res
 export const createApp = (dependencies: AppDependencies) => {
   const app = express();
 
-  if (dependencies.env.TRUST_PROXY_HOPS > 0) {
-    app.set("trust proxy", dependencies.env.TRUST_PROXY_HOPS);
-  } else {
-    app.set("trust proxy", false);
-  }
+  // `req.ip` stays the socket peer. Forwarded client addresses resolve through
+  // `RADIOSO_TRUSTED_PROXY_HOPS`, published per request by the request source
+  // middleware below.
+  app.set("trust proxy", false);
 
   app.disable("x-powered-by");
   app.use(createHttpLogger(dependencies.logger));
   app.use(createRequestAuditContextMiddleware());
   app.use(createHttpTracingMiddleware());
   app.use(createRequestTelemetryMiddleware(dependencies.telemetryService));
+  app.use(createRequestSourceMiddleware(dependencies.env));
   app.use(captureRequestBody);
   app.use((_req, res, next) => {
     res.setHeader("X-Content-Type-Options", "nosniff");

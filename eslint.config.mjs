@@ -127,6 +127,24 @@ export default tseslint.config(
     },
   },
 
+  // Express `trust proxy` is off, so `req.ip` is always the socket peer: behind a load balancer
+  // that is the balancer, and every caller would share one budget or one audit address.
+  {
+    files: ['backend/src/**/*.ts', 'ee/packages/*/src/**/*.ts'],
+    ignores: TEST_FILES,
+    rules: {
+      'no-restricted-properties': [
+        'error',
+        ...['req', 'request'].flatMap((object) => ['ip', 'ips'].map((property) => ({
+          object,
+          property,
+          message:
+            'This is the socket peer, not the client. Use readRequestSource(req, res) (backend) or the route mount\'s requestSource port (ee).',
+        }))),
+      ],
+    },
+  },
+
   {
     files: TEST_FILES,
     rules: {

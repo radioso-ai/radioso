@@ -74,6 +74,7 @@ const createApp = (overrides: Partial<GoogleLoginRouterOptions> = {}) => {
     successRedirect: SUCCESS_REDIRECT,
     authService: { federatedLogin: vi.fn(async () => federatedLoginResult) },
     abuseControlService: { enforce: vi.fn(async () => undefined) },
+    requestSource: { digest: () => "host-source-digest" },
     generateState: () => "fixed-state",
     ...overrides,
   };
@@ -123,7 +124,7 @@ describe("google login routes", () => {
 
     expect(enforce).toHaveBeenCalledWith(expect.objectContaining({
       scope: "ee.google_login.start",
-      subjectKey: expect.stringMatching(/^source:/),
+      subjectKey: "source:host-source-digest",
       limit: 10,
       windowMs: 60_000,
     }));
@@ -144,7 +145,7 @@ describe("google login routes", () => {
     expect(response.status).toBe(429);
     expect(enforce).toHaveBeenCalledWith(expect.objectContaining({
       scope: "ee.google_login.callback",
-      subjectKey: expect.stringMatching(/^source:/),
+      subjectKey: "source:host-source-digest",
       limit: 10,
       windowMs: 60_000,
     }));

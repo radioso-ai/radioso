@@ -135,6 +135,7 @@ import type {
 } from "../../modules/machineAccess/public.js";
 import type { MachineAccessSecurityObserver } from "../../modules/machineAccess/public.js";
 import type { ApiPrincipalRouteInventory } from "../http/apiPrincipalRoutePolicy.js";
+import type { RequestSourceDigestPort } from "../http/middleware/requestSource.js";
 import type { AgentConverseSessionMappingPort } from "../../modules/settings/contracts/agentConverseSession.js";
 import type {
   OperatorMcpAuthorizationService,
@@ -178,6 +179,8 @@ export interface AppDependencies {
   accountInvitationService: AccountInvitationService;
   apiPrincipalAuthenticator: ApiPrincipalAuthenticator;
   apiPrincipalRouteInventory: ApiPrincipalRouteInventory;
+  /** Application route mounts key their source budgets through this rather than reading `req.ip`. */
+  requestSource: RequestSourceDigestPort;
   machineAccessSecurityObserver?: MachineAccessSecurityObserver;
   credentialExpiryWarningLifecycle: Pick<CredentialExpiryWarningService, "start" | "stop">;
   personalCredentialService: PersonalCredentialService;

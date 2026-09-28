@@ -5,6 +5,7 @@ import { AgentRevisionRuntimeRepository } from "../../db/repositories/agentRevis
 import { createAgentPublicProfileComposition } from "../composition/agentDiscovery.js";
 import { createAgentToolCatalogComposition } from "../composition/agentToolCatalog.js";
 import { apiPrincipalRouteInventory } from "../http/apiPrincipalRoutePolicy.js";
+import { requestSourceDigestPort } from "../http/middleware/requestSource.js";
 import {
   createDefaultAgentSkillSettingsRegistry,
   createDefaultApplicationComposition,
@@ -1026,6 +1027,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     accountInvitationService: access.accountInvitationService,
     apiPrincipalAuthenticator: access.apiPrincipalAuthenticator,
     apiPrincipalRouteInventory,
+    requestSource: requestSourceDigestPort,
     machineAccessSecurityObserver: access.machineAccessSecurityObserver,
     credentialExpiryWarningLifecycle: access.credentialExpiryWarningLifecycle,
     personalCredentialService: access.personalCredentialService,

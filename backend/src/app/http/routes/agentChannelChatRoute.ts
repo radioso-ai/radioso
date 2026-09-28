@@ -13,7 +13,7 @@ import {
 } from "../middleware/agentChannelRateLimiter.js";
 import { onSuccessfulHttpResponse } from "../middleware/httpResponseCompletion.js";
 import { presentChatPayload, sendChatJson, sendChatSse } from "../presenters/chatPresenter.js";
-import { recordEdgeFactsProofRejected, resolveConversationRequestContext } from "../shared/conversationRequestContext.js";
+import { resolveConversationRequestContext } from "../shared/conversationRequestContext.js";
 import { agentChannelChatSchema } from "../schemas/agentChannelSchemas.js";
 import {
   buildAgentReplyEnvelope,
@@ -70,10 +70,7 @@ export const registerAgentChannelChatRoute = (
     async (req, res, next) => {
       try {
         const { agentChannelGrant } = res.locals as typeof res.locals & AgentChannelCredentialLocals;
-        const { context: requestContext, rejection } = resolveConversationRequestContext(dependencies, req);
-        if (rejection) {
-          recordEdgeFactsProofRejected(dependencies, rejection, req);
-        }
+        const { context: requestContext } = resolveConversationRequestContext(dependencies, req, res);
         // A tool call is validated against the catalog of the release the
         // conversation is pinned to, before any turn state is written.
         const turnInput: AgentTurnInput | null = req.body.startConversation

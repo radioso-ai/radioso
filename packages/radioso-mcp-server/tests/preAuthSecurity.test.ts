@@ -57,14 +57,14 @@ describe("standalone MCP pre-authentication controls", () => {
     expect(exchange).not.toHaveBeenCalled();
   });
 
-  it("keeps hosted clients distinct using only the trusted forwarding suffix", async () => {
+  it("keeps hosted clients distinct using only the entry Cloud Run appended", async () => {
     const consume = vi.fn().mockReturnValue(false);
     const server = createHttpServer({
       authService: createAuthService({
         converseApi: { ask: vi.fn(), exchange: vi.fn(), validate: vi.fn(), recordUse: vi.fn(), tools: vi.fn() },
         sessionStore: createInMemorySessionStore(),
       }),
-      config: { ...config, trustedProxyHops: 2 },
+      config: { ...config, trustedProxyHops: 1 },
       preAuthSourceBudget: { consume },
     });
     servers.push(server);
@@ -81,8 +81,9 @@ describe("standalone MCP pre-authentication controls", () => {
       method: "POST",
     });
 
-    await call("198.51.100.99, 203.0.113.7, 35.191.0.1");
-    await call("192.0.2.44, 203.0.113.8, 35.191.0.1");
+    // Cloud Run appends the connecting peer after whatever the caller sent.
+    await call("198.51.100.99, 203.0.113.7");
+    await call("198.51.100.99, 203.0.113.8");
 
     const sourceDigests = consume.mock.calls.map(([input]) => (input as { sourceDigest: string }).sourceDigest);
     expect(new Set(sourceDigests).size).toBe(2);

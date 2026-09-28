@@ -43,7 +43,7 @@ import {
   websiteEmbedLaunchAllowedAuditEvent,
   websiteEmbedLaunchDeniedAuditEvent,
 } from "../presenters/publicChatPresenter.js";
-import { recordEdgeFactsProofRejected, resolveConversationRequestContext } from "../shared/conversationRequestContext.js";
+import { resolveConversationRequestContext } from "../shared/conversationRequestContext.js";
 
 type PublicChatRouteDependencies = AnonymousRateLimiterDependencies & Pick<
   AppDependencies,
@@ -668,10 +668,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
           chatSessionId,
           sourceOrigin,
         });
-        const { context: requestContext, rejection } = resolveConversationRequestContext(dependencies, req);
-        if (rejection) {
-          recordEdgeFactsProofRejected(dependencies, rejection, req);
-        }
+        const { context: requestContext } = resolveConversationRequestContext(dependencies, req, res);
 
         const input = {
           workspaceId,

@@ -1,4 +1,5 @@
 import { Writable } from "node:stream";
+import { EDGE_FACTS_HEADERS } from "@radioso/edge-proof";
 import express from "express";
 import pino from "pino";
 import request from "supertest";
@@ -45,6 +46,8 @@ describe("HTTP logger redaction", () => {
       .set("x-radioso-worker-token", "worker-task-secret")
       .set("x-radioso-public-session", "public-session-secret")
       .set("x-workspace-id", "workspace-secret")
+      .set(EDGE_FACTS_HEADERS.facts, "edge-facts-forwarded-chain")
+      .set(EDGE_FACTS_HEADERS.signature, "edge-facts-signature")
       .set("x-visible-header", "visible-value")
       .expect(200);
 
@@ -57,6 +60,8 @@ describe("HTTP logger redaction", () => {
     expect(JSON.stringify(requestLog)).not.toContain("worker-task-secret");
     expect(JSON.stringify(requestLog)).not.toContain("public-session-secret");
     expect(JSON.stringify(requestLog)).not.toContain("workspace-secret");
+    expect(JSON.stringify(requestLog)).not.toContain("edge-facts-forwarded-chain");
+    expect(JSON.stringify(requestLog)).not.toContain("edge-facts-signature");
     expect(JSON.stringify(requestLog)).not.toContain("secret-response-cookie");
     expect(JSON.stringify(requestLog)).not.toContain("anonymous-session-secret");
     expect(JSON.stringify(requestLog)).not.toContain("public-session-id-secret");

@@ -78,7 +78,7 @@ describe("deriveConversationRequestContext (FR-023)", () => {
     expect(result.context.observedVia).toBe("edge_proof");
   });
 
-  it("resolves clientIp from a one-entry forwarded-for chain at hops=1 (local compose topology: Next.js is the single hop)", () => {
+  it("resolves clientIp from a one-entry forwarded-for chain at hops=1 (hosted Cloud Run: the frontend's front end appends exactly the visitor)", () => {
     const { headers: proofHeaders } = createEdgeFactsProof({
       facts: {
         forwardedFor: "172.19.0.1",
@@ -182,6 +182,30 @@ describe("deriveConversationRequestContext (FR-023)", () => {
 
     expect(result.rejection).toBe("malformed");
     expect(result.context.observedVia).toBe("unproven");
+  });
+
+  it("uses a reading of the envelope the caller already took instead of verifying the headers again", () => {
+    const result = deriveConversationRequestContext({
+      headers: { [EDGE_FACTS_HEADERS.marker]: "frontend" },
+      envelope: {
+        status: "verified",
+        facts: { forwardedFor: "203.0.113.9", geoHeaders: {}, userAgent: "TestAgent/1.0", acceptLanguage: null },
+      },
+      socketAddress: "10.0.0.1",
+      trustedProxyHops: 1,
+      secret: SECRET,
+      method: METHOD,
+      path: PATH,
+      geoResolver,
+      now: NOW,
+    });
+
+    expect(result.rejection).toBeUndefined();
+    expect(result.context).toMatchObject({
+      clientIp: "203.0.113.9",
+      userAgent: "TestAgent/1.0",
+      observedVia: "edge_proof",
+    });
   });
 
   it("reports 'missing' when the marker is present but proof headers are absent", () => {

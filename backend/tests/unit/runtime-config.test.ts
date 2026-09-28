@@ -616,8 +616,11 @@ describe("runtime configuration", () => {
     expect(computeTf).toContain('resource "google_cloud_run_v2_service_iam_member" "mcp_public"');
     expect(computeTf).toContain('name  = "RADIOSO_MCP_PUBLIC_URL"');
     expect(computeTf.match(/name = "RADIOSO_MCP_SIGNING_SECRET"/g)).toHaveLength(2);
+    // Cloud Run's front end appends exactly the connecting peer, so both the
+    // backend and the MCP service trust one hop and no more.
     expect(computeTf.match(/name {2}= "RADIOSO_TRUSTED_PROXY_HOPS"/g)).toHaveLength(2);
-    expect(computeTf.match(/value = "2"/g)?.length).toBeGreaterThanOrEqual(2);
+    expect(computeTf.match(/name {2}= "RADIOSO_TRUSTED_PROXY_HOPS"\s+value = "1"/g)).toHaveLength(2);
+    expect(mcpService).toMatch(/name {2}= "RADIOSO_TRUSTED_PROXY_HOPS"\s+value = "1"/);
     expect(databaseTf).toContain('resource "random_password" "radioso_mcp_signing_secret"');
     expect(secretsTf).toMatch(/"radioso-mcp-signing-secret"\s+= random_password\.radioso_mcp_signing_secret\.result/u);
     expect(terraformVariables).not.toContain('variable "radioso_mcp_signing_secret"');

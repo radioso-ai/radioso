@@ -18,7 +18,7 @@ export type IncomingHeaders = Record<string, IncomingHeaderValue>;
  * marker at all, a marker whose signed facts verified, or a marker that
  * failed to prove itself.
  */
-type EdgeFactsEnvelopeReading =
+export type EdgeFactsEnvelopeReading =
   | { status: "absent" }
   | { status: "verified"; facts: EdgeRequestFacts }
   | { status: "rejected"; reason: EdgeFactsRejectionReason };

@@ -5,6 +5,7 @@ import {
   readEdgeFactsEnvelope,
   resolveEdgeFactsClientAddress,
   singleHeader,
+  type EdgeFactsEnvelopeReading,
   type EdgeFactsRejectionReason,
   type IncomingHeaders,
 } from "./edgeFactsEnvelope.js";
@@ -20,14 +21,21 @@ interface DeriveConversationRequestContextInput {
    * `RADIOSO_TRUSTED_PROXY_HOPS`: this backend's own hop count, applied both
    * to a request it observed directly and to the raw `X-Forwarded-For` chain
    * a verified edge-proof envelope forwarded (see the `edge_proof` branch
-   * below) — the frontend and backend sit behind the same load balancer, so
-   * one hop count is correct for both.
+   * below). On Cloud Run one hop count is correct for both: the frontend is a
+   * Cloud Run service too, and each service's front end appends exactly the
+   * peer that connected to it, so the chain the frontend received ends with
+   * the visitor just as a direct caller's chain ends with that caller.
    */
   trustedProxyHops: number;
   /** `RADIOSO_EDGE_PROOF_SECRET`; unset means an edge marker can never verify. */
   secret: string | undefined;
   method: string;
   path: string;
+  /**
+   * This request's envelope as `readEdgeFactsEnvelope` already read it (the
+   * request-source middleware publishes one); read from `headers` when absent.
+   */
+  envelope?: EdgeFactsEnvelopeReading;
   geoResolver: VisitorGeoResolver;
   now?: Date;
 }
@@ -62,7 +70,7 @@ const nullFacts = (observedVia: ConversationRequestContext["observedVia"]): Conv
 export const deriveConversationRequestContext = (
   input: DeriveConversationRequestContextInput,
 ): DeriveConversationRequestContextResult => {
-  const envelope = readEdgeFactsEnvelope(input);
+  const envelope = input.envelope ?? readEdgeFactsEnvelope(input);
   if (envelope.status === "rejected") {
     return { context: nullFacts("unproven"), rejection: envelope.reason };
   }

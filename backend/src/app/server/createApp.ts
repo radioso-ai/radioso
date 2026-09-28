@@ -84,7 +84,7 @@ export const createApp = (dependencies: AppDependencies) => {
   app.use(createRequestAuditContextMiddleware());
   app.use(createHttpTracingMiddleware());
   app.use(createRequestTelemetryMiddleware(dependencies.telemetryService));
-  app.use(createRequestSourceMiddleware(dependencies.env));
+  app.use(createRequestSourceMiddleware(dependencies));
   app.use(captureRequestBody);
   app.use((_req, res, next) => {
     res.setHeader("X-Content-Type-Options", "nosniff");

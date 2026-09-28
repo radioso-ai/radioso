@@ -1,8 +1,8 @@
 import { resolveTrustedForwardedAddress } from "@radioso/edge-proof";
 
 import {
-  readEdgeFactsEnvelope,
   resolveEdgeFactsClientAddress,
+  type EdgeFactsEnvelopeReading,
   type IncomingHeaders,
 } from "./edgeFactsEnvelope.js";
 
@@ -11,19 +11,17 @@ interface ResolveRequestSourceAddressInput {
   socketAddress: string | null;
   /** `RADIOSO_TRUSTED_PROXY_HOPS`, applied to a verified envelope's chain and to the request's own. */
   trustedProxyHops: number;
-  /** `RADIOSO_EDGE_PROOF_SECRET`; unset means an edge envelope is never consulted. */
-  secret: string | undefined;
-  method: string;
-  path: string;
-  now?: Date;
+  /** This request's edge-facts envelope, read once by the caller with `readEdgeFactsEnvelope`. */
+  envelope: EdgeFactsEnvelopeReading;
 }
 
 /**
  * The request source: the best attributable client address of an inbound
  * request, or null when there is none. A first-party edge's verified
- * envelope wins, because the chain it carries stops at the load balancer
- * while the chain the backend receives through that edge has the edge's own
- * egress hop appended. Otherwise the backend's own observation stands.
+ * envelope wins, because the chain it carries ends with the visitor its own
+ * ingress observed, while the chain the backend receives through that edge
+ * has the edge's egress hop appended. Otherwise the backend's own observation
+ * stands.
  *
  * An edge marker that fails to verify is ignored here rather than nulling the
  * result, unlike `deriveConversationRequestContext`: recording visitor facts
@@ -31,9 +29,8 @@ interface ResolveRequestSourceAddressInput {
  * own attributable observation to key on.
  */
 export const resolveRequestSourceAddress = (input: ResolveRequestSourceAddressInput): string | null => {
-  const envelope = readEdgeFactsEnvelope(input);
-  if (envelope.status === "verified") {
-    const address = resolveEdgeFactsClientAddress(envelope.facts, input.trustedProxyHops);
+  if (input.envelope.status === "verified") {
+    const address = resolveEdgeFactsClientAddress(input.envelope.facts, input.trustedProxyHops);
     if (address) return address;
   }
 

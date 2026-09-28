@@ -1,10 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { copilotCapabilityProvenance } from "../../../src/modules/operatorCopilot/capabilityProvenance.js";
 import {
   assertOperatorMcpDispositionRegistry,
   operatorMcpDispositions,
+  refusalMayPinKey,
+  replayKeyFor,
 } from "../../../src/modules/operatorCopilot/operatorMcpDisposition.js";
+import type { CopilotMcpDisposition } from "../../../src/modules/operatorCopilot/contracts.js";
 
 describe("operator MCP descriptor disposition", () => {
   it("is an exhaustive bijection with the production descriptor registry", () => {
@@ -88,5 +91,75 @@ describe("operator MCP descriptor disposition", () => {
     expect(() => assertOperatorMcpDispositionRegistry(["workspace_settings"], {})).toThrow(/missing/i);
     expect(() => assertOperatorMcpDispositionRegistry([], { stale: { status: "excluded", reason: "old" } })).toThrow(/stale/i);
     expect(() => assertOperatorMcpDispositionRegistry(["x"], { x: { status: "excluded", reason: " " } })).toThrow(/reason/i);
+  });
+});
+
+const inputKeyedAct: CopilotMcpDisposition = {
+  status: "eligible", inputStrategy: "explicit", scope: "operator:write",
+  retry: { effect: "act", idempotent: true, operationIdentity: "input" },
+};
+const clientKeyedActWithHook: CopilotMcpDisposition = {
+  status: "eligible", inputStrategy: "explicit", scope: "operator:write",
+  retry: { effect: "act", idempotent: true, operationIdentity: "client" },
+};
+const idempotentReadNoHook: CopilotMcpDisposition = {
+  status: "eligible", inputStrategy: "explicit", scope: "operator:read",
+  retry: { effect: "none", idempotent: true, operationIdentity: "client" },
+};
+const nonIdempotentProbeNoHook: CopilotMcpDisposition = {
+  status: "eligible", inputStrategy: "explicit", scope: "operator:probe",
+  retry: { effect: "none", idempotent: false, operationIdentity: "client" },
+};
+
+describe("replayKeyFor", () => {
+  it("keys an input-identity tool by its input digest, ignoring a client-sent operation id", () => {
+    expect(replayKeyFor({ mcpDisposition: inputKeyedAct }, "client-op", "digest-1")).toBe("digest-1");
+  });
+
+  it("keys an input-identity tool by its input digest when the client sends none at all", () => {
+    expect(replayKeyFor({ mcpDisposition: inputKeyedAct }, null, "digest-1")).toBe("digest-1");
+  });
+
+  it("never keys an idempotent tool with no recovery hook, even when the client sends an operation id", () => {
+    expect(replayKeyFor({ mcpDisposition: idempotentReadNoHook }, "client-op", "digest-1")).toBeNull();
+  });
+
+  it("never keys an idempotent tool with no recovery hook when the client sends none either", () => {
+    expect(replayKeyFor({ mcpDisposition: idempotentReadNoHook }, null, "digest-1")).toBeNull();
+  });
+
+  it("keys a client-identity tool with a recovery hook by the client's operation id when one is present", () => {
+    expect(replayKeyFor({ mcpDisposition: clientKeyedActWithHook, reconcileMcpInvocation: vi.fn() }, "client-op", "digest-1")).toBe("client-op");
+  });
+
+  it("runs a client-identity tool with a recovery hook unkeyed when the client sends no operation id", () => {
+    expect(replayKeyFor({ mcpDisposition: clientKeyedActWithHook, reconcileMcpInvocation: vi.fn() }, null, "digest-1")).toBeNull();
+  });
+
+  it("keys a non-idempotent probe by the client's operation id, since it never reconciles a replay from a hook", () => {
+    expect(replayKeyFor({ mcpDisposition: nonIdempotentProbeNoHook }, "client-op", "digest-1")).toBe("client-op");
+  });
+
+  it("runs a non-idempotent probe unkeyed when the client sends no operation id", () => {
+    expect(replayKeyFor({ mcpDisposition: nonIdempotentProbeNoHook }, null, "digest-1")).toBeNull();
+  });
+});
+
+describe("refusalMayPinKey", () => {
+  it("refuses to let an input-derived key stay pinned by a pre-effect refusal", () => {
+    expect(refusalMayPinKey({ mcpDisposition: inputKeyedAct })).toBe(false);
+  });
+
+  it("lets a client-derived key stay pinned, since the caller can send a fresh id", () => {
+    expect(refusalMayPinKey({ mcpDisposition: clientKeyedActWithHook })).toBe(true);
+  });
+
+  it("lets an unkeyed-capable tool's key stay pinned", () => {
+    expect(refusalMayPinKey({ mcpDisposition: idempotentReadNoHook })).toBe(true);
+    expect(refusalMayPinKey({ mcpDisposition: nonIdempotentProbeNoHook })).toBe(true);
+  });
+
+  it("defaults to letting the key stay pinned when there is no eligible disposition to consult", () => {
+    expect(refusalMayPinKey({})).toBe(true);
   });
 });

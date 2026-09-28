@@ -622,12 +622,15 @@ export type CopilotMcpDisposition =
         readonly effect: "none" | "proposal" | "act";
         readonly idempotent: boolean;
         /**
-         * Where a call's replay key comes from. `client`: only an operation id the MCP client sends
-         * keys the call; without one the call runs unkeyed. `input`: an unkeyed call is keyed by
-         * its input digest, so an identical retry replays the first attempt. That is reserved for
-         * an act whose owner binds the first attempt's receipt and can only recover through it; a
-         * call its owner already answers idempotently gains nothing from it. A client-sent
-         * operation id keys the call under either identity.
+         * Where a call's replay key comes from (see `replayKeyFor` in `operatorMcpDisposition.ts`,
+         * the single place that turns this into the key `mcpApplicationService` prepares under).
+         * `client`: only an operation id the MCP client sends keys the call; without one the call
+         * runs unkeyed. `input`: the call is always keyed by its input digest, even when the client
+         * also sends an operation id -- that id is ignored, never merged with or preferred over the
+         * digest. Reserved for an act whose owner binds the first attempt's receipt and can only
+         * recover through it, so one logical retry must never be allowed to split across two
+         * receipts by arriving with and without a client id; a call its owner already answers
+         * idempotently gains nothing from it.
          */
         readonly operationIdentity: "client" | "input";
       };

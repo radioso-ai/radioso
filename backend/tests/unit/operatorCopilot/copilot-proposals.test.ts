@@ -1014,6 +1014,25 @@ describe("US3 copilot proposals", () => {
     expect(logger.warn).toHaveBeenCalledWith(expect.objectContaining({ proposalId: proposal.id, executionInvocationId: "execution-1", err: thrown }), expect.any(String));
   });
 
+  it("answers uncertain, not a thrown conflict, when settling a reviewed MCP apply loses its outcome race", async () => {
+    const repository = new MemoryProposalRepository();
+    const proposal = await createMcpReviewedProposal(repository);
+    const applyIfVersionMatches = vi.fn(async () => ({ outcome: "applied" as const, appliedRef: { directiveId } }));
+    const logger = { warn: vi.fn() };
+    const service = reviewedOperationService(repository, auditService(), applyIfVersionMatches, { logger });
+    // A concurrent settlement of the same receipt (e.g. another replica racing this retry) can win
+    // the compare-and-set before this attempt's own recordOutcome does, so the CAS write finds
+    // nothing left to update and the row it re-reads does not match what this attempt just applied.
+    // That is a lost race, not a caller mistake, and the MCP edge cannot act on a thrown conflict --
+    // it must see the same schema-valid `uncertain` answer an adapter exception already produces.
+    vi.spyOn(repository, "updateProposalOutcome").mockResolvedValueOnce(null);
+
+    await expect(service.executeMcpReviewedProposal({ workspaceId, accountId, operatorUserId, ...mcpBinding, proposalId: proposal.id, reviewDigest: "a".repeat(43), executionInvocationId: "execution-1", currentAuthorization }))
+      .resolves.toEqual({ status: "uncertain", reason: expect.any(String) });
+    expect((await repository.findProposal({ id: proposal.id, workspaceId, operatorUserId }))?.status).toBe("pending");
+    expect(logger.warn).toHaveBeenCalledOnce();
+  });
+
   it("logs an unconfirmed MCP reconcile exactly once when the adapter's reconcile throws", async () => {
     const repository = new MemoryProposalRepository();
     const proposal = await repository.createProposal({ workspaceId, operatorUserId, conversationId: "conversation-1", targetType: "directive", targetRef: { agentId, directiveId }, payload: { name: "Updated" }, versionToken: "current", evidence: null });

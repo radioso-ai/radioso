@@ -2,16 +2,25 @@ import { randomUUID } from "node:crypto";
 import { readFile, readdir } from "node:fs/promises";
 
 import { afterAll, beforeAll, expect, it } from "vitest";
+import { digestOperatorMcpCall, type OperatorMcpScope } from "@radioso/operator-mcp-contract";
 
 import { AccountRepository } from "../../../src/db/repositories/accountRepository.js";
 import { AgentRepository } from "../../../src/db/repositories/agentRepository.js";
 import { WorkspaceRepository } from "../../../src/db/repositories/workspaceRepository.js";
 import { CopilotRepository } from "../../../src/db/repositories/copilotRepository.js";
+import { OperatorMcpInvocationRepository } from "../../../src/db/repositories/operatorMcpInvocationRepository.js";
 import { createReviewedReceiptSettlement } from "../../../src/app/composition/copilotReviewedReceiptSettlement.js";
 import { createDirectiveCopilotProposalAdapter } from "../../../src/modules/operatorCopilot/proposalAdapters.js";
 import { OperatorCopilotService } from "../../../src/modules/operatorCopilot/service.js";
 import { AuthoredDirectiveService, type AuthoredDirectiveInput } from "../../../src/modules/agents/public.js";
 import type { CopilotProposalApplyContext } from "../../../src/modules/operatorCopilot/contracts.js";
+import { operatorMcpDispositions } from "../../../src/modules/operatorCopilot/operatorMcpDisposition.js";
+import { OperatorMcpApplicationService } from "../../../src/modules/operatorCopilot/mcpApplicationService.js";
+import { OperatorMcpCatalogService } from "../../../src/modules/operatorCopilot/mcpCatalog.js";
+import { enrichCopilotToolCatalog } from "../../../src/modules/operatorCopilot/catalog.js";
+import { createReviewedProposalExecutionTool } from "../../../src/modules/operatorCopilot/tools/reviewedProposalExecution.js";
+import { createDirectiveReviewedPreparationTool } from "../../../src/modules/operatorCopilot/tools/directiveReviewedPreparation.js";
+import type { OperatorMcpPrincipal } from "../../../src/modules/operatorMcpAuthorization/public.js";
 import { NoopUsageLimitPolicy } from "../../../src/shared/domain/usageLimitPolicy.js";
 import { Database } from "../../../src/shared/infra/database.js";
 import { resolveIntegrationDatabase } from "../support/integrationDatabase.js";
@@ -24,6 +33,7 @@ describeIntegration("the reviewed approval gate, proven against Postgres's row l
   const workspaceRepository = new WorkspaceRepository(database.kysely);
   const agentRepository = new AgentRepository(database.kysely);
   const proposals = new CopilotRepository(database.kysely);
+  const invocationsRepo = new OperatorMcpInvocationRepository(database.kysely);
   const coherenceChecker = { check: async () => ({ coherent: true as const, conflicts: [], rationale: "Coherent." }) };
   const authoredDirectiveService = new AuthoredDirectiveService({ repository: agentRepository, coherenceChecker, registeredCapabilityNames: new Set() });
   const adapter = createDirectiveCopilotProposalAdapter({
@@ -83,7 +93,7 @@ describeIntegration("the reviewed approval gate, proven against Postgres's row l
       "INSERT INTO operator_mcp_invocations (id, credential_id, grant_id, grant_version, account_id, workspace_id, user_id, client_id, method, descriptor_name, shape, operation_id, input_digest, proof_nonce_digest, status, retained_until) VALUES ($1, $2, $3, 1, $4, $5, $6, $7, 'tools/call', 'prepare_directive', 'propose', $8, 'v1:input', $9, 'running', NOW() + INTERVAL '30 days')",
       [invocationId, credentialId, grantId, account.id, workspace.id, operatorUserId, clientId, randomUUID(), `nonce-${invocationId}`],
     );
-    return { account, workspace, agent, operatorUserId, grantId, clientId, credentialId, invocationId };
+    return { account, workspace, agent, operatorUserId, membershipId, grantId, clientId, snapshotId, credentialId, invocationId };
   };
 
   const createExecutionInvocation = async (fixture: Awaited<ReturnType<typeof createFixture>>) => {
@@ -120,6 +130,95 @@ describeIntegration("the reviewed approval gate, proven against Postgres's row l
   });
 
   const createDirectiveInput = (name: string): AuthoredDirectiveInput => ({ name, condition: { kind: "always" }, action: "Quote the source verbatim." });
+
+  const mcpSecret = "integration-test-secret-at-least-32-bytes-long";
+  const principalFor = (
+    fixture: Awaited<ReturnType<typeof createFixture>>,
+    scopes: readonly OperatorMcpScope[] = ["operator:propose", "operator:write"],
+  ): OperatorMcpPrincipal => ({
+    credentialId: fixture.credentialId, credentialEpoch: "1", grantId: fixture.grantId, grantVersion: "1",
+    accountId: fixture.account.id, workspaceId: fixture.workspace.id, userId: fixture.operatorUserId,
+    membershipId: fixture.membershipId, membershipRole: "admin",
+    clientId: `https://client.example/${fixture.clientId}`, clientRecordId: fixture.clientId, clientVersion: "1",
+    clientMetadataSnapshotId: fixture.snapshotId, resource, currentToolScopes: scopes, currentOfflineAccess: false,
+  });
+
+  /**
+   * The production `OperatorMcpApplicationService`, wired the way `buildOperatorMcpServices`
+   * (`src/app/server/builders/operatorMcp.ts`) wires it: the real `OperatorMcpInvocationRepository`,
+   * a catalog assembled from the real `execute_reviewed_proposal` and `prepare_directive` descriptor
+   * factories carrying their real production `mcpDisposition` (`operatorMcpDispositions`), and the
+   * real `OperatorCopilotService` underneath both. Only credential/token resolution is stubbed to a
+   * fixed principal -- that OAuth machinery is a true external to the replay-key fix under test --
+   * and `hasAllPermissions` is a toggleable seam, the same one `OperatorCopilotService`'s own tests
+   * already use to simulate a revoked permission.
+   */
+  const buildRealMcpService = (
+    fixture: Awaited<ReturnType<typeof createFixture>>,
+    options: { isAuthorized?: () => boolean } = {},
+  ) => {
+    const principal = principalFor(fixture);
+    const isAuthorized = options.isAuthorized ?? (() => true);
+    const auditEvents: Array<{ eventType: string; eventStatus: string; metadata: Record<string, unknown> }> = [];
+    const auditService = { record: async (event: { eventType: string; eventStatus: string; metadata: Record<string, unknown> }) => { auditEvents.push(event); } };
+    // `execute_reviewed_proposal` declares no static required permission (its target-aware
+    // authorization is a second, later check with the target's own permission list) -- an empty
+    // list must stay vacuously authorized so the toggle below only ever denies a real,
+    // target-specific check, exactly like the real permission set this stands in for.
+    const currentAuthorization = { hasAllPermissions: async (input: { requiredPermissions: readonly string[] }) => input.requiredPermissions.length === 0 || isAuthorized() };
+    // A test-local `OperatorCopilotService` rather than the shared `copilot` above, so each test's
+    // audit events are its own -- the shared instance's no-op audit stub is used by every other test
+    // in this file and must stay unaffected.
+    const localCopilot = new OperatorCopilotService({
+      repository: proposals,
+      capabilityRunner: { runStreaming: async function* () {} } as never,
+      usageLimitPolicy: new NoopUsageLimitPolicy(),
+      auditService,
+      workspaceRouteKeyResolver: { resolveWorkspaceKey: async () => "reviewed-approval" },
+      prompt: "test",
+      tools: [],
+      currentAuthorization,
+      proposalAdapters: [adapter],
+    });
+    const executionTool = {
+      ...createReviewedProposalExecutionTool({ executeMcpReviewedProposal: (input) => localCopilot.executeMcpReviewedProposal(input) }),
+      mcpDisposition: operatorMcpDispositions.execute_reviewed_proposal,
+    };
+    const prepareDirectiveTool = {
+      ...createDirectiveReviewedPreparationTool({
+        proposalRepository: proposals, proposalAdapters: [adapter], auditService,
+        proposalRecovery: proposals, directives: authoredDirectiveService,
+        directiveAuthor: { draftForProposal: async () => { throw new Error("not exercised by these tests"); } },
+      }),
+      mcpDisposition: operatorMcpDispositions.prepare_directive,
+    };
+    const catalog = new OperatorMcpCatalogService(
+      enrichCopilotToolCatalog([executionTool, prepareDirectiveTool], { resolveWorkspaceKey: async () => "reviewed-approval" }),
+    );
+    const service = new OperatorMcpApplicationService({
+      credentialValidation: { validate: async () => principal, revalidateCredential: async () => principal },
+      invocations: invocationsRepo,
+      catalog,
+      currentAuthorization,
+      secret: mcpSecret,
+    });
+    return { service, principal, auditEvents };
+  };
+
+  /** Admits and invokes one `tools/call` through the real service, exactly as an MCP client would. */
+  const callTool = (
+    service: OperatorMcpApplicationService,
+    input: { name: string; arguments: Record<string, unknown>; operationId?: string },
+  ) => {
+    const bodyDigest = digestOperatorMcpCall({ name: input.name, arguments: input.arguments, ...(input.operationId ? { operationId: input.operationId } : {}) });
+    return service.admit({
+      accessToken: "integration-test-access-token", invocationId: randomUUID(), method: "tools/call",
+      descriptorName: input.name, resource, timestamp: String(Math.floor(Date.now() / 1_000)), nonce: randomUUID(), bodyDigest,
+    }).then((admitted) => service.invoke({
+      proof: admitted.proof, name: input.name, arguments: input.arguments,
+      ...(input.operationId ? { operationId: input.operationId } : {}), bodyDigest,
+    }));
+  };
 
   it("serializes a concurrent approve and claim through the row lock: claim only ever sees a fully committed approval, never a half-written one", async () => {
     const fixture = await createFixture();
@@ -228,6 +327,164 @@ describeIntegration("the reviewed approval gate, proven against Postgres's row l
     // confirmation requirement nor asks whether the operation is still approved.
     const replay = await proposals.claimMcpReviewedProposalApply(claimInput(fixture, proposal.id, executionInvocationId));
     expect(replay).toEqual({ status: "settled", outcome: "applied", appliedRef: { directiveId: existing.id } });
+  });
+
+  /**
+   * Issue #1324's key-switch fix, driven through the real `OperatorMcpApplicationService.invoke`
+   * (admission, proof, and `prepareInvocation` dedup all real) rather than by calling `replayKeyFor`
+   * or the repository directly: `execute_reviewed_proposal` is `operationIdentity: "input"`, so a
+   * first call that carries a client operation id and a retry that omits it must reconcile onto the
+   * one bound receipt.
+   */
+  it("applies a reviewed proposal once when a keyed execute is retried without an operation id", async () => {
+    const fixture = await createFixture();
+    const existing = await agentRepository.createDirective(fixture.agent.id, fixture.workspace.id, createDirectiveInput("key-switch-keyed-first"));
+    const payload = { name: "key-switch-keyed-first", condition: { kind: "always" }, action: "Applied once, however the retry is keyed." };
+    const proposal = await proposals.createProposal({
+      workspaceId: fixture.workspace.id, operatorUserId: fixture.operatorUserId,
+      origin: { type: "operator_mcp_invocation", invocationId: fixture.invocationId },
+      targetType: "directive", targetRef: { agentId: fixture.agent.id, directiveId: existing.id }, payload,
+      versionToken: existing.updatedAt.toISOString(), evidence: null, reviewDigest: REVIEW_DIGEST, reviewSnapshot: {},
+      expiresAt: new Date(Date.now() + 60_000), confirmationRequirement: "conversation",
+      changeEffect: { exposure: "draft", reversibility: "reversible", metered: false },
+    });
+    const { service, auditEvents } = buildRealMcpService(fixture);
+    const args = { proposalId: proposal.id, reviewDigest: REVIEW_DIGEST };
+
+    const first = await callTool(service, { name: "execute_reviewed_proposal", arguments: args, operationId: "client-operation-a" });
+    expect(first).toMatchObject({
+      structuredContent: { proposalId: proposal.id, status: "applied", appliedRef: { directiveId: existing.id } },
+      safeOutcomeCode: "completed",
+    });
+
+    const retry = await callTool(service, { name: "execute_reviewed_proposal", arguments: args });
+    expect(retry).toEqual(first);
+
+    const bound = await database.query<{ execution_invocation_id: string | null }>(
+      "SELECT execution_invocation_id FROM copilot_proposals WHERE id = $1", [proposal.id],
+    );
+    expect(bound).toHaveLength(1);
+    expect(bound[0].execution_invocation_id).not.toBeNull();
+    const receiptRows = await database.query<{ id: string }>(
+      "SELECT id FROM operator_mcp_invocations WHERE id = $1", [bound[0].execution_invocation_id],
+    );
+    expect(receiptRows).toHaveLength(1);
+
+    await expect(proposals.findProposal({ id: proposal.id, workspaceId: fixture.workspace.id, operatorUserId: fixture.operatorUserId }))
+      .resolves.toMatchObject({ status: "applied", appliedRef: { directiveId: existing.id } });
+    expect(auditEvents.filter((event) => event.eventType === "copilot.proposal.applied")).toHaveLength(1);
+
+    const directives = await authoredDirectiveService.list(fixture.workspace.id, fixture.agent.id);
+    expect(directives.find((directive) => directive.id === existing.id)).toMatchObject({ action: payload.action });
+  });
+
+  it("applies a reviewed proposal once when an unkeyed execute is retried with an operation id", async () => {
+    const fixture = await createFixture();
+    const existing = await agentRepository.createDirective(fixture.agent.id, fixture.workspace.id, createDirectiveInput("key-switch-unkeyed-first"));
+    const payload = { name: "key-switch-unkeyed-first", condition: { kind: "always" }, action: "Applied once, however the first call is unkeyed." };
+    const proposal = await proposals.createProposal({
+      workspaceId: fixture.workspace.id, operatorUserId: fixture.operatorUserId,
+      origin: { type: "operator_mcp_invocation", invocationId: fixture.invocationId },
+      targetType: "directive", targetRef: { agentId: fixture.agent.id, directiveId: existing.id }, payload,
+      versionToken: existing.updatedAt.toISOString(), evidence: null, reviewDigest: REVIEW_DIGEST, reviewSnapshot: {},
+      expiresAt: new Date(Date.now() + 60_000), confirmationRequirement: "conversation",
+      changeEffect: { exposure: "draft", reversibility: "reversible", metered: false },
+    });
+    const { service, auditEvents } = buildRealMcpService(fixture);
+    const args = { proposalId: proposal.id, reviewDigest: REVIEW_DIGEST };
+
+    const first = await callTool(service, { name: "execute_reviewed_proposal", arguments: args });
+    expect(first).toMatchObject({
+      structuredContent: { proposalId: proposal.id, status: "applied", appliedRef: { directiveId: existing.id } },
+      safeOutcomeCode: "completed",
+    });
+
+    const retry = await callTool(service, { name: "execute_reviewed_proposal", arguments: args, operationId: "client-operation-b" });
+    expect(retry).toEqual(first);
+
+    const bound = await database.query<{ execution_invocation_id: string | null }>(
+      "SELECT execution_invocation_id FROM copilot_proposals WHERE id = $1", [proposal.id],
+    );
+    expect(bound).toHaveLength(1);
+    expect(bound[0].execution_invocation_id).not.toBeNull();
+
+    await expect(proposals.findProposal({ id: proposal.id, workspaceId: fixture.workspace.id, operatorUserId: fixture.operatorUserId }))
+      .resolves.toMatchObject({ status: "applied", appliedRef: { directiveId: existing.id } });
+    expect(auditEvents.filter((event) => event.eventType === "copilot.proposal.applied")).toHaveLength(1);
+
+    const directives = await authoredDirectiveService.list(fixture.workspace.id, fixture.agent.id);
+    expect(directives.find((directive) => directive.id === existing.id)).toMatchObject({ action: payload.action });
+  });
+
+  /**
+   * Issue #1324's completed-proposal reconciliation fix: `mcpApplicationService`'s recoverable-attempt
+   * gate now includes a `completed` proposal-effect receipt, so a replay of a completed `prepare_*`
+   * call recovers the committed proposal instead of preparing (or being told nothing is retained
+   * for) a second one. Driven through the real service, catalog, and `prepare_directive` descriptor.
+   */
+  it("replays a completed prepare_directive call onto its committed proposal, creating no second row", async () => {
+    const fixture = await createFixture();
+    const existing = await agentRepository.createDirective(fixture.agent.id, fixture.workspace.id, createDirectiveInput("completed-replay"));
+    const { service } = buildRealMcpService(fixture);
+    const args = { kind: "set_enabled" as const, agentId: fixture.agent.id, directiveId: existing.id, enabled: false };
+
+    const first = await callTool(service, { name: "prepare_directive", arguments: args, operationId: "prepare-once" });
+    expect(first).toMatchObject({ safeOutcomeCode: "completed" });
+    const firstProposalId = (first.structuredContent as { proposalId: string }).proposalId;
+    expect(typeof firstProposalId).toBe("string");
+
+    const replay = await callTool(service, { name: "prepare_directive", arguments: args, operationId: "prepare-once" });
+    expect(replay).toMatchObject({ safeOutcomeCode: "completed" });
+    expect((replay.structuredContent as { proposalId: string }).proposalId).toBe(firstProposalId);
+
+    const rows = await database.query<{ id: string }>(
+      "SELECT id FROM copilot_proposals WHERE target_type = 'directive' AND (target_ref->>'directiveId') = $1",
+      [existing.id],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].id).toBe(firstProposalId);
+  });
+
+  /**
+   * Issue #1324's §2 fix: a receipt refused before any owner effect must not pin an input-derived
+   * key forever. `execute_reviewed_proposal`'s pre-claim `requireProposalAuthorization` check throws
+   * `target_permission_denied` (400, mapped to `invalid_arguments`) before `claimMcpReviewedProposalApply`
+   * ever runs, so the proposal is never bound to that refused receipt. Once the permission is
+   * restored, an identical retry must run fresh rather than replay the stale refusal forever.
+   */
+  it("lets an identical execute retry apply once its pre-claim permission denial is fixed", async () => {
+    const fixture = await createFixture();
+    const existing = await agentRepository.createDirective(fixture.agent.id, fixture.workspace.id, createDirectiveInput("permission-denied-then-restored"));
+    const payload = { name: "permission-denied-then-restored", condition: { kind: "always" }, action: "Applied once permission is restored." };
+    const proposal = await proposals.createProposal({
+      workspaceId: fixture.workspace.id, operatorUserId: fixture.operatorUserId,
+      origin: { type: "operator_mcp_invocation", invocationId: fixture.invocationId },
+      targetType: "directive", targetRef: { agentId: fixture.agent.id, directiveId: existing.id }, payload,
+      versionToken: existing.updatedAt.toISOString(), evidence: null, reviewDigest: REVIEW_DIGEST, reviewSnapshot: {},
+      expiresAt: new Date(Date.now() + 60_000), confirmationRequirement: "conversation",
+      changeEffect: { exposure: "draft", reversibility: "reversible", metered: false },
+    });
+    let authorized = false;
+    const { service } = buildRealMcpService(fixture, { isAuthorized: () => authorized });
+    const args = { proposalId: proposal.id, reviewDigest: REVIEW_DIGEST };
+
+    await expect(callTool(service, { name: "execute_reviewed_proposal", arguments: args }))
+      .rejects.toMatchObject({ code: "invalid_arguments" });
+
+    // The pre-claim refusal never reached `claimMcpReviewedProposalApply`, so the proposal was never
+    // bound to that refused receipt -- it is still exactly what it was before the call.
+    await expect(proposals.findProposal({ id: proposal.id, workspaceId: fixture.workspace.id, operatorUserId: fixture.operatorUserId }))
+      .resolves.toMatchObject({ status: "pending", executionInvocationId: null });
+
+    authorized = true;
+    const retry = await callTool(service, { name: "execute_reviewed_proposal", arguments: args });
+    expect(retry).toMatchObject({
+      structuredContent: { proposalId: proposal.id, status: "applied", appliedRef: { directiveId: existing.id } },
+      safeOutcomeCode: "completed",
+    });
+
+    const directives = await authoredDirectiveService.list(fixture.workspace.id, fixture.agent.id);
+    expect(directives.find((directive) => directive.id === existing.id)).toMatchObject({ action: payload.action });
   });
 
   it("reports stale once the target changed after approval, so approving never bypasses the version fence", async () => {

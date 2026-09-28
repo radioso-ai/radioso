@@ -181,6 +181,53 @@ export const assertOperatorMcpOperationIdentities = (descriptors: ReadonlyArray<
   }
 };
 
+/** The two descriptor fields {@link replayKeyFor} needs, kept narrow so it stays a pure function of data already on hand rather than depending on the full generic descriptor shape. */
+interface OperatorMcpReplayKeySource {
+  readonly mcpDisposition?: CopilotMcpDisposition;
+  readonly reconcileMcpInvocation?: unknown;
+}
+
+/**
+ * The replay key `mcpApplicationService` prepares this call under. `null` means the call is never
+ * deduplicated against an earlier attempt -- a fresh admission always runs it again.
+ *
+ * - `operationIdentity: "input"`: always the input digest, even when the client also sends an
+ *   operation id. The owner recovers only through the receipt bound to the first attempt it saw, so
+ *   honoring a client id here would let one logical retry split across two receipts the owner has
+ *   no way to reconcile between.
+ * - Idempotent with no `reconcileMcpInvocation` hook: never keyed, regardless of what the client
+ *   sends. There is nothing to recover a replay's result from, so answering from a durable receipt
+ *   here can only mean an empty or stale answer; running the call again is cheaper and correct.
+ * - Everything else: the client's own operation id when it sends one, unkeyed otherwise -- unchanged
+ *   from today.
+ */
+export const replayKeyFor = (
+  descriptor: OperatorMcpReplayKeySource,
+  clientOperationId: string | null,
+  inputDigest: string,
+): string | null => {
+  const disposition = descriptor.mcpDisposition;
+  if (disposition?.status !== "eligible") return clientOperationId;
+  if (disposition.retry.operationIdentity === "input") return inputDigest;
+  if (disposition.retry.idempotent && !descriptor.reconcileMcpInvocation) return null;
+  return clientOperationId;
+};
+
+/**
+ * Whether a receipt that was `refused` before any owner effect may keep pinning this descriptor's
+ * replay key forever (until purge). A `client`-derived key is the caller's own choice, so a stuck
+ * refusal is the caller's to escape -- it sends a fresh operation id and runs again. An
+ * `operationIdentity: "input"` key is derived from the call itself: the caller cannot change it
+ * short of changing what it is asking for, so pinning it would replay a pre-effect refusal forever
+ * even after its cause (a revoked permission, a lost admission race) is fixed. Only `mcpApplicationService`'s
+ * pre-effect refusal path calls this -- a refusal recorded after the owner may have applied
+ * something must never be abandoned this way (see issue #1339).
+ */
+export const refusalMayPinKey = (descriptor: OperatorMcpReplayKeySource): boolean => {
+  const disposition = descriptor.mcpDisposition;
+  return disposition?.status !== "eligible" || disposition.retry.operationIdentity !== "input";
+};
+
 export const attachOperatorMcpDispositions = (
   descriptors: ReadonlyArray<CopilotToolDescriptor>,
 ): ReadonlyArray<CopilotToolDescriptor> => {

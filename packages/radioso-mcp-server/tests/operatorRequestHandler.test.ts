@@ -185,6 +185,31 @@ describe("operator MCP stateless request handler", () => {
     });
   });
 
+  it("shows a 2025-06-18 client isError for a replay the backend cannot answer with a result, without leaking its outcome code", async () => {
+    const handler = createOperatorMcpRequestHandler({
+      ...dependencies,
+      call: vi.fn<OperatorMcpRequestHandlerDependencies["call"]>(async () => ({
+        content: [{ type: "text", text: "An earlier attempt at this call is still running. Retry the same call in a moment." }],
+        isError: true,
+        safeOutcomeCode: "in_progress",
+      })),
+    });
+    dependencies.admit.mockResolvedValue({ proof: { ...proof, method: "tools/call" } });
+
+    const response = await handler(standardRequest(
+      { id: 4, method: "tools/call", params: { arguments: {}, name: "retrieval_probe" } },
+      "2025-06-18",
+    ));
+
+    expect(response.status).toBe(200);
+    const body = await response.json() as { result?: Record<string, unknown> };
+    expect(body.result?.isError).toBe(true);
+    expect(body.result?.content).toEqual([{ type: "text", text: expect.stringContaining("still running") }]);
+    // The legacy envelope has no field for a backend outcome code; a 2025-06-18 client tells
+    // in-progress from any other tool error only by `isError` and its own message, never a code.
+    expect(body.result).not.toHaveProperty("safeOutcomeCode");
+  });
+
   it("dispatches a self-describing 2026-07-28 ping without initialization or session state", async () => {
     const handler = createOperatorMcpRequestHandler(dependencies);
     const response = await handler(operatorRequest({ id: "1", jsonrpc: "2.0", method: "ping" }));

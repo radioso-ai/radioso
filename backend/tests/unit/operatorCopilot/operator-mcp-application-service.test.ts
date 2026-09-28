@@ -934,6 +934,70 @@ describe("operator MCP operation identity", () => {
     expect(prepared.operationId).not.toBe("client-operation");
   });
 
+  it("abandons an input-keyed act's key when it is refused before any effect, keeping the real reason in the audit trail", async () => {
+    const act: CopilotToolDescriptor = {
+      ...inputKeyedAct(vi.fn()),
+      createTool: () => ({
+        name: "reviewed_act", description: descriptor.description, inputSchema: descriptor.inputSchema, outputSchema: descriptor.outputSchema,
+        invoke: vi.fn(async () => { throw new AppError(400, "target_permission_denied", "You no longer have permission for this reviewed operation target."); }),
+      }),
+    };
+    const { service, invocations, audit } = build(act);
+    const argumentsValue = { section: "retrieval" };
+    const bodyDigest = digestOperatorMcpCall({ name: act.name, arguments: argumentsValue });
+    const admitted = await service.admit({ accessToken: "operator-access", invocationId: uuid("12"), method: "tools/call", descriptorName: act.name, resource: principal.resource, timestamp: "1788480000", nonce: "edge-abandon", bodyDigest });
+
+    await expect(service.invoke({ proof: admitted.proof, name: act.name, arguments: argumentsValue, bodyDigest }))
+      .rejects.toMatchObject({ code: "invalid_arguments" });
+
+    // A derived key is the call itself, not something the caller can change by retrying -- pinning
+    // this refusal to it would replay a stale `target_permission_denied` forever, even after the
+    // permission is restored. The row is abandoned instead, freeing the key for a fresh admission,
+    // while the audit trail still names the real cause.
+    expect(invocations.recordOutcome).toHaveBeenCalledWith(expect.objectContaining({ status: "refused", safeOutcomeCode: "abandoned_before_effect" }));
+    expect(invocations.recordOutcome).not.toHaveBeenCalledWith(expect.objectContaining({ safeOutcomeCode: "invalid_arguments" }));
+    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
+      eventStatus: "failure", metadata: expect.objectContaining({ outcome: "refused", reason: "invalid_arguments" }),
+    }));
+  });
+
+  it("abandons an input-keyed act's key on an operation_conflict refusal too", async () => {
+    const act = inputKeyedAct(vi.fn());
+    const { service, invocations, audit } = build(act);
+    invocations.claimRunning.mockResolvedValueOnce(null);
+    const argumentsValue = { section: "retrieval" };
+    const bodyDigest = digestOperatorMcpCall({ name: act.name, arguments: argumentsValue });
+    const admitted = await service.admit({ accessToken: "operator-access", invocationId: uuid("12"), method: "tools/call", descriptorName: act.name, resource: principal.resource, timestamp: "1788480000", nonce: "edge-abandon-conflict", bodyDigest });
+
+    await expect(service.invoke({ proof: admitted.proof, name: act.name, arguments: argumentsValue, bodyDigest }))
+      .rejects.toMatchObject({ code: "operation_conflict" });
+
+    expect(invocations.recordOutcome).toHaveBeenCalledWith(expect.objectContaining({ status: "refused", safeOutcomeCode: "abandoned_before_effect" }));
+    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
+      eventStatus: "failure", metadata: expect.objectContaining({ outcome: "refused", reason: "operation_conflict" }),
+    }));
+  });
+
+  it("keeps a client-keyed refusal pinned to its key, since the caller can send a fresh operation id", async () => {
+    const rejectingDescriptor: CopilotToolDescriptor = {
+      ...descriptor,
+      createTool: () => ({
+        name: "workspace_settings", description: "Read settings",
+        inputSchema: z.object({ section: z.string() }), outputSchema: z.object({ section: z.string() }),
+        invoke: vi.fn(async () => { throw new AppError(400, "target_permission_denied", "denied"); }),
+      }),
+    };
+    const { service, invocations } = build(rejectingDescriptor);
+    const argumentsValue = { section: "retrieval" };
+    const bodyDigest = callDigest(argumentsValue, "client-operation");
+    const admitted = await service.admit({ accessToken: "operator-access", invocationId: uuid("12"), method: "tools/call", descriptorName: rejectingDescriptor.name, resource: principal.resource, timestamp: "1788480000", nonce: "edge-client-keyed-refused", bodyDigest });
+
+    await expect(service.invoke({ proof: admitted.proof, name: rejectingDescriptor.name, arguments: argumentsValue, operationId: "client-operation", bodyDigest }))
+      .rejects.toMatchObject({ code: "invalid_arguments" });
+
+    expect(invocations.recordOutcome).toHaveBeenCalledWith(expect.objectContaining({ status: "refused", safeOutcomeCode: "invalid_arguments" }));
+  });
+
   it("shares one receipt for execute_reviewed_proposal whether or not the client sends an operation id", async () => {
     const proposalId = uuid("55");
     const execution: CopilotToolDescriptor = {

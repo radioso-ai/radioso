@@ -3,8 +3,8 @@ import type { Request } from "express";
 import {
   deriveConversationRequestContext,
   type DeriveConversationRequestContextResult,
-  type EdgeFactsRejectionReason,
 } from "../../../shared/domain/conversationRequestContext.js";
+import type { EdgeFactsRejectionReason } from "../../../shared/domain/edgeFactsEnvelope.js";
 import type { AppDependencies } from "../../server/types.js";
 
 type RequestContextDependencies = Pick<AppDependencies, "env" | "visitorGeoResolver">;

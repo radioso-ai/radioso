@@ -1,3 +1,7 @@
+import { EDGE_FACTS_HEADERS } from '@radioso/edge-proof'
+
+import { buildEdgeFactsHeaders } from '../../../lib/server/edge-facts'
+
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
@@ -18,17 +22,28 @@ const buildUpstreamUrl = (requestUrl: string, pathSegments: string[]) => {
   const upstreamUrl = new URL(encodedPath, normalizedBase)
 
   upstreamUrl.search = incomingUrl.search
-  return upstreamUrl.toString()
+  return upstreamUrl
 }
 
-const buildUpstreamHeaders = (request: Request) => {
+// The backend verifies the edge-facts proof against its own `req.method` and
+// `req.originalUrl` without the query, so the proof signs exactly the method
+// and pathname of the upstream URL. Client-supplied edge headers never pass
+// through: only this proxy speaks for the edge.
+const buildUpstreamHeaders = (request: Request, upstreamUrl: URL) => {
   const headers = new Headers(request.headers)
 
   REQUEST_HEADER_BLACKLIST.forEach((headerName) => headers.delete(headerName))
+  Object.values(EDGE_FACTS_HEADERS).forEach((headerName) => headers.delete(headerName))
 
   if (!headers.has('x-forwarded-prefix')) {
     headers.set('x-forwarded-prefix', '/backend')
   }
+
+  const edgeFactsHeaders = buildEdgeFactsHeaders(request, {
+    method: request.method,
+    path: upstreamUrl.pathname,
+  })
+  Object.entries(edgeFactsHeaders).forEach(([name, value]) => headers.set(name, value))
 
   return headers
 }
@@ -74,20 +89,22 @@ const buildUpstreamBody = async (request: Request) => {
 const proxy = async (request: Request, context: ProxyContext) => {
   const { path } = await context.params
   const upstreamUrl = buildUpstreamUrl(request.url, path)
+  // Buffered before the headers are built, so a slow upload cannot age the
+  // edge-facts proof's timestamp past the backend's freshness window.
+  const body = await buildUpstreamBody(request)
   const init: RequestInit & { duplex?: 'half' } = {
     method: request.method,
-    headers: buildUpstreamHeaders(request),
+    headers: buildUpstreamHeaders(request, upstreamUrl),
     cache: 'no-store',
     redirect: 'manual',
   }
 
-  const body = await buildUpstreamBody(request)
   if (body !== undefined) {
     init.body = body
   }
 
   try {
-    const upstream = await fetch(upstreamUrl, init)
+    const upstream = await fetch(upstreamUrl.toString(), init)
 
     return new Response(upstream.body, {
       status: upstream.status,

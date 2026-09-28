@@ -5,6 +5,7 @@ import { z } from "zod";
 import type { AppDependencies } from "../../server/types.js";
 import { normalizeEmail } from "../../../modules/auth/domain/authPrimitives.js";
 import { createRateLimitMiddleware } from "../middleware/rateLimit.js";
+import { readRequestSource } from "../middleware/requestSource.js";
 import { requireSession, type SessionDependencies } from "../middleware/requireSession.js";
 import { validateBody } from "../middleware/validate.js";
 
@@ -69,9 +70,9 @@ export const createAuthRoutes = (dependencies: AuthRouteDependencies): Router =>
     scope: "auth.register",
     limit: authLimit,
     windowMs: authWindowMs,
-    resolveSubjectKey: (req) => {
+    resolveSubjectKey: (req, res) => {
       const email = typeof req.body?.email === "string" ? req.body.email : null;
-      return email ? normalizeEmail(email) : String(req.ip ?? "unknown");
+      return email ? normalizeEmail(email) : readRequestSource(req, res).digest;
     },
   });
   const loginRateLimit = createRateLimitMiddleware({
@@ -80,9 +81,9 @@ export const createAuthRoutes = (dependencies: AuthRouteDependencies): Router =>
     scope: "auth.login",
     limit: authLimit,
     windowMs: authWindowMs,
-    resolveSubjectKey: (req) => {
+    resolveSubjectKey: (req, res) => {
       const email = typeof req.body?.email === "string" ? req.body.email : null;
-      return email ? normalizeEmail(email) : String(req.ip ?? "unknown");
+      return email ? normalizeEmail(email) : readRequestSource(req, res).digest;
     },
   });
   const invitationAcceptRateLimit = createRateLimitMiddleware({
@@ -91,11 +92,10 @@ export const createAuthRoutes = (dependencies: AuthRouteDependencies): Router =>
     scope: "auth.invitation.accept",
     limit: authLimit,
     windowMs: authWindowMs,
-    resolveSubjectKey: (req) => {
+    resolveSubjectKey: (req, res) => {
       const token = typeof req.params.invitationToken === "string" ? req.params.invitationToken : "unknown";
       const tokenHash = createHash("sha256").update(token).digest("hex");
-      const source = req.ip ?? "unknown";
-      return `${tokenHash}:${source}`;
+      return `${tokenHash}:${readRequestSource(req, res).digest}`;
     },
   });
   const passwordResetRequestRateLimit = createRateLimitMiddleware({
@@ -104,9 +104,9 @@ export const createAuthRoutes = (dependencies: AuthRouteDependencies): Router =>
     scope: "auth.password_reset.request",
     limit: authLimit,
     windowMs: authWindowMs,
-    resolveSubjectKey: (req) => {
+    resolveSubjectKey: (req, res) => {
       const email = typeof req.body?.email === "string" ? req.body.email : null;
-      return email ? normalizeEmail(email) : String(req.ip ?? "unknown");
+      return email ? normalizeEmail(email) : readRequestSource(req, res).digest;
     },
   });
   const passwordResetConfirmRateLimit = createRateLimitMiddleware({
@@ -115,7 +115,7 @@ export const createAuthRoutes = (dependencies: AuthRouteDependencies): Router =>
     scope: "auth.password_reset.confirm",
     limit: authLimit,
     windowMs: authWindowMs,
-    resolveSubjectKey: (req) => String(req.ip ?? "unknown"),
+    resolveSubjectKey: (req, res) => readRequestSource(req, res).digest,
   });
   const emailVerificationResendRateLimit = createRateLimitMiddleware({
     service: dependencies.abuseControlService,
@@ -123,9 +123,9 @@ export const createAuthRoutes = (dependencies: AuthRouteDependencies): Router =>
     scope: "auth.email_verification.resend",
     limit: authLimit,
     windowMs: authWindowMs,
-    resolveSubjectKey: (req) => {
+    resolveSubjectKey: (req, res) => {
       const email = typeof req.body?.email === "string" ? req.body.email : null;
-      return email ? normalizeEmail(email) : String(req.ip ?? "unknown");
+      return email ? normalizeEmail(email) : readRequestSource(req, res).digest;
     },
   });
   const emailVerificationVerifyRateLimit = createRateLimitMiddleware({
@@ -134,7 +134,7 @@ export const createAuthRoutes = (dependencies: AuthRouteDependencies): Router =>
     scope: "auth.email_verification.verify",
     limit: authLimit,
     windowMs: authWindowMs,
-    resolveSubjectKey: (req) => String(req.ip ?? "unknown"),
+    resolveSubjectKey: (req, res) => readRequestSource(req, res).digest,
   });
   router.get("/registration", async (_req, res, next) => {
     try {
@@ -150,13 +150,13 @@ export const createAuthRoutes = (dependencies: AuthRouteDependencies): Router =>
     try {
       const result = await dependencies.authService.register({
         ...req.body,
-        requestIp: req.ip,
+        requestIp: readRequestSource(req, res).address,
         requestUserAgent: req.get("user-agent"),
       });
       if (result.requiresEmailVerification) {
         await dependencies.emailVerificationService.resend({
           email: req.body.email,
-          requestIp: req.ip,
+          requestIp: readRequestSource(req, res).address,
           requestUserAgent: req.get("user-agent"),
         });
       }
@@ -286,7 +286,7 @@ export const createAuthRoutes = (dependencies: AuthRouteDependencies): Router =>
       try {
         const result = await dependencies.passwordResetService.requestReset({
           email: req.body.email,
-          requestIp: req.ip,
+          requestIp: readRequestSource(req, res).address,
           requestUserAgent: req.get("user-agent"),
         });
         res.status(202).json(result);
@@ -341,7 +341,7 @@ export const createAuthRoutes = (dependencies: AuthRouteDependencies): Router =>
       try {
         const result = await dependencies.emailVerificationService.resend({
           email: req.body.email,
-          requestIp: req.ip,
+          requestIp: readRequestSource(req, res).address,
           requestUserAgent: req.get("user-agent"),
         });
         res.status(202).json(result);

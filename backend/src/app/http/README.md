@@ -38,6 +38,16 @@ If route code starts owning mapping, trace formatting, audit metadata, or
 persistence details, extract a named helper or move the behavior into the
 owning module.
 
+## Client Address
+
+`createApp` resolves each request's source once, in `middleware/requestSource.ts`,
+from `RADIOSO_TRUSTED_PROXY_HOPS` and, for requests the frontend relayed, its
+signed edge-facts envelope. Read it with `readRequestSource(req, res)`: key rate
+limits on `.digest`, and write `.address` only where an audit record keeps the
+IP. `req.ip` is always the socket peer, and lint rejects it in production code.
+Application route mounts get the same digest through their `requestSource`
+dependency.
+
 ## Contract Checklist
 
 For public API changes, review:

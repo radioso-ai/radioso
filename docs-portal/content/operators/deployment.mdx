@@ -1,7 +1,7 @@
 ---
 title: "Deployment"
 description: "Production deployment expectations for Radioso and the standalone docs portal."
-last_updated: 2026-09-23
+last_updated: 2026-09-28
 ---
 
 import { Callout } from 'nextra/components'
@@ -188,7 +188,9 @@ A routine step that calls a skill's MCP tool bounds that call with `EXTERNAL_MCP
 
 ## Reverse proxy client IPs
 
-Express `trust proxy` stays off by default, and `TRUST_PROXY_HOPS=0` is the secure setting for a deployment with no proxy in front of the backend. When the backend runs behind reverse proxies you control and rate limits must see the real client IP from `X-Forwarded-For`, set `TRUST_PROXY_HOPS` to the exact number of trusted hops. On Cloud Run behind the frontend API proxy that is typically `1` or `2`, depending on the topology.
+Rate limits, sign-up and password-reset audit records, and conversation visitor facts all key on the client's address, and behind a reverse proxy the socket peer is the proxy. `RADIOSO_TRUSTED_PROXY_HOPS` is the one setting that fixes this: it counts the trusted proxies at the right end of `X-Forwarded-For`, and the backend reads the entry at the start of that trusted suffix as the client. At `0`, the default, the backend uses the socket address and ignores `X-Forwarded-For`, which is the right setting when nothing sits in front of it. Hosted Cloud Run sets `2`, because Google's load balancer appends both the client address and its own.
+
+Requests the frontend relays — dashboard calls through `/backend`, public chat, and embed sessions — reach the backend with the frontend's own egress hop appended. With `RADIOSO_EDGE_PROOF_SECRET` set on both services, the frontend signs the `X-Forwarded-For` chain it received and the backend resolves that chain with the same hop count, so a relayed visitor gets their own address and their own rate-limit budget. Without the secret, relayed requests resolve to a proxy's address instead of the visitor's, and every visitor behind the frontend shares one budget. See [Self-hosting operations](/operators/self-hosting-operations) for the secret.
 
 ## Runtime separation
 

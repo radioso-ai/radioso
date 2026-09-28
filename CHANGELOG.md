@@ -9,6 +9,15 @@ Cut a release with the **Cut Release** workflow. It reads the commits since the 
 tag, writes the entry above this line, tags the commit, and publishes a GitHub Release. A
 deploy then ships a release that already exists; it never mints one.
 
+## [1.8.1] - 2026-09-28
+
+### Fixed
+
+- key every source rate limit on the resolved client address ([#1340](https://github.com/radioso-ai/radioso/pull/1340))
+- **operator-mcp:** answer every replay with a schema-valid result or an actionable error ([#1338](https://github.com/radioso-ai/radioso/pull/1338))
+
+[1.8.1]: https://github.com/radioso-ai/radioso/compare/v1.8.0...v1.8.1
+
 ## [1.8.0] - 2026-09-27
 
 ### Added

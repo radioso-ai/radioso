@@ -1,7 +1,7 @@
 ---
 title: "Website embed assets on Cloud CDN"
 description: "Architecture for caching embed launcher and config on Cloud CDN to avoid cold-starting the frontend on every page view."
-last_updated: 2026-06-21
+last_updated: 2026-09-28
 ---
 
 # Website embed assets on Cloud CDN
@@ -47,6 +47,13 @@ Key points:
   responses that send `Cache-Control: public`. The embed config sends that on
   success and `no-store` on rejection; the app sends neither. So authenticated
   responses are never cached, even on the CDN path.
+- The load balancer adds an entry to the `X-Forwarded-For` chain the frontend
+  receives. The backend resolves that chain, and a direct caller's, with one
+  `RADIOSO_TRUSTED_PROXY_HOPS` value of `1`, so every request the frontend
+  relays — dashboard, public chat, embed sessions — resolves to the load
+  balancer's address. Those visitors share one rate-limit budget, and their
+  conversations record that address as the visitor IP. No caller can pick its
+  own budget by forging the header.
 
 ## Per-origin caching
 

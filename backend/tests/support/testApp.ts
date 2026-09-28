@@ -218,6 +218,7 @@ import type { AppDependencies } from "../../src/app/server/types.js";
 import type { RealtimeRolloutPolicy } from "../../src/modules/realtime/domain/realtimeRolloutPolicy.js";
 import { badRequest, conflict, notFound } from "../../src/shared/domain/errors.js";
 import { apiPrincipalRouteInventory } from "../../src/app/http/apiPrincipalRoutePolicy.js";
+import { requestSourceDigestPort } from "../../src/app/http/middleware/requestSource.js";
 import type {
   AgentContextVariableEnablement,
   ContextVariable,
@@ -324,7 +325,6 @@ import {
 export const createTestEnv = (): Env => ({
   NODE_ENV: "test",
   PORT: 8080,
-  TRUST_PROXY_HOPS: 0,
   RADIOSO_RELEASE: "development",
   RADIOSO_COMMIT: "unknown",
   OBSERVABILITY_ENABLED: true,
@@ -2503,6 +2503,7 @@ export const createTestDependencies = (overrides: {
     authService,
     apiPrincipalAuthenticator,
     apiPrincipalRouteInventory,
+    requestSource: requestSourceDigestPort,
     personalCredentialService,
     serviceAccountService,
     accessGrantService,

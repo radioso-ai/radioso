@@ -1,22 +1,18 @@
-import {
-  collectGeoHeaders,
-  EDGE_FACTS_HEADERS,
-  resolveTrustedForwardedAddress,
-  verifyEdgeFactsProof,
-  type EdgeFactsVerification,
-} from "@radioso/edge-proof";
+import { collectGeoHeaders, resolveTrustedForwardedAddress } from "@radioso/edge-proof";
 import type { ConversationRequestContext } from "@radioso/conversation-contract";
 
+import {
+  readEdgeFactsEnvelope,
+  resolveEdgeFactsClientAddress,
+  singleHeader,
+  type EdgeFactsEnvelopeReading,
+  type EdgeFactsRejectionReason,
+  type IncomingHeaders,
+} from "./edgeFactsEnvelope.js";
 import type { VisitorGeoResolver } from "./visitorGeoResolver.js";
 
 const USER_AGENT_CAP = 512;
 const ACCEPT_LANGUAGE_CAP = 256;
-
-/** Mirrors `EdgeFactsVerification`'s failure reasons (spec 1277 Observability: `edge_facts_proof_rejected_total{reason}`). */
-export type EdgeFactsRejectionReason = Exclude<EdgeFactsVerification, { ok: true }>["reason"];
-
-type IncomingHeaderValue = string | readonly string[] | undefined;
-type IncomingHeaders = Record<string, IncomingHeaderValue>;
 
 interface DeriveConversationRequestContextInput {
   headers: IncomingHeaders;
@@ -25,14 +21,21 @@ interface DeriveConversationRequestContextInput {
    * `RADIOSO_TRUSTED_PROXY_HOPS`: this backend's own hop count, applied both
    * to a request it observed directly and to the raw `X-Forwarded-For` chain
    * a verified edge-proof envelope forwarded (see the `edge_proof` branch
-   * below) — the frontend and backend sit behind the same load balancer, so
-   * one hop count is correct for both.
+   * below). On Cloud Run one hop count is correct for both: the frontend is a
+   * Cloud Run service too, and each service's front end appends exactly the
+   * peer that connected to it, so the chain the frontend received ends with
+   * the visitor just as a direct caller's chain ends with that caller.
    */
   trustedProxyHops: number;
   /** `RADIOSO_EDGE_PROOF_SECRET`; unset means an edge marker can never verify. */
   secret: string | undefined;
   method: string;
   path: string;
+  /**
+   * This request's envelope as `readEdgeFactsEnvelope` already read it (the
+   * request-source middleware publishes one); read from `headers` when absent.
+   */
+  envelope?: EdgeFactsEnvelopeReading;
   geoResolver: VisitorGeoResolver;
   now?: Date;
 }
@@ -45,12 +48,6 @@ export interface DeriveConversationRequestContextResult {
 
 const capString = (value: string | null, maxLength: number): string | null =>
   value === null ? null : value.slice(0, maxLength);
-
-const singleHeader = (value: IncomingHeaderValue): string | null => {
-  if (typeof value === "string") return value;
-  if (Array.isArray(value)) return value[0] ?? null;
-  return null;
-};
 
 const nullFacts = (observedVia: ConversationRequestContext["observedVia"]): ConversationRequestContext => ({
   clientIp: null,
@@ -73,46 +70,20 @@ const nullFacts = (observedVia: ConversationRequestContext["observedVia"]): Conv
 export const deriveConversationRequestContext = (
   input: DeriveConversationRequestContextInput,
 ): DeriveConversationRequestContextResult => {
-  const marker = singleHeader(input.headers[EDGE_FACTS_HEADERS.marker]);
-  if (marker) {
-    if (!input.secret) {
-      return { context: nullFacts("unproven"), rejection: "missing" };
-    }
-
-    const verification = verifyEdgeFactsProof({
-      headers: {
-        [EDGE_FACTS_HEADERS.facts]: singleHeader(input.headers[EDGE_FACTS_HEADERS.facts]) ?? undefined,
-        [EDGE_FACTS_HEADERS.signature]: singleHeader(input.headers[EDGE_FACTS_HEADERS.signature]) ?? undefined,
-        [EDGE_FACTS_HEADERS.timestamp]: singleHeader(input.headers[EDGE_FACTS_HEADERS.timestamp]) ?? undefined,
-      },
-      method: input.method,
-      path: input.path,
-      secret: input.secret,
-      now: input.now,
-    });
-
-    if (!verification.ok) {
-      return { context: nullFacts("unproven"), rejection: verification.reason };
-    }
-
-    const geo = input.geoResolver.resolve(verification.facts.geoHeaders);
+  const envelope = input.envelope ?? readEdgeFactsEnvelope(input);
+  if (envelope.status === "rejected") {
+    return { context: nullFacts("unproven"), rejection: envelope.reason };
+  }
+  if (envelope.status === "verified") {
+    const geo = input.geoResolver.resolve(envelope.facts.geoHeaders);
     return {
       context: {
-        // The envelope carries the raw X-Forwarded-For chain the frontend
-        // received, unresolved (the frontend cannot know this backend's own
-        // hop count). Resolving it here, with this backend's
-        // `trustedProxyHops` and no socket fallback, means a hop count of 0
-        // yields null rather than trusting a caller-controlled entry.
-        clientIp: resolveTrustedForwardedAddress({
-          forwardedFor: verification.facts.forwardedFor ?? undefined,
-          socketAddress: null,
-          trustedProxyHops: input.trustedProxyHops,
-        }),
+        clientIp: resolveEdgeFactsClientAddress(envelope.facts, input.trustedProxyHops),
         country: geo.country,
         region: geo.region,
         city: geo.city,
-        userAgent: capString(verification.facts.userAgent, USER_AGENT_CAP),
-        acceptLanguage: capString(verification.facts.acceptLanguage, ACCEPT_LANGUAGE_CAP),
+        userAgent: capString(envelope.facts.userAgent, USER_AGENT_CAP),
+        acceptLanguage: capString(envelope.facts.acceptLanguage, ACCEPT_LANGUAGE_CAP),
         observedVia: "edge_proof",
       },
     };

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { RequestHandler } from "express";
 
 import type { Env } from "../../config/env.js";
+import { readRequestSource } from "./requestSource.js";
 import {
   createRateLimitMiddleware,
   type RateLimitAbuseControlPort,
@@ -35,9 +36,6 @@ interface PublicChatSessionReadRateLimiterDependencies extends RateLimiterAbuseC
 
 const hashRateLimitPart = (value: string) => createHash("sha256").update(value).digest("hex").slice(0, 32);
 
-const resolveRequestSource = (req: Parameters<Parameters<typeof createRateLimitMiddleware>[0]["resolveSubjectKey"]>[0]) =>
-  req.ip || req.socket.remoteAddress || "unknown";
-
 export const publicChatSessionExchangeRateLimiter = (dependencies: AnonymousRateLimiterDependencies): RequestHandler =>
   createRateLimitMiddleware({
     service: dependencies.abuseControlService,
@@ -45,14 +43,14 @@ export const publicChatSessionExchangeRateLimiter = (dependencies: AnonymousRate
     scope: "public.chat.session.exchange",
     limit: dependencies.env.PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS,
     windowMs: dependencies.env.PUBLIC_CHAT_RATE_LIMIT_WINDOW_MS,
-    resolveSubjectKey: (req) => {
+    resolveSubjectKey: (req, res) => {
       const launchToken = typeof req.params.token === "string" ? req.params.token : "";
       if (!launchToken) {
         return null;
       }
 
       const channel = typeof req.body?.channel === "string" ? req.body.channel : "unknown";
-      return `${hashRateLimitPart(launchToken)}:${channel}:source:${resolveRequestSource(req)}`;
+      return `${hashRateLimitPart(launchToken)}:${channel}:source:${readRequestSource(req, res).digest}`;
     },
     resolveAuditContext: (req) => ({
       metadata: {
@@ -72,13 +70,13 @@ export const publicChatEmbedConfigRateLimiter = (dependencies: PublicChatSession
     scope: "public.chat.embed_config",
     limit: dependencies.env.PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS,
     windowMs: dependencies.env.PUBLIC_CHAT_RATE_LIMIT_WINDOW_MS,
-    resolveSubjectKey: (req) => {
+    resolveSubjectKey: (req, res) => {
       const launchToken = typeof req.params.token === "string" ? req.params.token : "";
       if (!launchToken) {
         return null;
       }
 
-      return `${hashRateLimitPart(launchToken)}:source:${resolveRequestSource(req)}`;
+      return `${hashRateLimitPart(launchToken)}:source:${readRequestSource(req, res).digest}`;
     },
     resolveAuditContext: (req) => ({
       metadata: {
@@ -108,7 +106,7 @@ export const publicChatSessionReadRateLimiter = (dependencies: PublicChatSession
         return `${workspaceId}:browser:${rateLimitId}`;
       }
 
-      return `${workspaceId}:source:${resolveRequestSource(req)}`;
+      return `${workspaceId}:source:${readRequestSource(req, res).digest}`;
     },
     resolveAuditContext: (_req, res) => ({
       workspaceId: res.locals.workspaceId as string | undefined,
@@ -159,8 +157,7 @@ export const anonymousRateLimiters = (dependencies: AnonymousRateLimiterDependen
         return `${workspaceId}:browser:${rateLimitId}`;
       }
 
-      const requestSource = resolveRequestSource(req);
-      return `${workspaceId}:source:${requestSource}`;
+      return `${workspaceId}:source:${readRequestSource(req, res).digest}`;
     },
     resolveAuditContext: (_req, res) => ({
       workspaceId: res.locals.workspaceId as string | undefined,

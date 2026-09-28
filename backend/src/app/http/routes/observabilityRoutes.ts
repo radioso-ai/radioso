@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
 import { createRateLimitMiddleware } from "../middleware/rateLimit.js";
+import { readRequestSource } from "../middleware/requestSource.js";
 import { validateBody } from "../middleware/validate.js";
 
 const FRONTEND_ERROR_MESSAGE_MAX_LENGTH = 2048;
@@ -165,7 +166,7 @@ export const createObservabilityRoutes = (
     limit: 240,
     windowMs: 60_000,
     blockMs: 60_000,
-    resolveSubjectKey: (req) => String(req.ip ?? "unknown"),
+    resolveSubjectKey: (req, res) => readRequestSource(req, res).digest,
   });
   const frontendErrorRateLimit = createRateLimitMiddleware({
     service: dependencies.abuseControlService,
@@ -174,7 +175,7 @@ export const createObservabilityRoutes = (
     limit: 120,
     windowMs: 60_000,
     blockMs: 60_000,
-    resolveSubjectKey: (req) => String(req.ip ?? "unknown"),
+    resolveSubjectKey: (req, res) => readRequestSource(req, res).digest,
   });
 
   router.post(

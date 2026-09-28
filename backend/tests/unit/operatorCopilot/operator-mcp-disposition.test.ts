@@ -4,6 +4,7 @@ import { copilotCapabilityProvenance } from "../../../src/modules/operatorCopilo
 import {
   assertOperatorMcpDispositionRegistry,
   operatorMcpDispositions,
+  refusalMayPinKey,
   replayKeyFor,
 } from "../../../src/modules/operatorCopilot/operatorMcpDisposition.js";
 import type { CopilotMcpDisposition } from "../../../src/modules/operatorCopilot/contracts.js";
@@ -141,5 +142,24 @@ describe("replayKeyFor", () => {
 
   it("runs a non-idempotent probe unkeyed when the client sends no operation id", () => {
     expect(replayKeyFor({ mcpDisposition: nonIdempotentProbeNoHook }, null, "digest-1")).toBeNull();
+  });
+});
+
+describe("refusalMayPinKey", () => {
+  it("refuses to let an input-derived key stay pinned by a pre-effect refusal", () => {
+    expect(refusalMayPinKey({ mcpDisposition: inputKeyedAct })).toBe(false);
+  });
+
+  it("lets a client-derived key stay pinned, since the caller can send a fresh id", () => {
+    expect(refusalMayPinKey({ mcpDisposition: clientKeyedActWithHook })).toBe(true);
+  });
+
+  it("lets an unkeyed-capable tool's key stay pinned", () => {
+    expect(refusalMayPinKey({ mcpDisposition: idempotentReadNoHook })).toBe(true);
+    expect(refusalMayPinKey({ mcpDisposition: nonIdempotentProbeNoHook })).toBe(true);
+  });
+
+  it("defaults to letting the key stay pinned when there is no eligible disposition to consult", () => {
+    expect(refusalMayPinKey({})).toBe(true);
   });
 });

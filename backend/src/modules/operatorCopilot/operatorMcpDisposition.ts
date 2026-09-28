@@ -213,6 +213,21 @@ export const replayKeyFor = (
   return clientOperationId;
 };
 
+/**
+ * Whether a receipt that was `refused` before any owner effect may keep pinning this descriptor's
+ * replay key forever (until purge). A `client`-derived key is the caller's own choice, so a stuck
+ * refusal is the caller's to escape -- it sends a fresh operation id and runs again. An
+ * `operationIdentity: "input"` key is derived from the call itself: the caller cannot change it
+ * short of changing what it is asking for, so pinning it would replay a pre-effect refusal forever
+ * even after its cause (a revoked permission, a lost admission race) is fixed. Only `mcpApplicationService`'s
+ * pre-effect refusal path calls this -- a refusal recorded after the owner may have applied
+ * something must never be abandoned this way (see issue #1339).
+ */
+export const refusalMayPinKey = (descriptor: OperatorMcpReplayKeySource): boolean => {
+  const disposition = descriptor.mcpDisposition;
+  return disposition?.status !== "eligible" || disposition.retry.operationIdentity !== "input";
+};
+
 export const attachOperatorMcpDispositions = (
   descriptors: ReadonlyArray<CopilotToolDescriptor>,
 ): ReadonlyArray<CopilotToolDescriptor> => {

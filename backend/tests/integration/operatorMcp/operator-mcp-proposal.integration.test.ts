@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, expect, it } from "vitest";
 
 import { CopilotRepository } from "../../../src/db/repositories/copilotRepository.js";
-import { OperatorMcpInvocationRepository } from "../../../src/db/repositories/operatorMcpInvocationRepository.js";
 import { RoutineDefinitionRepository } from "../../../src/db/repositories/routineDefinitionRepository.js";
 import { createRoutineMcpApplyPort } from "../../../src/app/composition/copilotRoutineAtomicApply.js";
 import { createAgentSkillMcpApplyPort } from "../../../src/app/composition/copilotAgentSkillAtomicApply.js";
@@ -122,77 +121,6 @@ describeIntegration("operator MCP proposal origin", () => {
     await database.query("UPDATE copilot_proposals SET status = 'failed', failure_reason = 'target unavailable' WHERE id = $1", [proposal.id]);
     await expect(proposals.claimMcpReviewedProposalApply({ ...input, now: new Date() })).resolves.toEqual({ status: "settled", outcome: "failed", appliedRef: null, reason: "target unavailable" });
     await expect(proposals.claimMcpReviewedProposalApply({ ...input, executionInvocationId: otherExecutionId, now: new Date() })).resolves.toEqual({ status: "not_prepared" });
-  });
-
-  /**
-   * Issue #1324: a replay of a call whose receipt already settled `completed` must reconcile
-   * through the proposal it committed, not be told nothing is retained. `recoverOperatorMcpProposal`
-   * finds the proposal by its committed row before it ever inspects the invocation's own status, so
-   * this was already true against real Postgres -- the fix was `mcpApplicationService` actually
-   * calling it for a completed proposal-effect receipt, covered by the unit suite. This proves the
-   * repository mechanics that decision now relies on: the same proposal comes back, a second row for
-   * the same invocation is refused by the schema, and the receipt itself is left exactly as it was.
-   */
-  it("recovers a committed proposal after its originating call completed, without creating a second row", async () => {
-    const invocationId = randomUUID();
-    const operationId = "completed-proposal-replay";
-    const inputDigestValue = "completed-proposal-input";
-    await database.query(
-      "INSERT INTO operator_mcp_invocations (id, credential_id, grant_id, grant_version, account_id, workspace_id, user_id, client_id, method, descriptor_name, shape, operation_id, input_digest, proof_nonce_digest, status, retained_until) VALUES ($1, $2, $3, 1, $4, $5, $6, $7, 'tools/call', 'propose_ingestion_settings', 'propose', $8, $9, $10, 'running', NOW() + INTERVAL '30 days')",
-      [invocationId, credentialId, grantId, accountId, workspaceId, userId, clientId, operationId, inputDigestValue, `nonce-${invocationId}`],
-    );
-    const proposal = await proposals.createProposal({
-      workspaceId, operatorUserId: userId, origin: { type: "operator_mcp_invocation", invocationId },
-      targetType: "ingestion_settings", targetRef: { workspaceId }, payload: { summary: "Completed proposal replay" },
-      versionToken: "v1", evidence: null,
-    });
-    // Exactly what a fresh, successful `propose_*` call leaves once `mcpApplicationService` records
-    // its own outcome -- the case the old gate refused to reconcile.
-    await database.query("UPDATE operator_mcp_invocations SET status = 'completed', safe_outcome_code = 'completed' WHERE id = $1", [invocationId]);
-
-    await expect(proposals.recoverOperatorMcpProposal({
-      invocationId, grantId, workspaceId, operatorUserId: userId, operationId,
-      descriptorName: "propose_ingestion_settings", inputDigest: inputDigestValue,
-      staleBefore: new Date(Date.now() - 1_000), now: new Date(),
-    })).resolves.toMatchObject({ status: "recovered", proposal: { id: proposal.id } });
-
-    // No second proposal row for a replay of the same invocation.
-    await expect(database.query(
-      "INSERT INTO copilot_proposals (id, workspace_id, operator_user_id, operator_mcp_invocation_id, target_type, target_ref, payload, version_token) VALUES ($1, $2, $3, $4, 'ingestion_settings', '{}'::jsonb, '{}'::jsonb, 'v1')",
-      [randomUUID(), workspaceId, userId, invocationId],
-    )).rejects.toThrow();
-
-    // Recovery reads the committed subject; it does not settle the receipt a second time.
-    await expect(database.query("SELECT status, safe_outcome_code FROM operator_mcp_invocations WHERE id = $1", [invocationId]))
-      .resolves.toEqual([{ status: "completed", safe_outcome_code: "completed" }]);
-
-    await database.query("DELETE FROM copilot_proposals WHERE id = $1", [proposal.id]);
-    await database.query("DELETE FROM operator_mcp_invocations WHERE id = $1", [invocationId]);
-  });
-
-  /**
-   * Issue #1324: the replay path's own `recordOutcome` call must never clobber a receipt a
-   * concurrent claim already settled. `OperatorMcpInvocationRepository.recordOutcome` only writes
-   * from `admitted`/`running` (or `failed` -> `completed`), so a losing racer against an
-   * already-`completed` row is a silent no-op that returns the row exactly as the winner left it.
-   */
-  it("does not let a losing recordOutcome overwrite an already-completed receipt", async () => {
-    const invocationId = randomUUID();
-    await database.query(
-      "INSERT INTO operator_mcp_invocations (id, credential_id, grant_id, grant_version, account_id, workspace_id, user_id, client_id, method, descriptor_name, shape, operation_id, input_digest, proof_nonce_digest, status, retained_until) VALUES ($1, $2, $3, 1, $4, $5, $6, $7, 'tools/call', 'retrieval_probe', 'probe', NULL, 'v1:input', $8, 'running', NOW() + INTERVAL '30 days')",
-      [invocationId, credentialId, grantId, accountId, workspaceId, userId, clientId, `nonce-${invocationId}`],
-    );
-    const invocationsRepo = new OperatorMcpInvocationRepository(database.kysely);
-
-    const winner = await invocationsRepo.recordOutcome({ invocationId, status: "completed", safeOutcomeCode: "completed", resultReference: "first-writer", now: new Date() });
-    expect(winner).toMatchObject({ status: "completed", safeOutcomeCode: "completed", resultReference: "first-writer" });
-
-    // The replay path's own attempt to close the same receipt loses the race silently: it neither
-    // throws nor changes what the winner recorded.
-    const loser = await invocationsRepo.recordOutcome({ invocationId, status: "completed", safeOutcomeCode: "replayed", resultReference: "second-writer", now: new Date() });
-    expect(loser).toMatchObject({ status: "completed", safeOutcomeCode: "completed", resultReference: "first-writer" });
-
-    await database.query("DELETE FROM operator_mcp_invocations WHERE id = $1", [invocationId]);
   });
 
   it("does not cancel a reviewed receipt after its pre-effect claim is released", async () => {

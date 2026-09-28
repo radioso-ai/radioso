@@ -27,7 +27,7 @@ import type { OperatorMcpInvocationRecord, OperatorMcpInvocationRepositoryPort }
 import { AppError } from "../../shared/domain/errors.js";
 import { toolRejectionDetail, type OperatorMcpRejectionDetail } from "./invalidArgumentDetails.js";
 import { REVIEWED_APPROVAL_ACCEPT_WAIT_MS } from "./reviewedOperation.js";
-import { replayKeyFor } from "./operatorMcpDisposition.js";
+import { refusalMayPinKey, replayKeyFor } from "./operatorMcpDisposition.js";
 
 const MAX_RESULT_BYTES = 256 * 1024;
 const PROOF_TTL_MS = 15_000;
@@ -609,10 +609,19 @@ export class OperatorMcpApplicationService {
         : error instanceof OperatorMcpCatalogError ? error.code : "dependency_error";
       const refused = error instanceof OperatorMcpApplicationError
         && ["unknown_tool", "invalid_arguments", "missing_configuration", "operation_conflict", "budget_exhausted"].includes(error.code);
+      // A refusal here is always pre-effect for every one of those codes -- schema/proof/scope
+      // rejections, a tool's own 400/404/409, and a lost `claimRunning` race all happen before the
+      // owner is ever called. A derived key (`operationIdentity: "input"`) is the call itself, not
+      // something the caller can change by retrying, so pinning it to this refusal would replay a
+      // stale rejection forever, even after its cause (a revoked permission, a lost race) is fixed.
+      // Abandoning the receipt frees the key for a fresh admission via the same partial unique index
+      // a stuck proposal-preparation attempt already relies on; the audit record below still carries
+      // the real reason regardless.
+      const abandonRefusalKey = refused && !refusalMayPinKey(this.dependencies.catalog.descriptor(input.name) ?? {});
       await this.dependencies.invocations.recordOutcome({
         invocationId: input.proof.invocationId,
         status: refused ? "refused" : "failed",
-        safeOutcomeCode: reason,
+        safeOutcomeCode: abandonRefusalKey ? "abandoned_before_effect" : reason,
         ...(error instanceof OperatorMcpApplicationError && error.code === "invalid_arguments" && error.details
           ? { safeRejectionDetails: error.details }
           : {}),

@@ -513,9 +513,15 @@ resource "google_cloud_run_v2_service" "backend" {
           }
         }
       }
+      # Cloud Run's front end appends exactly the connecting peer to
+      # X-Forwarded-For, on run.app and on mapped domains alike; that entry is
+      # the only one a caller cannot forge. The frontend is Cloud Run too, so
+      # the chain it signs into the edge-facts envelope ends with the visitor
+      # and resolves with this same count. The frontend CDN load balancer
+      # changes that chain; see cdn.tf.
       env {
         name  = "RADIOSO_TRUSTED_PROXY_HOPS"
-        value = "2"
+        value = "1"
       }
       dynamic "env" {
         for_each = local.operator_mcp_configured ? [var.mcp_public_origin] : []
@@ -687,9 +693,10 @@ resource "google_cloud_run_v2_service" "mcp" {
           }
         }
       }
+      # Cloud Run appends exactly the connecting peer; see the backend service.
       env {
         name  = "RADIOSO_TRUSTED_PROXY_HOPS"
-        value = "2"
+        value = "1"
       }
       dynamic "env" {
         for_each = local.operator_mcp_configured ? [var.mcp_public_origin] : []

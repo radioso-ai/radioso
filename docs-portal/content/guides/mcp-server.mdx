@@ -1,7 +1,7 @@
 ---
 title: "MCP server"
 description: "Connect an MCP client to one Radioso agent or to Ray through delegated Operator MCP access."
-last_updated: 2026-09-27
+last_updated: 2026-09-28
 ---
 
 import { Callout, Steps } from 'nextra/components'
@@ -25,7 +25,7 @@ The dashboard session is the management boundary. It issues, rotates, and revoke
 
 Run `packages/radioso-mcp-server` as a standalone process.
 
-Standalone mode needs `RADIOSO_BASE_URL` pointed at the backend and its bind settings. Hosted Terraform shares a generated `RADIOSO_MCP_SIGNING_SECRET` with the backend and sets `RADIOSO_TRUSTED_PROXY_HOPS=2` for Google's appended client/load-balancer suffix. In a manual deployment, use the same signing secret in both processes and leave the hop count at `0` unless you control the exact rightmost proxy chain. Each process can keep short-lived backend session tokens in memory. Set `RADIOSO_MCP_REDIS_URL` when you want that cache shared across MCP instances; the signing secret also encrypts those cached tokens.
+Standalone mode needs `RADIOSO_BASE_URL` pointed at the backend and its bind settings. Hosted Terraform shares a generated `RADIOSO_MCP_SIGNING_SECRET` with the backend and sets `RADIOSO_TRUSTED_PROXY_HOPS=1`, because Cloud Run appends exactly the address of the client that connected. In a manual deployment, use the same signing secret in both processes and leave the hop count at `0` unless you control the exact rightmost proxy chain. Each process can keep short-lived backend session tokens in memory. Set `RADIOSO_MCP_REDIS_URL` when you want that cache shared across MCP instances; the signing secret also encrypts those cached tokens.
 
 ### Confirm the backend connection
 

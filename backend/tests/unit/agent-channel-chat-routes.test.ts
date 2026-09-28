@@ -1,3 +1,4 @@
+import { EDGE_FACTS_HEADERS } from "@radioso/edge-proof";
 import express from "express";
 import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
@@ -6,6 +7,7 @@ import { admittedAbuseControlDecision } from "../support/fakes.js";
 import { createAgentRoutes } from "../../src/app/http/routes/agentRoutes.js";
 import type { AppDependencies } from "../../src/app/server/types.js";
 import type { AccessGrant } from "../../src/modules/accessGrants/domain.js";
+import { MetricsRegistry } from "../../src/shared/observability/metrics/metricsRegistry.js";
 
 const workspaceId = "11111111-1111-4111-8111-111111111111";
 const agentId = "22222222-2222-4222-8222-222222222222";
@@ -140,23 +142,23 @@ describe("REST agent channel chat", () => {
     expect(sourceKeys.join(" ")).not.toContain("198.51.100.20");
   });
 
-  it("uses only the configured trusted XFF suffix behind the hosted proxy", async () => {
+  it("uses only the trusted XFF entry Cloud Run appended, never a caller-supplied prefix", async () => {
     const dependencies = createDependencies({
       env: {
         ...createDependencies().env,
-        RADIOSO_TRUSTED_PROXY_HOPS: 2,
+        RADIOSO_TRUSTED_PROXY_HOPS: 1,
       },
     });
 
     await request(createApp(dependencies))
       .post(`/api/v1/agents/${agentId}/chat`)
-      .set("X-Forwarded-For", "198.51.100.99, 203.0.113.10, 35.191.0.1")
+      .set("X-Forwarded-For", "198.51.100.99, 203.0.113.10")
       .set("Authorization", "Bearer rest-agent-secret")
       .send({ message: "Hello" })
       .expect(200);
     await request(createApp(dependencies))
       .post(`/api/v1/agents/${agentId}/chat`)
-      .set("X-Forwarded-For", "192.0.2.44, 203.0.113.11, 35.191.0.1")
+      .set("X-Forwarded-For", "198.51.100.99, 203.0.113.11")
       .set("Authorization", "Bearer rest-agent-secret")
       .send({ message: "Hello" })
       .expect(200);
@@ -166,6 +168,23 @@ describe("REST agent channel chat", () => {
     expect(new Set(sourceKeys).size).toBe(2);
     expect(sourceKeys.join(" ")).not.toContain("198.51.100.99");
     expect(sourceKeys.join(" ")).not.toContain("203.0.113.10");
+  });
+
+  it("leaves counting a rejected edge proof to the app-level request-source middleware", async () => {
+    const metricsRegistry = new MetricsRegistry();
+    const dependencies = createDependencies({ metricsRegistry });
+
+    await request(createApp(dependencies))
+      .post(`/api/v1/agents/${agentId}/chat`)
+      .set(EDGE_FACTS_HEADERS.marker, "frontend")
+      .set("Authorization", "Bearer rest-agent-secret")
+      .send({ message: "Hello" })
+      .expect(200);
+
+    expect(dependencies.assistantChatService.answer).toHaveBeenCalledWith(expect.objectContaining({
+      requestContext: expect.objectContaining({ observedVia: "unproven", clientIp: null }),
+    }));
+    expect(metricsRegistry.renderPrometheus()).not.toContain("edge_facts_proof_rejected_total");
   });
 
   it("rejects cross-agent use without entering chat", async () => {

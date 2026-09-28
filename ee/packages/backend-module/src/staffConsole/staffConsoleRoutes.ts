@@ -184,8 +184,8 @@ export const createStaffConsoleRoutes = (
   const logger = resolveLogger(dependencies);
 
   // The login endpoint has no session yet, so it is the one route in this router throttled
-  // pre-auth -- per attempted email, falling back to source IP -- mirroring the OSS backend's
-  // own `auth.login` limiter (js/missing-rate-limiting correctly flagged this route: unlike
+  // pre-auth -- per attempted email, falling back to the request source -- mirroring the OSS
+  // backend's own `auth.login` limiter (js/missing-rate-limiting correctly flagged this route: unlike
   // OSS's authRoutes.ts, it had no limiter at all).
   const staffLoginRateLimit = createRateLimitMiddleware({
     service: dependencies.abuseControlService,
@@ -193,9 +193,9 @@ export const createStaffConsoleRoutes = (
     scope: "ee.staff_console.auth.login",
     limit: dependencies.env.AUTH_RATE_LIMIT_MAX_ATTEMPTS ?? 10,
     windowMs: dependencies.env.AUTH_RATE_LIMIT_WINDOW_MS ?? 60_000,
-    resolveSubjectKey: (req) => {
+    resolveSubjectKey: (req, res) => {
       const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : null;
-      return email || String(req.ip ?? "unknown");
+      return email || dependencies.requestSource.digest(req, res);
     },
   });
 

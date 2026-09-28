@@ -27,6 +27,8 @@ export interface GoogleLoginRouterOptions {
   auditService?: Pick<RouteDependencies["auditService"], "record">;
   /** Required (not best-effort like `auditService`): without it neither OAuth entry route is throttled. */
   abuseControlService: RateLimitAbuseControlPort;
+  /** Keys each OAuth entry budget on the caller's resolved source rather than the proxy in front of it. */
+  requestSource: Pick<RouteDependencies["requestSource"], "digest">;
   /**
    * Narrow sink for the one line a failed sign-in writes. `federatedLogin`
    * records *which* of its steps refused; the error itself only exists out
@@ -178,7 +180,7 @@ export const createGoogleLoginRouter = (options: GoogleLoginRouterOptions): Rout
       scope,
       limit: 10,
       windowMs: 60_000,
-      resolveSubjectKey: (req) => `source:${req.ip ?? "unknown"}`,
+      resolveSubjectKey: (req, res) => `source:${options.requestSource.digest(req, res)}`,
     });
   const startRateLimit = oauthEntryRateLimit("ee.google_login.start");
   const callbackRateLimit = oauthEntryRateLimit("ee.google_login.callback");

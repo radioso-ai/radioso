@@ -223,7 +223,15 @@ export class AuthService {
       const sessionCookie = autoVerifyEmail
         ? await this.createSessionCookie(core.userId, core.account.id)
         : undefined;
+      await organizationCreationReservation.commit({ accountId: core.account.id });
+      await this.trackRegistration({
+        accountId: core.account.id,
+        workspaceId: core.workspace.id,
+        requiresEmailVerification: !autoVerifyEmail,
+      });
 
+      // Recorded last, once the attempt can no longer fail, so one signup never
+      // leaves both a success and a failure behind.
       await this.dependencies.auditService.record({
         accountId: core.account.id,
         eventType: "auth.register",
@@ -232,12 +240,6 @@ export class AuthService {
           email,
           verificationMode: autoVerifyEmail ? "development_auto_verify" : "email_verification",
         },
-      });
-      await organizationCreationReservation.commit({ accountId: core.account.id });
-      await this.trackRegistration({
-        accountId: core.account.id,
-        workspaceId: core.workspace.id,
-        requiresEmailVerification: !autoVerifyEmail,
       });
 
       return {
@@ -251,15 +253,13 @@ export class AuthService {
         ...(sessionCookie ? { sessionCookie } : {}),
       };
     } catch (error) {
-      try {
-        await this.recordDuplicateRegistration(email, error);
-        await this.recordOrganizationCreationDenied("auth.register", "registration_closed", null, error);
-        if (core) {
-          await this.rollbackCreatedAccount(core.account.id, core.userId);
-        }
-      } finally {
-        await organizationCreationReservation.release();
-      }
+      const orphaned = await this.unwindFailedProvisioning(
+        organizationCreationReservation,
+        core ? { accountId: core.account.id, userId: core.userId } : null,
+      );
+      await this.recordDuplicateRegistration(email, error);
+      await this.recordOrganizationCreationDenied("auth.register", "registration_closed", null, error);
+      await this.recordOrphanedAccount("auth.register", { email }, orphaned);
       throw error;
     }
   }
@@ -342,13 +342,12 @@ export class AuthService {
         sessionCookie,
       };
     } catch (error) {
-      try {
-        if (core) {
-          await this.rollbackCreatedAccount(core.account.id);
-        }
-      } finally {
-        await organizationCreationReservation.release();
-      }
+      // The user already existed, so only the account is this attempt's to undo.
+      const orphaned = await this.unwindFailedProvisioning(
+        organizationCreationReservation,
+        core ? { accountId: core.account.id } : null,
+      );
+      await this.recordOrphanedAccount("account.create", { actorUserId: user.id }, orphaned);
       throw error;
     }
   }
@@ -373,6 +372,33 @@ export class AuthService {
         ...(denial.rateLimit ? { rateLimit: denial.rateLimit } : {}),
       },
     });
+  }
+
+  /**
+   * Names an account that outlived a failed signup or organization creation.
+   * Only an orphan earns a record: a failure that cleaned up after itself
+   * leaves an operator nothing to act on, and its error still reaches the
+   * caller.
+   */
+  private async recordOrphanedAccount(
+    eventType: "auth.register" | "account.create",
+    actor: Record<string, unknown>,
+    orphaned: Record<string, unknown> | undefined,
+  ): Promise<void> {
+    if (!orphaned) {
+      return;
+    }
+
+    try {
+      await this.dependencies.auditService.record({
+        eventType,
+        eventStatus: "failure",
+        metadata: { ...actor, reason: "account_provisioning_failed", detail: orphaned },
+      });
+    } catch {
+      // A sink that cannot take the record must not replace the failure the
+      // caller has to handle.
+    }
   }
 
   private async recordDuplicateRegistration(email: string, error: unknown): Promise<void> {
@@ -692,7 +718,10 @@ export class AuthService {
         sessionCookie,
       };
     } catch (error) {
-      const cleanup = await this.unwindFailedFederatedProvisioning(organizationCreationReservation, core);
+      const cleanup = await this.unwindFailedProvisioning(
+        organizationCreationReservation,
+        core ? { accountId: core.account.id, userId: core.userId } : null,
+      );
       // OSS answers a closed signup from the provisioner rather than the
       // reservation, so a refusal reaches here and keeps its own name.
       const named = failFederatedLoginStage(federatedSignupRefusal(error), error);
@@ -701,7 +730,9 @@ export class AuthService {
   }
 
   /**
-   * Undoes a first sign-in that failed partway through provisioning.
+   * Undoes a signup, first sign-in, or organization creation that failed
+   * partway through provisioning. `created.userId` is set only when the attempt
+   * created the user too; an existing user is never this attempt's to delete.
    *
    * Both steps are best-effort. A failed provisioning step and a failed
    * rollback usually share one cause -- the database that would not take the
@@ -714,16 +745,16 @@ export class AuthService {
    * attempt's own failure record. Releasing a reservation only returns unused
    * quota, which the next attempt re-reserves, so that one just fails quietly.
    */
-  private async unwindFailedFederatedProvisioning(
+  private async unwindFailedProvisioning(
     reservation: OrganizationCreationReservation,
-    core: OrganizationCoreProvisioningResult | null,
+    created: { accountId: string; userId?: string } | null,
   ): Promise<Record<string, unknown> | undefined> {
     let orphaned: Record<string, unknown> | undefined;
-    if (core) {
+    if (created) {
       try {
-        await this.rollbackCreatedAccount(core.account.id, core.userId);
+        await this.rollbackCreatedAccount(created.accountId, created.userId);
       } catch {
-        orphaned = { orphanedAccountId: core.account.id };
+        orphaned = { orphanedAccountId: created.accountId };
       }
     }
 

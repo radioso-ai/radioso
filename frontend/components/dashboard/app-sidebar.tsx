@@ -16,6 +16,7 @@ import {
   SidebarMenuItem,
 } from '@/components/ui/sidebar'
 import { useAuth } from '@/lib/auth-context'
+import { teammateLabel } from '@/lib/teammate-label'
 import {
   Bot,
   BookOpen,
@@ -117,8 +118,8 @@ export function AppSidebar({ accountId, currentView, routeState, areaSubNav }: A
   // client inbox model, so the badge can never disagree with either of them
   // (a feedback-only workspace previously showed no badge at all here).
   const inboxCount = useNeedsAttentionOpenCount(activeWorkspaceId ?? '')
-  const userDisplayName = user?.email?.split('@')[0] || 'User'
-  const userInitial = userDisplayName.charAt(0).toUpperCase() || 'U'
+  const userLabel = user ? teammateLabel(user) : 'User'
+  const userInitial = Array.from(userLabel)[0]?.toUpperCase() || 'U'
   const isAccountActive = currentView === 'account'
 
   return (
@@ -176,7 +177,7 @@ export function AppSidebar({ accountId, currentView, routeState, areaSubNav }: A
               <SidebarMenuButton
                 size="lg"
                 isActive={isAccountActive}
-                tooltip={user?.email || userDisplayName}
+                tooltip={userLabel}
                 className={cn('group/user', isAccountActive && 'bg-sidebar-accent')}
               >
                 <div className="relative flex-shrink-0">
@@ -186,8 +187,10 @@ export function AppSidebar({ accountId, currentView, routeState, areaSubNav }: A
                   <span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full bg-emerald-500 ring-2 ring-sidebar" />
                 </div>
                 <div className="min-w-0 flex-1 text-left">
-                  <p className="truncate text-sm font-medium text-foreground">{userDisplayName}</p>
-                  <p className="truncate text-xs text-muted-foreground">{user?.email || 'user@example.com'}</p>
+                  <p className="truncate text-sm font-medium text-foreground">{userLabel}</p>
+                  {user?.displayName ? (
+                    <p className="truncate text-xs text-muted-foreground">{user.email}</p>
+                  ) : null}
                 </div>
               </SidebarMenuButton>
             </AccountMenu>

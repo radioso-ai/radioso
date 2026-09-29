@@ -1,6 +1,6 @@
 /* @vitest-environment jsdom */
 
-import { act } from 'react'
+import { act, useEffect } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -38,14 +38,21 @@ beforeAll(() => {
 
 // Renders as plain DOM attributes so assertions can read bootstrap state without a testing
 // library, matching this repo's manual createRoot/act component-test convention.
-function AuthProbe() {
-  const { user, isAuthenticated, isBootstrapping } = useAuth()
+type AuthLogin = ReturnType<typeof useAuth>['login']
+
+function AuthProbe({ loginRef }: { loginRef?: { current: AuthLogin | null } }) {
+  const { user, isAuthenticated, isBootstrapping, login } = useAuth()
+  useEffect(() => {
+    if (loginRef) loginRef.current = login
+  }, [login, loginRef])
   return (
     <div
       data-testid="auth-probe"
       data-bootstrapping={String(isBootstrapping)}
       data-authenticated={String(isAuthenticated)}
       data-email={user?.email ?? ''}
+      data-account-id={user?.accountId ?? ''}
+      data-display-name={user?.displayName ?? ''}
     />
   )
 }
@@ -167,6 +174,7 @@ describe('AuthProvider bootstrap effect', () => {
     workspacePublicRouteKey: 'session-org-key',
     requiresEmailVerification: false,
     email: 'recovered@example.com',
+    displayName: 'Recovered Name',
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion -- querySelector returns Element; the assertion is what gives callers `.dataset`.
@@ -193,6 +201,7 @@ describe('AuthProvider bootstrap effect', () => {
       userId: 'stored-user-1',
       accountId: 'stored-account-1',
       email: 'stored@example.com',
+      displayName: null,
     }))
 
     await act(async () => {
@@ -207,6 +216,85 @@ describe('AuthProvider bootstrap effect', () => {
     expect(probe()?.dataset.authenticated).toBe('true')
     expect(probe()?.dataset.email).toBe('stored@example.com')
     expect(apiMocks.getCurrentSession).not.toHaveBeenCalled()
+  })
+
+  it('learns the display name of a stored user that does not carry one yet', async () => {
+    window.localStorage.setItem('radioso.authUser', JSON.stringify({
+      userId: sessionFixture.userId,
+      accountId: sessionFixture.accountId,
+      email: sessionFixture.email,
+    }))
+    apiMocks.getCurrentSession.mockResolvedValueOnce(sessionFixture)
+
+    await act(async () => {
+      root.render(
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>,
+      )
+    })
+
+    expect(apiMocks.getCurrentSession).toHaveBeenCalledOnce()
+    expect(probe()?.dataset.authenticated).toBe('true')
+    expect(probe()?.dataset.displayName).toBe('Recovered Name')
+    expect(JSON.parse(window.localStorage.getItem('radioso.authUser') ?? 'null')).toMatchObject({
+      displayName: 'Recovered Name',
+    })
+  })
+
+  it('keeps the display name when the same user signs in to another account', async () => {
+    window.localStorage.setItem('radioso.authUser', JSON.stringify({
+      userId: 'user-1',
+      accountId: 'account-1',
+      email: 'ada@example.com',
+      displayName: 'Ada Lovelace',
+    }))
+
+    const loginRef: { current: AuthLogin | null } = { current: null }
+    await act(async () => {
+      root.render(
+        <AuthProvider>
+          <AuthProbe loginRef={loginRef} />
+        </AuthProvider>,
+      )
+    })
+    await act(async () => {
+      await loginRef.current?.('ada@example.com', 'user-1', 'account-2', 'Second Org')
+    })
+
+    expect(probe()?.dataset.accountId).toBe('account-2')
+    expect(probe()?.dataset.displayName).toBe('Ada Lovelace')
+    expect(apiMocks.getCurrentSession).not.toHaveBeenCalled()
+    expect(JSON.parse(window.localStorage.getItem('radioso.authUser') ?? 'null')).toMatchObject({
+      accountId: 'account-2',
+      displayName: 'Ada Lovelace',
+    })
+  })
+
+  it('asks the session for the name of a different user signing in', async () => {
+    window.localStorage.setItem('radioso.authUser', JSON.stringify({
+      userId: 'user-1',
+      accountId: 'account-1',
+      email: 'ada@example.com',
+      displayName: 'Ada Lovelace',
+    }))
+    apiMocks.getCurrentSession.mockResolvedValueOnce({ ...sessionFixture, userId: 'user-2', displayName: null })
+
+    const loginRef: { current: AuthLogin | null } = { current: null }
+    await act(async () => {
+      root.render(
+        <AuthProvider>
+          <AuthProbe loginRef={loginRef} />
+        </AuthProvider>,
+      )
+    })
+    await act(async () => {
+      await loginRef.current?.('grace@example.com', 'user-2', 'account-3', 'Other Org')
+    })
+
+    expect(probe()?.dataset.email).toBe('grace@example.com')
+    expect(probe()?.dataset.displayName).toBe('')
+    expect(apiMocks.getCurrentSession).toHaveBeenCalledOnce()
   })
 
   it('recovers a live session when local storage is empty and persists it', async () => {
@@ -229,6 +317,7 @@ describe('AuthProvider bootstrap effect', () => {
       userId: sessionFixture.userId,
       accountId: sessionFixture.accountId,
       email: sessionFixture.email,
+      displayName: sessionFixture.displayName,
       organizationName: sessionFixture.organizationName,
     })
     expect(window.localStorage.getItem('radioso.lastAccountId')).toBe(sessionFixture.accountId)

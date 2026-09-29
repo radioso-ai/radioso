@@ -7,6 +7,8 @@ interface User {
   userId: string
   accountId: string
   email: string
+  /** The name the person chose: null when they have none, absent until the server has said. */
+  displayName?: string | null
   organizationName?: string
 }
 
@@ -16,6 +18,7 @@ interface AuthContextType {
   isBootstrapping: boolean
   login: (email: string, userId: string, accountId: string, organizationName?: string | null) => Promise<void>
   logout: () => void
+  setDisplayName: (displayName: string | null) => void
 }
 
 const AuthContext = createContext<AuthContextType | null>(null)
@@ -30,6 +33,17 @@ const normalizeStoredOrganizationName = (value: unknown): string | undefined => 
 
   const trimmed = value.trim()
   return trimmed || undefined
+}
+
+const normalizeDisplayName = (value: unknown): string | null | undefined => {
+  if (value === null) {
+    return null
+  }
+  if (typeof value !== 'string') {
+    return undefined
+  }
+
+  return value.trim() || null
 }
 
 const readStoredAccountOrganizationNames = (
@@ -117,10 +131,12 @@ export const readStoredAuthUser = (
     }
 
     const organizationName = normalizeStoredOrganizationName(parsed.organizationName)
+    const displayName = normalizeDisplayName(parsed.displayName)
     return {
       userId: parsed.userId,
       accountId: typeof parsed.accountId === 'string' ? parsed.accountId : parsed.userId,
       email: parsed.email,
+      ...(displayName !== undefined ? { displayName } : {}),
       ...(organizationName ? { organizationName } : {}),
     }
   } catch {
@@ -186,6 +202,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           userId: session.userId,
           accountId: session.accountId,
           email: session.email,
+          displayName: normalizeDisplayName(session.displayName) ?? null,
           ...(organizationName ? { organizationName } : {}),
         }
         persistAuthUser(window.localStorage, recovered)
@@ -202,9 +219,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  // Sign-in responses carry no display name, and a user stored before names
+  // existed has none either, so the session is asked once in the background.
+  const userAwaitingDisplayName = user && user.displayName === undefined ? user.userId : null
+  useEffect(() => {
+    if (!userAwaitingDisplayName) {
+      return
+    }
+
+    let active = true
+    void authApi.getCurrentSession().then((session) => {
+      if (!active || session?.userId !== userAwaitingDisplayName) return
+      setUser((current) => current?.userId === userAwaitingDisplayName && current.displayName === undefined
+        ? { ...current, displayName: normalizeDisplayName(session.displayName) ?? null }
+        : current)
+    })
+
+    return () => {
+      active = false
+    }
+  }, [userAwaitingDisplayName])
+
+  // Keeps the stored copy in step with in-memory changes such as a renamed profile.
+  useEffect(() => {
+    if (user && typeof window !== 'undefined') {
+      persistAuthUser(window.localStorage, user)
+    }
+  }, [user])
+
   const login = useCallback(async (email: string, userId: string, accountId: string, organizationName?: string | null) => {
     const normalizedOrganizationName = normalizeStoredOrganizationName(organizationName)
-    const nextUser = {
+    const nextUser: User = {
       userId,
       accountId,
       email,
@@ -215,7 +260,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       persistAuthUser(window.localStorage, nextUser)
     }
 
-    setUser(nextUser)
+    // Switching or creating an organization signs the same person in again; their
+    // name travels with them rather than being asked of the server once more.
+    setUser((current) => current?.userId === userId && current.displayName !== undefined
+      ? { ...nextUser, displayName: current.displayName }
+      : nextUser)
+  }, [])
+
+  const setDisplayName = useCallback((displayName: string | null) => {
+    setUser((current) => current && current.displayName !== displayName ? { ...current, displayName } : current)
   }, [])
 
   const logout = useCallback(() => {
@@ -235,7 +288,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isAuthenticated: user !== null,
         isBootstrapping,
         login,
-        logout
+        logout,
+        setDisplayName,
       }}
     >
       {children}

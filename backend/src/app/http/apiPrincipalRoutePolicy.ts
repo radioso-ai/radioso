@@ -87,6 +87,9 @@ const declarations: readonly PolicyDeclaration[] = [
   sessionOnly("DELETE", "/api/v1/account/invitations/:invitationId", "account.users.manage"),
   sessionOnly("POST", "/api/v1/account/switch", "account.membership.read"),
   sessionOnly("GET", "/api/v1/auth/session"),
+  // A profile belongs to a person; machine principals act for a workspace and have none.
+  sessionOnly("GET", "/api/v1/auth/profile"),
+  sessionOnly("PATCH", "/api/v1/auth/profile"),
   sessionOnly("POST", "/api/v1/auth/invitations/:invitationToken/accept-as-current-user"),
   sessionOnly("DELETE", "/api/v1/account", "account.organization.delete"),
   sessionOnly("PATCH", "/api/v1/account", "account.organization.rename"),

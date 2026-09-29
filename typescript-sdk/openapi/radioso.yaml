@@ -196,8 +196,32 @@ components:
             email:
               type: string
               format: email
+            displayName:
+              type:
+                - string
+                - "null"
+              description: The name the person chose for themselves, or null when they have not set one.
           required:
             - email
+            - displayName
+    UserProfile:
+      type: object
+      properties:
+        userId:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        displayName:
+          type:
+            - string
+            - "null"
+          description: The name the person chose for themselves, or null when they have not set one.
+      required:
+        - userId
+        - email
+        - displayName
     EmailVerificationVerifyResponse:
       type: object
       properties:
@@ -326,6 +350,10 @@ components:
           type: string
           minLength: 1
           maxLength: 80
+        displayName:
+          type:
+            - string
+            - "null"
       required:
         - email
         - password
@@ -407,9 +435,23 @@ components:
         password:
           type: string
           minLength: 8
+        displayName:
+          type:
+            - string
+            - "null"
       required:
         - email
         - password
+    UserProfileUpdateRequest:
+      type: object
+      properties:
+        displayName:
+          type:
+            - string
+            - "null"
+      required:
+        - displayName
+      additionalProperties: false
     AccountInvitationCreateRequest:
       type: object
       properties:
@@ -474,6 +516,11 @@ components:
         email:
           type: string
           format: email
+        displayName:
+          type:
+            - string
+            - "null"
+          description: The name the person chose for themselves, or null when they have not set one.
         role:
           type: string
           enum:
@@ -491,6 +538,7 @@ components:
         - membershipId
         - userId
         - email
+        - displayName
         - role
         - status
         - createdAt
@@ -15537,6 +15585,61 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SessionResponse"
+        "401":
+          description: No active session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/auth/profile:
+    get:
+      tags:
+        - Auth
+      summary: Get the signed-in user's profile
+      description: "Returns the signed-in person's own profile: their email and the display name teammates see."
+      operationId: getUserProfile
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: Profile returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+        "401":
+          description: No active session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      tags:
+        - Auth
+      summary: Update the signed-in user's profile
+      description: Sets the signed-in person's display name, the name teammates see in the dashboard. The name is trimmed; an empty string or null clears it. It may use any script, holds at most 80 characters, and cannot contain control characters.
+      operationId: updateUserProfile
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserProfileUpdateRequest"
+      responses:
+        "200":
+          description: Profile updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+        "400":
+          description: Request validation failed, or the display name breaks the naming rules
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "401":
           description: No active session
           content:

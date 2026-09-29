@@ -160,6 +160,11 @@ export class PasswordResetService {
     // These repository ports do not share a transaction boundary. Consume the one-time
     // token before mutating account state so a retry cannot replay the same reset link.
     await this.dependencies.userRepository.updatePassword(user.id, passwordHash);
+    // A name chosen before the address was verified came from whoever registered it,
+    // not necessarily the mailbox owner now reclaiming the account.
+    if (!user.emailVerifiedAt && user.displayName !== null) {
+      await this.dependencies.userRepository.updateDisplayName(user.id, null);
+    }
     // Reset possession proves control of the mailbox, so a successful reset also verifies the email.
     await this.dependencies.userRepository.markEmailVerified(user.id, now);
     await this.dependencies.passwordResetTokenRepository.markAllActiveUsedForUser(user.id, now);

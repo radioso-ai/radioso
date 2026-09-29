@@ -38,6 +38,7 @@ export function InvitationAcceptForm({
   const { login } = useAuth()
   const riseSun = useAuthSunrise()
   const [email, setEmail] = useState(invitedEmail)
+  const [displayName, setDisplayName] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -59,7 +60,12 @@ export function InvitationAcceptForm({
 
     setIsSubmitting(true)
     try {
-      const response = await authApi.acceptInvitation(invitationToken, { email, password })
+      // Only a login this acceptance creates takes a name; an existing one keeps its own.
+      const response = await authApi.acceptInvitation(invitationToken, {
+        email,
+        password,
+        ...(mode === 'new_password' && displayName.trim() ? { displayName: displayName.trim() } : {}),
+      })
       seedWorkspaceSession(response.workspaceId, response.workspacePublicRouteKey)
       riseSun()
       await login(email, response.userId, response.accountId, response.organizationName)
@@ -117,6 +123,19 @@ export function InvitationAcceptForm({
         </>
       ) : null}
       <p className="text-sm text-muted-foreground">{passwordPrompt}</p>
+      {mode === 'new_password' ? (
+        <div className="space-y-2">
+          <Label htmlFor="invite-display-name">Your name (optional)</Label>
+          <Input
+            id="invite-display-name"
+            type="text"
+            autoComplete="name"
+            value={displayName}
+            onChange={(event) => setDisplayName(event.target.value)}
+            disabled={isSubmitting}
+          />
+        </div>
+      ) : null}
       <div className="space-y-2">
         <Label htmlFor="invite-email">Email</Label>
         <Input

@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import type { ReactNode } from 'react'
-import { Check, Gauge, LogOut, Monitor, Moon, Sun, Users } from 'lucide-react'
+import { Check, Gauge, LogOut, Monitor, Moon, Sun, UserRound, Users } from 'lucide-react'
 
 import {
   DropdownMenu,
@@ -57,6 +57,12 @@ export function AccountMenu({
       <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
       <DropdownMenuContent side="top" align="start" sideOffset={8} className="w-56">
         <DropdownMenuGroup>
+          <DropdownMenuItem asChild>
+            <Link href={href('profile')} aria-current={activeTab === 'profile' ? 'page' : undefined}>
+              <UserRound />
+              Profile
+            </Link>
+          </DropdownMenuItem>
           <DropdownMenuItem asChild>
             <Link href={href('members')} aria-current={activeTab === 'members' ? 'page' : undefined}>
               <Users />

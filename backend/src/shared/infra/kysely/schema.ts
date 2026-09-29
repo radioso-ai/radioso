@@ -1544,6 +1544,7 @@ export interface UserFederatedIdentities {
 export interface Users {
   created_at: Generated<Timestamp>;
   disabled_at: Timestamp | null;
+  display_name: string | null;
   email: string;
   email_verified_at: Timestamp | null;
   id: string;

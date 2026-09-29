@@ -28,10 +28,11 @@ describeIntegration("AccountMembershipRepository (Postgres)", () => {
       `INSERT INTO accounts (id, name, email, password_hash) VALUES ($1, $2, $3, $4)`,
       [accountId, "Membership Co", `acct-${accountId}@example.com`, "hash"],
     );
-    await database.query(`INSERT INTO users (id, email, password_hash) VALUES ($1, $2, $3)`, [
+    await database.query(`INSERT INTO users (id, email, password_hash, display_name) VALUES ($1, $2, $3, $4)`, [
       userAId,
       userAEmail,
       "hash",
+      "Member A",
     ]);
     await database.query(`INSERT INTO users (id, email, password_hash) VALUES ($1, $2, $3)`, [
       userBId,
@@ -78,13 +79,15 @@ describeIntegration("AccountMembershipRepository (Postgres)", () => {
     expect(await repository.findById(randomUUID())).toBeNull();
   });
 
-  it("listActiveByAccount joins the user email and orders by created_at ASC", async () => {
+  it("listActiveByAccount joins the user email and display name and orders by created_at ASC", async () => {
     await repository.create({ accountId, userId: userBId, role: "member" });
 
     const rows = await repository.listActiveByAccount(accountId);
     expect(rows.map((r) => r.userId)).toEqual([userAId, userBId]);
     const a = rows.find((r) => r.userId === userAId);
     expect(a?.email).toBe(userAEmail);
+    expect(a?.displayName).toBe("Member A");
+    expect(rows.find((r) => r.userId === userBId)?.displayName).toBeNull();
   });
 
   it("listActiveByUser returns active memberships for a user", async () => {

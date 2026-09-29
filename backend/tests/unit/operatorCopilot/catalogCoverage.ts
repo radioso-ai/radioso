@@ -180,6 +180,7 @@ const identityAdministration = permanent("Permanent exclusion: Ray does not admi
 const accountScope = permanent("Permanent exclusion: this is account-scoped rather than workspace-scoped, and Ray operates on one workspace.");
 const endUserSurface = permanent("Permanent exclusion: this is an end-user or inbound integration surface, not an operator-copilot tool.");
 const authOrRegistration = permanent("Permanent exclusion: authentication and registration are not an operator-copilot surface.");
+const personalProfile = permanent("Permanent exclusion: a profile is the signed-in person's own identity, not workspace configuration; only that person edits their name.");
 const agentDiscoveryDocument = permanent("Permanent exclusion: the public discovery documents are read by a visiting agent, not by an operator. They render what the operator already controls through the agent's card and walk-in settings, which `propose_agent_setting` covers.");
 const copilotUiOnly = permanent("Permanent exclusion: this endpoint is the operator copilot UI/control surface, not a tool Ray may call.");
 const ambientOperatorRuntime = permanent("Permanent exclusion: this is ambient operator-dashboard runtime transport, not an action Ray may call.");
@@ -243,6 +244,10 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "acceptAccountInvitationAsCurrentUser",
     "getCurrentSession",
   ], authOrRegistration),
+  ...coverage([
+    "getUserProfile",
+    "updateUserProfile",
+  ], personalProfile),
   ...coverage([
     "getAgentCard",
     "getAgentMcpServerCard",

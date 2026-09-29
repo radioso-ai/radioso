@@ -1828,7 +1828,21 @@ describe("AuthService describeSession", () => {
       workspaceId: registration.workspaceId,
       workspaceName: registration.workspaceName,
       workspacePublicRouteKey: registration.workspacePublicRouteKey,
+      displayName: null,
     });
+  });
+
+  it("carries the signed-in user's display name", async () => {
+    const { authService } = createAuthService({});
+    const registration = await authService.register({
+      email: "named-session@example.com",
+      password: "verysecurepassword",
+      displayName: "Grace Hopper",
+    });
+
+    await expect(
+      authService.describeSession({ userId: registration.userId, accountId: registration.accountId }),
+    ).resolves.toMatchObject({ displayName: "Grace Hopper" });
   });
 
   it("throws unauthorized when the user id no longer resolves to a user", async () => {
@@ -1914,5 +1928,331 @@ describe("registration product analytics", () => {
       subjectType: "workspace",
       properties: { requiresEmailVerification: false },
     });
+  });
+});
+
+describe("AuthService display name", () => {
+  const createPendingInvitation = async (
+    accountRepository: TrackingAccountRepository,
+    invitationRepository: InMemoryAccountInvitationRepository,
+    email: string,
+  ) => {
+    const account = await accountRepository.create({ name: "Shared Org", email: "owner@example.com", passwordHash: "hash" });
+    const invitationToken = `invitation-${email}`;
+    await invitationRepository.create({
+      accountId: account.id,
+      email,
+      invitedByMembershipId: "membership-owner",
+      tokenHash: sha256(invitationToken),
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    return invitationToken;
+  };
+
+  it("stores the trimmed display name given at signup", async () => {
+    const { authService, userRepository } = createAuthService({});
+
+    const result = await authService.register({
+      email: "named-signup@example.com",
+      password: "verysecurepassword",
+      displayName: "  Ada Lovelace  ",
+    });
+
+    expect((await userRepository.findById(result.userId))?.displayName).toBe("Ada Lovelace");
+  });
+
+  it("leaves the display name empty when signup gives none", async () => {
+    const { authService, userRepository } = createAuthService({});
+
+    const result = await authService.register({ email: "unnamed-signup@example.com", password: "verysecurepassword" });
+
+    expect((await userRepository.findById(result.userId))?.displayName).toBeNull();
+  });
+
+  it("rejects an invalid signup display name before reserving or creating anything", async () => {
+    const guard = new RecordingOrganizationCreationGuard();
+    const accountRepository = new TrackingAccountRepository();
+    const { authService } = createAuthService({ accountRepository, organizationCreationGuard: guard });
+
+    await expect(authService.register({
+      email: "bad-name-signup@example.com",
+      password: "verysecurepassword",
+      displayName: "Ada\nLovelace",
+    })).rejects.toMatchObject({ statusCode: 400 });
+
+    expect(guard.requests).toEqual([]);
+    expect(accountRepository.items.size).toBe(0);
+  });
+
+  it("stores the display name of a user an invitation creates", async () => {
+    const accountRepository = new TrackingAccountRepository();
+    const invitationRepository = new InMemoryAccountInvitationRepository();
+    const { authService, userRepository } = createAuthService({
+      accountRepository,
+      accountInvitationRepository: invitationRepository,
+      sessionRepository: new WorkingSessionRepository(),
+    });
+    const invitationToken = await createPendingInvitation(accountRepository, invitationRepository, "named-invitee@example.com");
+
+    const result = await authService.acceptInvitation({
+      invitationToken,
+      email: "named-invitee@example.com",
+      password: "verysecurepassword",
+      displayName: "Katherine Johnson",
+    });
+
+    expect((await userRepository.findById(result.userId))?.displayName).toBe("Katherine Johnson");
+  });
+
+  it("keeps an existing user's display name when they accept an invitation with a password", async () => {
+    const accountRepository = new TrackingAccountRepository();
+    const invitationRepository = new InMemoryAccountInvitationRepository();
+    const { authService, userRepository } = createAuthService({
+      accountRepository,
+      accountInvitationRepository: invitationRepository,
+      sessionRepository: new WorkingSessionRepository(),
+    });
+    const existing = await authService.register({
+      email: "existing-invitee@example.com",
+      password: "verysecurepassword",
+      displayName: "Dorothy Vaughan",
+    });
+    const invitationToken = await createPendingInvitation(accountRepository, invitationRepository, "existing-invitee@example.com");
+
+    await authService.acceptInvitation({
+      invitationToken,
+      email: "existing-invitee@example.com",
+      password: "verysecurepassword",
+      displayName: "Someone Else",
+    });
+
+    expect((await userRepository.findById(existing.userId))?.displayName).toBe("Dorothy Vaughan");
+  });
+
+  it("ignores an invalid name from an existing user accepting an invitation with a password", async () => {
+    const accountRepository = new TrackingAccountRepository();
+    const invitationRepository = new InMemoryAccountInvitationRepository();
+    const { authService, userRepository } = createAuthService({
+      accountRepository,
+      accountInvitationRepository: invitationRepository,
+      sessionRepository: new WorkingSessionRepository(),
+    });
+    const existing = await authService.register({ email: "existing-invalid@example.com", password: "verysecurepassword" });
+    const invitationToken = await createPendingInvitation(accountRepository, invitationRepository, "existing-invalid@example.com");
+
+    await expect(authService.acceptInvitation({
+      invitationToken,
+      email: "existing-invalid@example.com",
+      password: "verysecurepassword",
+      displayName: "z".repeat(81),
+    })).resolves.toMatchObject({ userId: existing.userId });
+    expect((await userRepository.findById(existing.userId))?.displayName).toBeNull();
+  });
+
+  it("rejects an invalid name from a user an invitation would create, before creating them", async () => {
+    const accountRepository = new TrackingAccountRepository();
+    const invitationRepository = new InMemoryAccountInvitationRepository();
+    const { authService, userRepository } = createAuthService({
+      accountRepository,
+      accountInvitationRepository: invitationRepository,
+      sessionRepository: new WorkingSessionRepository(),
+    });
+    const invitationToken = await createPendingInvitation(accountRepository, invitationRepository, "new-invalid@example.com");
+
+    await expect(authService.acceptInvitation({
+      invitationToken,
+      email: "new-invalid@example.com",
+      password: "verysecurepassword",
+      displayName: "Bad\u0007Name",
+    })).rejects.toMatchObject({ statusCode: 400 });
+    expect(await userRepository.findByEmail("new-invalid@example.com")).toBeNull();
+  });
+
+  it("stores the provider's name when a federated sign-in provisions a new user", async () => {
+    const { authService, userRepository } = createAuthService({ sessionRepository: new WorkingSessionRepository() });
+
+    const result = await authService.federatedLogin({
+      provider: "google",
+      subject: "google-named-first",
+      email: "federated-named@example.com",
+      emailVerified: true,
+      displayName: "Mary Jackson",
+    });
+
+    expect((await userRepository.findById(result.userId))?.displayName).toBe("Mary Jackson");
+  });
+
+  it("never overwrites a display name on a later federated sign-in", async () => {
+    const { authService, userRepository } = createAuthService({ sessionRepository: new WorkingSessionRepository() });
+    const first = await authService.federatedLogin({
+      provider: "google",
+      subject: "google-named-repeat",
+      email: "federated-repeat@example.com",
+      emailVerified: true,
+      displayName: "Mary Jackson",
+    });
+    await authService.updateProfile({ userId: first.userId, accountId: first.accountId, displayName: "Mary" });
+
+    await authService.federatedLogin({
+      provider: "google",
+      subject: "google-named-repeat",
+      email: "federated-repeat@example.com",
+      emailVerified: true,
+      displayName: "Mary Winston Jackson",
+    });
+
+    expect((await userRepository.findById(first.userId))?.displayName).toBe("Mary");
+  });
+
+  it("keeps an existing verified user unnamed when a federated sign-in matched by email brings a name", async () => {
+    const { authService, userRepository } = createAuthService({ sessionRepository: new WorkingSessionRepository() });
+    const registered = await authService.register({ email: "verified-unnamed@example.com", password: "verysecurepassword" });
+    await userRepository.markEmailVerified(registered.userId, new Date());
+
+    const result = await authService.federatedLogin({
+      provider: "google",
+      subject: "google-verified-unnamed",
+      email: "verified-unnamed@example.com",
+      emailVerified: true,
+      displayName: "Provider Name",
+    });
+
+    expect(result.userId).toBe(registered.userId);
+    expect((await userRepository.findById(registered.userId))?.displayName).toBeNull();
+  });
+
+  it("replaces a squatter's display name with the provider's when a federated sign-in reclaims an unverified account", async () => {
+    const { authService, userRepository } = createAuthService({ sessionRepository: new WorkingSessionRepository() });
+    const squatted = await authService.register({
+      email: "reclaimed-named@example.com",
+      password: "attacker-known-password",
+      displayName: "Squatter",
+    });
+
+    await authService.federatedLogin({
+      provider: "google",
+      subject: "google-reclaim-named",
+      email: "reclaimed-named@example.com",
+      emailVerified: true,
+      displayName: "  Real Owner  ",
+    });
+
+    expect((await userRepository.findById(squatted.userId))?.displayName).toBe("Real Owner");
+  });
+
+  it("clears a squatter's display name when a federated sign-in reclaims an unverified account without a usable name", async () => {
+    const { authService, userRepository } = createAuthService({ sessionRepository: new WorkingSessionRepository() });
+    const squatted = await authService.register({
+      email: "reclaimed-unnamed@example.com",
+      password: "attacker-known-password",
+      displayName: "Squatter",
+    });
+
+    await authService.federatedLogin({
+      provider: "google",
+      subject: "google-reclaim-unnamed",
+      email: "reclaimed-unnamed@example.com",
+      emailVerified: true,
+      displayName: "x".repeat(81),
+    });
+
+    expect((await userRepository.findById(squatted.userId))?.displayName).toBeNull();
+  });
+
+  it("drops a provider name the display-name rules reject instead of failing the sign-in", async () => {
+    const { authService, userRepository } = createAuthService({ sessionRepository: new WorkingSessionRepository() });
+
+    const result = await authService.federatedLogin({
+      provider: "google",
+      subject: "google-long-name",
+      email: "federated-long-name@example.com",
+      emailVerified: true,
+      displayName: "x".repeat(81),
+    });
+
+    expect((await userRepository.findById(result.userId))?.displayName).toBeNull();
+  });
+
+  it("describes and updates the signed-in user's own profile", async () => {
+    const { authService } = createAuthService({});
+    const registration = await authService.register({ email: "profile@example.com", password: "verysecurepassword" });
+
+    await expect(authService.getProfile(registration.userId)).resolves.toEqual({
+      userId: registration.userId,
+      email: "profile@example.com",
+      displayName: null,
+    });
+    await expect(authService.updateProfile({
+      userId: registration.userId,
+      accountId: registration.accountId,
+      displayName: " Annie Easley ",
+    })).resolves.toEqual({
+      userId: registration.userId,
+      email: "profile@example.com",
+      displayName: "Annie Easley",
+    });
+    await expect(authService.updateProfile({
+      userId: registration.userId,
+      accountId: registration.accountId,
+      displayName: "",
+    })).resolves.toMatchObject({ displayName: null });
+  });
+
+  it("audits a profile change by field name, never by value", async () => {
+    const { authService, auditService } = createAuthService({});
+    const registration = await authService.register({ email: "profile-audit@example.com", password: "verysecurepassword" });
+
+    await authService.updateProfile({
+      userId: registration.userId,
+      accountId: registration.accountId,
+      displayName: "Evelyn Boyd Granville",
+    });
+
+    const profileEvents = auditService.events.filter((event) => event.eventType === "auth.profile_updated");
+    expect(profileEvents).toEqual([
+      expect.objectContaining({
+        accountId: registration.accountId,
+        eventStatus: "success",
+        metadata: expect.objectContaining({ actorUserId: registration.userId, changedFields: ["displayName"] }),
+      }),
+    ]);
+    expect(JSON.stringify(profileEvents)).not.toContain("Evelyn");
+  });
+
+  it("records nothing when a profile update changes nothing", async () => {
+    const { authService, auditService } = createAuthService({});
+    const registration = await authService.register({
+      email: "profile-noop@example.com",
+      password: "verysecurepassword",
+      displayName: "Gladys West",
+    });
+
+    await authService.updateProfile({ userId: registration.userId, accountId: registration.accountId, displayName: "Gladys West " });
+
+    expect(auditService.events.filter((event) => event.eventType === "auth.profile_updated")).toEqual([]);
+  });
+
+  it("rejects an invalid display name without changing the profile", async () => {
+    const { authService, userRepository } = createAuthService({});
+    const registration = await authService.register({
+      email: "profile-invalid@example.com",
+      password: "verysecurepassword",
+      displayName: "Valid Name",
+    });
+
+    await expect(authService.updateProfile({
+      userId: registration.userId,
+      accountId: registration.accountId,
+      displayName: "y".repeat(81),
+    })).rejects.toMatchObject({ statusCode: 400 });
+    expect((await userRepository.findById(registration.userId))?.displayName).toBe("Valid Name");
+  });
+
+  it("rejects a profile read or update for a user that no longer exists", async () => {
+    const { authService } = createAuthService({});
+
+    await expect(authService.getProfile("missing-user")).rejects.toMatchObject({ statusCode: 401 });
+    await expect(authService.updateProfile({ userId: "missing-user", accountId: "missing-account", displayName: "Name" }))
+      .rejects.toMatchObject({ statusCode: 401 });
   });
 });

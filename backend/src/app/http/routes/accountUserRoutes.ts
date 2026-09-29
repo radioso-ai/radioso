@@ -29,7 +29,7 @@ export const createAccountSchema = z.object({
   organizationName: z.string().trim().min(1).max(80),
 });
 
-export const renameAccountSchema = z.object({
+const renameAccountSchema = z.object({
   organizationName: z.string().trim().min(1).max(80),
 });
 
@@ -81,6 +81,7 @@ export const createAccountUserRoutes = (dependencies: AccountUserRouteDependenci
           membershipId: user.id,
           userId: user.userId,
           email: user.email,
+          displayName: user.displayName,
           role: user.role,
           status: user.status,
           createdAt: user.createdAt.toISOString(),

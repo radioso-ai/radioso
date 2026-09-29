@@ -57,6 +57,7 @@ describe("resolveGoogleIdentity", () => {
       subject: "google-sub-1",
       email: "Person@Example.com",
       emailVerified: true,
+      name: "A Person",
     });
     expect(calls[0]).toContain("oauth2.googleapis.com/token");
     expect(calls[1]).toContain("userinfo");
@@ -73,6 +74,19 @@ describe("resolveGoogleIdentity", () => {
 
     const identity = await resolveGoogleIdentity({ config, code: "c", fetchImpl });
     expect(identity.emailVerified).toBe(true);
+  });
+
+  it("reports no name when userinfo omits one or sends a non-string", async () => {
+    const identityFor = async (userinfo: Record<string, unknown>) => resolveGoogleIdentity({
+      config,
+      code: "c",
+      fetchImpl: async (input: string | URL | Request) => toUrlString(input).includes("token")
+        ? jsonResponse(200, { access_token: "t" })
+        : jsonResponse(200, { sub: "s", email: "e@example.com", email_verified: true, ...userinfo }),
+    });
+
+    expect((await identityFor({})).name).toBeNull();
+    expect((await identityFor({ name: 42 })).name).toBeNull();
   });
 
   it("throws when the token exchange fails", async () => {

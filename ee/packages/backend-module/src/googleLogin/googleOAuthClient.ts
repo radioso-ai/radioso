@@ -8,10 +8,12 @@ export interface GoogleOAuthConfig {
   redirectUri: string;
 }
 
-export interface GoogleIdentity {
+interface GoogleIdentity {
   subject: string;
   email: string;
   emailVerified: boolean;
+  /** The `profile` scope's full name; null when the account shares none. */
+  name: string | null;
 }
 
 type FetchLike = typeof fetch;
@@ -21,7 +23,7 @@ const TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
 const USERINFO_ENDPOINT = "https://openidconnect.googleapis.com/v1/userinfo";
 const SCOPES = ["openid", "email", "profile"];
 
-export type GoogleOAuthErrorCode =
+type GoogleOAuthErrorCode =
   | "token_exchange_failed"
   | "userinfo_failed"
   | "invalid_userinfo";
@@ -110,6 +112,7 @@ const fetchUserInfo = async (input: {
     sub?: unknown;
     email?: unknown;
     email_verified?: unknown;
+    name?: unknown;
   };
 
   if (typeof json.sub !== "string" || typeof json.email !== "string") {
@@ -123,6 +126,7 @@ const fetchUserInfo = async (input: {
     subject: json.sub,
     email: json.email,
     emailVerified,
+    name: typeof json.name === "string" ? json.name : null,
   };
 };
 

@@ -68,6 +68,7 @@ export const startApiRuntime = async (options: StartApiRuntimeOptions): Promise<
     ingestion: dependencies.connectorIngestionPort,
     approvalDecisionService: dependencies.approvalDecisionService,
     operatorReplyService: dependencies.operatorReplyService,
+    operatorIdentityResolver: dependencies.operatorIdentityResolver,
     auditService: dependencies.auditService,
     metricsRegistry: dependencies.metricsRegistry,
     workspaceInvalidationPublisher: dependencies.workspaceInvalidationPublisher,

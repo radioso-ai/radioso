@@ -24,7 +24,9 @@ const replyToConversationRequestSchema = z.object({
 }).strict();
 
 const transferConversationOwnershipRequestSchema = z.object({
-  toAccountId: z.string().uuid(),
+  toUserId: z.string().uuid().describe(
+    "The teammate to hand the conversation to. Pass your own user id to take a conversation another teammate holds.",
+  ),
   expectedVersion: z.number().int().nonnegative(),
 }).strict();
 
@@ -38,6 +40,25 @@ export const registerConversationOwnershipPaths = (
   security: OpenApiSecurity,
 ) => {
   const bearerSecurity = [{ [security.bearerAuthScheme.name]: [] }];
+
+  registry.registerPath({
+    method: "get",
+    path: "/api/v1/conversations/operators",
+    tags: ["Conversation Ownership"],
+    summary: "List the teammates who can own a conversation",
+    description:
+      "Returns the active teammates who hold conversation takeover permission on the workspace, labelled by display name, else email. These are the valid transfer targets.",
+    operationId: "listConversationOperators",
+    security: bearerSecurity,
+    responses: {
+      200: {
+        description: "Teammates returned",
+        content: json(schemas.ConversationOperatorsResponseSchema),
+      },
+      401: errorResponse("Authentication required", schemas),
+      403: errorResponse("Workspace conversation takeover permission required", schemas),
+    },
+  });
 
   registry.registerPath({
     method: "post",
@@ -98,6 +119,8 @@ export const registerConversationOwnershipPaths = (
     path: "/api/v1/conversations/{conversationId}/transfer",
     tags: ["Conversation Ownership"],
     summary: "Transfer human ownership of a conversation",
+    description:
+      "Hands a human-owned conversation to another teammate, or to yourself to take it from the teammate holding it. The receiving teammate gets an email with a link to the conversation unless they made the transfer. A target who is not a teammate able to own conversations on the workspace returns 404.",
     operationId: "transferConversationOwnership",
     security: bearerSecurity,
     request: {
@@ -115,7 +138,7 @@ export const registerConversationOwnershipPaths = (
       400: errorResponse("Request validation failed", schemas),
       401: errorResponse("Authentication required", schemas),
       403: errorResponse("Workspace conversation takeover permission required", schemas),
-      404: errorResponse("Conversation not found", schemas),
+      404: errorResponse("Conversation or transfer target not found", schemas),
       409: errorResponse("Conversation ownership changed", schemas),
     },
   });

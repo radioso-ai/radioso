@@ -64,7 +64,11 @@ export function ProfileView() {
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             disabled={!profile || isSaving}
+            aria-describedby="profile-display-name-help"
           />
+          <p id="profile-display-name-help" className="text-xs text-muted-foreground">
+            Shown to visitors when you reply.
+          </p>
         </div>
         <div className="space-y-2">
           <Label htmlFor="profile-email">Email</Label>

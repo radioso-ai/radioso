@@ -1,7 +1,7 @@
 ---
 title: "Human Takeover"
 description: "Operator API and contract for taking over conversations and suppressing AI while handling manual responses."
-last_updated: 2026-09-22
+last_updated: 2026-09-30
 ---
 
 # Human Takeover
@@ -65,7 +65,19 @@ or directly through authenticated API endpoints under `/api/v1/conversations`.
 
 All endpoints require a bearer workspace session with the
 `workspace.conversation.takeover` permission. Every action records a
-`hitl.ownership` audit event.
+`hitl.ownership` audit event whose metadata names the acting teammate as
+`actorUserId`; a transfer also records the receiving teammate as `targetUserId`.
+
+Ownership belongs to a person, not to the organisation. The ownership record
+names the teammate handling the conversation in `ownerUserId`, and labels them in
+`ownerDisplayName` with their display name, or their email until they set one.
+The label is read from the teammate's profile each time, so a rename shows in the
+Inbox at once. `ownerAccountId` is the organisation the workspace belongs to and
+is the same for every teammate. A conversation claimed before ownership named a
+person keeps the label it was claimed under, with `ownerUserId` set to `null`.
+The same ownership, label included, reaches anyone who reads the workspace's
+history with an API token or through the operator MCP server, so a teammate who
+has not set a display name is visible to them by email.
 
 ### Take over
 
@@ -79,7 +91,10 @@ Body:
 }
 ```
 
-`reason` is optional. The response returns the current ownership record.
+`reason` is optional. The response returns the current ownership record, with
+you as `ownerUserId`. Take over claims a conversation that is AI-owned or waiting
+unclaimed; one a teammate already holds returns `409`, and you take it from them
+with a [transfer](#transfer-ownership) to yourself instead.
 
 ### Reply as a human
 
@@ -95,10 +110,32 @@ Body:
 ```
 
 The reply is saved as an assistant-role message with `source:
-human_agent`. The message includes the operator identity in metadata. The
+human_agent`. Its `metadata.humanAgent` records who sent it — `accountId`,
+`userId` — and the signature the visitor sees, `displayName`. The signature is
+your display name, or your organisation's name if you have not set one. It is
+never your email: with neither a display name nor an organisation name, the reply
+goes out unsigned and the visitor sees it from "A teammate". The
 `expectedVersion` value must match the current human-owned ownership record; if
 the conversation has been transferred or handed back, the endpoint returns
 `409` with the current ownership record in `error.details.ownership`.
+
+### List teammates
+
+`GET /api/v1/conversations/operators`
+
+Returns the teammates a conversation can be handed to: active users of the
+workspace's organisation who hold `workspace.conversation.takeover` on it.
+
+```json
+{
+  "operators": [
+    { "userId": "6f1c2d4e-8a90-4b7c-9d1e-2f3a4b5c6d7e", "label": "Dana Scully" },
+    { "userId": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d", "label": "fox@example.com" }
+  ]
+}
+```
+
+Each `label` is the teammate label: a display name, or the email until one is set.
 
 ### Transfer ownership
 
@@ -108,16 +145,27 @@ Body:
 
 ```json
 {
-  "toAccountId": "00000000-0000-0000-0000-000000000000",
+  "toUserId": "6f1c2d4e-8a90-4b7c-9d1e-2f3a4b5c6d7e",
   "expectedVersion": 3
 }
 ```
 
+Transfer hands a human-owned conversation to a teammate — one waiting unclaimed,
+or one someone holds. Pass your own `userId` to take a conversation from the
+teammate holding it. `toUserId` must be one of the teammates
+[List teammates](#list-teammates) returns; anyone else, including a user in
+another organisation, returns `404`.
+
 `expectedVersion` is an optimistic concurrency token from the ownership record.
 If ownership changed since the caller read it, the endpoint returns `409` with
 the current ownership record in `error.details.ownership`.
-`toAccountId` must be the account that owns the conversation workspace; targets
-outside the workspace are rejected.
+
+When you hand a conversation to someone else and email delivery is configured,
+they get an email with a link to it in the dashboard. The email names who handed
+it over and the workspace, and
+carries none of the transcript. It is queued on the action outbox and sent by
+the worker, so the transfer returns without waiting for it and a failed send is
+retried. Taking a conversation yourself sends nothing.
 
 ### Hand back to the AI
 
@@ -190,8 +238,10 @@ Conversation detail responses include `tailCursor`, which clients should use for
 follow-up tail calls. With no cursor, tail returns the newest bounded page and a
 cursor for the newest returned message. Messages include `source`, so a visitor
 sees a human reply distinctly, plus `operatorDisplayName` on a human-agent reply
-so the visitor can see who is answering (rendered as "👤 <name>"); only the name
-is exposed, never the operator's account id. The operator tail also includes
+so the visitor can see who is answering (rendered as "👤 <name>"). That name is
+the reply's signature: the teammate's display name, or the organisation's name.
+Only the name is exposed — never an email, user id, or account id — and an
+unsigned reply shows as "👤 A teammate". The operator tail also includes
 `ownership`; the visitor tail never does.
 
 The third caller is an AI agent on the other side of the MCP converse surface. It
@@ -220,7 +270,8 @@ message until a topic exists — with an outcome chip (In progress, Completed,
 or Handed off) plus search and filters for outcome, agent, and site.
 
 In **Needs you**, the left pane lists open items with search and filters for
-type, agent, and who has taken each one; critical escalations — an approval
+type, agent, and who has taken each one — **Me** is you, not your whole
+organisation; critical escalations — an approval
 to decide, a handoff awaiting or held by a human — sort to the top, followed
 by written negative feedback ordered by its latest creation or edit.
 Automatically detected signals and uncommented feedback stay in **Quality**
@@ -230,11 +281,16 @@ Both lenses share the same reading pane. For an actionable conversation —
 one awaiting a human or already human-owned — selecting it shows a one-line
 header naming the visitor, the page they were on, and how long they have
 been waiting; a situation card with the handoff reason and the visitor's
-opening request; the live transcript; and a reply composer that stays
-visible throughout. Sending a reply claims the item for you — there is no
-separate take-over step. Messages carry attribution (a badge for human-agent
-and system messages), and the pane reads the tail endpoint while open, so
-new visitor messages and your own replies appear without a manual refresh.
+opening request; the live transcript; and a reply composer. Sending a reply
+claims a conversation nobody holds yet — there is no separate take-over step.
+**Hand to…** next to Send gives a waiting conversation, or one you hold, to a
+teammate. When a teammate holds the conversation, the composer gives way to
+"Dana Scully is handling this · **Take over**", so two people never reply
+blind; Take over moves it to you and brings the composer back, with anything
+you had drafted still in it. Messages carry attribution (a badge for
+human-agent and system messages), and the pane reads the tail endpoint while
+open, so new visitor messages and your own replies appear without a manual
+refresh.
 **Done** closes a handoff and hands the conversation back to the agent; on a
 negative-feedback item, **Done** opens the same resolution-reason flow
 Quality → Review uses to classify it. An approval closes when you choose one

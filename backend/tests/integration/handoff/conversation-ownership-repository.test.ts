@@ -4,6 +4,7 @@ import type { PoolClient, QueryResultRow } from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { ConversationOwnershipRepository } from "../../../src/db/repositories/conversationOwnershipRepository.js";
+import { ownerLabel } from "../../../src/modules/handoff/public.js";
 import { Database } from "../../../src/shared/infra/database.js";
 import { createKyselyDatabase } from "../../../src/shared/infra/kysely/kyselyDatabase.js";
 import { applyTestMigration } from "../../support/databaseMigrations.js";
@@ -103,6 +104,29 @@ const seedConversation = async (
   return { accountId, conversationId, workspaceId };
 };
 
+const seedUser = async (
+  database: Database,
+  input: { email: string; displayName?: string | null },
+): Promise<string> => {
+  const userId = randomUUID();
+  await database.execute(
+    `INSERT INTO users (id, email, password_hash, display_name)
+     VALUES ($1, $2, $3, $4)`,
+    [userId, input.email, "hash", input.displayName ?? null],
+  );
+  return userId;
+};
+
+const seedConversationFor = async (database: Database, accountId: string): Promise<string> => {
+  const conversationId = randomUUID();
+  await database.execute(
+    `INSERT INTO conversations (id, account_id)
+     VALUES ($1, $2)`,
+    [conversationId, accountId],
+  );
+  return conversationId;
+};
+
 describeIfDatabase("ConversationOwnershipRepository Postgres integration", () => {
   let database: Database;
   let backingDatabase: Database;
@@ -118,12 +142,15 @@ describeIfDatabase("ConversationOwnershipRepository Postgres integration", () =>
     await client.query(`SET search_path TO ${schema}, public`);
     database = createClientBackedDatabase(client);
     await applyTestMigration(database, "001_init.sql");
+    await applyTestMigration(database, "014_account_multi_user.sql");
     await applyTestMigration(database, "105_conversation_ownership.sql");
+    await applyTestMigration(database, "202_user_display_name.sql");
+    await applyTestMigration(database, "203_conversation_ownership_owner_user.sql");
     repository = new ConversationOwnershipRepository(database.kysely);
   });
 
   beforeEach(async () => {
-    await database.execute("TRUNCATE conversation_ownership, conversations, accounts CASCADE");
+    await database.execute("TRUNCATE conversation_ownership, conversations, account_memberships, users, accounts CASCADE");
   });
 
   afterAll(async () => {
@@ -161,7 +188,9 @@ describeIfDatabase("ConversationOwnershipRepository Postgres integration", () =>
       workspaceId,
       state: "human_owned",
       ownerAccountId: null,
-      ownerDisplayName: null,
+      ownerUserId: null,
+      ownerProfile: null,
+      ownerStoredLabel: null,
       reason: "routine_handoff",
       version: 1,
       takenOverAt: null,
@@ -174,17 +203,21 @@ describeIfDatabase("ConversationOwnershipRepository Postgres integration", () =>
     const { conversationId, workspaceId } = await seedConversation(database);
     const firstOperator = randomUUID();
     const secondOperator = randomUUID();
+    const firstUser = await seedUser(database, { email: "first@example.com", displayName: "First Operator" });
+    const secondUser = await seedUser(database, { email: "second@example.com", displayName: "Second Operator" });
 
     const claimed = await repository.takeOver({
       conversationId,
       workspaceId,
       accountId: firstOperator,
+      userId: firstUser,
       displayName: "First Operator",
     });
     const stale = await repository.takeOver({
       conversationId,
       workspaceId,
       accountId: secondOperator,
+      userId: secondUser,
       displayName: "Second Operator",
       expectedVersion: 1,
     });
@@ -198,7 +231,9 @@ describeIfDatabase("ConversationOwnershipRepository Postgres integration", () =>
       workspaceId,
       state: "human_owned",
       ownerAccountId: firstOperator,
-      ownerDisplayName: "First Operator",
+      ownerUserId: firstUser,
+      ownerProfile: { displayName: "First Operator", email: "first@example.com" },
+      ownerStoredLabel: "First Operator",
       reason: "operator_takeover",
       version: 1,
     });
@@ -215,6 +250,7 @@ describeIfDatabase("ConversationOwnershipRepository Postgres integration", () =>
       conversationId,
       workspaceId,
       accountId: randomUUID(),
+      userId: await seedUser(database, { email: "ada@example.com", displayName: "Ada Operator" }),
       displayName: "Ada Operator",
       expectedVersion: 1,
     });
@@ -222,36 +258,49 @@ describeIfDatabase("ConversationOwnershipRepository Postgres integration", () =>
     expect(claimed.ok).toBe(true);
     expect(claimed.record).toMatchObject({
       state: "human_owned",
-      ownerDisplayName: "Ada Operator",
+      ownerProfile: { displayName: "Ada Operator", email: "ada@example.com" },
+      ownerStoredLabel: "Ada Operator",
       reason: "operator_takeover",
       version: 2,
     });
   });
 
-  it("transfers ownership with CAS", async () => {
-    const { conversationId, workspaceId } = await seedConversation(database);
+  it("transfers ownership to another teammate with CAS", async () => {
+    const { accountId, conversationId, workspaceId } = await seedConversation(database);
+    const firstUser = await seedUser(database, { email: "first@example.com", displayName: "First Operator" });
+    const nextUser = await seedUser(database, { email: "next@example.com" });
     const claimed = await repository.takeOver({
       conversationId,
       workspaceId,
-      accountId: randomUUID(),
+      accountId,
+      userId: firstUser,
       displayName: "First Operator",
     });
-    const nextOperator = randomUUID();
 
     if (!claimed.ok) {
       throw new Error("Expected takeover to succeed");
     }
     const unchanged = await repository.transfer({
       conversationId,
-      accountId: claimed.record.ownerAccountId!,
-      displayName: claimed.record.ownerDisplayName!,
+      accountId,
+      userId: firstUser,
+      displayName: "First Operator",
       expectedVersion: claimed.record.version,
     });
     expect(unchanged).toEqual({ ok: true, changed: false, record: claimed.record });
+    const stale = await repository.transfer({
+      conversationId,
+      accountId,
+      userId: nextUser,
+      displayName: "next@example.com",
+      expectedVersion: claimed.record.version - 1,
+    });
+    expect(stale).toEqual({ ok: false, changed: false, record: claimed.record });
     const transferred = await repository.transfer({
       conversationId,
-      accountId: nextOperator,
-      displayName: "Next Operator",
+      accountId,
+      userId: nextUser,
+      displayName: "next@example.com",
       expectedVersion: claimed.record.version,
     });
 
@@ -262,8 +311,10 @@ describeIfDatabase("ConversationOwnershipRepository Postgres integration", () =>
     expect(transferred.record).toMatchObject({
       conversationId,
       state: "human_owned",
-      ownerAccountId: nextOperator,
-      ownerDisplayName: "Next Operator",
+      ownerAccountId: accountId,
+      ownerUserId: nextUser,
+      ownerProfile: { displayName: null, email: "next@example.com" },
+      ownerStoredLabel: "next@example.com",
       version: claimed.record.version + 1,
     });
   });
@@ -274,6 +325,7 @@ describeIfDatabase("ConversationOwnershipRepository Postgres integration", () =>
       conversationId,
       workspaceId,
       accountId: randomUUID(),
+      userId: await seedUser(database, { email: `${randomUUID()}@example.com`, displayName: "Ada Operator" }),
       displayName: "Ada Operator",
     });
 
@@ -294,7 +346,9 @@ describeIfDatabase("ConversationOwnershipRepository Postgres integration", () =>
       workspaceId,
       state: "ai_owned",
       ownerAccountId: null,
-      ownerDisplayName: null,
+      ownerUserId: null,
+      ownerProfile: null,
+      ownerStoredLabel: null,
       version: claimed.record.version + 1,
     });
     await expect(repository.handBack({
@@ -309,6 +363,7 @@ describeIfDatabase("ConversationOwnershipRepository Postgres integration", () =>
       conversationId,
       workspaceId,
       accountId: randomUUID(),
+      userId: await seedUser(database, { email: `${randomUUID()}@example.com`, displayName: "Ada Operator" }),
       displayName: "Ada Operator",
     });
     if (!claimed.ok) {
@@ -333,9 +388,122 @@ describeIfDatabase("ConversationOwnershipRepository Postgres integration", () =>
       workspaceId,
       state: "human_owned",
       ownerAccountId: null,
-      ownerDisplayName: null,
+      ownerUserId: null,
+      ownerProfile: null,
+      ownerStoredLabel: null,
       reason: "retrieval_miss",
       version: handedBack.record.version + 1,
     });
+  });
+
+  it("gives two teammates of one organisation distinct owners and labels", async () => {
+    const { accountId, conversationId, workspaceId } = await seedConversation(database);
+    const otherConversationId = await seedConversationFor(database, accountId);
+    const dana = await seedUser(database, { email: "dana@example.com", displayName: "Dana Scully" });
+    const fox = await seedUser(database, { email: "fox@example.com" });
+
+    const danaClaim = await repository.takeOver({ conversationId, workspaceId, accountId, userId: dana, displayName: "Dana Scully" });
+    const foxClaim = await repository.takeOver({
+      conversationId: otherConversationId,
+      workspaceId,
+      accountId,
+      userId: fox,
+      displayName: "fox@example.com",
+    });
+
+    expect(danaClaim.record).toMatchObject({ ownerAccountId: accountId, ownerUserId: dana });
+    expect(foxClaim.record).toMatchObject({ ownerAccountId: accountId, ownerUserId: fox });
+    expect(danaClaim.record && ownerLabel(danaClaim.record)).toBe("Dana Scully");
+    expect(foxClaim.record && ownerLabel(foxClaim.record)).toBe("fox@example.com");
+    const loaded = await repository.loadByConversationIds([conversationId, otherConversationId]);
+    expect(loaded.get(conversationId)?.ownerUserId).toBe(dana);
+    expect(loaded.get(otherConversationId)?.ownerUserId).toBe(fox);
+  });
+
+  it("reads the owner's label live, so a rename shows without a new claim", async () => {
+    const { accountId, conversationId, workspaceId } = await seedConversation(database);
+    const dana = await seedUser(database, { email: "dana@example.com" });
+    await repository.takeOver({ conversationId, workspaceId, accountId, userId: dana, displayName: "dana@example.com" });
+
+    await database.execute("UPDATE users SET display_name = $1 WHERE id = $2", ["Dana Scully", dana]);
+
+    const renamed = await repository.load(conversationId);
+    const renamedInBatch = (await repository.loadByConversationIds([conversationId])).get(conversationId);
+    expect(renamed).toMatchObject({ ownerUserId: dana, ownerStoredLabel: "dana@example.com" });
+    expect(renamed && ownerLabel(renamed)).toBe("Dana Scully");
+    expect(renamedInBatch && ownerLabel(renamedInBatch)).toBe("Dana Scully");
+
+    await database.execute("UPDATE users SET display_name = NULL WHERE id = $1", [dana]);
+
+    const cleared = await repository.load(conversationId);
+    expect(cleared && ownerLabel(cleared)).toBe("dana@example.com");
+  });
+
+  it("falls back to the label stored at claim time once the owner's user is gone", async () => {
+    const { accountId, conversationId, workspaceId } = await seedConversation(database);
+    const dana = await seedUser(database, { email: "dana@example.com", displayName: "Dana Scully" });
+    await repository.takeOver({ conversationId, workspaceId, accountId, userId: dana, displayName: "Dana Scully" });
+
+    await database.execute("DELETE FROM users WHERE id = $1", [dana]);
+
+    const orphaned = await repository.load(conversationId);
+    expect(orphaned).toMatchObject({
+      state: "human_owned",
+      ownerAccountId: accountId,
+      ownerUserId: null,
+      ownerProfile: null,
+      ownerStoredLabel: "Dana Scully",
+    });
+    expect(orphaned && ownerLabel(orphaned)).toBe("Dana Scully");
+  });
+
+  it("lets a teammate take a conversation from another by transfer, but never by takeover", async () => {
+    const { accountId, conversationId, workspaceId } = await seedConversation(database);
+    const dana = await seedUser(database, { email: "dana@example.com", displayName: "Dana Scully" });
+    const fox = await seedUser(database, { email: "fox@example.com", displayName: "Fox Mulder" });
+    const claimed = await repository.takeOver({ conversationId, workspaceId, accountId, userId: dana, displayName: "Dana Scully" });
+    if (!claimed.ok) {
+      throw new Error("Expected takeover to succeed");
+    }
+
+    const snatched = await repository.takeOver({ conversationId, workspaceId, accountId, userId: fox, displayName: "Fox Mulder" });
+    const taken = await repository.transfer({
+      conversationId,
+      accountId,
+      userId: fox,
+      displayName: "Fox Mulder",
+      expectedVersion: claimed.record.version,
+    });
+
+    expect(snatched).toEqual({ ok: false, changed: false, record: claimed.record });
+    expect(taken).toMatchObject({ ok: true, changed: true, record: { ownerUserId: fox, ownerProfile: { displayName: "Fox Mulder", email: "fox@example.com" } } });
+  });
+
+  it("assigns an unclaimed handoff to a teammate by transfer, stamping the claim", async () => {
+    const { accountId, conversationId, workspaceId } = await seedConversation(database);
+    const fox = await seedUser(database, { email: "fox@example.com", displayName: "Fox Mulder" });
+    const requested = await repository.requestHandoff({ conversationId, workspaceId, reason: "routine_handoff" });
+
+    const assigned = await repository.transfer({
+      conversationId,
+      accountId,
+      userId: fox,
+      displayName: "Fox Mulder",
+      expectedVersion: requested.record.version,
+    });
+
+    expect(assigned).toMatchObject({
+      ok: true,
+      changed: true,
+      record: {
+        state: "human_owned",
+        ownerAccountId: accountId,
+        ownerUserId: fox,
+        ownerProfile: { displayName: "Fox Mulder", email: "fox@example.com" },
+        ownerStoredLabel: "Fox Mulder",
+        reason: "routine_handoff",
+      },
+    });
+    expect(assigned.record?.takenOverAt).toBeInstanceOf(Date);
   });
 });

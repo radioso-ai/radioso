@@ -30,6 +30,9 @@ constructing ad hoc fetches.
 - `dashboard-routes.ts`: dashboard route helpers.
 - `teammate-label.ts`: how operator surfaces name a teammate — display name,
   else email. Visitor-facing surfaces never fall back to an email.
+- `operator-actions.ts`: who holds a conversation — keyed by the owning user,
+  compared to the signed-in user for "mine" — and what the response view offers:
+  reply, Hand to…, or Take over from a teammate.
 - `agent-draft-save-port.ts`: the agent-scoped async bridge that lets Test Chat
   await the mounted editor's real private draft save before execution.
 - `agent-revision-test-chat-session.ts`: the in-memory Test Chat session store,

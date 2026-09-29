@@ -109,7 +109,12 @@ import type {
   EvalSnapshotService,
 } from "../../modules/eval/composition.js";
 import type { ApprovalDecisionService } from "../../modules/approvals/public.js";
-import type { OperatorReplyService } from "../../modules/handoff/public.js";
+import type {
+  ConversationOperatorDirectory,
+  ConversationTransferNotices,
+  OperatorIdentityResolver,
+  OperatorReplyService,
+} from "../../modules/handoff/public.js";
 import type { VectorIndexReconciler } from "../../modules/retrieval/composition.js";
 import type {
   EmbeddingBindingResolverPort,
@@ -238,6 +243,12 @@ export interface AppDependencies {
   chatService: ChatService;
   approvalDecisionService: ApprovalDecisionService;
   operatorReplyService: OperatorReplyService;
+  /** Who a signed-in teammate is to other teammates and, on their replies, to the visitor. */
+  operatorIdentityResolver: Pick<OperatorIdentityResolver, "resolve">;
+  /** The teammates a conversation can be handed to in a workspace. */
+  conversationOperatorDirectory: ConversationOperatorDirectory;
+  /** Queues the email a teammate gets when a conversation is handed to them. */
+  conversationTransferNotices: Pick<ConversationTransferNotices, "queueForRecipient">;
   workbenchReplayRunner: WorkbenchReplayRunner;
   /** Operator-only immutable candidate test executions; never mounted on public chat. */
   testExecutionService: TestExecutionService;

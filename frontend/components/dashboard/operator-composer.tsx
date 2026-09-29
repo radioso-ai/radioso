@@ -1,13 +1,19 @@
 'use client'
 
 import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Send } from 'lucide-react'
+import { ChevronDown, Send } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Textarea } from '@/components/ui/textarea'
 import { hitlApi, isHitlApiStatusError } from '@/lib/api-hitl'
-import type { ConversationOwnership, PendingApprovalDecision } from '@/lib/api-types'
-import { deriveOperatorActions } from '@/lib/operator-actions'
+import type { ConversationOperator, ConversationOwnership, PendingApprovalDecision } from '@/lib/api-types'
+import { deriveOperatorActions, listHandOffTargets } from '@/lib/operator-actions'
 import { cn } from '@/lib/utils'
 
 /**
@@ -24,6 +30,7 @@ export type OperatorActionResult =
   | { kind: 'refresh'; conversationId: string; reason: 'conflict' | 'invalid_option' }
 
 const genericError = 'Something went wrong. Try again.'
+const NO_TEAMMATES: readonly ConversationOperator[] = []
 
 /**
  * Shared busy/single-flight/conflict handling for the three operator mutations
@@ -51,6 +58,9 @@ export function useOperatorActionRunner(
   const run = useCallback(async (
     actionId: string,
     callback: () => Promise<OperatorActionResult>,
+    // A 404 the caller can explain (a transfer target no longer eligible) shows this message and
+    // runs `onNotFound` instead of the generic failure.
+    notFound?: { message: string; onNotFound?: () => void },
   ) => {
     if (inFlightRef.current) {
       return
@@ -66,6 +76,9 @@ export function useOperatorActionRunner(
         const invalidOption = isHitlApiStatusError(caught, 422)
         setError(invalidOption ? 'That option is no longer valid - refreshing.' : 'This conversation changed - refreshing.')
         await onChanged({ kind: 'refresh', conversationId, reason: invalidOption ? 'invalid_option' : 'conflict' })
+      } else if (notFound && isHitlApiStatusError(caught, 404)) {
+        setError(notFound.message)
+        notFound.onNotFound?.()
       } else {
         setError(genericError)
       }
@@ -84,9 +97,15 @@ export function useOperatorActionRunner(
   }
 }
 
-export interface OperatorComposerProps {
+interface OperatorComposerProps {
   conversationId: string
   ownership: ConversationOwnership | undefined
+  /** The signed-in teammate, compared to the ownership's user to tell "mine" from a teammate's. */
+  currentUserId: string | null
+  /** Teammates who can own the conversation, offered by "Hand to…". */
+  teammates?: readonly ConversationOperator[]
+  /** Re-reads the teammates when a transfer finds its target no longer eligible. */
+  onTeammatesStale?: () => void
   onChanged: (result: OperatorActionResult) => Promise<void> | void
   disabled?: boolean
   /**
@@ -109,27 +128,50 @@ export interface OperatorComposerProps {
 }
 
 /**
- * The always-visible reply composer (FR-009). Sending implicitly claims the
- * conversation: an AI-owned conversation is taken over first, then the reply is
- * sent against the fresh ownership version — there is no separate take-over
- * step or button on this surface. A 409/422 on send surfaces as a conflict
- * message while preserving the drafted text (FR-012); only a successful send
- * clears the textarea.
+ * The reply composer (FR-009). Sending implicitly claims a conversation that
+ * is AI-owned or waiting unclaimed: it is taken over first, then the reply is
+ * sent against the fresh ownership version. A conversation a teammate holds
+ * shows who is handling it and a Take over action instead, so two people never
+ * reply blind; taking over transfers it to the signed-in teammate. "Hand to…"
+ * transfers a waiting or own conversation to a teammate. A 409/422 surfaces as
+ * a conflict message while preserving the drafted text (FR-012) — the draft
+ * lives here, not in the textarea, so it survives the composer being swapped
+ * for the take-over line; only a successful send clears it.
  */
 export function OperatorComposer({
   conversationId,
   ownership,
+  currentUserId,
+  teammates = NO_TEAMMATES,
+  onTeammatesStale,
   onChanged,
   disabled,
   trailingActions,
   externalError,
 }: OperatorComposerProps) {
   const [message, setMessage] = useState('')
-  const actions = useMemo(() => deriveOperatorActions(ownership), [ownership])
+  const actions = useMemo(() => deriveOperatorActions(ownership, currentUserId), [ownership, currentUserId])
+  const handOffTargets = useMemo(
+    () => (actions.canHandOff ? listHandOffTargets(teammates, ownership) : []),
+    [actions.canHandOff, ownership, teammates],
+  )
   const runner = useOperatorActionRunner(conversationId, onChanged)
   const trimmedMessage = message.trim()
   const isDisabled = disabled || runner.isBusy
   const visibleError = runner.error ?? externalError ?? null
+
+  const transferTo = useCallback((actionId: 'hand-off' | 'take-over', toUserId: string) => {
+    void runner.run(actionId, async () => {
+      if (actions.version === null) {
+        throw new Error('Missing conversation ownership version.')
+      }
+      const response = await hitlApi.transferConversation(conversationId, { toUserId, expectedVersion: actions.version })
+      return { kind: 'ownership', conversationId, ownershipState: response.ownership.state }
+    }, {
+      message: actionId === 'take-over' ? 'You can no longer take this over.' : 'That teammate can no longer take this.',
+      onNotFound: onTeammatesStale,
+    })
+  }, [actions.version, conversationId, onTeammatesStale, runner])
 
   const handleSend = useCallback(() => {
     if (trimmedMessage.length === 0) {
@@ -137,10 +179,10 @@ export function OperatorComposer({
     }
     void runner.run('send', async () => {
       let version = actions.version
-      // Claims the conversation as part of sending whenever it isn't already
-      // claimed by a specific human - both AI-owned and an unclaimed handoff
-      // ("awaiting a human") are still take-over-able (FR-009).
-      if (actions.canTakeOver) {
+      // Claims the conversation as part of sending whenever nobody holds it -
+      // both AI-owned and an unclaimed handoff ("awaiting a human") are still
+      // take-over-able (FR-009).
+      if (actions.claimsOnSend) {
         const takeover = await hitlApi.takeOverConversation(conversationId, {})
         version = takeover.ownership.version
       }
@@ -151,7 +193,38 @@ export function OperatorComposer({
       setMessage('')
       return { kind: 'reply', conversationId }
     })
-  }, [actions.canTakeOver, actions.version, conversationId, runner, trimmedMessage])
+  }, [actions.claimsOnSend, actions.version, conversationId, runner, trimmedMessage])
+
+  if (!actions.canReply) {
+    return (
+      <div className="flex shrink-0 flex-col gap-2 border-t border-border bg-background px-6 pb-4 pt-4">
+        {visibleError ? (
+          <p className="text-xs text-destructive" role="status" aria-live="polite">
+            {visibleError}
+          </p>
+        ) : null}
+        <div className="flex items-center gap-2 text-sm">
+          <span className="text-muted-foreground">
+            {actions.owner?.label ?? 'A teammate'} is handling this
+          </span>
+          <span aria-hidden className="text-muted-foreground">·</span>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={isDisabled || currentUserId === null}
+            onClick={() => {
+              if (currentUserId !== null) {
+                transferTo('take-over', currentUserId)
+              }
+            }}
+          >
+            Take over
+          </Button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div
@@ -191,6 +264,23 @@ export function OperatorComposer({
           <Send className="h-3.5 w-3.5" aria-hidden />
           Send
         </Button>
+        {handOffTargets.length > 0 ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button type="button" size="sm" variant="ghost" className="gap-1" disabled={isDisabled}>
+                Hand to…
+                <ChevronDown className="h-3.5 w-3.5" aria-hidden />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              {handOffTargets.map((teammate) => (
+                <DropdownMenuItem key={teammate.userId} onSelect={() => transferTo('hand-off', teammate.userId)}>
+                  {teammate.label}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : null}
         <span className="flex-1" />
         {trailingActions}
       </div>
@@ -198,7 +288,7 @@ export function OperatorComposer({
   )
 }
 
-export interface ApprovalDecisionPanelProps {
+interface ApprovalDecisionPanelProps {
   conversationId: string
   decision: PendingApprovalDecision
   onChanged: (result: OperatorActionResult) => Promise<void> | void

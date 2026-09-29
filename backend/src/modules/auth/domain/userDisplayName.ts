@@ -74,3 +74,26 @@ export const normalizeDisplayName = (input: string | null): DisplayNameNormaliza
   }
   return { ok: true, displayName: trimmed };
 };
+
+/**
+ * How teammates are named to each other on operator surfaces: the name a person
+ * chose, or their email until they choose one. Never shown to a visitor.
+ */
+export const teammateLabel = (user: { displayName: string | null; email: string }): string =>
+  user.displayName ?? user.email;
+
+/**
+ * The name a visitor sees on a teammate's reply: the name they chose, else the
+ * organisation's name, else nothing. An email is private to the workspace, so it
+ * is never a fallback here.
+ */
+export const visitorFacingName = (input: {
+  displayName: string | null;
+  organizationName: string | null;
+}): string | null => {
+  if (input.displayName) {
+    return input.displayName;
+  }
+  const organizationName = input.organizationName?.trim() ?? "";
+  return organizationName.length > 0 ? organizationName : null;
+};

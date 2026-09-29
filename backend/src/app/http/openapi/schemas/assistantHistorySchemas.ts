@@ -288,8 +288,15 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       conversationId: z.string().uuid(),
       workspaceId: z.string().uuid(),
       state: z.enum(["ai_owned", "human_owned"]),
-      ownerAccountId: z.string().uuid().nullable(),
-      ownerDisplayName: z.string().nullable(),
+      ownerAccountId: z.string().uuid().nullable().openapi({
+        description: "The organisation the workspace belongs to while a teammate owns the conversation. Shared by every teammate, so it does not identify one.",
+      }),
+      ownerUserId: z.string().uuid().nullable().openapi({
+        description: "The teammate handling the conversation. Null while a handoff waits to be claimed, when AI-owned, and on conversations claimed before per-teammate ownership.",
+      }),
+      ownerDisplayName: z.string().nullable().openapi({
+        description: "The owner's teammate label: their display name, else their email. Operator-facing only.",
+      }),
       reason: z.string().nullable(),
       version: z.number().int().nonnegative(),
       takenOverAt: z.string().datetime().nullable(),
@@ -648,6 +655,21 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     }),
   );
 
+  const ConversationOperatorSchema = registry.register(
+    "ConversationOperator",
+    z.object({
+      userId: z.string().uuid(),
+      label: z.string().openapi({ description: "The teammate label: display name, else email." }),
+    }),
+  );
+
+  const ConversationOperatorsResponseSchema = registry.register(
+    "ConversationOperatorsResponse",
+    z.object({
+      operators: z.array(ConversationOperatorSchema),
+    }),
+  );
+
   const HumanReplyMessageSchema = registry.register(
     "HumanReplyMessage",
     z.object({
@@ -829,6 +851,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     ChatSuggestionSchema,
     ConversationOwnershipSchema,
     ConversationOwnershipResponseSchema,
+    ConversationOperatorsResponseSchema,
     AssistantRouteSchema,
     AssistantRouteDiagnosticsSchema,
     CapabilitySubTraceSchema,

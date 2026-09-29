@@ -19,7 +19,7 @@ import { randomBytes } from "node:crypto";
 import type { ApprovalDecisionService } from "../../approvals/public.js";
 import type { AuditPort } from "../../audit/contracts/index.js";
 import type { AgentStarterPromptReader } from "../../chat/contracts/index.js";
-import type { OperatorReplyService } from "../../handoff/public.js";
+import type { OperatorIdentityResolver, OperatorReplyService } from "../../handoff/public.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import { stringifyUnknown } from "../../../shared/text/stringifyUnknown.js";
 import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
@@ -125,6 +125,7 @@ export class ConnectorRegistry {
     ingestion: ConnectorIngestionPort;
     approvalDecisionService?: Pick<ApprovalDecisionService, "resolve">;
     operatorReplyService?: Pick<OperatorReplyService, "reply">;
+    operatorIdentityResolver?: Pick<OperatorIdentityResolver, "resolve">;
     auditService?: Pick<AuditPort, "record">;
     metricsRegistry?: Pick<MetricsRegistry, "incrementCounter"> | null;
     workspaceInvalidationPublisher?: WorkspaceInvalidationPublisher;
@@ -142,6 +143,7 @@ export class ConnectorRegistry {
           ingestion: context.ingestion,
           approvalDecisionService: context.approvalDecisionService,
           operatorReplyService: context.operatorReplyService,
+          operatorIdentityResolver: context.operatorIdentityResolver,
           auditService: context.auditService,
           metricsRegistry: context.metricsRegistry,
           workspaceInvalidationPublisher: context.workspaceInvalidationPublisher,

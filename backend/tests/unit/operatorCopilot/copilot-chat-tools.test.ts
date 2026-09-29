@@ -45,6 +45,7 @@ describe("copilot chat readers", () => {
       includeOwnership: true,
       includeTurnFailureDebug: true,
       includeLatency: true,
+      includeUnattributedReplySignatures: true,
     });
   });
 
@@ -100,6 +101,7 @@ describe("copilot chat readers", () => {
       includeOwnership: true,
       includeTurnFailureDebug: true,
       includeLatency: true,
+      includeUnattributedReplySignatures: true,
     });
     expect(result.transcript.messages[0]).toMatchObject({
       answerOutcome: "retrieval.answer",

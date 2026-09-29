@@ -111,6 +111,8 @@ import { RoutineStateRepository } from "../../db/repositories/routineStateReposi
 import { QUALITY_RESOLUTION_REASONS } from "../../modules/quality/domain/resolution.js";
 import { buildOperatorMcpServices } from "./builders/operatorMcp.js";
 import { createDefaultVisitorGeoResolver } from "../composition/visitorGeoResolver.js";
+import { createConversationOperatorDirectory } from "../composition/conversationOperatorDirectory.js";
+import { ConversationTransferNotices, OperatorIdentityResolver } from "../../modules/handoff/public.js";
 import { buildConversationLinkResolver } from "../composition/conversationLinkResolver.js";
 import { resolveWorkspaceManagedLlmModels } from "../../shared/infra/llm/workspaceManagedModels.js";
 import type { OperatorMcpClientMetadataSnapshot } from "../../modules/operatorMcpAuthorization/public.js";
@@ -433,6 +435,10 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     logger,
     createId: randomUUID,
   });
+  const operatorIdentityResolver = new OperatorIdentityResolver({
+    users: repositories.userRepository,
+    accounts: repositories.accountRepository,
+  });
   const evalServices = buildEvalServices({
     chat,
     infrastructure,
@@ -446,6 +452,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     skillSettingsResolver,
     workspaceInvalidationPublisher: realtimePublisherComposition.publisher,
     revisionEvalRunRetentionDays: env.AGENT_REVISION_EVAL_RUN_RETENTION_DAYS,
+    operatorIdentityResolver,
   });
   const {
     evalCaseService,
@@ -1083,6 +1090,9 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     chatService: chat.chatService,
     approvalDecisionService: chat.approvalDecisionService,
     operatorReplyService,
+    operatorIdentityResolver,
+    conversationOperatorDirectory: createConversationOperatorDirectory({ accountAccess: access.accountAccessService }),
+    conversationTransferNotices: new ConversationTransferNotices({ outbox: chat.actionOutbox, logger }),
     workbenchReplayRunner: chat.workbenchReplayRunner,
     testExecutionService,
     chatBootstrapService: chat.chatBootstrapService,

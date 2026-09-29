@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import {
   accountId,
+  currentUserId,
   defaultAgentId,
   installDashboardApiMocks,
   nowIso,
@@ -18,6 +19,7 @@ test("operator opens the inbox, replies to a handoff, marks it done, and the deb
     workspaceId,
     state: "human_owned" as const,
     ownerAccountId: null,
+    ownerUserId: null,
     ownerDisplayName: null,
     reason: "agent had no weekly schedule information",
     version: 1,
@@ -28,6 +30,7 @@ test("operator opens the inbox, replies to a handoff, marks it done, and the deb
   const humanOwnership = {
     ...ownership,
     ownerAccountId: accountId,
+    ownerUserId: currentUserId,
     ownerDisplayName: "Test Operator",
     version: 2,
     takenOverAt: nowIso,
@@ -98,7 +101,7 @@ test("operator opens the inbox, replies to a handoff, marks it done, and the deb
     conversationDetail,
     takeOverConversationResponse: { ownership: humanOwnership },
     handBackConversationResponse: {
-      ownership: { ...humanOwnership, state: "ai_owned", ownerAccountId: null, ownerDisplayName: null, version: 3 },
+      ownership: { ...humanOwnership, state: "ai_owned", ownerAccountId: null, ownerUserId: null, ownerDisplayName: null, version: 3 },
     },
     requestLog,
   });
@@ -690,4 +693,199 @@ test("the recently-closed strip shows the resolution and when it was closed", as
   // followed by non-empty content) rather than an exact date string.
   await expect(queue.getByText(/^Dismissed · .+/)).toBeVisible();
   await expect(queue.getByText("Dismissed", { exact: true })).toHaveCount(0);
+});
+
+// ── Per-teammate ownership ──────────────────────────────────────────────────
+
+const teammates = [
+  { userId: currentUserId, label: "Test Operator" },
+  { userId: "user-dana", label: "Dana Scully" },
+];
+
+const handoffOwnership = (conversationId: string, owner: { userId: string; label: string } | null, version: number) => ({
+  conversationId,
+  workspaceId,
+  state: "human_owned" as const,
+  ownerAccountId: owner ? accountId : null,
+  ownerUserId: owner?.userId ?? null,
+  ownerDisplayName: owner?.label ?? null,
+  reason: "visitor asked for a person",
+  version,
+  takenOverAt: owner ? nowIso : null,
+  createdAt: nowIso,
+  updatedAt: nowIso,
+});
+
+type HandoffOwnershipFixture = ReturnType<typeof handoffOwnership>;
+
+const handoffSummary = (id: string, preview: string, ownership: HandoffOwnershipFixture) => ({
+  id,
+  agentId: defaultAgentId,
+  agentName: "Gioia",
+  sourceChannel: "authenticated_chat",
+  sourceOrigin: null,
+  anonymousSessionId: null,
+  createdAt: nowIso,
+  updatedAt: nowIso,
+  messageCount: 1,
+  userMessageCount: 1,
+  assistantMessageCount: 0,
+  preview,
+  ownership,
+});
+
+const handoffDetail = (id: string, ownership: HandoffOwnershipFixture) => ({
+  conversationId: id,
+  workspaceId,
+  agentId: defaultAgentId,
+  agentName: "Gioia",
+  sourceChannel: "authenticated_chat",
+  sourceOrigin: null,
+  createdAt: nowIso,
+  updatedAt: nowIso,
+  messageCount: 1,
+  userMessageCount: 1,
+  assistantMessageCount: 0,
+  messagesTotal: 1,
+  messageWindowOffset: 0,
+  messageWindowLimit: 50,
+  hasOlderMessages: false,
+  nextCursor: null,
+  ownership,
+  messages: [
+    { id: `${id}-message`, role: "user" as const, source: "customer" as const, content: "Can I speak to someone?", createdAt: nowIso },
+  ],
+});
+
+const stubEmptyQualityQueue = async (page: import("@playwright/test").Page) => {
+  await page.route("**/backend/api/v1/quality/turns**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ items: [], total: 0, page: 1, pageSize: 25, totalPages: 1 }),
+    });
+  });
+};
+
+test("operator hands a waiting handoff to a teammate, who then holds it", async ({ page }) => {
+  const conversationId = "conversation-hand-to";
+  const waiting = handoffOwnership(conversationId, null, 1);
+  const transferRequests: Array<{ toUserId: string; expectedVersion: number }> = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    historyList: { conversations: [handoffSummary(conversationId, "Refund for a cancelled class", waiting)], total: 1, nextCursor: null, hasMore: false },
+    conversationDetails: { [conversationId]: handoffDetail(conversationId, waiting) },
+    conversationOperators: teammates,
+    transferRequests,
+  });
+  await stubEmptyQualityQueue(page);
+
+  await page.goto(`/w/${workspaceKey}/activity`);
+  await page.getByLabel("Inbox queue").getByRole("button", { name: /Refund for a cancelled class/ }).click();
+
+  const response = page.getByLabel("Response", { exact: true });
+  await response.getByRole("textbox", { name: "Reply to the visitor" }).fill("Draft for Dana");
+  await response.getByRole("button", { name: "Hand to…" }).click();
+  await page.getByRole("menuitem", { name: "Dana Scully" }).click();
+
+  await expect.poll(() => transferRequests).toEqual([{ toUserId: "user-dana", expectedVersion: 1 }]);
+  await expect(response.getByText("Dana Scully is handling this")).toBeVisible();
+  await expect(response.getByRole("textbox", { name: "Reply to the visitor" })).toHaveCount(0);
+  await expect(response.getByRole("button", { name: "Take over" })).toBeVisible();
+});
+
+test("handing to a teammate who can no longer take it keeps the draft and re-reads the teammates", async ({ page }) => {
+  const conversationId = "conversation-hand-to-gone";
+  const waiting = handoffOwnership(conversationId, null, 1);
+  const requestLog: string[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    historyList: { conversations: [handoffSummary(conversationId, "Billing question", waiting)], total: 1, nextCursor: null, hasMore: false },
+    conversationDetails: { [conversationId]: handoffDetail(conversationId, waiting) },
+    conversationOperators: [...teammates, { userId: "user-skinner", label: "Walter Skinner" }],
+    ineligibleTransferTargets: ["user-skinner"],
+    requestLog,
+  });
+  await stubEmptyQualityQueue(page);
+
+  await page.goto(`/w/${workspaceKey}/activity`);
+  await page.getByLabel("Inbox queue").getByRole("button", { name: /Billing question/ }).click();
+
+  const response = page.getByLabel("Response", { exact: true });
+  const replyBox = response.getByRole("textbox", { name: "Reply to the visitor" });
+  const teammateReads = () => requestLog.filter((entry) => entry === "GET /conversations/operators").length;
+  await replyBox.fill("Draft that must survive");
+  await response.getByRole("button", { name: "Hand to…" }).click();
+  const readsBeforeHandOff = teammateReads();
+  await page.getByRole("menuitem", { name: "Walter Skinner" }).click();
+
+  await expect(response.getByRole("status")).toBeVisible();
+  await expect(replyBox).toHaveValue("Draft that must survive");
+  await expect.poll(teammateReads).toBeGreaterThan(readsBeforeHandOff);
+});
+
+test("operator takes over a handoff a teammate holds and gets the composer back", async ({ page }) => {
+  const conversationId = "conversation-take-over";
+  const heldByDana = handoffOwnership(conversationId, teammates[1], 4);
+  const transferRequests: Array<{ toUserId: string; expectedVersion: number }> = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    historyList: { conversations: [handoffSummary(conversationId, "Invoice address change", heldByDana)], total: 1, nextCursor: null, hasMore: false },
+    conversationDetails: { [conversationId]: handoffDetail(conversationId, heldByDana) },
+    conversationOperators: teammates,
+    transferRequests,
+  });
+  await stubEmptyQualityQueue(page);
+
+  await page.goto(`/w/${workspaceKey}/activity`);
+  await page.getByLabel("Inbox queue").getByRole("button", { name: /Invoice address change/ }).click();
+
+  const response = page.getByLabel("Response", { exact: true });
+  await expect(response.getByText("Dana Scully is handling this")).toBeVisible();
+  await expect(response.getByRole("textbox", { name: "Reply to the visitor" })).toHaveCount(0);
+
+  await response.getByRole("button", { name: "Take over" }).click();
+
+  await expect.poll(() => transferRequests).toEqual([{ toUserId: currentUserId, expectedVersion: 4 }]);
+  await expect(response.getByRole("textbox", { name: "Reply to the visitor" })).toBeVisible();
+  await expect(response.getByText("Dana Scully is handling this")).toHaveCount(0);
+});
+
+test("the Taken by: Me filter shows only the signed-in teammate's handoffs, not the whole organisation's", async ({ page }) => {
+  const mine = handoffOwnership("conversation-mine", teammates[0], 2);
+  const danas = handoffOwnership("conversation-danas", teammates[1], 2);
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    historyList: {
+      conversations: [
+        handoffSummary("conversation-mine", "Mine to answer", mine),
+        handoffSummary("conversation-danas", "Dana is on it", danas),
+      ],
+      total: 2,
+      nextCursor: null,
+      hasMore: false,
+    },
+  });
+  await stubEmptyQualityQueue(page);
+
+  await page.goto(`/w/${workspaceKey}/activity`);
+  const queue = page.getByLabel("Inbox queue");
+  await expect(queue.getByRole("button", { name: /Mine to answer/ })).toBeVisible();
+  await expect(queue.getByRole("button", { name: /Dana is on it/ })).toBeVisible();
+
+  await queue.getByLabel("Filter by taken by").click();
+  await page.getByRole("option", { name: "Me", exact: true }).click();
+
+  await expect(queue.getByRole("button", { name: /Mine to answer/ })).toBeVisible();
+  await expect(queue.getByRole("button", { name: /Dana is on it/ })).toHaveCount(0);
+
+  await queue.getByLabel("Filter by taken by").click();
+  await page.getByRole("option", { name: "Dana Scully" }).click();
+
+  await expect(queue.getByRole("button", { name: /Dana is on it/ })).toBeVisible();
+  await expect(queue.getByRole("button", { name: /Mine to answer/ })).toHaveCount(0);
 });

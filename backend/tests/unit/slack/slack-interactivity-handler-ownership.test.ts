@@ -25,7 +25,9 @@ const ownershipRecord = (overrides: Partial<ConversationOwnershipRecord> = {}): 
   workspaceId: "ws_conversation",
   state: "human_owned",
   ownerAccountId: "acct_1",
-  ownerDisplayName: "Dana",
+  ownerUserId: "user_1",
+  ownerProfile: { displayName: "Dana Scully", email: "dana@example.com" },
+  ownerStoredLabel: "Dana Scully",
   reason: "operator_takeover",
   version: 3,
   takenOverAt: new Date("2026-01-01T00:00:00Z"),
@@ -61,7 +63,7 @@ const viewPayload = (value: string) => ({
 });
 
 const createHandler = (overrides: {
-  identity?: { accountId: string; userId: string | null; displayName: string | null } | { rejected: true };
+  identity?: { accountId: string; userId: string; displayName: string | null } | { rejected: true };
   currentOwnership?: ConversationOwnershipRecord | null;
   takeOverResult?: ConversationOwnershipMutationResult;
   handBackResult?: ConversationOwnershipMutationResult;
@@ -78,7 +80,9 @@ const createHandler = (overrides: {
       record: ownershipRecord({
         state: "ai_owned",
         ownerAccountId: null,
-        ownerDisplayName: null,
+        ownerUserId: null,
+        ownerProfile: null,
+        ownerStoredLabel: null,
         reason: null,
         version: 4,
         takenOverAt: null,
@@ -103,12 +107,16 @@ const createHandler = (overrides: {
     resolve: vi.fn(async () => overrides.identity ?? {
       accountId: "acct_1",
       userId: "user_1",
-      displayName: "Dana",
+      displayName: "Dana on Slack",
     }),
+  };
+  const operatorIdentities = {
+    resolve: vi.fn(async () => ({ userId: "user_1", teammateLabel: "Dana Scully", replySignature: "Dana Scully" })),
   };
   const handler = new SlackInteractivityHandler({
     installations: { findByTeamId: vi.fn(async () => installation) },
     identityResolver,
+    operatorIdentities,
     conversationOwnership: ownership,
     operatorReplyService: operatorReply,
     slackViews: { open: viewsOpen },
@@ -121,7 +129,7 @@ const createHandler = (overrides: {
     workspaceInvalidationPublisher: publisher,
     conversationLinks: overrides.conversationLinks,
   });
-  return { handler, ownership, viewsOpen, operatorReply, responsePosts, audit, identityResolver, publisher };
+  return { handler, ownership, viewsOpen, operatorReply, responsePosts, audit, identityResolver, operatorIdentities, publisher };
 };
 
 describe("SlackInteractivityHandler ownership branch", () => {
@@ -166,26 +174,30 @@ describe("SlackInteractivityHandler ownership branch", () => {
   });
 
   it("takes over a conversation, audits it, and updates the Slack message with talk and handback", async () => {
-    const { handler, ownership, responsePosts, audit, identityResolver, publisher } = createHandler();
+    const { handler, ownership, responsePosts, audit, identityResolver, operatorIdentities, publisher } = createHandler();
 
     await handler.handleBlockActions(blockPayload("ownership_takeover", {
       conversationId: "conv_1",
       workspaceId: "ws_conversation",
     }));
 
+    expect(operatorIdentities.resolve).toHaveBeenCalledWith({ accountId: "acct_1", userId: "user_1" });
     expect(ownership.takeOver).toHaveBeenCalledWith({
       conversationId: "conv_1",
       workspaceId: "ws_conversation",
       accountId: "acct_1",
-      displayName: "Dana",
+      userId: "user_1",
+      displayName: "Dana Scully",
     });
     expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
       accountId: "acct_1",
       workspaceId: "ws_conversation",
       eventType: "hitl.ownership",
       eventStatus: "success",
-      metadata: expect.objectContaining({ action: "taken_over", conversationId: "conv_1" }),
+      metadata: expect.objectContaining({ action: "taken_over", conversationId: "conv_1", actorUserId: "user_1" }),
     }));
+    expect(JSON.stringify(responsePosts[0].body.blocks)).toContain("Dana Scully");
+    expect(JSON.stringify(responsePosts[0].body.blocks)).not.toContain("Dana on Slack");
     expect(identityResolver.resolve).toHaveBeenCalledWith({
       installation,
       workspaceId: "ws_conversation",
@@ -220,7 +232,7 @@ describe("SlackInteractivityHandler ownership branch", () => {
 
   it("posts an ephemeral refresh when takeover loses the ownership race", async () => {
     const { handler, responsePosts, audit } = createHandler({
-      takeOverResult: { ok: false, changed: false, record: ownershipRecord({ ownerDisplayName: "Lee", version: 4 }) },
+      takeOverResult: { ok: false, changed: false, record: ownershipRecord({ ownerProfile: null, ownerStoredLabel: "Lee", version: 4 }) },
     });
 
     await handler.handleBlockActions(blockPayload("ownership_takeover", {
@@ -310,7 +322,7 @@ describe("SlackInteractivityHandler ownership branch", () => {
 
   it("does not open the reply modal when the conversation is not human-owned", async () => {
     const { handler, viewsOpen, responsePosts } = createHandler({
-      currentOwnership: ownershipRecord({ state: "ai_owned", ownerAccountId: null, ownerDisplayName: null }),
+      currentOwnership: ownershipRecord({ state: "ai_owned", ownerAccountId: null, ownerUserId: null, ownerProfile: null, ownerStoredLabel: null }),
     });
 
     await handler.handleBlockActions(blockPayload("ownership_talk", {
@@ -335,7 +347,7 @@ describe("SlackInteractivityHandler ownership branch", () => {
       conversationId: "conv_1",
       workspaceId: "ws_conversation",
       accountId: "acct_1",
-      displayName: "Dana",
+      userId: "user_1",
       message: "Hello customer",
     });
   });
@@ -350,7 +362,7 @@ describe("SlackInteractivityHandler ownership branch", () => {
     expect(empty.operatorReply.reply).not.toHaveBeenCalled();
 
     const aiOwned = createHandler({
-      currentOwnership: ownershipRecord({ state: "ai_owned", ownerAccountId: null, ownerDisplayName: null }),
+      currentOwnership: ownershipRecord({ state: "ai_owned", ownerAccountId: null, ownerUserId: null, ownerProfile: null, ownerStoredLabel: null }),
     });
     const aiOwnedResult = await aiOwned.handler.handleViewSubmission(viewPayload("Hello"));
     expect(aiOwnedResult).toEqual({

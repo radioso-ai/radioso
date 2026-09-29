@@ -189,6 +189,13 @@ export interface ApplicationDirectiveRegistration {
 interface ApplicationActionHandlerRegistration {
   type: string;
   requiredCapabilities?: string[];
+  /**
+   * Whether a routine step may emit this action. Defaults to true. An action that only host code
+   * queues — a transfer notice the transfer route writes — sets false: routine authoring never
+   * offers it and a routine step naming it fails validation and serving, while the worker still
+   * dispatches the rows host code queues.
+   */
+  emittableByRoutines?: boolean;
   handler:
     | ActionHandler
     | ((context: {
@@ -208,6 +215,12 @@ interface ApplicationActionHandlerRegistration {
         errorReporter: ErrorReporter;
       }) => ActionHandler);
 }
+
+/** The action handlers a routine step may emit; see `emittableByRoutines`. */
+export const routineEmittableActionHandlers = (
+  registrations: readonly ApplicationActionHandlerRegistration[],
+): ApplicationActionHandlerRegistration[] =>
+  registrations.filter((registration) => registration.emittableByRoutines !== false);
 
 type ApplicationAccountCreatedHook = (context: {
   accountId: string;

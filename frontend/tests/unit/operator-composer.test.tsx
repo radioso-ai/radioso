@@ -11,15 +11,26 @@ import { hitlApi } from '@/lib/api-hitl'
 
 const flush = async () => { await Promise.resolve(); await Promise.resolve() }
 
-const renderComposer = async (ownership: { state: 'ai_owned' | 'human_owned'; version: number }, onChanged = vi.fn()) => {
+const renderComposer = async (
+  ownership: { state: 'ai_owned' | 'human_owned'; version: number },
+  onChanged = vi.fn(),
+  currentUserId: string | null = 'user-me',
+  onTeammatesStale = vi.fn(),
+) => {
   const root = createRoot(document.createElement('div'))
   const container = (root as unknown as { _internalRoot: { containerInfo: HTMLElement } })._internalRoot.containerInfo
   await act(async () => {
     root.render(
-      <OperatorComposer conversationId="conversation-a" ownership={ownership as never} onChanged={onChanged} />,
+      <OperatorComposer
+        conversationId="conversation-a"
+        ownership={ownership as never}
+        currentUserId={currentUserId}
+        onChanged={onChanged}
+        onTeammatesStale={onTeammatesStale}
+      />,
     )
   })
-  return { root, container, onChanged }
+  return { root, container, onChanged, onTeammatesStale }
 }
 
 const typeInto = async (textarea: HTMLTextAreaElement, value: string) => {
@@ -66,9 +77,12 @@ describe('OperatorComposer', () => {
       .mockResolvedValue({ ownership: { state: 'human_owned', version: 3 } } as never)
     const reply = vi.spyOn(hitlApi, 'replyAsHuman').mockResolvedValue({ message: {} } as never)
     const changed = vi.fn()
-    // "Awaiting a human": already human_owned, but unclaimed (ownerAccountId null) -
+    // "Awaiting a human": already human_owned, but unclaimed (no owner) -
     // still take-over-able, and FR-009 requires claiming it on send too.
-    const { root, container } = await renderComposer({ state: 'human_owned', ownerAccountId: null, version: 2 } as never, changed)
+    const { root, container } = await renderComposer(
+      { state: 'human_owned', ownerAccountId: null, ownerUserId: null, version: 2 } as never,
+      changed,
+    )
 
     await typeInto(container.querySelector('textarea')!, 'hi')
     await clickSend(container)
@@ -79,12 +93,12 @@ describe('OperatorComposer', () => {
     await act(async () => root.unmount())
   })
 
-  it('sends directly against the current version when already claimed by a specific human', async () => {
+  it('sends directly against the current version when the signed-in teammate already holds it', async () => {
     const takeover = vi.spyOn(hitlApi, 'takeOverConversation')
     const reply = vi.spyOn(hitlApi, 'replyAsHuman').mockResolvedValue({ message: {} } as never)
     const changed = vi.fn()
     const { root, container } = await renderComposer(
-      { state: 'human_owned', ownerAccountId: 'account-other', version: 5 } as never,
+      { state: 'human_owned', ownerAccountId: 'account-1', ownerUserId: 'user-me', version: 5 } as never,
       changed,
     )
 
@@ -99,7 +113,9 @@ describe('OperatorComposer', () => {
 
   it('clears the draft only after a successful send', async () => {
     vi.spyOn(hitlApi, 'replyAsHuman').mockResolvedValue({ message: {} } as never)
-    const { root, container } = await renderComposer({ state: 'human_owned', version: 1 })
+    const { root, container } = await renderComposer(
+      { state: 'human_owned', ownerAccountId: 'account-1', ownerUserId: 'user-me', version: 1 } as never,
+    )
 
     const textarea = container.querySelector('textarea') as HTMLTextAreaElement
     await typeInto(textarea, 'hi there')
@@ -123,6 +139,49 @@ describe('OperatorComposer', () => {
     expect(changed).toHaveBeenCalledWith({ kind: 'refresh', conversationId: 'conversation-a', reason: 'conflict' })
     expect(container.querySelector('[role="status"]')?.textContent).toContain('conversation changed')
     expect(textarea.value).toBe('my draft reply')
+    await act(async () => root.unmount())
+  })
+
+  it('offers no reply to a conversation a teammate holds, and takes it over by transferring it to the signed-in teammate', async () => {
+    const transfer = vi.spyOn(hitlApi, 'transferConversation')
+      .mockResolvedValue({ ownership: { state: 'human_owned', version: 8 } } as never)
+    const changed = vi.fn()
+    const { root, container } = await renderComposer(
+      { state: 'human_owned', ownerAccountId: 'account-1', ownerUserId: 'user-dana', ownerDisplayName: 'Dana', version: 7 } as never,
+      changed,
+    )
+
+    expect(container.querySelector('textarea')).toBeNull()
+    await act(async () => {
+      ;[...container.querySelectorAll('button')].find((button) => button.textContent?.includes('Take over'))?.click()
+      await flush()
+    })
+
+    expect(transfer).toHaveBeenCalledWith('conversation-a', { toUserId: 'user-me', expectedVersion: 7 })
+    expect(changed).toHaveBeenCalledWith({ kind: 'ownership', conversationId: 'conversation-a', ownershipState: 'human_owned' })
+    await act(async () => root.unmount())
+  })
+
+  it('refreshes the teammate list when a transfer target is no longer eligible, without a conflict refresh', async () => {
+    vi.spyOn(hitlApi, 'transferConversation')
+      .mockRejectedValue(Object.assign(new Error('not found'), { status: 404 }))
+    const changed = vi.fn()
+    const stale = vi.fn()
+    const { root, container } = await renderComposer(
+      { state: 'human_owned', ownerAccountId: 'account-1', ownerUserId: 'user-dana', ownerDisplayName: 'Dana', version: 7 } as never,
+      changed,
+      'user-me',
+      stale,
+    )
+
+    await act(async () => {
+      ;[...container.querySelectorAll('button')].find((button) => button.textContent?.includes('Take over'))?.click()
+      await flush()
+    })
+
+    expect(stale).toHaveBeenCalledTimes(1)
+    expect(changed).not.toHaveBeenCalled()
+    expect(container.querySelector('[role="status"]')).not.toBeNull()
     await act(async () => root.unmount())
   })
 })

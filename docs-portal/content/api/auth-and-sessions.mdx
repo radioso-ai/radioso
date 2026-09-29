@@ -1,6 +1,6 @@
 ---
 title: Auth and sessions
-description: Check registration availability, register, log in, join an organization by invitation, and set the name teammates see.
+description: Check registration availability, register, log in, join an organization by invitation, and set the name teammates and visitors see.
 last_updated: 2026-09-30
 ---
 
@@ -51,7 +51,7 @@ curl -sS \
   https://api.radioso.ai/api/v1/auth/register
 ```
 
-`organizationName` and `displayName` are optional. The required fields are `email` and `password`. `displayName` is the name teammates see for you in the dashboard, and it follows the rules in [Your profile](#your-profile).
+`organizationName` and `displayName` are optional. The required fields are `email` and `password`. `displayName` is the name teammates see for you in the dashboard and visitors see on your replies, and it follows the rules in [Your profile](#your-profile).
 
 Registration returns account and default workspace bootstrap data plus `requiresEmailVerification`. Production returns `true`, sends a verification email, and does not set a session cookie. The documented development stack returns `false`, persists the new password user's verification state, and sets the session cookie immediately.
 
@@ -88,13 +88,13 @@ The response names where the session landed — `accountId`, `organizationName`,
 
 ## Your profile
 
-Your profile holds the name teammates see for you in the dashboard. Read it with the session cookie:
+Your profile holds the name teammates see for you in the dashboard, and the name visitors see on a reply you send them from the Inbox. Read it with the session cookie:
 
 ```bash
 curl -sS -b cookies.txt https://api.radioso.ai/api/v1/auth/profile
 ```
 
-The response carries `userId`, `email`, and `displayName`. `displayName` is `null` until you set one, and the dashboard labels you by email in the meantime.
+The response carries `userId`, `email`, and `displayName`. `displayName` is `null` until you set one. In the meantime the dashboard labels you by email, and your replies to visitors are signed with your organisation's name — a visitor never sees your email.
 
 Set or change the name with `PATCH`:
 

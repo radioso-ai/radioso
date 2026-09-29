@@ -131,6 +131,7 @@ interface CopilotConversationOptions {
   includeOwnership: boolean;
   includeTurnFailureDebug: boolean;
   includeLatency: boolean;
+  includeUnattributedReplySignatures: boolean;
 }
 
 interface CopilotOwnership {
@@ -342,7 +343,13 @@ export const createChatCopilotTools = (deps: ChatCopilotToolDependencies): Reado
           context.workspaceId,
           conversationId ?? requiredPageConversation(context.pageContext.conversationId),
           { limit: 100 },
-          { includeAnswerFeedback: true, includeOwnership: true, includeTurnFailureDebug: true, includeLatency: true },
+          {
+            includeAnswerFeedback: true,
+            includeOwnership: true,
+            includeTurnFailureDebug: true,
+            includeLatency: true,
+            includeUnattributedReplySignatures: true,
+          },
         ))),
       }),
     }),
@@ -361,7 +368,13 @@ export const createChatCopilotTools = (deps: ChatCopilotToolDependencies): Reado
         trace: boundTurnTracePayload(projectTurnTrace(await deps.chatHistoryService.getConversationTurn(
           context.workspaceId,
           messageId,
-          { includeAnswerFeedback: true, includeOwnership: true, includeTurnFailureDebug: true, includeLatency: true },
+          {
+            includeAnswerFeedback: true,
+            includeOwnership: true,
+            includeTurnFailureDebug: true,
+            includeLatency: true,
+            includeUnattributedReplySignatures: true,
+          },
         ))),
       }),
     }),

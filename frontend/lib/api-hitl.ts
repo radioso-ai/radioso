@@ -2,6 +2,7 @@ import { request, type ErrorResponse } from './api-client'
 import { withQuery } from './api-query'
 import type {
   ChatConversationTail,
+  ConversationOperatorsResponse,
   ConversationOwnershipResponse,
   HandBackConversationRequest,
   HumanReplyMessageResponse,
@@ -13,7 +14,7 @@ import type {
   TransferConversationOwnershipRequest,
 } from './api-types'
 
-export type HitlApiStatus = 409 | 422
+type HitlApiStatus = 404 | 409 | 422
 
 export const getHitlApiErrorStatus = (error: unknown): number | undefined => {
   if (!error || typeof error !== 'object' || !('status' in error)) {
@@ -61,6 +62,15 @@ export const hitlApi = {
     return request<HumanReplyMessageResponse>(
       `/conversations/${encodeURIComponent(conversationId)}/reply`,
       { method: 'POST', body: JSON.stringify(body) },
+      { withSession: true },
+    )
+  },
+
+  /** The teammates who can own a conversation in the current workspace: the valid transfer targets. */
+  async listConversationOperators(signal?: AbortSignal): Promise<ConversationOperatorsResponse> {
+    return request<ConversationOperatorsResponse>(
+      '/conversations/operators',
+      { method: 'GET', ...(signal ? { signal } : {}) },
       { withSession: true },
     )
   },

@@ -5,10 +5,12 @@ import type { MetricsRegistry } from "../../../shared/observability/metrics/metr
 import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
 import { resolveConversationLink, type ConversationLinkResolver } from "../../../shared/domain/conversationLinkResolver.js";
 import type { SlackInstallationRecord, SlackInstallationRepositoryPort } from "../public.js";
-import type {
-  OperatorReplyService,
-  ConversationOwnershipMutationResult,
-  ConversationOwnershipRecord,
+import {
+  ownerLabel,
+  type OperatorIdentityResolver,
+  type OperatorReplyService,
+  type ConversationOwnershipMutationResult,
+  type ConversationOwnershipRecord,
 } from "../../handoff/public.js";
 import {
   OWNERSHIP_REPLY_ACTION_ID,
@@ -17,7 +19,10 @@ import {
   buildReplyModal,
   buildResolvedDecisionMessage,
 } from "./slackBlockKitBuilder.js";
-import type { SlackOperatorIdentityResolver } from "./slackOperatorIdentityResolver.js";
+import type {
+  SlackOperatorIdentityResolution,
+  SlackOperatorIdentityResolver,
+} from "./slackOperatorIdentityResolver.js";
 import type { SlackResponseUrlClient } from "./slackResponseUrlClient.js";
 
 export type SlackInteractivityCallbackType = "block_actions" | "view_submission" | "view_closed";
@@ -40,11 +45,7 @@ export type SlackViewSubmissionResponse = {
   errors: Record<string, string>;
 };
 
-type SlackOperatorIdentity = {
-  accountId: string;
-  userId?: string | null;
-  displayName: string | null;
-};
+type SlackOperatorIdentity = Exclude<SlackOperatorIdentityResolution, { rejected: true }>;
 
 const readNestedString = (value: unknown, key: string): string | null =>
   value && typeof value === "object" && !Array.isArray(value) && typeof (value as Record<string, unknown>)[key] === "string"
@@ -145,6 +146,8 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
   constructor(private readonly options: {
     installations: Pick<SlackInstallationRepositoryPort, "findByTeamId">;
     identityResolver?: Pick<SlackOperatorIdentityResolver, "resolve">;
+    /** Names the teammate a Slack user resolves to, the same way the dashboard does. */
+    operatorIdentities?: Pick<OperatorIdentityResolver, "resolve">;
     approvalDecisions?: Pick<ApprovalDecisionService, "resolve">;
     pendingDecisions?: Pick<PendingDecisionRepository, "loadByHandle">;
     conversationOwnership?: {
@@ -153,6 +156,7 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
         conversationId: string;
         workspaceId: string;
         accountId: string;
+        userId: string;
         displayName: string;
       }): Promise<ConversationOwnershipMutationResult>;
       handBack(input: {
@@ -368,7 +372,7 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
     conversationId: string;
     workspaceId: string;
   }): Promise<void> {
-    if (!this.options.conversationOwnership) {
+    if (!this.options.conversationOwnership || !this.options.operatorIdentities) {
       return;
     }
     const resolved = await this.resolveOperator(payload, input.workspaceId);
@@ -376,12 +380,16 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
       await this.postEphemeral(payload, "You're not a Radioso operator on this workspace.");
       return;
     }
-    const displayName = resolved.identity.displayName ?? "Operator";
+    const operator = await this.options.operatorIdentities.resolve({
+      accountId: resolved.identity.accountId,
+      userId: resolved.identity.userId,
+    });
     const result = await this.options.conversationOwnership.takeOver({
       conversationId: input.conversationId,
       workspaceId: input.workspaceId,
       accountId: resolved.identity.accountId,
-      displayName,
+      userId: operator.userId,
+      displayName: operator.teammateLabel,
     });
     if (!result.ok) {
       await this.postEphemeral(payload, "Conversation ownership changed. Refreshing.");
@@ -395,6 +403,7 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
       workspaceId: input.workspaceId,
       action: "taken_over",
       conversationId: input.conversationId,
+      actorUserId: resolved.identity.userId,
       slackUserId: resolved.slackUserId,
       slackDisplayName: resolved.identity.displayName,
     });
@@ -404,7 +413,7 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
       state: "human_owned",
       contextText: ownershipContextText(input.conversationId),
       dashboardUrl: await resolveConversationLink(this.options.conversationLinks, input, this.options.logger),
-      ownerName: result.record.ownerDisplayName ?? displayName,
+      ownerName: ownerLabel(result.record) ?? operator.teammateLabel,
       version: result.record.version,
     });
     await this.postResponseUrl(payload, {
@@ -449,6 +458,7 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
       workspaceId: resultWorkspaceId,
       action: "handed_back",
       conversationId: input.conversationId,
+      actorUserId: resolved.identity.userId,
       slackUserId: resolved.slackUserId,
       slackDisplayName: resolved.identity.displayName,
     });
@@ -535,7 +545,7 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
       conversationId,
       workspaceId,
       accountId: resolved.identity.accountId,
-      displayName: resolved.identity.displayName ?? "Operator",
+      userId: resolved.identity.userId,
       message,
     });
     return undefined;
@@ -639,6 +649,7 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
     workspaceId: string;
     action: "taken_over" | "handed_back";
     conversationId: string;
+    actorUserId: string;
     slackUserId: string;
     slackDisplayName: string | null;
   }): Promise<void> {
@@ -651,6 +662,7 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
         metadata: {
           action: input.action,
           conversationId: input.conversationId,
+          actorUserId: input.actorUserId,
           slackOperator: {
             slackUserId: input.slackUserId,
             displayName: input.slackDisplayName,

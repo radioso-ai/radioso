@@ -5,6 +5,7 @@ import type { MessageRecord, MessageRepositoryPort } from "../../db/repositories
 import type { AuditService } from "../audit/contracts/index.js";
 import type { PublicConversationEventBus } from "../chat/contracts/index.js";
 import type { CustomerChannelReplyDeliverer } from "../customerReplyDelivery/public.js";
+import type { OperatorIdentityResolver } from "./operatorIdentity.js";
 
 export class OperatorReplyService {
   constructor(private readonly dependencies: {
@@ -13,14 +14,20 @@ export class OperatorReplyService {
     auditService: Pick<AuditService, "record">;
     publicConversationEventBus: Pick<PublicConversationEventBus, "publish">;
     customerReplyDelivery: CustomerChannelReplyDeliverer;
+    operatorIdentities: Pick<OperatorIdentityResolver, "resolve">;
     publisher?: WorkspaceInvalidationPublisher;
   }) {}
 
+  /**
+   * Sends a teammate's reply to the visitor. The message is attributed to the teammate and
+   * signed with their reply signature, which is never an email; with no signature the reply goes
+   * out unsigned.
+   */
   async reply(input: {
     conversationId: string;
     workspaceId: string;
     accountId: string;
-    displayName: string;
+    userId: string;
     message: string;
   }): Promise<MessageRecord> {
     const conversation = await this.dependencies.conversationRepository.findByIdAndWorkspaceId(
@@ -30,6 +37,10 @@ export class OperatorReplyService {
     if (!conversation) {
       throw notFound("Conversation not found");
     }
+    const operator = await this.dependencies.operatorIdentities.resolve({
+      accountId: input.accountId,
+      userId: input.userId,
+    });
 
     const message = await this.dependencies.messageRepository.create({
       conversationId: input.conversationId,
@@ -38,7 +49,8 @@ export class OperatorReplyService {
       source: "human_agent",
       content: input.message,
       operatorAccountId: input.accountId,
-      operatorDisplayName: input.displayName,
+      operatorUserId: operator.userId,
+      operatorDisplayName: operator.replySignature ?? undefined,
     });
     await this.dependencies.conversationRepository.touch(input.conversationId, input.workspaceId);
     this.dependencies.publisher?.enqueue(input.workspaceId, ["conversation.turn_committed"]);
@@ -50,6 +62,7 @@ export class OperatorReplyService {
       eventStatus: "success",
       metadata: {
         action: "replied",
+        actorUserId: operator.userId,
         conversationId: input.conversationId,
         messageId: message.id,
         messageLength: input.message.length,

@@ -1,11 +1,8 @@
 import type { RequestHandler } from "express";
-import {
-  MCP_SOURCE_PROOF_HEADERS,
-  resolveSourceDigest,
-  verifyMcpSourceProof,
-} from "@radioso/mcp-source-proof";
+import { MCP_SOURCE_PROOF_HEADERS, verifyMcpSourceProof } from "@radioso/mcp-source-proof";
 
 import { forbidden } from "../../../shared/domain/errors.js";
+import { readRequestSource } from "./requestSource.js";
 
 /**
  * Pre-authentication limiters spend budget and answer with a bare rejection, so they never read
@@ -19,15 +16,6 @@ export interface PreAuthSourceAbuseControlPort {
     windowMs: number;
   }): Promise<unknown>;
 }
-
-const preAuthSourceDigest = (
-  req: Parameters<RequestHandler>[0],
-  trustedProxyHops = 0,
-): string => resolveSourceDigest({
-  forwardedFor: req.headers["x-forwarded-for"],
-  socketAddress: req.socket.remoteAddress,
-  trustedProxyHops,
-});
 
 const singleHeader = (value: string | string[] | undefined): string | null =>
   typeof value === "string" ? value : null;
@@ -75,13 +63,16 @@ export const readPreAuthSourceDigest = (
 ): string | null =>
   (res.locals as typeof res.locals & Partial<PreAuthSourceLocals>).preAuthSourceDigest ?? null;
 
+/**
+ * The standalone MCP server's signed digest names the caller it saw, so it wins over
+ * everything this backend observed. Otherwise the request source the app published, which
+ * already prefers a verified frontend edge envelope over this backend's own forwarded chain.
+ */
 export const resolvedPreAuthSourceDigest = (
   req: Parameters<RequestHandler>[0],
+  res: Parameters<RequestHandler>[1],
   signingSecret?: string,
-  trustedProxyHops = 0,
-): string => {
-  return verifiedMcpSourceDigest(req, signingSecret) ?? preAuthSourceDigest(req, trustedProxyHops);
-};
+): string => verifiedMcpSourceDigest(req, signingSecret) ?? readRequestSource(req, res).digest;
 
 export const requireValidMcpSourceProof = (signingSecret?: string): RequestHandler => (req, _res, next) => {
   if (!verifiedMcpSourceDigest(req, signingSecret)) {
@@ -96,14 +87,13 @@ export const createPreAuthSourceRateLimiter = (input: {
   scope: string;
   limit: number;
   signingSecret?: string;
-  trustedProxyHops?: number;
   windowMs: number;
   onFailure?: (input: { outcome: "limited" | "unavailable" }) => void;
 }): RequestHandler => async (req, res, next) => {
   try {
     const sourceDigest = publishPreAuthSourceDigest(
       res,
-      resolvedPreAuthSourceDigest(req, input.signingSecret, input.trustedProxyHops),
+      resolvedPreAuthSourceDigest(req, res, input.signingSecret),
     );
     await input.service.enforce({
       scope: input.scope,

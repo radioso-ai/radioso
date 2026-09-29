@@ -3,6 +3,7 @@ import { digestSourceAddress } from "@radioso/mcp-source-proof";
 import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
 
+import type { Env } from "../../src/app/config/env.js";
 import { createTestApp } from "../support/testApp.js";
 
 const SECRET = "f".repeat(32);
@@ -11,6 +12,8 @@ const CLIENT_B = "203.0.113.11";
 const FORGED = "198.51.100.99";
 const FRONTEND_EGRESS = "34.96.0.5";
 const SESSION_EXCHANGE_PATH = "/api/v1/public/chat/launch-token-1/sessions";
+const OPERATOR_MCP_AUTHORIZE_PATH = "/api/v1/operator-mcp/oauth/authorize";
+const AGENT_CARD_PATH = "/.well-known/agent-card/ag_unknown.json";
 
 // The hosted topology. Cloud Run's front end appends exactly the connecting
 // peer, on run.app and on mapped domains alike, so the backend trusts one hop.
@@ -20,24 +23,30 @@ const direct = (client: string) => `${FORGED}, ${client}`;
 // The frontend is a Cloud Run service too: the chain it receives ends with the
 // visitor, and it signs that chain. The backend's own chain has the frontend's
 // egress appended after it.
-const relayedThroughFrontend = (client: string, method: string, path: string): Record<string, string> => ({
+const relayedThroughFrontend = (
+  client: string,
+  method: string,
+  path: string,
+  callerSent = FORGED,
+): Record<string, string> => ({
   [EDGE_FACTS_HEADERS.marker]: "frontend",
   ...createEdgeFactsProof({
-    facts: { forwardedFor: direct(client), geoHeaders: {}, userAgent: null, acceptLanguage: null },
+    facts: { forwardedFor: `${callerSent}, ${client}`, geoHeaders: {}, userAgent: null, acceptLanguage: null },
     method,
     path,
     secret: SECRET,
   }).headers,
-  "x-forwarded-for": `${direct(client)}, ${FRONTEND_EGRESS}`,
+  "x-forwarded-for": `${callerSent}, ${client}, ${FRONTEND_EGRESS}`,
 });
 
-const createHostedApp = () => {
+const createHostedApp = (envOverrides: Partial<Env> = {}) => {
   const { app, dependencies } = createTestApp({
     envOverrides: {
       RADIOSO_TRUSTED_PROXY_HOPS: 1,
       RADIOSO_EDGE_PROOF_SECRET: SECRET,
       PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS: 2,
       AUTH_RATE_LIMIT_MAX_ATTEMPTS: 2,
+      ...envOverrides,
     },
   });
   const enforce = vi.spyOn(dependencies.abuseControlService, "enforce");
@@ -135,5 +144,70 @@ describe("request-source keyed rate limits on hosted Cloud Run", () => {
       .send({ email: "Visitor@Example.com" });
 
     expect(subjectKeysFor(enforce, "auth.password_reset.request")).toEqual(["visitor@example.com"]);
+  });
+
+  // MCP clients run operator MCP OAuth on the app domain, so these requests reach the
+  // backend through the frontend proxy: every caller's own chain ends in the frontend's egress.
+  describe("pre-auth source limiters", () => {
+    it("gives each visitor the frontend relays its own operator MCP authorize budget", async () => {
+      const { app, enforce } = createHostedApp();
+      const authorize = (client: string) => request(app)
+        .get(OPERATOR_MCP_AUTHORIZE_PATH)
+        .set(relayedThroughFrontend(client, "GET", OPERATOR_MCP_AUTHORIZE_PATH));
+
+      expect((await authorize(CLIENT_A)).status).not.toBe(429);
+      expect((await authorize(CLIENT_A)).status).not.toBe(429);
+      expect((await authorize(CLIENT_A)).status).toBe(429);
+      expect((await authorize(CLIENT_B)).status).not.toBe(429);
+
+      expect(subjectKeysFor(enforce, "api.operator_mcp_oauth_authorize")).toEqual([
+        `source:${digestSourceAddress(CLIENT_A)}`,
+        `source:${digestSourceAddress(CLIENT_A)}`,
+        `source:${digestSourceAddress(CLIENT_A)}`,
+        `source:${digestSourceAddress(CLIENT_B)}`,
+      ]);
+    });
+
+    it("does not mint a fresh authorize budget for a prefix spoofed inside the relayed chain", async () => {
+      const { app, enforce } = createHostedApp();
+      const authorize = (callerSent: string) => request(app)
+        .get(OPERATOR_MCP_AUTHORIZE_PATH)
+        .set(relayedThroughFrontend(CLIENT_A, "GET", OPERATOR_MCP_AUTHORIZE_PATH, callerSent));
+
+      expect((await authorize(FORGED)).status).not.toBe(429);
+      expect((await authorize("198.51.100.1")).status).not.toBe(429);
+      expect((await authorize("198.51.100.2")).status).toBe(429);
+
+      expect(new Set(subjectKeysFor(enforce, "api.operator_mcp_oauth_authorize"))).toEqual(
+        new Set([`source:${digestSourceAddress(CLIENT_A)}`]),
+      );
+    });
+
+    it("keeps keying a direct authorize caller on the hop Cloud Run appended", async () => {
+      const { app, enforce } = createHostedApp();
+
+      await request(app).get(OPERATOR_MCP_AUTHORIZE_PATH).set("X-Forwarded-For", direct(CLIENT_A));
+
+      expect(subjectKeysFor(enforce, "api.operator_mcp_oauth_authorize")).toEqual([
+        `source:${digestSourceAddress(CLIENT_A)}`,
+      ]);
+    });
+
+    it("gives each visitor the frontend relays its own agent discovery budget", async () => {
+      const { app, enforce } = createHostedApp({ PUBLIC_CHAT_SESSION_READ_RATE_LIMIT_MAX_ATTEMPTS: 2 });
+      const readCard = (client: string) => request(app)
+        .get(AGENT_CARD_PATH)
+        .set(relayedThroughFrontend(client, "GET", AGENT_CARD_PATH));
+
+      expect((await readCard(CLIENT_A)).status).not.toBe(429);
+      expect((await readCard(CLIENT_A)).status).not.toBe(429);
+      expect((await readCard(CLIENT_A)).status).toBe(429);
+      expect((await readCard(CLIENT_B)).status).not.toBe(429);
+
+      expect(new Set(subjectKeysFor(enforce, "api.agent_discovery_document"))).toEqual(new Set([
+        `source:${digestSourceAddress(CLIENT_A)}`,
+        `source:${digestSourceAddress(CLIENT_B)}`,
+      ]));
+    });
   });
 });

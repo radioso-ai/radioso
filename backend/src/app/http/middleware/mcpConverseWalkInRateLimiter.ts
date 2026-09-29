@@ -44,10 +44,7 @@ const WALK_IN_AGENT_SOURCE_LIMIT = 60;
 const WALK_IN_AGENT_BACKSTOP_MULTIPLIER = 10;
 
 interface McpConverseWalkInRateLimiterDependencies {
-  env: Pick<Env,
-    | "RADIOSO_MCP_SIGNING_SECRET"
-    | "RADIOSO_TRUSTED_PROXY_HOPS"
-  >;
+  env: Pick<Env, "RADIOSO_MCP_SIGNING_SECRET">;
   abuseControlService: PreAuthSourceAbuseControlPort;
   agentRepository: Pick<AgentRepositoryPort, "findByPublicId">;
   auditService: RateLimitAuditPort;
@@ -88,8 +85,8 @@ export const createMcpConverseWalkInRateLimiter = (
 
   const sourceDigest = publishPreAuthSourceDigest(res, readPreAuthSourceDigest(res) ?? resolvedPreAuthSourceDigest(
     req,
+    res,
     dependencies.env.RADIOSO_MCP_SIGNING_SECRET,
-    dependencies.env.RADIOSO_TRUSTED_PROXY_HOPS,
   ));
   (res.locals as typeof res.locals & McpConverseWalkInLocals).mcpConverseSourceDigest = sourceDigest;
 

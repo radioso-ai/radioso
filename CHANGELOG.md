@@ -9,6 +9,14 @@ Cut a release with the **Cut Release** workflow. It reads the commits since the 
 tag, writes the entry above this line, tags the commit, and publishes a GitHub Release. A
 deploy then ships a release that already exists; it never mints one.
 
+## [1.8.2] - 2026-09-29
+
+### Fixed
+
+- key pre-auth source limits on the published request source ([#1343](https://github.com/radioso-ai/radioso/pull/1343))
+
+[1.8.2]: https://github.com/radioso-ai/radioso/compare/v1.8.1...v1.8.2
+
 ## [1.8.1] - 2026-09-28
 
 ### Fixed

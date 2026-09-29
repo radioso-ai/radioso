@@ -145,10 +145,11 @@ class FakeReviewedRepository {
     return { ...row };
   }
 
-  async releaseProposalApplyClaim(input: { id: string; claimedAt: Date }) {
+  async releaseProposalApplyClaim(input: { id: string; claimedAt: Date; previousAttemptStartedAt: Date | null }) {
     const row = this.rows.get(input.id);
     if (!row || !row.applyStartedAt || row.applyStartedAt.getTime() !== input.claimedAt.getTime()) return false;
-    row.applyStartedAt = null;
+    row.applyStartedAt = input.previousAttemptStartedAt;
+    if (!input.previousAttemptStartedAt) row.executionInvocationId = null;
     return true;
   }
 

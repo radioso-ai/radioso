@@ -20,7 +20,6 @@ interface McpConverseSessionRateLimiterDependencies {
     | "MCP_CONVERSE_SESSION_SOURCE_RATE_LIMIT_MAX_ATTEMPTS"
     | "MCP_CONVERSE_SESSION_TOKEN_RATE_LIMIT_MAX_ATTEMPTS"
     | "RADIOSO_MCP_SIGNING_SECRET"
-    | "RADIOSO_TRUSTED_PROXY_HOPS"
   >;
   abuseControlService: PreAuthSourceAbuseControlPort;
   metricsRegistry?: Pick<MetricsRegistry, "incrementCounter"> | null;
@@ -55,7 +54,6 @@ export const createMcpConverseSourceRateLimiter = (
   scope: "mcp.converse.session.source",
   limit: dependencies.env.MCP_CONVERSE_SESSION_SOURCE_RATE_LIMIT_MAX_ATTEMPTS,
   signingSecret: dependencies.env.RADIOSO_MCP_SIGNING_SECRET,
-  trustedProxyHops: dependencies.env.RADIOSO_TRUSTED_PROXY_HOPS,
   windowMs: dependencies.env.MCP_CONVERSE_SESSION_RATE_LIMIT_WINDOW_MS,
   onFailure: ({ outcome }) => dependencies.metricsRegistry?.incrementCounter(
     "mcp_converse_session_exchange_abuse_control_failures_total",
@@ -80,7 +78,6 @@ export const createMcpConverseMessagesSourceRateLimiter = (
   scope: "mcp.converse.messages.source",
   limit: MESSAGES_SOURCE_LIMIT,
   signingSecret: dependencies.env.RADIOSO_MCP_SIGNING_SECRET,
-  trustedProxyHops: dependencies.env.RADIOSO_TRUSTED_PROXY_HOPS,
   windowMs: dependencies.env.MCP_CONVERSE_SESSION_RATE_LIMIT_WINDOW_MS,
 });
 

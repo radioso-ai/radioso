@@ -19,7 +19,6 @@ export interface AgentChannelRateLimiterDependencies {
     | "AGENT_CHANNEL_CHAT_SOURCE_RATE_LIMIT_MAX_ATTEMPTS"
     | "AGENT_CHANNEL_CHAT_GRANT_RATE_LIMIT_MAX_ATTEMPTS"
     | "AGENT_CHANNEL_CHAT_WORKSPACE_RATE_LIMIT_MAX_ATTEMPTS"
-    | "RADIOSO_TRUSTED_PROXY_HOPS"
   >;
   abuseControlService: RateLimitBatchAbuseControlPort & PreAuthSourceAbuseControlPort;
   auditService: RateLimitAuditPort;
@@ -103,6 +102,5 @@ export const createAgentChannelSourceRateLimiter = (
   service: dependencies.abuseControlService,
   scope: "agent.channel.chat.source",
   limit: dependencies.env.AGENT_CHANNEL_CHAT_SOURCE_RATE_LIMIT_MAX_ATTEMPTS,
-  trustedProxyHops: dependencies.env.RADIOSO_TRUSTED_PROXY_HOPS,
   windowMs: dependencies.env.AGENT_CHANNEL_CHAT_RATE_LIMIT_WINDOW_MS,
 });

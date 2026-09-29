@@ -33,7 +33,6 @@ const createDependencies = (overrides: Partial<AppDependencies> = {}): AppDepend
     MCP_CONVERSE_SESSION_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: 60,
     MCP_CONVERSE_SESSION_TOKEN_RATE_LIMIT_MAX_ATTEMPTS: 10,
     RADIOSO_MCP_SIGNING_SECRET: "0123456789abcdef0123456789abcdef",
-    RADIOSO_TRUSTED_PROXY_HOPS: 0,
   },
   abuseControlService: {
     enforce: vi.fn().mockResolvedValue(admittedAbuseControlDecision()),

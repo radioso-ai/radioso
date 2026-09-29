@@ -4,6 +4,7 @@ import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
 
 import { admittedAbuseControlDecision } from "../support/fakes.js";
+import { createRequestSourceMiddleware } from "../../src/app/http/middleware/requestSource.js";
 import { createAgentRoutes } from "../../src/app/http/routes/agentRoutes.js";
 import type { AppDependencies } from "../../src/app/server/types.js";
 import type { AccessGrant } from "../../src/modules/accessGrants/domain.js";
@@ -86,6 +87,14 @@ const createApp = (dependencies = createDependencies()) => {
   return app;
 };
 
+/** The app-level request-source middleware runs before every router in the real app. */
+const createAppBehindRequestSource = (dependencies: AppDependencies) => {
+  const app = express();
+  app.use(createRequestSourceMiddleware({ env: dependencies.env, metricsRegistry: null }));
+  app.use(createApp(dependencies));
+  return app;
+};
+
 describe("REST agent channel chat", () => {
   it("runs chat with the immutable credential and path agent binding", async () => {
     const dependencies = createDependencies();
@@ -142,7 +151,7 @@ describe("REST agent channel chat", () => {
     expect(sourceKeys.join(" ")).not.toContain("198.51.100.20");
   });
 
-  it("uses only the trusted XFF entry Cloud Run appended, never a caller-supplied prefix", async () => {
+  it("keys its source budget on the published request source, never a caller-supplied prefix", async () => {
     const dependencies = createDependencies({
       env: {
         ...createDependencies().env,
@@ -150,13 +159,13 @@ describe("REST agent channel chat", () => {
       },
     });
 
-    await request(createApp(dependencies))
+    await request(createAppBehindRequestSource(dependencies))
       .post(`/api/v1/agents/${agentId}/chat`)
       .set("X-Forwarded-For", "198.51.100.99, 203.0.113.10")
       .set("Authorization", "Bearer rest-agent-secret")
       .send({ message: "Hello" })
       .expect(200);
-    await request(createApp(dependencies))
+    await request(createAppBehindRequestSource(dependencies))
       .post(`/api/v1/agents/${agentId}/chat`)
       .set("X-Forwarded-For", "198.51.100.99, 203.0.113.11")
       .set("Authorization", "Bearer rest-agent-secret")

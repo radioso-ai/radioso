@@ -33,7 +33,6 @@ export const createAgentDiscoveryRoutes = (dependencies: Dependencies): Router =
     // so the budget exists to stop a loop, not to ration discovery.
     limit: dependencies.env.PUBLIC_CHAT_SESSION_READ_RATE_LIMIT_MAX_ATTEMPTS,
     windowMs: dependencies.env.PUBLIC_CHAT_RATE_LIMIT_WINDOW_MS,
-    trustedProxyHops: dependencies.env.RADIOSO_TRUSTED_PROXY_HOPS,
   });
 
   const observe = (kind: DocumentKind, outcome: "served" | "not_found" | "not_modified"): void => {

@@ -9,7 +9,6 @@ const dependencies = (enforceBatch = vi.fn().mockResolvedValue(undefined)) => ({
     AGENT_CHANNEL_CHAT_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: 12,
     AGENT_CHANNEL_CHAT_GRANT_RATE_LIMIT_MAX_ATTEMPTS: 3,
     AGENT_CHANNEL_CHAT_WORKSPACE_RATE_LIMIT_MAX_ATTEMPTS: 9,
-    RADIOSO_TRUSTED_PROXY_HOPS: 0,
   },
   abuseControlService: { enforce: vi.fn(), enforceBatch },
   auditService: { record: vi.fn().mockResolvedValue(undefined) },

@@ -73,7 +73,6 @@ export const createOperatorMcpOauthRoutes = (dependencies: Dependencies): Router
     scope,
     limit,
     windowMs: dependencies.env.AUTH_RATE_LIMIT_WINDOW_MS,
-    trustedProxyHops: dependencies.env.RADIOSO_TRUSTED_PROXY_HOPS,
   });
   const authorizeRateLimit = sourceRateLimit(
     "api.operator_mcp_oauth_authorize",

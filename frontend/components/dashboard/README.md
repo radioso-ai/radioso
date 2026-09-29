@@ -2,7 +2,8 @@
 
 Dashboard components own the authenticated product UI: navigation, workspace
 views, document management, chat surfaces, settings, activity diagnostics,
-quality and Audience Pulse views, usage, and users.
+quality and Audience Pulse views, usage, users, and the signed-in person's
+profile.
 
 For the broader repository map, see
 [`docs/architecture/code-map.md`](../../../docs/architecture/code-map.md).

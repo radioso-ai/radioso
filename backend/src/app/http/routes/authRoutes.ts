@@ -9,10 +9,15 @@ import { readRequestSource } from "../middleware/requestSource.js";
 import { requireSession, type SessionDependencies } from "../middleware/requireSession.js";
 import { validateBody } from "../middleware/validate.js";
 
+// Shape only: the display-name rules (trim, blank clears, length, control
+// characters) belong to the auth domain, which answers a rejection with a 400.
+const displayNameInputSchema = z.string().nullable();
+
 export const registerSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8),
   organizationName: z.string().trim().min(1).max(80).optional(),
+  displayName: displayNameInputSchema.optional(),
 });
 
 export const loginSchema = z.object({
@@ -29,7 +34,12 @@ export const invitationTokenParamsSchema = z.object({
 export const invitationAcceptSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8),
+  displayName: displayNameInputSchema.optional(),
 });
+
+export const profileUpdateSchema = z.object({
+  displayName: displayNameInputSchema,
+}).strict();
 
 export const passwordResetRequestSchema = z.object({
   email: z.string().email(),
@@ -208,6 +218,39 @@ export const createAuthRoutes = (dependencies: AuthRouteDependencies): Router =>
     }
   });
 
+  // A profile is the person's own, whichever organization the session is on,
+  // so it does not need an active membership any more than the session does.
+  router.get("/profile", requireSession(dependencies, { requireActiveMembership: false }), async (_req, res, next) => {
+    try {
+      const { userId } = res.locals as { userId: string };
+      const profile = await dependencies.authService.getProfile(userId);
+      res.setHeader("Cache-Control", "no-store");
+      res.status(200).json(profile);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.patch(
+    "/profile",
+    requireSession(dependencies, { requireActiveMembership: false }),
+    validateBody(profileUpdateSchema),
+    async (req, res, next) => {
+      try {
+        const { userId, accountId } = res.locals as { userId: string; accountId: string };
+        const profile = await dependencies.authService.updateProfile({
+          userId,
+          accountId,
+          displayName: req.body.displayName,
+        });
+        res.setHeader("Cache-Control", "no-store");
+        res.status(200).json(profile);
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
   router.get("/invitations/:invitationToken", async (req, res, next) => {
     try {
       const params = invitationTokenParamsSchema.parse(req.params);
@@ -229,6 +272,7 @@ export const createAuthRoutes = (dependencies: AuthRouteDependencies): Router =>
           invitationToken: params.invitationToken,
           email: req.body.email,
           password: req.body.password,
+          displayName: req.body.displayName,
         });
         res.setHeader("Set-Cookie", result.sessionCookie);
         res.status(200).json({

@@ -180,6 +180,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the signed-in user's profile
+         * @description Returns the signed-in person's own profile: their email and the display name teammates see.
+         */
+        get: operations["getUserProfile"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update the signed-in user's profile
+         * @description Sets the signed-in person's display name, the name teammates see in the dashboard. The name is trimmed; an empty string or null clears it. It may use any script, holds at most 80 characters, and cannot contain control characters.
+         */
+        patch: operations["updateUserProfile"];
+        trace?: never;
+    };
     "/api/v1/auth/invitations/{invitationToken}": {
         parameters: {
             query?: never;
@@ -4026,6 +4050,16 @@ export interface components {
         SessionResponse: components["schemas"]["LoginResponse"] & {
             /** Format: email */
             email: string;
+            /** @description The name the person chose for themselves, or null when they have not set one. */
+            displayName: string | null;
+        };
+        UserProfile: {
+            /** Format: uuid */
+            userId: string;
+            /** Format: email */
+            email: string;
+            /** @description The name the person chose for themselves, or null when they have not set one. */
+            displayName: string | null;
         };
         EmailVerificationVerifyResponse: {
             /** @enum {boolean} */
@@ -4075,6 +4109,7 @@ export interface components {
             email: string;
             password: string;
             organizationName?: string;
+            displayName?: string | null;
         };
         CreateAccountRequest: {
             organizationName: string;
@@ -4111,6 +4146,10 @@ export interface components {
             /** Format: email */
             email: string;
             password: string;
+            displayName?: string | null;
+        };
+        UserProfileUpdateRequest: {
+            displayName: string | null;
         };
         AccountInvitationCreateRequest: {
             /** Format: email */
@@ -4142,6 +4181,8 @@ export interface components {
             userId: string;
             /** Format: email */
             email: string;
+            /** @description The name the person chose for themselves, or null when they have not set one. */
+            displayName: string | null;
             /** @enum {string} */
             role: "owner" | "admin" | "member";
             /** @enum {string} */
@@ -9796,6 +9837,77 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SessionResponse"];
+                };
+            };
+            /** @description No active session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getUserProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Profile returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserProfile"];
+                };
+            };
+            /** @description No active session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateUserProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserProfileUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Profile updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserProfile"];
+                };
+            };
+            /** @description Request validation failed, or the display name breaks the naming rules */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description No active session */

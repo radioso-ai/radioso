@@ -4,6 +4,8 @@ export type OrganizationCoreProvisioningRequest =
       organizationName: string;
       email: string;
       passwordHash: string;
+      /** Already normalized by the caller; absent or null leaves the user unnamed. */
+      displayName?: string | null;
       emailVerifiedAt: Date | null;
     }
   | {

@@ -1,14 +1,14 @@
 ---
 title: Auth and sessions
-description: Check registration availability, register, log in, and join an organization by invitation.
-last_updated: 2026-08-17
+description: Check registration availability, register, log in, join an organization by invitation, and set the name teammates see.
+last_updated: 2026-09-29
 ---
 
 import { Steps } from 'nextra/components'
 
 # Auth and sessions
 
-These routes are the entry point for account creation, session establishment, invitation inspection, and invitation acceptance.
+These routes are the entry point for account creation, session establishment, invitation inspection, invitation acceptance, and the signed-in person's own profile.
 
 ## How it works
 
@@ -47,11 +47,11 @@ Use registration when `GET /api/v1/auth/registration` reports that open registra
 ```bash
 curl -sS \
   -H 'Content-Type: application/json' \
-  -d '{"email":"you@example.com","password":"verysecurepassword","organizationName":"Acme"}' \
+  -d '{"email":"you@example.com","password":"verysecurepassword","organizationName":"Acme","displayName":"Ada Lovelace"}' \
   https://api.radioso.ai/api/v1/auth/register
 ```
 
-`organizationName` is optional. The required fields are `email` and `password`.
+`organizationName` and `displayName` are optional. The required fields are `email` and `password`. `displayName` is the name teammates see for you in the dashboard, and it follows the rules in [Your profile](#your-profile).
 
 Registration returns account and default workspace bootstrap data plus `requiresEmailVerification`. Production returns `true`, sends a verification email, and does not set a session cookie. The documented development stack returns `false`, persists the new password user's verification state, and sets the session cookie immediately.
 
@@ -84,6 +84,31 @@ curl -sS -c cookies.txt \
 
 The login request can also include `preferredWorkspaceId` or `preferredAccountId` when you want to restore a known context.
 
+## Your profile
+
+Your profile holds the name teammates see for you in the dashboard. Read it with the session cookie:
+
+```bash
+curl -sS -b cookies.txt https://api.radioso.ai/api/v1/auth/profile
+```
+
+The response carries `userId`, `email`, and `displayName`. `displayName` is `null` until you set one, and the dashboard labels you by email in the meantime.
+
+Set or change the name with `PATCH`:
+
+```bash
+curl -sS -b cookies.txt -X PATCH \
+  -H 'Content-Type: application/json' \
+  -d '{"displayName":"Ada Lovelace"}' \
+  https://api.radioso.ai/api/v1/auth/profile
+```
+
+The response is the updated profile. Radioso trims the name before storing it, and an empty string or `null` clears it. Any script works. A name holds at most 80 characters and cannot contain control characters such as line breaks or tabs; either returns `400`, as does a body with any field besides `displayName`.
+
+`GET /api/v1/auth/session` returns the same `displayName` next to the account and workspace the session lands on. Each change writes an `auth.profile_updated` audit event that names the changed field, never its value.
+
+Profile routes accept only the signed-in session. Personal and service credentials act for a workspace, so they have no profile to read or edit.
+
 ## Invitation flow
 
 In practice, the invitation flow has two steps:
@@ -91,23 +116,26 @@ In practice, the invitation flow has two steps:
 1. Read the invitation details with `GET /api/v1/auth/invitations/{invitationToken}`.
 2. Accept it with `POST /api/v1/auth/invitations/{invitationToken}/accept`.
 
-The accept request establishes a session for the joined account.
+The accept request establishes a session for the joined account. When the invitation creates a new login, the body can also carry `displayName`; an existing login keeps the name it already has.
 
 ## Endpoint reference
 
-The [API Reference](/api-reference) lists the fields on each register, login, and invitation payload.
+The [API Reference](/api-reference) lists the fields on each register, login, profile, and invitation payload.
 
 ```text
-GET  /api/v1/auth/registration
-POST /api/v1/auth/register
-POST /api/v1/auth/login
-GET  /api/v1/auth/invitations/{invitationToken}
-POST /api/v1/auth/invitations/{invitationToken}/accept
+GET   /api/v1/auth/registration
+POST  /api/v1/auth/register
+POST  /api/v1/auth/login
+GET   /api/v1/auth/session
+GET   /api/v1/auth/profile
+PATCH /api/v1/auth/profile
+GET   /api/v1/auth/invitations/{invitationToken}
+POST  /api/v1/auth/invitations/{invitationToken}/accept
 ```
 
 ## Common failure modes
 
-- `400` usually means the request body is incomplete or malformed.
+- `400` usually means the request body is incomplete or malformed, or a display name breaks the naming rules above.
 - `401` usually means the credentials are wrong, or the invitation accept flow is no longer valid.
 - `403` from registration means open registration is closed and the user needs an invitation. Login can also return `403` when email verification is required.
 - `404` means the invitation token does not exist.

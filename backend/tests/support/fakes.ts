@@ -47,7 +47,7 @@ import type {
   SessionRecord,
   SessionRepositoryPort,
 } from "../../src/modules/auth/services/authService.js";
-import type { UserRecord, UserRepositoryPort } from "../../src/db/repositories/userRepository.js";
+import type { CreateUserParams, UserRecord, UserRepositoryPort } from "../../src/db/repositories/userRepository.js";
 import type { WorkspaceRecord, WorkspaceRepositoryPort } from "../../src/db/repositories/workspaceRepository.js";
 import type {
   AgentGreetingUpdateOptions,
@@ -274,11 +274,12 @@ export class InMemoryAccountRepository implements AccountRepositoryPort {
 export class InMemoryUserRepository implements UserRepositoryPort {
   private readonly items = new Map<string, UserRecord>();
 
-  async create(params: { id?: string; email: string; passwordHash: string; emailVerifiedAt?: Date | null }): Promise<UserRecord> {
+  async create(params: CreateUserParams): Promise<UserRecord> {
     const record: UserRecord = {
       id: params.id ?? randomUUID(),
       email: params.email,
       passwordHash: params.passwordHash,
+      displayName: params.displayName ?? null,
       emailVerifiedAt: params.emailVerifiedAt === undefined ? new Date() : params.emailVerifiedAt,
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -307,6 +308,17 @@ export class InMemoryUserRepository implements UserRepositoryPort {
       passwordHash,
       updatedAt: new Date(),
     };
+    this.items.set(id, updated);
+    return updated;
+  }
+
+  async updateDisplayName(id: string, displayName: string | null): Promise<UserRecord> {
+    const existing = this.items.get(id);
+    if (!existing) {
+      throw notFound("User not found");
+    }
+
+    const updated: UserRecord = { ...existing, displayName, updatedAt: new Date() };
     this.items.set(id, updated);
     return updated;
   }
@@ -769,6 +781,7 @@ export class InMemoryAccountMembershipRepository implements AccountMembershipRep
     return users.map(({ membership, user }) => ({
       ...membership,
       email: user?.email ?? "unknown@example.com",
+      displayName: user?.displayName ?? null,
     }));
   }
 

@@ -15,7 +15,7 @@ export type AgentTab = 'chat' | 'behavior' | 'channels'
 export type KnowledgeTab = 'documents' | 'sources' | 'ingestion'
 export type ActivityTab = 'needs-attention' | 'all'
 export type SettingsTab = 'workspace' | 'api-access' | 'providers'
-export type AccountTab = 'members' | 'usage'
+export type AccountTab = 'profile' | 'members' | 'usage'
 export type HistoryFilter = 'all' | 'chat' | 'search' | 'contact'
 export type HistoryItemKind = 'chat' | 'search' | 'contact'
 export type QualityStatusFilter =
@@ -363,7 +363,7 @@ const parseSettingsTab = (value: string | null): SettingsTab | undefined => {
 }
 
 const parseAccountTab = (value: string | null): AccountTab | undefined => {
-  if (value === 'members' || value === 'usage') {
+  if (value === 'profile' || value === 'members' || value === 'usage') {
     return value
   }
   if (value === 'users') {

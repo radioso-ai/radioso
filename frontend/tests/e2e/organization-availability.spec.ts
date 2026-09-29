@@ -48,6 +48,7 @@ test('offers first-user registration when the server reports it available', asyn
 })
 
 test('enters the workspace directly after a development auto-verified registration', async ({ page }) => {
+  let registerBody: unknown = null
   await page.route('**/backend/api/v1/**', async (route) => {
     const path = new URL(route.request().url()).pathname.replace(/^\/backend\/api\/v1/, '')
     const method = route.request().method()
@@ -57,6 +58,7 @@ test('enters the workspace directly after a development auto-verified registrati
       return
     }
     if (path === '/auth/register' && method === 'POST') {
+      registerBody = route.request().postDataJSON()
       await route.fulfill({
         status: 201,
         contentType: 'application/json',
@@ -107,11 +109,13 @@ test('enters the workspace directly after a development auto-verified registrati
 
   await page.goto('/')
   await page.getByRole('button', { name: 'Create an account' }).click()
+  await page.getByLabel('Your name (optional)').fill('Local Dev')
   await page.getByLabel('Email').fill('local-dev@example.com')
   await page.getByLabel('Password', { exact: true }).fill('verysecurepassword')
   await page.getByLabel('Confirm Password').fill('verysecurepassword')
   await page.getByRole('button', { name: 'Create Account' }).click()
 
+  await expect.poll(() => registerBody).toMatchObject({ email: 'local-dev@example.com', displayName: 'Local Dev' })
   await expect(page.getByRole('heading', { name: 'Check your inbox' })).toHaveCount(0)
   await expect.poll(() => page.evaluate(() => localStorage.getItem('radioso.authUser'))).toContain('local-dev@example.com')
 })

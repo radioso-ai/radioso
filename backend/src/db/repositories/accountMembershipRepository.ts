@@ -18,6 +18,7 @@ export interface AccountMembershipRecord {
 
 export interface AccountMembershipUserRecord extends AccountMembershipRecord {
   email: string;
+  displayName: string | null;
 }
 
 interface AccountMembershipRow {
@@ -32,6 +33,7 @@ interface AccountMembershipRow {
 
 interface AccountMembershipUserRow extends AccountMembershipRow {
   email: string;
+  display_name: string | null;
 }
 
 const accountMembershipColumns = [
@@ -57,6 +59,7 @@ const mapMembership = (row: AccountMembershipRow): AccountMembershipRecord => ({
 const mapMembershipUser = (row: AccountMembershipUserRow): AccountMembershipUserRecord => ({
   ...mapMembership(row),
   email: row.email,
+  displayName: row.display_name,
 });
 
 export interface AccountMembershipRepositoryPort {
@@ -138,6 +141,7 @@ export class AccountMembershipRepository implements AccountMembershipRepositoryP
         "m.created_at",
         "m.updated_at",
         "u.email",
+        "u.display_name",
       ])
       .where("m.account_id", "=", accountId)
       .where("m.status", "=", "active")

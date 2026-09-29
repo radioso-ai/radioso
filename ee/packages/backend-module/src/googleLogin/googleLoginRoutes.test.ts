@@ -234,6 +234,7 @@ describe("google login routes", () => {
       subject: "google-sub",
       email: "person@example.com",
       emailVerified: true,
+      displayName: "Person",
     });
     const setCookie = response.headers["set-cookie"] as unknown as string[];
     expect(setCookie.some((c) => c.startsWith("radioso_session="))).toBe(true);

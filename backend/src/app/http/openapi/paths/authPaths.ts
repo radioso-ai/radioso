@@ -329,6 +329,81 @@ export const registerAuthPaths = (
 
   registry.registerPath({
     method: "get",
+    path: "/api/v1/auth/profile",
+    tags: ["Auth"],
+    summary: "Get the signed-in user's profile",
+    description: "Returns the signed-in person's own profile: their email and the display name teammates see.",
+    operationId: "getUserProfile",
+    security: [{ [security.sessionCookieScheme.name]: [] }],
+    responses: {
+      200: {
+        description: "Profile returned",
+        content: {
+          "application/json": {
+            schema: schemas.UserProfileSchema,
+          },
+        },
+      },
+      401: {
+        description: "No active session",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: "patch",
+    path: "/api/v1/auth/profile",
+    tags: ["Auth"],
+    summary: "Update the signed-in user's profile",
+    description:
+      "Sets the signed-in person's display name, the name teammates see in the dashboard. The name is trimmed; an empty string or null clears it. It may use any script, holds at most 80 characters, and cannot contain control characters.",
+    operationId: "updateUserProfile",
+    security: [{ [security.sessionCookieScheme.name]: [] }],
+    request: {
+      body: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: schemas.UserProfileUpdateRequestSchema,
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: "Profile updated",
+        content: {
+          "application/json": {
+            schema: schemas.UserProfileSchema,
+          },
+        },
+      },
+      400: {
+        description: "Request validation failed, or the display name breaks the naming rules",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      401: {
+        description: "No active session",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: "get",
     path: "/api/v1/auth/invitations/{invitationToken}",
     tags: ["Auth"],
     summary: "Get invitation details for an account join flow",

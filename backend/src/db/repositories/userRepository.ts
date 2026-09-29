@@ -7,6 +7,7 @@ export interface UserRecord {
   id: string;
   email: string;
   passwordHash: string;
+  displayName: string | null;
   emailVerifiedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -16,27 +17,38 @@ interface UserRow {
   id: string;
   email: string;
   password_hash: string;
+  display_name: string | null;
   email_verified_at: Date | null;
   created_at: Date;
   updated_at: Date;
 }
 
-const userColumns = ["id", "email", "password_hash", "email_verified_at", "created_at", "updated_at"] as const;
+const userColumns = ["id", "email", "password_hash", "display_name", "email_verified_at", "created_at", "updated_at"] as const;
 
 const mapUser = (row: UserRow): UserRecord => ({
   id: row.id,
   email: row.email,
   passwordHash: row.password_hash,
+  displayName: row.display_name,
   emailVerifiedAt: row.email_verified_at ? new Date(row.email_verified_at) : null,
   createdAt: new Date(row.created_at),
   updatedAt: new Date(row.updated_at),
 });
 
+export interface CreateUserParams {
+  id?: string;
+  email: string;
+  passwordHash: string;
+  displayName?: string | null;
+  emailVerifiedAt?: Date | null;
+}
+
 export interface UserRepositoryPort {
-  create(params: { id?: string; email: string; passwordHash: string; emailVerifiedAt?: Date | null }): Promise<UserRecord>;
+  create(params: CreateUserParams): Promise<UserRecord>;
   findByEmail(email: string): Promise<UserRecord | null>;
   findById(id: string): Promise<UserRecord | null>;
   updatePassword(id: string, passwordHash: string): Promise<UserRecord>;
+  updateDisplayName(id: string, displayName: string | null): Promise<UserRecord>;
   markEmailVerified(id: string, verifiedAt: Date): Promise<UserRecord>;
   deleteById(id: string): Promise<boolean>;
 }
@@ -44,13 +56,14 @@ export interface UserRepositoryPort {
 export class UserRepository implements UserRepositoryPort {
   constructor(private readonly db: Db) {}
 
-  async create(params: { id?: string; email: string; passwordHash: string; emailVerifiedAt?: Date | null }): Promise<UserRecord> {
+  async create(params: CreateUserParams): Promise<UserRecord> {
     const row = await this.db
       .insertInto("users")
       .values({
         id: params.id ?? randomUUID(),
         email: params.email,
         password_hash: params.passwordHash,
+        display_name: params.displayName ?? null,
         email_verified_at: params.emailVerifiedAt ?? null,
       })
       .returning(userColumns)
@@ -83,6 +96,17 @@ export class UserRepository implements UserRepositoryPort {
     const row = await this.db
       .updateTable("users")
       .set({ password_hash: passwordHash, updated_at: currentTimestamp() })
+      .where("id", "=", id)
+      .returning(userColumns)
+      .executeTakeFirstOrThrow();
+
+    return mapUser(row);
+  }
+
+  async updateDisplayName(id: string, displayName: string | null): Promise<UserRecord> {
+    const row = await this.db
+      .updateTable("users")
+      .set({ display_name: displayName, updated_at: currentTimestamp() })
       .where("id", "=", id)
       .returning(userColumns)
       .executeTakeFirstOrThrow();

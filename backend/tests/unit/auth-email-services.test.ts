@@ -50,7 +50,7 @@ class RecordingLogger {
 
 const readTokenFromUrl = (url: string): string => new URL(url).searchParams.get("token") ?? "";
 
-const createHarness = async (options: { verified?: boolean } = {}) => {
+const createHarness = async (options: { verified?: boolean; displayName?: string | null } = {}) => {
   const env = { ...createTestEnv(), APP_BASE_URL: "https://app.example.com" };
   const auditService = createAuditService();
   const accountRepository = new InMemoryAccountRepository();
@@ -74,6 +74,7 @@ const createHarness = async (options: { verified?: boolean } = {}) => {
     id: account.id,
     email: "ada@example.com",
     passwordHash: "old-password-hash",
+    displayName: options.displayName ?? null,
     emailVerifiedAt: options.verified === false ? null : new Date(),
   });
   await accountAccessService.ensureMembership({ accountId: account.id, userId: user.id, role: "owner" });
@@ -203,6 +204,29 @@ describe("PasswordResetService", () => {
     expect(await verifyPassword("new-secure-password", updated!.passwordHash)).toBe(true);
     expect(updated?.emailVerifiedAt).toBeInstanceOf(Date);
     expect((await sessionRepository.findActiveByTokenHash(oldSession.sessionTokenHash, new Date()))).toBeNull();
+  });
+
+  it("clears a display name set while the address was unverified when a reset reclaims it", async () => {
+    const { passwordResetService, mailDriver, user, userRepository } = await createHarness({
+      verified: false,
+      displayName: "Squatter",
+    });
+    await passwordResetService.requestReset({ email: "ada@example.com" });
+    const token = readTokenFromUrl(mailDriver.messages[0]?.metadata?.resetUrl ?? "");
+
+    await passwordResetService.confirmReset({ token, password: "new-secure-password" });
+
+    expect((await userRepository.findById(user.id))?.displayName).toBeNull();
+  });
+
+  it("keeps a verified user's display name through an ordinary password reset", async () => {
+    const { passwordResetService, mailDriver, user, userRepository } = await createHarness({ displayName: "Ada Lovelace" });
+    await passwordResetService.requestReset({ email: "ada@example.com" });
+    const token = readTokenFromUrl(mailDriver.messages[0]?.metadata?.resetUrl ?? "");
+
+    await passwordResetService.confirmReset({ token, password: "new-secure-password" });
+
+    expect((await userRepository.findById(user.id))?.displayName).toBe("Ada Lovelace");
   });
 
   it("rejects older active tokens after a newer token is requested", async () => {

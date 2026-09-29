@@ -189,6 +189,46 @@ test('new-user invitation collects a new password with confirmation and no reset
   await expect(page.getByRole('button', { name: 'Continue with Google' })).toHaveCount(0)
 })
 
+test('new-user invitation sends the optional name with the new password', async ({ page }) => {
+  const token = 'invite-new-user-named'
+  let acceptedBody: unknown = null
+
+  await installInvitationApiMocks(page, {
+    token,
+    invitation: {
+      accountId: defaultLoginResponse.accountId,
+      email: 'named-hire@example.com',
+      status: 'pending',
+      expiresAt: nowIso,
+      requiresExistingPassword: false,
+      federatedProviders: [],
+    },
+    sessionWorkspaces: [{
+      id: defaultLoginResponse.workspaceId,
+      accountId: defaultLoginResponse.accountId,
+      name: defaultLoginResponse.workspaceName,
+      publicRouteKey: defaultLoginResponse.workspacePublicRouteKey,
+    }],
+    onAccept: (body) => {
+      acceptedBody = body
+    },
+  })
+
+  await page.goto(`/invite/${token}`)
+
+  await page.getByLabel('Your name (optional)').fill('Grace Hopper')
+  await page.getByLabel('Password', { exact: true }).fill('supersecret123')
+  await page.getByLabel('Confirm password').fill('supersecret123')
+  await page.getByRole('button', { name: 'Join account' }).click()
+
+  await expect.poll(() => acceptedBody).toEqual({
+    email: 'named-hire@example.com',
+    password: 'supersecret123',
+    displayName: 'Grace Hopper',
+  })
+  await page.waitForURL((url) => url.pathname.startsWith('/w/'))
+})
+
 test('existing-user invitation skips confirmation, links to reset password, and accepts with the existing credential', async ({ page }) => {
   const token = 'invite-existing-user'
   const invitedEmail = 'returning@example.com'
@@ -223,6 +263,7 @@ test('existing-user invitation skips confirmation, links to reset password, and 
     page.getByText('You already have a Radioso login. Enter your existing password to join.'),
   ).toBeVisible()
   await expect(page.getByLabel('Confirm password')).toHaveCount(0)
+  await expect(page.getByLabel('Your name (optional)')).toHaveCount(0)
 
   const forgotLink = page.getByRole('link', { name: 'Forgot password?' })
   await expect(forgotLink).toBeVisible()

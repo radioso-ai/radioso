@@ -1,7 +1,7 @@
 ---
 title: Accounts and users
 description: List accounts, invite users, accept invitations, manage organization roles, and switch account context.
-last_updated: 2026-09-24
+last_updated: 2026-09-29
 ---
 
 # Accounts and users
@@ -67,6 +67,10 @@ Both endpoints accept inclusive UTC `from` and `to` dates in `YYYY-MM-DD` form, 
 
 The responses are deliberately operational rather than conversational. They return attribution and token accounting, never prompt text, model completion text, message bodies, document content, provider request IDs, idempotency keys, or error details.
 
+## List users
+
+`GET /api/v1/account/users` returns the current account's members, the invitations still waiting to be accepted, and workspace grants. Owners and admins can read it. Each member carries `email` and `displayName`. `displayName` is the name that person set on [their profile](/api/auth-and-sessions#your-profile), or `null` until they set one, so show the email in its place.
+
 ## Invite a user
 
 Create an invitation from the active account context.
@@ -105,7 +109,7 @@ Either way the password path is the same call:
 POST /api/v1/auth/invitations/{invitationToken}/accept
 ```
 
-The body carries `email` and `password`. The email has to match the address the invitation was sent to. A successful response sets the session cookie and returns the joined account and its workspace.
+The body carries `email` and `password`. The email has to match the address the invitation was sent to. When `requiresExistingPassword` is `false`, the body can also carry `displayName`, the name the new login shows teammates; an existing login keeps the name it already has. A successful response sets the session cookie and returns the joined account and its workspace.
 
 Someone who is already signed in as the invited address does not need a password at all:
 

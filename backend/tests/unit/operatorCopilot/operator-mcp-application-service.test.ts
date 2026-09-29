@@ -964,7 +964,7 @@ describe("operator MCP operation identity", () => {
   it("abandons an input-keyed act's key on an operation_conflict refusal too", async () => {
     const act = inputKeyedAct(vi.fn());
     const { service, invocations, audit } = build(act);
-    invocations.claimRunning.mockResolvedValueOnce(null);
+    invocations.prepareInvocation.mockResolvedValueOnce({ status: "conflict" });
     const argumentsValue = { section: "retrieval" };
     const bodyDigest = digestOperatorMcpCall({ name: act.name, arguments: argumentsValue });
     const admitted = await service.admit({ accessToken: "operator-access", invocationId: uuid("12"), method: "tools/call", descriptorName: act.name, resource: principal.resource, timestamp: "1788480000", nonce: "edge-abandon-conflict", bodyDigest });
@@ -975,6 +975,24 @@ describe("operator MCP operation identity", () => {
     expect(invocations.recordOutcome).toHaveBeenCalledWith(expect.objectContaining({ status: "refused", safeOutcomeCode: "abandoned_before_effect" }));
     expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
       eventStatus: "failure", metadata: expect.objectContaining({ outcome: "refused", reason: "operation_conflict" }),
+    }));
+  });
+
+  it("leaves a receipt alone after a concurrent retry reopened it before this request's running claim", async () => {
+    const act = inputKeyedAct(vi.fn());
+    const { service, invocations, audit } = build(act);
+    invocations.claimRunning.mockResolvedValueOnce(null);
+    const argumentsValue = { section: "retrieval" };
+    const bodyDigest = digestOperatorMcpCall({ name: act.name, arguments: argumentsValue });
+    const admitted = await service.admit({ accessToken: "operator-access", invocationId: uuid("12"), method: "tools/call", descriptorName: act.name, resource: principal.resource, timestamp: "1788480000", nonce: "edge-lost-running-claim", bodyDigest });
+
+    await expect(service.invoke({ proof: admitted.proof, name: act.name, arguments: argumentsValue, bodyDigest }))
+      .rejects.toMatchObject({ code: "operation_conflict" });
+
+    // The retry that reopened the receipt may be applying under it right now; only it may settle it.
+    expect(invocations.recordOutcome).not.toHaveBeenCalled();
+    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
+      eventStatus: "failure", metadata: expect.objectContaining({ outcome: "refused", reason: "operation_taken_over" }),
     }));
   });
 

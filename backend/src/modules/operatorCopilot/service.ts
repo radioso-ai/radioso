@@ -193,8 +193,8 @@ export interface CopilotRepositoryPort {
   /** Cancellation never steals an execution claim, even after its recovery lease expires. */
   cancelPendingProposal(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotProposal | null>;
   claimProposalApply(input: { id: string; workspaceId: string; operatorUserId: string; claimTtlSeconds: number }): Promise<CopilotProposalClaim | null>;
-  /** Clears only the exact claim this attempt was handed, after a pre-mutation denial. A claim already superseded by a later reclaim is left alone. */
-  releaseProposalApplyClaim(input: { id: string; workspaceId: string; operatorUserId: string; claimedAt: Date }): Promise<boolean>;
+  /** Restores the row to what this attempt's claim found, after a pre-mutation denial: unbinds a reviewed receipt unless an earlier attempt is still outstanding. A claim already superseded by a later reclaim is left alone. */
+  releaseProposalApplyClaim(input: { id: string; workspaceId: string; operatorUserId: string; claimedAt: Date; previousAttemptStartedAt: Date | null }): Promise<boolean>;
   claimMcpReviewedProposalApply(input: { proposalId: string; executionInvocationId: string; reviewDigest: string; workspaceId: string; operatorUserId: string; grantId: string; clientId: string; now: Date; claimTtlSeconds: number }): Promise<
     | { readonly status: "claimed"; readonly claim: CopilotProposalClaim }
     /** The proposal already reached this terminal outcome through this same execution receipt. */
@@ -446,12 +446,7 @@ export class OperatorCopilotService {
         });
       } catch (error) {
         if (error instanceof CopilotAuthorizationError) {
-          await this.deps.repository.releaseProposalApplyClaim({
-            id: proposal.id,
-            workspaceId: input.input.workspaceId,
-            operatorUserId: input.input.operatorUserId,
-            claimedAt,
-          });
+          await this.releaseDeniedClaim(input.input, input.claim);
           throw error;
         }
         this.logUnconfirmedMcpAttempt({ error, proposalId: proposal.id, executionInvocationId: input.executionInvocationId, targetType: proposal.targetType, workspaceId: input.input.workspaceId });
@@ -484,12 +479,7 @@ export class OperatorCopilotService {
       if (error instanceof CopilotAuthorizationError) {
         // The authorization check is intentionally after the claim. Leaving that bookkeeping
         // claim set would make an otherwise pending proposal impossible to apply or dismiss.
-        await this.deps.repository.releaseProposalApplyClaim({
-          id: proposal.id,
-          workspaceId: input.input.workspaceId,
-          operatorUserId: input.input.operatorUserId,
-          claimedAt,
-        });
+        await this.releaseDeniedClaim(input.input, input.claim);
         throw error;
       }
       if (input.executionInvocationId) {
@@ -506,6 +496,20 @@ export class OperatorCopilotService {
     const status = result.outcome === "stale" ? "stale" : "failed";
     await this.updateProposalAndAudit(input.input, proposal, status, null, "copilot.proposal.apply_failed", "failure", result.outcome, claimGuard, result.reason ?? null, input.executionInvocationId);
     return result.outcome === "failed" || result.reason ? { status, reason: result.reason } : { status };
+  }
+
+  /**
+   * Restores the pre-claim start time, so a reclaim of an interrupted apply still sees that
+   * attempt and reconciles it rather than applying as if it were the first.
+   */
+  private async releaseDeniedClaim(input: { workspaceId: string; operatorUserId: string }, claim: CopilotProposalClaim): Promise<void> {
+    await this.deps.repository.releaseProposalApplyClaim({
+      id: claim.proposal.id,
+      workspaceId: input.workspaceId,
+      operatorUserId: input.operatorUserId,
+      claimedAt: claim.claimedAt,
+      previousAttemptStartedAt: claim.previousAttemptStartedAt,
+    });
   }
 
   /** Claims a digest-bound MCP review receipt, then uses the same post-claim executor as dashboard Apply. */

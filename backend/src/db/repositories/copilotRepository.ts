@@ -343,8 +343,8 @@ export class CopilotRepository implements CopilotRepositoryPort, CopilotRetentio
       .set({ status: "dismissed", failure_reason: null, applied_ref: null, updated_at: new Date() })
       .where("id", "=", input.id).where("workspace_id", "=", input.workspaceId).where("operator_user_id", "=", input.operatorUserId)
       .where("status", "=", "pending").where("apply_started_at", "is", null)
-      // A released reviewed receipt can still retry and reconcile with its owner; only proposals
-      // that never reserved an execution receipt may be canceled.
+      // A receipt stays bound while an attempt under it may have landed, and only that receipt
+      // can reconcile it; a proposal with no bound receipt has nothing in flight to cancel.
       .where("execution_invocation_id", "is", null)
       .returning(proposalColumns).executeTakeFirst();
     return row ? mapProposal(row) : null;
@@ -442,14 +442,24 @@ export class CopilotRepository implements CopilotRepositoryPort, CopilotRetentio
   }
 
   /**
-   * Clears only the exact claim `claimProposalApply` handed to this attempt, after a
-   * pre-mutation authorization denial. Fenced the same way `updateProposalOutcome`'s `held`
-   * guard is: a claim already superseded by a later TTL reclaim no longer matches, so a
-   * crashed writer's late release cannot clear an unrelated, currently active claim.
+   * Hands back the exact claim this attempt was given, after a pre-mutation authorization denial,
+   * leaving the row as the claim found it. Fenced the same way `updateProposalOutcome`'s `held`
+   * guard is: a claim already superseded by a later TTL reclaim no longer matches, so a crashed
+   * writer's late release cannot clear an unrelated, currently active claim. Restoring the earlier
+   * start time also lets that earlier attempt, if it was only slow, still settle what it applied.
+   *
+   * A reviewed receipt stays bound only while an earlier attempt may have landed, because only
+   * that receipt can reconcile it. With no such attempt the denied one changed nothing, so the
+   * binding is dropped too; otherwise every later execution receipt would answer `not_prepared`
+   * until the proposal expired.
    */
-  async releaseProposalApplyClaim(input: { id: string; workspaceId: string; operatorUserId: string; claimedAt: Date }): Promise<boolean> {
+  async releaseProposalApplyClaim(input: { id: string; workspaceId: string; operatorUserId: string; claimedAt: Date; previousAttemptStartedAt: Date | null }): Promise<boolean> {
     const row = await this.db.updateTable("copilot_proposals")
-      .set({ apply_started_at: null, updated_at: new Date() })
+      .set({
+        apply_started_at: input.previousAttemptStartedAt,
+        ...(input.previousAttemptStartedAt ? {} : { execution_invocation_id: null }),
+        updated_at: new Date(),
+      })
       .where("id", "=", input.id)
       .where("workspace_id", "=", input.workspaceId)
       .where("operator_user_id", "=", input.operatorUserId)

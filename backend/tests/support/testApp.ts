@@ -8,6 +8,7 @@ import request from "supertest";
 import { createApp } from "../../src/app/server/createApp.js";
 import type { Env } from "../../src/app/config/env.js";
 import { createMailAccountInvitationNotifier } from "../../src/app/composition/accountInvitationNotifier.js";
+import { createConversationOperatorDirectory } from "../../src/app/composition/conversationOperatorDirectory.js";
 import { createMailService } from "../../src/modules/mail/public.js";
 import { randomUUID } from "node:crypto";
 import type { ConversationRoutineStore, RoutineState } from "@radioso/conversation-contract";
@@ -167,7 +168,11 @@ import { InMemoryWebhookSkillDefinitionRepository } from "./inMemoryWebhookSkill
 import { InMemorySlackSkillDefinitionRepository } from "./inMemorySlackSkillDefinitions.js";
 import { InMemoryAgentSkillRepository } from "./inMemoryAgentSkills.js";
 import { SlackSkillDefinitionService } from "../../src/modules/slackSkills/public.js";
-import { OperatorReplyService } from "../../src/modules/handoff/public.js";
+import {
+  ConversationTransferNotices,
+  OperatorIdentityResolver,
+  OperatorReplyService,
+} from "../../src/modules/handoff/public.js";
 import { AgentRetrievalAuthoringService, AgentSkillsService } from "../../src/modules/agentSkills/public.js";
 import { createDefaultSkillCapabilityRegistry } from "../../src/modules/skills/capabilityRegistry.js";
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../src/modules/documents/contracts/index.js";
@@ -297,6 +302,7 @@ import {
   InMemoryIngestionSettingsRepository,
   InMemoryHistoryItemsRepository,
   InMemoryMessageRepository,
+  InMemoryActionOutbox,
   InMemoryConversationOwnershipRepository,
   InMemoryRetrievalSettingsRepository,
   InMemoryFederatedIdentityRepository,
@@ -440,6 +446,7 @@ interface TestRepositories {
   conversationRepository: InMemoryConversationRepository;
   visitorRepository: InMemoryVisitorProfileRepository;
   conversationOwnershipRepository: InMemoryConversationOwnershipRepository;
+  actionOutbox: InMemoryActionOutbox;
   messageRepository: InMemoryMessageRepository;
   agentRepository: InMemoryAgentRepository;
   agentRevisionRepository: InMemoryAgentRevisionRepository;
@@ -893,6 +900,12 @@ export const createTestDependencies = (overrides: {
   const conversationRepository = new InMemoryConversationRepository();
   const conversationOwnershipRepository = new InMemoryConversationOwnershipRepository();
   conversationRepository.setOwnershipReader(conversationOwnershipRepository);
+  const actionOutbox = new InMemoryActionOutbox();
+  const operatorIdentityResolver = new OperatorIdentityResolver({
+    users: userRepository,
+    accounts: accountRepository,
+  });
+  const conversationOperatorDirectory = createConversationOperatorDirectory({ accountAccess: accountAccessService });
   // Visitor resolution itself is exercised against real Postgres in
   // tests/integration/visitor-resolver.integration.test.ts; this fake only lets a contract
   // test seed a visitor row directly so it can assert the operator-facing read surface
@@ -2004,6 +2017,7 @@ export const createTestDependencies = (overrides: {
     auditService,
     publicConversationEventBus,
     customerReplyDelivery: { deliver: async () => {} },
+    operatorIdentities: operatorIdentityResolver,
   });
   const agentRetrievalScope = createAgentRetrievalScopeResolver({ agentRepository });
   const retrievalSearchService = new RetrievalSearchService(retrievalPipeline, agentRetrievalScope);
@@ -2567,6 +2581,9 @@ export const createTestDependencies = (overrides: {
     chatService,
     approvalDecisionService,
     operatorReplyService,
+    operatorIdentityResolver,
+    conversationOperatorDirectory,
+    conversationTransferNotices: new ConversationTransferNotices({ outbox: actionOutbox, logger }),
     workbenchReplayRunner: workbenchReplayRunner as any,
     testExecutionService,
     revisionEvalRunService,
@@ -2686,6 +2703,7 @@ export const createTestDependencies = (overrides: {
       conversationRepository,
       visitorRepository,
       conversationOwnershipRepository,
+      actionOutbox,
       messageRepository,
       agentRepository,
       agentRevisionRepository,

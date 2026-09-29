@@ -21,6 +21,7 @@ import { LogoSpinner } from '@/components/ui/spinner'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useConversationTail } from '@/hooks/use-conversation-tail'
 import { hitlApi } from '@/lib/api-hitl'
+import { useOptionalAuth } from '@/lib/auth-context'
 import type { ChatConversationSummary, PendingApprovalDecision } from '@/lib/api-types'
 import { deriveConversationOutcome } from '@/lib/conversation-outcome'
 import {
@@ -44,6 +45,7 @@ import { useSkillCatalog } from '@/lib/skill-catalog'
 import { cn } from '@/lib/utils'
 import { InboxReadOnlyFooter } from './inbox-readonly-footer'
 import { InboxSituationCard } from './inbox-situation-card'
+import { useConversationOperators } from './use-conversation-operators'
 
 const noop = () => {}
 
@@ -173,6 +175,8 @@ export function InboxResponseView({
     [readOnlySource, now],
   )
   const effectiveItem = item ?? derivedHandoffItem
+  const currentUserId = useOptionalAuth()?.user?.userId ?? null
+  const teammates = useConversationOperators(effectiveItem !== null)
 
   const {
     isDocumentDialogOpen,
@@ -355,6 +359,9 @@ export function InboxResponseView({
         <OperatorComposer
           conversationId={effectiveItem.conversationId}
           ownership={conversationDetail?.ownership}
+          currentUserId={currentUserId}
+          teammates={teammates.operators}
+          onTeammatesStale={teammates.refresh}
           onChanged={handleChanged}
           externalError={handBackRunner.error}
           trailingActions={showDoneControl ? (

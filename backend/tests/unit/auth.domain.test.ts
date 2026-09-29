@@ -13,6 +13,8 @@ import {
   DISPLAY_NAME_MAX_LENGTH,
   looksLikeEmailAddress,
   normalizeDisplayName,
+  teammateLabel,
+  visitorFacingName,
 } from "../../src/modules/auth/domain/userDisplayName.js";
 
 describe("auth primitives", () => {
@@ -123,5 +125,24 @@ describe("email address shape", () => {
     const started = performance.now();
     expect(looksLikeEmailAddress(hostile)).toBe(true);
     expect(performance.now() - started).toBeLessThan(250);
+  });
+});
+
+describe("teammate label", () => {
+  it("uses the display name, and the email until one is chosen", () => {
+    expect(teammateLabel({ displayName: "Ada Lovelace", email: "ada@example.com" })).toBe("Ada Lovelace");
+    expect(teammateLabel({ displayName: null, email: "ada@example.com" })).toBe("ada@example.com");
+  });
+});
+
+describe("visitor-facing name", () => {
+  it("uses the display name, then the organisation name", () => {
+    expect(visitorFacingName({ displayName: "Ada Lovelace", organizationName: "Acme" })).toBe("Ada Lovelace");
+    expect(visitorFacingName({ displayName: null, organizationName: "  Acme  " })).toBe("Acme");
+  });
+
+  it("is null rather than falling back to anything private", () => {
+    expect(visitorFacingName({ displayName: null, organizationName: "   " })).toBeNull();
+    expect(visitorFacingName({ displayName: null, organizationName: null })).toBeNull();
   });
 });

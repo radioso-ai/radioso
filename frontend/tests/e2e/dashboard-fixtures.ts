@@ -1,12 +1,15 @@
 import type { Page, Route } from "@playwright/test";
-import type { components } from "../../../typescript-sdk/src/generated/types";
+import type { components, operations } from "../../../typescript-sdk/src/generated/types";
 import type { SkillAuthoringDescriptor } from "@/lib/api-routine-skill-catalog";
 
 type ApiSchemas = components["schemas"];
+type TransferRequestFixture = operations["transferConversationOwnership"]["requestBody"]["content"]["application/json"];
 
 export const workspaceId = "workspace-1";
 export const workspaceKey = "workspace-key";
 export const accountId = "account-1";
+/** The signed-in teammate `seedDashboardStorage` seeds. */
+export const currentUserId = "user-1";
 export const defaultAgentId = "67acb0c8-caad-4a1b-9fef-70cbca3f7d12";
 const defaultCandidateRevisionId = "11111111-1111-4111-8111-111111111111";
 export const defaultPublishedRevisionId = "22222222-2222-4222-8222-222222222222";
@@ -571,11 +574,11 @@ const buildDefaultChannelsLifecycle = (settings: PlatformSettingsFixture): Chann
 });
 
 export const seedDashboardStorage = async (page: Page) => {
-  await page.addInitScript(({ accountIdValue, workspaceIdValue, workspaceKeyValue }) => {
+  await page.addInitScript(({ accountIdValue, userIdValue, workspaceIdValue, workspaceKeyValue }) => {
     window.localStorage.setItem(
       "radioso.authUser",
       JSON.stringify({
-        userId: "user-1",
+        userId: userIdValue,
         accountId: accountIdValue,
         email: "operator@example.com",
       }),
@@ -585,6 +588,7 @@ export const seedDashboardStorage = async (page: Page) => {
     window.localStorage.setItem("radioso.activeWorkspacePublicRouteKey", workspaceKeyValue);
   }, {
     accountIdValue: accountId,
+    userIdValue: currentUserId,
     workspaceIdValue: workspaceId,
     workspaceKeyValue: workspaceKey,
   });
@@ -984,6 +988,12 @@ export const installDashboardApiMocks = async (
     conversationTailResponses?: ApiSchemas["ChatConversationTail"][];
     takeOverConversationResponse?: ApiSchemas["ConversationOwnershipResponse"];
     handBackConversationResponse?: ApiSchemas["ConversationOwnershipResponse"];
+    /** GET /conversations/operators: the teammates a conversation can be handed to. */
+    conversationOperators?: ApiSchemas["ConversationOperator"][];
+    /** Every `POST /conversations/:id/transfer` body, in order. */
+    transferRequests?: TransferRequestFixture[];
+    /** Transfer targets the backend no longer accepts: a transfer to one returns 404. */
+    ineligibleTransferTargets?: string[];
     humanReplyResponse?: ApiSchemas["HumanReplyMessageResponse"];
     resolveDecisionResponse?: unknown;
     agentUpdates?: unknown[];
@@ -1592,6 +1602,7 @@ export const installDashboardApiMocks = async (
           workspaceId,
           state: "human_owned",
           ownerAccountId: accountId,
+          ownerUserId: currentUserId,
           ownerDisplayName: "Test Operator",
           reason: null,
           version: 2,
@@ -1624,6 +1635,47 @@ export const installDashboardApiMocks = async (
       return;
     }
 
+    if (request.method() === "GET" && path === "/conversations/operators") {
+      await json(route, { operators: options.conversationOperators ?? [] });
+      return;
+    }
+
+    if (request.method() === "POST" && path.startsWith("/conversations/") && path.endsWith("/transfer")) {
+      const conversationId = path.replace("/conversations/", "").replace("/transfer", "");
+      const body = request.postDataJSON() as TransferRequestFixture;
+      options.transferRequests?.push(body);
+      if (options.ineligibleTransferTargets?.includes(body.toUserId)) {
+        await json(route, { error: { code: "not_found", message: "Transfer target not found" } }, 404);
+        return;
+      }
+      const target = (options.conversationOperators ?? []).find((operator) => operator.userId === body.toUserId);
+      const activeConversationDetail = conversationDetails.get(conversationId) ?? conversationDetail;
+      const currentOwnership = activeConversationDetail && typeof activeConversationDetail === "object"
+        ? (activeConversationDetail as { ownership?: ApiSchemas["ConversationOwnership"] }).ownership
+        : undefined;
+      const ownership: ApiSchemas["ConversationOwnership"] = {
+        conversationId,
+        workspaceId,
+        state: "human_owned",
+        ownerAccountId: accountId,
+        ownerUserId: body.toUserId,
+        ownerDisplayName: target?.label ?? null,
+        reason: currentOwnership?.reason ?? null,
+        version: body.expectedVersion + 1,
+        takenOverAt: currentOwnership?.takenOverAt ?? nowIso,
+        createdAt: currentOwnership?.createdAt ?? nowIso,
+        updatedAt: nowIso,
+      };
+      if (conversationDetail && typeof conversationDetail === "object") {
+        conversationDetail = { ...conversationDetail, ownership };
+      }
+      if (conversationDetails.has(conversationId)) {
+        conversationDetails.set(conversationId, { ...(conversationDetails.get(conversationId) as object), ownership });
+      }
+      await json(route, { ownership });
+      return;
+    }
+
     if (request.method() === "POST" && path.startsWith("/conversations/") && path.endsWith("/handback")) {
       const conversationId = path.replace("/conversations/", "").replace("/handback", "");
       const response = options.handBackConversationResponse ?? {
@@ -1632,6 +1684,7 @@ export const installDashboardApiMocks = async (
           workspaceId,
           state: "ai_owned",
           ownerAccountId: null,
+          ownerUserId: null,
           ownerDisplayName: null,
           reason: null,
           version: 3,

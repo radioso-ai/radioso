@@ -974,6 +974,8 @@ export const buildChatServices = (input: {
     contactHistoryProvider,
     retrievalAnswerService,
     actionDispatchWorker,
+    // The drain-pushing outbox, for producers outside the turn (e.g. conversation transfer notices).
+    actionOutbox: pushingActionOutbox,
     approvalDecisionService,
   };
 };

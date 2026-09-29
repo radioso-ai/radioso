@@ -168,6 +168,11 @@ export class AccountAccessService {
     return this.membershipRepository.listActiveByAccount(accountId);
   }
 
+  /** One active member of the account with their user, or null when the user is not one. */
+  async findAccountUser(accountId: string, userId: string): Promise<AccountMembershipUserRecord | null> {
+    return this.membershipRepository.findActiveUserByAccountAndUser(accountId, userId);
+  }
+
   async listWorkspaceGrants(accountId: string): Promise<WorkspaceGrantSummary[]> {
     if (!this.workspaceGrantRepository) {
       return [];

@@ -30,7 +30,7 @@ const TYPE_OPTION_LABEL: Record<EscalationType, string> = {
   negative_feedback: 'Feedback',
 }
 
-export interface InboxQueueProps {
+interface InboxQueueProps {
   /** The Needs-you / All lens toggle, rendered above the search row (spec 1116). It must always render, even with zero open items, so the All lens stays reachable. */
   lensToggle: ReactNode
   items: InboxItem[]
@@ -139,8 +139,8 @@ export function InboxQueue({
                   <SelectItem value={TAKEN_BY_UNCLAIMED}>Unclaimed</SelectItem>
                   <SelectItem value={TAKEN_BY_ME}>Me</SelectItem>
                   {operatorOptions.map((operator) => (
-                    <SelectItem key={operator.accountId} value={operator.accountId}>
-                      {operator.displayName}
+                    <SelectItem key={operator.key} value={operator.key}>
+                      {operator.label}
                     </SelectItem>
                   ))}
                 </SelectContent>

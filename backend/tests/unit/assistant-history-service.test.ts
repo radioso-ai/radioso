@@ -25,6 +25,7 @@ describe("AssistantHistoryService", () => {
         includeOwnership: true,
         includeAgentInternalName: true,
         includeTurnFailureDebug: true,
+        includeUnattributedReplySignatures: true,
       },
     );
   });
@@ -48,6 +49,7 @@ describe("AssistantHistoryService", () => {
         includeOwnership: true,
         includeAgentInternalName: true,
         includeTurnFailureDebug: true,
+        includeUnattributedReplySignatures: true,
       },
     );
   });

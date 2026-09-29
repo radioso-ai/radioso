@@ -87,7 +87,33 @@ describeIntegration("AccountMembershipRepository (Postgres)", () => {
     const a = rows.find((r) => r.userId === userAId);
     expect(a?.email).toBe(userAEmail);
     expect(a?.displayName).toBe("Member A");
+    expect(a?.disabledAt).toBeNull();
     expect(rows.find((r) => r.userId === userBId)?.displayName).toBeNull();
+  });
+
+  it("findActiveUserByAccountAndUser returns one member with their user, and null for a stranger", async () => {
+    const member = await repository.findActiveUserByAccountAndUser(accountId, userAId);
+
+    expect(member).toMatchObject({
+      accountId,
+      userId: userAId,
+      email: userAEmail,
+      displayName: "Member A",
+      status: "active",
+      disabledAt: null,
+    });
+    expect(await repository.findActiveUserByAccountAndUser(accountId, randomUUID())).toBeNull();
+    expect(await repository.findActiveUserByAccountAndUser(randomUUID(), userAId)).toBeNull();
+  });
+
+  it("listActiveByAccount reports when a member's user is disabled", async () => {
+    const disabledAt = new Date("2026-09-01T00:00:00.000Z");
+    await database.query(`UPDATE users SET disabled_at = $1 WHERE id = $2`, [disabledAt, userBId]);
+
+    const rows = await repository.listActiveByAccount(accountId);
+
+    expect(rows.find((r) => r.userId === userBId)?.disabledAt).toEqual(disabledAt);
+    await database.query(`UPDATE users SET disabled_at = NULL WHERE id = $1`, [userBId]);
   });
 
   it("listActiveByUser returns active memberships for a user", async () => {

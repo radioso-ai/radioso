@@ -19,6 +19,7 @@ const ownership = (overrides: Partial<ConversationOwnership> = {}): Conversation
   workspaceId: 'workspace-1',
   state: 'human_owned',
   ownerAccountId: 'account-1',
+  ownerUserId: 'user-anna',
   ownerDisplayName: 'Anna',
   reason: null,
   version: 1,

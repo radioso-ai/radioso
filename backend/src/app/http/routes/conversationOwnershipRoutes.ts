@@ -2,7 +2,12 @@ import { Router } from "express";
 import { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
-import { AppError, badRequest, notFound } from "../../../shared/domain/errors.js";
+import {
+  presentOwnership,
+  type ConversationOperator,
+  type ConversationOwnershipRecord,
+} from "../../../modules/handoff/public.js";
+import { AppError, badRequest, notFound, unauthorized } from "../../../shared/domain/errors.js";
 import { requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../middleware/requireWorkspaceSession.js";
 import { validateBody } from "../middleware/validate.js";
@@ -10,13 +15,13 @@ import { conversationParamsSchema } from "./conversationRouteSchemas.js";
 
 type ConversationOwnershipRouteDependencies = WorkspaceSessionDependencies & Pick<
   AppDependencies,
-  | "accountRepository"
   | "auditService"
+  | "conversationOperatorDirectory"
   | "conversationOwnershipRepository"
   | "conversationRepository"
+  | "conversationTransferNotices"
+  | "operatorIdentityResolver"
   | "operatorReplyService"
-  | "userRepository"
-  | "workspaceRepository"
   | "workspaceInvalidationPublisher"
 >;
 
@@ -30,13 +35,29 @@ const replyBodySchema = z.object({
 }).strict();
 
 const transferBodySchema = z.object({
-  toAccountId: z.string().uuid(),
+  toUserId: z.string().uuid(),
   expectedVersion: z.number().int().nonnegative(),
 }).strict();
 
 const versionBodySchema = z.object({
   expectedVersion: z.number().int().nonnegative(),
 }).strict();
+
+interface OperatorScope {
+  accountId: string;
+  userId: string;
+  workspaceId: string;
+}
+
+// Ownership routes are session-only, so a signed-in teammate is always present; the check keeps
+// a misconfigured policy from ever recording an ownerless claim.
+const readOperatorScope = (locals: Record<string, unknown>): OperatorScope => {
+  const { accountId, userId, workspaceId } = locals as { accountId: string; userId?: string; workspaceId: string };
+  if (!userId) {
+    throw unauthorized("A signed-in teammate is required");
+  }
+  return { accountId, userId, workspaceId };
+};
 
 const parseConversationId = (params: unknown): string => {
   const parsed = conversationParamsSchema.safeParse(params);
@@ -69,38 +90,28 @@ const requireOwnershipVersion = async (
   }
 };
 
-const requireTransferTargetInWorkspace = async (
+// Unknown users, users of another organisation, and teammates who cannot own conversations here
+// all read as "not found", so the route never confirms who exists outside the workspace.
+const requireTransferTarget = async (
   dependencies: ConversationOwnershipRouteDependencies,
-  workspaceId: string,
-  accountId: string,
-): Promise<void> => {
-  const workspace = await dependencies.workspaceRepository.findById(workspaceId);
-  if (!workspace || workspace.accountId !== accountId) {
+  scope: OperatorScope,
+  toUserId: string,
+): Promise<ConversationOperator> => {
+  const target = await dependencies.conversationOperatorDirectory.find({
+    accountId: scope.accountId,
+    workspaceId: scope.workspaceId,
+    userId: toUserId,
+  });
+  if (!target) {
     throw notFound("Transfer target not found");
   }
+  return target;
 };
 
-const resolveDisplayName = async (
-  dependencies: ConversationOwnershipRouteDependencies,
-  input: { accountId: string; userId?: string },
-): Promise<string> => {
-  const account = await dependencies.accountRepository.findById(input.accountId);
-  if (account?.name && account.name.trim().length > 0) {
-    return account.name;
-  }
-
-  if (input.userId) {
-    const user = await dependencies.userRepository.findById(input.userId);
-    if (user?.email && user.email.trim().length > 0) {
-      return user.email;
-    }
-  }
-
-  return "Operator";
-};
-
-const conflictWithCurrentOwnership = (record: unknown): AppError =>
-  new AppError(409, "conflict", "Conversation ownership changed", { ownership: record });
+const conflictWithCurrentOwnership = (record: ConversationOwnershipRecord | null): AppError =>
+  new AppError(409, "conflict", "Conversation ownership changed", {
+    ownership: record ? presentOwnership(record) : null,
+  });
 
 export const createConversationOwnershipRoutes = (
   dependencies: ConversationOwnershipRouteDependencies,
@@ -109,18 +120,30 @@ export const createConversationOwnershipRoutes = (
   const workspaceSession = requireWorkspaceSession(dependencies);
   const takeoverPermission = requireWorkspacePermission(dependencies, "workspace.conversation.takeover");
 
+  router.get("/operators", workspaceSession, takeoverPermission, async (_req, res, next) => {
+    try {
+      const { accountId, workspaceId } = readOperatorScope(res.locals);
+      const operators = await dependencies.conversationOperatorDirectory.list({ accountId, workspaceId });
+
+      res.status(200).json({ operators });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   router.post("/:conversationId/takeover", workspaceSession, takeoverPermission, validateBody(takeoverBodySchema), async (req, res, next) => {
     try {
-      const { accountId, userId, workspaceId } = res.locals as { accountId: string; userId?: string; workspaceId: string };
+      const { accountId, userId, workspaceId } = readOperatorScope(res.locals);
       const conversationId = parseConversationId(req.params);
       await requireConversationInWorkspace(dependencies, workspaceId, conversationId);
-      const displayName = await resolveDisplayName(dependencies, { accountId, userId });
+      const operator = await dependencies.operatorIdentityResolver.resolve({ accountId, userId });
       const body = req.body as z.infer<typeof takeoverBodySchema>;
       const result = await dependencies.conversationOwnershipRepository.takeOver({
         conversationId,
         workspaceId,
         accountId,
-        displayName,
+        userId: operator.userId,
+        displayName: operator.teammateLabel,
       });
 
       if (!result.ok) {
@@ -140,11 +163,12 @@ export const createConversationOwnershipRoutes = (
           action: "taken_over",
           conversationId,
           ownerAccountId: accountId,
+          actorUserId: userId,
           reason: body.reason,
         },
       });
 
-      res.status(200).json({ ownership: result.record });
+      res.status(200).json({ ownership: presentOwnership(result.record) });
     } catch (error) {
       next(error);
     }
@@ -152,17 +176,16 @@ export const createConversationOwnershipRoutes = (
 
   router.post("/:conversationId/reply", workspaceSession, takeoverPermission, validateBody(replyBodySchema), async (req, res, next) => {
     try {
-      const { accountId, userId, workspaceId } = res.locals as { accountId: string; userId?: string; workspaceId: string };
+      const { accountId, userId, workspaceId } = readOperatorScope(res.locals);
       const conversationId = parseConversationId(req.params);
       await requireConversationInWorkspace(dependencies, workspaceId, conversationId);
-      const displayName = await resolveDisplayName(dependencies, { accountId, userId });
       const body = req.body as z.infer<typeof replyBodySchema>;
       await requireOwnershipVersion(dependencies, conversationId, body.expectedVersion);
       const message = await dependencies.operatorReplyService.reply({
         conversationId,
         workspaceId,
         accountId,
-        displayName,
+        userId,
         message: body.message,
       });
 
@@ -174,16 +197,18 @@ export const createConversationOwnershipRoutes = (
 
   router.post("/:conversationId/transfer", workspaceSession, takeoverPermission, validateBody(transferBodySchema), async (req, res, next) => {
     try {
-      const { accountId, workspaceId } = res.locals as { accountId: string; workspaceId: string };
+      const scope = readOperatorScope(res.locals);
+      const { accountId, userId, workspaceId } = scope;
       const conversationId = parseConversationId(req.params);
       const body = req.body as z.infer<typeof transferBodySchema>;
       await requireConversationInWorkspace(dependencies, workspaceId, conversationId);
-      await requireTransferTargetInWorkspace(dependencies, workspaceId, body.toAccountId);
-      const targetDisplayName = await resolveDisplayName(dependencies, { accountId: body.toAccountId });
+      const target = await requireTransferTarget(dependencies, scope, body.toUserId);
+      // Transferring to yourself is how a teammate takes a conversation someone else holds.
       const result = await dependencies.conversationOwnershipRepository.transfer({
         conversationId,
-        accountId: body.toAccountId,
-        displayName: targetDisplayName,
+        accountId,
+        userId: target.userId,
+        displayName: target.label,
         expectedVersion: body.expectedVersion,
       });
 
@@ -203,11 +228,25 @@ export const createConversationOwnershipRoutes = (
         metadata: {
           action: "transferred",
           conversationId,
-          targetAccountId: body.toAccountId,
+          actorUserId: userId,
+          targetUserId: target.userId,
         },
       });
+      if (result.changed) {
+        // Queued, not sent: delivery runs on the action worker, so the transfer never waits on the
+        // mail provider. Awaited because the host throttles CPU once the response is sent; the
+        // call never rejects, so a lost notice cannot fail the transfer.
+        await dependencies.conversationTransferNotices.queueForRecipient({
+          accountId,
+          workspaceId,
+          conversationId,
+          ownershipVersion: result.record.version,
+          actorUserId: userId,
+          recipientUserId: target.userId,
+        });
+      }
 
-      res.status(200).json({ ownership: result.record });
+      res.status(200).json({ ownership: presentOwnership(result.record) });
     } catch (error) {
       next(error);
     }
@@ -215,7 +254,7 @@ export const createConversationOwnershipRoutes = (
 
   router.post("/:conversationId/handback", workspaceSession, takeoverPermission, validateBody(versionBodySchema), async (req, res, next) => {
     try {
-      const { accountId, workspaceId } = res.locals as { accountId: string; workspaceId: string };
+      const { accountId, userId, workspaceId } = readOperatorScope(res.locals);
       const conversationId = parseConversationId(req.params);
       const body = req.body as z.infer<typeof versionBodySchema>;
       await requireConversationInWorkspace(dependencies, workspaceId, conversationId);
@@ -240,10 +279,11 @@ export const createConversationOwnershipRoutes = (
         metadata: {
           action: "handed_back",
           conversationId,
+          actorUserId: userId,
         },
       });
 
-      res.status(200).json({ ownership: result.record });
+      res.status(200).json({ ownership: presentOwnership(result.record) });
     } catch (error) {
       next(error);
     }

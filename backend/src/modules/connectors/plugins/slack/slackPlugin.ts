@@ -10,7 +10,11 @@ import { ActionRequestRepository } from "../../../../db/repositories/actionReque
 import { PendingDecisionRepository } from "../../../../db/repositories/pendingDecisionRepository.js";
 import type { ApprovalDecisionService } from "../../../approvals/public.js";
 import type { AuditPort } from "../../../audit/contracts/index.js";
-import { ConversationOwnershipRepository, type OperatorReplyService } from "../../../handoff/public.js";
+import {
+  ConversationOwnershipRepository,
+  type OperatorIdentityResolver,
+  type OperatorReplyService,
+} from "../../../handoff/public.js";
 import type { MetricsRegistry } from "../../../../shared/observability/metrics/metricsRegistry.js";
 import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
 import type { ConversationLinkResolver } from "../../../../shared/domain/conversationLinkResolver.js";
@@ -43,6 +47,7 @@ interface SlackPluginOptions {
 type SlackConnectorContext = ConnectorContext & {
   approvalDecisionService?: Pick<ApprovalDecisionService, "resolve">;
   operatorReplyService?: Pick<OperatorReplyService, "reply">;
+  operatorIdentityResolver?: Pick<OperatorIdentityResolver, "resolve">;
   auditService?: Pick<AuditPort, "record">;
   metricsRegistry?: Pick<MetricsRegistry, "incrementCounter"> | null;
   assertPublicUrl?: (url: string) => Promise<void>;
@@ -149,6 +154,7 @@ export class SlackPlugin implements ConnectorPlugin {
           pendingDecisions: new PendingDecisionRepository(db),
           conversationOwnership: new ConversationOwnershipRepository(db),
           operatorReplyService: extendedContext.operatorReplyService,
+          operatorIdentities: extendedContext.operatorIdentityResolver,
           slackViews: {
             open: async ({ installation, triggerId, view }) => {
               const botToken = await installationService.resolveBotTokenForInstallation(installation);

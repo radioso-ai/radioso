@@ -143,6 +143,7 @@ describe("chat history service ownership read surface", () => {
       conversationId: conversation.id,
       workspaceId: "workspace-1",
       accountId: "operator-1",
+      userId: "user-1",
       displayName: "Operator One",
     });
 
@@ -154,6 +155,7 @@ describe("chat history service ownership read surface", () => {
       conversationId: conversation.id,
       state: "human_owned",
       ownerAccountId: "operator-1",
+      ownerUserId: "user-1",
       ownerDisplayName: "Operator One",
     });
     expect(typeof detail.ownership?.takenOverAt).toBe("string");
@@ -218,6 +220,7 @@ describe("chat history service ownership read surface", () => {
       conversationId: conversation.id,
       workspaceId: "workspace-1",
       accountId: "operator-1",
+      userId: "user-1",
       displayName: "Operator One",
     });
     if (!claimed.ok) {
@@ -416,6 +419,7 @@ describe("chat history service ownership read surface", () => {
       conversationId: conversation.id,
       workspaceId: "workspace-1",
       accountId: "operator-1",
+      userId: "user-1",
       displayName: "Operator One",
     });
     if (!claimed.ok) {
@@ -482,6 +486,7 @@ describe("chat history service ownership read surface", () => {
       conversationId: conversation.id,
       workspaceId: "workspace-1",
       accountId: "operator-1",
+      userId: "user-1",
       displayName: "Operator One",
     });
 
@@ -517,6 +522,7 @@ describe("chat history service ownership read surface", () => {
       source: "human_agent",
       content: "I can help with that.",
       operatorAccountId: "operator-1",
+      operatorUserId: "user-1",
       operatorDisplayName: "Joe",
     });
 
@@ -532,6 +538,74 @@ describe("chat history service ownership read surface", () => {
         operatorDisplayName: "Joe",
       }),
     ]);
+  });
+
+  // A reply stored before replies recorded their author could carry the replier's email as its
+  // signature. Only a reply that names its author (humanAgent.userId) was signed under the
+  // never-an-email rule, so only those signatures reach the visitor.
+  const seedLegacyAndAttributedReplies = async () => {
+    const setup = createService();
+    const conversation = await setup.conversationRepository.create({ workspaceId: "workspace-1" });
+    const baseline = await setup.messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "user",
+      content: "baseline",
+    });
+    const legacyReply = await setup.messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "assistant",
+      source: "human_agent",
+      content: "Replied before replies named their author.",
+      operatorAccountId: "operator-1",
+      operatorDisplayName: "dana@example.com",
+    });
+    const attributedReply = await setup.messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "assistant",
+      source: "human_agent",
+      content: "Replied with a signature.",
+      operatorAccountId: "operator-1",
+      operatorUserId: "user-1",
+      operatorDisplayName: "Dana Scully",
+    });
+    return { ...setup, conversation, baseline, legacyReply, attributedReply };
+  };
+
+  it("keeps an unattributed reply's signature off the visitor tail and detail", async () => {
+    const { service, messageRepository, conversation, baseline, legacyReply, attributedReply } = await seedLegacyAndAttributedReplies();
+
+    const tail = await service.tailConversation("workspace-1", conversation.id, {
+      cursor: messageRepository.cursorFor(baseline),
+      limit: 10,
+    });
+    const detail = await service.getConversation("workspace-1", conversation.id, { limit: 50, offset: 0 });
+
+    for (const messages of [tail.messages, detail.messages]) {
+      expect(messages.find((message) => message.id === legacyReply.id)?.operatorDisplayName).toBeUndefined();
+      expect(messages.find((message) => message.id === attributedReply.id)?.operatorDisplayName).toBe("Dana Scully");
+    }
+    expect(JSON.stringify([tail, detail])).not.toContain("dana@example.com");
+  });
+
+  it("shows an unattributed reply's signature on operator surfaces", async () => {
+    const { service, messageRepository, conversation, baseline, legacyReply } = await seedLegacyAndAttributedReplies();
+
+    const tail = await service.tailConversation("workspace-1", conversation.id, {
+      cursor: messageRepository.cursorFor(baseline),
+      limit: 10,
+    }, { includeOwnership: true, includeUnattributedReplySignatures: true });
+    const detail = await service.getConversation("workspace-1", conversation.id, { limit: 50, offset: 0 }, {
+      includeOwnership: true,
+      includeUnattributedReplySignatures: true,
+    });
+    const turn = await service.getConversationTurn("workspace-1", legacyReply.id, { includeUnattributedReplySignatures: true });
+
+    expect(tail.messages.find((message) => message.id === legacyReply.id)?.operatorDisplayName).toBe("dana@example.com");
+    expect(detail.messages.find((message) => message.id === legacyReply.id)?.operatorDisplayName).toBe("dana@example.com");
+    expect(turn.message.operatorDisplayName).toBe("dana@example.com");
   });
 });
 

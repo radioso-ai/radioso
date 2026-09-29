@@ -17,6 +17,7 @@ import {
   WEBHOOK_SEND_ACTION_TYPE,
 } from "../../src/modules/chat/composition.js";
 import { CloudTasksActionDrainDispatcher } from "../../src/modules/chat/infra/cloudTasksActionDrainDispatcher.js";
+import { CONVERSATION_TRANSFER_NOTICE_ACTION_TYPE } from "../../src/modules/handoff/public.js";
 import type { OrganizationCreationGuard } from "../../src/shared/domain/organizationCreationGuard.js";
 import type { ManagedModelPolicy } from "../../src/shared/domain/managedModelPolicy.js";
 import type { DirectiveMatcherPort } from "../../src/modules/directives/public.js";
@@ -72,6 +73,7 @@ describe("default application composition", () => {
       "radioso-audience-pulse",
       "radioso-contact-routine",
       "radioso-webhook-send",
+      "radioso-conversation-transfer-notice",
       "radioso-oss-organization-creation",
       "radioso-customer-email",
       "radioso-slack",
@@ -98,6 +100,16 @@ describe("default application composition", () => {
     ]);
     expect(composition.actionCapabilityMap.has(WEBHOOK_SEND_ACTION_TYPE)).toBe(true);
     expect(composition.actionCapabilityMap.requiredCapabilitiesFor(WEBHOOK_SEND_ACTION_TYPE)).toEqual([]);
+    // The worker dispatches a transfer notice, but only the transfer route queues one: routines
+    // can neither author nor emit it.
+    expect(composition.actionHandlerRegistrations.map((registration) => registration.type))
+      .toContain(CONVERSATION_TRANSFER_NOTICE_ACTION_TYPE);
+    expect(composition.actionCapabilityMap.has(CONVERSATION_TRANSFER_NOTICE_ACTION_TYPE)).toBe(false);
+    expect(composition.routineActionHandlerRegistrations.map((registration) => registration.type))
+      .not.toContain(CONVERSATION_TRANSFER_NOTICE_ACTION_TYPE);
+    expect(composition.routineActionHandlerRegistrations.map((registration) => registration.type)).toEqual(
+      expect.arrayContaining([CONTACT_SEND_ACTION_TYPE, HANDOFF_NOTIFY_ACTION_TYPE, WEBHOOK_SEND_ACTION_TYPE]),
+    );
     expect(composition.organizationCreationGuardRegistration).toBeTypeOf("function");
     expect(composition.oauthProviders).toEqual([]);
   });
@@ -227,6 +239,7 @@ describe("default application composition", () => {
       "radioso-audience-pulse",
       "radioso-contact-routine",
       "radioso-webhook-send",
+      "radioso-conversation-transfer-notice",
       "radioso-oss-organization-creation",
       "radioso-customer-email",
       "radioso-slack",

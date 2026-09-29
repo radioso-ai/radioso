@@ -10,6 +10,7 @@ const ownership: ConversationOwnership = {
   workspaceId: 'workspace-1',
   state: 'human_owned',
   ownerAccountId: null,
+  ownerUserId: null,
   ownerDisplayName: null,
   reason: null,
   version: 1,

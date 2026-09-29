@@ -200,6 +200,26 @@ describe("anonymous chat bootstrap integration", () => {
       source: "human_agent",
       content: "A human operator can help from here.",
     });
+    // Stored before replies named their author, when an email could stand in for the signature.
+    const unattributedReply = await repositories.messageRepository.create({
+      conversationId: followUp.body.conversationId,
+      workspaceId,
+      role: "assistant",
+      source: "human_agent",
+      content: "Signed the old way.",
+      operatorAccountId: "account-legacy",
+      operatorDisplayName: "operator@example.com",
+    });
+    const signedReply = await repositories.messageRepository.create({
+      conversationId: followUp.body.conversationId,
+      workspaceId,
+      role: "assistant",
+      source: "human_agent",
+      content: "Signed by name.",
+      operatorAccountId: "account-legacy",
+      operatorUserId: "user-dana",
+      operatorDisplayName: "Dana Scully",
+    });
 
     const tail = await request(app)
       .get(`/api/v1/public/chat/${chatToken}/tail/${followUp.body.conversationId}`)
@@ -209,7 +229,7 @@ describe("anonymous chat bootstrap integration", () => {
 
     expect(tail.status).toBe(200);
     expect(tail.body).not.toHaveProperty("ownership");
-    expect(tail.body.cursor).toEqual(repositories.messageRepository.cursorFor(humanReply));
+    expect(tail.body.cursor).toEqual(repositories.messageRepository.cursorFor(signedReply));
     expect(tail.body.messages).toEqual([
       expect.objectContaining({
         id: humanReply.id,
@@ -217,7 +237,11 @@ describe("anonymous chat bootstrap integration", () => {
         source: "human_agent",
         content: "A human operator can help from here.",
       }),
+      expect.objectContaining({ id: unattributedReply.id, source: "human_agent" }),
+      expect.objectContaining({ id: signedReply.id, source: "human_agent", operatorDisplayName: "Dana Scully" }),
     ]);
+    expect(tail.body.messages[1]).not.toHaveProperty("operatorDisplayName");
+    expect(JSON.stringify(tail.body)).not.toContain("operator@example.com");
   });
 
   it("returns 404 when a public session tails another session's conversation", async () => {

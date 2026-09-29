@@ -430,6 +430,8 @@ export type ChatConversationSummary = ApiSchemas['ChatConversationSummary'] & {
   channelContext?: ConversationChannelContext | null
 }
 export type ConversationOwnership = ApiSchemas['ConversationOwnership']
+export type ConversationOperator = ApiSchemas['ConversationOperator']
+export type ConversationOperatorsResponse = ApiSchemas['ConversationOperatorsResponse']
 export type ConversationRequestContext = ApiSchemas['ConversationRequestContext']
 export type ConversationVisitorProfile = ApiSchemas['ConversationVisitorProfile']
 export type ChatConversationMessage = ApiSchemas['ChatConversationMessage']

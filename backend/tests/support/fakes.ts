@@ -782,7 +782,12 @@ export class InMemoryAccountMembershipRepository implements AccountMembershipRep
       ...membership,
       email: user?.email ?? "unknown@example.com",
       displayName: user?.displayName ?? null,
+      disabledAt: null,
     }));
+  }
+
+  async findActiveUserByAccountAndUser(accountId: string, userId: string): Promise<AccountMembershipUserRecord | null> {
+    return (await this.listActiveByAccount(accountId)).find((member) => member.userId === userId) ?? null;
   }
 
   async listActiveByUser(userId: string): Promise<AccountMembershipRecord[]> {
@@ -4297,6 +4302,29 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
   }
 }
 
+/** Records action outbox writes; the drain never runs in the in-memory app. */
+export class InMemoryActionOutbox {
+  readonly items: Array<{
+    type: string;
+    payload: Record<string, unknown>;
+    workspaceId?: string | null;
+    accountId?: string | null;
+    conversationId?: string | null;
+    idempotencyKey?: string | null;
+  }> = [];
+
+  async enqueue(input: InMemoryActionOutbox["items"][number]): Promise<{ id: string; duplicate: boolean }> {
+    const existing = input.idempotencyKey
+      ? this.items.findIndex((item) => item.idempotencyKey === input.idempotencyKey)
+      : -1;
+    if (existing >= 0) {
+      return { id: `action-${existing}`, duplicate: true };
+    }
+    this.items.push(input);
+    return { id: `action-${this.items.length - 1}`, duplicate: false };
+  }
+}
+
 export class InMemoryConversationOwnershipRepository implements Pick<
   ConversationOwnershipRepository,
   "load" | "loadByConversationIds" | "requestHandoff" | "takeOver" | "transfer" | "handBack"
@@ -4331,7 +4359,8 @@ export class InMemoryConversationOwnershipRepository implements Pick<
       workspaceId: input.workspaceId,
       state: "human_owned",
       ownerAccountId: null,
-      ownerDisplayName: null,
+      ownerUserId: null,
+      ownerStoredLabel: null,
       reason: input.reason,
       version: existing ? existing.version + 1 : 1,
       takenOverAt: null,
@@ -4349,7 +4378,8 @@ export class InMemoryConversationOwnershipRepository implements Pick<
         workspaceId: input.workspaceId,
         state: "human_owned",
         ownerAccountId: input.accountId,
-        ownerDisplayName: input.displayName,
+        ownerUserId: input.userId,
+        ownerStoredLabel: input.displayName,
         reason: "operator_takeover",
         version: 1,
         takenOverAt: new Date(),
@@ -4371,7 +4401,8 @@ export class InMemoryConversationOwnershipRepository implements Pick<
       workspaceId: input.workspaceId,
       state: "human_owned",
       ownerAccountId: input.accountId,
-      ownerDisplayName: input.displayName,
+      ownerUserId: input.userId,
+      ownerStoredLabel: input.displayName,
       reason: "operator_takeover",
       version: existing.version + 1,
       takenOverAt: new Date(),
@@ -4386,14 +4417,16 @@ export class InMemoryConversationOwnershipRepository implements Pick<
     if (!existing || existing.state !== "human_owned" || existing.version !== input.expectedVersion) {
       return { ok: false, changed: false, record: existing ?? null };
     }
-    if (existing.ownerAccountId === input.accountId && existing.ownerDisplayName === input.displayName) {
+    if (existing.ownerAccountId === input.accountId && existing.ownerUserId === input.userId) {
       return { ok: true, changed: false, record: existing };
     }
 
     const record = this.createRecord({
       ...existing,
       ownerAccountId: input.accountId,
-      ownerDisplayName: input.displayName,
+      ownerUserId: input.userId,
+      ownerStoredLabel: input.displayName,
+      takenOverAt: existing.takenOverAt ?? new Date(),
       version: existing.version + 1,
       createdAt: existing.createdAt,
     });
@@ -4406,7 +4439,8 @@ export class InMemoryConversationOwnershipRepository implements Pick<
     if (!existing || existing.version !== input.expectedVersion) {
       return { ok: false, changed: false, record: existing ?? null };
     }
-    if (existing.state === "ai_owned" && existing.ownerAccountId === null && existing.ownerDisplayName === null) {
+    if (existing.state === "ai_owned" && existing.ownerAccountId === null && existing.ownerUserId === null
+      && existing.ownerStoredLabel === null) {
       return { ok: true, changed: false, record: existing };
     }
 
@@ -4414,7 +4448,8 @@ export class InMemoryConversationOwnershipRepository implements Pick<
       ...existing,
       state: "ai_owned",
       ownerAccountId: null,
-      ownerDisplayName: null,
+      ownerUserId: null,
+      ownerStoredLabel: null,
       version: existing.version + 1,
       createdAt: existing.createdAt,
     });
@@ -4427,7 +4462,8 @@ export class InMemoryConversationOwnershipRepository implements Pick<
     workspaceId: string;
     state: ConversationOwnershipRecord["state"];
     ownerAccountId: string | null;
-    ownerDisplayName: string | null;
+    ownerUserId: string | null;
+    ownerStoredLabel: string | null;
     reason: ConversationOwnershipRecord["reason"];
     version: number;
     takenOverAt: Date | null;
@@ -4439,7 +4475,10 @@ export class InMemoryConversationOwnershipRepository implements Pick<
       workspaceId: input.workspaceId,
       state: input.state,
       ownerAccountId: input.ownerAccountId,
-      ownerDisplayName: input.ownerDisplayName,
+      ownerUserId: input.ownerUserId,
+      // The in-memory store keeps no user profiles; owners are named by the stored label.
+      ownerProfile: null,
+      ownerStoredLabel: input.ownerStoredLabel,
       reason: input.reason,
       version: input.version,
       takenOverAt: input.takenOverAt,
@@ -4594,6 +4633,7 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
     content: string;
     source?: MessageSource;
     operatorAccountId?: string;
+    operatorUserId?: string;
     operatorDisplayName?: string;
     inputMetadata?: MessageRecord["inputMetadata"];
     metadata?: Record<string, unknown>;
@@ -4602,11 +4642,12 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
     skillStatus?: string;
   }): Promise<MessageRecord> {
     const metadata = input.metadata ?? (input.inputMetadata ? { ...input.inputMetadata } : undefined);
-    const metadataWithOperator = input.operatorAccountId || input.operatorDisplayName
+    const metadataWithOperator = input.operatorAccountId || input.operatorUserId || input.operatorDisplayName
       ? {
           ...(metadata ?? {}),
           humanAgent: {
             accountId: input.operatorAccountId,
+            userId: input.operatorUserId,
             displayName: input.operatorDisplayName,
           },
         }

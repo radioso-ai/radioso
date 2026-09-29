@@ -232,13 +232,18 @@ export class InMemoryCopilotRepository implements CopilotRepositoryPort, Copilot
     return { proposal, claimedAt, previousAttemptStartedAt };
   }
 
-  /** Clears only the exact claim `claimProposalApply` handed to this attempt, mirroring the real repository's fencing. */
-  async releaseProposalApplyClaim(input: { id: string; workspaceId: string; operatorUserId: string; claimedAt: Date }): Promise<boolean> {
+  /** Restores the row to what the exact claim this attempt was handed found, mirroring the real repository: unbinds a reviewed receipt unless an earlier attempt is still outstanding. */
+  async releaseProposalApplyClaim(input: { id: string; workspaceId: string; operatorUserId: string; claimedAt: Date; previousAttemptStartedAt: Date | null }): Promise<boolean> {
     const proposal = await this.findProposal(input);
     if (!proposal || proposal.status !== "pending") return false;
     const claimedAt = this.applyClaims.get(proposal.id);
     if (!claimedAt || claimedAt.getTime() !== input.claimedAt.getTime()) return false;
-    this.applyClaims.delete(proposal.id);
+    if (input.previousAttemptStartedAt) {
+      this.applyClaims.set(proposal.id, input.previousAttemptStartedAt);
+    } else {
+      this.applyClaims.delete(proposal.id);
+      this.proposals[this.proposals.indexOf(proposal)] = { ...proposal, executionInvocationId: null };
+    }
     return true;
   }
 

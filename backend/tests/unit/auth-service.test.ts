@@ -153,13 +153,15 @@ class RecordingOrganizationCreationGuard implements OrganizationCreationGuard {
   shouldReject: Error | null = null;
   /** Makes every reservation this guard hands out fail when it is released. */
   releaseError: Error | null = null;
+  /** Makes every reservation this guard hands out fail when it is committed. */
+  commitError: Error | null = null;
 
   async reserve(input: OrganizationCreationRequest): Promise<OrganizationCreationReservation> {
     this.requests.push(input);
     if (this.shouldReject) {
       throw this.shouldReject;
     }
-    const reservation = new RecordingOrganizationCreationReservation(this.releaseError);
+    const reservation = new RecordingOrganizationCreationReservation(this.releaseError, this.commitError);
     this.reservations.push(reservation);
     return reservation;
   }
@@ -174,9 +176,15 @@ class RecordingOrganizationCreationReservation implements OrganizationCreationRe
   released = false;
   accountId: string | null = null;
 
-  constructor(private readonly releaseError: Error | null = null) {}
+  constructor(
+    private readonly releaseError: Error | null = null,
+    private readonly commitError: Error | null = null,
+  ) {}
 
   async commit(input: { accountId: string }): Promise<void> {
+    if (this.commitError) {
+      throw this.commitError;
+    }
     this.committed = true;
     this.accountId = input.accountId;
   }
@@ -253,6 +261,11 @@ const createAuthService = (options: {
     auditService,
   };
 };
+
+const failureEvents = (
+  auditService: ReturnType<typeof createAuthService>["auditService"],
+  eventType: "auth.register" | "account.create",
+) => auditService.events.filter((event) => event.eventType === eventType && event.eventStatus === "failure");
 
 describe("AuthService rollback", () => {
   it("rolls back an auto-verified registration when session creation fails", async () => {
@@ -563,6 +576,163 @@ describe("AuthService rollback", () => {
 
     expect(guard.requests).toEqual([{ intent: "signup" }]);
     expect(guard.reservations[0]).toMatchObject({ committed: false, released: true });
+  });
+
+  // A signup that fails mid-provisioning usually fails because the database is
+  // down, which is also what makes the rollback fail. Cleanup must not replace
+  // the failure it is cleaning up after.
+  it("keeps the registration's own error when the rollback fails too", async () => {
+    const guard = new RecordingOrganizationCreationGuard();
+    const accountRepository = new TrackingAccountRepository();
+    accountRepository.deleteById = async () => {
+      throw new Error("account delete failed");
+    };
+    const { authService, auditService } = createAuthService({
+      accountRepository,
+      organizationCreationGuard: guard,
+      onAccountCreated: async () => {
+        throw new Error("account hook failed");
+      },
+    });
+
+    await expect(authService.register({
+      email: "register-rollback-fault@example.com",
+      password: "verysecurepassword",
+    })).rejects.toThrow("account hook failed");
+
+    expect(guard.reservations[0]?.released).toBe(true);
+    expect(failureEvents(auditService, "auth.register")).toEqual([
+      expect.objectContaining({
+        metadata: {
+          email: "register-rollback-fault@example.com",
+          reason: "account_provisioning_failed",
+          // In OSS an account that outlives its signup closes registration for
+          // everyone, so it is named rather than swallowed.
+          detail: { orphanedAccountId: "account-1" },
+        },
+      }),
+    ]);
+  });
+
+  it("keeps the registration's own error when releasing the reservation fails too", async () => {
+    const guard = new RecordingOrganizationCreationGuard();
+    guard.releaseError = new Error("reservation release failed");
+    const accountRepository = new TrackingAccountRepository();
+    const { authService, auditService } = createAuthService({
+      accountRepository,
+      organizationCreationGuard: guard,
+      onAccountCreated: async () => {
+        throw new Error("account hook failed");
+      },
+    });
+
+    await expect(authService.register({
+      email: "register-release-fault@example.com",
+      password: "verysecurepassword",
+    })).rejects.toThrow("account hook failed");
+
+    expect(accountRepository.deletedIds).toEqual(["account-1"]);
+    expect(failureEvents(auditService, "auth.register")).toEqual([]);
+  });
+
+  it("keeps the registration's own error when the orphaned account cannot be recorded either", async () => {
+    const accountRepository = new TrackingAccountRepository();
+    accountRepository.deleteById = async () => {
+      throw new Error("account delete failed");
+    };
+    const { authService, auditService } = createAuthService({
+      accountRepository,
+      onAccountCreated: async () => {
+        throw new Error("account hook failed");
+      },
+    });
+    auditService.record = async () => {
+      throw new Error("audit write failed");
+    };
+
+    await expect(authService.register({
+      email: "register-audit-fault@example.com",
+      password: "verysecurepassword",
+    })).rejects.toThrow("account hook failed");
+  });
+
+  it("records no registration success when committing the reservation fails", async () => {
+    const guard = new RecordingOrganizationCreationGuard();
+    guard.commitError = new Error("reservation commit failed");
+    const accountRepository = new TrackingAccountRepository();
+    const { authService, auditService } = createAuthService({
+      accountRepository,
+      organizationCreationGuard: guard,
+    });
+
+    await expect(authService.register({
+      email: "register-commit-fault@example.com",
+      password: "verysecurepassword",
+    })).rejects.toThrow("reservation commit failed");
+
+    expect(accountRepository.deletedIds).toEqual(["account-1"]);
+    expect(auditService.events.filter((event) => event.eventType === "auth.register")).toEqual([]);
+  });
+
+  it("keeps the organization creation's own error when the rollback fails too", async () => {
+    const guard = new RecordingOrganizationCreationGuard();
+    const accountRepository = new TrackingAccountRepository();
+    accountRepository.deleteById = async () => {
+      throw new Error("account delete failed");
+    };
+    const userRepository = new InMemoryUserRepository();
+    await userRepository.create({
+      id: "user-1",
+      email: "create-org-rollback-fault@example.com",
+      passwordHash: "hash",
+    });
+    const { authService, auditService } = createAuthService({
+      accountRepository,
+      userRepository,
+      organizationCreationGuard: guard,
+    });
+
+    await expect(authService.createOrganization({
+      userId: "user-1",
+      organizationName: "Rollback Fault Org",
+    })).rejects.toThrow("session create failed");
+
+    expect(guard.reservations[0]?.released).toBe(true);
+    expect(await userRepository.findById("user-1")).toBeTruthy();
+    expect(failureEvents(auditService, "account.create")).toEqual([
+      expect.objectContaining({
+        metadata: {
+          actorUserId: "user-1",
+          reason: "account_provisioning_failed",
+          detail: { orphanedAccountId: "account-1" },
+        },
+      }),
+    ]);
+  });
+
+  it("keeps the organization creation's own error when releasing the reservation fails too", async () => {
+    const guard = new RecordingOrganizationCreationGuard();
+    guard.releaseError = new Error("reservation release failed");
+    const accountRepository = new TrackingAccountRepository();
+    const userRepository = new InMemoryUserRepository();
+    await userRepository.create({
+      id: "user-1",
+      email: "create-org-release-fault@example.com",
+      passwordHash: "hash",
+    });
+    const { authService, auditService } = createAuthService({
+      accountRepository,
+      userRepository,
+      organizationCreationGuard: guard,
+    });
+
+    await expect(authService.createOrganization({
+      userId: "user-1",
+      organizationName: "Release Fault Org",
+    })).rejects.toThrow("session create failed");
+
+    expect(accountRepository.deletedIds).toEqual(["account-1"]);
+    expect(failureEvents(auditService, "account.create")).toEqual([]);
   });
 
   it("does not create account records when the organization creation guard rejects", async () => {

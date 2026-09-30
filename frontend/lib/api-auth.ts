@@ -5,6 +5,7 @@ import type {
   EmailVerificationResendRequest,
   EmailVerificationVerifyRequest,
   EmailVerificationVerifyResponse,
+  InvitationAcceptRequest,
   InvitationDetailsResponse,
   LoginRequest,
   LoginResponse,
@@ -15,6 +16,8 @@ import type {
   SessionResponse,
   RegisterRequest,
   RegisterResponse,
+  UserProfile,
+  UserProfileUpdateRequest,
 } from './api-types'
 
 export const authApi = {
@@ -50,6 +53,17 @@ export const authApi = {
     } catch {
       return null
     }
+  },
+
+  async getProfile(): Promise<UserProfile> {
+    return request<UserProfile>('/auth/profile', { method: 'GET' }, { withSession: true })
+  },
+
+  async updateProfile(data: UserProfileUpdateRequest): Promise<UserProfile> {
+    return request<UserProfile>('/auth/profile', {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }, { withSession: true })
   },
 
   async getGoogleLoginStatus(): Promise<{ enabled: boolean }> {
@@ -113,7 +127,7 @@ export const authApi = {
     }, { withSession: false })
   },
 
-  async acceptInvitation(invitationToken: string, data: RegisterRequest): Promise<LoginResponse> {
+  async acceptInvitation(invitationToken: string, data: InvitationAcceptRequest): Promise<LoginResponse> {
     return request<LoginResponse>(`/auth/invitations/${invitationToken}/accept`, {
       method: 'POST',
       body: JSON.stringify(data),

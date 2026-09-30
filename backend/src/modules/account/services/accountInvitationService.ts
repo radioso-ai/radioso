@@ -109,12 +109,14 @@ export class AccountInvitationService {
     });
 
     const acceptanceUrl = `/invite/${invitationToken}`;
+    const inviter = await this.userRepository.findById(input.invitedByUserId);
     // Notification is best-effort: the invitation stands on its own and the operator can
     // still share the acceptance link, so a delivery failure is reported, not thrown.
     const { delivered } = await this.invitationNotifier.notifyInvited({
       email,
       acceptancePath: acceptanceUrl,
-      invitedByEmail: (await this.userRepository.findById(input.invitedByUserId))?.email ?? null,
+      invitedByEmail: inviter?.email ?? null,
+      invitedByName: inviter?.displayName ?? null,
       expiresAt: invitation.expiresAt,
     });
 

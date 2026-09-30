@@ -33,6 +33,7 @@ export function RegisterForm({ onSwitchToLogin, onVerificationPending }: Registe
   const auth = useOptionalAuth()
   const riseSun = useAuthSunrise()
   const [organizationName, setOrganizationName] = useState('')
+  const [displayName, setDisplayName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -64,6 +65,7 @@ export function RegisterForm({ onSwitchToLogin, onVerificationPending }: Registe
         email,
         password,
         organizationName: organizationName.trim() || undefined,
+        displayName: displayName.trim() || undefined,
       })
       if (response.requiresEmailVerification) {
         setPendingVerificationEmail(email)
@@ -78,7 +80,7 @@ export function RegisterForm({ onSwitchToLogin, onVerificationPending }: Registe
         throw new Error('Registration is unavailable outside the auth shell')
       }
       riseSun()
-      await auth.login(email, response.userId, response.accountId, response.organizationName)
+      await auth.login({ ...response, email })
     } catch (error) {
       setError(getErrorMessage(error))
     } finally {
@@ -132,6 +134,17 @@ export function RegisterForm({ onSwitchToLogin, onVerificationPending }: Registe
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="space-y-2">
+        <Label htmlFor="displayName">Your name (optional)</Label>
+        <Input
+          id="displayName"
+          type="text"
+          autoComplete="name"
+          value={displayName}
+          onChange={(e) => setDisplayName(e.target.value)}
+          disabled={isLoading}
+        />
+      </div>
       <div className="space-y-2">
         <Label htmlFor="email">Email</Label>
         <Input

@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 
@@ -921,5 +923,259 @@ describe("auth integration", () => {
 
     expect(fetched.status).toBe(200);
     expect(fetched.body.federatedProviders).toEqual(["google"]);
+  });
+
+  describe("user profile", () => {
+    it("reads and updates the signed-in user's own display name", async () => {
+      const { app } = createTestApp();
+      const session = await issueTestSession(app, "profile-owner@example.com");
+
+      const initial = await request(app).get("/api/v1/auth/profile").set("Cookie", session.cookie);
+      expect(initial.status).toBe(200);
+      expect(initial.body).toEqual({ userId: session.userId, email: "profile-owner@example.com", displayName: null });
+      expect(initial.headers["cache-control"]).toBe("no-store");
+
+      const named = await request(app)
+        .patch("/api/v1/auth/profile")
+        .set("Cookie", session.cookie)
+        .send({ displayName: "  Ada Lovelace  " });
+      expect(named.status).toBe(200);
+      expect(named.body).toEqual({ userId: session.userId, email: "profile-owner@example.com", displayName: "Ada Lovelace" });
+
+      const described = await request(app).get("/api/v1/auth/session").set("Cookie", session.cookie);
+      expect(described.body.displayName).toBe("Ada Lovelace");
+    });
+
+    it("clears the display name with null or a blank string", async () => {
+      const { app } = createTestApp();
+      const session = await issueTestSession(app, "profile-clear@example.com");
+      await request(app).patch("/api/v1/auth/profile").set("Cookie", session.cookie).send({ displayName: "Ada" });
+
+      const cleared = await request(app).patch("/api/v1/auth/profile").set("Cookie", session.cookie).send({ displayName: null });
+      expect(cleared.status).toBe(200);
+      expect(cleared.body.displayName).toBeNull();
+
+      await request(app).patch("/api/v1/auth/profile").set("Cookie", session.cookie).send({ displayName: "Ada" });
+      const blanked = await request(app).patch("/api/v1/auth/profile").set("Cookie", session.cookie).send({ displayName: "   " });
+      expect(blanked.body.displayName).toBeNull();
+    });
+
+    it.each([
+      ["a name over 80 characters", { displayName: "a".repeat(81) }],
+      ["a name with a control character", { displayName: "Ada\u0007Lovelace" }],
+      ["a body with an unknown field", { displayName: "Ada", email: "other@example.com" }],
+      ["a body without displayName", {}],
+      ["a non-string name", { displayName: 42 }],
+    ])("rejects %s with 400 and leaves the profile unchanged", async (_label, body) => {
+      const { app } = createTestApp();
+      const session = await issueTestSession(app, `profile-invalid-${randomUUID()}@example.com`);
+      await request(app).patch("/api/v1/auth/profile").set("Cookie", session.cookie).send({ displayName: "Before" });
+
+      const response = await request(app).patch("/api/v1/auth/profile").set("Cookie", session.cookie).send(body);
+
+      expect(response.status).toBe(400);
+      expect(response.body.error.code).toBe("bad_request");
+      const after = await request(app).get("/api/v1/auth/profile").set("Cookie", session.cookie);
+      expect(after.body.displayName).toBe("Before");
+    });
+
+    it.each([
+      ["a name over 80 characters", "a".repeat(81), "Display name must be at most 80 characters"],
+      ["a name with a control character", "Ada\u0007Lovelace", "Display name cannot contain control characters"],
+      ["a name that reorders the text around it", "Ada‮ecalevol", "Display name cannot contain text-direction control characters"],
+      ["a name that renders as nothing", "​ㅤ", "Display name must contain a visible character"],
+      ["a name shaped like an email address", "dana@corp.com", "Display name cannot be an email address"],
+    ])("answers %s with its own reason", async (_label, displayName, message) => {
+      const { app } = createTestApp();
+      const session = await issueTestSession(app, `profile-reason-${randomUUID()}@example.com`);
+
+      const response = await request(app).patch("/api/v1/auth/profile").set("Cookie", session.cookie).send({ displayName });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error.message).toBe(message);
+    });
+
+    it("requires a session to read or update the profile", async () => {
+      const { app } = createTestApp();
+
+      expect((await request(app).get("/api/v1/auth/profile")).status).toBe(401);
+      expect((await request(app).patch("/api/v1/auth/profile").send({ displayName: "Ada" })).status).toBe(401);
+    });
+
+    it("audits a profile update by field name, never by value", async () => {
+      const { app, dependencies } = createTestApp();
+      const session = await issueTestSession(app, "profile-audit-http@example.com");
+
+      await request(app).patch("/api/v1/auth/profile").set("Cookie", session.cookie).send({ displayName: "Mae Jemison" });
+
+      const events = (dependencies.auditService as InMemoryAuditService).events
+        .filter((event) => event.eventType === "auth.profile_updated");
+      expect(events).toEqual([
+        expect.objectContaining({
+          accountId: session.accountId,
+          eventStatus: "success",
+          metadata: expect.objectContaining({ actorUserId: session.userId, changedFields: ["displayName"] }),
+        }),
+      ]);
+      expect(JSON.stringify(events)).not.toContain("Mae Jemison");
+    });
+
+    it("audits a profile update in every organization the user is still a member of", async () => {
+      const { app, dependencies } = createTestApp();
+      const joinOrganization = async (ownerEmail: string) => {
+        const owner = await issueTestSession(app, ownerEmail);
+        const invitation = await request(app)
+          .post("/api/v1/account/invitations")
+          .set("Cookie", owner.cookie)
+          .send({ email: "profile-multi-org@example.com" });
+        const invitationToken = invitation.body.acceptanceUrl.split("/").at(-1);
+        const accepted = await request(app)
+          .post(`/api/v1/auth/invitations/${invitationToken}/accept`)
+          .send({ email: "profile-multi-org@example.com", password: "verysecurepassword" })
+          .expect(200);
+        return { owner, cookie: accepted.headers["set-cookie"][0] };
+      };
+      const first = await joinOrganization("profile-first-owner@example.com");
+      const second = await joinOrganization("profile-second-owner@example.com");
+      const departed = await joinOrganization("profile-departed-owner@example.com");
+      const departedMembers = await request(app).get("/api/v1/account/users").set("Cookie", departed.owner.cookie);
+      const departedMembership = departedMembers.body.users
+        .find((user: { email: string }) => user.email === "profile-multi-org@example.com");
+      await request(app)
+        .delete(`/api/v1/account/users/${departedMembership.membershipId}`)
+        .set("Cookie", departed.owner.cookie)
+        .expect(204);
+
+      await request(app)
+        .patch("/api/v1/auth/profile")
+        .set("Cookie", first.cookie)
+        .send({ displayName: "Katherine Johnson" })
+        .expect(200);
+
+      const auditedAccounts = (dependencies.auditService as InMemoryAuditService).events
+        .filter((event) => event.eventType === "auth.profile_updated")
+        .map((event) => event.accountId);
+      expect(auditedAccounts).toHaveLength(2);
+      expect(auditedAccounts).toEqual(expect.arrayContaining([first.owner.accountId, second.owner.accountId]));
+    }, 20_000);
+
+    it("refuses a profile update from a session on an organization the user was removed from", async () => {
+      const { app, dependencies } = createTestApp();
+      const owner = await issueTestSession(app, "profile-remover@example.com");
+      const invitation = await request(app)
+        .post("/api/v1/account/invitations")
+        .set("Cookie", owner.cookie)
+        .send({ email: "profile-removed@example.com" });
+      const invitationToken = invitation.body.acceptanceUrl.split("/").at(-1);
+      const accepted = await request(app)
+        .post(`/api/v1/auth/invitations/${invitationToken}/accept`)
+        .send({ email: "profile-removed@example.com", password: "verysecurepassword", displayName: "Before" })
+        .expect(200);
+      const memberCookie = accepted.headers["set-cookie"][0];
+      const members = await request(app).get("/api/v1/account/users").set("Cookie", owner.cookie);
+      const membership = members.body.users.find((user: { email: string }) => user.email === "profile-removed@example.com");
+      await request(app).delete(`/api/v1/account/users/${membership.membershipId}`).set("Cookie", owner.cookie).expect(204);
+
+      const response = await request(app).patch("/api/v1/auth/profile").set("Cookie", memberCookie).send({ displayName: "After" });
+
+      expect(response.status).toBe(401);
+      expect(response.body.error.message).toBe("Active account membership is required");
+      const profile = await request(app).get("/api/v1/auth/profile").set("Cookie", memberCookie);
+      expect(profile.body.displayName).toBe("Before");
+      expect((dependencies.auditService as InMemoryAuditService).events
+        .filter((event) => event.eventType === "auth.profile_updated")).toEqual([]);
+    });
+
+    it("stores the display name given at signup", async () => {
+      const { app, repositories } = createTestApp();
+
+      const registered = await request(app).post("/api/v1/auth/register").send({
+        email: "named-signup-http@example.com",
+        password: "verysecurepassword",
+        displayName: "Hedy Lamarr",
+      });
+      expect(registered.status).toBe(201);
+      expect(registered.body.displayName).toBe("Hedy Lamarr");
+      await repositories.userRepository.markEmailVerified(registered.body.userId, new Date());
+      const login = await request(app).post("/api/v1/auth/login").send({
+        email: "named-signup-http@example.com",
+        password: "verysecurepassword",
+      });
+      expect(login.body.displayName).toBe("Hedy Lamarr");
+
+      const described = await request(app).get("/api/v1/auth/session").set("Cookie", login.headers["set-cookie"][0]);
+      expect(described.body.displayName).toBe("Hedy Lamarr");
+    });
+
+    it("answers organization changes and invitation joins with the person's display name", async () => {
+      const { app } = createTestApp();
+      const member = await issueTestSession(app, "named-mover@example.com");
+      await request(app).patch("/api/v1/auth/profile").set("Cookie", member.cookie).send({ displayName: "Joan Clarke" }).expect(200);
+
+      const created = await request(app)
+        .post("/api/v1/account/accounts")
+        .set("Cookie", member.cookie)
+        .send({ organizationName: "Second Named Org" });
+      expect(created.status).toBe(201);
+      expect(created.body.displayName).toBe("Joan Clarke");
+
+      const switched = await request(app)
+        .post("/api/v1/account/switch")
+        .set("Cookie", member.cookie)
+        .send({ accountId: member.accountId });
+      expect(switched.status).toBe(200);
+      expect(switched.body.displayName).toBe("Joan Clarke");
+
+      const owner = await issueTestSession(app, "named-mover-inviter@example.com");
+      const invitation = await request(app)
+        .post("/api/v1/account/invitations")
+        .set("Cookie", owner.cookie)
+        .send({ email: "named-mover@example.com" });
+      const invitationToken = invitation.body.acceptanceUrl.split("/").at(-1);
+      const joined = await request(app)
+        .post(`/api/v1/auth/invitations/${invitationToken}/accept-as-current-user`)
+        .set("Cookie", member.cookie);
+      expect(joined.status).toBe(200);
+      expect(joined.body.displayName).toBe("Joan Clarke");
+    }, 20_000);
+
+    it("rejects an invalid signup display name without creating the account", async () => {
+      const { app, repositories } = createTestApp();
+
+      const response = await request(app).post("/api/v1/auth/register").send({
+        email: "bad-name-signup-http@example.com",
+        password: "verysecurepassword",
+        displayName: "b".repeat(81),
+      });
+
+      expect(response.status).toBe(400);
+      expect(await repositories.userRepository.findByEmail("bad-name-signup-http@example.com")).toBeNull();
+    });
+
+    it("stores the display name of a user created by accepting an invitation and lists it to the team", async () => {
+      const { app } = createTestApp();
+      const owner = await issueTestSession(app, "owner-named-invite@example.com");
+      const invitation = await request(app)
+        .post("/api/v1/account/invitations")
+        .set("Cookie", owner.cookie)
+        .send({ email: "named-invitee-http@example.com" });
+      const invitationToken = invitation.body.acceptanceUrl.split("/").at(-1);
+
+      const accepted = await request(app)
+        .post(`/api/v1/auth/invitations/${invitationToken}/accept`)
+        .send({ email: "named-invitee-http@example.com", password: "verysecurepassword", displayName: "Radia Perlman" });
+      expect(accepted.status).toBe(200);
+      expect(accepted.body.displayName).toBe("Radia Perlman");
+
+      const profile = await request(app).get("/api/v1/auth/profile").set("Cookie", accepted.headers["set-cookie"][0]);
+      expect(profile.body.displayName).toBe("Radia Perlman");
+
+      const members = await request(app).get("/api/v1/account/users").set("Cookie", owner.cookie);
+      expect(members.status).toBe(200);
+      expect(members.body.users).toEqual(expect.arrayContaining([
+        expect.objectContaining({ userId: owner.userId, email: "owner-named-invite@example.com", displayName: null }),
+        expect.objectContaining({ userId: accepted.body.userId, email: "named-invitee-http@example.com", displayName: "Radia Perlman" }),
+      ]));
+    });
   });
 });

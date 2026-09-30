@@ -79,7 +79,7 @@ export default function OperatorMcpProposalPage() {
     void accountApi.switchAccount(accountMismatch.accountId, accountMismatch.workspaceId)
       .then(async (response) => {
         seedWorkspaceSession(response.workspaceId, response.workspacePublicRouteKey)
-        await login(user.email, response.userId, response.accountId, response.organizationName)
+        await login({ ...response, email: user.email })
         router.replace(`/oauth/operator-mcp/proposal/${encodeURIComponent(params.proposalId)}`)
       })
       .catch(() => setError('Could not switch accounts.'))

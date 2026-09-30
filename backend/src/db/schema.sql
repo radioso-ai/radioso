@@ -3452,7 +3452,9 @@ CREATE TABLE public.users (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     email_verified_at timestamp with time zone,
-    disabled_at timestamp with time zone
+    disabled_at timestamp with time zone,
+    display_name text,
+    CONSTRAINT users_display_name_check CHECK (((display_name IS NULL) OR (btrim(display_name) <> ''::text)))
 );
 
 

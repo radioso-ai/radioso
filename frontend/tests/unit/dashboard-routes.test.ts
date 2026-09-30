@@ -399,6 +399,19 @@ describe('dashboard route state', () => {
     })).toBe('/w/workspace-five-abc123/account?tab=usage')
   })
 
+  it('round-trips the profile tab through the canonical account route', () => {
+    expect(parseDashboardRoute(['account'], new URLSearchParams({ tab: 'profile' }))).toEqual({
+      section: 'account',
+      accountTab: 'profile',
+    })
+
+    expect(buildDashboardHref('account-1', {
+      section: 'account',
+      accountTab: 'profile',
+      workspacePublicRouteKey: 'workspace-key',
+    })).toBe('/w/workspace-key/account?tab=profile')
+  })
+
   it('round-trips detailed usage filters through the canonical account usage route', () => {
     const params = new URLSearchParams({
       tab: 'usage',

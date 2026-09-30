@@ -68,6 +68,27 @@ describeIntegration("PostgresOrganizationProvisioner", () => {
     expect(workspaces).toEqual([{ name: "Default" }]);
   });
 
+  it("stores the new user's display name with the organization", async () => {
+    const email = `atomic-named-${randomUUID()}@example.com`;
+
+    const result = await provisioner.provision({
+      intent: "new_user",
+      organizationName: "Atomic Named",
+      email,
+      passwordHash: "hash",
+      displayName: "Ada Lovelace",
+      emailVerifiedAt: null,
+    });
+    accountIds.add(result.account.id);
+    userIds.add(result.userId);
+
+    const users = await database.query<{ display_name: string | null }>(
+      "SELECT display_name FROM users WHERE id = $1",
+      [result.userId],
+    );
+    expect(users).toEqual([{ display_name: "Ada Lovelace" }]);
+  });
+
   it("rejects a duplicate new user without leaving organization artifacts", async () => {
     const email = `atomic-rollback-${randomUUID()}@example.com`;
     const existingUserId = randomUUID();

@@ -35,6 +35,32 @@ describeIntegration("UserRepository (Postgres)", () => {
     expect(await repository.findByEmail("missing@example.com")).toBeNull();
   });
 
+  it("stores a display name on create and leaves it null when none is given", async () => {
+    const named = newUser();
+    const unnamed = newUser();
+
+    expect((await repository.create({ ...named, displayName: "Ada Lovelace" })).displayName).toBe("Ada Lovelace");
+    expect((await repository.create(unnamed)).displayName).toBeNull();
+    expect((await repository.findById(named.id))?.displayName).toBe("Ada Lovelace");
+  });
+
+  it("updateDisplayName sets and clears the name", async () => {
+    const u = newUser();
+    await repository.create(u);
+
+    expect((await repository.updateDisplayName(u.id, "山田 太郎")).displayName).toBe("山田 太郎");
+    expect((await repository.findByEmail(u.email))?.displayName).toBe("山田 太郎");
+    expect((await repository.updateDisplayName(u.id, null)).displayName).toBeNull();
+  });
+
+  it("refuses a blank display name at the database", async () => {
+    const u = newUser();
+    await repository.create(u);
+
+    await expect(repository.updateDisplayName(u.id, "   ")).rejects.toThrow();
+    expect((await repository.findById(u.id))?.displayName).toBeNull();
+  });
+
   it("updatePassword changes the hash", async () => {
     const u = newUser();
     await repository.create(u);

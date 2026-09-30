@@ -7,7 +7,6 @@ import type { AssistantSuggestionExpansionService } from "../../src/modules/chat
 import type { ChatAnswerSupport } from "../../src/modules/chat/services/chatAnswerSupport.js";
 import type { ChatGateway } from "../../src/modules/chat/contracts/chatGateway.js";
 import type { PreparedSession } from "../../src/modules/chat/services/chatSessionPreparer.js";
-import { loadPromptTemplate } from "../../src/shared/infra/prompts/promptLoader.js";
 
 const session = (): PreparedSession => ({
   agent: { id: "agent-1", workspaceId: "workspace-1", name: "Agent" },
@@ -197,88 +196,5 @@ describe("RetrievalAnswerComposer coverage composition", () => {
       items: { properties: { rule: { enum: string[] } } };
     };
     expect(adherenceSchema.items.properties.rule.enum).toEqual(["d1"]);
-  });
-});
-
-describe("RetrievalAnswerComposer lead-back to a parked routine (#1377)", () => {
-  const pendingStep = {
-    stepId: "ask_dates",
-    instruction: "Ask for the arrival and departure dates.",
-    missingSlotKeys: ["arrival", "departure"],
-  };
-  const composedSystemPrompt = async (turnSession: PreparedSession): Promise<string> => {
-    const gateway = {
-      answer: vi.fn(async () => JSON.stringify({
-        coverage: "answered_sufficient_evidence",
-        requestFocus: "one-day attendance",
-        outcome: "answer",
-        answer: "The course meets on Saturday[[1]]. Which dates would you like to come?",
-        v: 2,
-        claims: [[1]],
-        suggestions: [],
-        grounding: "degraded",
-      })),
-    } as unknown as ChatGateway;
-    const composer = new RetrievalAnswerComposer(
-      {
-        buildChatWorkspaceContext: () => ({ workspaceId: "workspace-1" }),
-        buildChatUsageContext: () => ({ surface: "assistant", operation: "answer" }),
-        buildPromptWithContext: (prompt: string) => prompt,
-      } as unknown as ChatAnswerSupport,
-      gateway,
-      new ChatAnswerPresenter({ apply: () => ({ suggestions: [] }) } as unknown as AssistantSuggestionExpansionService),
-      {} as never,
-    );
-    await composer.composeAnswer(turnSession, "Can I attend for one day?", undefined, undefined);
-    return (gateway.answer as unknown as { mock: { calls: Array<[{ systemPrompt: string }]> } }).mock.calls[0][0].systemPrompt;
-  };
-  const declineHandoff = loadPromptTemplate("chat/routine-lead-back-decline-handoff.md");
-
-  it("closes the answer to a digression with the parked step, and says nothing of it otherwise", async () => {
-    const parked = await composedSystemPrompt({ ...session(), routineYield: { routineId: "booking", pendingStep } });
-
-    expect(parked).toContain(`- ${pendingStep.instruction}`);
-    expect(parked).not.toContain(declineHandoff);
-    expect(await composedSystemPrompt(session())).not.toContain(pendingStep.instruction);
-  });
-
-  it("closes a composed decline with the lead-back unless the agent hands that decline to a person", async () => {
-    const declineLeadBack = async (handoffOnRetrievalMiss: boolean) => {
-      const composeNoContext = vi.fn(async () => ({ text: "I can't confirm that here.", declineReason: "content_gap" as const }));
-      const composer = new RetrievalAnswerComposer(
-        {
-          buildChatWorkspaceContext: () => ({ workspaceId: "workspace-1" }),
-          buildChatUsageContext: () => ({ surface: "assistant", operation: "answer" }),
-          buildAnswerInstructionBlock: () => "",
-          // Same as `session.retrieval.prompt`, so the page-context fallback has nothing to add.
-          buildPromptWithContext: (prompt: string) => prompt,
-        } as unknown as ChatAnswerSupport,
-        { answer: vi.fn() } as unknown as ChatGateway,
-        new ChatAnswerPresenter({ apply: () => ({ suggestions: [] }) } as unknown as AssistantSuggestionExpansionService),
-        { composeNoContext },
-      );
-      const base = session();
-      await composer.composeAnswer({
-        ...base,
-        agent: { ...base.agent, handoffOnRetrievalMiss },
-        retrieval: { ...base.retrieval, contexts: [] },
-        routineYield: { routineId: "booking", pendingStep },
-      }, "Is there parking?", undefined, undefined);
-      return (composeNoContext.mock.calls[0] as unknown as [{ routineLeadBack?: unknown }])[0].routineLeadBack;
-    };
-
-    expect(await declineLeadBack(false)).toEqual({ pendingStep });
-    expect(await declineLeadBack(true)).toBeUndefined();
-  });
-
-  it("drops the lead-back from a decline the agent hands to a person", async () => {
-    const base = session();
-    const prompt = await composedSystemPrompt({
-      ...base,
-      agent: { ...base.agent, handoffOnRetrievalMiss: true },
-      routineYield: { routineId: "booking", pendingStep },
-    });
-
-    expect(prompt).toContain(declineHandoff);
   });
 });

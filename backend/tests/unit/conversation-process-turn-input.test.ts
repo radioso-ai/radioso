@@ -760,6 +760,8 @@ describe("createChatProcessTurnInput", () => {
   it("hands the engine the yield the routine attempt already took this turn (#1377)", () => {
     const session = preparedSession();
     const routineYield = {
+      sessionId: "conv_1",
+      inputEventId: "msg_1",
       routineId: "booking",
       executionId: "run_1",
       pendingStep: { stepId: "ask_dates", instruction: "Ask for the dates.", missingSlotKeys: ["arrival"] },
@@ -788,6 +790,8 @@ describe("createAttemptRoutineInput", () => {
   it("records a routine yield on the session, where the grounded turn that follows reads it (#1377)", () => {
     const session = preparedSession();
     const routineYield = {
+      sessionId: "conv_1",
+      inputEventId: "msg_1",
       routineId: "booking",
       pendingStep: { stepId: "ask_dates", instruction: "Ask for the dates.", missingSlotKeys: [] },
     };

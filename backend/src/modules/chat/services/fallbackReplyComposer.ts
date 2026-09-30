@@ -7,16 +7,12 @@ import type {
 } from "../../../shared/infra/llm/providerTypes.js";
 import type { TurnDeclineReason } from "./assistantTurnOutcomeTypes.js";
 import { CHAT_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
-import type { SteeringRule } from "../../../shared/domain/steeringRule.js";
+import type { RoutinePendingStep, SteeringRule } from "../../../shared/domain/steeringRule.js";
 import { loadPromptTemplate, renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import { isProviderCredentialError } from "../../../shared/infra/llm/providerErrors.js";
 import type { ChatGatewayUsageContext } from "../contracts/chatGateway.js";
 import { resolveChatLocale } from "./chatLocale.js";
-import {
-  appendRoutineLeadBack,
-  appendSteeringBlock,
-  type RoutineLeadBack,
-} from "../../../shared/infra/prompts/steeringPromptRenderer.js";
+import { appendRoutineLeadBack, appendSteeringBlock } from "../../../shared/infra/prompts/steeringPromptRenderer.js";
 
 export interface FallbackReplyInput {
   query: string;
@@ -24,7 +20,7 @@ export interface FallbackReplyInput {
   answerInstructionBlock?: string;
   steering?: SteeringRule[];
   /** The step a routine that yielded this turn still waits on; the decline closes by pointing back to it. */
-  routineLeadBack?: RoutineLeadBack;
+  pendingRoutineStep?: RoutinePendingStep;
   workspaceContext?: LlmCapabilityResolveInput;
   usageContext: ChatGatewayUsageContext;
   signal?: AbortSignal;
@@ -160,7 +156,7 @@ const buildGroundedMissSystemPrompt = (input: FallbackReplyInput): string =>
       input.steering,
     ),
     input.steering,
-    input.routineLeadBack,
+    input.pendingRoutineStep,
   );
 
 export class ModelFallbackReplyComposer implements FallbackReplyComposer {

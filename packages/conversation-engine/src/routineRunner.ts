@@ -340,9 +340,11 @@ const filledCollectedSlot = (
   collectedSlotsForStep(step).some((key) => !hasVariable(before, key) && hasVariable(after, key));
 
 /**
- * The step a yielding routine stays parked on. Only slot references are filled: the
- * routine claims nothing this turn, so the context staged for the turn (the visitor's
- * page) is not the routine's to read, and a context reference renders empty.
+ * The step a yielding routine stays parked on. The host puts it into the answer's system
+ * prompt, so it carries no captured value: a captured value is visitor text, and a slot
+ * reference shows as its bracketed key instead ("Ask [name] for the dates"). The routine
+ * claims nothing this turn, so the context staged for the turn (the visitor's page) is not
+ * the routine's to read either, and a context reference renders empty.
  */
 const pendingStepFor = (
   routine: Routine,
@@ -350,7 +352,8 @@ const pendingStepFor = (
   variables: Record<string, unknown>,
 ): RoutinePendingStep => ({
   stepId: step.id,
-  instruction: step.action ? resolveStepAction(step.action, variables, [], undefined) : "",
+  instruction: (step.action ?? "").replace(STEP_REFERENCE, (_match, kind: string, name: string) =>
+    kind === "slot" ? `[${name}]` : ""),
   missingSlotKeys: requiredCollectedSlots(routine, step)
     .filter((slot) => !hasVariable(variables, slot.key))
     .map((slot) => slot.key),

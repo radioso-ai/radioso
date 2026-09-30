@@ -73,6 +73,8 @@ export const resumeRoutine = async (input: {
   });
   if (result.yielded) {
     request.routineYieldSink?.yielded({
+      sessionId: request.sessionId,
+      ...(request.inputEvent.id ? { inputEventId: request.inputEvent.id } : {}),
       routineId: state.routineId,
       ...(state.executionId ? { executionId: state.executionId } : {}),
       ...(result.pendingStep ? { pendingStep: result.pendingStep } : {}),

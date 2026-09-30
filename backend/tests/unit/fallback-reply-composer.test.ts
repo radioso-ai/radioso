@@ -265,10 +265,10 @@ describe("grounded miss response composer", () => {
     }));
     const pendingStep = { stepId: "ask_date", instruction: "Ask what date works best for the demo.", missingSlotKeys: ["preferredDate"] };
 
-    await composer.composeNoContext({ query: "Is there parking?", usageContext, routineLeadBack: { pendingStep } });
+    await composer.composeNoContext({ query: "Is there parking?", usageContext, pendingRoutineStep: pendingStep });
     await composer.composeNoContext({ query: "Is there parking?", usageContext });
 
-    expect(prompts[0]).toBe(appendRoutineLeadBack(prompts[1] ?? "", [], { pendingStep }));
+    expect(prompts[0]).toBe(appendRoutineLeadBack(prompts[1] ?? "", [], pendingStep));
     expect(prompts[1]).not.toContain(pendingStep.instruction);
   });
 

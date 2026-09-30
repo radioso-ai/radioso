@@ -74,6 +74,35 @@ const createInput = (overrides: Partial<ProcessTurnInput> = {}): ProcessTurnInpu
 
 const stageKinds = (stages: ConversationTraceStage[]): string[] => stages.map((entry) => entry.kind);
 
+/** The yield the host took from its own `attemptRoutine` on this turn. */
+const hostYield = (): RoutineTurnYield => ({
+  sessionId: "session_1",
+  inputEventId: "input_1",
+  routineId: "booking",
+  executionId: "run_1",
+  pendingStep,
+});
+
+const turnStages = async (input: ProcessTurnInput, stream: boolean): Promise<ConversationTraceStage[]> => {
+  if (!stream) {
+    return (await new DefaultConversationEngine().processTurn(input)).trace.stages;
+  }
+  const streamInput: ProcessTurnStreamInput = {
+    ...input,
+    composer: {
+      compose: vi.fn(),
+      async *stream() {
+        yield { type: "final" as const, response: { answer: "Yes, there is free parking." } };
+      },
+    },
+  };
+  let stages: ConversationTraceStage[] = [];
+  for await (const event of new DefaultConversationEngine().processTurnStream(streamInput)) {
+    if (event.type === "final") stages = event.result.trace.stages;
+  }
+  return stages;
+};
+
 describe("routine yield", () => {
   it("tells the host which step the parked routine still waits on and claims nothing", async () => {
     const yielded = vi.fn();
@@ -86,6 +115,8 @@ describe("routine yield", () => {
 
     expect(result).toBeNull();
     expect(yielded).toHaveBeenCalledExactlyOnceWith({
+      sessionId: "session_1",
+      inputEventId: "input_1",
       routineId: "booking",
       executionId: "run_1",
       pendingStep,
@@ -117,30 +148,9 @@ describe("routine yield", () => {
     "records a yield the host already took and does not ask the routine again (stream: %s)",
     async (stream) => {
       const runner = yieldingRunner();
-      const input = createInput({
-        routineRunner: runner,
-        routineYield: { routineId: "booking", executionId: "run_1", pendingStep },
-      });
+      const input = createInput({ routineRunner: runner, routineYield: hostYield() });
 
-      let stages: ConversationTraceStage[];
-      if (stream) {
-        const streamInput: ProcessTurnStreamInput = {
-          ...input,
-          composer: {
-            compose: vi.fn(),
-            async *stream() {
-              yield { type: "final" as const, response: { answer: "Yes, there is free parking." } };
-            },
-          },
-        };
-        let finalStages: ConversationTraceStage[] = [];
-        for await (const event of new DefaultConversationEngine().processTurnStream(streamInput)) {
-          if (event.type === "final") finalStages = event.result.trace.stages;
-        }
-        stages = finalStages;
-      } else {
-        stages = (await new DefaultConversationEngine().processTurn(input)).trace.stages;
-      }
+      const stages = await turnStages(input, stream);
 
       expect(runner.resume).not.toHaveBeenCalled();
       expect(stageKinds(stages).slice(0, 3)).toEqual(["message", "gather", "routine_yield"]);
@@ -155,8 +165,43 @@ describe("routine yield", () => {
           missingSlotKeys: ["arrival", "departure"],
         },
       });
-      // Ids and slot keys only: the step instruction may carry captured values.
-      expect(JSON.stringify(stages)).not.toContain("Giulia");
+      // Ids and slot keys only: the step instruction never reaches the trace.
+      expect(JSON.stringify(stages)).not.toContain(pendingStep.instruction);
+    },
+  );
+
+  it.each([
+    [false, { sessionId: "session_other" }],
+    [true, { sessionId: "session_other" }],
+    [false, { inputEventId: "input_earlier" }],
+    [true, { inputEventId: "input_earlier" }],
+    [false, { inputEventId: undefined }],
+  ])(
+    "ignores a yield taken on another turn and asks the routine as usual (stream: %s, %o)",
+    async (stream, mismatch) => {
+      const runner = yieldingRunner();
+      const input = createInput({ routineRunner: runner, routineYield: { ...hostYield(), ...mismatch } });
+
+      const stages = await turnStages(input, stream);
+
+      expect(runner.resume).toHaveBeenCalledOnce();
+      // The routine's own answer to this message is what the trace records.
+      expect(stages.filter((entry) => entry.kind === "routine_yield")).toHaveLength(1);
+    },
+  );
+
+  it.each([false, true])(
+    "reuses the yield when the host retries the same turn (stream: %s)",
+    async (stream) => {
+      const runner = yieldingRunner();
+      const input = createInput({ routineRunner: runner, routineYield: hostYield() });
+
+      const first = await turnStages(input, stream);
+      const retried = await turnStages(input, stream);
+
+      expect(runner.resume).not.toHaveBeenCalled();
+      expect(stageKinds(first)).toContain("routine_yield");
+      expect(stageKinds(retried)).toContain("routine_yield");
     },
   );
 

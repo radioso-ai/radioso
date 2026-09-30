@@ -23,7 +23,6 @@ import {
   composeGroundedAnswerSystemPrompt,
 } from "./groundedAnswerPromptComposer.js";
 import type { ComposedDecline, FallbackReplyComposer } from "./fallbackReplyComposer.js";
-import type { RoutineLeadBack } from "../../../shared/infra/prompts/steeringPromptRenderer.js";
 import type { TurnDeclineReason } from "./assistantTurnOutcomeTypes.js";
 import { buildPreparedTurnOutcome } from "./preparedTurnOutcome.js";
 import { DEFAULT_SUGGESTED_QUESTIONS_COUNT } from "../../settings/contracts/retrieval.js";
@@ -39,7 +38,11 @@ import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { BoundedGroundingStreamGate } from "./boundedGroundingStreamGate.js";
 import { recordDirectiveSurfaceRendered } from "./directives/directiveSurfaceRendering.js";
 import { GroundedAnswerHeadReader } from "./groundedAnswerHeadReader.js";
-import { answerCoverageHeadParseOutcome, steeringForKnownVerdict } from "../../../shared/domain/steeringRule.js";
+import {
+  answerCoverageHeadParseOutcome,
+  steeringForKnownVerdict,
+  type RoutinePendingStep,
+} from "../../../shared/domain/steeringRule.js";
 import {
   buildAnswerCoverageAssessmentFromHead,
   buildDeterministicZeroEvidenceAssessment,
@@ -93,20 +96,31 @@ const shouldSuppressUnsupportedDraft = (
   && summary.sourcedClaimCount === 0;
 
 /**
- * The step a routine that yielded this turn waits on, for the answer to close by pointing
- * back to it (#1377). An agent that hands a retrieval miss to a person gets no lead-back
- * on the decline that hands off: the grounded answer is told so, since it commits its own
- * outcome, and a composed decline gets none at all.
+ * A routine that yielded this turn stays parked on a step, and the answer closes by
+ * pointing back to it (#1377) — unless the answer hands the visitor to a person. On an
+ * agent set to hand retrieval misses over, a `no_support` decline is that hand-off, so a
+ * composed decline gets no lead-back there, and a drafted answer whose own outcome declines
+ * that way is replaced by a composed decline rather than trusted to leave it out.
  */
-const answerLeadBack = (session: PreparedSession): RoutineLeadBack | undefined =>
-  session.routineYield?.pendingStep
-    ? { pendingStep: session.routineYield.pendingStep, declineHandsOff: session.agent.handoffOnRetrievalMiss === true }
-    : undefined;
+const handsOffRetrievalMisses = (session: PreparedSession): boolean =>
+  session.agent.handoffOnRetrievalMiss === true;
 
-const declineLeadBack = (session: PreparedSession): RoutineLeadBack | undefined =>
-  session.routineYield?.pendingStep && session.agent.handoffOnRetrievalMiss !== true
-    ? { pendingStep: session.routineYield.pendingStep }
-    : undefined;
+const declinePendingRoutineStep = (session: PreparedSession): RoutinePendingStep | undefined =>
+  handsOffRetrievalMisses(session) ? undefined : session.routineYield?.pendingStep;
+
+const draftHandsOffAfterLeadBack = (
+  session: PreparedSession,
+  outcome: GroundedAnswerEnvelope["outcome"],
+): boolean =>
+  outcome === "no_support" && handsOffRetrievalMisses(session) && session.routineYield?.pendingStep !== undefined;
+
+/** Aborts a streamed draft whose head declines into a hand-off after a lead-back. */
+class HandoffDraftReplacedError extends Error {
+  constructor() {
+    super("Grounded draft declines into a hand-off after a routine lead-back");
+    this.name = "HandoffDraftReplacedError";
+  }
+}
 
 /**
  * Composes a grounded answer for a retrieval turn: the grounded system prompt, the
@@ -315,7 +329,7 @@ export class RetrievalAnswerComposer {
       conversationIntentSnapshot,
       conversationSummary: session.conversationSummary,
       steering: knownAssessment ? steeringForKnownVerdict(steering, knownAssessment) : steering,
-      routineLeadBack: answerLeadBack(session),
+      pendingRoutineStep: session.routineYield?.pendingStep,
       retrievalSenseOfferAlternatives: session.retrievalSenseOfferAlternatives,
     });
     if (session.directiveSteering) {
@@ -452,13 +466,14 @@ export class RetrievalAnswerComposer {
       if (zeroEvidenceVerdict?.decision === "yield_turn") {
         return this.yieldedPresentedAnswer();
       }
-      const fallback = await this.generateAnswerWithPageContext(
+      const drafted = await this.generateAnswerWithPageContext(
         session,
         query,
         accountId,
         undefined,
         zeroEvidenceAssessment,
       );
+      const fallback = drafted && !draftHandsOffAfterLeadBack(session, drafted.outcome) ? drafted : null;
       if (fallback) {
         answer = fallback.answer;
         plannedSuggestions = fallback.suggestions;
@@ -475,7 +490,7 @@ export class RetrievalAnswerComposer {
           userExpectedLocale,
           answerInstructionBlock: this.support.buildAnswerInstructionBlock(session),
           steering: steeringForKnownVerdict(session.directiveSteering?.rules ?? [], zeroEvidenceAssessment),
-          routineLeadBack: declineLeadBack(session),
+          pendingRoutineStep: declinePendingRoutineStep(session),
           workspaceContext: this.support.buildChatWorkspaceContext(session),
           usageContext: this.support.buildChatUsageContext(session, accountId, "grounded_miss"),
         });
@@ -515,6 +530,18 @@ export class RetrievalAnswerComposer {
           envelopeAssessment,
         );
         this.recordUnsupportedAnswerDecline(decline.declineReason, false);
+        answer = decline.text;
+        declineReason = decline.declineReason;
+        grounding = "no_support";
+      } else if (draftHandsOffAfterLeadBack(session, envelope.outcome)) {
+        const decline = await this.composeFocusedDecline(
+          session,
+          query,
+          userExpectedLocale,
+          accountId,
+          "grounded_handoff_decline",
+          envelopeAssessment,
+        );
         answer = decline.text;
         declineReason = decline.declineReason;
         grounding = "no_support";
@@ -564,7 +591,7 @@ export class RetrievalAnswerComposer {
       userExpectedLocale,
       answerInstructionBlock: this.support.buildAnswerInstructionBlock(session),
       steering: steeringForKnownVerdict(session.directiveSteering?.rules ?? [], knownAssessment),
-      routineLeadBack: declineLeadBack(session),
+      pendingRoutineStep: declinePendingRoutineStep(session),
       // This is a model-authored scope-policy response, not an ordinary answer.
       // It is the refusal path, so it stays on the workspace chat tier rather
       // than the agent override that governs the turn's own calls — see the rule
@@ -613,13 +640,14 @@ export class RetrievalAnswerComposer {
       if (zeroEvidenceVerdict?.decision === "yield_turn") {
         return this.yieldedStreamResult();
       }
-      const fallbackEnvelope = await this.generateAnswerWithPageContext(
+      const drafted = await this.generateAnswerWithPageContext(
         session,
         query,
         accountId,
         signal,
         zeroEvidenceAssessment,
       );
+      const fallbackEnvelope = drafted && !draftHandsOffAfterLeadBack(session, drafted.outcome) ? drafted : null;
       if (fallbackEnvelope) {
         rawAnswer = fallbackEnvelope.answer;
       } else {
@@ -628,7 +656,7 @@ export class RetrievalAnswerComposer {
           userExpectedLocale,
           answerInstructionBlock: this.support.buildAnswerInstructionBlock(session),
           steering: steeringForKnownVerdict(session.directiveSteering?.rules ?? [], zeroEvidenceAssessment),
-          routineLeadBack: declineLeadBack(session),
+          pendingRoutineStep: declinePendingRoutineStep(session),
           workspaceContext: this.support.buildChatWorkspaceContext(session),
           usageContext: this.support.buildChatUsageContext(session, accountId, "stream_grounded_miss"),
           ...(signal ? { signal } : {}),
@@ -669,6 +697,7 @@ export class RetrievalAnswerComposer {
       const composeStartedAt = performance.now();
       let bypassCitationGate = false;
       let yieldedTurn = false;
+      let handoffDraft = false;
       // Retained so a later decline (gate-bound, unsupported draft) can render its
       // coverage-gated steering against the verdict already reported to the sink,
       // rather than re-deriving it or rendering the conditional phrasing a decline
@@ -731,6 +760,11 @@ export class RetrievalAnswerComposer {
           // A decline commitment streams from its own text; the citation gate
           // exists only to hold an `answer` commitment until it earns one (FR-027).
           bypassCitationGate = headStatus.kind === "parsed" && headStatus.head.outcome !== "answer";
+          if (headStatus.kind === "parsed" && draftHandsOffAfterLeadBack(session, headStatus.head.outcome)) {
+            handoffDraft = true;
+            gateController.abort(new HandoffDraftReplacedError());
+            break;
+          }
         }
         const appliesCitationGate = requiresIndexedSourceGate && !bypassCitationGate;
         if (appliesCitationGate) {
@@ -770,6 +804,31 @@ export class RetrievalAnswerComposer {
       }
       if (yieldedTurn) {
         return this.yieldedStreamResult(coverageHeadMs);
+      }
+      if (handoffDraft) {
+        const decline = await this.composeFocusedDecline(
+          session,
+          query,
+          userExpectedLocale,
+          accountId,
+          "stream_grounded_handoff_decline",
+          headAssessment ?? buildInvalidHeadAssessment(),
+          signal,
+        );
+        if (signal?.aborted) {
+          throw signal.reason ?? new Error("chat_turn_aborted");
+        }
+        return {
+          finalPresentation: this.chatAnswerPresenter.presentRetrievalDeclineAnswer(
+            decline.text,
+            decline.declineReason,
+          ),
+          suggestions: { mode: "assistant", planned: [] },
+          hasStreamedAnswer: false,
+          streamedAnswer: "",
+          deliveryMode: "committed",
+          ...(coverageHeadMs === undefined ? {} : { traceMetrics: { coverageHeadMs } }),
+        };
       }
       if (gateBound) {
         const decline = await this.composeFocusedDecline(

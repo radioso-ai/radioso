@@ -1,14 +1,10 @@
 import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
-import type { SteeringRule } from "../../../shared/domain/steeringRule.js";
+import type { RoutinePendingStep, SteeringRule } from "../../../shared/domain/steeringRule.js";
 import {
   formatConversationIntentSnapshot,
   type ConversationIntentSnapshot,
 } from "./conversationIntentSnapshot.js";
-import {
-  appendRoutineLeadBack,
-  renderSteeringBlock,
-  type RoutineLeadBack,
-} from "../../../shared/infra/prompts/steeringPromptRenderer.js";
+import { appendRoutineLeadBack, renderSteeringBlock } from "../../../shared/infra/prompts/steeringPromptRenderer.js";
 import { GENERATION_SURFACE } from "../../../shared/domain/generationSurface.js";
 import { steeringForSurface } from "../../../shared/domain/steeringRule.js";
 import { createReusableInputBoundary } from "../../../shared/infra/llm/inputTokenCaching.js";
@@ -25,7 +21,7 @@ interface GroundedAnswerSystemPromptInput {
   /** Behavioral steering matched for this turn (authored Directives + skill guidance). */
   steering?: SteeringRule[];
   /** The step a routine that yielded this turn still waits on; the answer closes by pointing back to it. */
-  routineLeadBack?: RoutineLeadBack;
+  pendingRoutineStep?: RoutinePendingStep;
   /** Labels/descriptions for retrieval-sense alternatives to offer after the grounded answer. */
   retrievalSenseOfferAlternatives?: Array<{ label: string; description?: string }>;
 }
@@ -100,7 +96,7 @@ export const composeGroundedAnswerSystemPrompt = (
   );
   // A parked routine's lead-back shapes the answer's last sentence, so it closes the prompt.
   const withLeadBack = (prompt: string): string =>
-    appendRoutineLeadBack(prompt, input.steering ?? [], input.routineLeadBack);
+    appendRoutineLeadBack(prompt, input.steering ?? [], input.pendingRoutineStep);
   if (!suggestionsExpected) {
     return resultWithReusablePrefix(base, withLeadBack(withEnvelope), {
       conversationContextPrompt: input.conversationSummary?.trim() || alternatives

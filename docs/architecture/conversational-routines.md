@@ -402,29 +402,40 @@ for a question about the agent itself — and the routine resumes on the visitor
 message.
 
 The answer closes by pointing back to what the routine is waiting on. The runner
-reports the step it stays parked on: the step's instruction with its slot references
-filled, and the keys of the step's required slots that are still unfilled. A context
-reference in the instruction renders empty, because the routine does not claim the
-turn and the context staged for it is not the routine's to read. The answer composers
-append `backend/prompts/chat/routine-lead-back.md` as the last block of their prompt,
-and the model ends the reply with one short sentence in the visitor's language that
-asks for what the step still needs: "Il piano Pro costa $49 al mese. Mi mandi la tua
-email di lavoro?" A grounded answer, the decline composed when retrieval finds
-nothing, and a direct reply all close this way.
+reports the step it stays parked on: the step's authored instruction, and the keys of
+the step's required slots that are still unfilled. The pending step goes into the
+answer's system prompt, so it never carries a captured value: a slot reference shows as
+its bracketed key ("Thank [name], then ask for a work email: [email]"), and a context
+reference renders empty, because the routine does not claim the turn and the context
+staged for it is not the routine's to read. The answer composers append
+`backend/prompts/chat/routine-lead-back.md` as the last block of their prompt, and the
+model ends the reply with one short sentence in the visitor's language that asks for
+what the step still needs: "Il piano Pro costa $49 al mese. Mi mandi la tua email di
+lavoro?" A grounded answer, a decline composed when retrieval finds nothing, a direct
+reply, and the decline composed when a direct reply comes back blank all close this way.
 
 The lead-back appears only on a turn the routine yielded. A turn the routine answers
 itself renders its step, and a conversation a person has taken over never reaches the
-routine. An agent set to hand a retrieval miss to a person leaves the lead-back off the
-decline that hands the visitor over, since the person picks up from there.
+routine. The one hand-off a yielded turn can make is a retrieval miss on an agent set
+to hand those to a person: a `no_support` decline hands the visitor over, so it closes
+without a lead-back. A composed decline on such an agent gets none, and a grounded draft
+whose own outcome is `no_support` is replaced, before any of it streams, by a composed
+decline. A directive that only tells the reply to point the visitor elsewhere ("for
+parking, call reception") transfers nothing: the conversation stays with the agent, the
+routine still waits, and the reply follows the directive and still closes with the
+lead-back.
 
 The turn's trace records the yield as a `routine_yield` stage right after the history
 gather, with the routine, its execution, the step it waits on (`stepId`), and
 `missingSlotKeys`. Like the routine sub-trace, it carries ids and slot keys, never the
-instruction or a captured value. The engine reports the yield to the host through
-`AttemptRoutineInput.routineYieldSink`. A host that attempts the routine before it
-prepares retrieval, as Radioso does, passes that yield to `processTurn` as
-`routineYield`: the engine records the stage and does not ask the routine about the
-same message a second time.
+instruction. The engine reports the yield to the host through
+`AttemptRoutineInput.routineYieldSink`, tagged with the session and the input event it
+was taken on. A host that attempts the routine before it prepares retrieval, as Radioso
+does, passes that yield to `processTurn` as `routineYield`. When its session and input
+event match the turn, the engine records the stage and does not ask the routine about
+the same message a second time; a yield from any other turn is ignored, and the routine
+is asked as usual. Radioso keeps the yield on the turn's session until `processTurn`
+answers, so a retry of a failed turn hands it back again.
 
 ## Activation and clarification
 
@@ -606,3 +617,7 @@ default confirms on a message posing as a system notice. Give a recap
 confirmation an AI-decides exit to have it checked. A held turn counts toward the
 re-ask limit like any other; past the limit the step asks differently and still
 takes no exit.
+
+A turn whose model call fails and falls back to the static "couldn't answer" reply
+closes without a lead-back: that reply is fixed text, and a lead-back is written by the
+model.

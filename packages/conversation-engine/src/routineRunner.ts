@@ -326,15 +326,17 @@ const rejectedCollectedKeys = (step: RoutineStep, rejected: readonly RoutineTrac
   return new Set(rejected.map((slot) => slot.key).filter((key) => collected.has(key)));
 };
 
-/** Whether the turn stored a new value for a slot the step collects: progress that resets the re-ask count. */
+/**
+ * Whether the turn filled a slot the step collects that was empty before it: progress that
+ * resets the re-ask count. Replacing a value the step already held is not progress, or a
+ * visitor restating an optional value with each failed answer would never reach the limit.
+ */
 const filledCollectedSlot = (
   step: RoutineStep,
   before: Record<string, unknown>,
   after: Record<string, unknown>,
 ): boolean =>
-  collectedSlotsForStep(step).some((key) =>
-    hasVariable(after, key) && (!hasVariable(before, key) || after[key] !== before[key]),
-  );
+  collectedSlotsForStep(step).some((key) => !hasVariable(before, key) && hasVariable(after, key));
 
 const declaredSlotVariables = (
   routine: Routine,
@@ -526,6 +528,10 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     // carries — enter its state here, so they are checked like any selector's (#1374).
     const startCheck = input.activationTurn ? checkDeclaredSlotValues(routine, input.state.variables) : null;
     const state: RoutineState = startCheck ? { ...input.state, variables: startCheck.values } : input.state;
+    // The activator's rejections the selector did not make good: the selector reads the same
+    // opening message, so a valid value it returns for the slot replaces the rejected one.
+    const unreplacedStartRejections = (variables: Record<string, unknown>): RoutineTraceRejectedSlot[] =>
+      (startCheck?.rejected ?? []).filter((rejected) => !hasVariable(variables, rejected.key));
     // Every next state sets the re-ask count afresh for the step it rests on (#1376).
     const { reaskCount: _previousReaskCount, ...stateWithoutReaskCount } = state;
     const stepById = (id: string): RoutineStep => {
@@ -741,10 +747,18 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         return input.activationTurn ? { nextStepId: selectInput.step.id } : decision;
       }
       // Rejected-slot hold (#1374): the visitor gave a value for one of this step's own slots
-      // that does not fit its type, so the step is not answered. It stays and is asked again,
-      // whichever exit — AI-decides, rule, or default — would otherwise have fired. The values
-      // that did fit are still kept.
-      return selectInput.holdOnRejectedSlot && rejectedCollectedKeys(selectInput.step, lastRejectedSlots).size > 0
+      // that does not fit its type — to the selector this turn, or to the activator in the
+      // opening message with no valid replacement since — so the step is not answered. It
+      // stays and is asked again, whichever exit — AI-decides, rule, or default — would
+      // otherwise have fired. The values that did fit are still kept.
+      if (!selectInput.holdOnRejectedSlot) {
+        return decision;
+      }
+      const rejected = [
+        ...lastRejectedSlots,
+        ...unreplacedStartRejections({ ...selectInput.variables, ...(decision.variables ?? {}) }),
+      ];
+      return rejectedCollectedKeys(selectInput.step, rejected).size > 0
         ? { ...decision, nextStepId: selectInput.step.id }
         : decision;
     };
@@ -752,8 +766,8 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     let step: RoutineStep;
     let variables = { ...state.variables };
     let path: string[];
-    // Values the selector rejected on the step the visitor answered. They hold that step; the
-    // activator's rejections are only traced, since the selector reads the same message again.
+    // Values rejected on the step the visitor answered and not made good this turn; they hold
+    // that step and are listed as missing on its re-ask.
     let resumeStepRejected: RoutineTraceRejectedSlot[] = [];
     if (currentStep.kind === "skill" || currentStep.kind === "action") {
       // Transit steps execute when the routine lands on them. This matters for a
@@ -782,11 +796,12 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       }
       const mainSelectorRan = lastSelectorRan;
       const mainSelection = lastSelection;
-      resumeStepRejected = lastRejectedSlots;
-      const tracedRejected = [...(startCheck?.rejected ?? []), ...resumeStepRejected];
+      const selectorRejected = lastRejectedSlots;
+      const tracedRejected = [...(startCheck?.rejected ?? []), ...selectorRejected];
       const landedId = landingStepId(currentStepId, decision);
       step = landedId === currentStepId ? currentStep : stepById(landedId);
       variables = { ...state.variables, ...(decision.variables ?? {}) };
+      resumeStepRejected = [...selectorRejected, ...unreplacedStartRejections(variables)];
       // Trace the resume step's outcome: it either advanced off (the user satisfied it) or
       // was re-asked. Captured keys, if any, belong to this step's edge evaluation.
       {

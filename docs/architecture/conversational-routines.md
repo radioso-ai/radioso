@@ -191,8 +191,11 @@ A value that does not fit is dropped. When it belongs to a slot the step the
 visitor was answering collects, that step stays put this turn whatever exit would
 otherwise fire — AI-decides, `field`, `slot_filled`, `counter`, or `default`: it is
 asked again, and the slot is listed as missing even when an earlier value still
-fills it. The values from the same message that did fit are kept. A rejected value
-for another step's slot is dropped and the turn carries on. Values a tool step
+fills it. The values from the same message that did fit are kept. On the routine's
+first turn a value the activator read that does not fit holds the first step the
+same way, unless the selector reads a valid value for that slot from the same
+message. A rejected value for another step's slot is dropped and the turn carries
+on. Values a tool step
 assigns to variables are the tool's output and keep whatever shape the tool
 returned.
 
@@ -200,11 +203,13 @@ returned.
 
 A step the visitor keeps answering without giving what it needs is asked again at
 most three times in a row. The runner counts a re-ask when the turn stays on the
-same chat step and stores no new value for a slot that step collects; a rejected
-value is nothing new. The count (`reaskCount` on the routine state, `reask_count`
-in `routine_states`) starts over when the routine enters a step or a turn fills one
-of the step's slots. A message the routine yields to normal answering leaves it
-where it was, and so does the routine's first turn.
+same chat step and fills none of the slots that step collects that were empty
+before the turn. A rejected value fills nothing, and neither does a new value for
+a slot the step already held, so a visitor who restates their name with every
+invalid email still reaches the limit. The count (`reaskCount` on the routine
+state, `reask_count` in `routine_states`) starts over when the routine enters a
+step or a turn fills one of the step's empty slots. A message the routine yields
+to normal answering leaves it where it was, and so does the routine's first turn.
 
 On the fourth re-ask in a row the routine offers a way forward:
 

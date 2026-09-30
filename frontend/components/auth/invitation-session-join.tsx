@@ -8,6 +8,7 @@ import { authApi, seedWorkspaceSession } from '@/lib/api'
 import { getApiErrorMessage, getApiErrorStatus } from '@/lib/api-error'
 import { useAuth } from '@/lib/auth-context'
 import { buildDashboardHref } from '@/lib/dashboard-routes'
+import { useAuthSunrise } from './auth-shell'
 
 /**
  * Join path for a visitor who already has a session. When the session belongs
@@ -26,6 +27,7 @@ export function InvitationSessionJoin({
 }) {
   const router = useRouter()
   const { login, logout } = useAuth()
+  const riseSun = useAuthSunrise()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -35,6 +37,7 @@ export function InvitationSessionJoin({
     try {
       const response = await authApi.acceptInvitationAsCurrentUser(invitationToken)
       seedWorkspaceSession(response.workspaceId, response.workspacePublicRouteKey)
+      riseSun()
       await login(signedInEmail, response.userId, response.accountId, response.organizationName)
       router.replace(buildDashboardHref(response.accountId, {
         section: 'activity',

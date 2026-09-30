@@ -4,11 +4,11 @@ import { useEffect, useState } from 'react'
 
 import { InvitationAcceptForm } from '@/components/auth/invitation-accept-form'
 import { InvitationSessionJoin } from '@/components/auth/invitation-session-join'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { LogoSpinner } from '@/components/ui/spinner'
 import { authApi, type InvitationDetailsResponse } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { useAuth } from '@/lib/auth-context'
+import { AuthShell } from './auth-shell'
 
 export function InvitationJoinScreen({ token, error: queryError }: { token: string; error?: string }) {
   const { user, isAuthenticated, isBootstrapping } = useAuth()
@@ -95,21 +95,13 @@ export function InvitationJoinScreen({ token, error: queryError }: { token: stri
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-6">
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <CardTitle>Join account</CardTitle>
-          <CardDescription>Accept your invitation with your own login.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Google returns here rather than the default landing page, so a
-              failed sign-in has to be reported on this card. */}
-          {queryError === 'google_login_failed' ? (
-            <p className="text-sm text-destructive">Google sign-in did not complete. Try again.</p>
-          ) : null}
-          {renderBody()}
-        </CardContent>
-      </Card>
-    </div>
+    <AuthShell title="You’re invited" subtitle="Accept your invitation with your own login.">
+      {/* Google returns here rather than the default landing page, so a
+          failed sign-in has to be reported on this card. */}
+      {queryError === 'google_login_failed' ? (
+        <p className="text-sm text-destructive">Google sign-in did not complete. Try again.</p>
+      ) : null}
+      {renderBody()}
+    </AuthShell>
   )
 }

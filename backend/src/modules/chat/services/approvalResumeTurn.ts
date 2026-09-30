@@ -135,9 +135,11 @@ export class ApprovalResumeTurn {
       query: session.userMessage.content,
     }, session));
     this.checkTurnCancellation(coordination, "routing");
+    // Its own usage key: a resume usually reuses the suspending turn's user message, whose
+    // routine calls metered under `routine_turn`, and a shared key drops usage (#1378).
     const modelGateway = new RoutineChatModelGateway(this.options.chatGateway, {
       workspaceContext: this.answerSupport.buildChatWorkspaceContext(session),
-      usageContext: this.answerSupport.buildChatUsageContext(session, input.decidedBy, "routine_turn"),
+      usageContext: this.answerSupport.buildChatUsageContext(session, input.decidedBy, "routine_resume_turn"),
     });
     const routineTurnPorts = await this.options.routineProvider.forTurn({
       modelGateway,

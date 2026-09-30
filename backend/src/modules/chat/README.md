@@ -341,6 +341,28 @@ imports from `services/`.
   while the lifecycle suppresses external actions, ownership handoffs, customer
   analytics, and summary regeneration. Chat does not own the caller's identity,
   provenance, or authorization policy; application composition supplies those.
+  A routine's captured slot values are opt-in at the source rather than masked
+  after the fact: `WorkbenchReplayInput.includeSlotValues` threads through
+  `ChatTurnAssemblyOptions`/`ChatRoutineProvider.forTurn` to the engine's
+  `DefaultRoutineRunner` construction, which is the only place a slot value is
+  ever produced on a routine trace, bounded there to 500 characters per value
+  (`truncated: true` on a cut one) and 50 filled slots per turn
+  (`omittedSlotCount` reports the rest). Only the Test Chat entry point
+  (`TrustedTestExecutionRunnerAdapter`) sets it, because Test Chat's trace is
+  stored in `agent_test_execution_attempts` under Test Chat's own retention.
+  Eval replay (`evalRunService.ts`) never does — an eval case can be captured
+  from a customer conversation, and eval persists its trace into append-only
+  `eval_runs`/revision-eval evidence with no per-conversation erasure path. A
+  live conversation — and a Ray `test_agent_turn` probe turn, which persists to
+  `audit_events` the same way a live turn does — never sets it either, so its
+  trace reports only which slots were filled (`filledSlotKeys`,
+  `capturedSlotKeys`), exactly as before slot values existed at all. A Test Chat
+  turn that ends on a routine hand-off terminal — whose `handoff.notify` action
+  a replayed turn never dispatches — carries the hand-off message content
+  (subject and body) that terminal's operator notification would send, built
+  through the same `operatorNotifications` text formatter the real dispatch uses
+  (`WorkbenchReplayRunner.handoffPreviewFor`); live delivery additionally appends
+  the conversation link, which a replayed turn has none of.
 - Fused turn planning: `turnPlanService.ts` (one `turn_planning` call on the
   agent's chat model + prompt `backend/prompts/chat/turn-planning.md`, strict
   parse and semantic validation) and `turnPlanCoordinator.ts` (gate, eligibility bounds from
@@ -354,7 +376,10 @@ imports from `services/`.
   `workbenchReplayRunner.ts`; their shared
   `chatTurnAssembly.ts` consumes the plan so replay executes the identical
   schedule, including the staged response-language detector on bypass or planner
-  failure. Policy stays with the owning modules: the routine
+  failure. Both run that detector through `turnResponseLanguage.ts`, which
+  records the language source and any unresolved reason on the turn span and
+  warns when a detection fails (`tests/unit/chat/turnResponseLanguage.test.ts`).
+  Policy stays with the owning modules: the routine
   activator applies plan rankings through `RoutineRegistry.prepareCandidates` /
   `applyRankedDecision` (including extracted activation variables), completed-
   routine correction/reentry adapters pin the plan as bypassed when they claim

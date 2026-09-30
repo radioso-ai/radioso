@@ -2,10 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import {
   DEFAULT_CLARIFICATION_STEERING_PROMPT,
+  DEFAULT_ROUTINE_STEP_STEERING_PROMPT,
   appendSteeringRules,
+  renderRoutineStepInstructions,
   renderSteeringRules,
+  routineStepSteeringOptions,
 } from "../src/steeringPrompt.js";
-import type { SteeringRule } from "../src/domain.js";
+import { partitionRoutineStepSteering, type SteeringRule } from "../src/domain.js";
 
 const rule = (action: string, priority: number, extra: Partial<SteeringRule> = {}): SteeringRule => ({
   id: `d${priority}`,
@@ -110,5 +113,38 @@ describe("appendSteeringRules", () => {
 
     expect(prompt.startsWith("Base prompt.\n\n")).toBe(true);
     expect(prompt).toContain("- Be warm.");
+  });
+});
+
+describe("routine step steering (#1351)", () => {
+  const stepRule: SteeringRule = { action: "Ask what email address we can reach them at.", source: "routine", lifespan: "response" };
+
+  it("partitions a step's steering into the controlling instruction and subordinate guidance by source", () => {
+    const tone = rule("Be warm.", 60);
+    const redirect = rule("Send follow-ups to the contact form.", 50);
+
+    expect(partitionRoutineStepSteering([tone, stepRule, redirect])).toEqual({
+      instructions: [stepRule],
+      guidance: [tone, redirect],
+    });
+  });
+
+  it("frames guidance as subordinate to the step instruction through the routine step template", () => {
+    const block = renderSteeringRules([rule("Be warm.", 10)], routineStepSteeringOptions());
+
+    expect(block.startsWith(DEFAULT_ROUTINE_STEP_STEERING_PROMPT.split("\n")[0] ?? "")).toBe(true);
+    expect(block).toContain("subordinate to the step instruction");
+    expect(block).toContain("- Be warm.");
+    expect(block).not.toContain("follow the one listed earlier");
+  });
+
+  it("renders a host-supplied routine step template in place of the default", () => {
+    expect(renderSteeringRules([rule("Be warm.", 10)], routineStepSteeringOptions("RULES\n{{steering_rules}}")))
+      .toBe("RULES\n- Be warm.");
+  });
+
+  it("lists the step instructions one per line", () => {
+    expect(renderRoutineStepInstructions(["Ask for the name.", "Ask for the email."]))
+      .toBe("- Ask for the name.\n- Ask for the email.");
   });
 });

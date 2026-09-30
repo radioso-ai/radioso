@@ -122,6 +122,43 @@ describe("operator backend adapter", () => {
     })).rejects.toMatchObject({ code: "budget_exhausted", status: 429 });
   });
 
+  it("carries the backend's retry timing through a budget-exhausted error", async () => {
+    const resetAt = "2026-09-30T00:01:00.000Z";
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
+      code: "budget_exhausted", message: "limit", retryAfterSeconds: 42, resetAt,
+    }), { status: 429 }));
+
+    await expect(createOperatorBackendAdapter({
+      baseUrl: "https://app.example",
+      fetchImpl,
+      internalSecret: "adapter-secret-key-12345678901234567890",
+      requestTimeoutMs: 1_000,
+    }).invoke({
+      proof,
+      name: "workspace_settings",
+      arguments: {},
+      bodyDigest: sha256Digest("{}"),
+    })).rejects.toMatchObject({ code: "budget_exhausted", status: 429, retryAfterSeconds: 42, resetAt });
+  });
+
+  it("drops an unusable retry timing rather than forwarding it", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
+      code: "budget_exhausted", message: "limit", retryAfterSeconds: -5, resetAt: "not-a-date",
+    }), { status: 429 }));
+
+    await expect(createOperatorBackendAdapter({
+      baseUrl: "https://app.example",
+      fetchImpl,
+      internalSecret: "adapter-secret-key-12345678901234567890",
+      requestTimeoutMs: 1_000,
+    }).invoke({
+      proof,
+      name: "workspace_settings",
+      arguments: {},
+      bodyDigest: sha256Digest("{}"),
+    })).rejects.toMatchObject({ code: "budget_exhausted", status: 429, retryAfterSeconds: undefined, resetAt: undefined });
+  });
+
   it("carries the canonical call digest through the signed invocation request", async () => {
     const call = { name: "workspace_settings", arguments: { section: "retrieval" } };
     const bodyDigest = digestOperatorMcpCall(call);

@@ -151,4 +151,16 @@ describe("operator MCP internal service contract", () => {
     const unauthorized = await request(app).post(path).set(signedHeaders(body)).send(body).expect(401);
     expect(unauthorized.body).toEqual({ code: "invalid_proof", message: "Unauthorized" });
   });
+
+  it("carries the repository's retry timing on a budget-exhausted refusal", async () => {
+    const { app, service } = harness();
+    const resetAt = new Date("2026-09-30T00:01:00.000Z");
+    service.admit.mockRejectedValueOnce(new OperatorMcpApplicationError("budget_exhausted", undefined, undefined, { retryAfterSeconds: 42, resetAt }));
+
+    const response = await request(app).post(path).set(signedHeaders(body)).send(body)
+      .expect(429)
+      .expect("Retry-After", "42");
+
+    expect(response.body).toEqual({ code: "budget_exhausted", message: "budget_exhausted", retryAfterSeconds: 42, resetAt: resetAt.toISOString() });
+  });
 });

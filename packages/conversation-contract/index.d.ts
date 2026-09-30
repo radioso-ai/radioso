@@ -1152,6 +1152,11 @@ export interface ConversationRoutineNextStepSelector {
  * engine owns graph mechanics and the host owns generation/presentation. It is told
  * only what it needs to write the message — the step and its projected steering for
  * this turn — not the graph topology or slot state.
+ *
+ * The rules play two roles (#1351): a `source: "routine"` rule is the step's own
+ * instruction and controls what the message asks for or does; every other rule
+ * (authored directives) is subordinate guidance that shapes how it is said and
+ * never replaces the step's question or action.
  */
 export interface ConversationRoutineStepRenderer {
   render(input: {
@@ -1159,6 +1164,21 @@ export interface ConversationRoutineStepRenderer {
     steering: SteeringRule[];
     turn: TurnContext;
   }): Promise<RenderableTurn>;
+}
+
+/**
+ * Which directives steered one routine step's reply, recorded as
+ * `outputs.routineStep` on the routine turn's `directive_steering` stage (#1351) so
+ * an operator can see every rule that touched the step. Ids and names only — never
+ * the directive text.
+ */
+export interface RoutineStepSteeringTrace {
+  routineId: string;
+  stepId: string;
+  /** The step instruction controlled the reply; these directives only shaped it. */
+  directivesAppliedAs: "subordinate_to_step_instruction";
+  /** Directives addressed to the step reply after matching and verdict gating. */
+  steeringDirectives: Array<{ id?: string; name?: string }>;
 }
 
 export interface ConversationRoutineSteeringInput {
@@ -1287,9 +1307,26 @@ export interface RoutineTraceStepEntry {
 }
 
 /**
+ * One declared slot's value in a {@link RoutineRunTrace}, self-describing by the slot's
+ * declared type. A concrete {@link ConversationRoutineRunner} produces this only when the
+ * caller that constructed it opted in (e.g. the engine's own `DefaultRoutineRunner` takes
+ * an `includeSlotValues` construction option) — a live customer conversation never opts
+ * in, so a value never reaches that trace in the first place.
+ */
+export interface RoutineTraceSlotValue {
+  key: string;
+  type: RoutineSlotType;
+  value: string | number | boolean;
+  /** True when `value` was cut to the per-value bound; the stored value ends in "…". */
+  truncated?: boolean;
+}
+
+/**
  * A step-by-step record of one routine turn's traversal, surfaced to the debug panel
- * as a {@link CapabilitySubTrace} (`namespace: "routine"`). Names and structure only —
- * no slot values, prompts, or completions.
+ * as a {@link CapabilitySubTrace} (`namespace: "routine"`). Per-step entries carry slot
+ * *keys* only, never values. `slotValues` is present only when the caller that resumed
+ * the routine asked for it — see {@link RoutineTraceSlotValue} — which is how a private
+ * test surface can show them while an ordinary trace never carries one at all.
  */
 export interface RoutineRunTrace {
   routineId: string;
@@ -1302,6 +1339,13 @@ export interface RoutineRunTrace {
   capturedSlotKeys: string[];
   /** Declared slot keys filled after this turn (names only). */
   filledSlotKeys: string[];
+  /**
+   * Every filled declared slot's value after this turn, in the routine's declared order,
+   * capped to a bounded count — present only when the caller opted in.
+   */
+  slotValues?: RoutineTraceSlotValue[];
+  /** Present alongside `slotValues` when the filled-slot count exceeded the bound. */
+  omittedSlotCount?: number;
   steps: RoutineTraceStepEntry[];
 }
 

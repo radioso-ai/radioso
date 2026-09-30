@@ -203,6 +203,9 @@ export const OperatorMcpErrorResponseSchema = z.object({
   code: boundedText(128),
   message: boundedText(512),
   requiredScope: scope.optional(),
+  /** Present only alongside a `budget_exhausted` refusal, so a client can wait the exact amount instead of guessing. */
+  retryAfterSeconds: z.number().int().positive().optional(),
+  resetAt: z.string().optional(),
 }).strict();
 
 export const OPERATOR_SERVICE_AUTH_HEADERS = {

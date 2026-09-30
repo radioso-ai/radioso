@@ -525,6 +525,32 @@ describe("operator MCP stateless request handler", () => {
     }));
 
     expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBeNull();
     await expect(response.json()).resolves.toEqual({ error: "budget_exhausted" });
+  });
+
+  it("carries the backend's retry timing on a budget-exhausted response", async () => {
+    const handler = createOperatorMcpRequestHandler({
+      ...dependencies,
+      call: vi.fn<OperatorMcpRequestHandlerDependencies["call"]>(async () => {
+        throw new OperatorBackendAdapterError("Operator request was throttled.", 429, "budget_exhausted", undefined, undefined, 42, "2026-09-30T00:01:00.000Z");
+      }),
+    });
+    dependencies.admit.mockResolvedValue({ proof: { ...proof, method: "tools/call" } });
+
+    const response = await handler(operatorRequest({
+      id: "budget-with-retry",
+      jsonrpc: "2.0",
+      method: "tools/call",
+      params: { name: "workspace_settings" },
+    }));
+
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBe("42");
+    await expect(response.json()).resolves.toEqual({
+      error: "budget_exhausted",
+      retryAfterSeconds: 42,
+      resetAt: "2026-09-30T00:01:00.000Z",
+    });
   });
 });

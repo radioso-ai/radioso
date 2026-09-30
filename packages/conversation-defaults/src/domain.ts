@@ -82,3 +82,19 @@ export const orderSteeringRules = (rules: SteeringRule[]): SteeringRule[] =>
     }
     return 0;
   });
+
+/**
+ * A routine step reply's steering in its two roles (#1351). The step's own projected
+ * rule (`source: "routine"`) is the controlling instruction: it decides what the
+ * message asks for or does. Every other rule — authored directives above all — is
+ * subordinate guidance that shapes how it is said and never replaces the step.
+ */
+export interface RoutineStepSteering {
+  instructions: SteeringRule[];
+  guidance: SteeringRule[];
+}
+
+export const partitionRoutineStepSteering = (rules: readonly SteeringRule[]): RoutineStepSteering => ({
+  instructions: rules.filter((rule) => rule.source === "routine"),
+  guidance: rules.filter((rule) => rule.source !== "routine"),
+});

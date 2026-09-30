@@ -148,6 +148,10 @@ describe("TrustedTestExecutionRunnerAdapter", () => {
       preResolvedHostVariables: [{
         name: "plan", description: "Current plan", value: { tier: "gold" }, surfacing: "always", sensitive: false, trust: "verified",
       }],
+      // Test Chat is the one caller that reads routine slot values back off the trace
+      // (test_chat_turn_trace); its trace lives in agent_test_execution_attempts under
+      // Test Chat's own retention, unlike eval replay, which must never request this.
+      includeSlotValues: true,
     }));
   });
 

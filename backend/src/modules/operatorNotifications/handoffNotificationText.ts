@@ -1,6 +1,6 @@
 import type { HandoffCollectedValue, HandoffOperatorNotification } from "./operatorNotification.js";
 
-interface FormattedHandoffNotification {
+export interface FormattedHandoffNotification {
   subject: string;
   /** Body lines, ready to join with a newline. The first line is the one-sentence headline. */
   lines: string[];

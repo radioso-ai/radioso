@@ -720,6 +720,82 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
     expect(assistantMessage?.metadata?.composedInstructions).toBe("retrieval system prompt");
   });
 
+  // Routine slot values are opt-in at the source (the engine's `includeSlotValues`
+  // construction option, requested only by the Test Chat / eval replay runner — see
+  // packages/conversation-engine/tests/defaultRoutineRunner.test.ts and
+  // backend/tests/unit/workbench-replay-runner.test.ts). A live conversation's engine
+  // trace therefore never carries a `slotValues` field in the first place; these tests
+  // pin that chatTurnLifecycle does not somehow add one on the way to persistence or to
+  // the returned response, for a customer turn and for a Ray turn-probe (safe_test)
+  // turn alike, since audit_events has no conversation FK and survives deletion.
+  const routineStageWithoutSlotValues = (): ConversationTrace => ({
+    traceId: "conversation-turn-no-slot-values",
+    startedAt: "2026-01-01T00:00:00.000Z",
+    completedAt: "2026-01-01T00:00:01.000Z",
+    stages: [
+      { id: "message", kind: "message", status: "applied" },
+      { id: "gather", kind: "gather", status: "applied" },
+      {
+        id: "routine:contact",
+        kind: "routine_activate",
+        status: "applied",
+        outputs: { routineId: "contact", completed: false, answerLength: 10 },
+        subTrace: {
+          namespace: "routine",
+          version: 1,
+          payload: {
+            routineId: "contact",
+            startStepId: "ask_email",
+            landedStepId: "done",
+            capturedSlotKeys: ["email"],
+            filledSlotKeys: ["email", "program"],
+            steps: [],
+          },
+        },
+      },
+    ],
+  });
+
+  const routineSubTracePayload = (turnTrace: unknown): Record<string, unknown> | undefined => {
+    const envelope = turnTrace as { spine: { stages: Array<{ subTrace?: { namespace: string; payload: Record<string, unknown> } }> } };
+    return envelope.spine.stages.find((stage) => stage.subTrace?.namespace === "routine")?.subTrace?.payload;
+  };
+
+  it("never carries routine slot values in a customer conversation's persisted or returned turn trace", async () => {
+    const { lifecycle, records } = harness();
+    const prepared = session();
+
+    const completed = await lifecycle.completeAssistantTurn({
+      workspaceId: "workspace_1",
+      session: prepared,
+      presentation: presentation(),
+      answerStartedAt: Date.now(),
+      stream: false,
+      engineTrace: routineStageWithoutSlotValues(),
+    });
+
+    expect(routineSubTracePayload(records[0].metadata.turnTrace)).not.toHaveProperty("slotValues");
+    expect(routineSubTracePayload(completed.response.turnTrace)).not.toHaveProperty("slotValues");
+  });
+
+  it("never carries routine slot values on a Ray turn-probe (safe_test) trace either — only a Test Chat/eval replay opts in", async () => {
+    const { lifecycle, records } = harness();
+    const prepared = session();
+
+    const completed = await lifecycle.completeAssistantTurn({
+      workspaceId: "workspace_1",
+      session: prepared,
+      presentation: presentation(),
+      answerStartedAt: Date.now(),
+      stream: false,
+      executionMode: "safe_test",
+      engineTrace: routineStageWithoutSlotValues(),
+    });
+
+    expect(routineSubTracePayload(records[0].metadata.turnTrace)).not.toHaveProperty("slotValues");
+    expect(routineSubTracePayload(completed.response.turnTrace)).not.toHaveProperty("slotValues");
+  });
+
   it("uses the transaction port for assistant message, action outbox, routine state, touch, and success audit", async () => {
     const records: RecordedAudit[] = [];
     const auditService = {

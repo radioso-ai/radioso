@@ -19,6 +19,7 @@ import {
   DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_DEFAULT_PROMPT,
   DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_WITH_MESSAGE_PROMPT,
   DEFAULT_ROUTINE_STEP_REPLY_PROMPT,
+  DEFAULT_ROUTINE_STEP_STEERING_PROMPT,
   InMemoryConversationRoutineStore,
   RoutineNextStepSelector,
   RoutineRegistry,
@@ -61,6 +62,7 @@ describe("routine defaults", () => {
       .toBe(backendPrompt("chat/routine-step-terminal-handoff-with-message.md"));
     expect(DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_DEFAULT_PROMPT)
       .toBe(backendPrompt("chat/routine-step-terminal-handoff-default.md"));
+    expect(DEFAULT_ROUTINE_STEP_STEERING_PROMPT).toBe(backendPrompt("chat/routine-step-steering.md"));
   });
 
   it("keeps generated fallback prompt artifacts current", () => {
@@ -326,6 +328,111 @@ describe("routine defaults", () => {
     const systemPrompt = vi.mocked(gw.complete).mock.calls[0][0].systemPrompt;
     expect(systemPrompt).not.toContain("This handoff has already been selected");
     expect(systemPrompt).not.toContain("Do not ask whether the user wants to be connected");
+  });
+
+  describe("directive precedence on a routine step (#1351)", () => {
+    const contactStep: RoutineStep = { id: "contact", kind: "chat", action: "Ask for the visitor's name and email." };
+    const stepRule = { action: "Ask for the visitor's name and email.", source: "routine" as const, lifespan: "response" as const };
+    const handoffRule = {
+      id: "directive-handoff",
+      directiveName: "hand-off-to-a-person",
+      action: "For accommodation, refunds, or complaints, tell the visitor to call reception.",
+      source: "directive" as const,
+      lifespan: "response" as const,
+      priority: 50,
+    };
+    // A template that exposes each section verbatim, so these tests pin the partition
+    // the renderer makes rather than the wording of the default prompt.
+    const sectionTemplate = "GUIDANCE<<{{subordinate_guidance}}>>STEP<<{{instructions}}>>";
+    const sections = (systemPrompt: string | undefined) => {
+      const match = /^GUIDANCE<<([\s\S]*)>>STEP<<([\s\S]*)>>$/u.exec(systemPrompt ?? "");
+      if (!match) {
+        throw new Error(`unexpected prompt shape: ${systemPrompt}`);
+      }
+      return { guidance: match[1], step: match[2] };
+    };
+
+    it("keeps directives out of the step instruction and renders them as subordinate guidance", async () => {
+      const gw = gateway("ok");
+      await new RoutineStepRenderer(gw, { promptTemplate: sectionTemplate, steeringPromptTemplate: "RULES:\n{{steering_rules}}" }).render({
+        step: contactStep,
+        steering: [stepRule, handoffRule],
+        turn,
+      });
+
+      const { guidance, step } = sections(vi.mocked(gw.complete).mock.calls[0][0].systemPrompt);
+      expect(step).toBe("- Ask for the visitor's name and email.");
+      expect(guidance).toBe("RULES:\n- For accommodation, refunds, or complaints, tell the visitor to call reception.");
+    });
+
+    it("renders a contextual directive with its condition in the guidance", async () => {
+      const gw = gateway("ok");
+      await new RoutineStepRenderer(gw, { promptTemplate: sectionTemplate, steeringPromptTemplate: "{{steering_rules}}" }).render({
+        step: contactStep,
+        steering: [stepRule, { ...handoffRule, action: "Use the formal register.", condition: "the visitor writes in Italian" }],
+        turn,
+      });
+
+      const { guidance } = sections(vi.mocked(gw.complete).mock.calls[0][0].systemPrompt);
+      expect(guidance).toBe("- Use the formal register. (when: the visitor writes in Italian)");
+    });
+
+    it("leaves the guidance section empty when no directive steers the step", async () => {
+      const gw = gateway("ok");
+      await new RoutineStepRenderer(gw, { promptTemplate: sectionTemplate }).render({
+        step: contactStep,
+        steering: [stepRule],
+        turn,
+      });
+
+      expect(sections(vi.mocked(gw.complete).mock.calls[0][0].systemPrompt)).toEqual({
+        guidance: "",
+        step: "- Ask for the visitor's name and email.",
+      });
+    });
+
+    it("keeps a directive addressed to another generator out of the step reply", async () => {
+      const gw = gateway("ok");
+      await new RoutineStepRenderer(gw, { promptTemplate: sectionTemplate }).render({
+        step: contactStep,
+        steering: [stepRule, { ...handoffRule, surfaces: ["suggested_questions"] }],
+        turn,
+      });
+
+      expect(sections(vi.mocked(gw.complete).mock.calls[0][0].systemPrompt).guidance).toBe("");
+    });
+
+    it("keeps the step's own action as the controlling instruction when only directives reached the steering", async () => {
+      const gw = gateway("ok");
+      await new RoutineStepRenderer(gw, { promptTemplate: sectionTemplate, steeringPromptTemplate: "{{steering_rules}}" }).render({
+        step: contactStep,
+        steering: [handoffRule],
+        turn,
+      });
+
+      const { guidance, step } = sections(vi.mocked(gw.complete).mock.calls[0][0].systemPrompt);
+      expect(step).toBe("- Ask for the visitor's name and email.");
+      expect(guidance).toContain("tell the visitor to call reception");
+    });
+
+    it("frames directives in the default prompt as subordinate and places the step instruction last", async () => {
+      const gw = gateway("ok");
+      await new RoutineStepRenderer(gw).render({
+        step: contactStep,
+        steering: [stepRule, handoffRule],
+        turn,
+      });
+
+      const systemPrompt = vi.mocked(gw.complete).mock.calls[0][0].systemPrompt ?? "";
+      const stepHeader = systemPrompt.indexOf("Step instruction(s)");
+      const guidanceAt = systemPrompt.indexOf(handoffRule.action);
+      const stepAt = systemPrompt.lastIndexOf(stepRule.action);
+      expect(guidanceAt).toBeGreaterThan(-1);
+      expect(stepHeader).toBeGreaterThan(guidanceAt);
+      expect(stepAt).toBeGreaterThan(stepHeader);
+      expect(systemPrompt.slice(stepHeader)).not.toContain(handoffRule.action);
+      expect(systemPrompt.slice(0, stepHeader)).toContain("subordinate to the step instruction");
+    });
   });
 
   it("passes staged retrieval context as untrusted message data, not system instructions", async () => {

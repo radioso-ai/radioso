@@ -1,13 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { DefaultConversationEngine } from "@radioso/conversation-engine";
+import { DefaultConversationEngine, DefaultRoutineRunner } from "@radioso/conversation-engine";
+import { RoutineStepRenderer } from "@radioso/conversation-defaults";
 import type {
   AnswerCoverageAssessment,
   AttemptRoutineInput,
   ConversationEngine,
   ProcessTurnInput,
   ProcessTurnResult,
+  Routine,
 } from "@radioso/conversation-contract";
+import type { ChatGatewayInput } from "../../src/modules/chat/contracts/chatGateway.js";
 import type { ConversationAgent } from "../../src/modules/agents/domain.js";
 import { projectInternalAgentConfig } from "../../src/modules/agents/agentConfig.js";
 import { WorkbenchReplayRunner } from "../../src/modules/chat/services/workbenchReplayRunner.js";
@@ -31,6 +34,7 @@ import type { ResponseLanguageDetectorInput } from "../../src/shared/services/re
 import type { RetrievalPipelineRequest, RetrievalPipelineResult } from "../../src/modules/retrieval/public.js";
 import { createAuditService } from "../support/fakes.js";
 import { unpublishedAgentPublicIdentity } from "../../src/modules/agents/public.js";
+import type { ChatRoutineTurnReporter } from "../../src/modules/chat/contracts/routineTurnState.js";
 
 const emptyTrace = () => {
   const now = new Date().toISOString();
@@ -56,6 +60,49 @@ const presenterStub = (): ChatAnswerPresenter => {
     presentNonRetrievalAnswer: present,
     presentRoutineAnswer: (answer: string) => present(answer),
   } as unknown as ChatAnswerPresenter;
+};
+
+// The tail of the #1354 incident routine: a recap step whose default edge lands on a
+// handoff ending authored in English, run through the real engine, runner, and renderer.
+const ENGLISH_HANDOFF_ENDING = "Reception will confirm availability and price by email.";
+const ITALIAN_CORRECTION = "No aspetta, arrivo il 15 novembre, non il 14.";
+const bookingRoutine: Routine = {
+  id: "book_accommodation",
+  rootStepId: "recap",
+  steps: [
+    { id: "recap", kind: "chat", action: "Read the request back and ask them to confirm it." },
+    { id: "handoff", kind: "terminal", action: ENGLISH_HANDOFF_ENDING, metadata: { terminalKind: "handoff" } },
+  ],
+  transitions: [{ from: "recap", to: "handoff", condition: "The request was read back.", guard: { kind: "default" } }],
+};
+const handoffRoutineProvider = (): ChatRoutineProvider => ({
+  async forTurn({ modelGateway, responseLanguage }) {
+    return {
+      routines: [bookingRoutine],
+      activator: { activate: async () => null },
+      runner: new DefaultRoutineRunner(
+        [bookingRoutine],
+        {
+          select: async () => {
+            throw new Error("a default edge must not consult the selector");
+          },
+        },
+        new RoutineStepRenderer(modelGateway, { responseLanguage }),
+      ),
+    };
+  },
+});
+const recordingChatGateway = (answer: string) => {
+  const calls: ChatGatewayInput[] = [];
+  return {
+    calls,
+    gateway: {
+      answer: vi.fn(async (input: ChatGatewayInput) => {
+        calls.push(input);
+        return answer;
+      }),
+    },
+  };
 };
 
 const agent = (): ConversationAgent => ({
@@ -1242,6 +1289,157 @@ describe("WorkbenchReplayRunner", () => {
     expect(result.handoff).toEqual({ routineId: "contact", stepId: "handoff" });
   });
 
+  const slotValuesFakeEngine = (): ConversationEngine => ({
+    async attemptRoutine(input: AttemptRoutineInput): Promise<ProcessTurnResult | null> {
+      await input.routineStore!.save({
+        sessionId: input.sessionId,
+        routineId: "contact",
+        path: ["done"],
+        variables: {},
+        status: "completed",
+      });
+      return {
+        response: { answer: "All set." },
+        trace: emptyTrace(),
+        decision: { reason: "routine_completed" },
+      } as unknown as ProcessTurnResult;
+    },
+    async processTurn(): Promise<ProcessTurnResult> {
+      throw new Error("grounding must not run when a routine claims the turn");
+    },
+  } as unknown as ConversationEngine);
+
+  it("requests routine slot values from the provider only when the caller (Test Chat) opts in", async () => {
+    const forTurn = vi.fn(async () => ({ activator: {} as never, runner: {} as never }));
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn([]),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: slotValuesFakeEngine(),
+      turnRouter: stubTurnRouter("retrieval"),
+      routineProvider: { forTurn },
+      chatGateway: chatGatewayStub(),
+      chatAnswerPresenter: presenterStub(),
+    });
+
+    await runner.run({
+      workspaceId: "ws-1",
+      executionMode: "safe_test" as const,
+      sourceAgentId: "agent-1",
+      baselineAgentConfig: projectInternalAgentConfig(agent()),
+      query: "Please help me",
+      history: [],
+      includeSlotValues: true,
+    });
+
+    expect(forTurn).toHaveBeenCalledWith(expect.objectContaining({ includeSlotValues: true }));
+  });
+
+  it("never requests routine slot values when the caller does not opt in — the eval replay default", async () => {
+    const forTurn = vi.fn(async () => ({ activator: {} as never, runner: {} as never }));
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn([]),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: slotValuesFakeEngine(),
+      turnRouter: stubTurnRouter("retrieval"),
+      routineProvider: { forTurn },
+      chatGateway: chatGatewayStub(),
+      chatAnswerPresenter: presenterStub(),
+    });
+
+    // No `includeSlotValues` on the input — the shape every eval replay call uses today.
+    await runner.run({
+      workspaceId: "ws-1",
+      executionMode: "safe_test" as const,
+      sourceAgentId: "agent-1",
+      baselineAgentConfig: projectInternalAgentConfig(agent()),
+      query: "Please help me",
+      history: [],
+    });
+
+    expect(forTurn).toHaveBeenCalledWith(expect.objectContaining({ includeSlotValues: false }));
+  });
+
+  it("carries a hand-off preview matching the real notification builder, without dispatching it", async () => {
+    const fakeEngine = {
+      async attemptRoutine(input: AttemptRoutineInput): Promise<ProcessTurnResult | null> {
+        await input.routineStore!.save({
+          sessionId: input.sessionId,
+          routineId: "contact",
+          path: ["handoff"],
+          variables: {},
+          status: "active",
+        });
+        return {
+          response: { answer: "A teammate will follow up." },
+          trace: emptyTrace(),
+          decision: { reason: "routine_completed" },
+          handoff: {
+            routineId: "contact",
+            stepId: "handoff",
+            collected: { program: "A stay at Ananda", guests: 2 },
+          },
+        } as unknown as ProcessTurnResult;
+      },
+      async processTurn(): Promise<ProcessTurnResult> {
+        throw new Error("grounding must not run when a routine claims the turn");
+      },
+    } as unknown as ConversationEngine;
+
+    const describeRoutineName = vi.fn(() => "Book accommodation");
+    const reporter: ChatRoutineTurnReporter = {
+      describe: () => null,
+      describeDeclined: () => null,
+      describeInvocation: () => null,
+      describeRoutineName,
+    };
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn([]),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: fakeEngine,
+      turnRouter: stubTurnRouter("retrieval"),
+      routineProvider: {
+        async forTurn() {
+          return { activator: {} as never, runner: {} as never, reporter };
+        },
+      },
+      chatGateway: chatGatewayStub(),
+      chatAnswerPresenter: presenterStub(),
+    });
+
+    const result = await runner.run({
+      workspaceId: "ws-1",
+      executionMode: "safe_test" as const,
+      sourceAgentId: "agent-1",
+      baselineAgentConfig: projectInternalAgentConfig(agent()),
+      query: "Please book Ananda for me",
+      history: [],
+    });
+
+    expect(result.handoff).toEqual({
+      routineId: "contact",
+      stepId: "handoff",
+      collected: { program: "A stay at Ananda", guests: 2 },
+    });
+    // No actual delivery happens for a replayed turn — only the preview the trace carries.
+    expect(result.actions ?? []).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "handoff.notify" }),
+    ]));
+    expect(describeRoutineName).toHaveBeenCalledWith("contact");
+    expect(result.turnTrace?.handoffPreview).toMatchObject({
+      subject: "Book accommodation: needs a human",
+      lines: expect.arrayContaining([
+        "A conversation needs a human operator.",
+        "Agent: Support (agent-1)",
+        "Routine: Book accommodation",
+        "Reason: routine_handoff",
+      ]),
+    });
+    expect(JSON.stringify(result.turnTrace?.handoffPreview)).toContain("A stay at Ananda");
+  });
+
   it("wires the coverage routine port into a replayed turn's reported coverage verdict", async () => {
     const coverageActivator = {
       evaluateCandidates: vi.fn(() => []),
@@ -1410,6 +1608,85 @@ describe("WorkbenchReplayRunner", () => {
     expect(result.answer).toBe('resumed:ask_email_on_interest:{"customer_email":"buyer@example.com"}');
     // The store is keyed by the ephemeral conversation id the runner injects.
     expect(seen!.sessionId).toBeTruthy();
+  });
+
+  // #1354: an active routine bypasses fused planning, so Test Chat takes the turn's
+  // language from the staged detector — the same schedule live chat runs.
+  it("renders an English handoff ending in the language Test Chat detected for the visitor", async () => {
+    const { calls, gateway } = recordingChatGateway("La reception confermerà disponibilità e prezzo via email.");
+    const detect = vi.fn(async (_input: ResponseLanguageDetectorInput) => ({ responseLanguage: "Italian" }));
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn([]),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: new DefaultConversationEngine(),
+      turnRouter: stubTurnRouter("retrieval"),
+      responseLanguageDetector: { detect },
+      routineProvider: handoffRoutineProvider(),
+      chatGateway: gateway,
+      chatAnswerPresenter: presenterStub(),
+    });
+
+    const result = await runner.run({
+      workspaceId: "ws-1",
+      executionMode: "safe_test" as const,
+      sourceAgentId: "agent-1",
+      baselineAgentConfig: projectInternalAgentConfig(agent()),
+      query: ITALIAN_CORRECTION,
+      history: [],
+      routineStartState: { routineId: "book_accommodation", path: ["recap"], variables: {}, status: "active" },
+    });
+
+    expect(detect).toHaveBeenCalledWith(expect.objectContaining({ query: ITALIAN_CORRECTION }));
+    expect(calls).toHaveLength(1);
+    expect(calls[0].systemPrompt)
+      .toContain(`Write one short message in Italian that preserves this meaning:\n${ENGLISH_HANDOFF_ENDING}`);
+    expect(result.answer).toBe("La reception confermerà disponibilità e prezzo via email.");
+    expect(result.handoff).toEqual(expect.objectContaining({ routineId: "book_accommodation", stepId: "handoff" }));
+  });
+
+  it("logs a failed Test Chat language detection and renders the handoff from the visitor's message", async () => {
+    const { calls, gateway } = recordingChatGateway("La reception confermerà disponibilità e prezzo via email.");
+    const logger = { warn: vi.fn() };
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn([]),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: new DefaultConversationEngine(),
+      turnRouter: stubTurnRouter("retrieval"),
+      responseLanguageDetector: {
+        detect: vi.fn(async () => {
+          throw new Error("rate limited");
+        }),
+      },
+      routineProvider: handoffRoutineProvider(),
+      chatGateway: gateway,
+      chatAnswerPresenter: presenterStub(),
+      logger,
+    });
+
+    await runner.run({
+      workspaceId: "ws-1",
+      executionMode: "safe_test" as const,
+      sourceAgentId: "agent-1",
+      baselineAgentConfig: projectInternalAgentConfig(agent()),
+      query: ITALIAN_CORRECTION,
+      history: [],
+      routineStartState: { routineId: "book_accommodation", path: ["recap"], variables: {}, status: "active" },
+    });
+
+    expect(calls[0].systemPrompt).toContain("Write one short message in the user's language");
+    expect(calls[0].prompt).toContain(`Latest user message for language detection only:\n${ITALIAN_CORRECTION}`);
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: "ws-1",
+        reasonCode: "response_language_unresolved",
+        unresolvedReason: "detector_failed",
+        errorType: "Error",
+      }),
+      expect.any(String),
+    );
+    expect(JSON.stringify(logger.warn.mock.calls)).not.toContain("aspetta");
   });
 
   it("exports an advanced routine continuation and imports it into the next private turn", async () => {

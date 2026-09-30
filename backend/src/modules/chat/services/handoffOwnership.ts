@@ -59,7 +59,12 @@ export const suppressedHumanOwnedResponse = (
 /** What the engine reports when a routine ends on a handoff terminal. */
 export type RoutineHandoffEffect = NonNullable<ProcessTurnResult["handoff"]>;
 
-const buildHandoffNotifyAction = (input: {
+/**
+ * Builds the `handoff.notify` action a routine handoff terminal (or a retrieval-miss
+ * handoff) emits. Exported so a Test Chat turn — whose actions are suppressed rather than
+ * dispatched — can build the identical payload for a hand-off preview.
+ */
+export const buildHandoffNotifyAction = (input: {
   conversationId: string;
   workspaceId: string;
   agentId: string;

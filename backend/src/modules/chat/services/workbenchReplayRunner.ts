@@ -27,6 +27,7 @@ import {
   startTurnPlan,
   type TurnPlanCoordinator,
 } from "./turnPlanCoordinator.js";
+import { detectTurnResponseLanguage } from "./turnResponseLanguage.js";
 import type { AuditService } from "../../audit/contracts/index.js";
 import type {
   RetrievalSenseDetectorPort,
@@ -74,6 +75,13 @@ import {
 import type { RetrievalTurnPort } from "./retrievalTurnDispatch.js";
 import type { GroundingSummary } from "./groundingAssertions.js";
 import type { TurnTraceEnvelope } from "./turnTraceEnvelope.js";
+import type { ChatRoutineTurnReporter } from "../contracts/routineTurnState.js";
+import { buildHandoffNotifyAction } from "./handoffOwnership.js";
+import {
+  formatHandoffNotification,
+  handoffNotificationFromAction,
+  type FormattedHandoffNotification,
+} from "../../operatorNotifications/public.js";
 import type { TurnSkill } from "./turnOutcome.js";
 import {
   DefaultTurnSelectionStrategy,
@@ -237,6 +245,17 @@ export interface WorkbenchReplayInput {
    * it verbatim and never regenerates or persists the summary.
    */
   conversationSummary?: string | null;
+  /**
+   * Includes each filled routine slot's value on this replayed turn's trace. Absent/false
+   * (the default) is what every caller of this runner gets except one: only the Test Chat
+   * entry point (`TrustedTestExecutionRunnerAdapter`) sets it, because Test Chat's trace is
+   * stored in `agent_test_execution_attempts` under Test Chat's own retention. Eval replay
+   * (`evalRunService.ts`, `evalMessageCaseRepository.ts`) must never set it: an eval case can
+   * be captured from a customer conversation, and eval persists its trace into append-only
+   * `eval_runs`/revision-eval evidence with a 90-day retention and no per-conversation erasure
+   * path — a captured slot value there would outlive the conversation it came from.
+   */
+  includeSlotValues?: boolean;
 }
 
 export class WorkbenchReplayRunner {
@@ -325,11 +344,16 @@ export class WorkbenchReplayRunner {
       && this.options.chatAnswerPresenter
       ? this.options.routineProvider
       : undefined;
+    // Only the caller sets `includeSlotValues` — Test Chat does (its trace lives in
+    // agent_test_execution_attempts under Test Chat's own retention); eval replay never
+    // does, since eval persists into append-only eval_runs/revision-eval evidence that
+    // outlives a source conversation with no per-conversation erasure path.
     const assembly = this.options.turnAssemblyFactory?.create({
       chatSessionPreparer: preparer,
       directiveStateStore: effects.directiveStateStore,
       routineStore,
       coverageHeadRecorder: this.options.coverageHeadRecorder,
+      includeSlotValues: input.includeSlotValues === true,
     }) ?? new ChatTurnAssembly({
       chatGateway: this.options.chatGateway ?? unavailableRoutineGateway,
       chatAnswerPresenter: presenter,
@@ -343,6 +367,7 @@ export class WorkbenchReplayRunner {
       turnInterpreter: this.options.turnInterpreter,
       routineStore,
       routineProvider,
+      includeSlotValues: input.includeSlotValues === true,
       clarifier,
       recordClarificationDecision: this.options.recordClarificationDecision,
       retrievalSenseDetector: this.options.retrievalSenseDetector,
@@ -378,6 +403,7 @@ export class WorkbenchReplayRunner {
         actions: routineResult.actions,
         pendingDecisionTransition: routineResult.pendingDecisionTransition,
         handoff: routineResult.handoff,
+        routineReporter: routineResult.routineReporter,
         continuation: this.continuation(effects, session.conversation.id, routineStore),
       });
     }
@@ -475,15 +501,13 @@ export class WorkbenchReplayRunner {
     );
   }
 
-  private async detectResponseLanguage(
+  private detectResponseLanguage(
     input: WorkbenchReplayInput,
     session: PreparedSession,
   ): Promise<string | undefined> {
-    if (!this.options.responseLanguageDetector) {
-      return undefined;
-    }
-    try {
-      const result = await this.options.responseLanguageDetector.detect({
+    return detectTurnResponseLanguage({
+      detector: this.options.responseLanguageDetector,
+      request: {
         query: input.query,
         history: session.history,
         workspaceContext: { workspaceId: input.workspaceId },
@@ -497,11 +521,54 @@ export class WorkbenchReplayRunner {
           attemptKey: "response_language",
           ...input.usageAttribution,
         },
-      });
-      return result.responseLanguage;
-    } catch {
+      },
+      logContext: { workspaceId: input.workspaceId, conversationId: session.conversation.id },
+      logger: this.options.logger,
+    });
+  }
+
+  /**
+   * The hand-off message content the suppressed `handoff.notify` action carries — the
+   * subject and body fields/values a real dispatch renders — built through the same
+   * payload builder and text formatter the real dispatch handler uses
+   * (`buildHandoffNotifyAction`, `handoffNotificationFromAction`, `formatHandoffNotification`)
+   * so this content cannot drift from what a live handoff sends. It is not the full
+   * delivered payload: live delivery additionally appends an `Open: <conversation URL>`
+   * line and, for a webhook, its own structured fields (see `emailWebhookSink.ts`) — a
+   * replayed turn has no durable conversation to link to, so this preview omits both.
+   * `routineReporter` resolves the routine's display name from the routines this turn ran
+   * against — the same authored name a live handoff's database-backed subject resolver
+   * would find — without a further lookup.
+   */
+  private handoffPreviewFor(input: {
+    input: WorkbenchReplayInput;
+    agent: ReturnType<typeof materializeAgentFromConfig>;
+    session: PreparedSession;
+    handoff?: ChatTurnAssemblyRoutineResult["handoff"];
+    routineReporter?: ChatRoutineTurnReporter;
+  }): FormattedHandoffNotification | undefined {
+    if (!input.handoff) {
       return undefined;
     }
+    const action = buildHandoffNotifyAction({
+      conversationId: input.session.conversation.id,
+      workspaceId: input.input.workspaceId,
+      agentId: input.agent.id,
+      userMessageId: input.session.userMessage.id,
+      reason: "routine_handoff",
+      routineId: input.handoff.routineId,
+      stepId: input.handoff.stepId,
+      collected: input.handoff.collected,
+    });
+    const notification = handoffNotificationFromAction({
+      payload: action.payload,
+      fallback: { conversationId: input.session.conversation.id, workspaceId: input.input.workspaceId },
+      subject: {
+        agentName: input.agent.name,
+        routineName: input.routineReporter?.describeRoutineName(input.handoff.routineId) ?? null,
+      },
+    });
+    return formatHandoffNotification(notification);
   }
 
   private presentResult(input: {
@@ -514,6 +581,7 @@ export class WorkbenchReplayRunner {
     actions?: RoutineActionRequest[];
     pendingDecisionTransition?: ChatTurnAssemblyRoutineResult["pendingDecisionTransition"];
     handoff?: ChatTurnAssemblyRoutineResult["handoff"];
+    routineReporter?: ChatRoutineTurnReporter;
     continuation?: TestExecutionReplayContinuationV1;
   }): WorkbenchReplayResult {
     const tracePresentation = buildTurnTraceForPresentation({
@@ -525,6 +593,10 @@ export class WorkbenchReplayRunner {
       stream: false,
       engineTrace: input.engineTrace,
     });
+    // A Test Chat/eval replay never dispatches this turn's actions (the caller drops them,
+    // see TrustedTestExecutionRunnerAdapter.run), so a hand-off notify never actually sends.
+    // Carry its message content on the trace instead.
+    const handoffPreview = this.handoffPreviewFor(input);
     return {
       answer: input.presentation.answer,
       messageId: input.session.userMessage.id,
@@ -534,7 +606,9 @@ export class WorkbenchReplayRunner {
       // the follow-up question generator, which leaves the answer untouched.
       suggestions: input.presentation.suggestions,
       groundingSummary: input.presentation.groundingSummary,
-      turnTrace: tracePresentation.turnTrace,
+      turnTrace: handoffPreview && tracePresentation.turnTrace
+        ? { ...tracePresentation.turnTrace, handoffPreview }
+        : tracePresentation.turnTrace,
       actions: input.actions,
       pendingDecisionTransition: input.pendingDecisionTransition,
       handoff: input.handoff,

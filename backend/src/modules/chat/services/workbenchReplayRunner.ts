@@ -75,6 +75,13 @@ import {
 import type { RetrievalTurnPort } from "./retrievalTurnDispatch.js";
 import type { GroundingSummary } from "./groundingAssertions.js";
 import type { TurnTraceEnvelope } from "./turnTraceEnvelope.js";
+import type { ChatRoutineTurnReporter } from "../contracts/routineTurnState.js";
+import { buildHandoffNotifyAction } from "./handoffOwnership.js";
+import {
+  formatHandoffNotification,
+  handoffNotificationFromAction,
+  type FormattedHandoffNotification,
+} from "../../operatorNotifications/public.js";
 import type { TurnSkill } from "./turnOutcome.js";
 import {
   DefaultTurnSelectionStrategy,
@@ -379,6 +386,7 @@ export class WorkbenchReplayRunner {
         actions: routineResult.actions,
         pendingDecisionTransition: routineResult.pendingDecisionTransition,
         handoff: routineResult.handoff,
+        routineReporter: routineResult.routineReporter,
         continuation: this.continuation(effects, session.conversation.id, routineStore),
       });
     }
@@ -502,6 +510,45 @@ export class WorkbenchReplayRunner {
     });
   }
 
+  /**
+   * What the suppressed `handoff.notify` action would have delivered, built through the same
+   * payload builder and text formatter the real dispatch handler uses (`buildHandoffNotifyAction`,
+   * `handoffNotificationFromAction`, `formatHandoffNotification`) so it cannot drift from the
+   * email/webhook a live handoff actually sends. `routineReporter` resolves the routine's
+   * display name from the routines this turn ran against — the same authored name a live
+   * handoff's database-backed subject resolver would find — without a further lookup.
+   */
+  private handoffPreviewFor(input: {
+    input: WorkbenchReplayInput;
+    agent: ReturnType<typeof materializeAgentFromConfig>;
+    session: PreparedSession;
+    handoff?: ChatTurnAssemblyRoutineResult["handoff"];
+    routineReporter?: ChatRoutineTurnReporter;
+  }): FormattedHandoffNotification | undefined {
+    if (!input.handoff) {
+      return undefined;
+    }
+    const action = buildHandoffNotifyAction({
+      conversationId: input.session.conversation.id,
+      workspaceId: input.input.workspaceId,
+      agentId: input.agent.id,
+      userMessageId: input.session.userMessage.id,
+      reason: "routine_handoff",
+      routineId: input.handoff.routineId,
+      stepId: input.handoff.stepId,
+      collected: input.handoff.collected,
+    });
+    const notification = handoffNotificationFromAction({
+      payload: action.payload,
+      fallback: { conversationId: input.session.conversation.id, workspaceId: input.input.workspaceId },
+      subject: {
+        agentName: input.agent.name,
+        routineName: input.routineReporter?.describeRoutineName(input.handoff.routineId) ?? null,
+      },
+    });
+    return formatHandoffNotification(notification);
+  }
+
   private presentResult(input: {
     input: WorkbenchReplayInput;
     agent: ReturnType<typeof materializeAgentFromConfig>;
@@ -512,6 +559,7 @@ export class WorkbenchReplayRunner {
     actions?: RoutineActionRequest[];
     pendingDecisionTransition?: ChatTurnAssemblyRoutineResult["pendingDecisionTransition"];
     handoff?: ChatTurnAssemblyRoutineResult["handoff"];
+    routineReporter?: ChatRoutineTurnReporter;
     continuation?: TestExecutionReplayContinuationV1;
   }): WorkbenchReplayResult {
     const tracePresentation = buildTurnTraceForPresentation({
@@ -522,7 +570,12 @@ export class WorkbenchReplayRunner {
       answerStartedAt: input.answerStartedAt,
       stream: false,
       engineTrace: input.engineTrace,
+      executionMode: input.input.executionMode,
     });
+    // A Test Chat/eval replay never dispatches this turn's actions (the caller drops them,
+    // see TrustedTestExecutionRunnerAdapter.run), so a hand-off notify never actually sends.
+    // Preview what it would have delivered directly on the trace.
+    const handoffPreview = this.handoffPreviewFor(input);
     return {
       answer: input.presentation.answer,
       messageId: input.session.userMessage.id,
@@ -532,7 +585,9 @@ export class WorkbenchReplayRunner {
       // the follow-up question generator, which leaves the answer untouched.
       suggestions: input.presentation.suggestions,
       groundingSummary: input.presentation.groundingSummary,
-      turnTrace: tracePresentation.turnTrace,
+      turnTrace: handoffPreview && tracePresentation.turnTrace
+        ? { ...tracePresentation.turnTrace, handoffPreview }
+        : tracePresentation.turnTrace,
       actions: input.actions,
       pendingDecisionTransition: input.pendingDecisionTransition,
       handoff: input.handoff,

@@ -321,6 +321,7 @@ const projectTurnTrace = (detail: CopilotConversationTurnDetail): Record<string,
 // from searching customer history.
 const CONVERSATION_TRANSCRIPT_DESCRIPTION = "Read a bounded transcript of a customer or dashboard chat conversation with shallow per-turn outcomes, routing, feedback, and ownership. Use turn_trace for one turn's full diagnostic spine. Test Chat sessions are read with test_chat_transcript.";
 const CONVERSATION_HISTORY_SEARCH_DESCRIPTION = "List recent customer and dashboard chat conversations in this workspace for investigation. Test Chat sessions are listed with test_chat_sessions.";
+const TURN_TRACE_DESCRIPTION = "Inspect one message's full turn diagnostic spine. Accepts user messages, including unanswered turns with their failure or cancellation reason. A routine's captured slot values are shown here, with PII-typed slots (for example email) masked; test_chat_turn_trace shows every value in full for a private Test Chat run.";
 
 export interface ChatCopilotToolDependencies {
   readonly chatHistoryService: CopilotConversationHistoryPort;
@@ -349,11 +350,11 @@ export const createChatCopilotTools = (deps: ChatCopilotToolDependencies): Reado
   },
   {
     name: "turn_trace", shape: "read", verificationCost: () => 0, uiLabel: "Reading turn trace", contributingModule: "chat", dashboardSubject: { type: "conversation" }, requiredPermissions: ["workspace.history.read"],
-    description: "Inspect one message's full turn diagnostic spine. Accepts user messages, including unanswered turns with their failure or cancellation reason.",
+    description: TURN_TRACE_DESCRIPTION,
     inputSchema: z.object({ messageId: idSchema }), outputSchema: turnTraceOutputSchema,
     createTool: (context) => ({
       name: "turn_trace",
-      description: "Inspect one message's full turn diagnostic spine. Accepts user messages, including unanswered turns with their failure or cancellation reason.",
+      description: TURN_TRACE_DESCRIPTION,
       inputSchema: z.object({ messageId: idSchema }),
       outputSchema: turnTraceOutputSchema,
       invoke: async ({ messageId }) => ({

@@ -720,6 +720,108 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
     expect(assistantMessage?.metadata?.composedInstructions).toBe("retrieval system prompt");
   });
 
+  it("masks a PII-typed routine slot value before persisting a customer conversation's turn trace", async () => {
+    const { lifecycle, records } = harness();
+    const prepared = session();
+    const routineTraceWithEmail: ConversationTrace = {
+      traceId: "conversation-turn-slot-values",
+      startedAt: "2026-01-01T00:00:00.000Z",
+      completedAt: "2026-01-01T00:00:01.000Z",
+      stages: [
+        { id: "message", kind: "message", status: "applied" },
+        { id: "gather", kind: "gather", status: "applied" },
+        {
+          id: "routine:contact",
+          kind: "routine_activate",
+          status: "applied",
+          outputs: { routineId: "contact", completed: false, answerLength: 10 },
+          subTrace: {
+            namespace: "routine",
+            version: 1,
+            payload: {
+              routineId: "contact",
+              startStepId: "ask_email",
+              landedStepId: "done",
+              capturedSlotKeys: ["email"],
+              filledSlotKeys: ["email", "program"],
+              slotValues: [
+                { key: "email", type: "email", value: "guest@example.com" },
+                { key: "program", type: "text", value: "A stay at Ananda" },
+              ],
+              steps: [],
+            },
+          },
+        },
+      ],
+    };
+
+    await lifecycle.completeAssistantTurn({
+      workspaceId: "workspace_1",
+      session: prepared,
+      presentation: presentation(),
+      answerStartedAt: Date.now(),
+      stream: false,
+      engineTrace: routineTraceWithEmail,
+    });
+
+    const turnTrace = records[0].metadata.turnTrace as {
+      spine: { stages: Array<{ subTrace?: { namespace: string; payload: { slotValues: Array<{ key: string; type: string; value: unknown }> } } }> };
+    };
+    const routineStage = turnTrace.spine.stages.find((stage) => stage.subTrace?.namespace === "routine");
+    expect(routineStage?.subTrace?.payload.slotValues).toEqual([
+      { key: "email", type: "email", value: "[redacted]" },
+      { key: "program", type: "text", value: "A stay at Ananda" },
+    ]);
+  });
+
+  it("keeps routine slot values in full on a safe-test turn's returned trace", async () => {
+    const { lifecycle } = harness();
+    const prepared = session();
+    const routineTraceWithEmail: ConversationTrace = {
+      traceId: "conversation-turn-slot-values-safe-test",
+      startedAt: "2026-01-01T00:00:00.000Z",
+      completedAt: "2026-01-01T00:00:01.000Z",
+      stages: [
+        {
+          id: "routine:contact",
+          kind: "routine_activate",
+          status: "applied",
+          subTrace: {
+            namespace: "routine",
+            version: 1,
+            payload: {
+              routineId: "contact",
+              startStepId: "ask_email",
+              landedStepId: "done",
+              capturedSlotKeys: ["email"],
+              filledSlotKeys: ["email"],
+              slotValues: [{ key: "email", type: "email", value: "guest@example.com" }],
+              steps: [],
+            },
+          },
+        },
+      ],
+    };
+
+    const completed = await lifecycle.completeAssistantTurn({
+      workspaceId: "workspace_1",
+      session: prepared,
+      presentation: presentation(),
+      answerStartedAt: Date.now(),
+      stream: false,
+      executionMode: "safe_test",
+      engineTrace: routineTraceWithEmail,
+    });
+
+    const turnTrace = completed.response.turnTrace as unknown as {
+      spine: { stages: Array<{ subTrace?: { namespace: string; payload: { slotValues: Array<{ key: string; type: string; value: unknown }> } } }> };
+    };
+    const routineStage = turnTrace.spine.stages.find((stage) => stage.subTrace?.namespace === "routine");
+    expect(routineStage?.subTrace?.payload.slotValues).toEqual([
+      { key: "email", type: "email", value: "guest@example.com" },
+    ]);
+  });
+
   it("uses the transaction port for assistant message, action outbox, routine state, touch, and success audit", async () => {
     const records: RecordedAudit[] = [];
     const auditService = {

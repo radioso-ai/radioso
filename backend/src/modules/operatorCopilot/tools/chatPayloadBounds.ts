@@ -47,6 +47,12 @@ export const turnTraceEnvelopeSchema = z.object({
   }).passthrough(),
   openTelemetry: z.object({ traceId: z.string(), spanId: z.string(), sampled: z.boolean() }).optional(),
   summary: z.record(jsonValueSchema).optional(),
+  /**
+   * Only on a Test Chat turn that ended on a routine hand-off terminal — the notification
+   * that terminal would have sent an operator, since a replayed turn never actually delivers
+   * it. Absent on a customer conversation's `turn_trace`, which sends for real.
+   */
+  handoffPreview: z.object({ subject: z.string(), lines: z.array(z.string()) }).optional(),
 });
 
 const MAX_MESSAGES = 20;

@@ -307,6 +307,14 @@ describe("candidate retrieval branches", () => {
     expect(result.rewrittenContexts).toHaveLength(2);
     expect(result.retrievalBranches[2]?.semanticContexts).toEqual([]);
     expect(result.retrievalBranches[3]?.semanticContexts).toEqual([]);
+    // Searched branches carry their own semantic timing...
+    expect(result.retrievalBranches[0]?.semanticSearchDurationMs).toBeGreaterThanOrEqual(0);
+    expect(result.retrievalBranches[1]?.semanticSearchDurationMs).toBeGreaterThanOrEqual(0);
+    // ...but a branch outside the cap issued no semantic search, so it has none.
+    expect(result.retrievalBranches[2]?.semanticSearchStartedAtMs).toBeUndefined();
+    expect(result.retrievalBranches[2]?.semanticSearchDurationMs).toBeUndefined();
+    expect(result.retrievalBranches[3]?.semanticSearchStartedAtMs).toBeUndefined();
+    expect(result.retrievalBranches[3]?.semanticSearchDurationMs).toBeUndefined();
   });
 
   it("passes the query embedding port's opaque active space through semantic search", async () => {
@@ -612,6 +620,15 @@ describe("candidate retrieval branches", () => {
     ]);
     expect(result.retrievalBranches).toHaveLength(2);
     expect(result.rewrittenContexts).toHaveLength(2);
+    // Both branches share one semantic query, so they share that one search's timing.
+    expect(result.retrievalBranches[0]?.semanticSearchStartedAtMs).toBeDefined();
+    expect(result.retrievalBranches[0]?.semanticSearchStartedAtMs)
+      .toBe(result.retrievalBranches[1]?.semanticSearchStartedAtMs);
+    expect(result.retrievalBranches[0]?.semanticSearchDurationMs)
+      .toBe(result.retrievalBranches[1]?.semanticSearchDurationMs);
+    // Their lexical searches are distinct branches, each with its own timing.
+    expect(result.retrievalBranches[0]?.lexicalSearchStartedAtMs).toBeDefined();
+    expect(result.retrievalBranches[1]?.lexicalSearchStartedAtMs).toBeDefined();
   });
 });
 
@@ -749,6 +766,86 @@ describe("candidate retrieval branch timings", () => {
     // The branches overlap: lexical is still running when semantic search starts.
     expect(result.lexicalRetrievalStartedAtMs + result.lexicalRetrievalDurationMs)
       .toBeGreaterThan(result.semanticRetrievalStartedAtMs);
+  });
+
+  it("measures each branch's own semantic and lexical search independently, not the group span", async () => {
+    // Alpha's searches are quick; beta's are slow. Each branch must report its own
+    // elapsed time, not the whole-group span shared by the old implementation.
+    const semanticDelayMsByQuery: Record<string, number> = {
+      "who is alpha": 20,
+      "who is beta": 120,
+    };
+    const lexicalDelayMsByQuery: Record<string, number> = {
+      alpha: 15,
+      beta: 100,
+    };
+    const stage = new CandidateRetrievalStageService(
+      {
+        async embedQueries(input) {
+          return { space: embeddingSpace, vectors: input.texts.map((_, index) => [index + 1]) };
+        },
+      },
+      {
+        async search(input) {
+          const query = input.queryVector[0] === 1 ? "who is alpha" : "who is beta";
+          await delay(semanticDelayMsByQuery[query] ?? 0);
+          return [
+            {
+              chunkId: `semantic-${input.queryVector[0]}`,
+              documentId: `doc-semantic-${input.queryVector[0]}`,
+              embeddingSpaceId: input.space.id,
+              version: "1",
+              score: 0.9,
+            },
+          ];
+        },
+      },
+      {
+        async search(input) {
+          await delay(lexicalDelayMsByQuery[input.query] ?? 0);
+          return [
+            {
+              chunkId: `lexical-${input.query}`,
+              documentId: `doc-lexical-${input.query}`,
+              title: input.query,
+              content: "profile",
+              similarity: 0.8,
+            },
+          ];
+        },
+      },
+      hydrateSemanticCandidates,
+    );
+
+    const subqueries = [
+      { id: "subquery_1", label: "Alpha", semanticQuery: "who is alpha", lexicalQuery: "alpha" },
+      { id: "subquery_2", label: "Beta", semanticQuery: "who is beta", lexicalQuery: "beta" },
+    ];
+
+    const result = await stage.execute({
+      ...singleBranchStageInput(),
+      rewrittenQuery: {
+        ...singleBranchStageInput().rewrittenQuery,
+        retrievalSubqueries: subqueries,
+      },
+      activeRetrievalSubqueries: subqueries,
+    });
+
+    const [alphaBranch, betaBranch] = result.retrievalBranches;
+
+    expect(alphaBranch?.semanticSearchDurationMs).toBeGreaterThanOrEqual(semanticDelayMsByQuery["who is alpha"] - 10);
+    expect(betaBranch?.semanticSearchDurationMs).toBeGreaterThanOrEqual(semanticDelayMsByQuery["who is beta"] - 10);
+    expect(betaBranch?.semanticSearchDurationMs ?? 0).toBeGreaterThan(alphaBranch?.semanticSearchDurationMs ?? 0);
+
+    expect(alphaBranch?.lexicalSearchDurationMs).toBeGreaterThanOrEqual(lexicalDelayMsByQuery.alpha - 10);
+    expect(betaBranch?.lexicalSearchDurationMs).toBeGreaterThanOrEqual(lexicalDelayMsByQuery.beta - 10);
+    expect(betaBranch?.lexicalSearchDurationMs ?? 0).toBeGreaterThan(alphaBranch?.lexicalSearchDurationMs ?? 0);
+
+    // Alpha's own span equals neither group span (a regression to the old "every
+    // branch gets the group window" behavior would make these equal, since the
+    // group window is dominated by beta's much slower searches).
+    expect(alphaBranch?.semanticSearchDurationMs).not.toBe(result.semanticRetrievalDurationMs);
+    expect(alphaBranch?.lexicalSearchDurationMs).not.toBe(result.lexicalRetrievalDurationMs);
   });
 
   it("reports zero semantic duration when the embedding is unavailable", async () => {

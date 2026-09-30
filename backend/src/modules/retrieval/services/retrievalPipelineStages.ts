@@ -80,6 +80,15 @@ export interface RetrievalBranchResult {
   semanticSearched: boolean;
   semanticContexts: RetrievedChunk[];
   lexicalContexts: RetrievedChunk[];
+  // Measured around this branch's own search, not the enclosing stage. Branches
+  // that share a semantic query share the one search issued for it, so they carry
+  // identical semantic timing. The semantic pair is absent when the branch issued
+  // no semantic search (outside the per-turn cap); a branch assembled without
+  // either pair (a hand-built fixture) is traced with the channel's group window.
+  semanticSearchStartedAtMs?: number;
+  semanticSearchDurationMs?: number;
+  lexicalSearchStartedAtMs?: number;
+  lexicalSearchDurationMs?: number;
 }
 
 export type SemanticRetrievalAvailability =

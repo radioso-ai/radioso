@@ -4,7 +4,10 @@ import type {
   ConversationRoutineNextStepSelector,
   Routine,
   RoutineNextStepDecision,
+  RoutineSelectionTrace,
   RoutineSkillResult,
+  RoutineSlotSchema,
+  RoutineSlotType,
   RoutineState,
   RoutineStep,
   RoutineTransition,
@@ -29,24 +32,61 @@ const skillResultBlock = (skillResult?: RoutineSkillResult): string => {
   return `A tool just ran for this step with status "${skillResult.status}".${outputs}`;
 };
 
-const slotSchemaBlock = (routine: Routine): string => {
+const slotLine = (slot: RoutineSlotSchema): string => {
+  const description = slot.description?.replace(/\s+/g, " ").trim();
+  return `- ${slot.key} (${slot.type})${description ? `: ${description}` : ""}`;
+};
+
+// A date slot without today's date left the model unsure how to write "11 novembre": it
+// dropped the value or stored it verbatim, so the hand-off received free text. The format
+// is stated as how to record the value, never as the slot's type: shown as the type, the
+// model read it as the format the user must type and re-asked a date it had already
+// captured, and parsed "11-14 Nov" as month 11, day 14.
+const dateRule = (today: Date): string =>
+  [
+    "The user may write a date in any form; a date they give counts as provided.",
+    'Record a date slot\'s value as YYYY-MM-DD, reading the day and month the way the user wrote them: "11-14 Nov" is 11 to 14 November.',
+    `Today is ${today.toISOString().slice(0, 10)} (UTC); a date given without a year is its next occurrence on or after today.`,
+    'Leave a date slot out when the user names only an approximate time, such as "mid-November" or "in spring".',
+  ].join(" ");
+
+// One readable line per slot, not the raw schema JSON. With the JSON dump the model
+// returned no values at all whenever the current step's own question went unanswered,
+// dropping slots the message plainly gave (#1370: a first message stating two dates kept
+// them in 0 of 20 samples; with this block and the date rule, in 19–20 of 20).
+// Keys only: whether a slot already holds a value is what a condition such as "the user
+// provided {{slot.arrival}}" turns on, and without it a value given on an earlier turn
+// looked missing, so the step re-asked for it.
+const filledSlotsLine = (routine: Routine, variables: Record<string, unknown>): string[] => {
+  const filled = (routine.slots ?? []).filter((slot) => Object.prototype.hasOwnProperty.call(variables, slot.key));
+  return filled.length > 0 ? [`Slots that already have a value from earlier turns: ${filled.map((slot) => slot.key).join(", ")}.`] : [];
+};
+
+const slotSchemaBlock = (routine: Routine, variables: Record<string, unknown>, today: Date): string => {
   if (!routine.slots || routine.slots.length === 0) {
     return "";
   }
   return [
-    "Declared slot schema:",
-    JSON.stringify(routine.slots),
+    "Declared slots (key, type, and what each one holds):",
+    ...routine.slots.map(slotLine),
+    ...filledSlotsLine(routine, variables),
     "",
-    "Extract every declared slot present in the latest user message in one pass.",
-    'Return extracted values in "variables" keyed by each slot\'s "key"; omit slots not provided this turn.',
+    "Extract every declared slot present in the latest user message in one pass, whether or not the current step asks for it.",
+    "Judge each slot on its own: a slot's description applies only to that slot and never stops you from extracting another.",
+    "A condition that refers to a slot as {{slot.<key>}} holds only when that slot has a value, given in the latest message or earlier in the conversation; when you return a value for every slot such a condition refers to, it holds.",
+    ...(routine.slots.some((slot) => slot.type === "date") ? [dateRule(today)] : []),
+    'Return extracted values in "variables" keyed by each slot\'s key; omit slots not provided this turn.',
   ].join("\n");
 };
 
 interface ParsedDecision {
+  readable: boolean;
   condition: number | null;
   offTopic: boolean;
   variables: Record<string, unknown>;
 }
+
+const unreadableDecision: ParsedDecision = { readable: false, condition: null, offTopic: false, variables: {} };
 
 // Extracts the first balanced { ... } object from the model output. Structural
 // parsing only; no product vocabulary.
@@ -87,7 +127,7 @@ const extractJsonObject = (raw: string): string | null => {
 const parseDecision = (raw: string): ParsedDecision => {
   const json = extractJsonObject(raw.trim());
   if (!json) {
-    return { condition: null, offTopic: false, variables: {} };
+    return unreadableDecision;
   }
   try {
     const parsed = JSON.parse(json) as { condition?: unknown; offTopic?: unknown; variables?: unknown };
@@ -97,10 +137,26 @@ const parseDecision = (raw: string): ParsedDecision => {
       parsed.variables && typeof parsed.variables === "object" && !Array.isArray(parsed.variables)
         ? (parsed.variables as Record<string, unknown>)
         : {};
-    return { condition, offTopic, variables };
+    return { readable: true, condition, offTopic, variables };
   } catch {
-    return { condition: null, offTopic: false, variables: {} };
+    return unreadableDecision;
   }
+};
+
+// The model often writes a number or boolean as a JSON string; a field guard compares with
+// `===`, so "2" would never equal 2. Structural coercion by declared type only.
+const coerceToSlotType = (value: unknown, type: RoutineSlotType | undefined): unknown => {
+  if (typeof value !== "string") {
+    return value;
+  }
+  const trimmed = value.trim();
+  if (type === "number" && /^-?\d+(?:\.\d+)?$/.test(trimmed)) {
+    return Number(trimmed);
+  }
+  if (type === "boolean" && (trimmed === "true" || trimmed === "false")) {
+    return trimmed === "true";
+  }
+  return value;
 };
 
 // Structural check: a literal template placeholder (e.g. "<name>") echoed verbatim by
@@ -117,16 +173,38 @@ const PLACEHOLDER_KEY_PATTERN = /^<.*>$/;
 const sanitizeVariables = (
   variables: Record<string, unknown>,
   routine: Routine,
-): Record<string, unknown> => {
-  const declaredKeys = new Set((routine.slots ?? []).map((slot) => slot.key));
-  return Object.fromEntries(
-    Object.entries(variables).filter(([key]) => {
-      if (PLACEHOLDER_KEY_PATTERN.test(key)) {
-        return false;
-      }
-      return declaredKeys.size === 0 || declaredKeys.has(key);
-    }),
-  );
+): { captured: Record<string, unknown>; undeclaredKeyCount: number } => {
+  const slotTypes = new Map((routine.slots ?? []).map((slot) => [slot.key, slot.type]));
+  const captured: Record<string, unknown> = {};
+  let undeclaredKeyCount = 0;
+  for (const [key, value] of Object.entries(variables)) {
+    if (PLACEHOLDER_KEY_PATTERN.test(key) || (slotTypes.size > 0 && !slotTypes.has(key))) {
+      undeclaredKeyCount += 1;
+      continue;
+    }
+    // A null or blank value is the model saying "not given"; kept, it would count as filled.
+    if (value === null || value === undefined || (typeof value === "string" && value.trim() === "")) {
+      continue;
+    }
+    captured[key] = coerceToSlotType(value, slotTypes.get(key));
+  }
+  return { captured, undeclaredKeyCount };
+};
+
+const selectionTrace = (
+  decision: ParsedDecision,
+  conditionMatched: boolean,
+  { captured, undeclaredKeyCount }: ReturnType<typeof sanitizeVariables>,
+): RoutineSelectionTrace => {
+  const outcome = !decision.readable
+    ? "unreadable"
+    : conditionMatched
+      ? "transition"
+      : decision.offTopic
+        ? "off_topic"
+        : "stay";
+  const returnedSlotKeys = Object.keys(captured);
+  return { outcome, returnedSlotKeys, ...(undeclaredKeyCount > 0 ? { undeclaredKeyCount } : {}) };
 };
 
 /**
@@ -138,12 +216,15 @@ const sanitizeVariables = (
  */
 export class RoutineNextStepSelector implements ConversationRoutineNextStepSelector {
   private readonly promptTemplate: string;
+  private readonly clock: () => Date;
 
   constructor(
     private readonly modelGateway: ConversationModelGateway,
-    options: { promptTemplate?: string } = {},
+    /** `clock` dates the turn so a date slot given without a year resolves; defaults to the wall clock. */
+    options: { promptTemplate?: string; clock?: () => Date } = {},
   ) {
     this.promptTemplate = options.promptTemplate ?? DEFAULT_ROUTINE_NEXT_STEP_PROMPT;
+    this.clock = options.clock ?? (() => new Date());
   }
 
   async select(input: {
@@ -166,7 +247,7 @@ export class RoutineNextStepSelector implements ConversationRoutineNextStepSelec
       currentStep: input.currentStep.action ?? input.currentStep.id,
       skillResult: skillResultBlock(input.skillResult),
       conditions,
-      slotSchema: slotSchemaBlock(input.routine),
+      slotSchema: slotSchemaBlock(input.routine, input.state.variables, this.clock()),
     });
 
     const { text } = await this.modelGateway.complete({
@@ -177,24 +258,24 @@ export class RoutineNextStepSelector implements ConversationRoutineNextStepSelec
 
     const conditionMatched =
       decision.condition !== null && decision.condition >= 1 && decision.condition <= input.transitions.length;
+    const sanitized = sanitizeVariables(decision.variables, input.routine);
+    const variables = sanitized.captured;
+    const selection = selectionTrace(decision, conditionMatched, sanitized);
 
     // A matched transition advances regardless of anything else (the user supplied what
     // the step asked for, possibly alongside a question).
     if (conditionMatched) {
-      return {
-        nextStepId: input.transitions[decision.condition! - 1].to,
-        variables: sanitizeVariables(decision.variables, input.routine),
-      };
+      return { nextStepId: input.transitions[decision.condition! - 1].to, variables, selection };
     }
 
     // No transition matched, but the user asked something unrelated → yield the turn so
     // normal answering handles it; the routine stays parked here to resume later.
     if (decision.offTopic) {
-      return { nextStepId: input.currentStep.id, yieldTurn: true };
+      return { nextStepId: input.currentStep.id, yieldTurn: true, selection };
     }
 
     // Otherwise the user is still on this step but hasn't satisfied it → stay (a re-ask),
     // keeping any captured variables so partial progress is not lost.
-    return { nextStepId: input.currentStep.id, variables: sanitizeVariables(decision.variables, input.routine) };
+    return { nextStepId: input.currentStep.id, variables, selection };
   }
 }

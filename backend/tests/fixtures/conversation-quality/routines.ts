@@ -1,13 +1,14 @@
 import type { RoutineDefinition } from "../../../src/modules/routines/public.js";
 
 /**
- * Two seed routines the suite exercises. They are authored `RoutineDefinition`s — the
+ * The seed routines the suite exercises. They are authored `RoutineDefinition`s — the
  * same shape an operator would publish — so a case can assert both that a routine claims
  * the turn and how far it advances. Ids are stable constants referenced by cases.
  */
 export const CONTACT_SUPPORT_ROUTINE_ID = "routine:cq-agent:contact-support:v1";
 export const BOOK_DEMO_ROUTINE_ID = "routine:cq-agent:book-demo:v1";
 export const START_RETURN_ROUTINE_ID = "routine:cq-agent:start-return:v1";
+export const BOOK_RETREAT_ROUTINE_ID = "routine:cq-agent:book-retreat:v1";
 /** The tool name `startReturnRoutine` is exposed under; the same name in chat and on the agent-facing doors. */
 export const START_RETURN_TOOL_NAME = "start_return";
 /** The skill the return routine dispatches once it holds an order id and a reason. */
@@ -145,4 +146,50 @@ export const startReturnRoutine: RoutineDefinition = {
   ],
 };
 
-export const conversationQualityRoutines: RoutineDefinition[] = [contactSupportRoutine, bookDemoRoutine, startReturnRoutine];
+/**
+ * A step that asks the visitor to confirm, over a slot whose description refuses a bare
+ * wish to stay (#1369). A "yes" to it fills nothing, so the step is re-asked, and the
+ * re-ask must ask again rather than announce a booking.
+ */
+export const bookRetreatRoutine: RoutineDefinition = {
+  id: BOOK_RETREAT_ROUTINE_ID,
+  agentId: CQ_AGENT_ID,
+  lineageId: "lineage:book-retreat",
+  version: 1,
+  enabled: true,
+  createdAt: FIXED_DATE,
+  updatedAt: FIXED_DATE,
+  name: "Book a retreat",
+  activation: {
+    triggerDescription: "the user wants to book a stay or a retreat at the retreat centre",
+    gateRef: null,
+    priority: 10,
+    reentryMode: "once_per_conversation",
+  },
+  slots: [
+    {
+      stableSlotId: "slot_retreat",
+      key: "retreat",
+      type: "text",
+      required: true,
+      description: "The name of the retreat the visitor picks from the retreat calendar. A wish to stay or visit is not a retreat: leave this empty until they name one.",
+      ordinal: 0,
+    },
+  ],
+  steps: [
+    { stableStepId: "confirm_retreat", kind: "chat", instruction: "Name the retreat the visitor seems interested in and ask them to confirm it: {{slot.retreat}}", toolRef: null, actionType: null, ordinal: 0, metadata: {} },
+  ],
+  transitions: [
+    defaultTransition("confirm_retreat", "done", 0),
+  ],
+  terminals: [
+    { stableStepId: "done", kind: "complete", instruction: "Tell them the retreat team will contact them to finish the booking.", ordinal: 0 },
+  ],
+};
+
+export const conversationQualityRoutines: RoutineDefinition[] = [
+  contactSupportRoutine,
+  bookDemoRoutine,
+  startReturnRoutine,
+  bookRetreatRoutine,
+];

@@ -134,6 +134,44 @@ describe("trace assertions", () => {
     expect(evaluateTraceAssertion({ type: "turn_activates_routine", routineId: BOOK_DEMO_ROUTINE_ID }, output).status).toBe("fail");
   });
 
+  it("passes routine_slots_filled only when every named slot is filled after the turn", () => {
+    const output = observed({
+      turnTrace: trace([
+        {
+          id: `routine:${BOOK_DEMO_ROUTINE_ID}`,
+          kind: "routine_activate",
+          status: "applied",
+          outputs: { routineId: BOOK_DEMO_ROUTINE_ID },
+          subTrace: {
+            namespace: "routine",
+            version: 1,
+            payload: {
+              routineId: BOOK_DEMO_ROUTINE_ID,
+              startStepId: "ask_name",
+              landedStepId: "ask_name",
+              capturedSlotKeys: ["email", "preferredDate"],
+              filledSlotKeys: ["email", "preferredDate"],
+              steps: [{ stepId: "ask_name", kind: "chat", event: "reasked" }],
+            },
+          },
+        },
+      ]),
+    });
+    const filled = (slotKeys: string[]) =>
+      evaluateTraceAssertion({ type: "routine_slots_filled", routineId: BOOK_DEMO_ROUTINE_ID, slotKeys }, output);
+
+    expect(filled(["email", "preferredDate"]).status).toBe("pass");
+    expect(filled(["email", "name"])).toMatchObject({ status: "fail", reason: expect.stringContaining("name") });
+    expect(evaluateTraceAssertion(
+      { type: "routine_slots_filled", routineId: CONTACT_SUPPORT_ROUTINE_ID, slotKeys: ["email"] },
+      output,
+    ).status).toBe("fail");
+    expect(evaluateTraceAssertion(
+      { type: "routine_slots_filled", routineId: BOOK_DEMO_ROUTINE_ID, slotKeys: ["email"] },
+      observed({}),
+    ).status).toBe("error");
+  });
+
   it("detects a clarifying question from either signal", () => {
     const engineSignal = observed({ turnTrace: trace([{ id: "clarification", kind: "clarification", status: "applied", outputs: { decision: "ask" } }]) });
     const skillSignal = observed({ turnTrace: trace([{ id: "dispatch:clarification.answer", kind: "skill_dispatch", status: "applied" }]) });
@@ -683,7 +721,7 @@ describe("seed fixtures", () => {
 
   it("only references document and routine ids that exist in the fixtures", () => {
     const documentIds = new Set(conversationQualityCorpus.map((doc) => doc.id));
-    const routineIds = new Set([CONTACT_SUPPORT_ROUTINE_ID, BOOK_DEMO_ROUTINE_ID, START_RETURN_ROUTINE_ID]);
+    const routineIds = new Set(conversationQualityRoutines.map((routine) => routine.id));
     for (const evalCase of conversationQualityCases) {
       for (const assertion of evalCase.assertions) {
         if ("documentId" in assertion) {

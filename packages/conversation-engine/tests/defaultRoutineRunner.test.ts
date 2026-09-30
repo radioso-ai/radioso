@@ -1837,3 +1837,193 @@ describe("DefaultRoutineRunner includeSlotValues", () => {
     expect(result.trace?.omittedSlotCount).toBe(5);
   });
 });
+
+describe("DefaultRoutineRunner re-ask signal and selector trace (#1369, #1370)", () => {
+  const bookingRoutine: Routine = {
+    id: "contact",
+    rootStepId: "program",
+    slots: [
+      { id: "slot_program", key: "program", type: "text", required: true, description: "The program they want to attend." },
+      { id: "slot_arrival", key: "arrival", type: "date", required: true },
+      { id: "slot_departure", key: "departure", type: "date", required: true },
+    ],
+    steps: [
+      { id: "program", kind: "chat", action: "Name the program and ask them to confirm it.", metadata: { collectsSlots: ["program"] } },
+      { id: "dates", kind: "chat", action: "Ask for {{slot.arrival}} and {{slot.departure}}.", metadata: { collectsSlots: ["arrival", "departure"] } },
+      { id: "done", kind: "terminal", action: "Confirm the request was sent." },
+    ],
+    transitions: [
+      { from: "program", to: "dates", condition: "The user provided {{slot.program}}." },
+      { from: "dates", to: "done", condition: "The user provided {{slot.arrival}} and {{slot.departure}}." },
+    ],
+  };
+  const stay = { outcome: "stay" as const, returnedSlotKeys: [] };
+  // A fresh mock per test: wrapping the shared echo mock would share its call history.
+  const freshRenderer = (): ConversationRoutineStepRenderer => ({
+    render: vi.fn(async ({ step }) => ({ answer: `[${step.id}]` })),
+  });
+
+  it("tells the renderer a step is re-asked and which of its slots are still missing", async () => {
+    const renderer = freshRenderer();
+    const runner = new DefaultRoutineRunner(
+      [bookingRoutine],
+      { select: vi.fn(async () => ({ nextStepId: "program", variables: {}, selection: stay })) },
+      renderer,
+    );
+
+    await runner.resume({ turn, state: state(["program"]) });
+
+    expect(renderer.render).toHaveBeenCalledWith(expect.objectContaining({
+      step: expect.objectContaining({ id: "program" }),
+      reask: { missingSlots: [bookingRoutine.slots![0]] },
+    }));
+  });
+
+  it("lists only the step's slots that this turn left unfilled", async () => {
+    const renderer = freshRenderer();
+    const runner = new DefaultRoutineRunner(
+      [bookingRoutine],
+      { select: vi.fn(async () => ({ nextStepId: "dates", variables: { arrival: "2026-11-11" } })) },
+      renderer,
+    );
+
+    await runner.resume({ turn, state: state(["program", "dates"], { program: "Retreat" }) });
+
+    expect(renderer.render).toHaveBeenCalledWith(expect.objectContaining({
+      reask: { missingSlots: [bookingRoutine.slots![2]] },
+    }));
+  });
+
+  it("does not signal a re-ask on the activation turn, where the step is asked for the first time", async () => {
+    const renderer = freshRenderer();
+    const runner = new DefaultRoutineRunner(
+      [bookingRoutine],
+      { select: vi.fn(async () => ({ nextStepId: "program", variables: {} })) },
+      renderer,
+    );
+
+    await runner.resume({ turn, state: state(["program"]), activationTurn: true });
+
+    expect(vi.mocked(renderer.render).mock.calls[0][0]).not.toHaveProperty("reask");
+  });
+
+  it("does not signal a re-ask when the turn advances to a new step", async () => {
+    const renderer = freshRenderer();
+    const runner = new DefaultRoutineRunner(
+      [bookingRoutine],
+      { select: vi.fn(async () => ({ nextStepId: "dates", variables: { program: "Retreat" } })) },
+      renderer,
+    );
+
+    await runner.resume({ turn, state: state(["program"]) });
+
+    expect(vi.mocked(renderer.render).mock.calls[0][0]).not.toHaveProperty("reask");
+  });
+
+  it("lists only required slots as missing on a re-ask", async () => {
+    const withOptional: Routine = {
+      ...bookingRoutine,
+      slots: [...bookingRoutine.slots!, { id: "slot_phone", key: "phone", type: "text", required: false }],
+      steps: bookingRoutine.steps.map((step) =>
+        step.id === "program" ? { ...step, metadata: { collectsSlots: ["program", "phone"] } } : step,
+      ),
+    };
+    const renderer = freshRenderer();
+    const runner = new DefaultRoutineRunner(
+      [withOptional],
+      { select: vi.fn(async () => ({ nextStepId: "program", variables: {} })) },
+      renderer,
+    );
+
+    await runner.resume({ turn, state: state(["program"]) });
+
+    expect(renderer.render).toHaveBeenCalledWith(expect.objectContaining({
+      reask: { missingSlots: [bookingRoutine.slots![0]] },
+    }));
+  });
+
+  it("does not signal a re-ask when every required slot the step collects is already filled", async () => {
+    // Two exits, so the fast-forward check has to ask the selector, which declines.
+    const withCancel: Routine = {
+      ...bookingRoutine,
+      transitions: [...bookingRoutine.transitions, { from: "dates", to: "done", condition: "The user wants to stop." }],
+    };
+    const renderer = freshRenderer();
+    const runner = new DefaultRoutineRunner(
+      [withCancel],
+      // The selector declines both on the resumed step and on the fast-forward check.
+      { select: vi.fn(async () => ({ nextStepId: "dates", variables: {} })) },
+      renderer,
+    );
+
+    await runner.resume({ turn, state: state(["program", "dates"], { program: "Retreat", arrival: "2026-11-11", departure: "2026-11-14" }) });
+
+    expect(vi.mocked(renderer.render).mock.calls[0][0]).not.toHaveProperty("reask");
+  });
+
+  it("extracts from the activation message even when activation already filled the step's slot", async () => {
+    const guarded: Routine = {
+      ...bookingRoutine,
+      transitions: [
+        { from: "program", to: "dates", condition: "program filled", guard: { kind: "field", ref: "program", op: "is_present" } },
+      ],
+    };
+    const select = vi.fn(async () => ({
+      nextStepId: "program",
+      variables: { arrival: "2026-11-11", departure: "2026-11-14" },
+    }));
+    const runner = new DefaultRoutineRunner([guarded], { select }, freshRenderer());
+
+    const result = await runner.resume({ turn, state: state(["program"], { program: "Retreat" }), activationTurn: true });
+
+    expect(select).toHaveBeenCalled();
+    expect(result.nextState?.variables).toMatchObject({ arrival: "2026-11-11", departure: "2026-11-14" });
+  });
+
+  it("records what the selector's model returned on the step it judged", async () => {
+    const selection = { outcome: "stay" as const, returnedSlotKeys: ["arrival", "departure"], undeclaredKeyCount: 1 };
+    const runner = new DefaultRoutineRunner(
+      [bookingRoutine],
+      {
+        select: vi.fn(async () => ({
+          nextStepId: "program",
+          variables: { arrival: "2026-11-11", departure: "2026-11-14" },
+          selection,
+        })),
+      },
+      freshRenderer(),
+    );
+
+    const result = await runner.resume({ turn, state: state(["program"]) });
+
+    expect(result.trace?.steps).toEqual([
+      {
+        stepId: "program",
+        kind: "chat",
+        event: "reasked",
+        capturedSlotKeys: ["arrival", "departure"],
+        viaSelector: true,
+        selection,
+      },
+    ]);
+  });
+
+  it("records the extraction-only pass's selection on a step whose branch is decided in code", async () => {
+    const guarded: Routine = {
+      ...bookingRoutine,
+      transitions: [
+        { from: "program", to: "dates", condition: "program filled", guard: { kind: "field", ref: "program", op: "is_present" } },
+      ],
+    };
+    const selection = { outcome: "stay" as const, returnedSlotKeys: [] };
+    const runner = new DefaultRoutineRunner(
+      [guarded],
+      { select: vi.fn(async () => ({ nextStepId: "program", variables: {}, selection })) },
+      freshRenderer(),
+    );
+
+    const result = await runner.resume({ turn, state: state(["program"]) });
+
+    expect(result.trace?.steps[0]).toMatchObject({ stepId: "program", event: "reasked", viaSelector: true, selection });
+  });
+});

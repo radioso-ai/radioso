@@ -260,6 +260,9 @@ it reaches a terminal step.
 replaceable ports. The default store is in memory, so a host that runs across
 processes supplies a durable `routineStore` to preserve active state; that store
 also owns routine expiry and TTL. The selector and renderer feed the default runner.
+When a turn renders the same chat step the user was answering, their reply did not
+satisfy it, and the runner passes the renderer `reask.missingSlots` — the step's slots
+still unfilled — so a renderer of your own can ask again for what is missing.
 When you supply `routineRunner`, it owns its routine list instead.
 
 The kit also accepts engine capability ports for steering, turn interpretation,

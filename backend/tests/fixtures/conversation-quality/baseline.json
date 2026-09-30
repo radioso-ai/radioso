@@ -121,6 +121,16 @@
       "status": "pass",
       "passRate": 1,
       "samples": 5
+    },
+    "routine-first-message-keeps-stated-slots": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "routine-reasked-confirmation-step-asks-again": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
     }
   }
 }

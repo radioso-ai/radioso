@@ -37,6 +37,25 @@ const state = (overrides: Partial<RoutineState>): RoutineState => ({
   ...overrides,
 });
 
+// A step collecting two required slots, where one has its own `slot_filled` exit — so the
+// step can be satisfied through that exit even while the other required slot is still empty.
+const pairRoutine: Routine = {
+  id: "routine-pair",
+  rootStepId: "ask_pair",
+  slots: [
+    { id: "slot-first", key: "first", type: "text", required: true },
+    { id: "slot-second", key: "second", type: "text", required: true },
+  ],
+  steps: [
+    { id: "ask_pair", kind: "chat", action: "Ask for both.", metadata: { collectsSlots: ["first", "second"] } },
+    { id: "done", kind: "terminal", action: "Thanks.", metadata: { terminalKind: "complete" } },
+  ],
+  transitions: [
+    { from: "ask_pair", to: "done", condition: "first filled", guard: { kind: "slot_filled", slots: ["first"] } },
+  ],
+  metadata: { definitionId: "definition-pair", name: "Pair routine", version: 1 },
+};
+
 describe("createRoutineTurnReporter", () => {
   const reporter = createRoutineTurnReporter([bookDemo]);
 
@@ -51,6 +70,33 @@ describe("createRoutineTurnReporter", () => {
         { key: "company", type: "text", required: false, description: "Company" },
       ],
     });
+  });
+
+  it("reports active when the current step's required collected slots are filled and only an optional one is empty, but still lists that optional slot as pending", () => {
+    const described = reporter.describe({
+      state: state({ path: ["ask_name", "ask_contact"], variables: { name: "Ada", email: "ada@example.com" } }),
+    });
+
+    expect(described).toEqual({
+      name: "Book a demo",
+      status: "active",
+      pendingInput: [{ key: "company", type: "text", required: false, description: "Company" }],
+    });
+  });
+
+  it("reports active when a passing slot_filled exit is satisfied, even though another required collected slot is still empty", () => {
+    const pairReporter = createRoutineTurnReporter([pairRoutine]);
+    const described = pairReporter.describe({
+      state: {
+        sessionId: "conversation-1",
+        routineId: pairRoutine.id,
+        path: ["ask_pair"],
+        variables: { first: "value" },
+        status: "active",
+      },
+    });
+
+    expect(described?.status).toBe("active");
   });
 
   it("lists required slots collected by later steps so a caller can supply everything at once", () => {

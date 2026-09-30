@@ -308,6 +308,38 @@ describe("routine definition compiler and validator", () => {
     });
   });
 
+  it("names only the required slots in an auto-gated condition, so an optional slot never holds the step (#1371)", () => {
+    const definition: RoutineDefinition = {
+      ...baseDefinition(),
+      slots: [
+        { stableSlotId: "slot_name", key: "full_name", type: "text", required: true, description: null, ordinal: 0 },
+        { stableSlotId: "slot_email", key: "email", type: "email", required: true, description: null, ordinal: 1 },
+        { stableSlotId: "slot_phone", key: "phone", type: "text", required: false, description: null, ordinal: 2 },
+        { stableSlotId: "slot_note", key: "note", type: "text", required: false, description: null, ordinal: 3 },
+      ],
+      steps: [
+        { stableStepId: "contact", kind: "chat", instruction: "Ask for {{slot.full_name}}, {{slot.email}} and, optionally, {{slot.phone}}.", toolRef: null, ordinal: 0, metadata: {} },
+        { stableStepId: "extra", kind: "chat", instruction: "Offer to add {{slot.note}}.", toolRef: null, ordinal: 1, metadata: {} },
+      ],
+      transitions: [
+        { fromStep: "contact", toRef: "extra", guardKind: "default", guardText: null, ordinal: 0 },
+        { fromStep: "extra", toRef: "done", guardKind: "default", guardText: null, ordinal: 1 },
+      ],
+      terminals: [
+        { stableStepId: "done", kind: "complete", instruction: "Confirm completion.", ordinal: 0 },
+      ],
+    };
+
+    const routine = compileRoutineDefinition(definition);
+    const conditionFrom = (stepId: string) => routine.transitions.find((transition) => transition.from === stepId)?.condition;
+
+    expect(conditionFrom("contact")).toBe("The user provided {{slot.full_name}} and {{slot.email}}.");
+    // A step that collects only optional slots still names them: nothing else can move it on.
+    expect(conditionFrom("extra")).toBe("The user provided {{slot.note}}.");
+    // The step still collects the optional slot; only the gate ignores it.
+    expect(routine.steps.find((step) => step.id === "contact")?.metadata?.collectsSlots).toEqual(["full_name", "email", "phone"]);
+  });
+
   it("treats only the first step that references a slot as collecting it (later refs are uses)", () => {
     // A later step that merely interpolates an already-collected slot (e.g. "mention
     // their {{slot.name}}") must NOT be marked as a collection step — otherwise the

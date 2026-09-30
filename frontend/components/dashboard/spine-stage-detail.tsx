@@ -967,7 +967,7 @@ const ROUTINE_EVENT_DESCRIPTIONS: Record<string, string> = {
   resumed: 'Where the routine picked up this turn.',
   advanced: 'The step was satisfied, so the routine moved on.',
   reasked: 'The routine stayed on this step and asked again.',
-  fast_forwarded: 'Skipped without asking — every slot it collects was already filled.',
+  fast_forwarded: 'Skipped without asking — it already had what this step asks for.',
   skill_dispatched: 'Ran this step’s tool.',
   action_emitted: 'Emitted a fire-and-forget action.',
   rendered: 'The reply you saw was generated from this step.',

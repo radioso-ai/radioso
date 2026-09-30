@@ -39,7 +39,7 @@ const isRoutineActivationCall = (metadata: Record<string, unknown> | undefined):
 const routineActivationUsageContext = (usageContext: ChatGatewayUsageContext): ChatGatewayUsageContext => ({
   ...usageContext,
   operation: "routine_activation",
-  attemptKey: "routine_activation",
+  attemptKey: `${usageContext.attemptKey}:routine_activation`,
 });
 
 /**

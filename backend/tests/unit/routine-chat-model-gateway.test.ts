@@ -161,7 +161,9 @@ describe("RoutineChatModelGateway", () => {
       usageContext: {
         ...turnContext.usageContext,
         operation: "routine_activation",
-        attemptKey: "routine_activation",
+        // Derived from the gateway's own key, so activation calls in two routine phases
+        // of one turn never share a usage key (#1378).
+        attemptKey: "routine_turn:routine_activation",
       },
       generation: CHAT_BEHAVIOR.intentRouting,
     });

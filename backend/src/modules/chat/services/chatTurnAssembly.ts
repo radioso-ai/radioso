@@ -686,9 +686,11 @@ export class ChatTurnAssembly {
         effects: reactionEffects,
       };
     }
+    // Its own usage key: the pre-retrieval routine attempt in the same turn builds another
+    // gateway under `routine_turn`, and a shared key drops one call's usage (#1378).
     const modelGateway = new RoutineChatModelGateway(this.options.chatGateway, {
       workspaceContext: this.answerSupport.buildChatWorkspaceContext(session),
-      usageContext: this.answerSupport.buildChatUsageContext(session, input.accountId, "routine_turn"),
+      usageContext: this.answerSupport.buildChatUsageContext(session, input.accountId, "routine_coverage_turn"),
       signal: input.coordination?.signal,
     });
     const routineTurnPorts = await this.options.routineProvider.forTurn({

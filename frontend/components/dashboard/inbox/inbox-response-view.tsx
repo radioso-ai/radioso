@@ -27,6 +27,7 @@ import { deriveConversationOutcome } from '@/lib/conversation-outcome'
 import {
   doneControlTooltip,
   findFirstVisitorMessage,
+  freshestOwnership,
   informativeChannelLabel,
   readOnlyHandledByLabel,
   resolveReadOnlySource,
@@ -159,6 +160,18 @@ export function InboxResponseView({
     isAudiencePulseEvidence,
   })
 
+  // The freshest ownership the pane has seen: the detail fetch loads once (then
+  // only refreshes after an operator's own action), but the tail poll re-reads
+  // ownership every second and is the only one of the two that observes a
+  // transfer or take-over made elsewhere while this pane stays open. Every
+  // ownership-derived action and label below — the composer, its "X is
+  // handling this" state, Done's hand-back version, the situation card's
+  // reason — reads this instead of `conversationDetail.ownership` directly.
+  const effectiveOwnership = useMemo(
+    () => freshestOwnership(conversationDetail?.ownership, conversationTail.ownership),
+    [conversationDetail?.ownership, conversationTail.ownership],
+  )
+
   // The actionable/read-only split and the header's identity/waiting fields
   // prefer the independently-fetched conversation detail once it loads — see
   // `resolveReadOnlySource` for why (a page left open long enough for
@@ -204,7 +217,7 @@ export function InboxResponseView({
     }
     if (effectiveItem.type === 'handoff') {
       const targetConversationId = effectiveItem.conversationId
-      const version = conversationDetail?.ownership?.version ?? null
+      const version = effectiveOwnership?.version ?? null
       void handBackRunner.run('done', async () => {
         if (version === null) {
           throw new Error('Missing conversation ownership version.')
@@ -217,11 +230,17 @@ export function InboxResponseView({
     if (effectiveItem.type === 'negative_feedback') {
       onRequestFeedbackClose(effectiveItem, anchor)
     }
-  }, [conversationDetail, effectiveItem, handBackRunner, onRequestFeedbackClose])
+  }, [effectiveItem, effectiveOwnership, handBackRunner, onRequestFeedbackClose])
 
   // See `shouldShowDoneControl` for the visibility rule (only renders when
-  // there's something to wrap up).
-  const showDoneControl = shouldShowDoneControl(effectiveItem?.type, conversationDetail, currentUserId)
+  // there's something to wrap up). `conversationDetail`'s own truthiness still
+  // gates "not loaded yet" (see that helper); the ownership value it reads is
+  // the freshest one once loaded.
+  const showDoneControl = shouldShowDoneControl(
+    effectiveItem?.type,
+    conversationDetail ? { ownership: effectiveOwnership } : null,
+    currentUserId,
+  )
   // A handoff selected from the All lens can render its composer immediately
   // from the row's own summary (see `readOnlySource` above), before
   // `conversationDetail` — the actual source of both the ownership check
@@ -328,7 +347,7 @@ export function InboxResponseView({
           <div className="space-y-4">
             {effectiveItem ? (
               <InboxSituationCard
-                handoffReason={conversationDetail?.ownership?.reason ?? null}
+                handoffReason={effectiveOwnership?.reason ?? null}
                 firstVisitorMessage={findFirstVisitorMessage(effectiveConversationMessages)}
               />
             ) : null}
@@ -361,7 +380,7 @@ export function InboxResponseView({
       {effectiveItem ? (
         <OperatorComposer
           conversationId={effectiveItem.conversationId}
-          ownership={conversationDetail?.ownership}
+          ownership={effectiveOwnership}
           currentUserId={currentUserId}
           teammates={teammates.operators}
           onTeammatesStale={teammates.refresh}

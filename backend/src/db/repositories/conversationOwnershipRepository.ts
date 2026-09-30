@@ -243,6 +243,10 @@ export class ConversationOwnershipRepository {
     const versionPredicate = input.expectedVersion === undefined
       ? sql``
       : sql`AND version = ${input.expectedVersion}`;
+    // Taking over an ai_owned row is a fresh claim: stamp `operator_takeover`. Taking over an
+    // already human_owned but unclaimed row (an awaiting handoff, claimed by Send or Take over
+    // instead of a reply or transfer) is claiming that handoff, so its own reason — routine_handoff,
+    // retrieval_miss — survives instead of being overwritten.
     const updatedResult = await selectWritten(sql`
       UPDATE conversation_ownership
           SET state = 'human_owned',
@@ -250,7 +254,7 @@ export class ConversationOwnershipRepository {
               owner_account_id = ${input.accountId},
               owner_user_id = ${input.userId},
               owner_display_name = ${input.displayName},
-              reason = 'operator_takeover',
+              reason = CASE WHEN state = 'human_owned' THEN reason ELSE 'operator_takeover' END,
               version = version + 1,
               taken_over_at = now(),
               updated_at = now()

@@ -157,8 +157,8 @@ export function OperatorComposer({
   const [message, setMessage] = useState('')
   const actions = useMemo(() => deriveOperatorActions(ownership, currentUserId), [ownership, currentUserId])
   const handOffTargets = useMemo(
-    () => (actions.canHandOff ? listHandOffTargets(teammates, ownership) : []),
-    [actions.canHandOff, ownership, teammates],
+    () => (actions.canHandOff ? listHandOffTargets(teammates, ownership, currentUserId) : []),
+    [actions.canHandOff, currentUserId, ownership, teammates],
   )
   const runner = useOperatorActionRunner(conversationId, onChanged)
   const trimmedMessage = message.trim()

@@ -17,7 +17,7 @@ const transfer = {
   recipientUserId: "user-fox",
 };
 
-const recordingLogger = () => ({ warn: vi.fn() });
+const recordingLogger = () => ({ warn: vi.fn(), info: vi.fn() });
 
 type SendMail = (message: { to: string; text: string }) => Promise<{ dispatched: boolean }>;
 
@@ -119,21 +119,44 @@ describe("ConversationTransferNoticeActionHandler", () => {
     expect(mail.send).toHaveBeenCalledWith(expect.objectContaining({ to: "fox@example.com" }));
   });
 
-  it("drops the notice when the conversation has since moved on from the recipient", async () => {
-    const { handler, mail } = handlerWith({ ownerUserId: "user-dana" });
+  it("drops the notice when the conversation has since moved on from the recipient, and logs why", async () => {
+    const logger = recordingLogger();
+    const { handler, mail } = handlerWith({ ownerUserId: "user-dana", logger });
 
     await handler.handle({ payload, context });
 
     expect(mail.send).not.toHaveBeenCalled();
+    expect(logger.info).toHaveBeenCalledWith(
+      {
+        event: "conversation_transfer_notice_skipped",
+        reason: "recipient_no_longer_owner",
+        requestId: "request-1",
+        conversationId: "conversation-1",
+        ownershipVersion: 4,
+      },
+      expect.any(String),
+    );
+    expect(JSON.stringify(logger.info.mock.calls)).not.toContain("fox@example.com");
   });
 
-  it("drops a notice a later transfer overtook, even once ownership comes back round to the recipient", async () => {
+  it("drops a notice a later transfer overtook, even once ownership comes back round to the recipient, and logs why", async () => {
     // A→B at v4 queued this notice; B→A (v5) and A→B (v6) followed, queueing a fresh one for v6.
-    const { handler, mail } = handlerWith({ ownerUserId: "user-fox", ownershipVersion: 6 });
+    const logger = recordingLogger();
+    const { handler, mail } = handlerWith({ ownerUserId: "user-fox", ownershipVersion: 6, logger });
 
     await handler.handle({ payload, context });
 
     expect(mail.send).not.toHaveBeenCalled();
+    expect(logger.info).toHaveBeenCalledWith(
+      {
+        event: "conversation_transfer_notice_skipped",
+        reason: "stale_ownership_version",
+        requestId: "request-1",
+        conversationId: "conversation-1",
+        ownershipVersion: 4,
+      },
+      expect.any(String),
+    );
   });
 
   it("drops a notice queued without the version it belongs to", async () => {
@@ -199,12 +222,23 @@ describe("ConversationTransferNoticeActionHandler", () => {
     );
   });
 
-  it("drops the notice when the recipient is no longer a teammate who can own it", async () => {
-    const { handler, mail } = handlerWith({ operators: [{ userId: "user-dana", label: "dana@example.com" }] });
+  it("drops the notice when the recipient is no longer a teammate who can own it, and logs why", async () => {
+    const logger = recordingLogger();
+    const { handler, mail } = handlerWith({ operators: [{ userId: "user-dana", label: "dana@example.com" }], logger });
 
     await handler.handle({ payload, context });
 
     expect(mail.send).not.toHaveBeenCalled();
+    expect(logger.info).toHaveBeenCalledWith(
+      {
+        event: "conversation_transfer_notice_skipped",
+        reason: "recipient_not_eligible",
+        requestId: "request-1",
+        conversationId: "conversation-1",
+        ownershipVersion: 4,
+      },
+      expect.any(String),
+    );
   });
 
   it("names only a sender who is a teammate in the workspace", async () => {

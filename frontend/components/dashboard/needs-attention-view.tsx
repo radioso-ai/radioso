@@ -178,7 +178,7 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
   const workspaceAgentOptions = useInboxAgentOptions(Boolean(workspaceId))
   const queueAgentOptions = useMemo(() => listInboxAgents(items), [items])
   const agentOptions = workspaceAgentOptions.length > 0 ? workspaceAgentOptions : queueAgentOptions
-  const operatorOptions = useMemo(() => listTakenByOperators(items), [items])
+  const operatorOptions = useMemo(() => listTakenByOperators(items, currentUserId), [items, currentUserId])
   const filteredItems = useMemo(
     () => filterInboxItems(items, filters, { currentUserId }),
     [items, filters, currentUserId],

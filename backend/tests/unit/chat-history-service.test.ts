@@ -582,12 +582,38 @@ describe("chat history service ownership read surface", () => {
       operatorUserId: "user-1",
       operatorDisplayName: "Dana Scully",
     });
-    return { ...setup, conversation, baseline, legacyEmailReply, legacyOrganisationReply, attributedReply };
+    const attributedEmailReply = await setup.messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "assistant",
+      source: "human_agent",
+      content: "Replied with a signature that happens to be email-shaped.",
+      operatorAccountId: "operator-1",
+      operatorUserId: "user-2",
+      operatorDisplayName: "carl@acme.example",
+    });
+    return {
+      ...setup,
+      conversation,
+      baseline,
+      legacyEmailReply,
+      legacyOrganisationReply,
+      attributedReply,
+      attributedEmailReply,
+    };
   };
 
-  it("shows every stored signature but an unattributed email, on visitor and operator surfaces alike", async () => {
-    const { service, messageRepository, conversation, baseline, legacyEmailReply, legacyOrganisationReply, attributedReply } =
-      await seedLegacyAndAttributedReplies();
+  it("shows every stored signature but an email, on visitor and operator surfaces alike, attributed or not", async () => {
+    const {
+      service,
+      messageRepository,
+      conversation,
+      baseline,
+      legacyEmailReply,
+      legacyOrganisationReply,
+      attributedReply,
+      attributedEmailReply,
+    } = await seedLegacyAndAttributedReplies();
     const cursor = { cursor: messageRepository.cursorFor(baseline), limit: 10 };
     const page = { limit: 50, offset: 0 };
 
@@ -602,12 +628,16 @@ describe("chat history service ownership read surface", () => {
       expect(messages.find((message) => message.id === legacyEmailReply.id)?.operatorDisplayName).toBeUndefined();
       expect(messages.find((message) => message.id === legacyOrganisationReply.id)?.operatorDisplayName).toBe("Acme Support");
       expect(messages.find((message) => message.id === attributedReply.id)?.operatorDisplayName).toBe("Dana Scully");
+      expect(messages.find((message) => message.id === attributedEmailReply.id)?.operatorDisplayName).toBeUndefined();
     }
     expect(JSON.stringify(surfaces)).not.toContain("dana@example.com");
+    expect(JSON.stringify(surfaces)).not.toContain("carl@acme.example");
     await expect(service.getConversationTurn("workspace-1", legacyEmailReply.id))
       .resolves.toMatchObject({ message: { operatorDisplayName: undefined } });
     await expect(service.getConversationTurn("workspace-1", legacyOrganisationReply.id))
       .resolves.toMatchObject({ message: { operatorDisplayName: "Acme Support" } });
+    await expect(service.getConversationTurn("workspace-1", attributedEmailReply.id))
+      .resolves.toMatchObject({ message: { operatorDisplayName: undefined } });
   });
 });
 

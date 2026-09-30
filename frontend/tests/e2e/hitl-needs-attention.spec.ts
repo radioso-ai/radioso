@@ -854,6 +854,45 @@ test("operator takes over a handoff a teammate holds and gets the composer back"
   await expect(response.getByText("Dana Scully is handling this")).toHaveCount(0);
 });
 
+test("ownership taken over elsewhere reaches an open pane through the tail poll, and the composer switches away", async ({ page }) => {
+  const conversationId = "conversation-tail-ownership";
+  const waiting = handoffOwnership(conversationId, null, 1);
+  const takenByDana = handoffOwnership(conversationId, teammates[1], 2);
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    historyList: { conversations: [handoffSummary(conversationId, "Order not received", waiting)], total: 1, nextCursor: null, hasMore: false },
+    conversationDetails: { [conversationId]: handoffDetail(conversationId, waiting) },
+    conversationOperators: teammates,
+  });
+  await stubEmptyQualityQueue(page);
+
+  // The conversation-detail fetch is never re-read in this test (no reply, no
+  // transfer, no hand-back from this operator) and keeps reporting the
+  // unclaimed handoff throughout. Only the tail poll — read every second while
+  // the pane is open — reports that Dana took it, standing in for a transfer
+  // made from another tab or teammate while this pane stayed open.
+  let tailCalls = 0;
+  await page.route(`**/backend/api/v1/history/chat/${conversationId}/tail**`, async (route) => {
+    tailCalls += 1;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ messages: [], cursor: null, ownership: tailCalls === 1 ? waiting : takenByDana }),
+    });
+  });
+
+  await page.goto(`/w/${workspaceKey}/activity`);
+  await page.getByLabel("Inbox queue").getByRole("button", { name: /Order not received/ }).click();
+
+  const response = page.getByLabel("Response", { exact: true });
+  await expect(response.getByRole("textbox", { name: "Reply to the visitor" })).toBeVisible();
+
+  await expect(response.getByText("Dana Scully is handling this")).toBeVisible();
+  await expect(response.getByRole("textbox", { name: "Reply to the visitor" })).toHaveCount(0);
+  await expect(response.getByRole("button", { name: "Take over" })).toBeVisible();
+});
+
 test("the Taken by: Me filter shows only the signed-in teammate's handoffs, not the whole organisation's", async ({ page }) => {
   const mine = handoffOwnership("conversation-mine", teammates[0], 2);
   const danas = handoffOwnership("conversation-danas", teammates[1], 2);

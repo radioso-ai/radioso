@@ -21,6 +21,7 @@ export const CONVERSATION_TRANSFER_NOTICE_ACTION_TYPE = "conversation.transfer_n
 
 interface TransferNoticeLogger {
   warn(payload: Record<string, unknown>, message: string): void;
+  info(payload: Record<string, unknown>, message: string): void;
 }
 
 /** An outbox row, as the slice of the action outbox a transfer writes to takes it. */
@@ -142,7 +143,7 @@ export class ConversationTransferNoticeActionHandler implements ActionHandler {
 
     let delivery: TransferNoticeDelivery | null;
     try {
-      delivery = await this.readDelivery(notice, transferredByUserId);
+      delivery = await this.readDelivery(notice, transferredByUserId, context.requestId);
     } catch (error) {
       this.dependencies.logger.warn(
         {
@@ -225,26 +226,67 @@ export class ConversationTransferNoticeActionHandler implements ActionHandler {
     }
   }
 
+  /**
+   * Logs a dropped notice at info: a reason code plus ids only, never an email or message content.
+   * These are expected, routine skips (ownership moved on since the transfer queued the notice),
+   * not failures, so they stay off the warn/error path but still leave a trace to debug from.
+   */
+  private logSkip(
+    notice: { conversationId: string; ownershipVersion: number },
+    requestId: string,
+    reason: string,
+  ): void {
+    this.dependencies.logger.info(
+      {
+        event: "conversation_transfer_notice_skipped",
+        reason,
+        requestId,
+        conversationId: notice.conversationId,
+        ownershipVersion: notice.ownershipVersion,
+      },
+      "Dropped a conversation transfer notice",
+    );
+  }
+
   /** Everything the email needs, read now; null when the notice is no longer true. */
   private async readDelivery(
     notice: { workspaceId: string; conversationId: string; recipientUserId: string; ownershipVersion: number },
     transferredByUserId: string | null,
+    requestId: string,
   ): Promise<TransferNoticeDelivery | null> {
     const [ownership, workspace] = await Promise.all([
       this.dependencies.ownership.load(notice.conversationId),
       this.dependencies.workspaces.findById(notice.workspaceId),
     ]);
-    if (!workspace || ownership?.workspaceId !== notice.workspaceId || ownership.state !== "human_owned"
-      || ownership.version !== notice.ownershipVersion || ownership.ownerUserId !== notice.recipientUserId) {
+    if (!workspace) {
+      this.logSkip(notice, requestId, "workspace_not_found");
+      return null;
+    }
+    if (!ownership || ownership.workspaceId !== notice.workspaceId) {
+      this.logSkip(notice, requestId, "ownership_not_found");
+      return null;
+    }
+    if (ownership.state !== "human_owned") {
+      this.logSkip(notice, requestId, "conversation_returned_to_ai");
+      return null;
+    }
+    if (ownership.version !== notice.ownershipVersion) {
+      this.logSkip(notice, requestId, "stale_ownership_version");
+      return null;
+    }
+    if (ownership.ownerUserId !== notice.recipientUserId) {
+      this.logSkip(notice, requestId, "recipient_no_longer_owner");
       return null;
     }
     const scope = { accountId: workspace.accountId, workspaceId: notice.workspaceId };
     const recipientOperator = await this.dependencies.operators.find({ ...scope, userId: notice.recipientUserId });
     if (!recipientOperator) {
+      this.logSkip(notice, requestId, "recipient_not_eligible");
       return null;
     }
     const recipient = await this.dependencies.users.findById(notice.recipientUserId);
     if (!recipient) {
+      this.logSkip(notice, requestId, "recipient_user_not_found");
       return null;
     }
     const transferredBy = transferredByUserId

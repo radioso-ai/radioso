@@ -85,7 +85,8 @@ export const teammateLabel = (user: { displayName: string | null; email: string 
 /**
  * The name a visitor sees on a teammate's reply: the name they chose, else the
  * organisation's name, else nothing. An email is private to the workspace, so it
- * is never a fallback here.
+ * is never a fallback here — not the teammate's, and not an organisation renamed
+ * to something email-shaped either.
  */
 export const visitorFacingName = (input: {
   displayName: string | null;
@@ -95,5 +96,8 @@ export const visitorFacingName = (input: {
     return input.displayName;
   }
   const organizationName = input.organizationName?.trim() ?? "";
-  return organizationName.length > 0 ? organizationName : null;
+  if (organizationName.length === 0 || looksLikeEmailAddress(organizationName)) {
+    return null;
+  }
+  return organizationName;
 };

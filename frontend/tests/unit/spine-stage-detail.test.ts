@@ -271,6 +271,34 @@ describe('buildRoutineRunTrace', () => {
     })
   })
 
+  it('carries the keys of slot values the runner did not store, never the values', () => {
+    const view = buildRoutineRunTrace(
+      routineStage({
+        steps: [{
+          stepId: 'ask_email',
+          kind: 'chat',
+          event: 'reasked',
+          rejectedSlots: [{ key: 'email', reason: 'type_mismatch', value: '<script>' }, { reason: 'not_scalar' }],
+        }],
+      }),
+    )
+    expect(view?.steps[0].rejectedSlotKeys).toEqual(['email'])
+    expect(JSON.stringify(view)).not.toContain('<script>')
+  })
+
+  it('carries which way out a step past its re-ask limit took', () => {
+    const view = buildRoutineRunTrace(
+      routineStage({
+        steps: [
+          { stepId: 'ask_contact', kind: 'chat', event: 'reask_limit_reached', reaskLimitOutcome: 'handoff' },
+          { stepId: 'ask_other', kind: 'chat', event: 'reask_limit_reached', reaskLimitOutcome: 'somewhere' },
+        ],
+      }),
+    )
+    expect(view?.steps[0].reaskLimitOutcome).toBe('handoff')
+    expect(view?.steps[1]).not.toHaveProperty('reaskLimitOutcome')
+  })
+
   it('omits skillReason when the sub-trace does not carry one', () => {
     const view = buildRoutineRunTrace(
       routineStage({

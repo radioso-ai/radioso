@@ -2213,3 +2213,331 @@ describe("DefaultRoutineRunner satisfied slot steps (#1371, #1372)", () => {
     expect(select.mock.calls.map(([input]) => input.currentStep.id)).toEqual(["dates", "contact"]);
   });
 });
+
+describe("DefaultRoutineRunner slot values checked against their declared type (#1374)", () => {
+  const emailSlot = { id: "slot_email", key: "email", type: "email" as const, required: true };
+  const adultsSlot = { id: "slot_adults", key: "adults", type: "number" as const, required: true };
+  const arrivalSlot = { id: "slot_arrival", key: "arrival", type: "date" as const, required: false };
+  const booking: Routine = {
+    id: "contact",
+    rootStepId: "ask_email",
+    slots: [emailSlot, adultsSlot, arrivalSlot],
+    steps: [
+      { id: "ask_email", kind: "chat", action: "Ask for {{slot.email}}.", metadata: { collectsSlots: ["email"] } },
+      { id: "ask_adults", kind: "chat", action: "Ask for {{slot.adults}} and {{slot.arrival}}.", metadata: { collectsSlots: ["adults", "arrival"] } },
+      { id: "done", kind: "terminal", action: "Confirm the request was sent." },
+    ],
+    transitions: [
+      { from: "ask_email", to: "ask_adults", condition: "The user provided {{slot.email}}." },
+      { from: "ask_adults", to: "done", condition: "The user provided {{slot.adults}}." },
+    ],
+  };
+  const renderer = (): ConversationRoutineStepRenderer => ({
+    render: vi.fn(async ({ step }) => ({ answer: `[${step.id}]` })),
+  });
+  const choosing = (nextStepId: string, variables: Record<string, unknown>) =>
+    ({ select: vi.fn(async () => ({ nextStepId, variables })) }) satisfies ConversationRoutineNextStepSelector;
+
+  it("does not store a value that does not fit its slot type, and asks the step that collects it again", async () => {
+    const render = renderer();
+    const runner = new DefaultRoutineRunner([booking], choosing("ask_adults", { email: "<script>alert(1)</script>" }), render);
+
+    const result = await runner.resume({ turn, state: state(["ask_email"]) });
+
+    expect(result.nextState?.path).toEqual(["ask_email"]);
+    expect(result.nextState?.variables).toEqual({});
+    expect(render.render).toHaveBeenCalledWith(expect.objectContaining({
+      step: expect.objectContaining({ id: "ask_email" }),
+      reask: { missingSlots: [emailSlot] },
+    }));
+    expect(result.trace?.steps[0]).toMatchObject({
+      stepId: "ask_email",
+      event: "reasked",
+      rejectedSlots: [{ key: "email", reason: "type_mismatch" }],
+    });
+    expect(result.trace?.steps[0]).not.toHaveProperty("capturedSlotKeys");
+    expect(JSON.stringify(result.trace)).not.toContain("script");
+  });
+
+  it("asks again for a slot the step already holds when this turn's new value for it is rejected", async () => {
+    const render = renderer();
+    const runner = new DefaultRoutineRunner([booking], choosing("ask_adults", { email: "not an email" }), render);
+
+    const result = await runner.resume({ turn, state: state(["ask_email"], { email: "giulia@example.com" }) });
+
+    expect(result.nextState?.path).toEqual(["ask_email"]);
+    expect(result.nextState?.variables).toEqual({ email: "giulia@example.com" });
+    expect(render.render).toHaveBeenCalledWith(expect.objectContaining({
+      step: expect.objectContaining({ id: "ask_email" }),
+      reask: { missingSlots: [emailSlot] },
+    }));
+  });
+
+  it("stores a value coerced to its declared type", async () => {
+    const runner = new DefaultRoutineRunner([booking], choosing("done", { adults: " 2 " }), renderer());
+
+    const result = await runner.resume({ turn, state: state(["ask_email", "ask_adults"], { email: "giulia@example.com" }) });
+
+    expect(result.terminal).toEqual({ kind: "complete", stepId: "done", collected: { email: "giulia@example.com", adults: 2 } });
+  });
+
+  it("drops a rejected value for another step's slot without holding the step the visitor answered", async () => {
+    const runner = new DefaultRoutineRunner(
+      [booking],
+      choosing("ask_adults", { email: "giulia@example.com", arrival: "mid-November" }),
+      renderer(),
+    );
+
+    const result = await runner.resume({ turn, state: state(["ask_email"]) });
+
+    expect(result.nextState?.path).toEqual(["ask_email", "ask_adults"]);
+    expect(result.nextState?.variables).toEqual({ email: "giulia@example.com" });
+    expect(result.trace?.steps[0]).toMatchObject({
+      stepId: "ask_email",
+      event: "advanced",
+      capturedSlotKeys: ["email"],
+      rejectedSlots: [{ key: "arrival", reason: "type_mismatch" }],
+    });
+  });
+
+  it("rejects an object for a number slot", async () => {
+    const runner = new DefaultRoutineRunner([booking], choosing("done", { adults: { count: 2 } }), renderer());
+
+    const result = await runner.resume({ turn, state: state(["ask_email", "ask_adults"], { email: "giulia@example.com" }) });
+
+    expect(result.nextState?.path).toEqual(["ask_email", "ask_adults"]);
+    expect(result.nextState?.variables).toEqual({ email: "giulia@example.com" });
+    expect(result.trace?.steps[0]).toMatchObject({ rejectedSlots: [{ key: "adults", reason: "not_scalar" }] });
+  });
+
+  it("lets a step's rule exits decide from the checked value", async () => {
+    const branching: Routine = {
+      ...booking,
+      steps: [...booking.steps, { id: "group", kind: "terminal", action: "Say a group booking needs a call." }],
+      transitions: [
+        { from: "ask_email", to: "ask_adults", condition: "The user provided {{slot.email}}." },
+        { from: "ask_adults", to: "group", condition: "", guard: { kind: "field", ref: "adults", op: "gt", value: 3 } },
+        { from: "ask_adults", to: "done", condition: "", guard: { kind: "default" } },
+      ],
+    };
+    const branchOn = async (adults: unknown) =>
+      new DefaultRoutineRunner([branching], choosing("ask_adults", { adults }), renderer())
+        .resume({ turn, state: state(["ask_email", "ask_adults"], { email: "giulia@example.com" }) });
+
+    expect((await branchOn("5")).terminal?.stepId).toBe("group");
+    expect((await branchOn("five")).trace?.steps[0]).toMatchObject({ rejectedSlots: [{ key: "adults", reason: "type_mismatch" }] });
+  });
+
+  it("checks the values the activator extracted on the activation turn", async () => {
+    const render = renderer();
+    const runner = new DefaultRoutineRunner([booking], choosing("ask_email", {}), render);
+
+    const result = await runner.resume({
+      turn,
+      state: state([], { email: "giulia at example", adults: "2" }),
+      activationTurn: true,
+    });
+
+    expect(result.nextState?.variables).toEqual({ adults: 2 });
+    expect(result.trace?.steps[0]).toMatchObject({
+      stepId: "ask_email",
+      rejectedSlots: [{ key: "email", reason: "type_mismatch" }],
+    });
+    expect(vi.mocked(render.render).mock.calls[0][0]).not.toHaveProperty("reask");
+  });
+
+  it("moves on when the selector reads a valid value where the activator's was rejected", async () => {
+    const withCancel: Routine = {
+      ...booking,
+      steps: [...booking.steps, { id: "cancelled", kind: "terminal", action: "Say the request was cancelled." }],
+      transitions: [...booking.transitions, { from: "ask_email", to: "cancelled", condition: "The user wants to stop." }],
+    };
+    // Every exit is AI-decides, so the satisfied step is judged again on the way on.
+    const select = vi.fn<ConversationRoutineNextStepSelector["select"]>()
+      .mockResolvedValueOnce({ nextStepId: "ask_email", variables: { email: "giulia@example.com" } })
+      .mockResolvedValueOnce({ nextStepId: "ask_adults", variables: {} });
+    const runner = new DefaultRoutineRunner([withCancel], { select }, renderer());
+
+    const result = await runner.resume({
+      turn,
+      state: state([], { email: "giulia at example" }),
+      activationTurn: true,
+    });
+
+    expect(result.nextState?.path.at(-1)).toBe("ask_adults");
+    expect(result.nextState?.variables).toEqual({ email: "giulia@example.com" });
+    expect(result.trace?.steps[0]).toMatchObject({ rejectedSlots: [{ key: "email", reason: "type_mismatch" }] });
+  });
+
+  it("leaves values the routine already holds alone on a later turn", async () => {
+    const runner = new DefaultRoutineRunner([booking], choosing("ask_email", {}), renderer());
+
+    const result = await runner.resume({ turn, state: state(["ask_email"], { adults: "two" }) });
+
+    expect(result.nextState?.variables).toEqual({ adults: "two" });
+  });
+});
+
+describe("DefaultRoutineRunner bounded re-asks (#1376)", () => {
+  const nameSlot = { id: "slot_name", key: "full_name", type: "text" as const, required: true };
+  const emailSlot = { id: "slot_email", key: "email", type: "email" as const, required: true };
+  const steps: Routine["steps"] = [
+    { id: "ask_contact", kind: "chat", action: "Ask for {{slot.full_name}} and {{slot.email}}.", metadata: { collectsSlots: ["full_name", "email"] } },
+    { id: "ask_message", kind: "chat", action: "Ask what they need." },
+    { id: "done", kind: "terminal", action: "Confirm the request was sent." },
+    { id: "handoff", kind: "terminal", action: "Hand the visitor to a person.", metadata: { terminalKind: "handoff" } },
+  ];
+  const contactWith = (transitions: Routine["transitions"]): Routine => ({
+    id: "contact",
+    rootStepId: "ask_contact",
+    slots: [nameSlot, emailSlot],
+    steps,
+    transitions,
+  });
+  const forward = { from: "ask_contact", to: "ask_message", condition: "The user provided {{slot.full_name}} and {{slot.email}}." };
+  const toPerson = { from: "ask_contact", to: "handoff", condition: "The user asks to talk to a person." };
+  const messageDone = { from: "ask_message", to: "done", condition: "The user said what they need." };
+  const withHandoff = contactWith([forward, toPerson, messageDone]);
+  const withoutHandoff = contactWith([forward, messageDone]);
+  const renderer = (): ConversationRoutineStepRenderer => ({
+    render: vi.fn(async ({ step }) => ({ answer: `[${step.id}]` })),
+  });
+  const staying = (variables: Record<string, unknown> = {}) =>
+    ({ select: vi.fn(async () => ({ nextStepId: "ask_contact", variables })) }) satisfies ConversationRoutineNextStepSelector;
+  const onContactStep = (reaskCount?: number, variables: Record<string, unknown> = {}): RoutineState => ({
+    ...state(["ask_contact"], variables),
+    ...(reaskCount === undefined ? {} : { reaskCount }),
+  });
+
+  it("counts each re-ask of the same step that captures nothing new", async () => {
+    const runner = new DefaultRoutineRunner([withHandoff], staying(), renderer());
+
+    const first = await runner.resume({ turn, state: onContactStep() });
+    const second = await runner.resume({ turn, state: first.nextState! });
+
+    expect(first.nextState?.reaskCount).toBe(1);
+    expect(second.nextState?.reaskCount).toBe(2);
+  });
+
+  it("starts the count again when the turn fills a slot the step collects", async () => {
+    const runner = new DefaultRoutineRunner([withHandoff], staying({ full_name: "Giulia Verdi" }), renderer());
+
+    const result = await runner.resume({ turn, state: onContactStep(3) });
+
+    expect(result.nextState?.path).toEqual(["ask_contact"]);
+    expect(result.nextState?.reaskCount ?? 0).toBe(0);
+    expect(result.response.answer).toBe("[ask_contact]");
+  });
+
+  it("starts the count again when the routine moves to another step", async () => {
+    const runner = new DefaultRoutineRunner(
+      [withHandoff],
+      { select: vi.fn(async () => ({ nextStepId: "ask_message", variables: { full_name: "Giulia", email: "g@example.com" } })) },
+      renderer(),
+    );
+
+    const result = await runner.resume({ turn, state: onContactStep(2) });
+
+    expect(result.nextState?.path).toEqual(["ask_contact", "ask_message"]);
+    expect(result.nextState?.reaskCount ?? 0).toBe(0);
+  });
+
+  it("does not count the activation turn, where the step is asked for the first time", async () => {
+    const runner = new DefaultRoutineRunner([withHandoff], staying(), renderer());
+
+    const result = await runner.resume({ turn, state: state([]), activationTurn: true });
+
+    expect(result.nextState?.reaskCount ?? 0).toBe(0);
+  });
+
+  it("counts a re-ask whose value was rejected for not fitting its slot type", async () => {
+    const runner = new DefaultRoutineRunner([withHandoff], staying({ email: "<script>alert(1)</script>" }), renderer());
+
+    const result = await runner.resume({ turn, state: onContactStep(1) });
+
+    expect(result.nextState?.reaskCount).toBe(2);
+  });
+
+  it("asks again as usual up to the limit", async () => {
+    const render = renderer();
+    const runner = new DefaultRoutineRunner([withHandoff], staying(), render);
+
+    const result = await runner.resume({ turn, state: onContactStep(2) });
+
+    expect(result.nextState?.reaskCount).toBe(3);
+    expect(render.render).toHaveBeenCalledWith(expect.objectContaining({
+      step: expect.objectContaining({ id: "ask_contact" }),
+      reask: { missingSlots: [nameSlot, emailSlot] },
+    }));
+    expect(result.trace?.steps.map((entry) => entry.event)).not.toContain("reask_limit_reached");
+  });
+
+  it("hands off along the step's own hand-off exit once the limit is passed", async () => {
+    const render = renderer();
+    const select = vi.fn(async () => ({ nextStepId: "ask_contact", variables: {} }));
+    const runner = new DefaultRoutineRunner([withHandoff], { select }, render);
+
+    const result = await runner.resume({ turn, state: onContactStep(3) });
+
+    expect(select).toHaveBeenCalledTimes(1);
+    expect(result.nextState).toBeNull();
+    expect(result.terminal).toEqual({ kind: "handoff", stepId: "handoff", collected: {} });
+    expect(result.response.answer).toBe("[handoff]");
+    expect(vi.mocked(render.render).mock.calls[0][0]).not.toHaveProperty("reask");
+    expect(result.trace).toMatchObject({ landedStepId: "handoff", terminalKind: "handoff" });
+    expect(result.trace?.steps).toEqual([
+      expect.objectContaining({ stepId: "ask_contact", event: "reasked" }),
+      { stepId: "ask_contact", kind: "chat", event: "reask_limit_reached", reaskCount: 4, reaskLimitOutcome: "handoff" },
+      { stepId: "handoff", kind: "terminal", event: "rendered" },
+    ]);
+  });
+
+  it("asks differently when the step has no hand-off exit, and keeps counting", async () => {
+    const render = renderer();
+    const runner = new DefaultRoutineRunner([withoutHandoff], staying(), render);
+
+    const first = await runner.resume({ turn, state: onContactStep(3) });
+    const second = await runner.resume({ turn, state: first.nextState! });
+
+    expect(first.nextState?.reaskCount).toBe(4);
+    expect(second.nextState?.reaskCount).toBe(5);
+    for (const [call] of vi.mocked(render.render).mock.calls) {
+      expect(call).toMatchObject({
+        step: expect.objectContaining({ id: "ask_contact" }),
+        reask: { missingSlots: [nameSlot, emailSlot], exhausted: true },
+      });
+    }
+    expect(first.trace?.steps).toContainEqual(
+      { stepId: "ask_contact", kind: "chat", event: "reask_limit_reached", reaskCount: 4, reaskLimitOutcome: "exhausted_reask" },
+    );
+  });
+
+  it("never jumps to a hand-off end the step has no exit to", async () => {
+    const viaSkill = contactWith([
+      forward,
+      { from: "ask_contact", to: "notify", condition: "The user asks to talk to a person." },
+      { from: "notify", to: "handoff", condition: "" },
+      messageDone,
+    ]);
+    const withSkill: Routine = { ...viaSkill, steps: [...steps, { id: "notify", kind: "skill", skillName: "notify_team" }] };
+    const dispatch = vi.fn(async () => ({ status: "success" as const }));
+    const render = renderer();
+    const runner = new DefaultRoutineRunner([withSkill], staying(), render, { dispatch });
+
+    const result = await runner.resume({ turn, state: onContactStep(3) });
+
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(result.nextState?.path).toEqual(["ask_contact"]);
+    expect(render.render).toHaveBeenCalledWith(expect.objectContaining({ reask: expect.objectContaining({ exhausted: true }) }));
+  });
+
+  it("takes its limit from the runner options", async () => {
+    const render = renderer();
+    const runner = new DefaultRoutineRunner([withoutHandoff], staying(), render, undefined, { reaskLimit: 1 });
+
+    const result = await runner.resume({ turn, state: onContactStep(1) });
+
+    expect(render.render).toHaveBeenCalledWith(expect.objectContaining({ reask: expect.objectContaining({ exhausted: true }) }));
+    expect(result.nextState?.reaskCount).toBe(2);
+  });
+});

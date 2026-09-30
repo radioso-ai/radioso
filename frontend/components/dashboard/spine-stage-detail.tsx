@@ -901,7 +901,23 @@ interface RoutineTraceStepView {
   skillReason?: string
   /** The next-step selector's own reading of this turn, when a model call ran here. */
   selection?: RoutineStepSelectionView
+  /** Slot keys whose returned value did not fit the slot's type and was not stored (#1374). */
+  rejectedSlotKeys?: string[]
+  /** On `reask_limit_reached`: whether the routine handed off or asked differently (#1376). */
+  reaskLimitOutcome?: RoutineReaskLimitOutcome
 }
+
+type RoutineReaskLimitOutcome = 'handoff' | 'exhausted_reask'
+
+const asReaskLimitOutcome = (value: unknown): RoutineReaskLimitOutcome | undefined =>
+  value === 'handoff' || value === 'exhausted_reask' ? value : undefined
+
+// Keys only: the runner never puts a rejected value on the trace, and this ignores one if present.
+const rejectedSlotKeysOf = (value: unknown): string[] =>
+  asArray(value).flatMap((entry) => {
+    const key = isRecord(entry) ? asString(entry.key) : undefined
+    return key ? [key] : []
+  })
 
 interface RoutineRunTraceView {
   startStepId?: string
@@ -930,6 +946,8 @@ export const buildRoutineRunTrace = (
     .filter(isRecord)
     .map((entry): RoutineTraceStepView => {
       const selection = buildRoutineStepSelection(entry.selection)
+      const rejectedSlotKeys = rejectedSlotKeysOf(entry.rejectedSlots)
+      const reaskLimitOutcome = asReaskLimitOutcome(entry.reaskLimitOutcome)
       return {
         stepId: asString(entry.stepId) ?? '',
         kind: asString(entry.kind) ?? 'chat',
@@ -940,6 +958,8 @@ export const buildRoutineRunTrace = (
         ...(asString(entry.skillStatus) ? { skillStatus: asString(entry.skillStatus) } : {}),
         ...(asString(entry.skillReason) ? { skillReason: asString(entry.skillReason) } : {}),
         ...(selection ? { selection } : {}),
+        ...(rejectedSlotKeys.length > 0 ? { rejectedSlotKeys } : {}),
+        ...(reaskLimitOutcome ? { reaskLimitOutcome } : {}),
       }
     })
   return {
@@ -960,6 +980,7 @@ const ROUTINE_EVENT_LABELS: Record<string, string> = {
   skill_dispatched: 'Tool ran',
   action_emitted: 'Action sent',
   rendered: 'Replied here',
+  reask_limit_reached: 'Re-ask limit',
 }
 
 // Plain-language one-liners so the timeline reads without knowing the engine's terms.
@@ -971,6 +992,11 @@ const ROUTINE_EVENT_DESCRIPTIONS: Record<string, string> = {
   skill_dispatched: 'Ran this step’s tool.',
   action_emitted: 'Emitted a fire-and-forget action.',
   rendered: 'The reply you saw was generated from this step.',
+}
+
+const ROUTINE_REASK_LIMIT_DESCRIPTIONS: Record<RoutineReaskLimitOutcome, string> = {
+  handoff: 'Asked too many times in a row, so the routine took this step’s hand-off exit.',
+  exhausted_reask: 'Asked too many times in a row, so the reply asked differently.',
 }
 
 const ROUTINE_SELECTION_OUTCOME_LABELS: Record<RoutineStepSelectionOutcome, string> = {
@@ -987,6 +1013,7 @@ const ROUTINE_EVENT_TONE: Record<string, string> = {
   skill_dispatched: 'bg-primary/10 text-primary',
   action_emitted: 'bg-primary/10 text-primary',
   rendered: 'bg-muted text-muted-foreground',
+  reask_limit_reached: 'bg-amber-500/10 text-amber-600',
 }
 
 function SlotKeyChips({ keys, tone }: { keys: string[]; tone: string }) {
@@ -1055,6 +1082,9 @@ function RoutineStepsTimeline({ trace }: { trace: RoutineRunTraceView }) {
               {ROUTINE_EVENT_DESCRIPTIONS[step.event] ? (
                 <p className="text-[11px] text-muted-foreground">{ROUTINE_EVENT_DESCRIPTIONS[step.event]}</p>
               ) : null}
+              {step.reaskLimitOutcome ? (
+                <p className="text-[11px] text-muted-foreground">{ROUTINE_REASK_LIMIT_DESCRIPTIONS[step.reaskLimitOutcome]}</p>
+              ) : null}
               {step.skillName ? (
                 <p className="text-[11px] text-muted-foreground">
                   Tool <code className="text-foreground">{step.skillName}</code>
@@ -1073,6 +1103,17 @@ function RoutineStepsTimeline({ trace }: { trace: RoutineRunTraceView }) {
                 <div className="flex flex-wrap items-center gap-1.5">
                   <span className="text-[10px] uppercase tracking-wide text-muted-foreground">captured</span>
                   <SlotKeyChips keys={step.capturedSlotKeys} tone="bg-emerald-500/10 text-emerald-600" />
+                </div>
+              ) : null}
+              {step.rejectedSlotKeys ? (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span
+                    className="text-[10px] uppercase tracking-wide text-muted-foreground"
+                    title="The value did not fit the slot's type, so it was not stored."
+                  >
+                    not stored, wrong type
+                  </span>
+                  <SlotKeyChips keys={step.rejectedSlotKeys} tone="bg-amber-500/10 text-amber-600" />
                 </div>
               ) : null}
             </li>

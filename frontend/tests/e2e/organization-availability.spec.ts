@@ -42,9 +42,9 @@ test('offers first-user registration when the server reports it available', asyn
 
   await page.goto('/')
 
-  await page.getByRole('button', { name: 'Register' }).click()
-  await expect(page.getByRole('heading', { name: 'Create your account' })).toBeVisible()
-  await expect(page.getByText('Agents that answer, act, and hand off — inside the rules you set.', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Create an account' }).click()
+  await expect(page.getByRole('heading', { name: 'Step into the light' })).toBeVisible()
+  await expect(page.getByRole('img', { name: 'radioso' })).toBeVisible()
 })
 
 test('enters the workspace directly after a development auto-verified registration', async ({ page }) => {
@@ -106,13 +106,13 @@ test('enters the workspace directly after a development auto-verified registrati
   })
 
   await page.goto('/')
-  await page.getByRole('button', { name: 'Register' }).click()
+  await page.getByRole('button', { name: 'Create an account' }).click()
   await page.getByLabel('Email').fill('local-dev@example.com')
   await page.getByLabel('Password', { exact: true }).fill('verysecurepassword')
   await page.getByLabel('Confirm Password').fill('verysecurepassword')
   await page.getByRole('button', { name: 'Create Account' }).click()
 
-  await expect(page.getByRole('heading', { name: 'Verify your email' })).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: 'Check your inbox' })).toHaveCount(0)
   await expect.poll(() => page.evaluate(() => localStorage.getItem('radioso.authUser'))).toContain('local-dev@example.com')
 })
 
@@ -133,11 +133,11 @@ test('shows invitation guidance without flashing registration when registration 
   await page.goto('/')
   await registrationRequested
 
-  await expect(page.getByRole('button', { name: 'Register' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Create an account' })).toHaveCount(0)
   releaseRegistrationResponse()
 
   await expect(page.getByText('Registration is invitation-only. Ask an organization administrator for an invitation.')).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Register' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Create an account' })).toHaveCount(0)
 })
 
 test('recovers registration availability after a transient startup failure without flashing signup', async ({ page }) => {
@@ -174,12 +174,12 @@ test('recovers registration availability after a transient startup failure witho
 
   await page.goto('/')
 
-  await expect(page.getByRole('button', { name: 'Register' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Create an account' })).toHaveCount(0)
   await expect(page.getByText('Unable to check registration availability.')).toBeVisible()
   backendReady = true
   await page.getByRole('button', { name: 'Retry registration check' }).click()
 
-  await expect(page.getByRole('button', { name: 'Register' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Create an account' })).toBeVisible()
   expect(attempts).toBeGreaterThanOrEqual(2)
 })
 

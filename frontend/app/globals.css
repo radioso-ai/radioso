@@ -250,3 +250,312 @@
 .radioso-themed-scrollbar::-webkit-scrollbar-thumb:hover {
   background-color: var(--radioso-muted-foreground, rgba(100, 116, 139, 0.6));
 }
+
+/* ── Signed-out band ───────────────────────────────────────────────────
+   Login, registration, invitations, password reset, and email verification.
+   The sun mark broadcasts over a dotted field (the marketing site's hero
+   waves) and lights the top of the form card. Only the atmosphere is custom:
+   the controls are the shared primitives, and the band re-scopes the semantic
+   tokens the way the site's `.brand-bookend` does, so buttons, fields, links
+   and focus rings follow it without overrides.
+
+   The sun is the primary on the night ground. On the paper ground the logo
+   yellow cannot carry text, so the primary is ink and the waves are amber. */
+.auth-band {
+  color-scheme: light;
+  --background: #f7f4ec;
+  --foreground: #1f1b12;
+  --card: rgb(255 255 255 / 0.72);
+  --card-foreground: var(--foreground);
+  --muted-foreground: #6f6a5e;
+  --primary: #1f1b12;
+  --primary-foreground: #f7f4ec;
+  --destructive: #c2261d;
+  --border: rgb(31 27 18 / 0.12);
+  --input: rgb(31 27 18 / 0.16);
+  --ring: #bf8a00;
+  --auth-dot: rgb(191 138 0 / 0.75);
+  --auth-glow-core: rgb(255 196 64 / 0.34);
+  --auth-glow-mid: rgb(246 170 40 / 0.16);
+  --auth-glow-edge: rgb(200 120 20 / 0.06);
+  --auth-wave: rgb(191 138 0 / 0.4);
+  --auth-card-light: rgb(255 199 32 / 0.18);
+}
+
+.dark .auth-band {
+  color-scheme: dark;
+  --background: #0b0d10;
+  --foreground: #f3efe6;
+  --card: rgb(21 23 28 / 0.62);
+  --muted-foreground: #a39f95;
+  --primary: #ffc720;
+  --primary-foreground: #1a1507;
+  --destructive: #f87171;
+  --border: rgb(255 255 255 / 0.09);
+  --input: rgb(255 255 255 / 0.12);
+  --ring: #ffc720;
+  --auth-dot: rgb(255 199 32 / 0.9);
+  --auth-glow-core: rgb(255 196 64 / 0.3);
+  --auth-glow-mid: rgb(246 170 40 / 0.14);
+  --auth-glow-edge: rgb(200 120 20 / 0.05);
+  --auth-wave: rgb(255 199 32 / 0.35);
+  --auth-card-light: rgb(255 199 32 / 0.1);
+}
+
+/* Light from the sun above, falling off before the fields. */
+.auth-card {
+  background-image: linear-gradient(180deg, var(--auth-card-light), transparent 45%);
+}
+
+/* Centred on the 104px sun mark at the top of the logo column. */
+.auth-signal {
+  position: absolute;
+  top: 52px;
+  left: 50%;
+  z-index: -1;
+  width: 1px;
+  height: 1px;
+  pointer-events: none;
+}
+
+.auth-dots,
+.auth-glow,
+.auth-rings span {
+  position: absolute;
+  top: 0;
+  left: 0;
+  border-radius: 9999px;
+}
+
+.auth-dots {
+  width: 1600px;
+  height: 1600px;
+  margin: -800px 0 0 -800px;
+  border-radius: 0;
+  background-image: radial-gradient(circle, var(--auth-dot) 1px, transparent 1.4px);
+  background-size: 14px 14px;
+  mask-image: radial-gradient(
+    circle at center,
+    rgb(0 0 0 / 0.38) 0,
+    rgb(0 0 0 / 0.12) 260px,
+    rgb(0 0 0 / 0.03) 560px,
+    transparent 800px
+  );
+}
+
+.auth-glow {
+  width: 900px;
+  height: 900px;
+  margin: -450px 0 0 -450px;
+  background: radial-gradient(
+    circle,
+    var(--auth-glow-core) 0,
+    var(--auth-glow-mid) 22%,
+    var(--auth-glow-edge) 45%,
+    transparent 68%
+  );
+  opacity: 0.8;
+  transition: opacity 0.6s ease;
+}
+
+.auth-rings span {
+  width: 300px;
+  height: 300px;
+  margin: -150px 0 0 -150px;
+  border: 1px solid var(--auth-wave);
+  opacity: 0;
+  animation: auth-wave 6s cubic-bezier(0.2, 0.6, 0.3, 1) infinite;
+}
+
+.auth-rings span:nth-child(2) {
+  animation-delay: 2s;
+}
+
+.auth-rings span:nth-child(3) {
+  animation-delay: 4s;
+}
+
+@keyframes auth-wave {
+  0% {
+    transform: scale(0.25);
+    opacity: 0;
+  }
+  8% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+}
+
+/* A wave sent by pressing the sun: one pass, brighter than the steady three. */
+.auth-ping {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 300px;
+  height: 300px;
+  margin: -150px 0 0 -150px;
+  border-radius: 9999px;
+  border: 1.5px solid var(--auth-wave);
+  box-shadow: 0 0 24px var(--auth-wave);
+  opacity: 0;
+  animation: auth-ping 2.4s cubic-bezier(0.2, 0.6, 0.3, 1) forwards;
+}
+
+@keyframes auth-ping {
+  0% {
+    transform: scale(0.3);
+    opacity: 0;
+  }
+  6% {
+    opacity: 1;
+  }
+  100% {
+    transform: scale(3);
+    opacity: 0;
+  }
+}
+
+.auth-sun {
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  width: 104px;
+  height: 104px;
+  filter: drop-shadow(0 0 8px rgb(255 199 32 / 0.35));
+  transition:
+    filter 0.35s ease,
+    transform 0.35s ease,
+    scale 0.2s ease;
+}
+
+/* The sun warms as the form fills in, is at full strength once the form is
+   ready to submit, and dims its glow while a password is being typed. Fields
+   without a placeholder never report `:placeholder-shown`, so only fields
+   that have one count as filled in. */
+.auth-band:has(.auth-card input[placeholder]:not(:placeholder-shown)) .auth-sun {
+  filter: brightness(1.15) drop-shadow(0 0 16px rgb(255 199 32 / 0.55));
+  transform: scale(1.03);
+}
+
+.auth-band:has(.auth-card input[placeholder]:not(:placeholder-shown)) .auth-glow {
+  opacity: 0.9;
+}
+
+.auth-band:has(.auth-card form:valid) .auth-sun {
+  filter: brightness(1.35) drop-shadow(0 0 26px rgb(255 199 32 / 0.75));
+  transform: scale(1.06);
+}
+
+.auth-band:has(.auth-card form:valid) .auth-glow {
+  opacity: 1;
+}
+
+.auth-band:has(.auth-card input[type='password']:focus) .auth-glow {
+  opacity: 0.55;
+}
+
+/* `scale` composes with the warming `transform` above instead of replacing it. */
+.auth-sun:active {
+  scale: 0.94;
+  transition-duration: 0.08s;
+}
+
+/* ── Sunrise ───────────────────────────────────────────────────────────
+   Played by `SunriseProvider` once credentials are accepted: the sun floods
+   the screen while the app loads underneath, then fades away. */
+.sunrise {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  overflow: hidden;
+  pointer-events: none;
+  transition: opacity 0.4s ease;
+}
+
+.sunrise[data-setting='true'] {
+  opacity: 0;
+}
+
+.sunrise-wash {
+  position: absolute;
+  top: var(--sunrise-y);
+  left: var(--sunrise-x);
+  width: 300px;
+  height: 300px;
+  margin: -150px 0 0 -150px;
+  border-radius: 9999px;
+  background: radial-gradient(circle, #ffe08a 0, #ffc720 35%, rgb(255 199 32 / 0) 70%);
+  animation: sunrise-wash 1.3s cubic-bezier(0.5, 0, 0.2, 1) forwards;
+}
+
+@keyframes sunrise-wash {
+  0% {
+    transform: scale(0.05);
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(var(--sunrise-scale));
+    opacity: 1;
+  }
+}
+
+.sunrise-greeting {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: #1a1507;
+  animation: sunrise-greeting 0.5s 0.7s both;
+}
+
+.sunrise-title {
+  font-family: var(--font-display);
+  font-size: 44px;
+  font-weight: 500;
+}
+
+.sunrise-detail {
+  font-size: 15px;
+  opacity: 0.7;
+}
+
+@keyframes sunrise-greeting {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-rings span,
+  .sunrise-wash,
+  .sunrise-greeting {
+    animation: none;
+  }
+  .auth-rings span {
+    opacity: 0.25;
+    transform: scale(1);
+  }
+  .auth-rings span:nth-child(2) {
+    transform: scale(1.7);
+  }
+  .auth-rings span:nth-child(3) {
+    transform: scale(2.4);
+  }
+  .sunrise-wash {
+    transform: scale(var(--sunrise-scale));
+  }
+  .auth-sun {
+    transition: none;
+  }
+}

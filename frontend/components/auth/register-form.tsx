@@ -6,9 +6,11 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { authApi, seedWorkspaceSession } from '@/lib/api'
 import { useOptionalAuth } from '@/lib/auth-context'
+import { useAuthSunrise } from './auth-shell'
 
 interface RegisterFormProps {
   onSwitchToLogin: () => void
+  onVerificationPending: () => void
 }
 
 const getErrorMessage = (error: unknown) => {
@@ -27,8 +29,9 @@ const getErrorMessage = (error: unknown) => {
   return 'Registration failed. Please try again.'
 }
 
-export function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
+export function RegisterForm({ onSwitchToLogin, onVerificationPending }: RegisterFormProps) {
   const auth = useOptionalAuth()
+  const riseSun = useAuthSunrise()
   const [organizationName, setOrganizationName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -67,12 +70,14 @@ export function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
         setPassword('')
         setConfirmPassword('')
         setMessage('Check your email to verify your account before signing in.')
+        onVerificationPending()
         return
       }
       seedWorkspaceSession(response.workspaceId, response.workspacePublicRouteKey)
       if (!auth) {
         throw new Error('Registration is unavailable outside the auth shell')
       }
+      riseSun()
       await auth.login(email, response.userId, response.accountId, response.organizationName)
     } catch (error) {
       setError(getErrorMessage(error))
@@ -100,12 +105,9 @@ export function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
   if (pendingVerificationEmail) {
     return (
       <div className="space-y-4">
-        <div className="space-y-2">
-          <h2 className="text-lg font-semibold text-foreground">Verify your email</h2>
-          <p className="text-sm text-muted-foreground">
-            We sent a verification link to {pendingVerificationEmail}. Verify your email before signing in.
-          </p>
-        </div>
+        <p className="text-sm text-muted-foreground">
+          We sent a verification link to {pendingVerificationEmail}.
+        </p>
         {message ? (
           <p className="text-sm text-muted-foreground">{message}</p>
         ) : null}
@@ -187,16 +189,6 @@ export function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
       <Button type="submit" className="w-full" loading={isLoading}>
         Create account
       </Button>
-      <p className="text-center text-sm text-muted-foreground">
-        Already have an account?{' '}
-        <button
-          type="button"
-          onClick={onSwitchToLogin}
-          className="text-primary hover:underline font-medium"
-        >
-          Sign in
-        </button>
-      </p>
     </form>
   )
 }

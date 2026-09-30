@@ -345,7 +345,7 @@ test("password sign-in returns to the pending consent transaction", async ({ pag
   });
 
   await page.goto(`/oauth/operator-mcp/consent?transaction=${transactionId}`);
-  await expect(page.getByRole("heading", { name: "Welcome back" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Back in the light" })).toBeVisible();
   await page.getByLabel("Email").fill("operator@example.com");
   await page.getByLabel("Password").fill("password-for-test");
   await page.getByRole("button", { name: "Sign In" }).click();
@@ -476,7 +476,7 @@ test("proposal deep-link returns to review after a signed-out operator logs in",
 
   const proposalPath = "/oauth/operator-mcp/proposal/33333333-3333-4333-8333-333333333333";
   await page.goto(proposalPath);
-  await expect(page.getByRole("heading", { name: "Welcome back" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Back in the light" })).toBeVisible();
   await page.getByLabel("Email").fill("operator@example.com");
   await page.getByLabel("Password").fill("password-for-test");
   await page.getByRole("button", { name: "Sign In" }).click();

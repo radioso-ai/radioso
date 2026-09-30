@@ -34,6 +34,7 @@ import type { ResponseLanguageDetectorInput } from "../../src/shared/services/re
 import type { RetrievalPipelineRequest, RetrievalPipelineResult } from "../../src/modules/retrieval/public.js";
 import { createAuditService } from "../support/fakes.js";
 import { unpublishedAgentPublicIdentity } from "../../src/modules/agents/public.js";
+import type { ChatRoutineTurnReporter } from "../../src/modules/chat/contracts/routineTurnState.js";
 
 const emptyTrace = () => {
   const now = new Date().toISOString();
@@ -1286,6 +1287,157 @@ describe("WorkbenchReplayRunner", () => {
       options: [{ id: "approve", label: "Approve" }],
     });
     expect(result.handoff).toEqual({ routineId: "contact", stepId: "handoff" });
+  });
+
+  const slotValuesFakeEngine = (): ConversationEngine => ({
+    async attemptRoutine(input: AttemptRoutineInput): Promise<ProcessTurnResult | null> {
+      await input.routineStore!.save({
+        sessionId: input.sessionId,
+        routineId: "contact",
+        path: ["done"],
+        variables: {},
+        status: "completed",
+      });
+      return {
+        response: { answer: "All set." },
+        trace: emptyTrace(),
+        decision: { reason: "routine_completed" },
+      } as unknown as ProcessTurnResult;
+    },
+    async processTurn(): Promise<ProcessTurnResult> {
+      throw new Error("grounding must not run when a routine claims the turn");
+    },
+  } as unknown as ConversationEngine);
+
+  it("requests routine slot values from the provider only when the caller (Test Chat) opts in", async () => {
+    const forTurn = vi.fn(async () => ({ activator: {} as never, runner: {} as never }));
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn([]),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: slotValuesFakeEngine(),
+      turnRouter: stubTurnRouter("retrieval"),
+      routineProvider: { forTurn },
+      chatGateway: chatGatewayStub(),
+      chatAnswerPresenter: presenterStub(),
+    });
+
+    await runner.run({
+      workspaceId: "ws-1",
+      executionMode: "safe_test" as const,
+      sourceAgentId: "agent-1",
+      baselineAgentConfig: projectInternalAgentConfig(agent()),
+      query: "Please help me",
+      history: [],
+      includeSlotValues: true,
+    });
+
+    expect(forTurn).toHaveBeenCalledWith(expect.objectContaining({ includeSlotValues: true }));
+  });
+
+  it("never requests routine slot values when the caller does not opt in — the eval replay default", async () => {
+    const forTurn = vi.fn(async () => ({ activator: {} as never, runner: {} as never }));
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn([]),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: slotValuesFakeEngine(),
+      turnRouter: stubTurnRouter("retrieval"),
+      routineProvider: { forTurn },
+      chatGateway: chatGatewayStub(),
+      chatAnswerPresenter: presenterStub(),
+    });
+
+    // No `includeSlotValues` on the input — the shape every eval replay call uses today.
+    await runner.run({
+      workspaceId: "ws-1",
+      executionMode: "safe_test" as const,
+      sourceAgentId: "agent-1",
+      baselineAgentConfig: projectInternalAgentConfig(agent()),
+      query: "Please help me",
+      history: [],
+    });
+
+    expect(forTurn).toHaveBeenCalledWith(expect.objectContaining({ includeSlotValues: false }));
+  });
+
+  it("carries a hand-off preview matching the real notification builder, without dispatching it", async () => {
+    const fakeEngine = {
+      async attemptRoutine(input: AttemptRoutineInput): Promise<ProcessTurnResult | null> {
+        await input.routineStore!.save({
+          sessionId: input.sessionId,
+          routineId: "contact",
+          path: ["handoff"],
+          variables: {},
+          status: "active",
+        });
+        return {
+          response: { answer: "A teammate will follow up." },
+          trace: emptyTrace(),
+          decision: { reason: "routine_completed" },
+          handoff: {
+            routineId: "contact",
+            stepId: "handoff",
+            collected: { program: "A stay at Ananda", guests: 2 },
+          },
+        } as unknown as ProcessTurnResult;
+      },
+      async processTurn(): Promise<ProcessTurnResult> {
+        throw new Error("grounding must not run when a routine claims the turn");
+      },
+    } as unknown as ConversationEngine;
+
+    const describeRoutineName = vi.fn(() => "Book accommodation");
+    const reporter: ChatRoutineTurnReporter = {
+      describe: () => null,
+      describeDeclined: () => null,
+      describeInvocation: () => null,
+      describeRoutineName,
+    };
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn([]),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: fakeEngine,
+      turnRouter: stubTurnRouter("retrieval"),
+      routineProvider: {
+        async forTurn() {
+          return { activator: {} as never, runner: {} as never, reporter };
+        },
+      },
+      chatGateway: chatGatewayStub(),
+      chatAnswerPresenter: presenterStub(),
+    });
+
+    const result = await runner.run({
+      workspaceId: "ws-1",
+      executionMode: "safe_test" as const,
+      sourceAgentId: "agent-1",
+      baselineAgentConfig: projectInternalAgentConfig(agent()),
+      query: "Please book Ananda for me",
+      history: [],
+    });
+
+    expect(result.handoff).toEqual({
+      routineId: "contact",
+      stepId: "handoff",
+      collected: { program: "A stay at Ananda", guests: 2 },
+    });
+    // No actual delivery happens for a replayed turn — only the preview the trace carries.
+    expect(result.actions ?? []).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "handoff.notify" }),
+    ]));
+    expect(describeRoutineName).toHaveBeenCalledWith("contact");
+    expect(result.turnTrace?.handoffPreview).toMatchObject({
+      subject: "Book accommodation: needs a human",
+      lines: expect.arrayContaining([
+        "A conversation needs a human operator.",
+        "Agent: Support (agent-1)",
+        "Routine: Book accommodation",
+        "Reason: routine_handoff",
+      ]),
+    });
+    expect(JSON.stringify(result.turnTrace?.handoffPreview)).toContain("A stay at Ananda");
   });
 
   it("wires the coverage routine port into a replayed turn's reported coverage verdict", async () => {

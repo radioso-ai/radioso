@@ -116,6 +116,20 @@ describe("createRoutineTurnReporter", () => {
 
     expect(unnamed.describe({ state: state({ status: "completed" }) })?.name).toBe(bookDemo.id);
   });
+
+  it("resolves a routine's display name by id alone, without a state to describe", () => {
+    expect(reporter.describeRoutineName(bookDemo.id)).toBe("Book a demo");
+  });
+
+  it("falls back to the routine id when resolving a name for an unnamed routine", () => {
+    const unnamed = createRoutineTurnReporter([{ ...bookDemo, metadata: undefined }]);
+
+    expect(unnamed.describeRoutineName(bookDemo.id)).toBe(bookDemo.id);
+  });
+
+  it("returns null resolving a name for a routine this turn does not know", () => {
+    expect(reporter.describeRoutineName("routine-unknown")).toBeNull();
+  });
 });
 
 describe("createRoutineTurnReporter with exposed routines", () => {

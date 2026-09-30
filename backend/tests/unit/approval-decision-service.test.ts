@@ -29,6 +29,7 @@ const decision = (overrides: Partial<PendingDecisionRecord> = {}): PendingDecisi
   status: "pending",
   decision: null,
   decidedBy: null,
+  decidedByUserId: null,
   decidedAt: null,
   deadline: null,
   createdAt: new Date("2026-06-19T00:00:00.000Z"),
@@ -44,6 +45,8 @@ const createRepository = (record: PendingDecisionRecord) => ({
     return resume;
   }),
 }) as unknown as Pick<PendingDecisionRepository, "loadByHandle" | "resolveInTransaction" | "listPending">;
+
+const noActivity = () => ({ record: vi.fn(async () => undefined) });
 
 const runner = (): ResumeRunner => ({
   resume: vi.fn(async () => ({
@@ -73,7 +76,7 @@ describe("ApprovalDecisionService role-scoped decisions", () => {
     const pending = decision();
     const repository = createRepository(pending);
     const resumeRunner = runner();
-    const service = new ApprovalDecisionService(repository, resumeRunner, {
+    const service = new ApprovalDecisionService(repository, resumeRunner, noActivity(), {
       resolveWorkspaceRole: vi.fn(async () => "admin" as const),
     });
 
@@ -91,7 +94,7 @@ describe("ApprovalDecisionService role-scoped decisions", () => {
   it("reports list eligibility with the same role resolver", async () => {
     const pending = decision();
     const repository = createRepository(pending);
-    const service = new ApprovalDecisionService(repository, runner(), {
+    const service = new ApprovalDecisionService(repository, runner(), noActivity(), {
       resolveWorkspaceRole: vi.fn(async () => "member" as const),
     });
 
@@ -119,6 +122,7 @@ describe("ApprovalDecisionService role-scoped decisions", () => {
     const service = new ApprovalDecisionService(
       repository,
       resumeRunner,
+      noActivity(),
       { resolveWorkspaceRole: vi.fn(async () => "admin" as const) },
       { publishMessageCreated },
     );
@@ -160,6 +164,7 @@ describe("ApprovalDecisionService role-scoped decisions", () => {
     const service = new ApprovalDecisionService(
       repository,
       resumeRunner,
+      noActivity(),
       { resolveWorkspaceRole: vi.fn(async () => "admin" as const) },
       undefined,
       publisher,
@@ -200,6 +205,7 @@ describe("ApprovalDecisionService role-scoped decisions", () => {
           },
         })),
       },
+      noActivity(),
       { resolveWorkspaceRole: vi.fn(async () => "admin" as const) },
       { publishMessageCreated },
       publisher,
@@ -230,7 +236,7 @@ describe("ApprovalDecisionService role-scoped decisions", () => {
     });
     const repository = createRepository(pending);
     const resumeRunner = runner();
-    const service = new ApprovalDecisionService(repository, resumeRunner, {
+    const service = new ApprovalDecisionService(repository, resumeRunner, noActivity(), {
       resolveWorkspaceRole: vi.fn(async () => "admin" as const),
     });
 
@@ -246,5 +252,36 @@ describe("ApprovalDecisionService role-scoped decisions", () => {
       optionId: "approve",
       payload: { internalCode: "approve_refund" },
     }));
+  });
+
+  it("records who decided which option before resuming the routine, in the decision's transaction", async () => {
+    const pending = decision();
+    const repository = createRepository(pending);
+    const resumeRunner = runner();
+    const activity = noActivity();
+    const service = new ApprovalDecisionService(repository, resumeRunner, activity, {
+      resolveWorkspaceRole: vi.fn(async () => "admin" as const),
+    });
+
+    await service.resolve({
+      agentId: pending.agentId,
+      handle: pending.handle,
+      optionId: "reject",
+      contentHash: pending.contentHash,
+      caller: { accountId: "account_1", workspaceId: pending.workspaceId, userId: "user_bea" },
+    });
+
+    const transaction = vi.mocked(repository.resolveInTransaction).mock.calls[0]?.[0];
+    expect(transaction).toMatchObject({ decidedBy: "account_1", decidedByUserId: "user_bea" });
+    expect(activity.record).toHaveBeenCalledWith({}, {
+      kind: "approval_decided",
+      conversationId: pending.conversationId,
+      workspaceId: pending.workspaceId,
+      actorUserId: "user_bea",
+      detail: { handle: pending.handle, decision: { optionId: "reject", label: "Reject" } },
+    });
+    expect(activity.record.mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(resumeRunner.resume).mock.invocationCallOrder[0],
+    );
   });
 });

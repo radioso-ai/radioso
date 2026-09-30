@@ -2,6 +2,7 @@
 
 import { AlertTriangle } from 'lucide-react'
 
+import { handoffReasonLabel } from '@/lib/conversation-activity'
 import { selectSituationBody, type SituationSource } from '@/lib/inbox-response'
 
 /**
@@ -12,16 +13,17 @@ import { selectSituationBody, type SituationSource } from '@/lib/inbox-response'
  */
 export function InboxSituationCard(source: SituationSource) {
   const body = selectSituationBody(source)
-  if (!source.handoffReason && !body) {
+  const reason = handoffReasonLabel(source.handoffReason)
+  if (!reason && !body) {
     return null
   }
 
   return (
     <div className="rounded-lg border border-border bg-muted/20 px-4 py-3">
-      {source.handoffReason ? (
+      {reason ? (
         <p className="mb-1 flex items-center gap-1.5 text-sm font-medium text-amber-700 dark:text-amber-300">
           <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden />
-          Handed off — {source.handoffReason}
+          Handed off — {reason}
         </p>
       ) : null}
       {body ? <p className="text-sm text-foreground">{body}</p> : null}

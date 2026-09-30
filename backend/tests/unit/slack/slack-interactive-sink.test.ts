@@ -55,6 +55,7 @@ const decision = (overrides: Partial<PendingDecisionRecord> = {}): PendingDecisi
   status: "pending",
   decision: null,
   decidedBy: null,
+  decidedByUserId: null,
   decidedAt: null,
   deadline: null,
   createdAt: new Date("2026-01-01T00:00:00Z"),

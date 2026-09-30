@@ -23,6 +23,7 @@ import { useConversationTail } from '@/hooks/use-conversation-tail'
 import { hitlApi } from '@/lib/api-hitl'
 import { useOptionalAuth } from '@/lib/auth-context'
 import type { ChatConversationSummary, PendingApprovalDecision } from '@/lib/api-types'
+import { freshestActivity } from '@/lib/conversation-activity'
 import { deriveConversationOutcome } from '@/lib/conversation-outcome'
 import {
   doneControlTooltip,
@@ -170,6 +171,12 @@ export function InboxResponseView({
   const effectiveOwnership = useMemo(
     () => freshestOwnership(conversationDetail?.ownership, conversationTail.ownership),
     [conversationDetail?.ownership, conversationTail.ownership],
+  )
+  // The same for the conversation's activity: the tail poll sees an event recorded elsewhere —
+  // a teammate's claim, reassignment, or hand-back — while this pane stays open.
+  const activity = useMemo(
+    () => freshestActivity(conversationDetail?.activity, conversationTail.activity),
+    [conversationDetail?.activity, conversationTail.activity],
   )
 
   // The actionable/read-only split and the header's identity/waiting fields
@@ -373,6 +380,8 @@ export function InboxResponseView({
               analyticsSurface="dashboard"
               skillCatalog={skillCatalog}
               audience="operator"
+              activity={activity}
+              hasOlderMessages={conversationDetail?.hasOlderMessages ?? false}
             />
           </div>
         )}

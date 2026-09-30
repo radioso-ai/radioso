@@ -303,6 +303,7 @@ const declarations: readonly PolicyDeclaration[] = [
   ].map(([method, path, permission]) => sessionOnly(method, path, permission)),
   ...[
     ["GET", "/api/v1/conversations/operators"],
+    ["GET", "/api/v1/conversations/recently-closed"],
     ["POST", "/api/v1/conversations/:conversationId/takeover"],
     ["POST", "/api/v1/conversations/:conversationId/reply"],
     ["POST", "/api/v1/conversations/:conversationId/transfer"],

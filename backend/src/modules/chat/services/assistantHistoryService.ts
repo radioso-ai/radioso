@@ -9,6 +9,7 @@ const dashboardConversationDetailOptions = {
   includeAgentInternalName: true,
   includeTurnFailureDebug: true,
   includeOperatorLabel: true,
+  includeActivity: true,
 };
 
 export class AssistantHistoryService {
@@ -76,6 +77,7 @@ export class AssistantHistoryService {
     return this.chatHistoryService.tailConversation(workspaceId, conversationId, input, {
       includeOwnership: true,
       includeOperatorLabel: true,
+      includeActivity: true,
     });
   }
 

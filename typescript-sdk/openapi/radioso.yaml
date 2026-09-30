@@ -10552,6 +10552,217 @@ components:
             $ref: "#/components/schemas/ConversationOperator"
       required:
         - operators
+    ConversationActivityEntry:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        kind:
+          type: string
+          enum:
+            - handoff_requested
+            - claimed
+            - reassigned
+            - handed_back
+            - approval_decided
+            - feedback_resolved
+            - feedback_dismissed
+        createdAt:
+          type: string
+          format: date-time
+        actor:
+          type:
+            - object
+            - "null"
+          properties:
+            userId:
+              type: string
+              format: uuid
+            label:
+              type:
+                - string
+                - "null"
+              description: "The teammate label as it is now: display name, else email. Null once the user is deleted."
+          required:
+            - userId
+            - label
+          description: The teammate who acted. Null when the agent acted, or the change came from a caller that is no teammate.
+        subject:
+          type:
+            - object
+            - "null"
+          properties:
+            userId:
+              type: string
+              format: uuid
+            label:
+              type:
+                - string
+                - "null"
+              description: "The teammate label as it is now: display name, else email. Null once the user is deleted."
+          required:
+            - userId
+            - label
+          description: The teammate who holds a `reassigned` conversation now.
+        from:
+          type:
+            - object
+            - "null"
+          properties:
+            userId:
+              type: string
+              format: uuid
+            label:
+              type:
+                - string
+                - "null"
+              description: "The teammate label as it is now: display name, else email. Null once the user is deleted."
+          required:
+            - userId
+            - label
+          description: Who held a `reassigned` conversation before. Null when nobody had claimed the handoff.
+        handoffReason:
+          type:
+            - string
+            - "null"
+          description: The handoff reason code on `handoff_requested`, for example `routine_handoff` or `retrieval_miss`.
+        decision:
+          type:
+            - object
+            - "null"
+          properties:
+            optionId:
+              type: string
+            label:
+              type: string
+              description: The option's label as the routine author wrote it.
+          required:
+            - optionId
+            - label
+          description: The option chosen on `approval_decided`.
+        resolution:
+          type:
+            - string
+            - "null"
+          description: The triage resolution code given on `feedback_resolved` or `feedback_dismissed`.
+        assistantMessageId:
+          type:
+            - string
+            - "null"
+          format: uuid
+          description: The answer the feedback was on, for `feedback_resolved` and `feedback_dismissed`.
+      required:
+        - id
+        - kind
+        - createdAt
+        - actor
+        - subject
+        - from
+        - handoffReason
+        - decision
+        - resolution
+        - assistantMessageId
+      description: Something a teammate or the agent did to the conversation. Operator reads only.
+    RecentlyClosedInboxItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: The closing event's id.
+        conversationId:
+          type: string
+          format: uuid
+        itemKind:
+          type: string
+          enum:
+            - handoff
+            - approval
+            - negative_feedback
+        outcome:
+          type: string
+          enum:
+            - handed_back
+            - approval_decided
+            - feedback_resolved
+            - feedback_dismissed
+        closedAt:
+          type: string
+          format: date-time
+        closedBy:
+          type:
+            - object
+            - "null"
+          properties:
+            userId:
+              type: string
+              format: uuid
+            label:
+              type:
+                - string
+                - "null"
+              description: "The teammate label as it is now: display name, else email. Null once the user is deleted."
+          required:
+            - userId
+            - label
+          description: The teammate who closed it. Null for a caller that is no teammate, or a user since deleted.
+        decision:
+          type:
+            - object
+            - "null"
+          properties:
+            optionId:
+              type: string
+            label:
+              type: string
+              description: The option's label as the routine author wrote it.
+          required:
+            - optionId
+            - label
+          description: The option chosen, for an approval.
+        resolution:
+          type:
+            - string
+            - "null"
+          description: The triage resolution code, for negative feedback.
+        assistantMessageId:
+          type:
+            - string
+            - "null"
+          format: uuid
+          description: The answer, for negative feedback.
+        title:
+          type:
+            - string
+            - "null"
+          description: See ChatConversationSummary.title.
+        preview:
+          type:
+            - string
+            - "null"
+          description: The conversation's first-message preview.
+      required:
+        - id
+        - conversationId
+        - itemKind
+        - outcome
+        - closedAt
+        - closedBy
+        - decision
+        - resolution
+        - assistantMessageId
+        - title
+        - preview
+    RecentlyClosedInboxItemsResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/RecentlyClosedInboxItem"
+      required:
+        - items
     HumanReplyMessage:
       type: object
       properties:
@@ -10718,6 +10929,11 @@ components:
           allOf:
             - $ref: "#/components/schemas/ConversationOwnership"
             - description: The conversation's ownership record whenever one exists, `ai_owned` included, the same as the tail's, so a reader holding an older record sees a hand-back by its higher version. Absent until a teammate is first involved.
+        activity:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConversationActivityEntry"
+          description: "What teammates and the agent did to the conversation, oldest first: handoffs, claims, reassignments, hand-backs, approvals decided, feedback resolved or dismissed."
       required:
         - conversationId
         - workspaceId
@@ -10754,6 +10970,11 @@ components:
           allOf:
             - $ref: "#/components/schemas/ConversationOwnership"
             - description: The conversation's ownership record whenever one exists, `ai_owned` included, so a hand-back made elsewhere reaches a reader polling the tail. Absent until a teammate is first involved.
+        activity:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConversationActivityEntry"
+          description: The conversation's whole activity timeline, oldest first, on every tail, so a reader polling the tail sees an event recorded elsewhere.
       required:
         - messages
         - cursor
@@ -29979,6 +30200,50 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ConversationOperatorsResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Workspace conversation takeover permission required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/conversations/recently-closed:
+    get:
+      tags:
+        - Conversation Ownership
+      summary: List the Inbox items closed most recently
+      description: "Returns the workspace's most recently closed Inbox items, newest first: handoffs handed back to the agent, approvals decided, and negative feedback resolved or dismissed. Each item names the teammate who closed it, labelled by display name, else email. Dashboard test chats are left out."
+      operationId: listRecentlyClosedInboxItems
+      security: *a107
+      parameters:
+        - schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 10
+            description: How many items to return, 1 to 50.
+          required: false
+          description: How many items to return, 1 to 50.
+          name: limit
+          in: query
+      responses:
+        "200":
+          description: Recently closed items returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecentlyClosedInboxItemsResponse"
+        "400":
+          description: Invalid query
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "401":
           description: Authentication required
           content:

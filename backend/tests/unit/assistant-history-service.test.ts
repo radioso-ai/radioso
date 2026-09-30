@@ -26,6 +26,7 @@ describe("AssistantHistoryService", () => {
         includeAgentInternalName: true,
         includeTurnFailureDebug: true,
         includeOperatorLabel: true,
+        includeActivity: true,
       },
     );
   });
@@ -50,11 +51,12 @@ describe("AssistantHistoryService", () => {
         includeAgentInternalName: true,
         includeTurnFailureDebug: true,
         includeOperatorLabel: true,
+        includeActivity: true,
       },
     );
   });
 
-  it("tails a conversation with ownership and the replying teammate's label", async () => {
+  it("tails a conversation with ownership, the replying teammate's label, and the activity", async () => {
     const tailConversation = vi.fn(async () => ({}) as never);
     const chatHistoryService = { tailConversation } as unknown as ChatHistoryService;
     const service = new AssistantHistoryService(chatHistoryService);
@@ -65,7 +67,7 @@ describe("AssistantHistoryService", () => {
       "workspace-1",
       "conversation-1",
       { limit: 20 },
-      { includeOwnership: true, includeOperatorLabel: true },
+      { includeOwnership: true, includeOperatorLabel: true, includeActivity: true },
     );
   });
 });

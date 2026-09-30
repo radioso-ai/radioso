@@ -496,4 +496,89 @@ describe("conversation ownership routes", () => {
 
     expect(response.status).toBe(404);
   });
+
+  it("shows the operator each change in the conversation's timeline, and lists a handed-back handoff as recently closed", async () => {
+    const { app, repositories } = createTestApp();
+    const owner = await issueTestSession(app, "activity-owner@example.com");
+    const member = await acceptInvite(app, owner.cookie, "activity-member@example.com");
+    await repositories.userRepository.updateDisplayName(member.userId, "Bea");
+    const conversation = await repositories.conversationRepository.create({ workspaceId: member.workspaceId, sourceChannel: "dashboard" });
+    await repositories.conversationRepository.setTitle(conversation.id, member.workspaceId, "Refund for order 1042");
+    const requested = await repositories.conversationOwnershipRepository.requestHandoff({
+      conversationId: conversation.id,
+      workspaceId: member.workspaceId,
+      reason: "routine_handoff",
+    });
+
+    const assigned = await request(app)
+      .post(`/api/v1/conversations/${conversation.id}/transfer`)
+      .set(adminSessionHeaders(member))
+      .send({ toUserId: owner.userId, expectedVersion: requested.record.version });
+    const retaken = await request(app)
+      .post(`/api/v1/conversations/${conversation.id}/transfer`)
+      .set(adminSessionHeaders(member))
+      .send({ toUserId: member.userId, expectedVersion: assigned.body.ownership.version });
+    const handedBack = await request(app)
+      .post(`/api/v1/conversations/${conversation.id}/handback`)
+      .set(adminSessionHeaders(member))
+      .send({ expectedVersion: retaken.body.ownership.version });
+    expect([assigned.status, retaken.status, handedBack.status]).toEqual([200, 200, 200]);
+
+    const detail = await request(app)
+      .get(`/api/v1/history/chat/${conversation.id}`)
+      .set(adminSessionHeaders(member));
+    const tail = await request(app)
+      .get(`/api/v1/history/chat/${conversation.id}/tail`)
+      .set(adminSessionHeaders(member));
+
+    const expected = [
+      expect.objectContaining({
+        kind: "reassigned",
+        actor: { userId: member.userId, label: "Bea" },
+        subject: { userId: owner.userId, label: "activity-owner@example.com" },
+        from: null,
+      }),
+      expect.objectContaining({
+        kind: "reassigned",
+        actor: { userId: member.userId, label: "Bea" },
+        subject: { userId: member.userId, label: "Bea" },
+        from: { userId: owner.userId, label: "activity-owner@example.com" },
+      }),
+      expect.objectContaining({ kind: "handed_back", actor: { userId: member.userId, label: "Bea" } }),
+    ];
+    expect(detail.status).toBe(200);
+    expect(detail.body.activity).toEqual(expected);
+    expect(tail.status).toBe(200);
+    expect(tail.body.activity).toEqual(expected);
+
+    const closed = await request(app)
+      .get("/api/v1/conversations/recently-closed")
+      .set(adminSessionHeaders(member));
+
+    expect(closed.status).toBe(200);
+    expect(closed.body).toEqual({
+      items: [expect.objectContaining({
+        conversationId: conversation.id,
+        itemKind: "handoff",
+        outcome: "handed_back",
+        closedBy: { userId: member.userId, label: "Bea" },
+        closedAt: expect.any(String),
+        title: "Refund for order 1042",
+      })],
+    });
+  });
+
+  it("keeps recently closed to teammates with takeover permission, and checks its limit", async () => {
+    const { app, dependencies } = createTestApp();
+    const session = await issueTestSession(app, "activity-denied@example.com");
+    const permissionSpy = vi.spyOn(dependencies.accountAccessService, "requirePermission")
+      .mockRejectedValueOnce(forbidden("No takeover"));
+
+    const denied = await request(app).get("/api/v1/conversations/recently-closed").set(adminSessionHeaders(session));
+    const invalid = await request(app).get("/api/v1/conversations/recently-closed?limit=500").set(adminSessionHeaders(session));
+
+    expect(denied.status).toBe(403);
+    expect(invalid.status).toBe(400);
+    permissionSpy.mockRestore();
+  });
 });

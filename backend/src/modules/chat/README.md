@@ -267,11 +267,15 @@ imports from `services/`.
   Then it is omitted, and the visitor surface labels the reply "A teammate".
   Operator reads add `operatorLabel` (`includeOperatorLabel`): the replier's
   teammate label (display name, else email) read now through the narrow
-  `TeammateLabelReaderPort` — one batched lookup per read, wired in
-  `app/composition/teammateLabelReader.ts` — falling back to the signature rule
-  above when the reply names no user or the user is gone. It can be an email, so
-  the public presenters also strip it; the calling-agent update reader reads the
-  tail with ownership only and never gets it.
+  `TeammateLabelReaderPort` (owned by `auth/contracts`) — one batched lookup per
+  read, wired in `app/composition/teammateLabelReader.ts` — falling back to the
+  signature rule above when the reply names no user or the user is gone. It can be
+  an email, so the public presenters also strip it; the calling-agent update reader
+  reads the tail with ownership only and never gets it. Operator reads also add the
+  conversation's `activity` (`includeActivity`) through the conversation activity
+  module's `ConversationActivityTimelineReader`; the public presenters strip it too.
+  `PostgresAssistantTurnPersistence` records a turn's `handoff_requested` event in
+  the turn's transaction when the handoff changed ownership.
   `includeTurnFailureDebug` attaches a `turnFailure` fact (failed or superseded,
   never both classified as the same) to the user message of a turn that never
   produced an assistant reply — the read-side counterpart to

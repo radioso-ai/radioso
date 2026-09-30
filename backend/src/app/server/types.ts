@@ -108,6 +108,7 @@ import type {
   EvalSnapshotService,
 } from "../../modules/eval/composition.js";
 import type { ApprovalDecisionService } from "../../modules/approvals/public.js";
+import type { ConversationActivityReadService } from "../../modules/conversationActivity/public.js";
 import type {
   ConversationOperatorDirectory,
   ConversationOwnershipService,
@@ -243,6 +244,8 @@ export interface AppDependencies {
   conversationOwnershipService: ConversationOwnershipService;
   /** The teammates a conversation can be handed to in a workspace. */
   conversationOperatorDirectory: ConversationOperatorDirectory;
+  /** Operator reads of conversation activity: a conversation's timeline, the Inbox's recently closed items. */
+  conversationActivityReads: ConversationActivityReadService;
   workbenchReplayRunner: WorkbenchReplayRunner;
   /** Operator-only immutable candidate test executions; never mounted on public chat. */
   testExecutionService: TestExecutionService;

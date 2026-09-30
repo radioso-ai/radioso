@@ -480,11 +480,14 @@ describe("SlackInteractivityHandler ownership rules through the ownership servic
       audit: vi.fn(async () => undefined),
     };
     const replyScope = { messages: { create: vi.fn() }, conversations: { touch: vi.fn() }, outbox: { enqueue: vi.fn() } };
+    const activity = { record: vi.fn(async () => undefined) };
     const service = new ConversationOwnershipService({
       conversations: { findByIdAndWorkspaceId: async (id: string) => ({ id }) as ConversationRecord },
       ownership,
-      transfers: { run: (work) => work({ ownership, outbox }) },
-      replyWrites: { run: (work) => work({ conversations: { lockForUpdate: async () => true }, ownership, reply: replyScope }) },
+      changes: { run: (work) => work({ ownership, outbox, activity }) },
+      replyWrites: {
+        run: (work) => work({ conversations: { lockForUpdate: async () => true }, ownership, reply: replyScope, activity }),
+      },
       operators: { find: async ({ userId }: { userId: string }) => operators[userId] ?? null },
       operatorIdentities: {
         resolve: async ({ userId }: { userId: string }) => ({ userId, teammateLabel: operators[userId].label, replySignature: null }),

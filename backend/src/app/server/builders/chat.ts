@@ -10,6 +10,10 @@ import { ClarificationStateRepository } from "../../../db/repositories/clarifica
 import { createConversationEngine } from "@radioso/conversation-engine";
 import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
 import type { TeammateLabelReaderPort } from "../../../modules/chat/contracts/index.js";
+import type {
+  ConversationActivityRecorder,
+  ConversationActivityTimelineReader,
+} from "../../../modules/conversationActivity/contracts/index.js";
 import { AuditEventRepository } from "../../../db/repositories/auditEventRepository.js";
 import { BootstrapGreetingCacheRepository } from "../../../db/repositories/bootstrapGreetingCacheRepository.js";
 import { ConversationRepository } from "../../../db/repositories/conversationRepository.js";
@@ -205,6 +209,8 @@ export const buildChatServices = (input: {
   auditService: AuditService;
   bootstrapGreetingCacheRepository: BootstrapGreetingCacheRepository;
   composition: ApplicationComposition;
+  /** Records the activity of a handoff a turn requests and an approval decided; reads a conversation's timeline. */
+  conversationActivity: { recorder: ConversationActivityRecorder; reads: ConversationActivityTimelineReader };
   conversationOwnershipRepository: ConversationOwnershipRepository;
   conversationRepository: ConversationRepository;
   clusteringEmbeddings: ClusteringEmbeddingPort;
@@ -804,6 +810,7 @@ export const buildChatServices = (input: {
       input.conversationOwnershipRepository,
       actionDrainDispatcher,
       input.logger,
+      input.conversationActivity.recorder,
     ),
     actionCapabilities: input.composition.actionCapabilityMap,
     capabilityPolicy: input.composition.capabilityPolicy,
@@ -879,6 +886,7 @@ export const buildChatServices = (input: {
     new AnswerCoverageRepository(input.database.kysely),
     visitorRepository,
     input.teammateLabels,
+    input.conversationActivity.reads,
   );
   // "Continue in test chat": a private test execution seeded from a live conversation's
   // thread and its current routine/clarification/directive position. Read-only on the source.
@@ -949,6 +957,7 @@ export const buildChatServices = (input: {
   const approvalDecisionService = new ApprovalDecisionService(
     new PendingDecisionRepository(input.database.kysely),
     chatService.asApprovalResumeRunner(),
+    input.conversationActivity.recorder,
     {
       resolveWorkspaceRole: (caller) => input.accountAccessService.resolveWorkspaceRole(caller),
     },

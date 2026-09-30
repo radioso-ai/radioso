@@ -852,6 +852,63 @@ describe("chat history service reply attribution for operators", () => {
   });
 });
 
+describe("chat history service conversation activity", () => {
+  const entry = {
+    id: "77777777-7777-4777-8777-777777777777",
+    kind: "handed_back" as const,
+    createdAt: "2026-09-30T10:00:00.000Z",
+    actor: { userId: "user-bea", label: "Bea" },
+    subject: null,
+    from: null,
+    handoffReason: null,
+    decision: null,
+    resolution: null,
+    assistantMessageId: null,
+  };
+
+  const createActivityService = () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditRepository = new InMemoryAuditEventRepository();
+    const reads: Array<[string, string]> = [];
+    const service = new ChatHistoryService(
+      conversationRepository,
+      messageRepository,
+      auditRepository,
+      new InMemoryHistoryItemsRepository(conversationRepository, auditRepository),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      {
+        listForConversation: async (workspaceId: string, conversationId: string) => {
+          reads.push([workspaceId, conversationId]);
+          return [entry];
+        },
+      },
+    );
+    return { service, conversationRepository, reads };
+  };
+
+  it("carries the conversation's activity on the detail and every tail only when an operator read asks", async () => {
+    const { service, conversationRepository, reads } = createActivityService();
+    const conversation = await conversationRepository.create({ workspaceId: "workspace-1" });
+
+    const detail = await service.getConversation("workspace-1", conversation.id, { limit: 50 }, { includeActivity: true });
+    const tail = await service.tailConversation("workspace-1", conversation.id, { limit: 10 }, { includeActivity: true });
+    const publicDetail = await service.getConversation("workspace-1", conversation.id, { limit: 50 });
+    const publicTail = await service.tailConversation("workspace-1", conversation.id, { limit: 10 });
+
+    expect(detail.activity).toEqual([entry]);
+    expect(tail.activity).toEqual([entry]);
+    expect(publicDetail).not.toHaveProperty("activity");
+    expect(publicTail).not.toHaveProperty("activity");
+    expect(reads).toEqual([["workspace-1", conversation.id], ["workspace-1", conversation.id]]);
+  });
+});
+
 describe("chat history service turn failure debug", () => {
   const detailInput = { limit: 50, offset: 0 };
 

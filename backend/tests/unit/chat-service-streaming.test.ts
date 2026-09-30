@@ -2217,6 +2217,7 @@ describe("chat service streaming", () => {
       status: "resolved",
       decision: { optionId: "approve" },
       decidedBy: "account-1",
+      decidedByUserId: null,
       decidedAt: now,
       deadline: null,
       createdAt: now,

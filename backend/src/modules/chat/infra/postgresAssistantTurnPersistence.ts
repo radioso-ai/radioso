@@ -6,7 +6,9 @@ import type { RoutineState } from "@radioso/conversation-contract";
 import { DEFAULT_ROUTINE_STATE_TTL_MS } from "../../../db/repositories/routineStateRepository.js";
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import type { PendingDecisionCreateInput } from "../../../db/repositories/pendingDecisionRepository.js";
+import { ConversationActivityRepository } from "../../../db/repositories/conversationActivityRepository.js";
 import { ConversationOwnershipRepository } from "../../../db/repositories/conversationOwnershipRepository.js";
+import type { ConversationActivityRecorder } from "../../conversationActivity/contracts/index.js";
 import { toJsonb, toSanitizedJsonb } from "../../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../../shared/infra/kysely/types.js";
 import {
@@ -269,6 +271,8 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
     // interval-loop poller and the recovery sweep still drain the row.
     private readonly actionDrainDispatcher?: ActionDrainDispatcherPort,
     private readonly logger?: Pick<AppLogger, "warn">,
+    // Records the handoff a turn requests in the turn's own transaction.
+    private readonly conversationActivity: ConversationActivityRecorder = new ConversationActivityRepository(db),
   ) {}
 
   async completeAssistantTurn(input: CompleteAssistantTurnInput): Promise<AssistantTurnPersistenceReceipt> {
@@ -324,6 +328,16 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
       const message = result.rows[0];
       if (!message) {
         throw new Error("Expected inserted assistant message");
+      }
+      // Recorded after the reply that announced it, so the handoff dates after that reply.
+      if (input.ownershipHandoff && ownershipResult?.changed) {
+        await this.conversationActivity.record(db, {
+          kind: "handoff_requested",
+          conversationId: input.conversationId,
+          workspaceId: input.workspaceId,
+          actorUserId: null,
+          detail: { reason: input.ownershipHandoff.reason },
+        });
       }
 
       if (input.answerCoverageRequestMessageId) {

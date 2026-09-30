@@ -1276,7 +1276,9 @@ metadata rather than outcome-name matching.
 Should not own anything that influences a turn. Nothing here feeds retrieval,
 routing, or answer composition. Current triage and its append-only transition
 history are its only writes. Eval verification enters through a narrow batch
-port; Quality does not read Eval tables or snapshots itself.
+port; Quality does not read Eval tables or snapshots itself. Closing feedback
+also records a `feedback_resolved` or `feedback_dismissed` conversation activity
+event in the transition's transaction, through the conversation activity port.
 
 `GET /quality/turns` and `GET /quality/stats` select from one shared turn
 population, defined in `turnPopulationSql.ts`. It excludes operator-test channels
@@ -1308,6 +1310,41 @@ Related docs:
 
 - `docs/human-takeover.md` (the Inbox and the operator console)
 - `docs/quality-eval-learning-loop.md` (structured closure and Eval verification)
+
+## Conversation Activity
+
+Owns the vocabulary and operator reads of a conversation's activity: handoffs
+requested, claims, reassignments, hand-backs, approvals decided, and negative
+feedback resolved or dismissed. Each event is written by the module that makes the
+change, in that change's transaction, through one narrow port,
+`ConversationActivityRecorder.record(db, event)`: handoff (claim, transfer,
+hand-back, and a reply's claim, through its units of work), chat turn persistence
+(`handoff_requested`), approvals (`resolve`), and quality (`QualityTriageStore`).
+Reads label every teammate live (display name, else email) through the auth
+module's `TeammateLabelReaderPort`, so activity is operator-only; the public chat
+presenters strip it.
+
+Should not own the changes it records, audit events, or message content — events
+carry ids and codes only.
+
+Public surfaces and contracts:
+
+- `backend/src/modules/conversationActivity/contracts/index.ts` (kinds, event, recorder port, presented entry)
+- `backend/src/modules/conversationActivity/readService.ts` (timeline, recently closed)
+- `backend/src/db/repositories/conversationActivityRepository.ts` (Postgres recorder and reads)
+- `backend/src/app/composition/conversationActivity.ts` (default wiring)
+- `GET /api/v1/conversations/recently-closed`; `activity` on the operator history detail and tail
+- `frontend/lib/conversation-activity.ts` (thread lines, placement, "Closed by")
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/handoff tests/unit/approval-decision-service.test.ts tests/unit/quality-triage-service.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/handoff tests/integration/approvals tests/integration/quality-triage.integration.test.ts`
+- `cd frontend && pnpm exec vitest run tests/unit/conversation-activity.test.ts`
+
+Related docs:
+
+- `docs/human-takeover.md#conversation-activity`
 
 ## Audience Pulse
 

@@ -1,6 +1,10 @@
 import { z } from "zod";
 
 import type { CallerKind } from "../../../shared/domain/conversationSource.js";
+import {
+  CONVERSATION_ACTIVITY_KINDS,
+  type ConversationActivityEntry,
+} from "../../conversationActivity/contracts/index.js";
 import type { CopilotToolDescriptor } from "../contracts.js";
 import { boundPayload, truncationRecordSchema } from "../payloadCompaction.js";
 import { boundConversationPayload, boundTurnTracePayload, jsonValueSchema, turnTraceEnvelopeSchema } from "./chatPayloadBounds.js";
@@ -44,6 +48,19 @@ const transcriptMessageSchema = z.object({
   operatorLabel: z.string().nullable(),
   turnFailure: turnFailureSchema,
 });
+const activityPersonSchema = z.object({ userId: z.string().uuid(), label: z.string().nullable() }).nullable();
+const transcriptActivitySchema = z.object({
+  kind: z.enum(CONVERSATION_ACTIVITY_KINDS),
+  createdAt: z.string(),
+  /** Null when the agent acted, or a caller that is no teammate. */
+  actor: activityPersonSchema,
+  subject: activityPersonSchema,
+  from: activityPersonSchema,
+  handoffReason: z.string().nullable(),
+  decision: z.object({ optionId: z.string(), label: z.string() }).nullable(),
+  resolution: z.string().nullable(),
+  assistantMessageId: z.string().uuid().nullable(),
+});
 const conversationTranscriptOutputSchema = z.object({
   transcript: z.object({
     conversationId: z.string().uuid(),
@@ -56,6 +73,7 @@ const conversationTranscriptOutputSchema = z.object({
     messageCount: z.number().int().nonnegative(),
     ownership: ownershipSchema,
     messages: z.array(transcriptMessageSchema),
+    activity: z.array(transcriptActivitySchema),
   }).and(z.object({ truncation: truncationRecordSchema })),
 });
 const turnTraceOutputSchema = z.object({
@@ -137,6 +155,8 @@ interface CopilotConversationOptions {
   includeLatency: boolean;
   /** Names the teammate behind each human reply, by teammate label (can be an email). */
   includeOperatorLabel: boolean;
+  /** The conversation's activity: handoffs, claims, reassignments, hand-backs, decisions, feedback closed. */
+  includeActivity?: boolean;
 }
 
 interface CopilotOwnership {
@@ -199,6 +219,7 @@ interface CopilotConversationDetail {
   messageCount: number;
   ownership?: CopilotOwnership;
   messages: ReadonlyArray<CopilotConversationMessage>;
+  activity?: ReadonlyArray<ConversationActivityEntry>;
 }
 
 interface CopilotConversationTurnDetail {
@@ -258,6 +279,17 @@ const projectTranscript = (conversation: CopilotConversationDetail): Record<stri
     operatorDisplayName: message.operatorDisplayName ?? null,
     operatorLabel: message.operatorLabel ?? null,
     turnFailure: projectTurnFailure(message.turnFailure),
+  })),
+  activity: (conversation.activity ?? []).map((entry) => ({
+    kind: entry.kind,
+    createdAt: entry.createdAt,
+    actor: entry.actor,
+    subject: entry.subject,
+    from: entry.from,
+    handoffReason: entry.handoffReason,
+    decision: entry.decision,
+    resolution: entry.resolution,
+    assistantMessageId: entry.assistantMessageId,
   })),
 });
 
@@ -330,7 +362,7 @@ const projectTurnTrace = (detail: CopilotConversationTurnDetail): Record<string,
 // Test Chat sessions are private test executions rather than conversations, so these two readers
 // never see them; naming the Test Chat readers keeps a "why didn't it fire in Test Chat" question
 // from searching customer history.
-const CONVERSATION_TRANSCRIPT_DESCRIPTION = "Read a bounded transcript of a customer or dashboard chat conversation with shallow per-turn outcomes, routing, feedback, and ownership. Use turn_trace for one turn's full diagnostic spine. Test Chat sessions are read with test_chat_transcript.";
+const CONVERSATION_TRANSCRIPT_DESCRIPTION = "Read a bounded transcript of a customer or dashboard chat conversation with shallow per-turn outcomes, routing, feedback, and ownership, plus its activity: who handed it off, took it, reassigned it, and handed it back, which approval option a teammate chose, and who resolved or dismissed its feedback. Use turn_trace for one turn's full diagnostic spine. Test Chat sessions are read with test_chat_transcript.";
 const CONVERSATION_HISTORY_SEARCH_DESCRIPTION = "List recent customer and dashboard chat conversations in this workspace for investigation. Test Chat sessions are listed with test_chat_sessions.";
 const TURN_TRACE_DESCRIPTION = "Inspect one message's full turn diagnostic spine. Accepts user messages, including unanswered turns with their failure or cancellation reason. A routine's sub-trace reports which slots were filled by key only (filledSlotKeys, capturedSlotKeys) — never their values — and, per step the selector judged, its selection: outcome and the slot keys the model returned (returnedSlotKeys). Use test_chat_turn_trace to see values, on a private Test Chat run only.";
 
@@ -359,6 +391,7 @@ export const createChatCopilotTools = (deps: ChatCopilotToolDependencies): Reado
             includeTurnFailureDebug: true,
             includeLatency: true,
             includeOperatorLabel: true,
+            includeActivity: true,
           },
         ))),
       }),

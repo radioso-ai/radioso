@@ -7,3 +7,4 @@ export {
   tokenPrefix,
 } from "../domain/authPrimitives.js";
 export { outwardFacingName, teammateLabel, visitorFacingName } from "../domain/userDisplayName.js";
+export type { TeammateLabelReaderPort } from "./teammateLabels.js";

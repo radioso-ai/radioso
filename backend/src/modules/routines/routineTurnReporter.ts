@@ -1,5 +1,6 @@
 import type { Routine, RoutineState, RoutineStep } from "@radioso/conversation-contract";
 
+import { collectedSlotsForStep, isSlotCollectionStepSatisfied } from "./domain.js";
 import { compiledRoutineToolName, type DirectInvocationOutcome } from "./exposure/directInvocationActivator.js";
 import type {
   RoutineInvocationReport,
@@ -22,22 +23,24 @@ interface RoutineTurnInvocationSource {
 const hasVariable = (variables: Record<string, unknown>, key: string): boolean =>
   Object.prototype.hasOwnProperty.call(variables, key);
 
-// Mirrors the engine's own read of a chat step's collected slots
-// (`routineRunner.ts` `collectedSlotsFor`), so "waiting for input" here agrees
-// with the step the runner would fast-forward once those slots are filled.
-const collectedSlotsFor = (step: RoutineStep | undefined): string[] => {
-  const value = step?.metadata?.collectsSlots;
-  return Array.isArray(value) && value.every((candidate): candidate is string => typeof candidate === "string")
-    ? value
-    : [];
-};
-
 const routineDisplayName = (routine: Routine): string =>
   typeof routine.metadata?.name === "string" && routine.metadata.name.length > 0
     ? routine.metadata.name
     : routine.id;
 
+// A chat step still lacking what it asks for, by the rule the runner uses to skip it: an
+// unfilled optional slot alone never reports `waiting_for_input`.
+const isWaitingForInput = (
+  routine: Routine,
+  currentStep: RoutineStep | undefined,
+  variables: Record<string, unknown>,
+): boolean =>
+  currentStep?.kind === "chat" &&
+  collectedSlotsForStep(currentStep).length > 0 &&
+  !isSlotCollectionStepSatisfied(routine, currentStep, variables);
+
 const statusFor = (
+  routine: Routine,
   state: RoutineState,
   currentStep: RoutineStep | undefined,
   awaitingDecision: boolean,
@@ -51,8 +54,7 @@ const statusFor = (
   if (awaitingDecision || state.status === "suspended") {
     return "waiting_for_approval";
   }
-  const unfilledCollectedSlots = collectedSlotsFor(currentStep).some((key) => !hasVariable(state.variables, key));
-  return currentStep?.kind === "chat" && unfilledCollectedSlots ? "waiting_for_input" : "active";
+  return isWaitingForInput(routine, currentStep, state.variables) ? "waiting_for_input" : "active";
 };
 
 /**
@@ -65,7 +67,7 @@ const pendingInputFor = (
   state: RoutineState,
   currentStep: RoutineStep | undefined,
 ): RoutinePendingInput[] => {
-  const currentStepSlots = new Set(collectedSlotsFor(currentStep));
+  const currentStepSlots = new Set(currentStep ? collectedSlotsForStep(currentStep) : []);
   return (routine.slots ?? [])
     .filter((slot) => !hasVariable(state.variables, slot.key))
     .filter((slot) => slot.required || currentStepSlots.has(slot.key))
@@ -112,7 +114,7 @@ export const createRoutineTurnReporter = (
       // the activation turn still has an empty path, and its current step is the root.
       const currentStepId = state.path.at(-1) ?? routine.rootStepId;
       const currentStep = routine.steps.find((step) => step.id === currentStepId);
-      const status = statusFor(state, currentStep, awaitingDecision);
+      const status = statusFor(routine, state, currentStep, awaitingDecision);
       return {
         ...identityOf(routine),
         status,

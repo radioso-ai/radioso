@@ -13,7 +13,6 @@ import type {
   RoutineRunTrace,
   RoutineSelectionTrace,
   RoutineSkillResult,
-  RoutineSlotSchema,
   RoutineState,
   RoutineStep,
   RoutineStepReask,
@@ -23,6 +22,13 @@ import type {
   SteeringRule,
   TurnContext,
 } from "@radioso/conversation-contract";
+
+import {
+  collectedSlotsForStep,
+  isSlotCollectionStepSatisfied,
+  requiredCollectedSlots,
+  slotFilledGuardPasses,
+} from "./slotCollectionStep.js";
 
 type RoutineFieldGuard = Extract<RoutineGuard, { kind: "field" }>;
 
@@ -252,20 +258,8 @@ const stagedContextForSkillResult = (
 const hasTypedSlotSchema = (routine: Routine): boolean =>
   Array.isArray(routine.slots) && routine.slots.length > 0;
 
-const collectedSlotsFor = (step: RoutineStep): string[] => {
-  const value = step.metadata?.collectsSlots;
-  return Array.isArray(value) && value.every((candidate): candidate is string => typeof candidate === "string")
-    ? value
-    : [];
-};
-
 const hasVariable = (variables: Record<string, unknown>, key: string): boolean =>
   Object.prototype.hasOwnProperty.call(variables, key);
-
-const requiredCollectedSlots = (routine: Routine, step: RoutineStep): RoutineSlotSchema[] => {
-  const collected = new Set(collectedSlotsFor(step));
-  return (routine.slots ?? []).filter((slot) => slot.required && collected.has(slot.key));
-};
 
 /**
  * What a re-rendered step still lacks: its required collected slots that are unfilled, as
@@ -347,6 +341,10 @@ const slotValuesTraceFields = (
   return { slotValues, ...(omittedSlotCount > 0 ? { omittedSlotCount } : {}) };
 };
 
+/**
+ * Runner-local gate on top of the shared `isSlotCollectionStepSatisfied` rule: only a
+ * chat step on a routine with a typed slot schema can be fast-forwarded past.
+ */
 const isSatisfiedSlotCollectionStep = (
   routine: Routine,
   step: RoutineStep,
@@ -355,8 +353,7 @@ const isSatisfiedSlotCollectionStep = (
   if (step.kind !== "chat" || !hasTypedSlotSchema(routine)) {
     return false;
   }
-  const collectedSlots = collectedSlotsFor(step);
-  return collectedSlots.length > 0 && collectedSlots.every((key) => hasVariable(variables, key));
+  return isSlotCollectionStepSatisfied(routine, step, variables);
 };
 
 const isDefaultTransition = (transition: RoutineTransition): boolean =>
@@ -521,7 +518,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     ): boolean => {
       switch (transition.guard?.kind) {
         case "slot_filled":
-          return transition.guard.slots.length > 0 && transition.guard.slots.every((slot) => hasVariable(variables, slot));
+          return slotFilledGuardPasses(transition, variables);
         case "outcome":
           return skillResult?.status === transition.guard.status;
         case "counter":
@@ -532,6 +529,18 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
           return false;
       }
     };
+    // Where a satisfied slot step goes when its structure decides: its only exit, else the
+    // first rule exit that matches, else its default exit. `undefined` when only an
+    // AI-decides exit could move it.
+    const satisfiedStepExit = (
+      step: RoutineStep,
+      exits: readonly RoutineTransition[],
+      variables: Record<string, unknown>,
+    ): string | undefined =>
+      exits.length === 1
+        ? exits[0].to
+        : (exits.find((exit) => !isDefaultTransition(exit) && !isLlmTransition(exit) && guardMatches(exit, step.id, variables))
+          ?? exits.find(isDefaultTransition))?.to;
     type SelectNextInput = {
       step: RoutineStep;
       transitions: RoutineTransition[];
@@ -556,12 +565,11 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       // `llm` edge will trigger the selector, run an extraction-only pass first and let
       // the deterministic guards below decide the branch from the merged values.
       //
-      // Only when at least one collected slot is still missing. A *satisfied* step
-      // (every slot already filled) is reached on the fast-forward walk — running the
-      // selector there would add a model round-trip to a deterministic path, let an
-      // unrelated message overwrite an already-filled slot, and could spuriously yield
-      // the turn. "Already collected" means nothing to extract, so skip it.
-      const collected = collectedSlotsFor(input.step);
+      // Only when at least one collected slot is still missing. A step already holding
+      // every collected slot has nothing to extract — running the selector there would add
+      // a model round-trip to a deterministic path, let an unrelated message overwrite an
+      // already-filled slot, and could spuriously yield the turn.
+      const collected = collectedSlotsForStep(input.step);
       let extracted: Record<string, unknown> = {};
       if (
         collected.length > 0 &&
@@ -624,8 +632,19 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       }
       const allowed = new Set([input.step.id, ...llmTransitions.map((transition) => transition.to)]);
       const chosen = allowed.has(decision.nextStepId) ? decision.nextStepId : input.step.id;
-      if (input.defaultOnDecline && chosen === input.step.id && defaultTransition) {
-        return { ...decision, nextStepId: defaultTransition.to };
+      if (chosen === input.step.id) {
+        if (input.defaultOnDecline && defaultTransition) {
+          return { ...decision, nextStepId: defaultTransition.to };
+        }
+        // No AI-decides exit held, yet the reply filled what the step asks for: the step is
+        // done, so its rule or default exit moves on instead of asking again (#1372).
+        const withDecision = { ...variables, ...(decision.variables ?? {}) };
+        const exit = isSatisfiedSlotCollectionStep(routine, input.step, withDecision)
+          ? satisfiedStepExit(input.step, input.transitions, withDecision)
+          : undefined;
+        if (exit !== undefined) {
+          return { ...decision, nextStepId: exit };
+        }
       }
       return { ...decision, nextStepId: chosen };
     };
@@ -692,12 +711,16 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     }
     let stagedContext = turn.stagedContext;
 
-    // Skip slot-collection steps whose slots are already filled, so an intake never
-    // re-asks for a value the routine already holds. A bounded loop (a `counter`
-    // back-edge into a satisfied step) would otherwise fast-forward forever — track the
-    // steps visited this traversal and, on a revisit, stop and render the current step
-    // instead of throwing. This keeps the runner on the degrade-don't-throw path: a
-    // loop that can't fast-forward to progress settles on a chat step the user can act on.
+    // Skip slot-collection steps that are already satisfied, so an intake never re-asks
+    // for a value the routine already holds. A satisfied step leaves by its structure — a
+    // matching rule exit, else its default — with no model call: the latest message
+    // answered an earlier step and has already been read (#1372). Only a step whose way on
+    // is an AI-decides exit asks the selector.
+    // A bounded loop (a `counter` back-edge into a satisfied step) would otherwise
+    // fast-forward forever — track the steps visited this traversal and, on a revisit, stop
+    // and render the current step instead of throwing. This keeps the runner on the
+    // degrade-don't-throw path: a loop that can't fast-forward to progress settles on a
+    // chat step the user can act on.
     const fastForwarded = new Set<string>([step.id]);
     while (isSatisfiedSlotCollectionStep(routine, step, variables)) {
       const stepEdges = outgoing(step.id);
@@ -710,9 +733,13 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         kind: step.kind,
         event: "fast_forwarded",
       };
+      const decidedExit = satisfiedStepExit(step, stepEdges, variables);
       let nextStepId: string;
-      if (stepEdges.length === 1) {
-        nextStepId = stepEdges[0].to;
+      if (decidedExit !== undefined) {
+        nextStepId = decidedExit;
+      } else if (!stepEdges.some(isLlmTransition)) {
+        // Rule exits that don't match and no default: nothing moves this step on.
+        break;
       } else {
         const fastForwardState: RoutineState = { ...state, path, variables, attempts, status: "active" };
         const beforeFastForward = variables;

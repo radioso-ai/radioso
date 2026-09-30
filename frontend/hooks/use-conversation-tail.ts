@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 
 import { hitlApi } from '@/lib/api-hitl'
-import type { ChatConversationMessage, ConversationOwnership } from '@/lib/api-types'
+import type { ChatConversationMessage, ConversationActivityEntry, ConversationOwnership } from '@/lib/api-types'
 import { mergeTailMessages } from '@/lib/conversation-tail'
 
 interface UseConversationTailInput {
@@ -24,6 +24,11 @@ interface ConversationTailState {
    * either read alone.
    */
   ownership: ConversationOwnership | undefined
+  /**
+   * The conversation's whole activity timeline as of the latest poll, oldest first; undefined until
+   * a poll has read it. Weighed against the detail fetch's by `freshestActivity`.
+   */
+  activity: ConversationActivityEntry[] | undefined
   cursor: string | null
   error: unknown
   isPolling: boolean
@@ -38,6 +43,7 @@ export const useConversationTail = ({
 }: UseConversationTailInput): ConversationTailState => {
   const [messages, setMessages] = useState<ChatConversationMessage[]>([])
   const [ownership, setOwnership] = useState<ConversationOwnership | undefined>()
+  const [activity, setActivity] = useState<ConversationActivityEntry[] | undefined>()
   const [cursor, setCursor] = useState<string | null>(initialCursor ?? null)
   const [error, setError] = useState<unknown>(null)
   const [hasPolled, setHasPolled] = useState(false)
@@ -54,6 +60,7 @@ export const useConversationTail = ({
 
       setMessages([])
       setOwnership(undefined)
+      setActivity(undefined)
       setCursor(initialCursor ?? null)
       setError(null)
       setHasPolled(false)
@@ -80,6 +87,7 @@ export const useConversationTail = ({
 
         setMessages((existing) => mergeTailMessages(existing, tail.messages))
         setOwnership(tail.ownership)
+        setActivity(tail.activity)
         setCursor(tail.cursor)
         setError(null)
         setHasPolled(true)
@@ -110,6 +118,7 @@ export const useConversationTail = ({
   return {
     messages: enabled ? messages : [],
     ownership: enabled ? ownership : undefined,
+    activity: enabled ? activity : undefined,
     cursor,
     error,
     isPolling: enabled,

@@ -171,4 +171,30 @@ describe("public chat presenter", () => {
     expect(tail).not.toHaveProperty("ownership");
     expect(detail).not.toHaveProperty("ownership");
   });
+
+  it("never forwards a conversation's activity to the visitor, even when a read carried it", () => {
+    // Operator reads carry who claimed, reassigned, and handed back the conversation, labelled by
+    // teammate label (which can be an email), so a mis-wired read must still not hand it on.
+    const activity = [{
+      id: "a1",
+      kind: "reassigned" as const,
+      createdAt: "2026-09-30T10:00:00.000Z",
+      actor: { userId: "u1", label: "bea@acme.example" },
+      subject: { userId: "u2", label: "Carl" },
+      from: null,
+      handoffReason: null,
+      decision: null,
+      resolution: null,
+      assistantMessageId: null,
+    }];
+    const tail = stripPublicConversationTailCitationArtifacts({ messages: [], cursor: null, activity }, true);
+    const detail = stripPublicConversationCitationArtifacts(
+      { messages: [], activity } as unknown as ChatConversationDetail,
+      "anonymous-session-1",
+      true,
+    );
+
+    expect(tail).not.toHaveProperty("activity");
+    expect(detail).not.toHaveProperty("activity");
+  });
 });

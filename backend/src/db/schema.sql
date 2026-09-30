@@ -2020,6 +2020,24 @@ CREATE TABLE public.context_variables (
 
 
 --
+-- Name: conversation_activity; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.conversation_activity (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    conversation_id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    kind text NOT NULL,
+    actor_user_id uuid,
+    subject_user_id uuid,
+    detail jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
+    CONSTRAINT conversation_activity_detail_check CHECK ((jsonb_typeof(detail) = 'object'::text)),
+    CONSTRAINT conversation_activity_kind_check CHECK ((kind = ANY (ARRAY['handoff_requested'::text, 'claimed'::text, 'reassigned'::text, 'handed_back'::text, 'approval_decided'::text, 'feedback_resolved'::text, 'feedback_dismissed'::text])))
+);
+
+
+--
 -- Name: conversation_ownership; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2910,7 +2928,8 @@ CREATE TABLE public.pending_decisions (
     decided_at timestamp with time zone,
     deadline timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    decided_by_user_id uuid
 );
 
 
@@ -4852,6 +4871,14 @@ ALTER TABLE ONLY public.context_variables
 
 
 --
+-- Name: conversation_activity conversation_activity_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conversation_activity
+    ADD CONSTRAINT conversation_activity_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: conversation_ownership conversation_ownership_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6667,6 +6694,20 @@ CREATE INDEX chunks_p9_workspace_id_idx ON public.chunks_p9 USING btree (workspa
 --
 
 CREATE INDEX clarification_states_pending_idx ON public.clarification_states USING btree (session_id) WHERE (status = 'pending'::text);
+
+
+--
+-- Name: conversation_activity_conversation_created_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX conversation_activity_conversation_created_idx ON public.conversation_activity USING btree (conversation_id, created_at);
+
+
+--
+-- Name: conversation_activity_workspace_closed_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX conversation_activity_workspace_closed_idx ON public.conversation_activity USING btree (workspace_id, created_at DESC) WHERE (kind = ANY (ARRAY['handed_back'::text, 'approval_decided'::text, 'feedback_resolved'::text, 'feedback_dismissed'::text]));
 
 
 --
@@ -9829,6 +9870,30 @@ ALTER TABLE ONLY public.context_variable_values
 
 
 --
+-- Name: conversation_activity conversation_activity_actor_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conversation_activity
+    ADD CONSTRAINT conversation_activity_actor_user_id_fkey FOREIGN KEY (actor_user_id) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: conversation_activity conversation_activity_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conversation_activity
+    ADD CONSTRAINT conversation_activity_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.conversations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: conversation_activity conversation_activity_subject_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conversation_activity
+    ADD CONSTRAINT conversation_activity_subject_user_id_fkey FOREIGN KEY (subject_user_id) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
 -- Name: conversation_ownership conversation_ownership_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -10562,6 +10627,14 @@ ALTER TABLE ONLY public.operator_mcp_refresh_lineages
 
 ALTER TABLE ONLY public.password_reset_tokens
     ADD CONSTRAINT password_reset_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: pending_decisions pending_decisions_decided_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pending_decisions
+    ADD CONSTRAINT pending_decisions_decided_by_user_id_fkey FOREIGN KEY (decided_by_user_id) REFERENCES public.users(id) ON DELETE SET NULL;
 
 
 --

@@ -434,6 +434,10 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
   ...coverage(["listConversationOperators"], permanent(
     "Permanent exclusion: the teammate list only feeds the dashboard's transfer menu. Transferring a conversation stays with the operator (never-list `live_conversation_ownership`), so Ray has no use for the targets.",
   )),
+  // The workspace-wide list of recent closures is a navigation aid for the Inbox strip.
+  ...coverage(["listRecentlyClosedInboxItems"], permanent(
+    "Permanent exclusion: the recently-closed list only feeds the Inbox strip. Ray reads who closed a conversation's handoff, approval, or feedback from conversation_transcript's activity.",
+  )),
   ...coverage(["resolveDecision"], neverListExclusion("pending_decision_resolution")),
   ...coverage([
     "completeMcpConnectionOauth",

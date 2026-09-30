@@ -2,10 +2,11 @@ import { randomUUID } from "node:crypto";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { ConversationActivityRepository } from "../../src/db/repositories/conversationActivityRepository.js";
 import { QualityTurnsService } from "../../src/modules/quality/service.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { runAllTestMigrations } from "../support/databaseMigrations.js";
-import { stubOutcomeCatalog } from "../support/qualityOutcomeCatalog.js";
+import { stubOutcomeCatalog, unrecordedConversationActivity } from "../support/qualityOutcomeCatalog.js";
 
 const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
 
@@ -69,7 +70,7 @@ describeIfDatabase("quality triage transitions", () => {
 
   it("treats a missing triage row as open version zero", async () => {
     const fixture = await seedTurn();
-    const service = new QualityTurnsService(database.kysely, stubOutcomeCatalog());
+    const service = new QualityTurnsService(database.kysely, stubOutcomeCatalog(), unrecordedConversationActivity);
 
     const page = await service.listLowQualityTurns(fixture.workspaceId, { limit: 25 });
 
@@ -85,7 +86,7 @@ describeIfDatabase("quality triage transitions", () => {
 
   it("atomically records close, reopen, and reclose transitions without the note", async () => {
     const fixture = await seedTurn();
-    const service = new QualityTurnsService(database.kysely, stubOutcomeCatalog());
+    const service = new QualityTurnsService(database.kysely, stubOutcomeCatalog(), unrecordedConversationActivity);
 
     const closed = await service.setTriageState(fixture.workspaceId, {
       assistantMessageId: fixture.assistantMessageId,
@@ -201,7 +202,7 @@ describeIfDatabase("quality triage transitions", () => {
       [fixture.workspaceId, fixture.assistantMessageId, caseId],
     );
 
-    const service = new QualityTurnsService(database.kysely, stubOutcomeCatalog());
+    const service = new QualityTurnsService(database.kysely, stubOutcomeCatalog(), unrecordedConversationActivity);
     await expect(service.setTriageState(fixture.workspaceId, {
       assistantMessageId: fixture.assistantMessageId,
       state: "resolved",
@@ -229,8 +230,8 @@ describeIfDatabase("quality triage transitions", () => {
 
   it("allows one concurrent first write and returns the winner to the stale caller", async () => {
     const fixture = await seedTurn();
-    const firstService = new QualityTurnsService(database.kysely, stubOutcomeCatalog());
-    const secondService = new QualityTurnsService(database.kysely, stubOutcomeCatalog());
+    const firstService = new QualityTurnsService(database.kysely, stubOutcomeCatalog(), unrecordedConversationActivity);
+    const secondService = new QualityTurnsService(database.kysely, stubOutcomeCatalog(), unrecordedConversationActivity);
 
     const results = await Promise.all([
       firstService.setTriageState(fixture.workspaceId, {
@@ -265,7 +266,7 @@ describeIfDatabase("quality triage transitions", () => {
 
   it("rejects a stale later write without changing current state or audit history", async () => {
     const fixture = await seedTurn();
-    const service = new QualityTurnsService(database.kysely, stubOutcomeCatalog());
+    const service = new QualityTurnsService(database.kysely, stubOutcomeCatalog(), unrecordedConversationActivity);
     await service.setTriageState(fixture.workspaceId, {
       assistantMessageId: fixture.assistantMessageId,
       state: "acknowledged",
@@ -300,7 +301,7 @@ describeIfDatabase("quality triage transitions", () => {
 
   it("returns effective-open conflict state and records effective-open audit history after fresh feedback", async () => {
     const fixture = await seedTurn();
-    const service = new QualityTurnsService(database.kysely, stubOutcomeCatalog());
+    const service = new QualityTurnsService(database.kysely, stubOutcomeCatalog(), unrecordedConversationActivity);
     await service.setTriageState(fixture.workspaceId, {
       assistantMessageId: fixture.assistantMessageId,
       state: "resolved",
@@ -375,12 +376,95 @@ describeIfDatabase("quality triage transitions", () => {
 
   it("returns not_found for a missing or foreign assistant turn", async () => {
     const fixture = await seedTurn();
-    const service = new QualityTurnsService(database.kysely, stubOutcomeCatalog());
+    const service = new QualityTurnsService(database.kysely, stubOutcomeCatalog(), unrecordedConversationActivity);
     await expect(service.setTriageState(fixture.workspaceId, {
       assistantMessageId: randomUUID(),
       state: "acknowledged",
       expectedVersion: 0,
       updatedBy: fixture.userId,
     })).resolves.toEqual({ kind: "not_found" });
+  });
+
+  const activityOf = async (conversationId: string) => database.query<{
+    kind: string;
+    actor_user_id: string | null;
+    detail: Record<string, unknown>;
+  }>(
+    "SELECT kind, actor_user_id, detail FROM conversation_activity WHERE conversation_id = $1 ORDER BY created_at",
+    [conversationId],
+  );
+
+  it("records who resolved and who dismissed the feedback, and nothing for other transitions", async () => {
+    const fixture = await seedTurn();
+    const service = new QualityTurnsService(
+      database.kysely,
+      stubOutcomeCatalog(),
+      new ConversationActivityRepository(database.kysely),
+    );
+
+    await service.setTriageState(fixture.workspaceId, {
+      assistantMessageId: fixture.assistantMessageId,
+      state: "acknowledged",
+      expectedVersion: 0,
+      updatedBy: fixture.userId,
+    });
+    await service.setTriageState(fixture.workspaceId, {
+      assistantMessageId: fixture.assistantMessageId,
+      state: "resolved",
+      expectedVersion: 1,
+      resolution: { reason: "knowledge_gap", note: "Updated the refund policy" },
+      updatedBy: fixture.userId,
+    });
+    await service.setTriageState(fixture.workspaceId, {
+      assistantMessageId: fixture.assistantMessageId,
+      state: "open",
+      expectedVersion: 2,
+      updatedBy: fixture.userId,
+    });
+    await service.setTriageState(fixture.workspaceId, {
+      assistantMessageId: fixture.assistantMessageId,
+      state: "dismissed",
+      expectedVersion: 3,
+      updatedBy: null,
+    });
+
+    await expect(activityOf(fixture.conversationId)).resolves.toEqual([
+      {
+        kind: "feedback_resolved",
+        actor_user_id: fixture.userId,
+        detail: { assistantMessageId: fixture.assistantMessageId, resolution: "knowledge_gap" },
+      },
+      {
+        kind: "feedback_dismissed",
+        actor_user_id: null,
+        detail: { assistantMessageId: fixture.assistantMessageId, resolution: null },
+      },
+    ]);
+  });
+
+  it("leaves the feedback open, with no transition, when its closing activity cannot be recorded", async () => {
+    const fixture = await seedTurn();
+    const service = new QualityTurnsService(database.kysely, stubOutcomeCatalog(), {
+      record: async () => { throw new Error("activity unavailable"); },
+    });
+
+    await expect(service.setTriageState(fixture.workspaceId, {
+      assistantMessageId: fixture.assistantMessageId,
+      state: "resolved",
+      expectedVersion: 0,
+      updatedBy: fixture.userId,
+    })).rejects.toThrow("activity unavailable");
+
+    const triage = await database.query(
+      "SELECT state FROM assistant_answer_triage WHERE assistant_message_id = $1",
+      [fixture.assistantMessageId],
+    );
+    const transitions = await database.query(
+      "SELECT id FROM assistant_answer_triage_transitions WHERE assistant_message_id = $1",
+      [fixture.assistantMessageId],
+    );
+    expect(triage).toEqual([]);
+    expect(transitions).toEqual([]);
+    await expect(activityOf(fixture.conversationId)).resolves.toEqual([]);
   });
 });

@@ -114,7 +114,8 @@ import { createDefaultVisitorGeoResolver } from "../composition/visitorGeoResolv
 import { createConversationOperatorDirectory } from "../composition/conversationOperatorDirectory.js";
 import { createTeammateLabelReader } from "../composition/teammateLabelReader.js";
 import { createPostgresOwnershipReplyUnitOfWork } from "../composition/conversationOwnershipReplies.js";
-import { createPostgresOwnershipTransferUnitOfWork } from "../composition/conversationOwnershipTransfers.js";
+import { createConversationActivityComposition } from "../composition/conversationActivity.js";
+import { createPostgresOwnershipChangeUnitOfWork } from "../composition/conversationOwnershipChanges.js";
 import { ConversationOwnershipService, OperatorIdentityResolver } from "../../modules/handoff/public.js";
 import { buildConversationLinkResolver } from "../composition/conversationLinkResolver.js";
 import { resolveWorkspaceManagedLlmModels } from "../../shared/infra/llm/workspaceManagedModels.js";
@@ -258,6 +259,12 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     },
     logger,
   });
+  const teammateLabels = createTeammateLabelReader({ users: repositories.userRepository });
+  const conversationActivity = createConversationActivityComposition({
+    store: repositories.conversationActivityRepository,
+    teammateLabels,
+    messages: repositories.messageRepository,
+  });
   const chat = buildChatServices({
     accountAccessService: access.accountAccessService,
     agentRetrievalScope,
@@ -267,6 +274,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     auditService: infrastructure.auditService,
     bootstrapGreetingCacheRepository: repositories.bootstrapGreetingCacheRepository,
     composition,
+    conversationActivity,
     conversationOwnershipRepository: repositories.conversationOwnershipRepository,
     conversationRepository: repositories.conversationRepository,
     clusteringEmbeddings: embeddingPorts,
@@ -302,7 +310,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     ingestionSettingsService: settings.ingestionSettingsService,
     routineTriggerEmbeddingService,
     workspaceInvalidationPublisher: realtimePublisherComposition.publisher,
-    teammateLabels: createTeammateLabelReader({ users: repositories.userRepository }),
+    teammateLabels,
   });
   const skillCatalog = buildSkillCatalogServices({
     accessGrantService: access.accessGrantService,
@@ -471,14 +479,16 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   const conversationOwnershipService = new ConversationOwnershipService({
     conversations: repositories.conversationRepository,
     ownership: repositories.conversationOwnershipRepository,
-    transfers: createPostgresOwnershipTransferUnitOfWork({
+    changes: createPostgresOwnershipChangeUnitOfWork({
       db: infrastructure.database.kysely,
+      activity: conversationActivity.recorder,
       actionDrain: chat.actionDrainDispatcher,
       logger,
       errorReporter: infrastructure.errorReportingService,
     }),
     replyWrites: createPostgresOwnershipReplyUnitOfWork({
       db: infrastructure.database.kysely,
+      activity: conversationActivity.recorder,
       actionDrain: chat.actionDrainDispatcher,
       logger,
       errorReporter: infrastructure.errorReportingService,
@@ -494,6 +504,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   const qualitySignalsService = new QualityTurnsService(
     infrastructure.database.kysely,
     new SkillCatalogOutcomeSource(skillCatalogService),
+    conversationActivity.recorder,
     undefined,
     {
       getByAssistantMessageIds: (workspaceId, assistantMessageIds) =>
@@ -1118,6 +1129,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     approvalDecisionService: chat.approvalDecisionService,
     conversationOwnershipService,
     conversationOperatorDirectory,
+    conversationActivityReads: conversationActivity.reads,
     workbenchReplayRunner: chat.workbenchReplayRunner,
     testExecutionService,
     chatBootstrapService: chat.chatBootstrapService,

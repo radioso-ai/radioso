@@ -4,6 +4,10 @@ import type { CallerKind, ConversationSourceScope } from "../../../shared/domain
 import type { ConversationOutcomeFilter } from "../../../shared/domain/conversationOutcome.js";
 import type { ConversationTurnStage } from "../contracts/interruption.js";
 import type { TeammateLabelReaderPort } from "../contracts/teammateLabels.js";
+import type {
+  ConversationActivityEntry,
+  ConversationActivityTimelineReader,
+} from "../../conversationActivity/contracts/index.js";
 import { outwardFacingName } from "../../auth/contracts/index.js";
 import { presentOwnership, type ConversationOwnershipScope } from "../../handoff/public.js";
 import type { AuditEventRecord, AuditEventRepositoryPort } from "../../../db/repositories/auditEventRepository.js";
@@ -120,6 +124,12 @@ const NO_TEAMMATE_LABELS: ReadonlyMap<string, string> = new Map();
 class NoopTeammateLabelReader implements TeammateLabelReaderPort {
   async labelsByUserIds(): Promise<ReadonlyMap<string, string>> {
     return NO_TEAMMATE_LABELS;
+  }
+}
+
+class NoopConversationActivityReader implements ConversationActivityTimelineReader {
+  async listForConversation(): Promise<ConversationActivityEntry[]> {
+    return [];
   }
 }
 
@@ -342,6 +352,8 @@ export interface ChatConversationDetail {
   messages: ChatConversationTurn[];
   /** See {@link ChatConversationTail.ownership}: the same record, on operator reads only. */
   ownership?: ChatConversationOwnership;
+  /** See {@link ChatConversationTail.activity}: on operator reads only. */
+  activity?: ConversationActivityEntry[];
 }
 
 /**
@@ -363,6 +375,13 @@ export interface ChatConversationTail {
    * sees a hand-back made elsewhere. Absent until a teammate is first involved: the row is lazy.
    */
   ownership?: ChatConversationOwnership;
+  /**
+   * What people and the agent did to the conversation — handoffs, claims, reassignments,
+   * hand-backs, approvals decided, feedback closed — oldest first, each teammate labelled as they
+   * are now. Operator reads only: a label can be an email. Every tail carries the whole timeline,
+   * so a reader that polls sees an event recorded elsewhere without tracking a second cursor.
+   */
+  activity?: ConversationActivityEntry[];
 }
 
 interface ChatConversationPage {
@@ -918,6 +937,7 @@ export class ChatHistoryService {
       new NoopAnswerCoverageHistoryReader(),
     private readonly visitorRepository: VisitorProfileReaderPort = new NoopVisitorProfileReader(),
     private readonly teammateLabels: TeammateLabelReaderPort = new NoopTeammateLabelReader(),
+    private readonly conversationActivity: ConversationActivityTimelineReader = new NoopConversationActivityReader(),
   ) {}
 
   async listConversations(
@@ -1085,6 +1105,7 @@ export class ChatHistoryService {
       includeOwnership?: boolean;
       includeAgentInternalName?: boolean;
       includeOperatorLabel?: boolean;
+      includeActivity?: boolean;
     } = { includeAnswerFeedback: true },
   ): Promise<ContactHistoryDetailResponse> {
     const contact = await this.contactHistoryProvider.getById(workspaceId, requestId);
@@ -1157,6 +1178,9 @@ export class ChatHistoryService {
       // OFF by default: names the teammate behind each human reply, which can be an email. The
       // calling-agent update reader reads with ownership but must not get this either.
       includeOperatorLabel?: boolean;
+      // OFF by default: the conversation's activity names teammates by label, which can be an
+      // email, so only operator reads set it.
+      includeActivity?: boolean;
     } = {},
   ): Promise<ChatConversationDetail> {
     const conversation = await this.conversationRepository.findByIdAndWorkspaceId(conversationId, workspaceId);
@@ -1165,7 +1189,7 @@ export class ChatHistoryService {
       throw notFound("Conversation not found");
     }
 
-    const [{ messages, total, nextCursor, hasMore }, messageSummaries, ownershipRecord, tailBaseline, visitorProfile] =
+    const [{ messages, total, nextCursor, hasMore }, messageSummaries, ownershipRecord, tailBaseline, visitorProfile, activity] =
       await Promise.all([
         this.messageRepository.listWindowByConversationId(workspaceId, conversation.id, input),
         this.messageRepository.summarizeByConversationIds(workspaceId, [conversation.id]),
@@ -1179,6 +1203,7 @@ export class ChatHistoryService {
         options.includeAgentInternalName && conversation.visitorId
           ? this.visitorRepository.findById(workspaceId, conversation.visitorId)
           : Promise.resolve(null),
+        this.loadActivity(workspaceId, conversation.id, options.includeActivity),
       ]);
     const assistantMessageIds = messages
       .filter((message) => message.role === "assistant")
@@ -1274,6 +1299,7 @@ export class ChatHistoryService {
         ...(options.includeOperatorLabel ? operatorLabelField(message, operatorLabels) : {}),
       })),
       ...operatorOwnershipField(ownershipRecord),
+      ...(activity ? { activity } : {}),
     };
   }
 
@@ -1357,7 +1383,12 @@ export class ChatHistoryService {
     workspaceId: string,
     conversationId: string,
     input: { cursor?: string; limit: number },
-    options: { includeOwnership?: boolean; includeLatency?: boolean; includeOperatorLabel?: boolean } = {},
+    options: {
+      includeOwnership?: boolean;
+      includeLatency?: boolean;
+      includeOperatorLabel?: boolean;
+      includeActivity?: boolean;
+    } = {},
   ): Promise<ChatConversationTail> {
     const conversation = await this.conversationRepository.findByIdAndWorkspaceId(conversationId, workspaceId);
 
@@ -1366,13 +1397,14 @@ export class ChatHistoryService {
     }
 
     const cursor = input.cursor ? decodeCursorWithKeys(input.cursor, ["createdAt", "id"]) : null;
-    const [{ messages, latestCursor }, ownershipRecord] = await Promise.all([
+    const [{ messages, latestCursor }, ownershipRecord, activity] = await Promise.all([
       this.messageRepository.listSinceByConversationId(workspaceId, conversation.id, {
         sinceCreatedAt: cursor ? new Date(cursor.keys.createdAt) : undefined,
         sinceId: cursor?.keys.id,
         limit: input.limit,
       }),
       options.includeOwnership ? this.conversationOwnership.load(conversation.id) : Promise.resolve(null),
+      this.loadActivity(workspaceId, conversation.id, options.includeActivity),
     ]);
 
     const operatorLabels = await this.loadOperatorLabels(messages, options.includeOperatorLabel);
@@ -1381,7 +1413,17 @@ export class ChatHistoryService {
       messages: messages.map((message) => this.toLightweightConversationTurn(message, options, operatorLabels)),
       cursor: latestCursor,
       ...operatorOwnershipField(ownershipRecord),
+      ...(activity ? { activity } : {}),
     };
+  }
+
+  /** The conversation's activity timeline, and no read unless the caller opted in. */
+  private async loadActivity(
+    workspaceId: string,
+    conversationId: string,
+    include: boolean | undefined,
+  ): Promise<ConversationActivityEntry[] | null> {
+    return include ? this.conversationActivity.listForConversation(workspaceId, conversationId) : null;
   }
 
   /** One batched profile read for the repliers in `messages`, and none unless the caller opted in. */

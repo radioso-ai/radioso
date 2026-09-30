@@ -3,8 +3,9 @@ import { randomUUID } from "node:crypto";
 import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
 
 import { createPostgresOwnershipReplyUnitOfWork } from "../../../src/app/composition/conversationOwnershipReplies.js";
-import { createPostgresOwnershipTransferUnitOfWork } from "../../../src/app/composition/conversationOwnershipTransfers.js";
+import { createPostgresOwnershipChangeUnitOfWork } from "../../../src/app/composition/conversationOwnershipChanges.js";
 import { ActionRequestRepository } from "../../../src/db/repositories/actionRequestRepository.js";
+import { ConversationActivityRepository } from "../../../src/db/repositories/conversationActivityRepository.js";
 import { ConversationOwnershipRepository } from "../../../src/db/repositories/conversationOwnershipRepository.js";
 import type { ConversationRecord } from "../../../src/db/repositories/conversationRepository.js";
 import { MessageRepository } from "../../../src/db/repositories/messageRepository.js";
@@ -30,6 +31,7 @@ const { describeIntegration, integrationDatabaseUrl } = await resolveIntegration
 describeIntegration("conversation transfer with its notice (Postgres)", () => {
   const database = new Database(integrationDatabaseUrl);
   const ownership = new ConversationOwnershipRepository(database.kysely);
+  const activity = new ConversationActivityRepository(database.kysely);
   const accountId = randomUUID();
   const workspaceId = randomUUID();
   const danaId = randomUUID();
@@ -43,6 +45,16 @@ describeIntegration("conversation transfer with its notice (Postgres)", () => {
 
   const messagesIn = async (conversationId: string) => database.query<{ content: string }>(
     `SELECT content FROM messages WHERE conversation_id = $1`,
+    [conversationId],
+  );
+
+  const activityOf = async (conversationId: string) => database.query<{
+    kind: string;
+    actor_user_id: string | null;
+    subject_user_id: string | null;
+    detail: Record<string, unknown>;
+  }>(
+    `SELECT kind, actor_user_id, subject_user_id, detail FROM conversation_activity WHERE conversation_id = $1 ORDER BY created_at`,
     [conversationId],
   );
 
@@ -89,8 +101,8 @@ describeIntegration("conversation transfer with its notice (Postgres)", () => {
       findByIdAndWorkspaceId: async (id: string, inWorkspace: string) => conversationRecord(id, inWorkspace),
     },
     ownership,
-    transfers: createPostgresOwnershipTransferUnitOfWork({ db: database.kysely, actionDrain, logger: { warn: vi.fn() } }),
-    replyWrites: createPostgresOwnershipReplyUnitOfWork({ db: database.kysely, actionDrain, logger: { warn: vi.fn() } }),
+    changes: createPostgresOwnershipChangeUnitOfWork({ db: database.kysely, activity, actionDrain, logger: { warn: vi.fn() } }),
+    replyWrites: createPostgresOwnershipReplyUnitOfWork({ db: database.kysely, activity, actionDrain, logger: { warn: vi.fn() } }),
     operators: {
       find: async ({ userId }: { userId: string }) =>
         userId === foxId ? { userId: foxId, label: "Fox Mulder" } : userId === danaId ? { userId: danaId, label: "Dana Scully" } : null,
@@ -320,5 +332,46 @@ describeIntegration("conversation transfer with its notice (Postgres)", () => {
 
     await expect(ownership.load(conversationId)).resolves.toBeNull();
     await expect(messagesIn(conversationId)).resolves.toEqual([]);
+  });
+
+  it("records each change with the teammate who made it: a claim, a reassignment from its holder, a hand-back", async () => {
+    const conversationId = randomUUID();
+    await database.query(`INSERT INTO conversations (id, workspace_id) VALUES ($1, $2)`, [conversationId, workspaceId]);
+    const service = createService({ requestDrain: async () => undefined });
+
+    const claimed = await service.takeOver(dana, { conversationId });
+    const transferred = await service.transfer(dana, { conversationId, toUserId: foxId, expectedVersion: claimed.record!.version });
+    await service.handBack({ ...dana, userId: foxId }, { conversationId, expectedVersion: transferred.record!.version });
+
+    await expect(activityOf(conversationId)).resolves.toEqual([
+      { kind: "claimed", actor_user_id: danaId, subject_user_id: null, detail: {} },
+      { kind: "reassigned", actor_user_id: danaId, subject_user_id: foxId, detail: { fromUserId: danaId } },
+      { kind: "handed_back", actor_user_id: foxId, subject_user_id: null, detail: {} },
+    ]);
+  });
+
+  it("rolls a claim, a transfer, and a hand-back back when their activity cannot be recorded", async () => {
+    const { conversationId, version } = await seedClaimedConversation();
+    const service = createService({ requestDrain: async () => undefined });
+    vi.spyOn(ConversationActivityRepository.prototype, "record").mockRejectedValue(new Error("activity unavailable"));
+
+    await expect(service.transfer(dana, { conversationId, toUserId: foxId, expectedVersion: version }))
+      .rejects.toThrow("activity unavailable");
+    await expect(service.handBack(dana, { conversationId, expectedVersion: version }))
+      .rejects.toThrow("activity unavailable");
+
+    await expect(ownership.load(conversationId)).resolves.toMatchObject({ state: "human_owned", ownerUserId: danaId, version });
+    await expect(outboxRows(conversationId)).resolves.toEqual([]);
+    await expect(activityOf(conversationId)).resolves.toEqual([]);
+
+    const unclaimed = randomUUID();
+    await database.query(`INSERT INTO conversations (id, workspace_id) VALUES ($1, $2)`, [unclaimed, workspaceId]);
+    await expect(service.takeOver(dana, { conversationId: unclaimed })).rejects.toThrow("activity unavailable");
+    await expect(service.reply(dana, { conversationId: unclaimed, message: "Hi", expectedVersion: 0 }))
+      .rejects.toThrow("activity unavailable");
+
+    await expect(ownership.load(unclaimed)).resolves.toBeNull();
+    await expect(messagesIn(unclaimed)).resolves.toEqual([]);
+    await expect(activityOf(unclaimed)).resolves.toEqual([]);
   });
 });

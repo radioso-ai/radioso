@@ -6,6 +6,7 @@ import type {
   QualityTriageRecord,
   QualityTriageState,
 } from '@/lib/api'
+import type { RecentlyClosedInboxItemsResponse } from '@/lib/api-types'
 import { deriveConversationOutcome } from '@/lib/conversation-outcome'
 import { resolveConversationDisplayTitle } from '@/lib/conversation-title'
 import { formatApprovalCreatedAt } from '@/lib/needs-attention-format'
@@ -574,38 +575,51 @@ export const listTakenByOperators = (
 
 // ── Recently closed (FR-014 / User Story 2) ─────────────────────────────────
 
+type ApiRecentlyClosedInboxItem = RecentlyClosedInboxItemsResponse['items'][number]
+
 export interface RecentlyClosedInboxItem {
   key: string
   conversationId: string
   title: string
-  state: 'resolved' | 'dismissed'
+  itemKind: ApiRecentlyClosedInboxItem['itemKind']
+  outcome: ApiRecentlyClosedInboxItem['outcome']
   closedAt: string
+  closedBy: ApiRecentlyClosedInboxItem['closedBy']
+  /** The option chosen, for an approval. */
+  decisionLabel: string | null
 }
 
-const feedbackClosedAt = (turn: LowQualityTurn): string =>
-  turn.triage.updatedAt ?? turn.triage.closedAt ?? turn.createdAt
-
-export const RECENTLY_CLOSED_FEEDBACK_LIMIT = 10
+export const RECENTLY_CLOSED_LIMIT = 10
 
 /**
- * Feedback items already resolved or dismissed, newest closure first. Handoff and
- * approval items have no durable closure record in this frontend-only slice (that
- * is backend work for a later slice, per spec 1116's architecture constraints), so
- * the recently-closed strip is feedback-only for now rather than inventing one.
+ * The workspace's recently closed Inbox items — handoffs handed back, approvals decided, negative
+ * feedback resolved or dismissed — as the strip shows them, newest closure first as the backend
+ * orders them. Each is titled like the conversation's queue row.
  */
-export const buildRecentlyClosedFeedbackItems = (
-  turns: readonly LowQualityTurn[],
-): RecentlyClosedInboxItem[] => turns
-  .filter((turn) => turn.triage.state === 'resolved' || turn.triage.state === 'dismissed')
-  .map((turn) => ({
-    key: `quality:${turn.assistantMessageId}`,
-    conversationId: turn.conversationId,
-    title: turn.question || 'Low-quality answer',
-    state: turn.triage.state as 'resolved' | 'dismissed',
-    closedAt: feedbackClosedAt(turn),
-  }))
-  .sort((left, right) => byTimestampDesc(left.closedAt, right.closedAt))
-  .slice(0, RECENTLY_CLOSED_FEEDBACK_LIMIT)
+export const buildRecentlyClosedItems = (
+  items: readonly ApiRecentlyClosedInboxItem[],
+): RecentlyClosedInboxItem[] => items.map((item) => ({
+  key: `closed:${item.id}`,
+  conversationId: item.conversationId,
+  title: resolveConversationDisplayTitle(item),
+  itemKind: item.itemKind,
+  outcome: item.outcome,
+  closedAt: item.closedAt,
+  closedBy: item.closedBy,
+  decisionLabel: item.decision?.label ?? null,
+}))
+
+/** What was closed, as the strip labels it: the kind of item, and how it closed where that varies. */
+export const recentlyClosedKindLabel = (item: RecentlyClosedInboxItem): string => {
+  switch (item.itemKind) {
+    case 'handoff':
+      return 'Handoff'
+    case 'approval':
+      return item.decisionLabel ? `Approval · ${item.decisionLabel}` : 'Approval'
+    case 'negative_feedback':
+      return item.outcome === 'feedback_dismissed' ? 'Feedback dismissed' : 'Feedback resolved'
+  }
+}
 
 // ── Empty-queue confidence summary (FR-014) ─────────────────────────────────
 

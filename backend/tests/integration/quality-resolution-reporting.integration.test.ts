@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { QualityTurnsService } from "../../src/modules/quality/service.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { runAllTestMigrations } from "../support/databaseMigrations.js";
-import { stubOutcomeCatalog } from "../support/qualityOutcomeCatalog.js";
+import { stubOutcomeCatalog, unrecordedConversationActivity } from "../support/qualityOutcomeCatalog.js";
 
 const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
 
@@ -94,7 +94,7 @@ describeIfDatabase("quality resolution reporting", () => {
       ],
     );
 
-    const service = new QualityTurnsService(database.kysely, stubOutcomeCatalog(), clock);
+    const service = new QualityTurnsService(database.kysely, stubOutcomeCatalog(), unrecordedConversationActivity, clock);
     const knowledgeGapTransition = await service.setTriageState(workspaceId, {
       assistantMessageId: knowledgeGapId,
       state: "resolved",

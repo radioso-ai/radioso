@@ -15,8 +15,12 @@ import { conversationParamsSchema } from "./conversationRouteSchemas.js";
 
 type ConversationOwnershipRouteDependencies = WorkspaceSessionDependencies & Pick<
   AppDependencies,
-  "conversationOperatorDirectory" | "conversationOwnershipService"
+  "conversationActivityReads" | "conversationOperatorDirectory" | "conversationOwnershipService"
 >;
+
+const recentlyClosedQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(50).default(10),
+}).strict();
 
 const takeoverBodySchema = z.object({
   reason: z.string().trim().min(1).max(500).optional(),
@@ -80,6 +84,23 @@ export const createConversationOwnershipRoutes = (
       const operators = await dependencies.conversationOperatorDirectory.list({ accountId, workspaceId });
 
       res.status(200).json({ operators });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // The Inbox's recently closed items: handoffs handed back, approvals decided, negative feedback
+  // resolved or dismissed — newest first, each with the teammate who closed it.
+  router.get("/recently-closed", workspaceSession, takeoverPermission, async (req, res, next) => {
+    try {
+      const query = recentlyClosedQuerySchema.safeParse(req.query);
+      if (!query.success) {
+        throw badRequest("Invalid query", query.error.flatten());
+      }
+      const { workspaceId } = readActor(res.locals);
+      const items = await dependencies.conversationActivityReads.listRecentlyClosed(workspaceId, query.data.limit);
+
+      res.status(200).json({ items });
     } catch (error) {
       next(error);
     }

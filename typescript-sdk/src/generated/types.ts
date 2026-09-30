@@ -2941,6 +2941,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/conversations/recently-closed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the Inbox items closed most recently
+         * @description Returns the workspace's most recently closed Inbox items, newest first: handoffs handed back to the agent, approvals decided, and negative feedback resolved or dismissed. Each item names the teammate who closed it, labelled by display name, else email. Dashboard test chats are left out.
+         */
+        get: operations["listRecentlyClosedInboxItems"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/conversations/{conversationId}/takeover": {
         parameters: {
             query?: never;
@@ -7778,6 +7798,93 @@ export interface components {
         ConversationOperatorsResponse: {
             operators: components["schemas"]["ConversationOperator"][];
         };
+        /** @description Something a teammate or the agent did to the conversation. Operator reads only. */
+        ConversationActivityEntry: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            kind: "handoff_requested" | "claimed" | "reassigned" | "handed_back" | "approval_decided" | "feedback_resolved" | "feedback_dismissed";
+            /** Format: date-time */
+            createdAt: string;
+            /** @description The teammate who acted. Null when the agent acted, or the change came from a caller that is no teammate. */
+            actor: {
+                /** Format: uuid */
+                userId: string;
+                /** @description The teammate label as it is now: display name, else email. Null once the user is deleted. */
+                label: string | null;
+            } | null;
+            /** @description The teammate who holds a `reassigned` conversation now. */
+            subject: {
+                /** Format: uuid */
+                userId: string;
+                /** @description The teammate label as it is now: display name, else email. Null once the user is deleted. */
+                label: string | null;
+            } | null;
+            /** @description Who held a `reassigned` conversation before. Null when nobody had claimed the handoff. */
+            from: {
+                /** Format: uuid */
+                userId: string;
+                /** @description The teammate label as it is now: display name, else email. Null once the user is deleted. */
+                label: string | null;
+            } | null;
+            /** @description The handoff reason code on `handoff_requested`, for example `routine_handoff` or `retrieval_miss`. */
+            handoffReason: string | null;
+            /** @description The option chosen on `approval_decided`. */
+            decision: {
+                optionId: string;
+                /** @description The option's label as the routine author wrote it. */
+                label: string;
+            } | null;
+            /** @description The triage resolution code given on `feedback_resolved` or `feedback_dismissed`. */
+            resolution: string | null;
+            /**
+             * Format: uuid
+             * @description The answer the feedback was on, for `feedback_resolved` and `feedback_dismissed`.
+             */
+            assistantMessageId: string | null;
+        };
+        RecentlyClosedInboxItem: {
+            /**
+             * Format: uuid
+             * @description The closing event's id.
+             */
+            id: string;
+            /** Format: uuid */
+            conversationId: string;
+            /** @enum {string} */
+            itemKind: "handoff" | "approval" | "negative_feedback";
+            /** @enum {string} */
+            outcome: "handed_back" | "approval_decided" | "feedback_resolved" | "feedback_dismissed";
+            /** Format: date-time */
+            closedAt: string;
+            /** @description The teammate who closed it. Null for a caller that is no teammate, or a user since deleted. */
+            closedBy: {
+                /** Format: uuid */
+                userId: string;
+                /** @description The teammate label as it is now: display name, else email. Null once the user is deleted. */
+                label: string | null;
+            } | null;
+            /** @description The option chosen, for an approval. */
+            decision: {
+                optionId: string;
+                /** @description The option's label as the routine author wrote it. */
+                label: string;
+            } | null;
+            /** @description The triage resolution code, for negative feedback. */
+            resolution: string | null;
+            /**
+             * Format: uuid
+             * @description The answer, for negative feedback.
+             */
+            assistantMessageId: string | null;
+            /** @description See ChatConversationSummary.title. */
+            title: string | null;
+            /** @description The conversation's first-message preview. */
+            preview: string | null;
+        };
+        RecentlyClosedInboxItemsResponse: {
+            items: components["schemas"]["RecentlyClosedInboxItem"][];
+        };
         HumanReplyMessage: {
             /** Format: uuid */
             id: string;
@@ -7841,11 +7948,15 @@ export interface components {
             tailCursor: string | null;
             messages: components["schemas"]["ChatConversationMessage"][];
             ownership?: components["schemas"]["ConversationOwnership"] & unknown;
+            /** @description What teammates and the agent did to the conversation, oldest first: handoffs, claims, reassignments, hand-backs, approvals decided, feedback resolved or dismissed. */
+            activity?: components["schemas"]["ConversationActivityEntry"][];
         };
         ChatConversationTail: {
             messages: components["schemas"]["ChatConversationMessage"][];
             cursor: string | null;
             ownership?: components["schemas"]["ConversationOwnership"] & unknown;
+            /** @description The conversation's whole activity timeline, oldest first, on every tail, so a reader polling the tail sees an event recorded elsewhere. */
+            activity?: components["schemas"]["ConversationActivityEntry"][];
         };
         PublicChatConversationTail: {
             messages: components["schemas"]["PublicChatConversationMessage"][];
@@ -22593,6 +22704,56 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ConversationOperatorsResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace conversation takeover permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listRecentlyClosedInboxItems: {
+        parameters: {
+            query?: {
+                /** @description How many items to return, 1 to 50. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Recently closed items returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecentlyClosedInboxItemsResponse"];
+                };
+            };
+            /** @description Invalid query */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description Authentication required */

@@ -102,6 +102,7 @@ describe("copilot chat readers", () => {
       includeTurnFailureDebug: true,
       includeLatency: true,
       includeOperatorLabel: true,
+      includeActivity: true,
     });
     expect(result.transcript.messages[0]).toMatchObject({
       answerOutcome: "retrieval.answer",
@@ -212,4 +213,54 @@ describe("copilot chat readers", () => {
     });
   });
 
+
+  it("carries the conversation's activity: who handed off, took, reassigned, and handed back, and what was decided", async () => {
+    const ports = dependencies();
+    const tool = ports.descriptors.find((descriptor) => descriptor.name === "conversation_transcript")!;
+    const conversationId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+    const bea = { userId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", label: "Bea" };
+    const carl = { userId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", label: "carl@acme.example" };
+    const entry = (overrides: Record<string, unknown>) => ({
+      id: "ffffffff-ffff-4fff-8fff-ffffffffffff",
+      createdAt: "2026-08-18T10:00:01.000Z",
+      actor: null,
+      subject: null,
+      from: null,
+      handoffReason: null,
+      decision: null,
+      resolution: null,
+      assistantMessageId: null,
+      ...overrides,
+    });
+    ports.getConversation.mockResolvedValue({
+      conversationId,
+      agentId: null,
+      agentName: null,
+      sourceChannel: "website_embed",
+      callerKind: "human" as const,
+      createdAt: "2026-08-18T10:00:00.000Z",
+      updatedAt: "2026-08-18T10:00:05.000Z",
+      messageCount: 0,
+      messages: [],
+      activity: [
+        entry({ kind: "handoff_requested", handoffReason: "retrieval_miss" }),
+        entry({ kind: "reassigned", actor: bea, subject: carl, from: bea }),
+        entry({ kind: "approval_decided", actor: carl, decision: { optionId: "approve", label: "Approve refund" } }),
+        entry({ kind: "handed_back", actor: carl }),
+      ],
+    });
+
+    const result = await tool.createTool(context(null)).invoke({ conversationId }, {} as never) as {
+      transcript: { activity: Array<Record<string, unknown>> };
+    };
+
+    expect(result.transcript.activity).toEqual([
+      expect.objectContaining({ kind: "handoff_requested", actor: null, handoffReason: "retrieval_miss" }),
+      expect.objectContaining({ kind: "reassigned", actor: bea, subject: carl, from: bea }),
+      expect.objectContaining({ kind: "approval_decided", actor: carl, decision: { optionId: "approve", label: "Approve refund" } }),
+      expect.objectContaining({ kind: "handed_back", actor: carl }),
+    ]);
+    expect(result.transcript.activity[0]).not.toHaveProperty("id");
+    expect(tool.outputSchema.safeParse(result).success).toBe(true);
+  });
 });

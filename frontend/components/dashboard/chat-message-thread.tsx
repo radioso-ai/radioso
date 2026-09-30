@@ -26,6 +26,8 @@ import {
 } from '@/lib/product-analytics'
 import type { WebsiteEmbedAnalyticsInput } from '@/lib/embed-analytics'
 import { humanReplyAuthor, type ReplyAttributionAudience } from '@/lib/reply-attribution'
+import { activityLine, placeActivity } from '@/lib/conversation-activity'
+import type { ConversationActivityEntry } from '@/lib/api-types'
 import type {
   AnswerFeedbackEntry,
   AnswerFeedbackState,
@@ -52,6 +54,21 @@ const timeFormatter = new Intl.DateTimeFormat(undefined, {
   hour: 'numeric',
   minute: '2-digit',
 })
+
+const NO_ACTIVITY: readonly ConversationActivityEntry[] = []
+
+/** One activity event as a short muted line between messages. Operator threads only. */
+function ActivityEventLine({ entry }: { entry: ConversationActivityEntry }) {
+  return (
+    <div data-activity-kind={entry.kind} className="flex justify-center">
+      <p className="max-w-full truncate text-xs text-muted-foreground">
+        {activityLine(entry)}
+        <span aria-hidden> · </span>
+        <time dateTime={entry.createdAt}>{timeFormatter.format(new Date(entry.createdAt))}</time>
+      </p>
+    </div>
+  )
+}
 
 const SUGGESTION_BUTTON_HOVER_CLASS =
   'radioso-suggestion-hover-highlight'
@@ -420,6 +437,8 @@ export function ChatMessageThread({
   skillCatalog = [],
   routineMarkers,
   audience = 'visitor',
+  activity = NO_ACTIVITY,
+  hasOlderMessages = false,
 }: {
   messages: ChatThreadMessage[]
   onOpenDocument: (documentId: string) => Promise<CitationOpenResult>
@@ -460,8 +479,17 @@ export function ChatMessageThread({
   // Who reads this thread. A human reply's badge names the teammate who wrote it for
   // operators, and only the reply's signature for a visitor.
   audience?: ReplyAttributionAudience
+  // What teammates and the agent did to the conversation, interleaved with the messages by
+  // time. Operator threads only: a visitor thread never renders it, whatever it is passed.
+  activity?: readonly ConversationActivityEntry[]
+  // Whether older messages exist above the loaded window, so older events are held back too.
+  hasOlderMessages?: boolean
 }) {
   const skillGroupInfo = useMemo(() => computeSkillGroupInfo(messages), [messages])
+  const activityPlacement = useMemo(
+    () => placeActivity(messages, audience === 'operator' ? activity : NO_ACTIVITY, { hasOlderMessages }),
+    [messages, activity, audience, hasOlderMessages],
+  )
   // The identity line sits on the earliest AI-authored turn currently rendered, so it
   // stays at the top of the assistant's presence after older messages load in. Turns a
   // person wrote or a takeover produced are skipped: they are not what the chip claims.
@@ -1023,6 +1051,8 @@ export function ChatMessageThread({
   // Walk the thread, banding contiguous routine turns. `routineMarkers` is only
   // supplied by the diagnostics surface, so public chat/embed fall straight
   // through to a flat list of rendered messages.
+  const activityBefore = (index: number): ReactNode[] =>
+    (activityPlacement.before.get(index) ?? []).map((entry) => <ActivityEventLine key={`activity-${entry.id}`} entry={entry} />)
   const threadContent: ReactNode[] = []
   for (let index = 0; index < messages.length; index += 1) {
     const marker = routineMarkers?.[index]
@@ -1030,7 +1060,7 @@ export function ChatMessageThread({
       const groupNodes: ReactNode[] = []
       let end = index
       while (end < messages.length) {
-        groupNodes.push(renderMessage(messages[end], end))
+        groupNodes.push(...activityBefore(end), renderMessage(messages[end], end))
         if (routineMarkers?.[end]?.isGroupEnd) {
           break
         }
@@ -1054,8 +1084,11 @@ export function ChatMessageThread({
       index = end
       continue
     }
-    threadContent.push(renderMessage(messages[index], index))
+    threadContent.push(...activityBefore(index), renderMessage(messages[index], index))
   }
+  threadContent.push(...activityPlacement.trailing.map((entry) => (
+    <ActivityEventLine key={`activity-${entry.id}`} entry={entry} />
+  )))
 
   return (
     <div ref={threadRef} className="mx-auto max-w-3xl space-y-6">

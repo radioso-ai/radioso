@@ -13,7 +13,11 @@ For the broader repository map, see
 
 This module **reads and triages; it never influences a turn**. Nothing here
 feeds retrieval, routing, or answer composition. It owns no writes except the
-operator's triage state and append-only transition history.
+operator's triage state and append-only transition history. A transition that
+resolves or dismisses the feedback also records who closed it as conversation
+activity, in the same transaction, through the `ConversationActivityRecorder`
+port from `conversationActivity/contracts`; a failed activity write rolls the
+transition back.
 
 Terminal triage uses structured, state-compatible reasons from
 `domain/resolution.ts`. The transition write is version-conditional: competing

@@ -43,11 +43,11 @@ export {
   type SlackInstallationRepositoryPort,
   type WorkspaceAccountLookup,
 } from "./install/slackInstallationService.js";
-export { SlackOperatorIdentityResolver } from "./operator/slackOperatorIdentityResolver.js";
 export {
-  PostgresSlackOperatorPermission,
-  PostgresWorkspaceMemberLookup,
-} from "./operator/workspaceMemberLookup.js";
+  SlackOperatorIdentityResolver,
+  type SlackOperatorPermissionPort,
+} from "./operator/slackOperatorIdentityResolver.js";
+export { PostgresWorkspaceMemberLookup } from "./operator/workspaceMemberLookup.js";
 export {
   SlackInteractivityHandler,
   type SlackViewSubmissionResponse,

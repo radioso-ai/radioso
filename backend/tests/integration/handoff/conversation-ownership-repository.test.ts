@@ -319,22 +319,31 @@ describeIfDatabase("ConversationOwnershipRepository Postgres integration", () =>
     });
   });
 
-  it("hands back ownership to the AI with CAS", async () => {
+  it("hands back ownership to the AI with CAS, only from its owner", async () => {
     const { conversationId, workspaceId } = await seedConversation(database);
+    const ada = await seedUser(database, { email: `${randomUUID()}@example.com`, displayName: "Ada Operator" });
+    const teammate = await seedUser(database, { email: `${randomUUID()}@example.com` });
     const claimed = await repository.takeOver({
       conversationId,
       workspaceId,
       accountId: randomUUID(),
-      userId: await seedUser(database, { email: `${randomUUID()}@example.com`, displayName: "Ada Operator" }),
+      userId: ada,
       displayName: "Ada Operator",
     });
 
     if (!claimed.ok) {
       throw new Error("Expected takeover to succeed");
     }
+    const byTeammate = await repository.handBack({
+      conversationId,
+      expectedVersion: claimed.record.version,
+      actingUserId: teammate,
+    });
+    expect(byTeammate).toEqual({ ok: false, changed: false, record: claimed.record });
     const handedBack = await repository.handBack({
       conversationId,
       expectedVersion: claimed.record.version,
+      actingUserId: ada,
     });
 
     expect(handedBack.ok).toBe(true);
@@ -354,16 +363,18 @@ describeIfDatabase("ConversationOwnershipRepository Postgres integration", () =>
     await expect(repository.handBack({
       conversationId,
       expectedVersion: handedBack.record.version,
+      actingUserId: teammate,
     })).resolves.toEqual({ ok: true, changed: false, record: handedBack.record });
   });
 
   it("re-requests human ownership after a hand-back left the row ai_owned", async () => {
     const { conversationId, workspaceId } = await seedConversation(database);
+    const ada = await seedUser(database, { email: `${randomUUID()}@example.com`, displayName: "Ada Operator" });
     const claimed = await repository.takeOver({
       conversationId,
       workspaceId,
       accountId: randomUUID(),
-      userId: await seedUser(database, { email: `${randomUUID()}@example.com`, displayName: "Ada Operator" }),
+      userId: ada,
       displayName: "Ada Operator",
     });
     if (!claimed.ok) {
@@ -372,6 +383,7 @@ describeIfDatabase("ConversationOwnershipRepository Postgres integration", () =>
     const handedBack = await repository.handBack({
       conversationId,
       expectedVersion: claimed.record.version,
+      actingUserId: ada,
     });
     if (!handedBack.ok) {
       throw new Error("Expected hand-back to succeed");
@@ -455,6 +467,11 @@ describeIfDatabase("ConversationOwnershipRepository Postgres integration", () =>
       ownerStoredLabel: "Dana Scully",
     });
     expect(orphaned && ownerLabel(orphaned)).toBe("Dana Scully");
+
+    // A claim that names nobody is no claim: the next teammate takes the conversation over.
+    const fox = await seedUser(database, { email: "fox@example.com", displayName: "Fox Mulder" });
+    const reclaimed = await repository.takeOver({ conversationId, workspaceId, accountId, userId: fox, displayName: "Fox Mulder" });
+    expect(reclaimed).toMatchObject({ ok: true, changed: true, record: { ownerUserId: fox, ownerStoredLabel: "Fox Mulder" } });
   });
 
   it("lets a teammate take a conversation from another by transfer, but never by takeover", async () => {
@@ -505,5 +522,65 @@ describeIfDatabase("ConversationOwnershipRepository Postgres integration", () =>
       },
     });
     expect(assigned.record?.takenOverAt).toBeInstanceOf(Date);
+  });
+});
+
+describeIfDatabase("migration 203 on conversations claimed before per-user ownership", () => {
+  let database: Database;
+  let backingDatabase: Database;
+  let client: PoolClient;
+  let schema: string;
+
+  beforeAll(async () => {
+    backingDatabase = new Database(integrationDatabaseUrl!);
+    client = await backingDatabase.pool.connect();
+    schema = `conversation_ownership_203_${randomUUID().replaceAll("-", "_")}`;
+    await client.query(`CREATE SCHEMA ${schema}`);
+    await client.query(`SET search_path TO ${schema}, public`);
+    database = createClientBackedDatabase(client);
+    await applyTestMigration(database, "001_init.sql");
+    await applyTestMigration(database, "014_account_multi_user.sql");
+    await applyTestMigration(database, "105_conversation_ownership.sql");
+    await applyTestMigration(database, "202_user_display_name.sql");
+  });
+
+  afterAll(async () => {
+    if (client) {
+      await client.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`).catch(() => undefined);
+      client.release();
+    }
+    if (backingDatabase) {
+      await backingDatabase.close();
+    }
+  });
+
+  it("releases every organisation-level claim to awaiting a human and leaves the rest alone", async () => {
+    const { accountId, conversationId: claimedId, workspaceId } = await seedConversation(database);
+    const waitingId = await seedConversationFor(database, accountId);
+    const handedBackId = await seedConversationFor(database, accountId);
+    await database.execute(
+      `INSERT INTO conversation_ownership
+         (conversation_id, workspace_id, state, owner_account_id, owner_display_name, reason, version, taken_over_at)
+       VALUES
+         ($1, $4, 'human_owned', $5, 'Acme Organization', 'operator_takeover', 3, now()),
+         ($2, $4, 'human_owned', NULL, NULL, 'routine_handoff', 1, NULL),
+         ($3, $4, 'ai_owned', NULL, NULL, 'operator_takeover', 4, NULL)`,
+      [claimedId, waitingId, handedBackId, workspaceId, accountId],
+    );
+
+    await applyTestMigration(database, "203_conversation_ownership_owner_user.sql");
+
+    const repository = new ConversationOwnershipRepository(database.kysely);
+    await expect(repository.load(claimedId)).resolves.toMatchObject({
+      state: "human_owned",
+      ownerAccountId: null,
+      ownerUserId: null,
+      ownerStoredLabel: null,
+      reason: "operator_takeover",
+      takenOverAt: null,
+      version: 4,
+    });
+    await expect(repository.load(waitingId)).resolves.toMatchObject({ state: "human_owned", ownerAccountId: null, version: 1 });
+    await expect(repository.load(handedBackId)).resolves.toMatchObject({ state: "ai_owned", ownerAccountId: null, version: 4 });
   });
 });

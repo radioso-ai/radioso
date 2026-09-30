@@ -579,7 +579,7 @@ export class RoutineDefinitionService {
         diagnostics.push({
           code: "unregistered_action_type",
           location: `step:${step.stableStepId}`,
-          message: `unregistered action type: action step "${step.stableStepId}" references "${step.actionType}", but no action handler is registered for that type.`,
+          message: `unregistered action type: action step "${step.stableStepId}" references "${step.actionType}", but no action a routine may emit is registered under that type.`,
         });
         continue;
       }

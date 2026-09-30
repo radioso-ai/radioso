@@ -99,9 +99,14 @@ export const dashboardQueryKeys = {
     humanOwned: (workspaceId: string, input: { pageSize: number }) =>
       workspaceKey(workspaceId, 'attention', 'human-owned', input.pageSize),
   },
+  conversations: {
+    // Not a live-invalidation family: no workspace event reports a teammate change, so
+    // callers re-read it by invalidating this key.
+    operators: (workspaceId: string) => workspaceKey(workspaceId, 'conversations', 'operators'),
+  },
 } as const
 
-export type DashboardQueryFamily =
+type DashboardQueryFamily =
   | 'documents/list'
   | 'documents/crawl-activity'
   | 'sources/list'

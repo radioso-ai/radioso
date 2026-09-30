@@ -445,7 +445,7 @@ export const ownershipLabel = (ownership: ConversationOwnership): string => {
 
 // ── Queue filters (FR-017) ──────────────────────────────────────────────────
 
-/** `'anyone' | 'unclaimed' | 'me'`, or a specific owner's key (see `ConversationOwner`). */
+/** `'anyone' | 'unclaimed' | 'me'`, or a specific owner's user id (see `ConversationOwner`). */
 export type TakenByFilter = 'anyone' | 'unclaimed' | 'me' | (string & {})
 
 export const TAKEN_BY_ANYONE: TakenByFilter = 'anyone'
@@ -492,10 +492,10 @@ const matchesTakenBy = (
   if (filter === TAKEN_BY_UNCLAIMED) {
     return item.takenBy === null
   }
-  if (filter === TAKEN_BY_ME) {
-    return item.takenBy !== null && item.takenBy.userId !== null && item.takenBy.userId === currentUserId
+  if (item.takenBy === null) {
+    return false
   }
-  return item.takenBy?.key === filter
+  return item.takenBy.userId === (filter === TAKEN_BY_ME ? currentUserId : filter)
 }
 
 /** Applies the queue's search/type/agent/taken-by filters together, preserving item order. */
@@ -548,20 +548,20 @@ export const listInboxAgents = (items: readonly InboxItem[]): InboxAgentOption[]
 }
 
 export interface InboxOperatorOption {
-  key: string
+  userId: string
   label: string
 }
 
 /** Distinct teammates who have taken an open item, for the "Taken by" filter's operator options. */
 export const listTakenByOperators = (items: readonly InboxItem[]): InboxOperatorOption[] => {
-  const byKey = new Map<string, InboxOperatorOption>()
+  const byUserId = new Map<string, InboxOperatorOption>()
   for (const item of items) {
-    if (!item.takenBy || byKey.has(item.takenBy.key)) {
+    if (!item.takenBy || byUserId.has(item.takenBy.userId)) {
       continue
     }
-    byKey.set(item.takenBy.key, { key: item.takenBy.key, label: item.takenBy.label ?? 'A teammate' })
+    byUserId.set(item.takenBy.userId, { userId: item.takenBy.userId, label: item.takenBy.label ?? 'A teammate' })
   }
-  return [...byKey.values()]
+  return [...byUserId.values()]
 }
 
 // ── Recently closed (FR-014 / User Story 2) ─────────────────────────────────

@@ -471,6 +471,7 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
               </div>
             ) : (
               <InboxResponseView
+                workspaceId={workspaceId}
                 selection={
                   selectedInboxItem
                     ? { source: 'item', item: selectedInboxItem }

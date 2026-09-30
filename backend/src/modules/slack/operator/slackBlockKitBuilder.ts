@@ -63,7 +63,7 @@ const mrkdwnContext = (text: string): Record<string, unknown> => ({
 });
 
 /** Slack mrkdwn reserves `&`, `<`, `>`; the permalink's query string carries `&`. */
-const escapeMrkdwn = (text: string): string =>
+export const escapeMrkdwn = (text: string): string =>
   text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 
 /** Null when there is no link: a post without one beats a post with a link that does not route. */
@@ -149,7 +149,8 @@ export const buildOwnershipMessage = (input: {
   const contextText = input.contextText.trim() || input.conversationId;
   const dashboardLink = dashboardLinkMrkdwn(input.dashboardUrl);
   if (input.state === "human_owned") {
-    const ownerName = input.ownerName?.trim() || "Operator";
+    // The owner's name is teammate-chosen text: escaped, it cannot mention the channel or forge a link.
+    const ownerName = escapeMrkdwn(input.ownerName?.trim() || "a teammate");
     const version = input.version ?? 0;
     const status = `Handled by ${ownerName}`;
     return {

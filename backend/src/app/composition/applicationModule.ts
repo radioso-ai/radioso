@@ -190,12 +190,13 @@ interface ApplicationActionHandlerRegistration {
   type: string;
   requiredCapabilities?: string[];
   /**
-   * Whether a routine step may emit this action. Defaults to true. An action that only host code
-   * queues — a transfer notice the transfer route writes — sets false: routine authoring never
-   * offers it and a routine step naming it fails validation and serving, while the worker still
-   * dispatches the rows host code queues.
+   * Whether a routine step may emit this action. Every registration says so explicitly, so a new
+   * handler is never admitted into routines by default. An action that only host code queues — a
+   * transfer notice written with its transfer — sets false: routine authoring never offers it and a
+   * routine step naming it fails validation and serving, while the worker still dispatches the rows
+   * host code queues.
    */
-  emittableByRoutines?: boolean;
+  emittableByRoutines: boolean;
   handler:
     | ActionHandler
     | ((context: {
@@ -220,7 +221,7 @@ interface ApplicationActionHandlerRegistration {
 export const routineEmittableActionHandlers = (
   registrations: readonly ApplicationActionHandlerRegistration[],
 ): ApplicationActionHandlerRegistration[] =>
-  registrations.filter((registration) => registration.emittableByRoutines !== false);
+  registrations.filter((registration) => registration.emittableByRoutines);
 
 type ApplicationAccountCreatedHook = (context: {
   accountId: string;

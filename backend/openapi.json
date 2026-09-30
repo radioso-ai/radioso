@@ -14339,7 +14339,7 @@
               "null"
             ],
             "format": "uuid",
-            "description": "The teammate handling the conversation. Null while a handoff waits to be claimed, when AI-owned, and on conversations claimed before per-teammate ownership."
+            "description": "The teammate handling the conversation; a human-owned conversation is claimed exactly when this is set. Null while a handoff waits to be claimed, when AI-owned, and once the owner's user is deleted."
           },
           "ownerDisplayName": {
             "type": [
@@ -15665,10 +15665,21 @@
         "properties": {
           "message": {
             "$ref": "#/components/schemas/HumanReplyMessage"
+          },
+          "ownership": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ConversationOwnership"
+              },
+              {
+                "description": "The conversation's ownership after the reply. A reply to an AI-owned or unclaimed conversation claims it for the replier, so its version moves on."
+              }
+            ]
           }
         },
         "required": [
-          "message"
+          "message",
+          "ownership"
         ]
       },
       "ChatConversationDetail": {
@@ -46200,6 +46211,7 @@
           "Conversation Ownership"
         ],
         "summary": "Take human ownership of a conversation",
+        "description": "Claims a conversation the AI owns or that waits for a teammate. A conversation another teammate holds returns 409; take it from them by transferring it to yourself.",
         "operationId": "takeOverConversation",
         "security": [
           {
@@ -46305,6 +46317,7 @@
           "Conversation Ownership"
         ],
         "summary": "Reply to a conversation as a human operator",
+        "description": "Only the teammate who owns the conversation replies. A reply to a conversation the AI owns, or one waiting for a teammate, claims it for you first. A conversation another teammate holds, or an `expectedVersion` that is no longer current, returns 409 with the current ownership.",
         "operationId": "replyToConversation",
         "security": [
           {
@@ -46418,7 +46431,7 @@
           "Conversation Ownership"
         ],
         "summary": "Transfer human ownership of a conversation",
-        "description": "Hands a human-owned conversation to another teammate, or to yourself to take it from the teammate holding it. The receiving teammate gets an email with a link to the conversation unless they made the transfer. A target who is not a teammate able to own conversations on the workspace returns 404.",
+        "description": "Hands a human-owned conversation to another teammate, or to yourself to take it from the teammate holding it. The receiving teammate gets an email with a link to the conversation unless they made the transfer. A target who is not a teammate able to own conversations on the workspace returns 404 with code `transfer_target_unavailable`; a conversation that is not in the workspace returns 404 with code `not_found`.",
         "operationId": "transferConversationOwnership",
         "security": [
           {
@@ -46504,7 +46517,7 @@
             }
           },
           "404": {
-            "description": "Conversation or transfer target not found",
+            "description": "Conversation not found (`not_found`), or transfer target unavailable (`transfer_target_unavailable`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -46532,6 +46545,7 @@
           "Conversation Ownership"
         ],
         "summary": "Return a human-owned conversation to AI ownership",
+        "description": "Only the teammate who owns the conversation hands it back; anyone may while it waits unclaimed. A conversation another teammate holds, or an `expectedVersion` that is no longer current, returns 409 with the current ownership.",
         "operationId": "handBackConversation",
         "security": [
           {

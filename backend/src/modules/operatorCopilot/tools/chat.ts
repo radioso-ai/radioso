@@ -108,6 +108,8 @@ export interface CopilotConversationListOptions {
 /** Ownership is present only while a person owns the conversation; absent reads as AI-owned. */
 export interface CopilotConversationOwnershipSummary {
   readonly state: string;
+  /** The teammate holding the conversation; a human-owned conversation is claimed exactly when this is set. */
+  readonly ownerUserId: string | null;
   readonly ownerDisplayName: string | null;
   readonly reason: string | null;
   /** Set once an operator takes the conversation over; null while it waits unassigned. */
@@ -131,7 +133,6 @@ interface CopilotConversationOptions {
   includeOwnership: boolean;
   includeTurnFailureDebug: boolean;
   includeLatency: boolean;
-  includeUnattributedReplySignatures: boolean;
 }
 
 interface CopilotOwnership {
@@ -348,7 +349,6 @@ export const createChatCopilotTools = (deps: ChatCopilotToolDependencies): Reado
             includeOwnership: true,
             includeTurnFailureDebug: true,
             includeLatency: true,
-            includeUnattributedReplySignatures: true,
           },
         ))),
       }),
@@ -373,7 +373,6 @@ export const createChatCopilotTools = (deps: ChatCopilotToolDependencies): Reado
             includeOwnership: true,
             includeTurnFailureDebug: true,
             includeLatency: true,
-            includeUnattributedReplySignatures: true,
           },
         ))),
       }),

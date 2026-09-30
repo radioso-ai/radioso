@@ -2,15 +2,13 @@ import { ApprovalDecisionServiceError, type ApprovalDecisionService } from "../.
 import type { AuditPort } from "../../audit/contracts/index.js";
 import type { PendingDecisionRepository } from "../../../db/repositories/pendingDecisionRepository.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
-import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
 import { resolveConversationLink, type ConversationLinkResolver } from "../../../shared/domain/conversationLinkResolver.js";
 import type { SlackInstallationRecord, SlackInstallationRepositoryPort } from "../public.js";
 import {
   ownerLabel,
-  type OperatorIdentityResolver,
-  type OperatorReplyService,
-  type ConversationOwnershipMutationResult,
   type ConversationOwnershipRecord,
+  type ConversationOwnershipService,
+  type OwnershipActor,
 } from "../../handoff/public.js";
 import {
   OWNERSHIP_REPLY_ACTION_ID,
@@ -18,6 +16,7 @@ import {
   buildOwnershipMessage,
   buildReplyModal,
   buildResolvedDecisionMessage,
+  escapeMrkdwn,
 } from "./slackBlockKitBuilder.js";
 import type {
   SlackOperatorIdentityResolution,
@@ -128,6 +127,10 @@ const readNumber = (value: unknown): number | null =>
 
 const ownershipContextText = (conversationId: string): string => `Conversation ${conversationId}`;
 
+/** Plain text naming whoever holds a conversation, for the teammate the refusal is shown to. */
+const heldByText = (record: ConversationOwnershipRecord | null): string =>
+  `${(record && ownerLabel(record)) ?? "A teammate"} is handling this.`;
+
 const decisionErrorOutcome = (error: ApprovalDecisionServiceError): "stale" | "forbidden" | "invalid" => {
   switch (error.reason) {
     case "stale_proposal":
@@ -142,29 +145,29 @@ const decisionErrorOutcome = (error: ApprovalDecisionServiceError): "stale" | "f
   }
 };
 
+/** The teammate a Slack user resolved to, acting in the conversation's workspace. */
+const ownershipActor = (resolved: { identity: SlackOperatorIdentity }, workspaceId: string): OwnershipActor => ({
+  accountId: resolved.identity.accountId,
+  userId: resolved.identity.userId,
+  workspaceId,
+});
+
+/** Records which Slack user clicked, next to the teammate they resolved to. */
+const slackAuditContext = (resolved: { slackUserId: string; identity: SlackOperatorIdentity }): Record<string, unknown> => ({
+  slackOperator: {
+    slackUserId: resolved.slackUserId,
+    displayName: resolved.identity.displayName,
+  },
+});
+
 export class SlackInteractivityHandler implements SlackInteractivityHandlerPort {
   constructor(private readonly options: {
     installations: Pick<SlackInstallationRepositoryPort, "findByTeamId">;
     identityResolver?: Pick<SlackOperatorIdentityResolver, "resolve">;
-    /** Names the teammate a Slack user resolves to, the same way the dashboard does. */
-    operatorIdentities?: Pick<OperatorIdentityResolver, "resolve">;
     approvalDecisions?: Pick<ApprovalDecisionService, "resolve">;
     pendingDecisions?: Pick<PendingDecisionRepository, "loadByHandle">;
-    conversationOwnership?: {
-      load(conversationId: string): Promise<ConversationOwnershipRecord | null>;
-      takeOver(input: {
-        conversationId: string;
-        workspaceId: string;
-        accountId: string;
-        userId: string;
-        displayName: string;
-      }): Promise<ConversationOwnershipMutationResult>;
-      handBack(input: {
-        conversationId: string;
-        expectedVersion: number;
-      }): Promise<ConversationOwnershipMutationResult>;
-    };
-    operatorReplyService?: Pick<OperatorReplyService, "reply">;
+    /** Handoff's ownership rules; the buttons act as the teammate the Slack user resolves to. */
+    conversationOwnership?: Pick<ConversationOwnershipService, "load" | "takeOver" | "handBack" | "reply" | "replyRefusal">;
     slackViews?: {
       open(input: {
         installation: SlackInstallationRecord;
@@ -175,7 +178,6 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
     responseUrlClient?: SlackResponseUrlClient;
     audit?: Pick<AuditPort, "record">;
     metrics?: Pick<MetricsRegistry, "incrementCounter">;
-    workspaceInvalidationPublisher?: WorkspaceInvalidationPublisher;
     conversationLinks?: ConversationLinkResolver;
     logger?: { warn(payload: Record<string, unknown>, message: string): void };
   }) {}
@@ -372,7 +374,8 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
     conversationId: string;
     workspaceId: string;
   }): Promise<void> {
-    if (!this.options.conversationOwnership || !this.options.operatorIdentities) {
+    const ownership = this.options.conversationOwnership;
+    if (!ownership) {
       return;
     }
     const resolved = await this.resolveOperator(payload, input.workspaceId);
@@ -380,40 +383,24 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
       await this.postEphemeral(payload, "You're not a Radioso operator on this workspace.");
       return;
     }
-    const operator = await this.options.operatorIdentities.resolve({
-      accountId: resolved.identity.accountId,
-      userId: resolved.identity.userId,
-    });
-    const result = await this.options.conversationOwnership.takeOver({
+    const result = await ownership.takeOver(ownershipActor(resolved, input.workspaceId), {
       conversationId: input.conversationId,
-      workspaceId: input.workspaceId,
-      accountId: resolved.identity.accountId,
-      userId: operator.userId,
-      displayName: operator.teammateLabel,
+      // A click on Take over is explicit, so it takes the conversation from a teammate who holds it.
+      takeFromTeammate: true,
+      auditContext: slackAuditContext(resolved),
     });
     if (!result.ok) {
       await this.postEphemeral(payload, "Conversation ownership changed. Refreshing.");
       return;
     }
-    if (result.changed) {
-      this.options.workspaceInvalidationPublisher?.enqueue(input.workspaceId, ["conversation.ownership_changed"]);
-    }
-    await this.recordOwnershipAudit({
-      accountId: resolved.identity.accountId,
-      workspaceId: input.workspaceId,
-      action: "taken_over",
-      conversationId: input.conversationId,
-      actorUserId: resolved.identity.userId,
-      slackUserId: resolved.slackUserId,
-      slackDisplayName: resolved.identity.displayName,
-    });
     const message = buildOwnershipMessage({
       conversationId: input.conversationId,
       workspaceId: input.workspaceId,
       state: "human_owned",
       contextText: ownershipContextText(input.conversationId),
       dashboardUrl: await resolveConversationLink(this.options.conversationLinks, input, this.options.logger),
-      ownerName: ownerLabel(result.record) ?? operator.teammateLabel,
+      // The channel can include people outside the workspace, so the card never names anyone by email.
+      ownerName: result.record.ownerProfile?.displayName ?? resolved.identity.displayName,
       version: result.record.version,
     });
     await this.postResponseUrl(payload, {
@@ -427,11 +414,12 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
     conversationId: string;
     version: number;
   }): Promise<void> {
-    if (!this.options.conversationOwnership) {
+    const ownership = this.options.conversationOwnership;
+    if (!ownership) {
       return;
     }
-    const ownership = await this.options.conversationOwnership.load(input.conversationId);
-    const workspaceId = ownership?.workspaceId;
+    const current = await ownership.load(input.conversationId);
+    const workspaceId = current?.workspaceId;
     if (!workspaceId) {
       await this.postEphemeral(payload, "Conversation ownership changed. Refreshing.");
       return;
@@ -441,35 +429,26 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
       await this.postEphemeral(payload, "You're not a Radioso operator on this workspace.");
       return;
     }
-    const result = await this.options.conversationOwnership.handBack({
+    const result = await ownership.handBack(ownershipActor(resolved, workspaceId), {
       conversationId: input.conversationId,
       expectedVersion: input.version,
+      auditContext: slackAuditContext(resolved),
     });
     if (!result.ok) {
-      await this.postEphemeral(payload, "Conversation ownership changed. Refreshing.");
+      await this.postEphemeral(
+        payload,
+        result.refusal === "held_by_teammate" ? escapeMrkdwn(heldByText(result.record)) : "Conversation ownership changed. Refreshing.",
+      );
       return;
     }
-    const resultWorkspaceId = result.record.workspaceId;
-    if (result.changed) {
-      this.options.workspaceInvalidationPublisher?.enqueue(resultWorkspaceId, ["conversation.ownership_changed"]);
-    }
-    await this.recordOwnershipAudit({
-      accountId: resolved.identity.accountId,
-      workspaceId: resultWorkspaceId,
-      action: "handed_back",
-      conversationId: input.conversationId,
-      actorUserId: resolved.identity.userId,
-      slackUserId: resolved.slackUserId,
-      slackDisplayName: resolved.identity.displayName,
-    });
     const message = buildOwnershipMessage({
       conversationId: input.conversationId,
-      workspaceId: resultWorkspaceId,
+      workspaceId,
       state: "ai_owned",
       contextText: ownershipContextText(input.conversationId),
       dashboardUrl: await resolveConversationLink(
         this.options.conversationLinks,
-        { workspaceId: resultWorkspaceId, conversationId: input.conversationId },
+        { workspaceId, conversationId: input.conversationId },
         this.options.logger,
       ),
     });
@@ -485,7 +464,8 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
     workspaceId: string;
     version: number;
   }): Promise<void> {
-    if (!this.options.conversationOwnership || !this.options.slackViews) {
+    const ownership = this.options.conversationOwnership;
+    if (!ownership || !this.options.slackViews) {
       return;
     }
     const resolved = await this.resolveOperator(payload, input.workspaceId);
@@ -493,9 +473,9 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
       await this.postEphemeral(payload, "You're not a Radioso operator on this workspace.");
       return;
     }
-    const ownership = await this.options.conversationOwnership.load(input.conversationId);
-    if (ownership?.state !== "human_owned") {
-      await this.postEphemeral(payload, "Take over the conversation before replying.");
+    const refusal = await ownership.replyRefusal(ownershipActor(resolved, input.workspaceId), input.conversationId);
+    if (refusal) {
+      await this.postEphemeral(payload, escapeMrkdwn(heldByText(refusal.record)));
       return;
     }
     const triggerId = readString(payload.trigger_id);
@@ -513,7 +493,8 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
     payload: SlackInteractivityPayload,
     view: Record<string, unknown>,
   ): Promise<SlackViewSubmissionResponse | undefined> {
-    if (!this.options.conversationOwnership || !this.options.operatorReplyService) {
+    const ownership = this.options.conversationOwnership;
+    if (!ownership) {
       return undefined;
     }
     const metadata = parseOwnershipValue(view.private_metadata);
@@ -530,24 +511,21 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
     if (!resolved || "rejected" in resolved) {
       return this.replyModalError("Take over the conversation before replying.");
     }
-    const ownership = await this.options.conversationOwnership.load(conversationId);
-    if (ownership?.state !== "human_owned") {
-      return this.replyModalError("Take over the conversation before replying.");
-    }
-    // The modal was opened against a specific ownership version. If ownership changed since
-    // (handed back, or re-taken-over), the stale modal must not post a customer-visible reply —
-    // mirror the dashboard reply route's expectedVersion check.
-    const expectedVersion = readNumber(metadata?.version);
-    if (expectedVersion !== null && ownership.version !== expectedVersion) {
-      return this.replyModalError("This conversation changed. Take over again before replying.");
-    }
-    await this.options.operatorReplyService.reply({
+    // The modal was opened against a specific ownership version; a stale one must not post a
+    // customer-visible reply, the same check the dashboard reply makes.
+    const result = await ownership.reply(ownershipActor(resolved, workspaceId), {
       conversationId,
-      workspaceId,
-      accountId: resolved.identity.accountId,
-      userId: resolved.identity.userId,
       message,
+      expectedVersion: readNumber(metadata?.version) ?? undefined,
+      auditContext: slackAuditContext(resolved),
     });
+    if (!result.ok) {
+      return this.replyModalError(
+        result.refusal === "held_by_teammate"
+          ? heldByText(result.record)
+          : "This conversation changed. Take over again before replying.",
+      );
+    }
     return undefined;
   }
 
@@ -641,41 +619,6 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
         handle: input.handle,
         err: error instanceof Error ? error.message : String(error),
       }, "Slack decision audit failed");
-    }
-  }
-
-  private async recordOwnershipAudit(input: {
-    accountId: string;
-    workspaceId: string;
-    action: "taken_over" | "handed_back";
-    conversationId: string;
-    actorUserId: string;
-    slackUserId: string;
-    slackDisplayName: string | null;
-  }): Promise<void> {
-    try {
-      await this.options.audit?.record({
-        accountId: input.accountId,
-        workspaceId: input.workspaceId,
-        eventType: "hitl.ownership",
-        eventStatus: "success",
-        metadata: {
-          action: input.action,
-          conversationId: input.conversationId,
-          actorUserId: input.actorUserId,
-          slackOperator: {
-            slackUserId: input.slackUserId,
-            displayName: input.slackDisplayName,
-          },
-        },
-      });
-    } catch (error) {
-      this.options.logger?.warn({
-        event: "slack_ownership_audit_failed",
-        workspaceId: input.workspaceId,
-        conversationId: input.conversationId,
-        err: error instanceof Error ? error.message : String(error),
-      }, "Slack ownership audit failed");
     }
   }
 }

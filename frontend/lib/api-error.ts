@@ -10,6 +10,22 @@ export function getApiErrorStatus(error: unknown): number | undefined {
   return undefined
 }
 
+/** The machine-readable `error.code` of an API error body, when it carries one. */
+export function getApiErrorCode(error: unknown): string | undefined {
+  if (
+    error
+    && typeof error === 'object'
+    && 'error' in error
+    && error.error
+    && typeof error.error === 'object'
+    && 'code' in error.error
+    && typeof error.error.code === 'string'
+  ) {
+    return error.error.code
+  }
+  return undefined
+}
+
 export function getApiErrorMessage(error: unknown, fallback: string): string {
   if (
     error &&

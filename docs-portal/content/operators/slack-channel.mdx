@@ -52,7 +52,11 @@ When the agent needs a person, Radioso posts an interactive message to the opera
 
 From these an operator can approve or deny a decision (the routine resumes with the chosen option), take over a conversation (the agent stops answering it), reply to the customer (a short Slack form opens, and the reply goes back where the conversation started — the customer's Slack DM or the website chat), or hand the conversation back to the agent.
 
-Only Radioso workspace members can act. Radioso matches the Slack user to a member by email, so the Slack user's email must match their Radioso account. A Slack user who is not a member, or who lacks the takeover permission, gets a private message and the action does not run. A button that is already out of date, because someone resolved it first, is rejected without changing the result.
+Slack follows the same ownership rules as the dashboard and the [API](/operators/human-takeover#operator-api), enforced by the server. **Take over** on a conversation a teammate holds takes it from them, the same as a transfer to yourself, and sends no email. When a teammate holds a conversation, only they talk to the customer or hand it back: anyone else who clicks **Talk to customer** or **Hand back to AI** sees "Dana Scully is handling this.", shown only to them, and no reply form opens and the card stays as it is. A reply form opened on an older version of the conversation refuses to send with "This conversation changed. Take over again before replying."
+
+Once taken over, the card reads "Handled by Dana Scully": the teammate's Radioso display name, else their Slack profile name, else "a teammate" — never an email address. The name is escaped, so it cannot mention the channel or add a link.
+
+Only Radioso workspace members can act. Radioso matches the Slack user's email to an active teammate whose user is not disabled, so the Slack user's email must match their Radioso account; the action is then authorised by the same role and workspace-grant rules the dashboard uses (`workspace.conversation.takeover`). A Slack user who is not a member, or who lacks the takeover permission, gets a private message and the action does not run. A button that is already out of date, because someone resolved it first, is rejected without changing the result.
 
 ## Slack in the Inbox
 
@@ -113,7 +117,8 @@ Slack sends Events API payloads to `/api/connectors/slack/events` and interactio
 ## Common failure modes
 
 - **Add to Slack** does nothing and the UI names a missing variable: one of the three `SLACK_*` environment variables is unset. Set all three and restart the backend.
-- An operator's Slack action is rejected with a private message: their Slack email does not match a Radioso member with the takeover permission.
+- An operator's Slack action is rejected with a private message: their Slack email does not match an active, enabled Radioso member with the takeover permission.
+- **Talk to customer** or **Hand back to AI** answers "… is handling this." and does nothing else: a teammate holds the conversation. Click **Take over** to take it from them, or leave it to them.
 - Buttons or reactions do not work after an upgrade: the app was installed before those scopes existed. Reinstall or re-consent the app.
 - Thread follow-ups without a tag go unanswered, or `Every message` has no effect: the app is missing the `message.channels` and `message.groups` events or the history scopes, and install status shows `needs_reauth`. Update the event subscriptions from the manifest and re-consent.
 - The agent answers a top-level message nobody tagged it in: that channel's binding is set to `Every message`. Switch it back to `@mentions only`.

@@ -97,13 +97,13 @@ describe('needs attention helpers', () => {
   })
 
   it('labels assigned human ownership with the owner display name', () => {
-    expect(ownershipLabel(ownership({ ownerAccountId: 'account-2', ownerDisplayName: 'Ada Lovelace' }))).toBe(
+    expect(ownershipLabel(ownership({ ownerAccountId: 'account-2', ownerUserId: 'user-ada', ownerDisplayName: 'Ada Lovelace' }))).toBe(
       'Handled by Ada Lovelace',
     )
   })
 
   it('falls back to teammate when assigned ownership has no display name', () => {
-    expect(ownershipLabel(ownership({ ownerAccountId: 'account-2', ownerDisplayName: null }))).toBe(
+    expect(ownershipLabel(ownership({ ownerAccountId: 'account-2', ownerUserId: 'user-ada', ownerDisplayName: null }))).toBe(
       'Handled by a teammate',
     )
   })
@@ -122,7 +122,7 @@ describe('toHandoffInboxItem', () => {
       type: 'handoff',
       severity: 'critical',
       title: 'Weekly yoga schedule',
-      takenBy: { key: 'user-anna', userId: 'user-anna', label: 'Anna' },
+      takenBy: { userId: 'user-anna', label: 'Anna' },
     })
   })
 })
@@ -840,6 +840,7 @@ describe('inboxWaitingPresentation', () => {
       conversations: [humanOwned({
         ownership: ownership({
           ownerAccountId: 'account-anna',
+          ownerUserId: 'user-anna',
           ownerDisplayName: 'Anna',
           takenOverAt: '2026-06-19T11:55:00.000Z',
         }),
@@ -901,7 +902,7 @@ describe('inbox item last-message time and taken-by', () => {
       qualityTurns: [],
     })
 
-    expect(items[0]).toMatchObject({ takenBy: { key: 'user-ada', userId: 'user-ada', label: 'Ada Lovelace' } })
+    expect(items[0]).toMatchObject({ takenBy: { userId: 'user-ada', label: 'Ada Lovelace' } })
   })
 
   it('carries the anonymous session id onto a handoff item', () => {
@@ -1044,8 +1045,8 @@ describe('filterInboxItems', () => {
           ownership: ownership({ conversationId: 'c-theirs', ownerAccountId: 'account-1', ownerUserId: 'user-anna', ownerDisplayName: 'Anna' }),
         }),
         humanOwned({
-          id: 'c-legacy',
-          ownership: ownership({ conversationId: 'c-legacy', ownerAccountId: 'account-1', ownerUserId: null, ownerDisplayName: 'Acme' }),
+          id: 'c-unclaimed',
+          ownership: ownership({ conversationId: 'c-unclaimed' }),
         }),
       ],
       qualityTurns: [],
@@ -1075,27 +1076,6 @@ describe('filterInboxItems', () => {
     const filtered = filterInboxItems(items, { ...EMPTY_INBOX_FILTERS, takenBy: 'user-anna' }, context)
 
     expect(filtered.map((i) => i.conversationId)).toEqual(['c-anna'])
-  })
-
-  it('taken-by an owner from before per-teammate ownership matches by label', () => {
-    const items = buildInboxItems({
-      decisions: [],
-      conversations: [
-        humanOwned({
-          id: 'c-legacy',
-          ownership: ownership({ conversationId: 'c-legacy', ownerAccountId: 'account-1', ownerUserId: null, ownerDisplayName: 'Acme' }),
-        }),
-        humanOwned({
-          id: 'c-anna',
-          ownership: ownership({ conversationId: 'c-anna', ownerAccountId: 'account-1', ownerUserId: 'user-anna', ownerDisplayName: 'Anna' }),
-        }),
-      ],
-      qualityTurns: [],
-    })
-
-    const filtered = filterInboxItems(items, { ...EMPTY_INBOX_FILTERS, takenBy: 'label:Acme' }, context)
-
-    expect(filtered.map((i) => i.conversationId)).toEqual(['c-legacy'])
   })
 
   it('combines filters', () => {
@@ -1170,18 +1150,13 @@ describe('listTakenByOperators', () => {
           id: 'c-3',
           ownership: ownership({ conversationId: 'c-3', ownerAccountId: 'account-1', ownerUserId: 'user-x', ownerDisplayName: null }),
         }),
-        humanOwned({
-          id: 'c-4',
-          ownership: ownership({ conversationId: 'c-4', ownerAccountId: 'account-1', ownerUserId: null, ownerDisplayName: 'Acme' }),
-        }),
       ],
       qualityTurns: [],
     })
 
     expect(listTakenByOperators(items)).toEqual([
-      { key: 'user-anna', label: 'Anna' },
-      { key: 'user-x', label: 'A teammate' },
-      { key: 'label:Acme', label: 'Acme' },
+      { userId: 'user-anna', label: 'Anna' },
+      { userId: 'user-x', label: 'A teammate' },
     ])
   })
 })
@@ -1298,6 +1273,7 @@ describe('countAiHandledConversationsByAgent', () => {
           conversationId: 'c-1',
           state: 'human_owned',
           ownerAccountId: 'account-1',
+          ownerUserId: 'user-anna',
           ownerDisplayName: 'Anna',
         }),
       }),
@@ -1329,7 +1305,7 @@ describe('summarizeAiHandledConversations', () => {
       conversation({
         id: 'c-2',
         agentId: 'agent-1',
-        ownership: ownership({ conversationId: 'c-2', state: 'human_owned', ownerAccountId: 'account-1', ownerDisplayName: 'Anna' }),
+        ownership: ownership({ conversationId: 'c-2', state: 'human_owned', ownerAccountId: 'account-1', ownerUserId: 'user-anna', ownerDisplayName: 'Anna' }),
       }),
     ])).toEqual({ totalCount: 1, agentCount: 1 })
   })

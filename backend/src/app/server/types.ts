@@ -55,7 +55,6 @@ import type { WorkspaceRepositoryPort } from "../../db/repositories/workspaceRep
 import type { AccountRepositoryPort } from "../../modules/auth/services/authService.js";
 import type { BootstrapGreetingCacheRepositoryPort } from "../../db/repositories/bootstrapGreetingCacheRepository.js";
 import type { ConversationRepositoryPort } from "../../db/repositories/conversationRepository.js";
-import type { ConversationOwnershipRepository } from "../../db/repositories/conversationOwnershipRepository.js";
 import type { MessageRepositoryPort } from "../../db/repositories/messageRepository.js";
 import type { ConnectorIngestionPort } from "@radioso/connector-api";
 import type { ConnectorRegistry } from "../../modules/connectors/services/connectorRegistry.js";
@@ -111,9 +110,7 @@ import type {
 import type { ApprovalDecisionService } from "../../modules/approvals/public.js";
 import type {
   ConversationOperatorDirectory,
-  ConversationTransferNotices,
-  OperatorIdentityResolver,
-  OperatorReplyService,
+  ConversationOwnershipService,
 } from "../../modules/handoff/public.js";
 import type { VectorIndexReconciler } from "../../modules/retrieval/composition.js";
 import type {
@@ -242,13 +239,10 @@ export interface AppDependencies {
   documentStorage: DocumentStoragePort;
   chatService: ChatService;
   approvalDecisionService: ApprovalDecisionService;
-  operatorReplyService: OperatorReplyService;
-  /** Who a signed-in teammate is to other teammates and, on their replies, to the visitor. */
-  operatorIdentityResolver: Pick<OperatorIdentityResolver, "resolve">;
+  /** Who handles a human-owned conversation: take over, reply, transfer, hand back. */
+  conversationOwnershipService: ConversationOwnershipService;
   /** The teammates a conversation can be handed to in a workspace. */
   conversationOperatorDirectory: ConversationOperatorDirectory;
-  /** Queues the email a teammate gets when a conversation is handed to them. */
-  conversationTransferNotices: Pick<ConversationTransferNotices, "queueForRecipient">;
   workbenchReplayRunner: WorkbenchReplayRunner;
   /** Operator-only immutable candidate test executions; never mounted on public chat. */
   testExecutionService: TestExecutionService;
@@ -303,10 +297,6 @@ export interface AppDependencies {
   accountRepository: AccountRepositoryPort;
   bootstrapGreetingCacheRepository: BootstrapGreetingCacheRepositoryPort;
   conversationRepository: ConversationRepositoryPort;
-  conversationOwnershipRepository: Pick<
-    ConversationOwnershipRepository,
-    "load" | "loadByConversationIds" | "requestHandoff" | "takeOver" | "transfer" | "handBack"
-  >;
   messageRepository: MessageRepositoryPort;
   connectorRegistry: ConnectorRegistry;
   connectorManagementService: ConnectorManagementPort;

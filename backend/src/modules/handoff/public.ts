@@ -5,7 +5,6 @@ export {
   isHumanOwned,
   ownerLabel,
   presentOwnership,
-  resolveOwnership,
 } from "./ownershipState.js";
 export { OperatorReplyService } from "./operatorReplyService.js";
 export { OperatorIdentityResolver, type OperatorIdentity } from "./operatorIdentity.js";
@@ -13,16 +12,17 @@ export type { ConversationOperator, ConversationOperatorDirectory } from "./conv
 export {
   CONVERSATION_TRANSFER_NOTICE_ACTION_TYPE,
   ConversationTransferNoticeActionHandler,
-  ConversationTransferNotices,
+  transferNoticeRequest,
 } from "./transferNotice.js";
-export { ConversationOwnershipRepository } from "../../db/repositories/conversationOwnershipRepository.js";
+export {
+  ConversationOwnershipService,
+  type OwnershipActor,
+  type OwnershipTransferUnitOfWork,
+} from "./conversationOwnershipService.js";
 export type {
   ConversationOwnershipRecord,
   ConversationOwnershipScope,
 } from "./ownershipState.js";
-export type {
-  ConversationOwnershipMutationResult,
-} from "../../db/repositories/conversationOwnershipRepository.js";
 
 export interface ConversationOwnershipReader {
   load(conversationId: string): Promise<ConversationOwnershipRecord | null>;

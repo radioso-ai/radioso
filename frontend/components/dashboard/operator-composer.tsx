@@ -11,7 +11,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Textarea } from '@/components/ui/textarea'
-import { hitlApi, isHitlApiStatusError } from '@/lib/api-hitl'
+import { hitlApi, isHitlApiStatusError, transferFailureCause } from '@/lib/api-hitl'
 import type { ConversationOperator, ConversationOwnership, PendingApprovalDecision } from '@/lib/api-types'
 import { deriveOperatorActions, listHandOffTargets } from '@/lib/operator-actions'
 import { cn } from '@/lib/utils'
@@ -30,6 +30,12 @@ export type OperatorActionResult =
   | { kind: 'refresh'; conversationId: string; reason: 'conflict' | 'invalid_option' }
 
 const genericError = 'Something went wrong. Try again.'
+
+/** A failure the caller can explain: its message, and what to re-read because of it. */
+interface ExplainedFailure {
+  message: string
+  followUp?: () => void
+}
 const NO_TEAMMATES: readonly ConversationOperator[] = []
 
 /**
@@ -58,9 +64,9 @@ export function useOperatorActionRunner(
   const run = useCallback(async (
     actionId: string,
     callback: () => Promise<OperatorActionResult>,
-    // A 404 the caller can explain (a transfer target no longer eligible) shows this message and
-    // runs `onNotFound` instead of the generic failure.
-    notFound?: { message: string; onNotFound?: () => void },
+    // Explains a failure the caller understands (a transfer's target or conversation gone)
+    // instead of the generic message; null falls through to it.
+    explainFailure?: (caught: unknown) => ExplainedFailure | null,
   ) => {
     if (inFlightRef.current) {
       return
@@ -76,11 +82,10 @@ export function useOperatorActionRunner(
         const invalidOption = isHitlApiStatusError(caught, 422)
         setError(invalidOption ? 'That option is no longer valid - refreshing.' : 'This conversation changed - refreshing.')
         await onChanged({ kind: 'refresh', conversationId, reason: invalidOption ? 'invalid_option' : 'conflict' })
-      } else if (notFound && isHitlApiStatusError(caught, 404)) {
-        setError(notFound.message)
-        notFound.onNotFound?.()
       } else {
-        setError(genericError)
+        const explained = explainFailure?.(caught) ?? null
+        setError(explained?.message ?? genericError)
+        explained?.followUp?.()
       }
     } finally {
       inFlightRef.current = false
@@ -104,7 +109,7 @@ interface OperatorComposerProps {
   currentUserId: string | null
   /** Teammates who can own the conversation, offered by "Hand to…". */
   teammates?: readonly ConversationOperator[]
-  /** Re-reads the teammates when a transfer finds its target no longer eligible. */
+  /** Re-reads the teammates when a transfer finds its target no longer eligible (not when the conversation is gone). */
   onTeammatesStale?: () => void
   onChanged: (result: OperatorActionResult) => Promise<void> | void
   disabled?: boolean
@@ -167,9 +172,18 @@ export function OperatorComposer({
       }
       const response = await hitlApi.transferConversation(conversationId, { toUserId, expectedVersion: actions.version })
       return { kind: 'ownership', conversationId, ownershipState: response.ownership.state }
-    }, {
-      message: actionId === 'take-over' ? 'You can no longer take this over.' : 'That teammate can no longer take this.',
-      onNotFound: onTeammatesStale,
+    }, (caught) => {
+      switch (transferFailureCause(caught)) {
+        case 'target_unavailable':
+          return {
+            message: actionId === 'take-over' ? 'You can no longer take this over.' : 'That teammate can no longer take this.',
+            followUp: onTeammatesStale,
+          }
+        case 'conversation_missing':
+          return { message: 'This conversation is no longer available.' }
+        default:
+          return null
+      }
     })
   }, [actions.version, conversationId, onTeammatesStale, runner])
 
@@ -195,9 +209,22 @@ export function OperatorComposer({
     })
   }, [actions.claimsOnSend, actions.version, conversationId, runner, trimmedMessage])
 
+  // The global "Ask Ray" tag is fixed to the bottom-right viewport corner
+  // (see AskRayTag in copilot-panel.tsx) and must stay exactly there. When
+  // this composer renders a trailing action (Done), that button lands in the
+  // same bottom-right corner, so give the row extra clearance below it — sized
+  // to the tag's height, not its width, since the tag's single line of text
+  // keeps a stable height across locales while its width does not.
+  const containerClassName = cn(
+    'flex shrink-0 flex-col gap-2 border-t border-border bg-background px-6 pt-4',
+    trailingActions ? 'pb-12' : 'pb-4',
+  )
+
+  // A teammate's conversation keeps the trailing actions: Done on a feedback
+  // item is triage, not a reply, so it never waits on taking the conversation over.
   if (!actions.canReply) {
     return (
-      <div className="flex shrink-0 flex-col gap-2 border-t border-border bg-background px-6 pb-4 pt-4">
+      <div className={containerClassName}>
         {visibleError ? (
           <p className="text-xs text-destructive" role="status" aria-live="polite">
             {visibleError}
@@ -221,25 +248,15 @@ export function OperatorComposer({
           >
             Take over
           </Button>
+          <span className="flex-1" />
+          {trailingActions}
         </div>
       </div>
     )
   }
 
   return (
-    <div
-      className={cn(
-        'flex shrink-0 flex-col gap-2 border-t border-border bg-background px-6 pt-4',
-        // The global "Ask Ray" tag is fixed to the bottom-right viewport corner
-        // (see AskRayTag in copilot-panel.tsx) and must stay exactly there. When
-        // this composer renders a trailing action (Done), that button lands in
-        // the same bottom-right corner, so give the row extra clearance below it
-        // — sized to the tag's height, not its width, since the tag's single
-        // line of text keeps a stable height across locales while its width
-        // does not.
-        trailingActions ? 'pb-12' : 'pb-4',
-      )}
-    >
+    <div className={containerClassName}>
       <Textarea
         aria-label="Reply to the visitor"
         placeholder="Reply to the visitor - sending takes over the conversation"

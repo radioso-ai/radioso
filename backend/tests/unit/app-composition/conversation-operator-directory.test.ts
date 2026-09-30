@@ -17,7 +17,8 @@ const member = (overrides: Partial<AccountMembershipUserRecord> & Pick<AccountMe
 
 const directoryWith = (members: AccountMembershipUserRecord[], permitted: (userId: string) => boolean) => {
   const accountAccess = {
-    listAccountUsers: vi.fn(async () => members),
+    listMembersWithWorkspacePermission: vi.fn(async () =>
+      members.filter((member) => member.disabledAt === null && permitted(member.userId))),
     findAccountUser: vi.fn(async (_accountId: string, userId: string) =>
       members.find((member) => member.userId === userId) ?? null),
     hasPermission: vi.fn(async (input: { userId?: string | null }) => permitted(input.userId ?? "")),
@@ -38,14 +39,13 @@ describe("conversation operator directory", () => {
       { userId: "user-dana", label: "Dana Scully" },
       { userId: "user-fox", label: "fox@example.com" },
     ]);
-    expect(accountAccess.listAccountUsers).toHaveBeenCalledWith("account-1");
-    expect(accountAccess.hasPermission).toHaveBeenCalledWith({
+    // One bulk eligibility read, not a permission check per member.
+    expect(accountAccess.listMembersWithWorkspacePermission).toHaveBeenCalledWith({
       accountId: "account-1",
-      userId: "user-fox",
       workspaceId: "workspace-1",
       permission: "workspace.conversation.takeover",
     });
-    expect(accountAccess.hasPermission).not.toHaveBeenCalledWith(expect.objectContaining({ userId: "user-gone" }));
+    expect(accountAccess.hasPermission).not.toHaveBeenCalled();
   });
 
   it("finds one eligible teammate and nobody else", async () => {
@@ -72,7 +72,7 @@ describe("conversation operator directory", () => {
     await directory.find({ accountId: "account-1", workspaceId: "workspace-1", userId: "user-fox" });
     await directory.find({ accountId: "account-1", workspaceId: "workspace-1", userId: "user-gone" });
 
-    expect(accountAccess.listAccountUsers).not.toHaveBeenCalled();
+    expect(accountAccess.listMembersWithWorkspacePermission).not.toHaveBeenCalled();
     expect(accountAccess.findAccountUser).toHaveBeenCalledTimes(2);
     expect(accountAccess.findAccountUser).toHaveBeenCalledWith("account-1", "user-fox");
     // A disabled user is ruled out before any permission resolution.

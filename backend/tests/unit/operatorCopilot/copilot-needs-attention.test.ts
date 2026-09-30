@@ -40,6 +40,7 @@ const conversation = (overrides: Record<string, unknown> = {}) => ({
   updatedAt: "2026-08-26T07:00:00.000Z",
   ownership: {
     state: "human_owned",
+    ownerUserId: null,
     ownerDisplayName: null,
     reason: "escalation",
     takenOverAt: null,
@@ -198,17 +199,30 @@ describe("needs_attention", () => {
     const claimed = conversation({
       ownership: {
         state: "human_owned",
+        ownerUserId: "user-ada",
         ownerDisplayName: "Ada",
         reason: "escalation",
         takenOverAt: "2026-08-26T07:30:00.000Z",
         updatedAt: "2026-08-26T07:00:00.000Z",
       },
     });
+    // Its owner's user is gone, so nobody holds it any more, whatever label it kept.
+    const orphaned = conversation({
+      id: "conversation-orphaned",
+      ownership: {
+        state: "human_owned",
+        ownerUserId: null,
+        ownerDisplayName: "Bea",
+        reason: "escalation",
+        takenOverAt: "2026-08-26T07:20:00.000Z",
+        updatedAt: "2026-08-26T07:10:00.000Z",
+      },
+    });
     const result = await list(populated({
       chatHistoryService: {
         getConversation: vi.fn(),
         getConversationTurn: vi.fn(),
-        listConversations: vi.fn(async () => ({ conversations: [claimed], total: 1 })),
+        listConversations: vi.fn(async () => ({ conversations: [claimed, orphaned], total: 2 })),
       },
     }), { kinds: ["handoff"] });
 
@@ -216,6 +230,7 @@ describe("needs_attention", () => {
       takenOverAt: "2026-08-26T07:30:00.000Z",
       ownerDisplayName: "Ada",
     });
+    expect(result.items.find((item) => item.conversationId === "conversation-orphaned")).toMatchObject({ ownerDisplayName: null });
     expect(result.items[0].waitingMinutes).toEqual(expect.any(Number));
     expect(result.items[0].waitingMinutes as number).toBeGreaterThanOrEqual(0);
   });

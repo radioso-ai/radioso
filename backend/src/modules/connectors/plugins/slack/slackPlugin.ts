@@ -10,11 +10,7 @@ import { ActionRequestRepository } from "../../../../db/repositories/actionReque
 import { PendingDecisionRepository } from "../../../../db/repositories/pendingDecisionRepository.js";
 import type { ApprovalDecisionService } from "../../../approvals/public.js";
 import type { AuditPort } from "../../../audit/contracts/index.js";
-import {
-  ConversationOwnershipRepository,
-  type OperatorIdentityResolver,
-  type OperatorReplyService,
-} from "../../../handoff/public.js";
+import type { ConversationOwnershipService } from "../../../handoff/public.js";
 import type { MetricsRegistry } from "../../../../shared/observability/metrics/metricsRegistry.js";
 import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
 import type { ConversationLinkResolver } from "../../../../shared/domain/conversationLinkResolver.js";
@@ -22,7 +18,6 @@ import { IntegrationConnectionRepository } from "../../../integrationConnections
 import {
   createSlackInteractivityRouter,
   FetchSlackResponseUrlClient,
-  PostgresSlackOperatorPermission,
   PostgresWorkspaceMemberLookup,
   PostgresWorkspaceAccountLookup,
   SlackChannelBindingRepository,
@@ -31,6 +26,7 @@ import {
   SlackInteractivityHandler,
   SlackOperatorIdentityResolver,
   SlackWebApiClient,
+  type SlackOperatorPermissionPort,
 } from "../../../slack/public.js";
 import type { SlackStarterPromptsPort } from "./slackAgentSession.js";
 import { SlackMessageHandler, type SlackWebApiClientFactory } from "./slackMessageHandler.js";
@@ -46,8 +42,8 @@ interface SlackPluginOptions {
 
 type SlackConnectorContext = ConnectorContext & {
   approvalDecisionService?: Pick<ApprovalDecisionService, "resolve">;
-  operatorReplyService?: Pick<OperatorReplyService, "reply">;
-  operatorIdentityResolver?: Pick<OperatorIdentityResolver, "resolve">;
+  conversationOwnershipService?: ConversationOwnershipService;
+  operatorPermissions?: SlackOperatorPermissionPort;
   auditService?: Pick<AuditPort, "record">;
   metricsRegistry?: Pick<MetricsRegistry, "incrementCounter"> | null;
   assertPublicUrl?: (url: string) => Promise<void>;
@@ -104,7 +100,8 @@ export class SlackPlugin implements ConnectorPlugin {
     });
     const operatorIdentityResolver = new SlackOperatorIdentityResolver({
       workspaceMembers: new PostgresWorkspaceMemberLookup(db),
-      permissions: new PostgresSlackOperatorPermission(db),
+      // Without the host's permission rules nobody is authorised: Slack operator actions fail closed.
+      permissions: extendedContext.operatorPermissions ?? { hasPermission: async () => false },
       slack: {
         usersInfo: async (slackUserId, installation) => {
           if (!installation) {
@@ -152,9 +149,7 @@ export class SlackPlugin implements ConnectorPlugin {
           identityResolver: operatorIdentityResolver,
           approvalDecisions: extendedContext.approvalDecisionService,
           pendingDecisions: new PendingDecisionRepository(db),
-          conversationOwnership: new ConversationOwnershipRepository(db),
-          operatorReplyService: extendedContext.operatorReplyService,
-          operatorIdentities: extendedContext.operatorIdentityResolver,
+          conversationOwnership: extendedContext.conversationOwnershipService,
           slackViews: {
             open: async ({ installation, triggerId, view }) => {
               const botToken = await installationService.resolveBotTokenForInstallation(installation);
@@ -170,7 +165,6 @@ export class SlackPlugin implements ConnectorPlugin {
           }),
           audit: extendedContext.auditService,
           metrics: extendedContext.metricsRegistry ?? undefined,
-          workspaceInvalidationPublisher: extendedContext.workspaceInvalidationPublisher,
           conversationLinks: extendedContext.conversationLinks,
           logger: context.logger,
         }),

@@ -292,7 +292,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
         description: "The organisation the workspace belongs to while a teammate owns the conversation. Shared by every teammate, so it does not identify one.",
       }),
       ownerUserId: z.string().uuid().nullable().openapi({
-        description: "The teammate handling the conversation. Null while a handoff waits to be claimed, when AI-owned, and on conversations claimed before per-teammate ownership.",
+        description: "The teammate handling the conversation; a human-owned conversation is claimed exactly when this is set. Null while a handoff waits to be claimed, when AI-owned, and once the owner's user is deleted.",
       }),
       ownerDisplayName: z.string().nullable().openapi({
         description: "The owner's teammate label: their display name, else their email. Operator-facing only.",
@@ -692,6 +692,9 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     "HumanReplyMessageResponse",
     z.object({
       message: HumanReplyMessageSchema,
+      ownership: ConversationOwnershipSchema.openapi({
+        description: "The conversation's ownership after the reply. A reply to an AI-owned or unclaimed conversation claims it for the replier, so its version moves on.",
+      }),
     }),
   );
 

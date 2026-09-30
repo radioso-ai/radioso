@@ -65,6 +65,8 @@ export const registerConversationOwnershipPaths = (
     path: "/api/v1/conversations/{conversationId}/takeover",
     tags: ["Conversation Ownership"],
     summary: "Take human ownership of a conversation",
+    description:
+      "Claims a conversation the AI owns or that waits for a teammate. A conversation another teammate holds returns 409; take it from them by transferring it to yourself.",
     operationId: "takeOverConversation",
     security: bearerSecurity,
     request: {
@@ -92,6 +94,8 @@ export const registerConversationOwnershipPaths = (
     path: "/api/v1/conversations/{conversationId}/reply",
     tags: ["Conversation Ownership"],
     summary: "Reply to a conversation as a human operator",
+    description:
+      "Only the teammate who owns the conversation replies. A reply to a conversation the AI owns, or one waiting for a teammate, claims it for you first. A conversation another teammate holds, or an `expectedVersion` that is no longer current, returns 409 with the current ownership.",
     operationId: "replyToConversation",
     security: bearerSecurity,
     request: {
@@ -120,7 +124,7 @@ export const registerConversationOwnershipPaths = (
     tags: ["Conversation Ownership"],
     summary: "Transfer human ownership of a conversation",
     description:
-      "Hands a human-owned conversation to another teammate, or to yourself to take it from the teammate holding it. The receiving teammate gets an email with a link to the conversation unless they made the transfer. A target who is not a teammate able to own conversations on the workspace returns 404.",
+      "Hands a human-owned conversation to another teammate, or to yourself to take it from the teammate holding it. The receiving teammate gets an email with a link to the conversation unless they made the transfer. A target who is not a teammate able to own conversations on the workspace returns 404 with code `transfer_target_unavailable`; a conversation that is not in the workspace returns 404 with code `not_found`.",
     operationId: "transferConversationOwnership",
     security: bearerSecurity,
     request: {
@@ -138,7 +142,7 @@ export const registerConversationOwnershipPaths = (
       400: errorResponse("Request validation failed", schemas),
       401: errorResponse("Authentication required", schemas),
       403: errorResponse("Workspace conversation takeover permission required", schemas),
-      404: errorResponse("Conversation or transfer target not found", schemas),
+      404: errorResponse("Conversation not found (`not_found`), or transfer target unavailable (`transfer_target_unavailable`)", schemas),
       409: errorResponse("Conversation ownership changed", schemas),
     },
   });
@@ -148,6 +152,8 @@ export const registerConversationOwnershipPaths = (
     path: "/api/v1/conversations/{conversationId}/handback",
     tags: ["Conversation Ownership"],
     summary: "Return a human-owned conversation to AI ownership",
+    description:
+      "Only the teammate who owns the conversation hands it back; anyone may while it waits unclaimed. A conversation another teammate holds, or an `expectedVersion` that is no longer current, returns 409 with the current ownership.",
     operationId: "handBackConversation",
     security: bearerSecurity,
     request: {

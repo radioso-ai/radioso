@@ -159,7 +159,7 @@ describe("conversation ownership routes", () => {
 
     const handback = await request(app)
       .post(`/api/v1/conversations/${conversation.id}/handback`)
-      .set(adminSessionHeaders(member))
+      .set(adminSessionHeaders(owner))
       .send({ expectedVersion: 2 });
 
     expect(handback.status).toBe(200);
@@ -174,7 +174,7 @@ describe("conversation ownership routes", () => {
     const staleReply = await request(app)
       .post(`/api/v1/conversations/${conversation.id}/reply`)
       .set(adminSessionHeaders(member))
-      .send({ message: "Still here.", expectedVersion: 3 });
+      .send({ message: "Still here.", expectedVersion: 2 });
 
     expect(staleReply.status).toBe(409);
     expect(staleReply.body.error.details.ownership).toMatchObject({
@@ -192,6 +192,59 @@ describe("conversation ownership routes", () => {
       "handed_back",
     ]);
     expect(dependencies.chatInferencePipeline.complete).not.toHaveBeenCalled();
+  });
+
+  it("refuses a reply and a hand-back from a teammate who does not own the conversation", async () => {
+    const { app, repositories } = createTestApp();
+    const owner = await issueTestSession(app, "ownership-guard-owner@example.com");
+    const member = await acceptInvite(app, owner.cookie, "ownership-guard-member@example.com");
+    const conversation = await repositories.conversationRepository.create({ workspaceId: owner.workspaceId, sourceChannel: "dashboard" });
+    const claim = await request(app)
+      .post(`/api/v1/conversations/${conversation.id}/takeover`)
+      .set(adminSessionHeaders(member))
+      .send({});
+    const version = claim.body.ownership.version as number;
+
+    const reply = await request(app)
+      .post(`/api/v1/conversations/${conversation.id}/reply`)
+      .set(adminSessionHeaders(owner))
+      .send({ message: "Let me jump in.", expectedVersion: version });
+    const handback = await request(app)
+      .post(`/api/v1/conversations/${conversation.id}/handback`)
+      .set(adminSessionHeaders(owner))
+      .send({ expectedVersion: version });
+
+    for (const refused of [reply, handback]) {
+      expect(refused.status).toBe(409);
+      expect(refused.body.error.code).toBe("conflict");
+      expect(refused.body.error.details.ownership).toMatchObject({ state: "human_owned", ownerUserId: member.userId, version });
+    }
+    expect(await repositories.messageRepository.listByConversationId(owner.workspaceId, conversation.id)).toEqual([]);
+    await expect(repositories.conversationOwnershipRepository.load(conversation.id))
+      .resolves.toMatchObject({ state: "human_owned", ownerUserId: member.userId, version });
+  });
+
+  it("claims a waiting handoff for the teammate who replies to it", async () => {
+    const { app, repositories } = createTestApp();
+    const owner = await issueTestSession(app, "ownership-claim-reply-owner@example.com");
+    const member = await acceptInvite(app, owner.cookie, "ownership-claim-reply-member@example.com");
+    const conversation = await repositories.conversationRepository.create({ workspaceId: owner.workspaceId, sourceChannel: "dashboard" });
+    const requested = await repositories.conversationOwnershipRepository.requestHandoff({
+      conversationId: conversation.id,
+      workspaceId: owner.workspaceId,
+      reason: "routine_handoff",
+    });
+
+    const reply = await request(app)
+      .post(`/api/v1/conversations/${conversation.id}/reply`)
+      .set(adminSessionHeaders(member))
+      .send({ message: "Hi, I can help.", expectedVersion: requested.record.version });
+
+    expect(reply.status).toBe(201);
+    expect(reply.body.ownership).toMatchObject({ state: "human_owned", ownerUserId: member.userId, version: requested.record.version + 1 });
+    expect(repositories.auditEventRepository.items.filter((event) =>
+      event.eventType === "hitl.ownership" && event.metadata.conversationId === conversation.id
+    ).map((event) => event.metadata.action)).toEqual(["taken_over", "replied"]);
   });
 
   it("gives two teammates of one organisation distinct owners and labels", async () => {
@@ -240,7 +293,8 @@ describe("conversation ownership routes", () => {
 
     expect(unsigned.status).toBe(201);
     expect(unsigned.body.message.metadata.humanAgent).toEqual({ accountId: owner.accountId, userId: owner.userId });
-    expect(JSON.stringify(unsigned.body)).not.toContain("ownership-signature-owner@example.com");
+    // The operator-facing ownership next to it names the owner by teammate label; the message never does.
+    expect(JSON.stringify(unsigned.body.message)).not.toContain("ownership-signature-owner@example.com");
     expect(signed.body.message.metadata.humanAgent).toEqual({
       accountId: owner.accountId,
       userId: owner.userId,
@@ -274,7 +328,7 @@ describe("conversation ownership routes", () => {
     expect(assigned.body.ownership.takenOverAt).toEqual(expect.any(String));
     expect(repositories.actionOutbox.items).toEqual([expect.objectContaining({
       type: "conversation.transfer_notice",
-      payload: { recipientUserId: member.userId, transferredByUserId: owner.userId },
+      payload: { recipientUserId: member.userId, transferredByUserId: owner.userId, ownershipVersion: 2 },
       workspaceId: owner.workspaceId,
       conversationId: conversation.id,
       idempotencyKey: `conversation-transfer:${conversation.id}:2`,
@@ -323,13 +377,44 @@ describe("conversation ownership routes", () => {
         .send({ toUserId, expectedVersion: claim.body.ownership.version });
 
       expect(response.status).toBe(404);
-      expect(response.body.error.message).toBe("Transfer target not found");
+      expect(response.body.error).toMatchObject({ code: "transfer_target_unavailable", message: "Transfer target not found" });
     }
+    const missingConversation = await request(app)
+      .post(`/api/v1/conversations/${randomUUID()}/transfer`)
+      .set(adminSessionHeaders(owner))
+      .send({ toUserId: owner.userId, expectedVersion: claim.body.ownership.version });
+    expect(missingConversation.status).toBe(404);
+    expect(missingConversation.body.error.code).toBe("not_found");
     const legacyBody = await request(app)
       .post(`/api/v1/conversations/${conversation.id}/transfer`)
       .set(adminSessionHeaders(owner))
       .send({ toAccountId: owner.accountId, expectedVersion: claim.body.ownership.version });
     expect(legacyBody.status).toBe(400);
+    expect(repositories.actionOutbox.items).toEqual([]);
+  });
+
+  it("leaves a disabled teammate off the operators list and refuses to hand them a conversation", async () => {
+    const { app, repositories } = createTestApp();
+    const owner = await issueTestSession(app, "ownership-disabled-owner@example.com");
+    const member = await acceptInvite(app, owner.cookie, "ownership-disabled-member@example.com");
+    const conversation = await repositories.conversationRepository.create({ workspaceId: owner.workspaceId, sourceChannel: "dashboard" });
+    const claim = await request(app)
+      .post(`/api/v1/conversations/${conversation.id}/takeover`)
+      .set(adminSessionHeaders(owner))
+      .send({});
+    repositories.userRepository.disable(member.userId);
+
+    const operators = await request(app)
+      .get("/api/v1/conversations/operators")
+      .set(adminSessionHeaders(owner));
+    const transfer = await request(app)
+      .post(`/api/v1/conversations/${conversation.id}/transfer`)
+      .set(adminSessionHeaders(owner))
+      .send({ toUserId: member.userId, expectedVersion: claim.body.ownership.version });
+
+    expect(operators.body.operators).toEqual([{ userId: owner.userId, label: "ownership-disabled-owner@example.com" }]);
+    expect(transfer.status).toBe(404);
+    expect(transfer.body.error.code).toBe("transfer_target_unavailable");
     expect(repositories.actionOutbox.items).toEqual([]);
   });
 

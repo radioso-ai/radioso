@@ -1645,7 +1645,7 @@ export const installDashboardApiMocks = async (
       const body = request.postDataJSON() as TransferRequestFixture;
       options.transferRequests?.push(body);
       if (options.ineligibleTransferTargets?.includes(body.toUserId)) {
-        await json(route, { error: { code: "not_found", message: "Transfer target not found" } }, 404);
+        await json(route, { error: { code: "transfer_target_unavailable", message: "Transfer target not found" } }, 404);
         return;
       }
       const target = (options.conversationOperators ?? []).find((operator) => operator.userId === body.toUserId);

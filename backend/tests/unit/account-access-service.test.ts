@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   AccountAccessService,
@@ -11,6 +11,7 @@ import {
   createAuditService,
   InMemoryAccountMembershipRepository,
   InMemoryUserRepository,
+  InMemoryWorkspaceGrantRepository,
 } from "../support/fakes.js";
 
 describe("AccountAccessService", () => {
@@ -138,6 +139,41 @@ describe("AccountAccessService", () => {
     );
     expect(service.permissionsForWorkspaceRole("admin", apiAccessPermissions)).toEqual(new Set(apiAccessPermissions));
     expect(service.permissionsForWorkspaceRole("owner", apiAccessPermissions)).toEqual(new Set(apiAccessPermissions));
+  });
+
+  it("lists the enabled members holding a workspace permission in two reads, agreeing with hasPermission", async () => {
+    const userRepository = new InMemoryUserRepository();
+    const membershipRepository = new InMemoryAccountMembershipRepository();
+    membershipRepository.setUserRepository(userRepository);
+    const grantRepository = new InMemoryWorkspaceGrantRepository();
+    const service = new AccountAccessService(membershipRepository, createAuditService(), grantRepository);
+    const addMember = async (email: string, role: "owner" | "admin" | "member") => {
+      const user = await userRepository.create({ email, passwordHash: "hash" });
+      await membershipRepository.create({ accountId: "account-1", userId: user.id, role });
+      return user.id;
+    };
+    const owner = await addMember("owner@example.com", "owner");
+    const grantedAdmin = await addMember("granted@example.com", "member");
+    const plainMember = await addMember("member@example.com", "member");
+    const disabledAdmin = await addMember("disabled@example.com", "admin");
+    const elsewhereAdmin = await addMember("elsewhere@example.com", "member");
+    await grantRepository.upsert({ workspaceId: "workspace-1", accountId: "account-1", userId: grantedAdmin, role: "admin" });
+    await grantRepository.upsert({ workspaceId: "workspace-2", accountId: "account-1", userId: elsewhereAdmin, role: "admin" });
+    userRepository.disable(disabledAdmin);
+    // An admin-only permission, so the workspace grant decides it for members.
+    const permission = "workspace.api_access.personal.audit" as const;
+    const perUserLookup = vi.spyOn(grantRepository, "findByWorkspaceAndUser");
+    const perUserMembership = vi.spyOn(membershipRepository, "findActiveByAccountAndUser");
+
+    const eligible = await service.listMembersWithWorkspacePermission({ accountId: "account-1", workspaceId: "workspace-1", permission });
+
+    expect(eligible.map((member) => member.userId)).toEqual([owner, grantedAdmin]);
+    expect(perUserLookup).not.toHaveBeenCalled();
+    expect(perUserMembership).not.toHaveBeenCalled();
+    for (const userId of [owner, grantedAdmin, plainMember, elsewhereAdmin]) {
+      await expect(service.hasPermission({ accountId: "account-1", userId, workspaceId: "workspace-1", permission }))
+        .resolves.toBe(eligible.some((member) => member.userId === userId));
+    }
   });
 
   it("never grants public chat permissions to session users or workspace API tokens", async () => {

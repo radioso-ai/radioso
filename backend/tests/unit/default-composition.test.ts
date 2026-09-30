@@ -10,6 +10,7 @@ import {
   createDefaultWebsiteCrawlJobDispatcher,
 } from "../../src/app/composition/defaultComposition.js";
 import {
+  APPROVAL_REQUEST_ACTION_TYPE,
   CONTACT_SEND_ACTION_TYPE,
   DefaultTurnSelectionStrategy,
   HANDOFF_NOTIFY_ACTION_TYPE,
@@ -108,8 +109,18 @@ describe("default application composition", () => {
     expect(composition.routineActionHandlerRegistrations.map((registration) => registration.type))
       .not.toContain(CONVERSATION_TRANSFER_NOTICE_ACTION_TYPE);
     expect(composition.routineActionHandlerRegistrations.map((registration) => registration.type)).toEqual(
-      expect.arrayContaining([CONTACT_SEND_ACTION_TYPE, HANDOFF_NOTIFY_ACTION_TYPE, WEBHOOK_SEND_ACTION_TYPE]),
+      expect.arrayContaining([
+        CONTACT_SEND_ACTION_TYPE,
+        HANDOFF_NOTIFY_ACTION_TYPE,
+        APPROVAL_REQUEST_ACTION_TYPE,
+        WEBHOOK_SEND_ACTION_TYPE,
+        // The Slack escalation skill posts from a routine step (`routine_post`).
+        "slack.post",
+      ]),
     );
+    // Every registration says whether a routine may emit it; nothing is admitted by default.
+    expect(composition.actionHandlerRegistrations.filter((registration) => typeof registration.emittableByRoutines !== "boolean"))
+      .toEqual([]);
     expect(composition.organizationCreationGuardRegistration).toBeTypeOf("function");
     expect(composition.oauthProviders).toEqual([]);
   });

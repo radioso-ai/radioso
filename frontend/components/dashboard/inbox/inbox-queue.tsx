@@ -139,7 +139,7 @@ export function InboxQueue({
                   <SelectItem value={TAKEN_BY_UNCLAIMED}>Unclaimed</SelectItem>
                   <SelectItem value={TAKEN_BY_ME}>Me</SelectItem>
                   {operatorOptions.map((operator) => (
-                    <SelectItem key={operator.key} value={operator.key}>
+                    <SelectItem key={operator.userId} value={operator.userId}>
                       {operator.label}
                     </SelectItem>
                   ))}

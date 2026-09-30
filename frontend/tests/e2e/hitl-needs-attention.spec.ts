@@ -889,3 +889,78 @@ test("the Taken by: Me filter shows only the signed-in teammate's handoffs, not 
   await expect(queue.getByRole("button", { name: /Dana is on it/ })).toBeVisible();
   await expect(queue.getByRole("button", { name: /Mine to answer/ })).toHaveCount(0);
 });
+
+test("a feedback item on a conversation a teammate holds still offers Done", async ({ page }) => {
+  const conversationId = "conversation-feedback-held";
+  const assistantMessageId = "assistant-feedback-held";
+  const heldByDana = handoffOwnership(conversationId, teammates[1], 3);
+  const feedbackTurn = {
+    assistantMessageId,
+    conversationId,
+    agentId: defaultAgentId,
+    agentName: "Gioia",
+    channel: "website_embed",
+    question: "Is the studio open on holidays?",
+    answerPreview: "The studio is open every day.",
+    skillName: "retrieval.answer",
+    skillOutcome: "grounded",
+    skillStatus: "completed",
+    totalLatencyMs: 900,
+    createdAt: nowIso,
+    feedback: {
+      upCount: 0,
+      downCount: 1,
+      latestDownUpdatedAt: nowIso,
+      comments: [{ value: "down", comment: "It is closed on holidays.", createdAt: nowIso, updatedAt: nowIso }],
+    },
+    triage: { state: "open", version: 0, resolution: null, legacyReason: null, closedAt: null, updatedAt: null },
+    verification: null,
+  };
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    conversationDetails: { [conversationId]: handoffDetail(conversationId, heldByDana) },
+    conversationOperators: teammates,
+  });
+  await page.route("**/backend/api/v1/quality/turns**", async (route) => {
+    const url = new URL(route.request().url());
+    const isWrittenFeedback =
+      url.searchParams.get("feedback") === "down" && url.searchParams.get("hasComment") === "true";
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        items: isWrittenFeedback ? [feedbackTurn] : [],
+        total: isWrittenFeedback ? 1 : 0,
+        page: 1,
+        pageSize: isWrittenFeedback ? 25 : 1,
+        totalPages: 1,
+      }),
+    });
+  });
+  await page.route("**/backend/api/v1/quality/turns/*/triage**", async (route) => {
+    const body = route.request().postDataJSON() as { state: string; expectedVersion: number };
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        state: body.state,
+        version: body.expectedVersion + 1,
+        resolution: null,
+        legacyReason: null,
+        closedAt: null,
+        updatedAt: nowIso,
+      }),
+    });
+  });
+
+  await page.goto(`/w/${workspaceKey}/activity?tab=needs-attention`);
+  await page.getByLabel("Inbox queue").getByRole("button", { name: /Is the studio open on holidays\?/ }).click();
+
+  const response = page.getByLabel("Response", { exact: true });
+  await expect(response.getByText("Dana Scully is handling this")).toBeVisible();
+  await expect(response.getByRole("textbox", { name: "Reply to the visitor" })).toHaveCount(0);
+
+  await response.getByRole("button", { name: "Done" }).click();
+  await expect(page.getByRole("heading", { name: "Resolve review" })).toBeVisible();
+});

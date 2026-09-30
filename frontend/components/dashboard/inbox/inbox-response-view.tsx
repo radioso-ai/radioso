@@ -66,6 +66,8 @@ export type InboxResponseSelection =
   | { source: 'readonly'; conversationId: string; conversation?: ChatConversationSummary }
 
 interface InboxResponseViewProps {
+  /** The workspace whose teammates "Hand to…" offers. */
+  workspaceId: string
   selection: InboxResponseSelection | null
   now: Date
   pendingDecisions: PendingApprovalDecision[]
@@ -105,6 +107,7 @@ interface InboxResponseViewProps {
  * header, situation card, and the type-specific Done control.
  */
 export function InboxResponseView({
+  workspaceId,
   selection,
   now,
   pendingDecisions,
@@ -176,7 +179,7 @@ export function InboxResponseView({
   )
   const effectiveItem = item ?? derivedHandoffItem
   const currentUserId = useOptionalAuth()?.user?.userId ?? null
-  const teammates = useConversationOperators(effectiveItem !== null)
+  const teammates = useConversationOperators(workspaceId, effectiveItem !== null)
 
   const {
     isDocumentDialogOpen,
@@ -218,7 +221,7 @@ export function InboxResponseView({
 
   // See `shouldShowDoneControl` for the visibility rule (only renders when
   // there's something to wrap up).
-  const showDoneControl = shouldShowDoneControl(effectiveItem?.type, conversationDetail)
+  const showDoneControl = shouldShowDoneControl(effectiveItem?.type, conversationDetail, currentUserId)
   // A handoff selected from the All lens can render its composer immediately
   // from the row's own summary (see `readOnlySource` above), before
   // `conversationDetail` — the actual source of both the ownership check

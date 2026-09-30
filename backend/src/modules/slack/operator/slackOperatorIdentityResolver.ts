@@ -10,6 +10,7 @@ export interface WorkspaceMemberLookupPort {
   findByEmail(workspaceId: string, email: string): Promise<WorkspaceMemberLookupResult | null>;
 }
 
+/** Whether a teammate may act on conversations; answered by the same role rules the dashboard enforces. */
 export interface SlackOperatorPermissionPort {
   hasPermission(input: {
     accountId: string;

@@ -13,8 +13,9 @@ import { createConversationOperatorDirectory } from "../conversationOperatorDire
 import { buildConversationLinkResolver } from "../conversationLinkResolver.js";
 
 /**
- * Delivers the email a teammate gets when a conversation is handed to them. The transfer route
- * queues the notice on the action outbox; this registers the worker-side handler that sends it.
+ * Delivers the email a teammate gets when a conversation is handed to them. A transfer queues the
+ * notice on the action outbox in its own transaction; this registers the worker-side handler that
+ * sends it. The link and logo come from `APP_BASE_URL`, so the worker needs it too.
  */
 export const createConversationTransferNoticeApplicationModule = (): ApplicationModule => ({
   id: "radioso-conversation-transfer-notice",
@@ -22,11 +23,9 @@ export const createConversationTransferNoticeApplicationModule = (): Application
   register(context) {
     context.registerActionHandler({
       type: CONVERSATION_TRANSFER_NOTICE_ACTION_TYPE,
-      // An operator action, not a routine one: no capability gates a teammate's own inbox, and
-      // only the transfer route queues it.
-      requiredCapabilities: [],
+      // An operator action, not a routine one: only a transfer queues it.
       emittableByRoutines: false,
-      handler: ({ auditService, database, env, logger, mailService }) => {
+      handler: ({ auditService, database, env, errorReporter, logger, mailService }) => {
         const workspaces = new WorkspaceRepository(database.kysely);
         return new ConversationTransferNoticeActionHandler({
           users: new UserRepository(database.kysely),
@@ -44,6 +43,7 @@ export const createConversationTransferNoticeApplicationModule = (): Application
           mail: mailService,
           appBaseUrl: env.APP_BASE_URL,
           logger,
+          errorReporter,
         });
       },
     });

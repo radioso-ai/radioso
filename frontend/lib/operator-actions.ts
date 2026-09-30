@@ -1,30 +1,23 @@
 import type { ConversationOperator, ConversationOwnership } from './api-types'
 
-type OwnershipIdentity = Pick<ConversationOwnership, 'state' | 'ownerAccountId' | 'ownerUserId' | 'ownerDisplayName'>
+type OwnershipIdentity = Pick<ConversationOwnership, 'state' | 'ownerUserId' | 'ownerDisplayName'>
 
 /**
- * Who holds a human-owned conversation. `key` identifies the owner for
- * grouping and filtering: the user id, or the label for a conversation claimed
- * before ownership named a person (`userId` null) — such a conversation is
- * never "mine". `label` is the teammate label, null when there is none.
+ * The teammate holding a human-owned conversation. A conversation is claimed
+ * exactly when it names a user; `userId` identifies the owner for "mine"
+ * checks, grouping and filtering. `label` is the teammate label, null when
+ * there is none.
  */
 export interface ConversationOwner {
-  key: string
-  userId: string | null
+  userId: string
   label: string | null
 }
 
 export const conversationOwner = (ownership?: OwnershipIdentity | null): ConversationOwner | null => {
-  if (!ownership || ownership.state !== 'human_owned') {
+  if (!ownership || ownership.state !== 'human_owned' || !ownership.ownerUserId) {
     return null
   }
-  if (ownership.ownerUserId === null && ownership.ownerAccountId === null) {
-    return null
-  }
-  const label = ownership.ownerDisplayName?.trim() || null
-  return ownership.ownerUserId !== null
-    ? { key: ownership.ownerUserId, userId: ownership.ownerUserId, label }
-    : { key: `label:${label ?? ''}`, userId: null, label }
+  return { userId: ownership.ownerUserId, label: ownership.ownerDisplayName?.trim() || null }
 }
 
 type OperatorActionStatus = 'ai_owned' | 'awaiting_human' | 'owned_by_me' | 'owned_by_teammate'
@@ -52,7 +45,7 @@ const statusFor = (
   if (!owner) {
     return 'awaiting_human'
   }
-  return owner.userId !== null && owner.userId === currentUserId ? 'owned_by_me' : 'owned_by_teammate'
+  return owner.userId === currentUserId ? 'owned_by_me' : 'owned_by_teammate'
 }
 
 export const deriveOperatorActions = (

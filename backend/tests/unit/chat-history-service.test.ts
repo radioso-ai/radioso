@@ -229,6 +229,7 @@ describe("chat history service ownership read surface", () => {
     await conversationOwnershipRepository.handBack({
       conversationId: conversation.id,
       expectedVersion: claimed.record.version,
+      actingUserId: claimed.record.ownerUserId!,
     });
 
     const detail = await service.getConversation("workspace-1", conversation.id, detailInput, {
@@ -455,6 +456,7 @@ describe("chat history service ownership read surface", () => {
     await conversationOwnershipRepository.handBack({
       conversationId: conversation.id,
       expectedVersion: claimed.record.version,
+      actingUserId: claimed.record.ownerUserId!,
     });
     const aiOwnedTail = await service.tailConversation(
       "workspace-1",
@@ -540,9 +542,9 @@ describe("chat history service ownership read surface", () => {
     ]);
   });
 
-  // A reply stored before replies recorded their author could carry the replier's email as its
-  // signature. Only a reply that names its author (humanAgent.userId) was signed under the
-  // never-an-email rule, so only those signatures reach the visitor.
+  // A reply stored before replies recorded their author was signed with the organisation's name,
+  // or with the replier's email where the organisation had none. Every surface shows the first and
+  // none shows the second; a reply that names its author was signed under the never-an-email rule.
   const seedLegacyAndAttributedReplies = async () => {
     const setup = createService();
     const conversation = await setup.conversationRepository.create({ workspaceId: "workspace-1" });
@@ -552,7 +554,7 @@ describe("chat history service ownership read surface", () => {
       role: "user",
       content: "baseline",
     });
-    const legacyReply = await setup.messageRepository.create({
+    const legacyEmailReply = await setup.messageRepository.create({
       conversationId: conversation.id,
       workspaceId: "workspace-1",
       role: "assistant",
@@ -560,6 +562,15 @@ describe("chat history service ownership read surface", () => {
       content: "Replied before replies named their author.",
       operatorAccountId: "operator-1",
       operatorDisplayName: "dana@example.com",
+    });
+    const legacyOrganisationReply = await setup.messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "assistant",
+      source: "human_agent",
+      content: "Also replied before replies named their author.",
+      operatorAccountId: "operator-1",
+      operatorDisplayName: "Acme Support",
     });
     const attributedReply = await setup.messageRepository.create({
       conversationId: conversation.id,
@@ -571,41 +582,32 @@ describe("chat history service ownership read surface", () => {
       operatorUserId: "user-1",
       operatorDisplayName: "Dana Scully",
     });
-    return { ...setup, conversation, baseline, legacyReply, attributedReply };
+    return { ...setup, conversation, baseline, legacyEmailReply, legacyOrganisationReply, attributedReply };
   };
 
-  it("keeps an unattributed reply's signature off the visitor tail and detail", async () => {
-    const { service, messageRepository, conversation, baseline, legacyReply, attributedReply } = await seedLegacyAndAttributedReplies();
+  it("shows every stored signature but an unattributed email, on visitor and operator surfaces alike", async () => {
+    const { service, messageRepository, conversation, baseline, legacyEmailReply, legacyOrganisationReply, attributedReply } =
+      await seedLegacyAndAttributedReplies();
+    const cursor = { cursor: messageRepository.cursorFor(baseline), limit: 10 };
+    const page = { limit: 50, offset: 0 };
 
-    const tail = await service.tailConversation("workspace-1", conversation.id, {
-      cursor: messageRepository.cursorFor(baseline),
-      limit: 10,
-    });
-    const detail = await service.getConversation("workspace-1", conversation.id, { limit: 50, offset: 0 });
+    const surfaces = [
+      (await service.tailConversation("workspace-1", conversation.id, cursor)).messages,
+      (await service.getConversation("workspace-1", conversation.id, page)).messages,
+      (await service.tailConversation("workspace-1", conversation.id, cursor, { includeOwnership: true })).messages,
+      (await service.getConversation("workspace-1", conversation.id, page, { includeOwnership: true })).messages,
+    ];
 
-    for (const messages of [tail.messages, detail.messages]) {
-      expect(messages.find((message) => message.id === legacyReply.id)?.operatorDisplayName).toBeUndefined();
+    for (const messages of surfaces) {
+      expect(messages.find((message) => message.id === legacyEmailReply.id)?.operatorDisplayName).toBeUndefined();
+      expect(messages.find((message) => message.id === legacyOrganisationReply.id)?.operatorDisplayName).toBe("Acme Support");
       expect(messages.find((message) => message.id === attributedReply.id)?.operatorDisplayName).toBe("Dana Scully");
     }
-    expect(JSON.stringify([tail, detail])).not.toContain("dana@example.com");
-  });
-
-  it("shows an unattributed reply's signature on operator surfaces", async () => {
-    const { service, messageRepository, conversation, baseline, legacyReply } = await seedLegacyAndAttributedReplies();
-
-    const tail = await service.tailConversation("workspace-1", conversation.id, {
-      cursor: messageRepository.cursorFor(baseline),
-      limit: 10,
-    }, { includeOwnership: true, includeUnattributedReplySignatures: true });
-    const detail = await service.getConversation("workspace-1", conversation.id, { limit: 50, offset: 0 }, {
-      includeOwnership: true,
-      includeUnattributedReplySignatures: true,
-    });
-    const turn = await service.getConversationTurn("workspace-1", legacyReply.id, { includeUnattributedReplySignatures: true });
-
-    expect(tail.messages.find((message) => message.id === legacyReply.id)?.operatorDisplayName).toBe("dana@example.com");
-    expect(detail.messages.find((message) => message.id === legacyReply.id)?.operatorDisplayName).toBe("dana@example.com");
-    expect(turn.message.operatorDisplayName).toBe("dana@example.com");
+    expect(JSON.stringify(surfaces)).not.toContain("dana@example.com");
+    await expect(service.getConversationTurn("workspace-1", legacyEmailReply.id))
+      .resolves.toMatchObject({ message: { operatorDisplayName: undefined } });
+    await expect(service.getConversationTurn("workspace-1", legacyOrganisationReply.id))
+      .resolves.toMatchObject({ message: { operatorDisplayName: "Acme Support" } });
   });
 });
 

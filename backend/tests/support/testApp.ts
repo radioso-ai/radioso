@@ -168,8 +168,9 @@ import { InMemoryWebhookSkillDefinitionRepository } from "./inMemoryWebhookSkill
 import { InMemorySlackSkillDefinitionRepository } from "./inMemorySlackSkillDefinitions.js";
 import { InMemoryAgentSkillRepository } from "./inMemoryAgentSkills.js";
 import { SlackSkillDefinitionService } from "../../src/modules/slackSkills/public.js";
+import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
 import {
-  ConversationTransferNotices,
+  ConversationOwnershipService,
   OperatorIdentityResolver,
   OperatorReplyService,
 } from "../../src/modules/handoff/public.js";
@@ -2019,6 +2020,20 @@ export const createTestDependencies = (overrides: {
     customerReplyDelivery: { deliver: async () => {} },
     operatorIdentities: operatorIdentityResolver,
   });
+  const workspaceInvalidationPublisher: WorkspaceInvalidationPublisher = {
+    enqueue: () => ({ accepted: false, reason: "disabled" }),
+  };
+  const conversationOwnershipService = new ConversationOwnershipService({
+    conversations: conversationRepository,
+    ownership: conversationOwnershipRepository,
+    // The in-memory stores have no transactions; atomicity is covered against Postgres.
+    transfers: { run: (work) => work({ ownership: conversationOwnershipRepository, outbox: actionOutbox }) },
+    operators: conversationOperatorDirectory,
+    operatorIdentities: operatorIdentityResolver,
+    replies: operatorReplyService,
+    audit: auditService,
+    publisher: workspaceInvalidationPublisher,
+  });
   const agentRetrievalScope = createAgentRetrievalScopeResolver({ agentRepository });
   const retrievalSearchService = new RetrievalSearchService(retrievalPipeline, agentRetrievalScope);
   const retrievalAnswerService = new RetrievalAnswerService({
@@ -2451,7 +2466,7 @@ export const createTestDependencies = (overrides: {
     agentBundleExportService: agentBundleServices.exportService,
     agentBundleImportService: agentBundleServices.importService,
     agentBundleImportCleanupWorker: agentBundleServices.cleanupWorker,
-    workspaceInvalidationPublisher: { enqueue: () => ({ accepted: false, reason: "disabled" }) },
+    workspaceInvalidationPublisher,
     conversationLinks: { resolve: async () => null },
     realtimePublisherLifecycle: { shutdown: async () => undefined },
     credentialExpiryWarningLifecycle,
@@ -2580,10 +2595,8 @@ export const createTestDependencies = (overrides: {
     documentStorage,
     chatService,
     approvalDecisionService,
-    operatorReplyService,
-    operatorIdentityResolver,
+    conversationOwnershipService,
     conversationOperatorDirectory,
-    conversationTransferNotices: new ConversationTransferNotices({ outbox: actionOutbox, logger }),
     workbenchReplayRunner: workbenchReplayRunner as any,
     testExecutionService,
     revisionEvalRunService,
@@ -2655,7 +2668,6 @@ export const createTestDependencies = (overrides: {
     identityNonceRepository,
     bootstrapGreetingCacheRepository,
     conversationRepository,
-    conversationOwnershipRepository,
     messageRepository,
     connectorRegistry,
     connectorManagementService: new ConnectorManagementService({

@@ -8,8 +8,22 @@ import type { ModelInferencePipeline } from "../infra/llm/modelInferencePipeline
 import type { LlmCapabilityResolveInput } from "../infra/llm/workspaceContext.js";
 import { renderPromptTemplate } from "../infra/prompts/promptLoader.js";
 
+/**
+ * Why a detection produced no label. `no_input` and `no_label` are honest outcomes
+ * (nothing to judge, or the model found no reliable language); `unparseable_output`
+ * and `rejected_label` mean the model broke its output contract. Structural only —
+ * never the query, the history, or the raw model output.
+ */
+export type ResponseLanguageUnresolvedReason =
+  | "no_input"
+  | "no_label"
+  | "unparseable_output"
+  | "rejected_label";
+
 export interface ResponseLanguageDetection {
   responseLanguage?: string;
+  /** Set exactly when `responseLanguage` is absent. */
+  unresolvedReason?: ResponseLanguageUnresolvedReason;
 }
 
 export interface ResponseLanguageDetectorInput {
@@ -45,14 +59,26 @@ const fallbackUsageContext = (
   attemptKey: "response_language",
 });
 
-export const parseResponseLanguageDetection = (raw: string): ResponseLanguageDetection => {
+const parseDetectionJson = (raw: string): { responseLanguage?: unknown } | null => {
   try {
-    const parsed = JSON.parse(stripJsonFence(raw)) as { responseLanguage?: unknown };
-    const responseLanguage = normalizeLlmClassifierLanguageLabel(parsed.responseLanguage);
-    return responseLanguage ? { responseLanguage } : {};
+    const parsed: unknown = JSON.parse(stripJsonFence(raw));
+    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed) ? parsed : null;
   } catch {
-    return {};
+    return null;
   }
+};
+
+export const parseResponseLanguageDetection = (raw: string): ResponseLanguageDetection => {
+  const parsed = parseDetectionJson(raw);
+  if (!parsed) {
+    return { unresolvedReason: "unparseable_output" };
+  }
+  const label = parsed.responseLanguage;
+  if (label === undefined || label === null || (typeof label === "string" && label.trim().length === 0)) {
+    return { unresolvedReason: "no_label" };
+  }
+  const responseLanguage = normalizeLlmClassifierLanguageLabel(label);
+  return responseLanguage ? { responseLanguage } : { unresolvedReason: "rejected_label" };
 };
 
 export class LlmResponseLanguageDetector implements ResponseLanguageDetector {
@@ -60,7 +86,7 @@ export class LlmResponseLanguageDetector implements ResponseLanguageDetector {
 
   async detect(input: ResponseLanguageDetectorInput): Promise<ResponseLanguageDetection> {
     if (!input.query.trim() && input.history.length === 0) {
-      return {};
+      return { unresolvedReason: "no_input" };
     }
 
     const { text } = await this.inference.complete({

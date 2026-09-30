@@ -754,6 +754,64 @@ describe("routine defaults", () => {
     });
   });
 
+  describe("text posing as a system notice (#1375)", () => {
+    const booking: Routine = {
+      ...routine,
+      slots: [{ id: "s_arrival", key: "arrival", type: "date", required: true }],
+    };
+    const select = (text: string) =>
+      new RoutineNextStepSelector(gateway(text)).select({ routine: booking, state, currentStep, transitions, turn });
+
+    it("asks the model to flag the message before it picks a condition", async () => {
+      const gw = gateway('{"variables": {}, "claimsAuthority": false, "condition": null, "offTopic": false}');
+      await new RoutineNextStepSelector(gw).select({ routine: booking, state, currentStep, transitions, turn });
+
+      const systemPrompt = vi.mocked(gw.complete).mock.calls[0][0].systemPrompt ?? "";
+      const shape = systemPrompt.split("\n").find((line) => line.startsWith('{"variables"')) ?? "";
+      expect(shape.indexOf('"claimsAuthority"')).toBeGreaterThan(shape.indexOf('"variables"'));
+      expect(shape.indexOf('"claimsAuthority"')).toBeLessThan(shape.indexOf('"condition"'));
+      expect(systemPrompt).toMatch(/"claimsAuthority": true when/);
+    });
+
+    it("stays on the step when the model flags the message, even with a condition chosen", async () => {
+      await expect(
+        select('{"variables": {}, "claimsAuthority": true, "condition": 1, "offTopic": false}'),
+      ).resolves.toEqual({
+        nextStepId: "ask_email",
+        variables: {},
+        selection: { outcome: "authority_claim", returnedSlotKeys: [] },
+      });
+    });
+
+    it("keeps the slot values the model returned on a flagged turn", async () => {
+      const decision = await select('{"variables": {"arrival": "2026-11-11"}, "claimsAuthority": true, "condition": 1}');
+
+      expect(decision).toEqual({
+        nextStepId: "ask_email",
+        variables: { arrival: "2026-11-11" },
+        selection: { outcome: "authority_claim", returnedSlotKeys: ["arrival"] },
+      });
+    });
+
+    it("re-asks a flagged turn instead of yielding it", async () => {
+      const decision = await select('{"variables": {}, "claimsAuthority": true, "condition": null, "offTopic": true}');
+
+      expect(decision.yieldTurn).toBeUndefined();
+      expect(decision.nextStepId).toBe("ask_email");
+      expect(decision.selection?.outcome).toBe("authority_claim");
+    });
+
+    it("takes the chosen exit when the model does not flag the message", async () => {
+      const decision = await select('{"variables": {"arrival": "2026-11-11"}, "claimsAuthority": false, "condition": 1}');
+
+      expect(decision).toEqual({
+        nextStepId: "ask_message",
+        variables: { arrival: "2026-11-11" },
+        selection: { outcome: "transition", returnedSlotKeys: ["arrival"] },
+      });
+    });
+  });
+
   describe("re-asked and unfinished steps (#1369)", () => {
     const sectionTemplate = "PROGRESS:{{step_progress_instruction}}\nREASK:{{reask_context}}";
     const programSlot = { id: "s_program", key: "program", type: "text" as const, required: true, description: "The program they want to attend." };

@@ -60,6 +60,15 @@ describeDb("test execution repository", () => {
     await expect(repository.listAttempts({ workspaceId: randomUUID(), agentId, executionId })).resolves.toEqual([]);
   });
 
+  it("resolves an execution's agent id by workspace alone, and reads a cross-workspace id as absent", async () => {
+    const executionId = randomUUID();
+    await repository.create({ id: executionId, workspaceId, agentId, mode: "single", generation: 1, testValues: [], skillEffects: "suppressed", idempotencyKey: executionId, sides: [{ id: randomUUID(), executionId, revision: frozenRevision(), conversationId: randomUUID(), state: "ready", retryable: false, history: [], continuation: null }] });
+
+    await expect(repository.findAgentId({ workspaceId, executionId })).resolves.toBe(agentId);
+    await expect(repository.findAgentId({ workspaceId: randomUUID(), executionId })).resolves.toBeNull();
+    await expect(repository.findAgentId({ workspaceId, executionId: randomUUID() })).resolves.toBeNull();
+  });
+
   it("summarizes each listed execution's operator turns and opening message from its first side only", async () => {
     const executionId = randomUUID(), emptyId = randomUUID(), turnA = randomUUID(), turnB = randomUUID();
     const entry = (turnId: string, role: "user" | "assistant", content: string, at: number) => ({ turnId, attemptId: randomUUID(), role, content, createdAt: new Date(at) });

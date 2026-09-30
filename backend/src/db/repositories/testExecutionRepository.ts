@@ -81,6 +81,11 @@ export class TestExecutionRepository implements TestExecutionRepositoryPort {
     return Number(result.numDeletedRows);
   }
 
+  async findAgentId(input: { workspaceId: string; executionId: string }): Promise<string | null> {
+    const row = await this.db.selectFrom("agent_test_executions").select("agent_id").where("id", "=", input.executionId).where("workspace_id", "=", input.workspaceId).executeTakeFirst();
+    return row?.agent_id ?? null;
+  }
+
   async find(input: { workspaceId: string; agentId: string; executionId: string }): Promise<TestExecution | null> {
     const execution = await this.db.selectFrom("agent_test_executions").selectAll().where("id", "=", input.executionId).where("workspace_id", "=", input.workspaceId).where("agent_id", "=", input.agentId).executeTakeFirst();
     if (!execution) return null;

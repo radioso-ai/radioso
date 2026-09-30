@@ -91,6 +91,7 @@ const port = (overrides: Partial<CopilotTestChatPort> = {}): CopilotTestChatPort
     messageId: MESSAGE_ID,
     turnTrace: envelope(),
   })),
+  findAgentId: vi.fn(async () => AGENT_ID),
   ...overrides,
 });
 
@@ -281,6 +282,37 @@ describe("Test Chat copilot descriptors", () => {
 
     await expect(invoke(testChat, "send_test_chat_message", { message: "hi" }, null)).rejects.toThrow(/agent/i);
     expect(testChat.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("resolves a continued session's agent from testExecutionId when neither agentId nor a dashboard page names one", async () => {
+    // The shape operator MCP calls always have: no page context (`agentId: null`), only a
+    // testExecutionId to continue. #1361: this used to fall straight to the page-context fallback
+    // and throw a plain "no agent context" error, which surfaced over MCP as a 503 runtime outage.
+    const sendMessage = vi.fn(port().sendMessage);
+    const findAgentId = vi.fn(async () => AGENT_ID);
+
+    const output = await invoke(port({ sendMessage, findAgentId }), "send_test_chat_message", { testExecutionId: EXECUTION_ID, message: "Can I book a demo?" }, null);
+
+    expect(findAgentId).toHaveBeenCalledWith({ workspaceId: "workspace-1", testExecutionId: EXECUTION_ID });
+    expect(sendMessage).toHaveBeenCalledWith(expect.objectContaining({ agentId: AGENT_ID, testExecutionId: EXECUTION_ID }));
+    expect(output.turn.outcome).toBe("completed");
+  });
+
+  it("reads a testExecutionId this workspace does not own as not found, not as a missing-agent refusal", async () => {
+    const sendMessage = vi.fn(port().sendMessage);
+    const findAgentId = vi.fn(async () => null);
+
+    await expect(invoke(port({ sendMessage, findAgentId }), "send_test_chat_message", { testExecutionId: EXECUTION_ID, message: "hi" }, null))
+      .rejects.toMatchObject({ code: "not_found" });
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("still requires agentId or agentName for a fresh session, since there is no testExecutionId to resolve one from", async () => {
+    const sendMessage = vi.fn(port().sendMessage);
+
+    await expect(invoke(port({ sendMessage }), "send_test_chat_message", { message: "hi" }, null))
+      .rejects.toMatchObject({ code: "bad_request" });
+    expect(sendMessage).not.toHaveBeenCalled();
   });
 });
 

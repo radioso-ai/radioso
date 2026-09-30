@@ -449,6 +449,53 @@ describe("OperatorMcpApplicationService", () => {
     }));
   });
 
+  it("reports a running-turn conflict as a retryable operation_conflict, not invalid_arguments", async () => {
+    // #1365's 409 test_turn_in_progress means "resend once the running turn settles" -- the
+    // caller made no mistake, so it must not read as invalid_arguments, which would tell an MCP
+    // client to change input that was never wrong.
+    const rejectingDescriptor: CopilotToolDescriptor = {
+      ...descriptor,
+      createTool: () => ({
+        name: "workspace_settings", description: "Read settings",
+        inputSchema: z.object({ section: z.string() }), outputSchema: z.object({ section: z.string() }),
+        invoke: vi.fn(async () => { throw new AppError(409, "test_turn_in_progress", "Another test turn is still running. Send the next message after it settles."); }),
+      }),
+    };
+    const { service, invocations, audit } = build(rejectingDescriptor);
+    const argumentsValue = { section: "retrieval" };
+    const bodyDigest = callDigest(argumentsValue);
+    const admitted = await service.admit({ accessToken: "operator-access", invocationId: uuid("12"), method: "tools/call", descriptorName: rejectingDescriptor.name, resource: principal.resource, timestamp: "1788480000", nonce: "turn-in-progress", bodyDigest });
+
+    const rejection = await service.invoke({ proof: admitted.proof, name: rejectingDescriptor.name, arguments: argumentsValue, bodyDigest })
+      .then(() => null, (error: OperatorMcpApplicationError) => error);
+
+    expect(rejection).toMatchObject({ code: "operation_conflict" });
+    expect(rejection?.details?.[0]).toBe("Another test turn is still running. Send the next message after it settles.");
+    expect(invocations.recordOutcome).toHaveBeenCalledWith(expect.objectContaining({ status: "refused", safeOutcomeCode: "operation_conflict" }));
+    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
+      eventStatus: "failure",
+      metadata: expect.objectContaining({ outcome: "refused", reason: "operation_conflict" }),
+    }));
+  });
+
+  it("still reports an unrelated 409 collision as invalid_arguments, since only a named retryable code gets operation_conflict", async () => {
+    const rejectingDescriptor: CopilotToolDescriptor = {
+      ...descriptor,
+      createTool: () => ({
+        name: "workspace_settings", description: "Read settings",
+        inputSchema: z.object({ section: z.string() }), outputSchema: z.object({ section: z.string() }),
+        invoke: vi.fn(async () => { throw new AppError(409, "some_other_conflict", "A different, caller-correctable collision."); }),
+      }),
+    };
+    const { service } = build(rejectingDescriptor);
+    const argumentsValue = { section: "retrieval" };
+    const bodyDigest = callDigest(argumentsValue);
+    const admitted = await service.admit({ accessToken: "operator-access", invocationId: uuid("12"), method: "tools/call", descriptorName: rejectingDescriptor.name, resource: principal.resource, timestamp: "1788480000", nonce: "other-409", bodyDigest });
+
+    await expect(service.invoke({ proof: admitted.proof, name: rejectingDescriptor.name, arguments: argumentsValue, bodyDigest }))
+      .rejects.toMatchObject({ code: "invalid_arguments" });
+  });
+
   it("leaves an AppError outside the caller-rejection statuses unchanged", async () => {
     const rejectingDescriptor: CopilotToolDescriptor = {
       ...descriptor,

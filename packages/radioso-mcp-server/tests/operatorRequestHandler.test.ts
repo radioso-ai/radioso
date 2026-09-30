@@ -438,6 +438,31 @@ describe("operator MCP stateless request handler", () => {
     await expect(response.json()).resolves.toMatchObject({ error: { code: -32602, message: "operation_conflict" } });
   });
 
+  // #1361/#1365: sending while the session's previous test turn is still running is retryable,
+  // not a caller mistake, so the backend maps it to operation_conflict rather than
+  // invalid_arguments; this covers the same edge translation for that named scenario.
+  it("tells a client sending into a running test turn to retry, not to change its input", async () => {
+    const handler = createOperatorMcpRequestHandler({
+      ...dependencies,
+      call: vi.fn<OperatorMcpRequestHandlerDependencies["call"]>(async () => {
+        throw new OperatorBackendAdapterError("Operator request was rejected.", 400, "operation_conflict", undefined, ["Another test turn is still running. Send the next message after it settles."]);
+      }),
+    });
+    dependencies.admit.mockResolvedValue({ proof: { ...proof, method: "tools/call" } });
+
+    const response = await handler(operatorRequest({
+      id: "test-turn-in-progress",
+      jsonrpc: "2.0",
+      method: "tools/call",
+      params: { name: "send_test_chat_message" },
+    }));
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: -32602, message: "operation_conflict", data: ["Another test turn is still running. Send the next message after it settles."] },
+    });
+  });
+
   it("carries the rejected argument paths back to the caller as JSON-RPC error data", async () => {
     const handler = createOperatorMcpRequestHandler({
       ...dependencies,

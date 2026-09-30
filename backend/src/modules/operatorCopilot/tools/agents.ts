@@ -1,6 +1,11 @@
 import { z } from "zod";
 
-import { serializeAgentConfig, type AgentConfig, type ConversationAgent } from "../../agents/public.js";
+import {
+  AGENT_CONFIG_FULL_TEXT_FIELD_PATHS,
+  serializeAgentConfig,
+  type AgentConfig,
+  type ConversationAgent,
+} from "../../agents/public.js";
 import { builtInAnswerDirectiveViews, type BuiltInDirectiveView } from "../../directives/public.js";
 import { exactContentItemSchema, type ExactContentItem } from "../../../shared/domain/exactContent.js";
 import type {
@@ -8,7 +13,7 @@ import type {
   CopilotToolDescriptor,
 } from "../contracts.js";
 import { requireCurrentCopilotPermissions } from "../authorization.js";
-import { boundPayload } from "../payloadCompaction.js";
+import { boundPayload, type FullStringPaths } from "../payloadCompaction.js";
 import {
   describeNamedAgent,
   entity,
@@ -63,6 +68,16 @@ const copilotDirectiveDetailCollectionLimit = 10;
 const copilotDirectiveMetadataCharLimit = 4_000;
 const copilotDirectiveDetailCharBudget = 24_000;
 
+/**
+ * Compactor paths (`boundPayload`'s `fullStringPaths`) for the fields `AGENT_CONFIG_FULL_TEXT_FIELD_PATHS`
+ * names, rooted at the `boundPayload(portableAgent)` call below rather than at `agentConfiguration`'s
+ * own `$`. The agents module states which of its fields qualify and why (write-bounded above the
+ * generic cap, replaced whole); this tool only translates that list into the compactor's own path
+ * syntax.
+ */
+const AGENT_CONFIGURATION_FULL_STRING_PATHS: FullStringPaths = new Set(
+  AGENT_CONFIG_FULL_TEXT_FIELD_PATHS.map((field) => `$.${field}`),
+);
 
 export interface CopilotAgentConfigurationPort extends CopilotAgentLookupPort {
   resolve(workspaceId: string, agentId: string): Promise<ConversationAgent>;
@@ -162,7 +177,7 @@ const projectAgentConfiguration = (
 
   return {
     id: agent.id,
-    ...boundPayload(portableAgent as unknown as Record<string, unknown>),
+    ...boundPayload(portableAgent as unknown as Record<string, unknown>, AGENT_CONFIGURATION_FULL_STRING_PATHS),
     authoredDirectives: visibleIndexes.map((index) => ({
       id: directives[index].id,
       name: directives[index].name,

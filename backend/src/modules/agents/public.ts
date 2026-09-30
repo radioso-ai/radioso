@@ -25,6 +25,7 @@ export {
   type WebsiteEmbedSurfaceSettings,
 } from "./domain.js";
 export {
+  AGENT_CONFIG_FULL_TEXT_FIELD_PATHS,
   agentInputFieldSchemas,
   agentInputThemeSchema,
   agentReviewedSettingsPatchSchema,

@@ -32,7 +32,11 @@ describe("RoutineNextStepSelector", () => {
   it("maps the chosen condition number to its transition target and captures variables", async () => {
     const selector = new RoutineNextStepSelector(gateway('{"condition": 1, "variables": {"email": "alex@example.com"}}'));
     const decision = await selector.select({ routine, state, currentStep, transitions, turn });
-    expect(decision).toEqual({ nextStepId: "ask_message", variables: { email: "alex@example.com" } });
+    expect(decision).toEqual({
+      nextStepId: "ask_message",
+      variables: { email: "alex@example.com" },
+      selection: expect.any(Object),
+    });
   });
 
   it("includes declared slot schema in the prompt and returns variables keyed by slot key", async () => {
@@ -56,10 +60,11 @@ describe("RoutineNextStepSelector", () => {
     expect(decision).toEqual({
       nextStepId: "ask_message",
       variables: { name: "Alex", email: "alex@example.com" },
+      selection: { outcome: "transition", returnedSlotKeys: ["name", "email"] },
     });
     const call = vi.mocked(gw.complete).mock.calls[0][0];
-    expect(call.systemPrompt).toContain('"key":"name"');
-    expect(call.systemPrompt).toContain('"type":"email"');
+    expect(call.systemPrompt).toContain("- name (text): Visitor name.");
+    expect(call.systemPrompt).toContain("- email (email): Visitor email.");
     expect(call.systemPrompt).toContain("Extract every declared slot present");
   });
 
@@ -69,7 +74,7 @@ describe("RoutineNextStepSelector", () => {
     await new RoutineNextStepSelector(gw).select({ routine, state, currentStep, transitions, turn });
 
     const call = vi.mocked(gw.complete).mock.calls[0][0];
-    expect(call.systemPrompt).not.toContain("Declared slot schema");
+    expect(call.systemPrompt).not.toContain("Declared slots");
     expect(call.systemPrompt).not.toContain("Extract every declared slot present");
   });
 
@@ -84,14 +89,18 @@ describe("RoutineNextStepSelector", () => {
       gateway('Reasoning: the user gave an email. {"condition": 1, "variables": {"email": "a@b.c"}} — done.'),
     );
     const decision = await selector.select({ routine, state, currentStep, transitions, turn });
-    expect(decision).toEqual({ nextStepId: "ask_message", variables: { email: "a@b.c" } });
+    expect(decision).toEqual({ nextStepId: "ask_message", variables: { email: "a@b.c" }, selection: expect.any(Object) });
   });
 
   it("parses a captured variable value that itself contains a closing brace", async () => {
     // A user message with a "}" must not truncate the JSON scan and drop the decision.
     const selector = new RoutineNextStepSelector(gateway('{"condition": 1, "variables": {"message": "thanks } bye"}}'));
     const decision = await selector.select({ routine, state, currentStep, transitions, turn });
-    expect(decision).toEqual({ nextStepId: "ask_message", variables: { message: "thanks } bye" } });
+    expect(decision).toEqual({
+      nextStepId: "ask_message",
+      variables: { message: "thanks } bye" },
+      selection: expect.any(Object),
+    });
   });
 
   it("stays on the current step when the model returns null or unparseable output", async () => {
@@ -110,7 +119,7 @@ describe("RoutineNextStepSelector", () => {
   it("yields the turn (instead of re-asking) when the user asks something off-topic", async () => {
     const selector = new RoutineNextStepSelector(gateway('{"condition": null, "offTopic": true, "variables": {}}'));
     const decision = await selector.select({ routine, state, currentStep, transitions, turn });
-    expect(decision).toEqual({ nextStepId: "ask_email", yieldTurn: true });
+    expect(decision).toEqual({ nextStepId: "ask_email", yieldTurn: true, selection: expect.any(Object) });
   });
 
   it("advances rather than yielding when a condition also matched (the answer wins)", async () => {
@@ -118,7 +127,7 @@ describe("RoutineNextStepSelector", () => {
       gateway('{"condition": 1, "offTopic": true, "variables": {"email": "a@b.c"}}'),
     );
     const decision = await selector.select({ routine, state, currentStep, transitions, turn });
-    expect(decision).toEqual({ nextStepId: "ask_message", variables: { email: "a@b.c" } });
+    expect(decision).toEqual({ nextStepId: "ask_message", variables: { email: "a@b.c" }, selection: expect.any(Object) });
   });
 
   it("stays put without calling the model when there are no outgoing transitions", async () => {

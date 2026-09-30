@@ -3,12 +3,13 @@ import type {
   ConversationModelGateway,
 } from "@radioso/conversation-contract";
 
-import type { ChatGateway, ChatGatewayUsageContext } from "../../contracts/chatGateway.js";
+import type { ChatGateway, ChatGatewayInput, ChatGatewayUsageContext } from "../../contracts/chatGateway.js";
+import { isBlankChatAnswerError } from "../chatAnswerErrors.js";
 import { CHAT_BEHAVIOR } from "../../../../shared/domain/behaviorConfig.js";
 import type { LlmCapabilityResolveInput } from "../../../../shared/infra/llm/workspaceContext.js";
 
 /** The per-turn billing + model-resolution context a routine LLM call needs. */
-export interface RoutineModelTurnContext {
+interface RoutineModelTurnContext {
   workspaceContext: LlmCapabilityResolveInput;
   usageContext: ChatGatewayUsageContext;
   signal?: AbortSignal;
@@ -60,7 +61,7 @@ export class RoutineChatModelGateway implements ConversationModelGateway {
     metadata?: Record<string, unknown>;
   }): Promise<{ text: string }> {
     const routineActivation = isRoutineActivationCall(input.metadata);
-    const text = await this.chatGateway.answer({
+    const request: ChatGatewayInput = {
       query: lastUserContent(input.messages),
       history: [],
       prompt: serializeTranscript(input.messages),
@@ -71,7 +72,18 @@ export class RoutineChatModelGateway implements ConversationModelGateway {
         : this.turn.usageContext,
       ...(routineActivation ? { generation: CHAT_BEHAVIOR.intentRouting } : {}),
       ...(this.turn.signal ? { signal: this.turn.signal } : {}),
-    });
-    return { text };
+    };
+    try {
+      return { text: await this.chatGateway.answer(request) };
+    } catch (error) {
+      // The model occasionally returns an empty completion for a routine prompt, and one
+      // blank call used to fail the whole turn. Retry once, under its own usage attempt so
+      // the failed call and the retry are both accounted for.
+      if (!isBlankChatAnswerError(error)) {
+        throw error;
+      }
+      const retryUsage = { ...request.usageContext, attemptKey: `${request.usageContext.attemptKey}:blank_retry` };
+      return { text: await this.chatGateway.answer({ ...request, usageContext: retryUsage }) };
+    }
   }
 }

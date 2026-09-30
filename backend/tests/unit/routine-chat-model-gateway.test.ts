@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { BlankChatAnswerError } from "../../src/modules/chat/services/chatAnswerErrors.js";
 import { RoutineChatModelGateway } from "../../src/modules/chat/services/routines/routineChatModelGateway.js";
 import { CHAT_BEHAVIOR } from "../../src/shared/domain/behaviorConfig.js";
 import type { ChatGateway, ChatGatewayInput } from "../../src/modules/chat/contracts/chatGateway.js";
@@ -44,6 +45,52 @@ describe("RoutineChatModelGateway", () => {
     expect(input.systemPrompt).toBe("ROUTINE STEP INSTRUCTIONS");
     expect(input.usageContext).toBe(turnContext.usageContext);
     expect(input.workspaceContext).toBe(turnContext.workspaceContext);
+  });
+
+  it("retries a blank completion once, under its own usage attempt", async () => {
+    const calls: ChatGatewayInput[] = [];
+    const chatGateway: Pick<ChatGateway, "answer"> = {
+      async answer(input) {
+        calls.push(input);
+        if (calls.length === 1) {
+          throw new BlankChatAnswerError();
+        }
+        return '{"condition": 1, "variables": {}}';
+      },
+    };
+
+    const result = await new RoutineChatModelGateway(chatGateway, turnContext).complete({
+      messages: [{ role: "user", content: "si" }],
+      systemPrompt: "SELECT",
+    });
+
+    expect(result.text).toBe('{"condition": 1, "variables": {}}');
+    expect(calls).toHaveLength(2);
+    expect(calls[1].usageContext.attemptKey).toBe("routine_turn:blank_retry");
+    expect(calls[1].prompt).toBe(calls[0].prompt);
+  });
+
+  it("fails when the retry is blank too, and never retries other errors", async () => {
+    const blankTwice: Pick<ChatGateway, "answer"> = {
+      answer: async () => {
+        throw new BlankChatAnswerError();
+      },
+    };
+    await expect(
+      new RoutineChatModelGateway(blankTwice, turnContext).complete({ messages: [{ role: "user", content: "si" }] }),
+    ).rejects.toBeInstanceOf(BlankChatAnswerError);
+
+    let attempts = 0;
+    const failing: Pick<ChatGateway, "answer"> = {
+      answer: async () => {
+        attempts += 1;
+        throw new Error("provider_timeout");
+      },
+    };
+    await expect(
+      new RoutineChatModelGateway(failing, turnContext).complete({ messages: [{ role: "user", content: "si" }] }),
+    ).rejects.toThrow("provider_timeout");
+    expect(attempts).toBe(1);
   });
 
   it("uses a cheap routine_activation usage label and generation budget for activation ranking", async () => {

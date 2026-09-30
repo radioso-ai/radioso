@@ -856,6 +856,38 @@ function ComposeStageDetail({
   )
 }
 
+const ROUTINE_SELECTION_OUTCOMES = ['transition', 'stay', 'off_topic', 'unreadable'] as const
+type RoutineStepSelectionOutcome = (typeof ROUTINE_SELECTION_OUTCOMES)[number]
+
+const asRoutineSelectionOutcome = (value: unknown): RoutineStepSelectionOutcome | undefined =>
+  typeof value === 'string' &&
+  (ROUTINE_SELECTION_OUTCOMES as readonly string[]).includes(value)
+    ? (value as RoutineStepSelectionOutcome)
+    : undefined
+
+/**
+ * The next-step selector's own reading of one step, so an operator can tell "the
+ * model returned nothing" from "the model returned a value that was not captured"
+ * (#1370). Slot keys and counts only, mirroring the wire shape's own privacy rule.
+ */
+interface RoutineStepSelectionView {
+  outcome: RoutineStepSelectionOutcome
+  returnedSlotKeys: string[]
+  undeclaredKeyCount?: number
+}
+
+const buildRoutineStepSelection = (value: unknown): RoutineStepSelectionView | undefined => {
+  if (!isRecord(value)) return undefined
+  const outcome = asRoutineSelectionOutcome(value.outcome)
+  if (!outcome) return undefined
+  const undeclaredKeyCount = asNumber(value.undeclaredKeyCount)
+  return {
+    outcome,
+    returnedSlotKeys: asStringArray(value.returnedSlotKeys),
+    ...(typeof undeclaredKeyCount === 'number' && undeclaredKeyCount > 0 ? { undeclaredKeyCount } : {}),
+  }
+}
+
 /** One step's outcome as the runner walked the routine graph this turn. */
 interface RoutineTraceStepView {
   stepId: string
@@ -867,6 +899,8 @@ interface RoutineTraceStepView {
   skillStatus?: string
   /** Failure reason for a failed tool step, e.g. `suppressed_for_safe_test`, `mcp_timeout`. */
   skillReason?: string
+  /** The next-step selector's own reading of this turn, when a model call ran here. */
+  selection?: RoutineStepSelectionView
 }
 
 interface RoutineRunTraceView {
@@ -894,16 +928,20 @@ export const buildRoutineRunTrace = (
   const payload = subTrace.payload
   const steps = asArray(payload.steps)
     .filter(isRecord)
-    .map((entry): RoutineTraceStepView => ({
-      stepId: asString(entry.stepId) ?? '',
-      kind: asString(entry.kind) ?? 'chat',
-      event: asString(entry.event) ?? '',
-      capturedSlotKeys: asStringArray(entry.capturedSlotKeys),
-      viaSelector: entry.viaSelector === true,
-      ...(asString(entry.skillName) ? { skillName: asString(entry.skillName) } : {}),
-      ...(asString(entry.skillStatus) ? { skillStatus: asString(entry.skillStatus) } : {}),
-      ...(asString(entry.skillReason) ? { skillReason: asString(entry.skillReason) } : {}),
-    }))
+    .map((entry): RoutineTraceStepView => {
+      const selection = buildRoutineStepSelection(entry.selection)
+      return {
+        stepId: asString(entry.stepId) ?? '',
+        kind: asString(entry.kind) ?? 'chat',
+        event: asString(entry.event) ?? '',
+        capturedSlotKeys: asStringArray(entry.capturedSlotKeys),
+        viaSelector: entry.viaSelector === true,
+        ...(asString(entry.skillName) ? { skillName: asString(entry.skillName) } : {}),
+        ...(asString(entry.skillStatus) ? { skillStatus: asString(entry.skillStatus) } : {}),
+        ...(asString(entry.skillReason) ? { skillReason: asString(entry.skillReason) } : {}),
+        ...(selection ? { selection } : {}),
+      }
+    })
   return {
     startStepId: asString(payload.startStepId),
     landedStepId: asString(payload.landedStepId),
@@ -933,6 +971,13 @@ const ROUTINE_EVENT_DESCRIPTIONS: Record<string, string> = {
   skill_dispatched: 'Ran this step’s tool.',
   action_emitted: 'Emitted a fire-and-forget action.',
   rendered: 'The reply you saw was generated from this step.',
+}
+
+const ROUTINE_SELECTION_OUTCOME_LABELS: Record<RoutineStepSelectionOutcome, string> = {
+  transition: 'Chose an exit',
+  stay: 'Stayed on step',
+  off_topic: 'Read as off-topic',
+  unreadable: 'Unreadable model output',
 }
 
 const ROUTINE_EVENT_TONE: Record<string, string> = {
@@ -988,6 +1033,20 @@ function RoutineStepsTimeline({ trace }: { trace: RoutineRunTraceView }) {
                   </span>
                 ) : null}
               </div>
+              {step.selection ? (
+                <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+                  <span>{ROUTINE_SELECTION_OUTCOME_LABELS[step.selection.outcome]}</span>
+                  <span className="text-[10px] uppercase tracking-wide text-muted-foreground">returned</span>
+                  {step.selection.returnedSlotKeys.length > 0 ? (
+                    <SlotKeyChips keys={step.selection.returnedSlotKeys} tone="bg-muted text-muted-foreground" />
+                  ) : (
+                    <span>nothing</span>
+                  )}
+                  {step.selection.undeclaredKeyCount ? (
+                    <span>+{step.selection.undeclaredKeyCount} undeclared dropped</span>
+                  ) : null}
+                </div>
+              ) : null}
               {ROUTINE_EVENT_DESCRIPTIONS[step.event] ? (
                 <p className="text-[11px] text-muted-foreground">{ROUTINE_EVENT_DESCRIPTIONS[step.event]}</p>
               ) : null}

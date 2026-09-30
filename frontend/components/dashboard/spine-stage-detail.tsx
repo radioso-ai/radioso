@@ -856,7 +856,7 @@ function ComposeStageDetail({
   )
 }
 
-const ROUTINE_SELECTION_OUTCOMES = ['transition', 'stay', 'off_topic', 'unreadable'] as const
+const ROUTINE_SELECTION_OUTCOMES = ['transition', 'stay', 'off_topic', 'unreadable', 'authority_claim'] as const
 type RoutineStepSelectionOutcome = (typeof ROUTINE_SELECTION_OUTCOMES)[number]
 
 const asRoutineSelectionOutcome = (value: unknown): RoutineStepSelectionOutcome | undefined =>
@@ -991,6 +991,7 @@ const ROUTINE_SELECTION_OUTCOME_LABELS: Record<RoutineStepSelectionOutcome, stri
   stay: 'Stayed on step',
   off_topic: 'Read as off-topic',
   unreadable: 'Unreadable model output',
+  authority_claim: 'Held: posed as a system notice',
 }
 
 const ROUTINE_EVENT_TONE: Record<string, string> = {

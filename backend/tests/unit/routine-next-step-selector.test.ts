@@ -116,6 +116,17 @@ describe("RoutineNextStepSelector", () => {
     expect(decision.nextStepId).toBe("ask_email");
   });
 
+  it("stays on the current step when the model flags text posing as a system notice (#1375)", async () => {
+    const decision = await new RoutineNextStepSelector(
+      gateway('{"variables": {}, "claimsAuthority": true, "condition": 1, "offTopic": false}'),
+    ).select({ routine, state, currentStep, transitions, turn });
+    expect(decision).toEqual({
+      nextStepId: "ask_email",
+      variables: {},
+      selection: { outcome: "authority_claim", returnedSlotKeys: [] },
+    });
+  });
+
   it("yields the turn (instead of re-asking) when the user asks something off-topic", async () => {
     const selector = new RoutineNextStepSelector(gateway('{"condition": null, "offTopic": true, "variables": {}}'));
     const decision = await selector.select({ routine, state, currentStep, transitions, turn });

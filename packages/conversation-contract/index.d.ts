@@ -1123,8 +1123,11 @@ export interface RoutineSelectionTrace {
    * - `stay`: the model chose none, so the step is not yet satisfied.
    * - `off_topic`: the model chose none and read the message as a different request.
    * - `unreadable`: the model's output could not be parsed, so nothing was chosen or extracted.
+   * - `authority_claim`: the model flagged text posing as a system, operator, or assistant
+   *   message, or claiming the request is already confirmed, so no condition was taken and
+   *   the step is asked again, whatever condition the model chose.
    */
-  outcome: "transition" | "stay" | "off_topic" | "unreadable";
+  outcome: "transition" | "stay" | "off_topic" | "unreadable" | "authority_claim";
   /** Slot keys the model returned a value for, including a value that replaces a filled slot. */
   returnedSlotKeys: string[];
   /** Keys the model returned that the routine does not declare; they are dropped, never captured. */

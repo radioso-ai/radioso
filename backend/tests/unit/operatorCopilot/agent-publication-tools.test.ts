@@ -58,4 +58,20 @@ describe("agent publication MCP tools", () => {
     await expect(prepare.createTool({ ...context, currentAuthorization: authorization }).invoke({}, {} as never)).rejects.toThrow();
     expect(createCandidate).toHaveBeenCalledOnce(); expect(createProposal).not.toHaveBeenCalled();
   });
+
+  it("tells an agentId-only caller to pass agentId, not agentName, when no agent is selected", async () => {
+    // agent_publication_state and prepare_agent_publication accept only agentId (see `readInput` /
+    // `prepareInput` above) -- the shared "no agent" message must not send this caller after a field
+    // its own schema would then reject.
+    const tools = createAgentPublicationCopilotTools({ revisions: { state: vi.fn(), createCandidate: vi.fn(), detail: vi.fn(), describeCandidateRelease: vi.fn(), describeCandidatePublicationReview: vi.fn(), readCandidateReleaseChange: vi.fn(), publish: vi.fn() }, proposalRepository: { createProposal: vi.fn() }, proposalRecovery: { recoverOperatorMcpProposal: vi.fn() }, proposalAdapters: [], auditService: { record: vi.fn() } });
+    const noAgentContext = { ...context, pageContext: { ...context.pageContext, agentId: null } };
+    const read = tools.find((tool) => tool.name === "agent_publication_state")!;
+    const prepare = tools.find((tool) => tool.name === "prepare_agent_publication")!;
+
+    const readRejection = await read.createTool(noAgentContext).invoke({}, {} as never).catch((error: Error) => error);
+    const prepareRejection = await prepare.createTool(noAgentContext).invoke({}, {} as never).catch((error: Error) => error);
+
+    expect(readRejection).toMatchObject({ code: "bad_request", message: "No agent is selected. Pass agentId." });
+    expect(prepareRejection).toMatchObject({ code: "bad_request", message: "No agent is selected. Pass agentId." });
+  });
 });

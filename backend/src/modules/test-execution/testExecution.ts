@@ -225,6 +225,8 @@ export interface TestExecutionRepositoryPort {
   /** `idempotencyKey` fences a start: a repeated key for the same workspace/agent replays the execution it already created instead of starting a second one. */
   create(input: Omit<TestExecution, "createdAt" | "state"> & { state?: TestExecutionState; idempotencyKey: string }): Promise<TestExecution>;
   find(input: { workspaceId: string; agentId: string; executionId: string }): Promise<TestExecution | null>;
+  /** Scoped by workspace alone: the read a caller with only an execution id, not yet an agent id, needs. Null for an id this workspace does not own. */
+  findAgentId(input: { workspaceId: string; executionId: string }): Promise<string | null>;
   findByIdempotencyKey(input: { workspaceId: string; agentId: string; idempotencyKey: string }): Promise<TestExecution | null>;
   /** Self-heals a side stuck "running" past its lease (an abandoned attempt) into "failed, retryable". */
   recoverExpiredSides(input: { workspaceId: string; agentId: string; executionId: string; now: Date }): Promise<TestExecution | null>;
@@ -394,6 +396,23 @@ export class TestExecutionService {
     return this.options.repository.list(input);
   }
 
+  /**
+   * The effective agent for an id-scoped Test Chat call. The caller's own agentId, when given, is
+   * used as-is: every read and write below is already scoped by (workspaceId, agentId,
+   * executionId), so a mismatched id finds no row and fails not-found the same as any other wrong
+   * id -- this is the "verify" half. Without one, resolves the execution's own owning agent by
+   * workspace alone -- the "resolve" half, for a caller with a session id but not yet an agent id
+   * (an operator MCP client continuing a Test Chat session by `testExecutionId`). An id this
+   * workspace does not own resolves to nothing, so it fails not-found here too, rather than leaking
+   * whether it exists elsewhere.
+   */
+  private async resolveAgentId(workspaceId: string, agentId: string | undefined, executionId: string): Promise<string> {
+    if (agentId) return agentId;
+    const resolved = await this.options.repository.findAgentId({ workspaceId, executionId });
+    if (!resolved) throw notFound("Test execution is unavailable.");
+    return resolved;
+  }
+
   /** A list page with each execution's turn count and opening message, read in one projection rather than per execution. */
   async summaries(input: { workspaceId: string; agentId: string; limit: number; cursor?: string }): Promise<TestExecutionSummaryPage> {
     const page = await this.options.repository.list(input);
@@ -401,13 +420,19 @@ export class TestExecutionService {
     return { ...page, executions: page.executions.map((item) => ({ ...item, turnCount: summaries.get(item.id)?.turnCount ?? 0, firstMessage: summaries.get(item.id)?.firstMessage ?? null })) };
   }
 
-  /** The execution read as turns per side, after the same stuck-side self-heal `detail` applies. */
-  async transcript(input: { workspaceId: string; agentId: string; executionId: string }): Promise<TestExecutionTranscript> {
-    return readTranscript(await this.detail({ workspaceId: input.workspaceId, agentId: input.agentId, executionId: input.executionId }));
+  /**
+   * The execution read as turns per side, after the same stuck-side self-heal `detail` applies.
+   * `agentId` is resolved and verified by `resolveAgentId`, so a caller with only a session id
+   * needs no separate lookup, and one that supplies a mismatched id gets the same not-found this
+   * read already gives any other wrong id.
+   */
+  async transcript(input: { workspaceId: string; agentId?: string; executionId: string }): Promise<TestExecutionTranscript> {
+    const agentId = await this.resolveAgentId(input.workspaceId, input.agentId, input.executionId);
+    return readTranscript(await this.detail({ workspaceId: input.workspaceId, agentId, executionId: input.executionId }));
   }
 
   /** One turn on one side, the first side unless one is named, as the store holds it. */
-  async turn(input: { workspaceId: string; agentId: string; executionId: string; turnId: string; sideId?: string }): Promise<TestExecutionTurnRead> {
+  async turn(input: { workspaceId: string; agentId?: string; executionId: string; turnId: string; sideId?: string }): Promise<TestExecutionTurnRead> {
     return findTranscriptTurn(await this.transcript(input), input);
   }
 
@@ -454,10 +479,16 @@ export class TestExecutionService {
     return events;
   }
 
-  /** One turn without the stream: the settled outcome of this call's own attempt, on the first side. */
-  async send(input: TestExecutionMessageInput): Promise<TestExecutionTurnRead> {
-    const events = await this.message(input);
-    return settleSentTurn(await this.turn({ workspaceId: input.workspaceId, agentId: input.agentId, executionId: input.executionId, turnId: input.turnId }), events);
+  /**
+   * One turn without the stream: the settled outcome of this call's own attempt, on the first
+   * side. `agentId` is resolved and verified by `resolveAgentId` before the turn is claimed, so a
+   * caller continuing a session by id alone runs against that session's own agent.
+   */
+  async send(input: Omit<TestExecutionMessageInput, "agentId"> & { agentId?: string }): Promise<TestExecutionTurnRead> {
+    const agentId = await this.resolveAgentId(input.workspaceId, input.agentId, input.executionId);
+    const resolved = { ...input, agentId };
+    const events = await this.message(resolved);
+    return settleSentTurn(await this.turn({ workspaceId: resolved.workspaceId, agentId, executionId: resolved.executionId, turnId: resolved.turnId }), events);
   }
 
   async *streamMessage(input: TestExecutionMessageInput): AsyncGenerator<TestExecutionEvent> {

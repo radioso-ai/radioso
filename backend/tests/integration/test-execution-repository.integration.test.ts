@@ -60,6 +60,60 @@ describeDb("test execution repository", () => {
     await expect(repository.listAttempts({ workspaceId: randomUUID(), agentId, executionId })).resolves.toEqual([]);
   });
 
+  it("resolves an execution's agent id by workspace alone, and reads a cross-workspace id as absent", async () => {
+    const executionId = randomUUID();
+    await repository.create({ id: executionId, workspaceId, agentId, mode: "single", generation: 1, testValues: [], skillEffects: "suppressed", idempotencyKey: executionId, sides: [{ id: randomUUID(), executionId, revision: frozenRevision(), conversationId: randomUUID(), state: "ready", retryable: false, history: [], continuation: null }] });
+
+    await expect(repository.findAgentId({ workspaceId, executionId })).resolves.toBe(agentId);
+    await expect(repository.findAgentId({ workspaceId: randomUUID(), executionId })).resolves.toBeNull();
+    await expect(repository.findAgentId({ workspaceId, executionId: randomUUID() })).resolves.toBeNull();
+  });
+
+  it("resolves the owning agent for a Test Chat call scoped only by testExecutionId, verifies a supplied one, and rejects a mismatch or a cross-workspace id", async () => {
+    const service = new TestExecutionService({
+      revisions: repository,
+      contextCatalog: new ContextVariableRepository(database.kysely),
+      repository,
+      runner: { run: async () => ({ answer: "answer", messageId: randomUUID(), continuation: null }) },
+      usageLimitPolicy: new NoopUsageLimitPolicy(),
+      createId: randomUUID,
+    });
+    const execution = await service.start({ workspaceId, agentId, accountId: null, mode: "single", revisionIds: [revisionId], testValues: [], skillEffects: "suppressed", idempotencyKey: randomUUID() });
+
+    // No agentId at all -- an operator MCP client continuing a session by id alone -- resolves it
+    // from the execution itself.
+    await expect(service.transcript({ workspaceId, executionId: execution.id })).resolves.toMatchObject({ id: execution.id });
+    // The caller's own agentId, when it matches, is used as-is: no extra resolution read.
+    await expect(service.transcript({ workspaceId, agentId, executionId: execution.id })).resolves.toMatchObject({ id: execution.id });
+    // A mismatched explicit agentId is rejected exactly like any other wrong id.
+    await expect(service.transcript({ workspaceId, agentId: randomUUID(), executionId: execution.id })).rejects.toMatchObject({ statusCode: 404 });
+    // A testExecutionId this workspace does not own resolves to nothing.
+    await expect(service.transcript({ workspaceId: randomUUID(), executionId: execution.id })).rejects.toMatchObject({ statusCode: 404 });
+  });
+
+  it("rejects send with another agent's id against this execution as not found, and creates no turn or attempt row", async () => {
+    const otherAgentId = randomUUID();
+    await database.query("INSERT INTO agents (id,workspace_id,name) VALUES ($1,$2,$3)", [otherAgentId, workspaceId, "other-agent"]);
+    const service = new TestExecutionService({
+      revisions: repository,
+      contextCatalog: new ContextVariableRepository(database.kysely),
+      repository,
+      runner: { run: async () => ({ answer: "answer", messageId: randomUUID(), continuation: null }) },
+      usageLimitPolicy: new NoopUsageLimitPolicy(),
+      createId: randomUUID,
+    });
+    const execution = await service.start({ workspaceId, agentId, accountId: null, mode: "single", revisionIds: [revisionId], testValues: [], skillEffects: "suppressed", idempotencyKey: randomUUID() });
+    const turnId = randomUUID();
+
+    // A real agent's own id, but not the one this execution belongs to: rejected exactly like a
+    // testExecutionId this workspace does not own, before any claim is attempted.
+    await expect(service.send({ workspaceId, agentId: otherAgentId, accountId: null, executionId: execution.id, message: "hello", generation: execution.generation, turnId, attemptId: randomUUID() }))
+      .rejects.toMatchObject({ statusCode: 404 });
+
+    expect(await database.query("SELECT 1 FROM agent_test_execution_turns WHERE execution_id = $1 AND turn_id = $2", [execution.id, turnId])).toEqual([]);
+    expect(await database.query("SELECT 1 FROM agent_test_execution_attempts WHERE execution_id = $1 AND turn_id = $2", [execution.id, turnId])).toEqual([]);
+  });
+
   it("summarizes each listed execution's operator turns and opening message from its first side only", async () => {
     const executionId = randomUUID(), emptyId = randomUUID(), turnA = randomUUID(), turnB = randomUUID();
     const entry = (turnId: string, role: "user" | "assistant", content: string, at: number) => ({ turnId, attemptId: randomUUID(), role, content, createdAt: new Date(at) });

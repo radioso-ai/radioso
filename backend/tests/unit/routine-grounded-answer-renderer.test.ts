@@ -10,13 +10,18 @@ import { ChatAnswerPresenter } from "../../src/modules/chat/services/chatAnswerP
 import type { PreparedSession } from "../../src/modules/chat/services/chatSessionPreparer.js";
 import type { RetrievalPipelineResult } from "../../src/modules/retrieval/public.js";
 import {
+  createRetrievalTurnSkill,
+  RetrievalAnswerComposer,
   RETRIEVAL_OUTCOME_KIND,
   RETRIEVAL_TURN_SKILL,
 } from "../../src/modules/chat/services/retrievalTurnSkill.js";
+import { ChatAnswerSupport } from "../../src/modules/chat/services/chatAnswerSupport.js";
+import type { ChatGateway } from "../../src/modules/chat/contracts/chatGateway.js";
+import { renderSteeringBlock } from "../../src/shared/infra/prompts/steeringPromptRenderer.js";
 import type { TurnRenderContext, TurnSkill } from "../../src/modules/chat/services/turnOutcome.js";
 import type { ChatPresentedAnswer } from "../../src/modules/chat/services/chatAnswerPresenter.js";
 import type { ChatSuggestion } from "../../src/modules/chat/types/chatResponses.js";
-import type { AssistantSuggestionExpansionService } from "../../src/modules/chat/services/assistantSuggestionExpansionService.js";
+import { AssistantSuggestionExpansionService } from "../../src/modules/chat/services/assistantSuggestionExpansionService.js";
 
 const retrievalResult = (): RetrievalPipelineResult =>
   ({
@@ -176,6 +181,61 @@ describe("createRoutineGroundedAnswerRenderer", () => {
         effectiveRetrieval: retrieval,
       },
     });
+  });
+
+  it("composes a retrieval-fed step's grounded prompt with the step as the controlling instruction (#1351)", async () => {
+    const systemPrompts: string[] = [];
+    const gateway: ChatGateway = {
+      async answer(input) {
+        systemPrompts.push(input.systemPrompt ?? "");
+        return JSON.stringify({
+          coverage: "answered_sufficient_evidence",
+          requestFocus: "where Kriya is introduced",
+          outcome: "answer",
+          answer: "Kriya is introduced in the first module[[1]]. What email address can we reach you at?",
+          v: 2,
+          claims: [[1]],
+          suggestions: [],
+          grounding: "grounded",
+        });
+      },
+      async *streamAnswer() {
+        throw new Error("routine grounded rendering uses the non-streaming path");
+      },
+    };
+    const composer = new RetrievalAnswerComposer(
+      new ChatAnswerSupport(),
+      gateway,
+      new ChatAnswerPresenter(new AssistantSuggestionExpansionService(), undefined, { supportsGroundedAnswer: () => true }),
+      { async composeNoContext() { throw new Error("the staged retrieval has context"); } },
+    );
+    const stepAction = "Answer where Kriya is introduced, then ask what email address we can reach them at.";
+    const redirect = {
+      id: "directive-form",
+      directiveName: "contact-form-only",
+      action: "Send anyone who needs a follow-up to the contact form at https://example.com/contact.",
+      source: "directive" as const,
+      lifespan: "response" as const,
+      priority: 50,
+    };
+    const renderer = createRoutineGroundedAnswerRenderer({
+      session: { ...session(), directiveSteering: { rules: [], matches: [], omissions: [] } },
+      turnSkills: [createRetrievalTurnSkill(composer)],
+    });
+
+    await renderer.render({
+      step: { ...step, action: stepAction },
+      steering: [{ action: stepAction, source: "routine", lifespan: "response" }, redirect],
+      turn: turnWithRetrieval(retrievalResult()),
+    });
+
+    const systemPrompt = systemPrompts[0] ?? "";
+    expect(systemPrompts).toHaveLength(1);
+    expect(systemPrompt).toContain(renderSteeringBlock([redirect, { action: stepAction, source: "routine", lifespan: "response" }], { includeRuleIds: true }));
+    expect(systemPrompt).toContain("subordinate to the step");
+    expect(systemPrompt).toContain(`[directive-form] ${redirect.action}`);
+    expect(systemPrompt.indexOf("Step instruction(s) — the controlling instruction")).toBeLessThan(systemPrompt.indexOf(redirect.action));
+    expect(systemPrompt).not.toContain("govern the visible answer");
   });
 
   it("declines when no staged retrieval result is available", async () => {

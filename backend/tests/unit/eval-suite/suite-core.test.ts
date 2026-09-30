@@ -601,6 +601,16 @@ describe("seed fixtures", () => {
     ]);
   });
 
+  it("adds the #1351 hand-off directive only to its own case, never to the seeded agent", () => {
+    const overridden = conversationQualityCases.filter((evalCase) => evalCase.agentConfigOverride?.authoredDirectives);
+    expect(overridden.map((evalCase) => evalCase.id)).toEqual(["routine-step-outranks-always-on-handoff-directive"]);
+    expect(overridden[0]?.agentConfigOverride?.authoredDirectives?.map((directive) => directive.name)).toEqual([
+      ...conversationQualityAgentConfig.authoredDirectives.map((directive) => directive.name),
+      "contact-form-only",
+    ]);
+    expect(conversationQualityAgentConfig.authoredDirectives.map((directive) => directive.name)).not.toContain("contact-form-only");
+  });
+
   it("validates the seed cases against the schema with unique ids", () => {
     const parsed = parseConversationQualityCases(conversationQualityCases);
     expect(parsed).toHaveLength(conversationQualityCases.length);

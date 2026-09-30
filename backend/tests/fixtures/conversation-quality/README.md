@@ -14,7 +14,7 @@ repo-committed regression suite you run from the CLI.
 |------|------------|
 | `corpus.ts` | 4 seed documents with quotable facts (30-day refund, $49 Pro plan, SOC 2 Type II) |
 | `routines.ts` | 2 seed `RoutineDefinition`s: `contact-support`, `book-demo` |
-| `directives.ts` | 4 seed `AuthoredDirective`s: pricing-precision, refund-empathy, security-precision, maximally-helpful |
+| `directives.ts` | 4 seed `AuthoredDirective`s: pricing-precision, refund-empathy, security-precision, maximally-helpful; plus `contact-form-only`, which only the `routine-step-outranks-always-on-handoff-directive` case adds, through `agentConfigOverride` |
 | `agent.ts` | the single seed agent (retrieval on, directives attached) all cases run against |
 | `cases.ts` | the 20 seed cases |
 | `baseline.json` | committed per-case verdicts; the run diffs against this and fails on regression |

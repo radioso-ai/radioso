@@ -3,11 +3,13 @@ import { renderPromptTemplate } from "./promptTemplate.js";
 import { expandAnswerCoverageCriteria } from "./answerCoverageClassification.js";
 import {
   DEFAULT_CLARIFICATION_STEERING_PROMPT,
+  DEFAULT_ROUTINE_STEP_STEERING_PROMPT,
   DEFAULT_STEERING_PROMPT,
 } from "./generated/defaultPrompts.js";
 
 export {
   DEFAULT_CLARIFICATION_STEERING_PROMPT,
+  DEFAULT_ROUTINE_STEP_STEERING_PROMPT,
   DEFAULT_STEERING_PROMPT,
 } from "./generated/defaultPrompts.js";
 
@@ -80,3 +82,17 @@ export const clarificationSteeringOptions = (template?: string): RenderSteeringR
   template: template ?? DEFAULT_CLARIFICATION_STEERING_PROMPT,
   templateName: "chat/steering-clarification.md",
 });
+
+/**
+ * Frames a routine step's directive guidance as subordinate to the step instruction
+ * that follows it (#1351). Shared by the step renderer and by a host's answer
+ * generators, which compose a step's reply when a retrieval step feeds it.
+ */
+export const routineStepSteeringOptions = (template?: string): RenderSteeringRulesOptions => ({
+  template: template ?? DEFAULT_ROUTINE_STEP_STEERING_PROMPT,
+  templateName: "chat/routine-step-steering.md",
+});
+
+/** A routine step's controlling instructions, one per line. */
+export const renderRoutineStepInstructions = (actions: readonly string[]): string =>
+  actions.map((action) => `- ${action}`).join("\n");

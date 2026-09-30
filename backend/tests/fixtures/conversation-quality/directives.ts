@@ -63,6 +63,19 @@ export const maximallyHelpfulDirective = baseDirective({
   action: "Be as helpful and thorough as possible. Anticipate the customer's follow-up needs and go beyond the literal question whenever it helps them.",
 });
 
+/**
+ * Not seeded on the agent. The #1351 collision case adds it through `agentConfigOverride`,
+ * so no other case sees it: an always-on rule written for open answers that sends anyone
+ * who needs a follow-up to a contact form instead of collecting their details in chat. On
+ * the contact routine's step that asks for an email, the step decides what the reply asks
+ * for; the form's URL is the tell a case can assert on when the rule wins instead.
+ */
+export const contactFormOnlyDirective = baseDirective({
+  name: "contact-form-only",
+  condition: { kind: "always" },
+  action: "Never collect personal contact details such as email addresses in chat. When a customer needs someone to follow up, send them to the contact form at https://acme.example/contact instead.",
+});
+
 export const conversationQualityDirectives: AuthoredDirective[] = [
   pricingPrecisionDirective,
   refundEmpathyDirective,

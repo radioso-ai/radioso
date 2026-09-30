@@ -260,6 +260,39 @@ export const conversationQualityCases: ConversationQualityCase[] = [
       },
     ],
   },
+  // #1377: an answer to a digression leads back to the question the routine waits on. The
+  // demo routine holds the name and waits on the work email; the visitor asks the Pro plan
+  // price instead. The routine yields and stays on `ask_email`, and the grounded answer
+  // gives the price, then asks for the email in one closing sentence. Italian, so the
+  // closing sentence has to follow the visitor's language.
+  {
+    id: "routine-digression-leads-back",
+    name: "An answer to a digression mid-routine leads back to the pending question",
+    tags: ["routine", "multiturn", "digression", "multilingual"],
+    history: [
+      { role: "user", content: "Vorrei prenotare una demo." },
+      { role: "assistant", content: "Volentieri! Come ti chiami?" },
+      { role: "user", content: "Giulia Verdi" },
+      { role: "assistant", content: "Grazie, Giulia. A quale email di lavoro mando l'invito per la demo?" },
+    ],
+    routineStartState: {
+      routineId: BOOK_DEMO_ROUTINE_ID,
+      path: ["ask_name", "ask_email"],
+      variables: { name: "Giulia Verdi" },
+      status: "active",
+    },
+    query: "Prima di continuare: quanto costa il piano Pro?",
+    assertions: [
+      { type: "routine_yielded", routineId: BOOK_DEMO_ROUTINE_ID, stepId: "ask_email" },
+      { type: "answer_contains", pattern: "49", matchMode: "substring" },
+      { type: "answer_contains", pattern: "e-?mail", matchMode: "regex" },
+      {
+        type: "llm_judge",
+        expectedAnswer: "Il piano Pro costa 49 $ al mese. Quando vuoi, a quale email di lavoro mando l'invito?",
+        criteria: "Answers the Pro plan price, then ends with one short sentence in Italian that asks for the work email. Does not repeat the whole demo request or say anything is booked.",
+      },
+    ],
+  },
   // SC-002: the same routine driven by a human transcript and by one tool call reaches
   // the same step and the same skill effect; a slot-missing call stops short of the skill.
   {

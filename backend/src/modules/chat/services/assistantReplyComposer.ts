@@ -46,6 +46,9 @@ export class AssistantReplyComposer {
       pageContextCondition: this.support.pageContextCondition(session),
       conversationSummary: session.conversationSummary,
       steering: session.directiveSteering?.rules ?? [],
+      ...(session.routineYield?.pendingStep
+        ? { routineLeadBack: { pendingStep: session.routineYield.pendingStep } }
+        : {}),
     });
   }
 

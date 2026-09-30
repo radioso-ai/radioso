@@ -7,6 +7,7 @@ import {
   routineStepSteeringOptions,
   steeringForSurface,
   type RenderSteeringRulesOptions,
+  type RoutinePendingStep,
   type SteeringRule,
 } from "../../domain/steeringRule.js";
 import { loadPromptTemplate, renderPromptTemplate } from "./promptLoader.js";
@@ -74,6 +75,50 @@ export const renderSteeringBlock = (
 ): string => {
   const rules = surfaceRules(steering, options);
   return renderRoutineStepBlock(rules, options) ?? renderSteeringRules(rules, surfaceOptions(options));
+};
+
+/** The step a routine that yielded this turn waits on, carried into the reply. */
+export interface RoutineLeadBack {
+  pendingStep: RoutinePendingStep;
+  /**
+   * The answer's `no_support` decline hands the conversation to a person, so a declined
+   * answer leaves the lead-back out. Only an answer that commits an outcome can honor it.
+   */
+  declineHandsOff?: boolean;
+}
+
+const renderRoutineLeadBack = ({ pendingStep, declineHandsOff }: RoutineLeadBack): string =>
+  renderPromptTemplate("chat/routine-lead-back.md", {
+    pending_step: `- ${pendingStep.instruction}`,
+    missing_slots: pendingStep.missingSlotKeys.length > 0
+      ? `\n${renderPromptTemplate("chat/routine-lead-back-missing-slots.md", {
+        slot_keys: pendingStep.missingSlotKeys.join(", "),
+      })}`
+      : "",
+    decline_handoff: declineHandsOff ? `\n\n${loadPromptTemplate("chat/routine-lead-back-decline-handoff.md")}` : "",
+  });
+
+/**
+ * A routine that yielded the turn stays parked on a step, and the reply to the visitor's
+ * digression closes by pointing back to it (#1377). The roles are the reverse of a
+ * routine step's reply: the reply comes first and the pending step only shapes its closing
+ * sentence (`chat/routine-lead-back.md`). Callers append it last: placed before a grounded
+ * answer's coverage and envelope rules, the model left the closing sentence out. Nothing
+ * is appended when a routine step's rule steers the reply, since that routine is handling
+ * the turn itself.
+ */
+export const appendRoutineLeadBack = (
+  prompt: string,
+  steering: SteeringRule[] = [],
+  leadBack?: RoutineLeadBack,
+): string => {
+  if (!leadBack || (!leadBack.pendingStep.instruction && leadBack.pendingStep.missingSlotKeys.length === 0)) {
+    return prompt;
+  }
+  if (partitionRoutineStepSteering(surfaceRules(steering, {})).instructions.length > 0) {
+    return prompt;
+  }
+  return `${prompt}\n\n${renderRoutineLeadBack(leadBack)}`;
 };
 
 export const appendSteeringBlock = (

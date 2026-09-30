@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { loadPromptTemplate } from "../../src/shared/infra/prompts/promptLoader.js";
 import { composeGroundedAnswerSystemPrompt } from "../../src/modules/chat/services/groundedAnswerPromptComposer.js";
+import { appendRoutineLeadBack } from "../../src/shared/infra/prompts/steeringPromptRenderer.js";
 import { PromptBuilder } from "../../src/modules/retrieval/services/promptBuilder.js";
 
 const conversationIntentSnapshot = {
@@ -200,6 +201,38 @@ describe("grounded answer prompt contract", () => {
     expect(result.systemPrompt).toContain("Coverage-aware response");
     expect(result.systemPrompt).toContain("answer the resolved request directly");
     expect(result.systemPrompt).toContain("Citation and grounding rules remain authoritative");
+  });
+
+  it("closes the prompt with a lead-back to a parked routine's step, after every format rule (#1377)", () => {
+    const pendingStep = {
+      stepId: "ask_dates",
+      instruction: "Ask for the arrival and departure dates.",
+      missingSlotKeys: ["departure"],
+    };
+    const input = {
+      baseSystemPrompt: "BASE",
+      suggestedQuestionsEnabled: true,
+      suggestedQuestionsCount: 3,
+      hasRetrievedContexts: true,
+      conversationIntentSnapshot,
+    };
+
+    const withSuggestions = composeGroundedAnswerSystemPrompt({ ...input, routineLeadBack: { pendingStep } });
+    const withoutSuggestions = composeGroundedAnswerSystemPrompt({
+      ...input,
+      suggestedQuestionsEnabled: false,
+      routineLeadBack: { pendingStep },
+    });
+    const withoutLeadBack = composeGroundedAnswerSystemPrompt(input);
+
+    // Placed before the coverage and envelope rules, the model left the closing sentence out.
+    expect(withSuggestions.systemPrompt).toBe(appendRoutineLeadBack(withoutLeadBack.systemPrompt, [], { pendingStep }));
+    expect(withoutSuggestions.systemPrompt).toBe(appendRoutineLeadBack(
+      composeGroundedAnswerSystemPrompt({ ...input, suggestedQuestionsEnabled: false }).systemPrompt,
+      [],
+      { pendingStep },
+    ));
+    expect(withoutLeadBack.systemPrompt).not.toContain(pendingStep.instruction);
   });
 
   it("explains what `applicable` means for an adherence attestation (#1260 review F4)", () => {

@@ -714,6 +714,40 @@ test('reopens a later failed turn and retries that recorded turn only', async ({
   expect(requestBodies).toContainEqual(expect.objectContaining({ executionGeneration: 4, turnId: 'later-turn', attemptId: expect.stringMatching(/^[0-9a-f-]{36}$/) }))
 })
 
+test('reopens a session with a failed turn that a later message superseded', async ({ page }) => {
+  const saved = {
+    id: 'execution-history-superseded', generation: 1, mode: 'single', state: 'completed', createdAt: nowIso,
+    sides: [{ id: 'superseded-side', revision: published, conversationId: 'conversation-superseded', state: 'completed', retryable: false }],
+  }
+  await installCockpitMocks(page, {
+    executionHistory: [saved],
+    executionDetail: {
+      ...saved,
+      testValues: [],
+      sides: saved.sides.map((side) => ({
+        ...side,
+        history: [
+          { turnId: 'failed-turn', role: 'user', content: 'How do I contact a human?', attemptId: 'failed-attempt', createdAt: nowIso },
+          { turnId: 'next-turn', role: 'user', content: 'guest@example.com', attemptId: 'next-attempt', createdAt: nowIso },
+          { turnId: 'next-turn', role: 'assistant', content: 'What would you like to tell them?', messageId: 'message-next', attemptId: 'next-attempt', createdAt: nowIso },
+        ],
+      })),
+      attempts: [
+        { sideId: 'superseded-side', turnId: 'failed-turn', attemptId: 'failed-attempt', fence: 1, state: 'failed', failureCode: 'runner_failed', createdAt: nowIso, updatedAt: nowIso, leaseExpiresAt: nowIso },
+        { sideId: 'superseded-side', turnId: 'next-turn', attemptId: 'next-attempt', fence: 1, state: 'completed', createdAt: nowIso, updatedAt: nowIso, leaseExpiresAt: nowIso },
+      ],
+    },
+  })
+  await page.goto(testUrl)
+  await clickTestChatAction(page, 'Conversation history')
+  await page.getByRole('button', { name: 'Open', exact: true }).click()
+
+  await expect(page.getByText('Test failed: runner_failed', { exact: true })).toBeVisible()
+  await expect(page.getByText('What would you like to tell them?', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Retry this side' })).toHaveCount(0)
+  await expect(testChatComposer(page)).toBeEnabled()
+})
+
 test('fences a delayed stream after test values reset the execution', async ({ page }) => {
   const mocks = await installCockpitMocks(page, { delayMessage: true, enabledContextVariableIds: ['tier'], contextVariables: [{ id: 'tier', name: 'Customer tier', description: null, valueType: 'string' }] })
   await page.goto(testUrl)

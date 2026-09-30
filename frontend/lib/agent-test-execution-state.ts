@@ -73,49 +73,88 @@ export const initializeTestExecutionState = (execution: TestExecution): TestExec
   }])),
 })
 
+type PersistedAttempt = TestExecutionHistoryDetail['attempts'][number]
+type PersistedSide = TestExecutionHistoryDetail['sides'][number]
+
+/**
+ * One side's latest attempt per turn. A retry supersedes an attempt with a higher
+ * fence, but every new turn starts again at fence 1, so fences only order attempts
+ * within one turn — the same grouping the backend's turn read model uses.
+ */
+const latestAttemptByTurn = (attempts: readonly PersistedAttempt[], sideId: string): Map<string, PersistedAttempt> => {
+  const latest = new Map<string, PersistedAttempt>()
+  attempts.forEach((attempt) => {
+    if (attempt.sideId !== sideId) return
+    const current = latest.get(attempt.turnId)
+    if (!current || attempt.fence >= current.fence) latest.set(attempt.turnId, attempt)
+  })
+  return latest
+}
+
+/** The side's latest turn: the one its last operator message opened. */
+const currentTurnId = (history: PersistedSide['history']): string | undefined =>
+  history.filter((entry) => entry.role === 'user').at(-1)?.turnId
+
+/**
+ * The assistant slot of a turn that has no answer in the history: a failed turn
+ * keeps its failure in place, and only the current turn can still be running.
+ */
+const unansweredPlaceholder = (sideId: string, attempt: PersistedAttempt | undefined, isCurrentTurn: boolean): TestExecutionMessage | null => {
+  if (!attempt || !(attempt.state === 'failed' || (attempt.state === 'running' && isCurrentTurn))) return null
+  return {
+    id: `${sideId}-${attempt.turnId}-${attempt.attemptId}`,
+    role: 'assistant',
+    content: attempt.state === 'failed' ? `Test failed: ${attempt.failureCode ?? 'unknown'}` : '',
+    state: attempt.state === 'failed' ? 'failed' : 'streaming',
+    turnId: attempt.turnId,
+    attemptId: attempt.attemptId,
+  }
+}
+
+/** A side's persisted history as messages, with each unanswered turn's placeholder right after that turn. */
+const hydrateSideMessages = (side: PersistedSide, latestByTurn: Map<string, PersistedAttempt>, current: string | undefined): TestExecutionMessage[] => {
+  const answeredTurnIds = new Set(side.history.filter((entry) => entry.role === 'assistant').map((entry) => entry.turnId))
+  const lastIndexByTurn = new Map(side.history.map((entry, index) => [entry.turnId, index] as const))
+  return side.history.flatMap((entry, index) => {
+    const message: TestExecutionMessage = {
+      id: entry.messageId ?? `${side.id}-${entry.turnId}-${entry.role}-${entry.attemptId}`,
+      role: entry.role,
+      content: entry.content,
+      state: 'completed',
+      turnId: entry.turnId,
+      attemptId: entry.attemptId,
+      persistedAssistantMessageId: entry.role === 'assistant' ? entry.messageId : undefined,
+      turnTrace: entry.role === 'assistant' ? entry.turnTrace : undefined,
+    }
+    const endsUnansweredTurn = lastIndexByTurn.get(entry.turnId) === index && !answeredTurnIds.has(entry.turnId)
+    const placeholder = endsUnansweredTurn
+      ? unansweredPlaceholder(side.id, latestByTurn.get(entry.turnId), entry.turnId === current)
+      : null
+    return placeholder ? [message, placeholder] : [message]
+  })
+}
+
 /**
  * Reopen a private execution from the server's frozen transcript and attempts.
  * A running persisted attempt remains running: this projection never invents a
- * terminal event or silently starts a replacement turn.
+ * terminal event or silently starts a replacement turn. A failed turn stays in
+ * the transcript even after a later message superseded it.
  */
 export const hydrateTestExecutionState = (execution: TestExecutionHistoryDetail): TestExecutionState => {
-  const currentAttemptBySide = new Map<string, TestExecutionHistoryDetail['attempts'][number]>()
-  execution.attempts.forEach((attempt) => {
-    const current = currentAttemptBySide.get(attempt.sideId)
-    if (!current || attempt.fence >= current.fence) currentAttemptBySide.set(attempt.sideId, attempt)
+  const sides = execution.sides.map((side) => {
+    const latestByTurn = latestAttemptByTurn(execution.attempts, side.id)
+    const current = currentTurnId(side.history)
+    return { side, latestByTurn, current, currentAttempt: current === undefined ? undefined : latestByTurn.get(current) }
   })
-  const runningAttempt = [...currentAttemptBySide.values()].find((attempt) => attempt.state === 'running')
+  const runningAttempt = sides.map(({ currentAttempt }) => currentAttempt).find((attempt) => attempt?.state === 'running')
   return {
     executionId: execution.id,
     generation: execution.generation,
     state: execution.state,
     activeTurnId: runningAttempt?.turnId ?? null,
     activeAttemptId: runningAttempt?.attemptId ?? null,
-    sides: Object.fromEntries(execution.sides.map((side) => {
-      const currentAttempt = currentAttemptBySide.get(side.id)
-      const messages: TestExecutionMessage[] = side.history.map((entry) => ({
-        id: entry.messageId ?? `${side.id}-${entry.turnId}-${entry.role}-${entry.attemptId}`,
-        role: entry.role,
-        content: entry.content,
-        state: 'completed',
-        turnId: entry.turnId,
-        attemptId: entry.attemptId,
-        persistedAssistantMessageId: entry.role === 'assistant' ? entry.messageId : undefined,
-        turnTrace: entry.role === 'assistant' ? entry.turnTrace : undefined,
-      }))
-      const hasCurrentAssistant = currentAttempt !== undefined && messages.some((message) =>
-        message.role === 'assistant' && message.turnId === currentAttempt.turnId && message.attemptId === currentAttempt.attemptId,
-      )
-      if (currentAttempt && !hasCurrentAssistant && (currentAttempt.state === 'running' || currentAttempt.state === 'failed')) {
-        messages.push({
-          id: `${side.id}-${currentAttempt.turnId}-${currentAttempt.attemptId}`,
-          role: 'assistant',
-          content: currentAttempt.state === 'failed' ? `Test failed: ${currentAttempt.failureCode ?? 'unknown'}` : '',
-          state: currentAttempt.state === 'failed' ? 'failed' : 'streaming',
-          turnId: currentAttempt.turnId,
-          attemptId: currentAttempt.attemptId,
-        })
-      }
+    sides: Object.fromEntries(sides.map(({ side, latestByTurn, current, currentAttempt }) => {
+      const messages = hydrateSideMessages(side, latestByTurn, current)
       return [side.id, {
         id: side.id,
         revisionId: side.revision.id,

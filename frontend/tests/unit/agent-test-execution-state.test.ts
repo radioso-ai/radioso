@@ -150,6 +150,36 @@ describe('agent test execution state', () => {
     expect(retrying.sides.left.messages).toEqual(reopened.sides.left.messages)
   })
 
+  it('keeps a failed turn a later message superseded in its place when the session is reopened', () => {
+    const revision = { id: 'revision-7', label: 'Published', kind: 'published' as const, versionNumber: 7, createdAt: '' }
+    const reopened = hydrateTestExecutionState({
+      id: 'execution-1', generation: 2, mode: 'single', skillEffects: 'suppressed', state: 'completed', createdAt: '', testValues: [],
+      sides: [{
+        id: 'left', revision, conversationId: 'left-chat', state: 'completed', retryable: false,
+        history: [
+          { turnId: 'turn-1', role: 'user', content: 'How do I contact a human?', attemptId: 'attempt-1', createdAt: '' },
+          { turnId: 'turn-2', role: 'user', content: 'guest@example.com', attemptId: 'attempt-2', createdAt: '' },
+          { turnId: 'turn-2', role: 'assistant', content: 'What would you like to tell them?', messageId: 'message-2', attemptId: 'attempt-2', createdAt: '' },
+        ],
+      }],
+      // Turn 1 failed, and so did its retry (fence 2); turn 2 then started at fence 1 and completed.
+      attempts: [
+        { sideId: 'left', turnId: 'turn-1', attemptId: 'attempt-1', fence: 1, state: 'failed', failureCode: 'runner_failed', createdAt: '', updatedAt: '' },
+        { sideId: 'left', turnId: 'turn-1', attemptId: 'attempt-1-retry', fence: 2, state: 'failed', failureCode: 'runner_failed', createdAt: '', updatedAt: '' },
+        { sideId: 'left', turnId: 'turn-2', attemptId: 'attempt-2', fence: 1, state: 'completed', createdAt: '', updatedAt: '' },
+      ],
+    })
+
+    expect(reopened.sides.left.messages).toEqual([
+      expect.objectContaining({ role: 'user', turnId: 'turn-1', content: 'How do I contact a human?' }),
+      expect.objectContaining({ role: 'assistant', turnId: 'turn-1', attemptId: 'attempt-1-retry', state: 'failed', content: 'Test failed: runner_failed' }),
+      expect.objectContaining({ role: 'user', turnId: 'turn-2', content: 'guest@example.com' }),
+      expect.objectContaining({ role: 'assistant', turnId: 'turn-2', state: 'completed', content: 'What would you like to tell them?' }),
+    ])
+    expect(reopened).toMatchObject({ activeTurnId: null, activeAttemptId: null })
+    expect(reopened.sides.left).toMatchObject({ retryable: false, errorCode: undefined })
+  })
+
   describe('initializeTestExecutionState status derivation', () => {
     const execution = (sides: Array<{ id: string; state: 'running' | 'failed' | 'completed' | 'missing' }>) => ({
       id: 'execution-1',

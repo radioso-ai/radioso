@@ -20,6 +20,7 @@ import type {
   RenderableTurn,
   ResumeAwaitingDecisionInput,
   ConversationRoutineDecisionResult,
+  RoutineTurnYield,
   SelectionDecision,
   SkillDefinition,
   SelectedSkill,
@@ -39,6 +40,7 @@ import {
   createTrace,
   historyGatherStage,
   reportProgress,
+  routineYieldStage,
   skillInputResolutionStage,
   stage,
   timedStage,
@@ -129,8 +131,31 @@ const coverageVerdictSinkDeps = (
   composeStartedAt,
 });
 
+type OpenedTurn =
+  | { claimed: ProcessTurnResult }
+  | { claimed: null; routineYield?: RoutineTurnYield };
+
 export class DefaultConversationEngine implements ConversationEngine {
-  private async prepareTurn(input: ProcessTurnInput | ProcessTurnStreamInput): Promise<PreparedTurnRun> {
+  /**
+   * The routine pass that opens a turn. A host that ran it before preparing the turn
+   * passes the yield in, so the routine is not asked about the same message twice.
+   */
+  private async openTurn(input: ProcessTurnInput | ProcessTurnStreamInput): Promise<OpenedTurn> {
+    if (input.routineYield) {
+      return { claimed: null, routineYield: input.routineYield };
+    }
+    const observed: { routineYield?: RoutineTurnYield } = {};
+    const claimed = await this.attemptRoutine({
+      ...input,
+      routineYieldSink: { yielded: (routineYield) => { observed.routineYield = routineYield; } },
+    });
+    return claimed ? { claimed } : { claimed: null, ...observed };
+  }
+
+  private async prepareTurn(
+    input: ProcessTurnInput | ProcessTurnStreamInput,
+    routineYield?: RoutineTurnYield,
+  ): Promise<PreparedTurnRun> {
     const stages: ConversationTraceStage[] = [];
     const events: ConversationEvent[] = [];
     const history = await input.stores.loadHistory({ sessionId: input.sessionId });
@@ -164,6 +189,9 @@ export class DefaultConversationEngine implements ConversationEngine {
     // Tail of the loaded history is represented as structural references only;
     // the UI resolves message text from the authorized conversation records.
     stages.push(historyGatherStage(history));
+    if (routineYield) {
+      stages.push(routineYieldStage(routineYield));
+    }
 
     const interpretationStartedAt = Date.now();
     if (input.turnInterpreter) {
@@ -450,11 +478,11 @@ export class DefaultConversationEngine implements ConversationEngine {
   }
 
   async processTurn(input: ProcessTurnInput): Promise<ProcessTurnResult> {
-    const resumed = await this.attemptRoutine(input);
-    if (resumed) {
-      return resumed;
+    const opened = await this.openTurn(input);
+    if (opened.claimed) {
+      return opened.claimed;
     }
-    const prepared = await this.prepareTurn(input);
+    const prepared = await this.prepareTurn(input, opened.routineYield);
     const composeStartedAt = Date.now();
     const coverageVerdict = createCoverageVerdictSink(coverageVerdictSinkDeps(input, prepared, composeStartedAt));
     const response = await input.composer.compose({
@@ -503,8 +531,9 @@ export class DefaultConversationEngine implements ConversationEngine {
   }
 
   async *processTurnStream(input: ProcessTurnStreamInput): AsyncIterable<ProcessTurnStreamEvent> {
-    const resumed = await this.attemptRoutine(input);
-    if (resumed) {
+    const opened = await this.openTurn(input);
+    if (opened.claimed) {
+      const resumed = opened.claimed;
       const chunks = input.composer.streamCommitted?.(resumed.response)
         ?? (resumed.response.answer ? [resumed.response.answer] : []);
       for (const text of chunks) {
@@ -515,7 +544,7 @@ export class DefaultConversationEngine implements ConversationEngine {
       yield { type: "final", result: resumed };
       return;
     }
-    const prepared = await this.prepareTurn(input);
+    const prepared = await this.prepareTurn(input, opened.routineYield);
     let response: RenderableTurn | null = null;
     let finalMetadata: Record<string, unknown> | undefined;
     const composeStartedAt = Date.now();

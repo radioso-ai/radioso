@@ -1,4 +1,5 @@
-export type { SteeringRule } from "@radioso/conversation-contract";
+// A yielded routine's pending step steers the turn's answer as a closing lead-back (#1377).
+export type { RoutinePendingStep, SteeringRule } from "@radioso/conversation-contract";
 export {
   addressesSurface,
   appendSteeringRules,

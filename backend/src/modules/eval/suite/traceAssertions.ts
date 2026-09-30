@@ -23,6 +23,8 @@ export type SuiteTraceAssertion =
   | { type: "routine_step_reached"; routineId: string; stepId: string }
   /** Every named slot is filled after the turn, whichever step the routine landed on. */
   | { type: "routine_slots_filled"; routineId: string; slotKeys: string[] }
+  /** The active routine yielded the turn to a normal answer and stays parked on `stepId`. */
+  | { type: "routine_yielded"; routineId: string; stepId: string }
   | { type: "turn_asks_clarification" }
   | { type: "turn_grounding_verdict"; verdict: "grounded" | "degraded" | "no_support" }
   | { type: "turn_answer_coverage"; coverage: "answered" | "partial" | "unanswered" | "unclear" };
@@ -34,6 +36,7 @@ const TRACE_ASSERTION_TYPES = new Set<string>([
   "turn_activates_routine",
   "routine_step_reached",
   "routine_slots_filled",
+  "routine_yielded",
   "turn_asks_clarification",
   "turn_grounding_verdict",
   "turn_answer_coverage",
@@ -233,6 +236,25 @@ export const evaluateTraceAssertion = (
       return fail(
         assertion,
         `Routine "${assertion.routineId}" left ${missing.join(", ")} unfilled; filled: ${[...filled].join(", ") || "none"}.`,
+      );
+    }
+    case "routine_yielded": {
+      if (!output.turnTrace) {
+        return missingTrace(assertion);
+      }
+      const yieldStage = stages(output).find(
+        (stage) => stage.kind === "routine_yield" && readString(stage.outputs, "routineId") === assertion.routineId,
+      );
+      if (!yieldStage) {
+        return fail(assertion, `Routine "${assertion.routineId}" did not yield the turn.`);
+      }
+      const parkedOn = readString(yieldStage.outputs, "stepId");
+      if (parkedOn === assertion.stepId) {
+        return pass(assertion, `Routine "${assertion.routineId}" yielded the turn and stays on "${parkedOn}".`);
+      }
+      return fail(
+        assertion,
+        `Routine "${assertion.routineId}" yielded the turn on ${parkedOn ?? "no recorded step"}; expected "${assertion.stepId}".`,
       );
     }
     case "turn_asks_clarification": {

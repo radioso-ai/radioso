@@ -15,6 +15,28 @@ const historyMessage = (overrides: Partial<MessageRecord>): MessageRecord => ({
 });
 
 describe("non-retrieval answer prompt builder", () => {
+  it("closes a reply to a digression with a lead-back to the parked routine's step (#1377)", () => {
+    const base = {
+      route: CHAT_TURN_ROUTE.DIRECT,
+      answerInstructionBlock: "Configured response instructions:\nHelp visitors book retreats.",
+      history: [],
+      query: "Are you a real person?",
+      framing: { intentTopic: "assistant identity", isIdentityQuestion: true },
+    };
+    const pendingStep = {
+      stepId: "ask_dates",
+      instruction: "Ask for the arrival and departure dates.",
+      missingSlotKeys: ["arrival", "departure"],
+    };
+
+    const prompt = buildAssistantReplyPrompt({ ...base, routineLeadBack: { pendingStep } });
+
+    expect(prompt).toContain(`- ${pendingStep.instruction}`);
+    expect(prompt).toContain("arrival, departure");
+    expect(prompt.indexOf("Are you a real person?")).toBeLessThan(prompt.indexOf(pendingStep.instruction));
+    expect(buildAssistantReplyPrompt(base)).not.toContain(pendingStep.instruction);
+  });
+
   it("instructs social replies to loop back to the configured assistant scope", () => {
     const prompt = buildAssistantReplyPrompt({
       route: CHAT_TURN_ROUTE.DIRECT,

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { appendSteeringBlock, renderSteeringBlock } from "../../src/shared/infra/prompts/steeringPromptRenderer.js";
+import {
+  appendRoutineLeadBack,
+  appendSteeringBlock,
+  renderSteeringBlock,
+} from "../../src/shared/infra/prompts/steeringPromptRenderer.js";
 import { loadPromptTemplate, renderPromptTemplate } from "../../src/shared/infra/prompts/promptLoader.js";
 import { renderSteeringRules, type SteeringRule } from "../../src/shared/domain/steeringRule.js";
 
@@ -109,5 +113,60 @@ describe("renderSteeringBlock on a routine step's reply", () => {
         templateName: "chat/steering-suggested-questions.md",
       }),
     );
+  });
+});
+
+// A routine that yields a turn stays parked on a step; the reply to the visitor's
+// digression closes by pointing back to it (#1377). The pending step is subordinate to
+// the reply, so it closes the prompt rather than rendering as a controlling block.
+describe("appendRoutineLeadBack", () => {
+  const tone = rule("Use the formal register.", 60);
+  const pendingStep = {
+    stepId: "ask_dates",
+    instruction: "Ask Giulia for the arrival and departure dates.",
+    missingSlotKeys: ["arrival", "departure"],
+  };
+  const leadBackBlock = (declineHandoff = "") =>
+    renderPromptTemplate("chat/routine-lead-back.md", {
+      pending_step: `- ${pendingStep.instruction}`,
+      missing_slots: `\n${renderPromptTemplate("chat/routine-lead-back-missing-slots.md", { slot_keys: "arrival, departure" })}`,
+      decline_handoff: declineHandoff,
+    });
+
+  it("closes the prompt with the pending step and the keys it still needs", () => {
+    expect(appendRoutineLeadBack("Prompt.", [tone], { pendingStep })).toBe(`Prompt.\n\n${leadBackBlock()}`);
+  });
+
+  it("leaves out the missing-slots line when the step names no unfilled slot", () => {
+    expect(appendRoutineLeadBack("Prompt.", [], { pendingStep: { ...pendingStep, missingSlotKeys: [] } })).toBe(
+      `Prompt.\n\n${renderPromptTemplate("chat/routine-lead-back.md", {
+        pending_step: `- ${pendingStep.instruction}`,
+        missing_slots: "",
+        decline_handoff: "",
+      })}`,
+    );
+  });
+
+  it("tells a grounded answer to drop the lead-back when its decline hands the visitor to a person", () => {
+    expect(appendRoutineLeadBack("Prompt.", [], { pendingStep, declineHandsOff: true })).toBe(
+      `Prompt.\n\n${leadBackBlock(`\n\n${loadPromptTemplate("chat/routine-lead-back-decline-handoff.md")}`)}`,
+    );
+  });
+
+  it("appends nothing without a pending step, or with one that asks for nothing", () => {
+    expect(appendRoutineLeadBack("Prompt.", [tone])).toBe("Prompt.");
+    expect(appendRoutineLeadBack("Prompt.", [], {
+      pendingStep: { stepId: "ask_dates", instruction: "", missingSlotKeys: [] },
+    })).toBe("Prompt.");
+  });
+
+  it("gives way to a routine step that controls the reply", () => {
+    const stepRule: SteeringRule = {
+      action: "Ask what email address we can reach them at.",
+      source: "routine",
+      lifespan: "response",
+    };
+
+    expect(appendRoutineLeadBack("Prompt.", [stepRule, tone], { pendingStep })).toBe("Prompt.");
   });
 });

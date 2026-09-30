@@ -13,6 +13,7 @@ import type {
   AwaitingSkillInput,
   RoutineActionRequest,
   RoutineAwaitingDecision,
+  RoutineTurnYield,
   SelectionDecision,
   TurnOutcome,
 } from "@radioso/conversation-contract";
@@ -129,6 +130,26 @@ export const historyGatherStage = (history: ConversationMessage[]): Conversation
   outputs: {
     historyCount: history.length,
     history: historyReferences(history),
+  },
+});
+
+/**
+ * The active routine declined the turn and stays parked. Ids and slot keys only: the
+ * pending step's instruction can carry captured values, so it never reaches the trace.
+ */
+export const routineYieldStage = (routineYield: RoutineTurnYield): ConversationTraceStage => stage({
+  id: `routine_yield:${routineYield.routineId}`,
+  kind: "routine_yield",
+  status: "skipped",
+  outputs: {
+    routineId: routineYield.routineId,
+    ...(routineYield.executionId ? { executionId: routineYield.executionId } : {}),
+    ...(routineYield.pendingStep
+      ? {
+          stepId: routineYield.pendingStep.stepId,
+          missingSlotKeys: routineYield.pendingStep.missingSlotKeys,
+        }
+      : {}),
   },
 });
 

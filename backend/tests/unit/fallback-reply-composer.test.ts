@@ -8,6 +8,7 @@ import {
 import { buildTurnInterpretationPrompt } from "../../src/modules/chat/services/conversationTurnInterpreter.js";
 import { buildTurnPlanningPrompt } from "../../src/modules/chat/services/turnPlanService.js";
 import { CHAT_BEHAVIOR } from "../../src/shared/domain/behaviorConfig.js";
+import { appendRoutineLeadBack } from "../../src/shared/infra/prompts/steeringPromptRenderer.js";
 import type { ModelUsageEvent, UsageEventRecorder } from "../../src/shared/domain/usageEventRecorder.js";
 import { ModelInferencePipelineService } from "../../src/shared/infra/llm/modelInferencePipeline.js";
 import type { TextGenerationClient } from "../../src/shared/infra/llm/providerTypes.js";
@@ -248,6 +249,27 @@ describe("grounded miss response composer", () => {
     expect(observedRequest.systemPrompt).toContain("result, formula, code, facts, draft, or reasoning");
     expect(observedRequest.systemPrompt).toContain("team's first-person voice");
     expect(observedRequest.systemPrompt).toContain("Do not refer to yourself");
+  });
+
+  it("closes a decline to a digression with a lead-back to the parked routine's step (#1377)", async () => {
+    const prompts: string[] = [];
+    const composer = new ModelFallbackReplyComposer(pipeline({
+      metadata: { capability: "chat", provider: "openai", model: "test-model" },
+      async complete({ systemPrompt }) {
+        prompts.push(systemPrompt ?? "");
+        return textResult(JSON.stringify({ reply: "I can't confirm parking.", declineReason: "content_gap" }));
+      },
+      stream() {
+        return streamResult([""]);
+      },
+    }));
+    const pendingStep = { stepId: "ask_date", instruction: "Ask what date works best for the demo.", missingSlotKeys: ["preferredDate"] };
+
+    await composer.composeNoContext({ query: "Is there parking?", usageContext, routineLeadBack: { pendingStep } });
+    await composer.composeNoContext({ query: "Is there parking?", usageContext });
+
+    expect(prompts[0]).toBe(appendRoutineLeadBack(prompts[1] ?? "", [], { pendingStep }));
+    expect(prompts[1]).not.toContain(pendingStep.instruction);
   });
 
   it("passes assistant scope instructions into no-context generation", async () => {

@@ -26,14 +26,27 @@ export const serializedLength = (value: unknown): number => JSON.stringify(value
 
 const appendPath = (path: string, key: string): string => `${path}.${key}`;
 
+/**
+ * Absolute compactor paths (`$.foo.bar`, matching `TruncationEntry.path`) exempt from
+ * string-length compaction. A caller reaches for this when a field's write-time bound already
+ * exceeds the generic per-string cap and the write that replaces it does so as one whole value —
+ * `boundPayload`'s doc comment and each caller's own exemption list explain why a specific field
+ * qualifies. Array-length compaction and the recursion into nested values are unaffected: an
+ * exemption only says "do not shorten this string," not "do not bound anything under this path."
+ */
+export type FullStringPaths = ReadonlySet<string>;
+
+const NO_FULL_STRING_PATHS: FullStringPaths = new Set();
+
 const compactValue = (
   value: unknown,
   options: CompactionOptions,
   path: string,
   truncation: TruncationEntry[],
+  fullStringPaths: FullStringPaths,
 ): unknown => {
   if (typeof value === "string") {
-    if (value.length <= options.maxStringChars) return value;
+    if (value.length <= options.maxStringChars || fullStringPaths.has(path)) return value;
     truncation.push({
       path,
       reason: "string_length",
@@ -52,12 +65,12 @@ const compactValue = (
       });
     }
     return value.slice(0, options.maxArrayItems).map((entry, index) =>
-      compactValue(entry, options, `${path}[${index}]`, truncation));
+      compactValue(entry, options, `${path}[${index}]`, truncation, fullStringPaths));
   }
   if (value && typeof value === "object") {
     return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, entry]) => [
       key,
-      compactValue(entry, options, appendPath(path, key), truncation),
+      compactValue(entry, options, appendPath(path, key), truncation, fullStringPaths),
     ]));
   }
   return value;
@@ -67,10 +80,11 @@ export const compactRecord = <T extends Record<string, unknown>>(
   payload: T,
   options: CompactionOptions,
   initialTruncation: ReadonlyArray<TruncationEntry> = [],
+  fullStringPaths: FullStringPaths = NO_FULL_STRING_PATHS,
 ): CompactionResult<T> => {
   const truncation = [...initialTruncation];
   return {
-    value: compactValue(payload, options, "$", truncation) as T,
+    value: compactValue(payload, options, "$", truncation, fullStringPaths) as T,
     truncation,
   };
 };
@@ -174,8 +188,23 @@ export const compactForBudget = <T extends Record<string, unknown>>(
  * signal `boundConversationPayload`/`boundTurnTracePayload` already expose — a caller's own output
  * schema must declare `truncation: truncationRecordSchema` for it to survive validation rather than
  * being stripped as an unrecognized field.
+ *
+ * `fullStringPaths` opts specific absolute paths (e.g. `$.customInstruction`) out of string-length
+ * compaction. It stays empty for almost every caller: only a field the owning module's write
+ * contract already bounds above `MAX_STRING_CHARS`, and that a write tool replaces whole, qualifies
+ * — see `agents/agentInputSchema.ts`'s `AGENT_CONFIG_FULL_TEXT_FIELD_PATHS` for the worked example
+ * (issue #1352). A field with no write-time bound has no worst case to exempt against and stays
+ * generically compacted like everything else.
  */
-export const boundPayload = <T extends Record<string, unknown>>(payload: T): T => {
-  const { value, truncation } = compactRecord(payload, { maxStringChars: MAX_STRING_CHARS, maxArrayItems: MAX_ARRAY_ITEMS });
+export const boundPayload = <T extends Record<string, unknown>>(
+  payload: T,
+  fullStringPaths: FullStringPaths = NO_FULL_STRING_PATHS,
+): T => {
+  const { value, truncation } = compactRecord(
+    payload,
+    { maxStringChars: MAX_STRING_CHARS, maxArrayItems: MAX_ARRAY_ITEMS },
+    [],
+    fullStringPaths,
+  );
   return withTruncation(value, truncation);
 };

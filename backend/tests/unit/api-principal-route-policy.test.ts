@@ -49,6 +49,8 @@ describe("API principal route policy", () => {
     ["GET", "/api/v1/workspace/mcp/context"],
     ["GET", "/api/v1/connectors"],
     ["POST", "/api/v1/conversations/conversation-1/takeover"],
+    ["POST", "/api/v1/conversations/conversation-1/transfer"],
+    ["GET", "/api/v1/conversations/operators"],
     ["GET", "/api/v1/copilot"],
     ["GET", "/api/v1/auth/profile"],
     ["PATCH", "/api/v1/auth/profile"],

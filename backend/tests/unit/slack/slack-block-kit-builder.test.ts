@@ -199,6 +199,39 @@ describe("slackBlockKitBuilder", () => {
     ]);
   });
 
+  it("escapes the owner's name so it can neither mention the channel nor forge a link", () => {
+    for (const ownerName of ["<!channel>", "<https://evil.example|Open in dashboard>"]) {
+      const message = buildOwnershipMessage({
+        conversationId: "conv_1",
+        workspaceId: "ws_1",
+        state: "human_owned",
+        contextText: "Customer needs help with billing.",
+        dashboardUrl: null,
+        ownerName,
+        version: 3,
+      });
+
+      const escaped = `Handled by ${ownerName.replaceAll("<", "&lt;").replaceAll(">", "&gt;")}`;
+      expect(message.text).toBe(escaped);
+      expect(readMrkdwnTexts(message.blocks)).toContain(escaped);
+      expect(JSON.stringify(message)).not.toContain(ownerName);
+    }
+  });
+
+  it("names nobody in particular when the owner has no name", () => {
+    const message = buildOwnershipMessage({
+      conversationId: "conv_1",
+      workspaceId: "ws_1",
+      state: "human_owned",
+      contextText: "Customer needs help with billing.",
+      dashboardUrl: null,
+      ownerName: null,
+      version: 3,
+    });
+
+    expect(message.text).toBe("Handled by a teammate");
+  });
+
   it("renders the ownership reply modal with callback metadata and input block", () => {
     const modal = buildReplyModal({
       conversationId: "conv_1",

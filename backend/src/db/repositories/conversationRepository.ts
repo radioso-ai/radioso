@@ -718,6 +718,23 @@ export class ConversationRepository implements ConversationRepositoryPort {
     return row ? mapConversation(row) : null;
   }
 
+  /**
+   * Locks the conversation row until the caller's transaction ends — the lock {@link touch} takes,
+   * without writing — so a write that may still be refused can queue behind every writer already
+   * holding the conversation and leave it untouched when refused. Message inserts, which only hold
+   * the key, are not blocked. Call it inside a transaction. False when there is no such conversation.
+   */
+  async lockForUpdate(conversationId: string, workspaceId: string): Promise<boolean> {
+    const row = await this.db
+      .selectFrom("conversations")
+      .select("id")
+      .where("id", "=", conversationId)
+      .where("workspace_id", "=", workspaceId)
+      .forNoKeyUpdate()
+      .executeTakeFirst();
+    return row !== undefined;
+  }
+
   async touch(conversationId: string, workspaceId: string): Promise<void> {
     await this.db
       .updateTable("conversations")

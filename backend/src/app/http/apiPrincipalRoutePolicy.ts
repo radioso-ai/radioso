@@ -302,6 +302,7 @@ const declarations: readonly PolicyDeclaration[] = [
     ["DELETE", "/api/v1/agents/:agentId/skills/:skillId", "workspace.agents.manage"],
   ].map(([method, path, permission]) => sessionOnly(method, path, permission)),
   ...[
+    ["GET", "/api/v1/conversations/operators"],
     ["POST", "/api/v1/conversations/:conversationId/takeover"],
     ["POST", "/api/v1/conversations/:conversationId/reply"],
     ["POST", "/api/v1/conversations/:conversationId/transfer"],

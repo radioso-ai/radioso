@@ -55,7 +55,6 @@ import type { WorkspaceRepositoryPort } from "../../db/repositories/workspaceRep
 import type { AccountRepositoryPort } from "../../modules/auth/services/authService.js";
 import type { BootstrapGreetingCacheRepositoryPort } from "../../db/repositories/bootstrapGreetingCacheRepository.js";
 import type { ConversationRepositoryPort } from "../../db/repositories/conversationRepository.js";
-import type { ConversationOwnershipRepository } from "../../db/repositories/conversationOwnershipRepository.js";
 import type { MessageRepositoryPort } from "../../db/repositories/messageRepository.js";
 import type { ConnectorIngestionPort } from "@radioso/connector-api";
 import type { ConnectorRegistry } from "../../modules/connectors/services/connectorRegistry.js";
@@ -109,7 +108,10 @@ import type {
   EvalSnapshotService,
 } from "../../modules/eval/composition.js";
 import type { ApprovalDecisionService } from "../../modules/approvals/public.js";
-import type { OperatorReplyService } from "../../modules/handoff/public.js";
+import type {
+  ConversationOperatorDirectory,
+  ConversationOwnershipService,
+} from "../../modules/handoff/public.js";
 import type { VectorIndexReconciler } from "../../modules/retrieval/composition.js";
 import type {
   EmbeddingBindingResolverPort,
@@ -237,7 +239,10 @@ export interface AppDependencies {
   documentStorage: DocumentStoragePort;
   chatService: ChatService;
   approvalDecisionService: ApprovalDecisionService;
-  operatorReplyService: OperatorReplyService;
+  /** Who handles a human-owned conversation: take over, reply, transfer, hand back. */
+  conversationOwnershipService: ConversationOwnershipService;
+  /** The teammates a conversation can be handed to in a workspace. */
+  conversationOperatorDirectory: ConversationOperatorDirectory;
   workbenchReplayRunner: WorkbenchReplayRunner;
   /** Operator-only immutable candidate test executions; never mounted on public chat. */
   testExecutionService: TestExecutionService;
@@ -292,10 +297,6 @@ export interface AppDependencies {
   accountRepository: AccountRepositoryPort;
   bootstrapGreetingCacheRepository: BootstrapGreetingCacheRepositoryPort;
   conversationRepository: ConversationRepositoryPort;
-  conversationOwnershipRepository: Pick<
-    ConversationOwnershipRepository,
-    "load" | "loadByConversationIds" | "requestHandoff" | "takeOver" | "transfer" | "handBack"
-  >;
   messageRepository: MessageRepositoryPort;
   connectorRegistry: ConnectorRegistry;
   connectorManagementService: ConnectorManagementPort;

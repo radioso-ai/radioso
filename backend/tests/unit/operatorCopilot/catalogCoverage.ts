@@ -430,6 +430,10 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "transferConversationOwnership",
     "handBackConversation",
   ], neverListExclusion("live_conversation_ownership")),
+  // The teammate list exists to pick a transfer target for the dashboard's "Hand to" menu.
+  ...coverage(["listConversationOperators"], permanent(
+    "Permanent exclusion: the teammate list only feeds the dashboard's transfer menu. Transferring a conversation stays with the operator (never-list `live_conversation_ownership`), so Ray has no use for the targets.",
+  )),
   ...coverage(["resolveDecision"], neverListExclusion("pending_decision_resolution")),
   ...coverage([
     "completeMcpConnectionOauth",

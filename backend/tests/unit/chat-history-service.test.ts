@@ -31,7 +31,24 @@ class InMemoryVisitorProfileReader {
   }
 }
 
-const createService = (visitorRepository: InMemoryVisitorProfileReader = new InMemoryVisitorProfileReader()) => {
+/** Fake of the narrow teammate-label port: labels by user id, counting each batched read. */
+class RecordingTeammateLabelReader {
+  readonly labels = new Map<string, string>();
+  readonly reads: string[][] = [];
+
+  async labelsByUserIds(userIds: readonly string[]): Promise<ReadonlyMap<string, string>> {
+    this.reads.push([...userIds]);
+    return new Map(userIds.flatMap((userId) => {
+      const label = this.labels.get(userId);
+      return label === undefined ? [] : [[userId, label] as const];
+    }));
+  }
+}
+
+const createService = (
+  visitorRepository: InMemoryVisitorProfileReader = new InMemoryVisitorProfileReader(),
+  teammateLabels: RecordingTeammateLabelReader = new RecordingTeammateLabelReader(),
+) => {
   const conversationRepository = new InMemoryConversationRepository();
   const messageRepository = new InMemoryMessageRepository();
   const auditRepository = new InMemoryAuditEventRepository();
@@ -43,6 +60,7 @@ const createService = (visitorRepository: InMemoryVisitorProfileReader = new InM
     auditRepository,
     conversationOwnershipRepository,
     visitorRepository,
+    teammateLabels,
     service: new ChatHistoryService(
       conversationRepository,
       messageRepository,
@@ -53,6 +71,7 @@ const createService = (visitorRepository: InMemoryVisitorProfileReader = new InM
       conversationOwnershipRepository,
       undefined,
       visitorRepository,
+      teammateLabels,
     ),
   };
 };
@@ -143,6 +162,7 @@ describe("chat history service ownership read surface", () => {
       conversationId: conversation.id,
       workspaceId: "workspace-1",
       accountId: "operator-1",
+      userId: "user-1",
       displayName: "Operator One",
     });
 
@@ -154,6 +174,7 @@ describe("chat history service ownership read surface", () => {
       conversationId: conversation.id,
       state: "human_owned",
       ownerAccountId: "operator-1",
+      ownerUserId: "user-1",
       ownerDisplayName: "Operator One",
     });
     expect(typeof detail.ownership?.takenOverAt).toBe("string");
@@ -206,9 +227,17 @@ describe("chat history service ownership read surface", () => {
     expect(detail.ownership).toBeUndefined();
   });
 
-  it("omits ownership after hand-back leaves an ai_owned row", async () => {
-    const { conversationRepository, conversationOwnershipRepository, service } = createService();
+  it("carries the AI-owned record after a hand-back on operator detail reads, never on the public one", async () => {
+    // The same rule as the tail: a pane that loads the detail after a hand-back must see the
+    // hand-back's version, or a stale human-owned record from an earlier tail poll would win.
+    const { conversationRepository, conversationOwnershipRepository, messageRepository, service } = createService();
     const conversation = await conversationRepository.create({ workspaceId: "workspace-1" });
+    const message = await messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "user",
+      content: "hello",
+    });
     await conversationOwnershipRepository.requestHandoff({
       conversationId: conversation.id,
       workspaceId: "workspace-1",
@@ -218,21 +247,29 @@ describe("chat history service ownership read surface", () => {
       conversationId: conversation.id,
       workspaceId: "workspace-1",
       accountId: "operator-1",
+      userId: "user-1",
       displayName: "Operator One",
     });
     if (!claimed.ok) {
       throw new Error("expected takeover to succeed");
     }
-    await conversationOwnershipRepository.handBack({
+    const handedBack = await conversationOwnershipRepository.handBack({
       conversationId: conversation.id,
       expectedVersion: claimed.record.version,
+      actingUserId: claimed.record.ownerUserId!,
     });
 
     const detail = await service.getConversation("workspace-1", conversation.id, detailInput, {
       includeOwnership: true,
     });
+    const turn = await service.getConversationTurn("workspace-1", message.id, { includeOwnership: true });
+    const publicDetail = await service.getConversation("workspace-1", conversation.id, detailInput);
+    const publicTurn = await service.getConversationTurn("workspace-1", message.id);
 
-    expect(detail.ownership).toBeUndefined();
+    expect(detail.ownership).toMatchObject({ state: "ai_owned", ownerUserId: null, version: handedBack.record!.version });
+    expect(turn.ownership).toMatchObject({ state: "ai_owned", version: handedBack.record!.version });
+    expect(publicDetail).not.toHaveProperty("ownership");
+    expect(publicTurn).not.toHaveProperty("ownership");
   });
 
   it("returns a tail cursor for the newest message in the detail snapshot", async () => {
@@ -389,7 +426,7 @@ describe("chat history service ownership read surface", () => {
     expect(untitledDetail.title).toBeNull();
   });
 
-  it("tails dashboard messages with ownership only while human-owned", async () => {
+  it("tails dashboard messages with the ownership record, including an AI-owned one after a hand-back", async () => {
     const { conversationRepository, messageRepository, conversationOwnershipRepository, service } = createService();
     const conversation = await conversationRepository.create({ workspaceId: "workspace-1" });
     const baseline = await messageRepository.create({
@@ -416,6 +453,7 @@ describe("chat history service ownership read surface", () => {
       conversationId: conversation.id,
       workspaceId: "workspace-1",
       accountId: "operator-1",
+      userId: "user-1",
       displayName: "Operator One",
     });
     if (!claimed.ok) {
@@ -451,6 +489,7 @@ describe("chat history service ownership read surface", () => {
     await conversationOwnershipRepository.handBack({
       conversationId: conversation.id,
       expectedVersion: claimed.record.version,
+      actingUserId: claimed.record.ownerUserId!,
     });
     const aiOwnedTail = await service.tailConversation(
       "workspace-1",
@@ -459,7 +498,54 @@ describe("chat history service ownership read surface", () => {
       { includeOwnership: true },
     );
 
-    expect(aiOwnedTail.ownership).toBeUndefined();
+    // A hand-back made elsewhere reaches an open pane: the record comes back AI-owned at a newer version.
+    expect(aiOwnedTail.ownership).toMatchObject({
+      conversationId: conversation.id,
+      state: "ai_owned",
+      ownerUserId: null,
+      ownerDisplayName: null,
+      takenOverAt: null,
+      version: claimed.record.version + 1,
+    });
+  });
+
+  it("tails no ownership for a conversation no teammate has ever been involved in", async () => {
+    const { conversationRepository, service } = createService();
+    const conversation = await conversationRepository.create({ workspaceId: "workspace-1" });
+
+    const tail = await service.tailConversation("workspace-1", conversation.id, { limit: 10 }, { includeOwnership: true });
+
+    expect(tail).not.toHaveProperty("ownership");
+  });
+
+  it("presents a conversation whose owner's user is gone as waiting, without their label or claim time", async () => {
+    const { conversationRepository, conversationOwnershipRepository, service } = createService();
+    const conversation = await conversationRepository.create({ workspaceId: "workspace-1" });
+    const claimedAt = new Date("2026-09-01T10:00:00.000Z");
+    // What the foreign key leaves behind when the owner's user is deleted: only owner_user_id is nulled.
+    conversationOwnershipRepository.items.set(conversation.id, {
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      state: "human_owned",
+      ownerAccountId: "account-1",
+      ownerUserId: null,
+      ownerProfile: null,
+      ownerStoredLabel: "gone@example.com",
+      reason: "operator_takeover",
+      version: 2,
+      takenOverAt: claimedAt,
+      createdAt: claimedAt,
+      updatedAt: claimedAt,
+    });
+
+    const list = await service.listConversations("workspace-1", { limit: 50, offset: 0 });
+    const detail = await service.getConversation("workspace-1", conversation.id, { limit: 50 }, { includeOwnership: true });
+    const tail = await service.tailConversation("workspace-1", conversation.id, { limit: 10 }, { includeOwnership: true });
+
+    for (const ownership of [list.conversations.find((row) => row.id === conversation.id)?.ownership, detail.ownership, tail.ownership]) {
+      expect(ownership).toMatchObject({ state: "human_owned", ownerUserId: null, ownerDisplayName: null, takenOverAt: null });
+    }
+    expect(JSON.stringify([list, detail, tail])).not.toContain("gone@example.com");
   });
 
   it("never includes ownership on public tail even when the conversation is human-owned", async () => {
@@ -482,6 +568,7 @@ describe("chat history service ownership read surface", () => {
       conversationId: conversation.id,
       workspaceId: "workspace-1",
       accountId: "operator-1",
+      userId: "user-1",
       displayName: "Operator One",
     });
 
@@ -517,6 +604,7 @@ describe("chat history service ownership read surface", () => {
       source: "human_agent",
       content: "I can help with that.",
       operatorAccountId: "operator-1",
+      operatorUserId: "user-1",
       operatorDisplayName: "Joe",
     });
 
@@ -532,6 +620,235 @@ describe("chat history service ownership read surface", () => {
         operatorDisplayName: "Joe",
       }),
     ]);
+  });
+
+  // A reply stored before replies recorded their author was signed with the organisation's name,
+  // or with the replier's email where the organisation had none. Every surface shows the first and
+  // none shows the second; a reply that names its author was signed under the never-an-email rule.
+  const seedLegacyAndAttributedReplies = async () => {
+    const setup = createService();
+    const conversation = await setup.conversationRepository.create({ workspaceId: "workspace-1" });
+    const baseline = await setup.messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "user",
+      content: "baseline",
+    });
+    const legacyEmailReply = await setup.messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "assistant",
+      source: "human_agent",
+      content: "Replied before replies named their author.",
+      operatorAccountId: "operator-1",
+      operatorDisplayName: "dana@example.com",
+    });
+    const legacyOrganisationReply = await setup.messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "assistant",
+      source: "human_agent",
+      content: "Also replied before replies named their author.",
+      operatorAccountId: "operator-1",
+      operatorDisplayName: "Acme Support",
+    });
+    const attributedReply = await setup.messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "assistant",
+      source: "human_agent",
+      content: "Replied with a signature.",
+      operatorAccountId: "operator-1",
+      operatorUserId: "user-1",
+      operatorDisplayName: "Dana Scully",
+    });
+    const attributedEmailReply = await setup.messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "assistant",
+      source: "human_agent",
+      content: "Replied with a signature that happens to be email-shaped.",
+      operatorAccountId: "operator-1",
+      operatorUserId: "user-2",
+      operatorDisplayName: "carl@acme.example",
+    });
+    const embeddedEmailReply = await setup.messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "assistant",
+      source: "human_agent",
+      content: "Replied with an address inside the signature.",
+      operatorAccountId: "operator-1",
+      operatorDisplayName: "Erin erin@acme\u3002example",
+    });
+    return {
+      ...setup,
+      conversation,
+      baseline,
+      legacyEmailReply,
+      legacyOrganisationReply,
+      attributedReply,
+      attributedEmailReply,
+      embeddedEmailReply,
+    };
+  };
+
+  it("shows every stored signature but an email, on visitor and operator surfaces alike, attributed or not", async () => {
+    const {
+      service,
+      messageRepository,
+      conversation,
+      baseline,
+      legacyEmailReply,
+      legacyOrganisationReply,
+      attributedReply,
+      attributedEmailReply,
+      embeddedEmailReply,
+    } = await seedLegacyAndAttributedReplies();
+    const cursor = { cursor: messageRepository.cursorFor(baseline), limit: 10 };
+    const page = { limit: 50, offset: 0 };
+
+    const surfaces = [
+      (await service.tailConversation("workspace-1", conversation.id, cursor)).messages,
+      (await service.getConversation("workspace-1", conversation.id, page)).messages,
+      (await service.tailConversation("workspace-1", conversation.id, cursor, { includeOwnership: true })).messages,
+      (await service.getConversation("workspace-1", conversation.id, page, { includeOwnership: true })).messages,
+    ];
+
+    for (const messages of surfaces) {
+      expect(messages.find((message) => message.id === legacyEmailReply.id)?.operatorDisplayName).toBeUndefined();
+      expect(messages.find((message) => message.id === legacyOrganisationReply.id)?.operatorDisplayName).toBe("Acme Support");
+      expect(messages.find((message) => message.id === attributedReply.id)?.operatorDisplayName).toBe("Dana Scully");
+      expect(messages.find((message) => message.id === attributedEmailReply.id)?.operatorDisplayName).toBeUndefined();
+      expect(messages.find((message) => message.id === embeddedEmailReply.id)?.operatorDisplayName).toBeUndefined();
+    }
+    expect(JSON.stringify(surfaces)).not.toContain("dana@example.com");
+    expect(JSON.stringify(surfaces)).not.toContain("carl@acme.example");
+    expect(JSON.stringify(surfaces)).not.toContain("erin@");
+    await expect(service.getConversationTurn("workspace-1", legacyEmailReply.id))
+      .resolves.toMatchObject({ message: { operatorDisplayName: undefined } });
+    await expect(service.getConversationTurn("workspace-1", legacyOrganisationReply.id))
+      .resolves.toMatchObject({ message: { operatorDisplayName: "Acme Support" } });
+    await expect(service.getConversationTurn("workspace-1", attributedEmailReply.id))
+      .resolves.toMatchObject({ message: { operatorDisplayName: undefined } });
+  });
+});
+
+describe("chat history service reply attribution for operators", () => {
+  // Replies from Dana (a display name set since she replied), Carl (no display name, so his
+  // teammate label is his email, under an email-shaped organisation name that left his reply
+  // unsigned), a teammate whose user is gone, and one stored before replies named their author.
+  const seedReplies = async () => {
+    const setup = createService();
+    setup.teammateLabels.labels.set("user-dana", "Dana Scully");
+    setup.teammateLabels.labels.set("user-carl", "carl@acme.example");
+    const conversation = await setup.conversationRepository.create({ workspaceId: "workspace-1" });
+    const baseline = await setup.messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "user",
+      content: "baseline",
+    });
+    const reply = (content: string, operator: { userId?: string; displayName?: string }) =>
+      setup.messageRepository.create({
+        conversationId: conversation.id,
+        workspaceId: "workspace-1",
+        role: "assistant",
+        source: "human_agent",
+        content,
+        operatorAccountId: "account-1",
+        ...(operator.userId ? { operatorUserId: operator.userId } : {}),
+        ...(operator.displayName ? { operatorDisplayName: operator.displayName } : {}),
+      });
+    const danaReply = await reply("From Dana.", { userId: "user-dana", displayName: "Dana" });
+    const danaFollowUp = await reply("Dana again.", { userId: "user-dana", displayName: "Dana" });
+    const carlReply = await reply("From Carl.", { userId: "user-carl" });
+    const goneReply = await reply("From someone who left.", { userId: "user-gone", displayName: "Walter Skinner" });
+    const legacyReply = await reply("Before replies named their author.", { displayName: "Acme Support" });
+    const aiReply = await setup.messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "assistant",
+      content: "An AI answer.",
+    });
+    return { ...setup, conversation, baseline, danaReply, danaFollowUp, carlReply, goneReply, legacyReply, aiReply };
+  };
+
+  it("names the teammate who replied on operator reads, from their profile now, in one batched read", async () => {
+    const seeded = await seedReplies();
+    const { service, teammateLabels, messageRepository, conversation, baseline } = seeded;
+
+    const detail = await service.getConversation("workspace-1", conversation.id, { limit: 50, offset: 0 }, {
+      includeOperatorLabel: true,
+    });
+    const tail = await service.tailConversation("workspace-1", conversation.id, {
+      cursor: messageRepository.cursorFor(baseline),
+      limit: 10,
+    }, { includeOperatorLabel: true });
+
+    for (const messages of [detail.messages, tail.messages]) {
+      const labelOf = (id: string) => messages.find((message) => message.id === id)?.operatorLabel;
+      expect(labelOf(seeded.danaReply.id)).toBe("Dana Scully");
+      expect(labelOf(seeded.danaFollowUp.id)).toBe("Dana Scully");
+      expect(labelOf(seeded.carlReply.id)).toBe("carl@acme.example");
+      // No profile to read: the reply's stored signature stands in.
+      expect(labelOf(seeded.goneReply.id)).toBe("Walter Skinner");
+      expect(labelOf(seeded.legacyReply.id)).toBe("Acme Support");
+      expect(messages.find((message) => message.id === seeded.aiReply.id)).not.toHaveProperty("operatorLabel");
+      // The visitor-facing signature is unchanged alongside it.
+      expect(messages.find((message) => message.id === seeded.carlReply.id)?.operatorDisplayName).toBeUndefined();
+      expect(messages.find((message) => message.id === seeded.danaReply.id)?.operatorDisplayName).toBe("Dana");
+    }
+    // One read per request, each teammate once.
+    expect(teammateLabels.reads).toHaveLength(2);
+    for (const read of teammateLabels.reads) {
+      expect([...read].sort()).toEqual(["user-carl", "user-dana", "user-gone"]);
+    }
+  });
+
+  it("names the replier on a single operator turn read", async () => {
+    const { service, carlReply } = await seedReplies();
+
+    await expect(service.getConversationTurn("workspace-1", carlReply.id, { includeOperatorLabel: true }))
+      .resolves.toMatchObject({ message: { operatorLabel: "carl@acme.example" } });
+  });
+
+  it("keeps the replier's label off every read that does not ask for it, the visitor surface included", async () => {
+    const { service, teammateLabels, messageRepository, conversation, baseline, carlReply } = await seedReplies();
+    const cursor = { cursor: messageRepository.cursorFor(baseline), limit: 10 };
+    const page = { limit: 50, offset: 0 };
+
+    // The public/embed routes read with no options; the calling-agent update reader reads the
+    // tail with ownership only. Neither may carry a teammate label, which can be an email.
+    const reads = [
+      (await service.tailConversation("workspace-1", conversation.id, cursor)).messages,
+      (await service.getConversation("workspace-1", conversation.id, page, { includeAnswerFeedback: true })).messages,
+      (await service.tailConversation("workspace-1", conversation.id, cursor, { includeOwnership: true })).messages,
+      [(await service.getConversationTurn("workspace-1", carlReply.id)).message],
+    ];
+
+    for (const messages of reads) {
+      for (const message of messages) {
+        expect(message).not.toHaveProperty("operatorLabel");
+      }
+    }
+    expect(JSON.stringify(reads)).not.toContain("carl@acme.example");
+    expect(teammateLabels.reads).toEqual([]);
+  });
+
+  it("reads no profiles when no reply names its author", async () => {
+    const { service, teammateLabels, conversationRepository, messageRepository } = createService();
+    const conversation = await conversationRepository.create({ workspaceId: "workspace-1" });
+    await messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "user",
+      content: "hello",
+    });
+
+    await service.getConversation("workspace-1", conversation.id, { limit: 50, offset: 0 }, { includeOperatorLabel: true });
+
+    expect(teammateLabels.reads).toEqual([]);
   });
 });
 

@@ -2033,7 +2033,8 @@ CREATE TABLE public.conversation_ownership (
     version integer DEFAULT 1 NOT NULL,
     taken_over_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    owner_user_id uuid
 );
 
 
@@ -9832,6 +9833,14 @@ ALTER TABLE ONLY public.context_variable_values
 
 ALTER TABLE ONLY public.conversation_ownership
     ADD CONSTRAINT conversation_ownership_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.conversations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: conversation_ownership conversation_ownership_owner_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conversation_ownership
+    ADD CONSTRAINT conversation_ownership_owner_user_id_fkey FOREIGN KEY (owner_user_id) REFERENCES public.users(id) ON DELETE SET NULL;
 
 
 --

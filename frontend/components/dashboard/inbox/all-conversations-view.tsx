@@ -388,6 +388,7 @@ export function AllConversationsView({
               }}
             />
             <InboxResponseView
+              workspaceId={routeState.workspaceId ?? ''}
               selection={responseSelection}
               now={now}
               pendingDecisions={[]}

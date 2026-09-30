@@ -77,10 +77,10 @@ export function InboxQueueRow({
       <span className="truncate text-sm font-medium text-foreground">{item.title}</span>
       <span className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
         {lastMessage ? <span>{lastMessage}</span> : null}
-        {item.takenByAccountId ? (
+        {item.takenBy ? (
           <>
             {lastMessage ? <span aria-hidden>·</span> : null}
-            <span>taken by {item.takenByDisplayName?.trim() || 'a teammate'}</span>
+            <span>taken by {item.takenBy.label ?? 'a teammate'}</span>
           </>
         ) : null}
       </span>

@@ -125,6 +125,24 @@ const grantRank: Record<WorkspaceGrantRole, number> = {
   admin: 2,
 };
 
+/** A workspace grant can only raise a member's role on that workspace, never lower it. */
+const effectiveWorkspaceRole = (
+  accountRole: AccountMembershipRole,
+  grant: Pick<WorkspaceGrantRecord, "role"> | null,
+): AccountMembershipRole => {
+  if (!grant) {
+    return accountRole;
+  }
+  const effectiveRank = Math.max(roleRank[accountRole], grantRank[grant.role]);
+  if (effectiveRank >= roleRank.owner) {
+    return "owner";
+  }
+  if (effectiveRank >= roleRank.admin) {
+    return "admin";
+  }
+  return "member";
+};
+
 export class AccountAccessService {
   constructor(
     private readonly membershipRepository: AccountMembershipRepositoryPort,
@@ -166,6 +184,30 @@ export class AccountAccessService {
 
   async listAccountUsers(accountId: string): Promise<AccountMembershipUserRecord[]> {
     return this.membershipRepository.listActiveByAccount(accountId);
+  }
+
+  /** One active member of the account with their user, or null when the user is not one. */
+  async findAccountUser(accountId: string, userId: string): Promise<AccountMembershipUserRecord | null> {
+    return this.membershipRepository.findActiveUserByAccountAndUser(accountId, userId);
+  }
+
+  /**
+   * The account's active members whose user is not disabled and who hold `permission` on the
+   * workspace, with the same role and grant rules as {@link hasPermission}. One membership read and
+   * one grant read however many members there are.
+   */
+  async listMembersWithWorkspacePermission(input: {
+    accountId: string;
+    workspaceId: string;
+    permission: AccountPermission;
+  }): Promise<AccountMembershipUserRecord[]> {
+    const [members, grants] = await Promise.all([
+      this.membershipRepository.listActiveByAccount(input.accountId),
+      this.workspaceGrantRepository?.listByWorkspace(input.workspaceId) ?? Promise.resolve([]),
+    ]);
+    const grantByUser = new Map(grants.map((grant) => [grant.userId, grant]));
+    return members.filter((member) => member.disabledAt === null
+      && this.roleAllows(effectiveWorkspaceRole(member.role, grantByUser.get(member.userId) ?? null), input.permission));
   }
 
   async listWorkspaceGrants(accountId: string): Promise<WorkspaceGrantSummary[]> {
@@ -583,18 +625,7 @@ export class AccountAccessService {
     }
 
     const grant = await this.workspaceGrantRepository.findByWorkspaceAndUser(workspaceId, membership.userId);
-    if (!grant) {
-      return membership.role;
-    }
-
-    const effectiveRank = Math.max(roleRank[membership.role], grantRank[grant.role]);
-    if (effectiveRank >= roleRank.owner) {
-      return "owner";
-    }
-    if (effectiveRank >= roleRank.admin) {
-      return "admin";
-    }
-    return "member";
+    return effectiveWorkspaceRole(membership.role, grant);
   }
 
   private async requireWorkspaceInAccount(accountId: string, workspaceId: string): Promise<void> {

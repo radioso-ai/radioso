@@ -6,8 +6,8 @@
  *
  * Teammates and visitors read a name without the address beside it, so the
  * rules also refuse what would let one person read as another: text that
- * renders as nothing, text that reorders what surrounds it, and an address
- * standing in for a name.
+ * renders as nothing, text that reorders what surrounds it, and a name that
+ * carries an address.
  */
 export const DISPLAY_NAME_MAX_LENGTH = 80;
 
@@ -35,21 +35,26 @@ const DIRECTION_CONTROL = /[‪-‮⁦-⁩]/u;
  */
 const INVISIBLE_CHARACTER = /[\p{Cf}\p{Z}ᅟᅠㅤﾠ]/gu;
 
-const WHITESPACE = /\s/u;
+const WHITESPACE_RUN = /\s+/u;
+
+/** U+3002 IDEOGRAPHIC FULL STOP, which NFKC keeps, and U+FF61, which NFKC turns into it. */
+const IDEOGRAPHIC_FULL_STOP = /[\u3002\uFF61]/gu;
 
 /**
- * Structural only: something@domain.tld with no spaces, whatever the script.
- * String scanning rather than a pattern, so the cost stays linear on stored
- * text of any length.
+ * Structural only: some word of the text reads as something@domain.tld —
+ * something before its first "@", and after its last "@" a dot with something
+ * on each side — whatever the script and whatever surrounds it. Read after NFKC
+ * normalisation, with the ideographic full stops read as dots, so lookalikes
+ * that render as "@" or "." — U+FF20 FULLWIDTH COMMERCIAL AT, U+2024 ONE DOT
+ * LEADER, U+3002 — count as the real thing. String scanning rather than a
+ * pattern, so the cost stays linear on stored text of any length.
  */
-export const looksLikeEmailAddress = (value: string): boolean => {
-  const at = value.indexOf("@");
-  if (at <= 0 || at !== value.lastIndexOf("@") || WHITESPACE.test(value)) {
-    return false;
-  }
-  // A dot with at least one character on each side somewhere in the domain.
-  return value.slice(at + 2, -1).includes(".");
-};
+export const containsEmailAddress = (value: string): boolean =>
+  value
+    .normalize("NFKC")
+    .replace(IDEOGRAPHIC_FULL_STOP, ".")
+    .split(WHITESPACE_RUN)
+    .some((word) => word.indexOf("@") > 0 && word.slice(word.lastIndexOf("@") + 2, -1).includes("."));
 
 /** Trims the input; blank clears the name. Length counts characters, not UTF-16 units. */
 export const normalizeDisplayName = (input: string | null): DisplayNameNormalization => {
@@ -69,8 +74,41 @@ export const normalizeDisplayName = (input: string | null): DisplayNameNormaliza
   if (Array.from(trimmed).length > DISPLAY_NAME_MAX_LENGTH) {
     return { ok: false, reason: "too_long" };
   }
-  if (looksLikeEmailAddress(trimmed)) {
+  if (containsEmailAddress(trimmed)) {
     return { ok: false, reason: "email_address" };
   }
   return { ok: true, displayName: trimmed };
 };
+
+/**
+ * How teammates are named to each other on operator surfaces: the name a person
+ * chose, or their email until they choose one. Never shown to a visitor.
+ */
+export const teammateLabel = (user: { displayName: string | null; email: string }): string =>
+  user.displayName ?? user.email;
+
+/**
+ * A name shown outside the workspace — to a visitor, or in a Slack channel that
+ * can include people who are not teammates: the first candidate that is neither
+ * blank nor holds an email address, trimmed, else null. An email is private to
+ * the workspace, and a stored name is checked again on the way out because names
+ * saved before validation can still hold one.
+ */
+export const outwardFacingName = (...candidates: ReadonlyArray<string | null | undefined>): string | null => {
+  for (const candidate of candidates) {
+    const name = candidate?.trim() ?? "";
+    if (name.length > 0 && !containsEmailAddress(name)) {
+      return name;
+    }
+  }
+  return null;
+};
+
+/**
+ * The name a visitor sees on a teammate's reply: the name they chose, else the
+ * organisation's name, else nothing — never anything holding an email.
+ */
+export const visitorFacingName = (input: {
+  displayName: string | null;
+  organizationName: string | null;
+}): string | null => outwardFacingName(input.displayName, input.organizationName);

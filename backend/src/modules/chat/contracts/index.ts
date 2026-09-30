@@ -14,6 +14,8 @@ export type {
   PublicChatActionAdvertiserPort,
 } from "../services/publicChatActionAdvertiser.js";
 export type { ChatGateway } from "./chatGateway.js";
+// Operator reads name the teammate behind a human reply; composition supplies the labels.
+export type { TeammateLabelReaderPort } from "./teammateLabels.js";
 // Read-only conversation starters (greeting chips) for channels that show them outside a
 // conversation, such as Slack's agent pane; the connector registry carries this port.
 export type { AgentStarterPromptReader } from "./agentStarterPrompts.js";

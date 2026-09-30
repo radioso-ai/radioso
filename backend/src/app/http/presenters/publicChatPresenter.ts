@@ -174,10 +174,10 @@ export const stripPublicChatCitationArtifacts = <T extends {
 };
 
 export const stripPublicConversationCitationArtifacts = (
-  detail: ChatConversationDetail,
+  { ownership: _ownership, ...detail }: ChatConversationDetail,
   anonymousSessionId: string,
   exposeCitations: boolean,
-): ChatConversationDetail => ({
+): Omit<ChatConversationDetail, "ownership"> => ({
   ...detail,
   messages: detail.messages.map((message) => {
     const {
@@ -187,6 +187,7 @@ export const stripPublicConversationCitationArtifacts = (
       answerFeedbackEntries,
       debug: _debug,
       turnFailure: _turnFailure,
+      operatorLabel: _operatorLabel,
       ...publicMessage
     } = message;
     const publicAnswerFeedbackEntries = message.role === "assistant"
@@ -222,6 +223,7 @@ export const stripPublicConversationTailCitationArtifacts = (
         answerFeedbackEntries: _answerFeedbackEntries,
         debug: _debug,
         turnFailure: _turnFailure,
+        operatorLabel: _operatorLabel,
         ...publicMessage
       } = message;
 

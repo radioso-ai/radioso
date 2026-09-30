@@ -8,6 +8,8 @@ import request from "supertest";
 import { createApp } from "../../src/app/server/createApp.js";
 import type { Env } from "../../src/app/config/env.js";
 import { createMailAccountInvitationNotifier } from "../../src/app/composition/accountInvitationNotifier.js";
+import { createConversationOperatorDirectory } from "../../src/app/composition/conversationOperatorDirectory.js";
+import { createTeammateLabelReader } from "../../src/app/composition/teammateLabelReader.js";
 import { createMailService } from "../../src/modules/mail/public.js";
 import { randomUUID } from "node:crypto";
 import type { ConversationRoutineStore, RoutineState } from "@radioso/conversation-contract";
@@ -167,7 +169,12 @@ import { InMemoryWebhookSkillDefinitionRepository } from "./inMemoryWebhookSkill
 import { InMemorySlackSkillDefinitionRepository } from "./inMemorySlackSkillDefinitions.js";
 import { InMemoryAgentSkillRepository } from "./inMemoryAgentSkills.js";
 import { SlackSkillDefinitionService } from "../../src/modules/slackSkills/public.js";
-import { OperatorReplyService } from "../../src/modules/handoff/public.js";
+import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
+import {
+  ConversationOwnershipService,
+  OperatorIdentityResolver,
+  OperatorReplyService,
+} from "../../src/modules/handoff/public.js";
 import { AgentRetrievalAuthoringService, AgentSkillsService } from "../../src/modules/agentSkills/public.js";
 import { createDefaultSkillCapabilityRegistry } from "../../src/modules/skills/capabilityRegistry.js";
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../src/modules/documents/contracts/index.js";
@@ -297,6 +304,7 @@ import {
   InMemoryIngestionSettingsRepository,
   InMemoryHistoryItemsRepository,
   InMemoryMessageRepository,
+  InMemoryActionOutbox,
   InMemoryConversationOwnershipRepository,
   InMemoryRetrievalSettingsRepository,
   InMemoryFederatedIdentityRepository,
@@ -440,6 +448,7 @@ interface TestRepositories {
   conversationRepository: InMemoryConversationRepository;
   visitorRepository: InMemoryVisitorProfileRepository;
   conversationOwnershipRepository: InMemoryConversationOwnershipRepository;
+  actionOutbox: InMemoryActionOutbox;
   messageRepository: InMemoryMessageRepository;
   agentRepository: InMemoryAgentRepository;
   agentRevisionRepository: InMemoryAgentRevisionRepository;
@@ -893,6 +902,12 @@ export const createTestDependencies = (overrides: {
   const conversationRepository = new InMemoryConversationRepository();
   const conversationOwnershipRepository = new InMemoryConversationOwnershipRepository();
   conversationRepository.setOwnershipReader(conversationOwnershipRepository);
+  const actionOutbox = new InMemoryActionOutbox();
+  const operatorIdentityResolver = new OperatorIdentityResolver({
+    users: userRepository,
+    accounts: accountRepository,
+  });
+  const conversationOperatorDirectory = createConversationOperatorDirectory({ accountAccess: accountAccessService });
   // Visitor resolution itself is exercised against real Postgres in
   // tests/integration/visitor-resolver.integration.test.ts; this fake only lets a contract
   // test seed a visitor row directly so it can assert the operator-facing read surface
@@ -1766,6 +1781,7 @@ export const createTestDependencies = (overrides: {
     conversationOwnershipRepository,
     undefined,
     visitorRepository,
+    createTeammateLabelReader({ users: userRepository }),
   );
   const routineStateStore = new InMemoryRoutineStateStore();
   const directiveStateStore = new InMemoryDirectiveStateStore();
@@ -1999,11 +2015,35 @@ export const createTestDependencies = (overrides: {
   const assistantHistoryService = new AssistantHistoryService(chatHistoryService);
   const publicConversationEventBus = new InMemoryPublicConversationEventBus();
   const operatorReplyService = new OperatorReplyService({
-    conversationRepository,
-    messageRepository,
     auditService,
     publicConversationEventBus,
-    customerReplyDelivery: { deliver: async () => {} },
+    customerReplyDelivery: { route: async () => null },
+    logger,
+  });
+  const workspaceInvalidationPublisher: WorkspaceInvalidationPublisher = {
+    enqueue: () => ({ accepted: false, reason: "disabled" }),
+  };
+  const conversationOwnershipService = new ConversationOwnershipService({
+    conversations: conversationRepository,
+    ownership: conversationOwnershipRepository,
+    // The in-memory stores have no transactions; atomicity is covered against Postgres.
+    transfers: { run: (work) => work({ ownership: conversationOwnershipRepository, outbox: actionOutbox }) },
+    replyWrites: {
+      run: (work) => work({
+        conversations: {
+          lockForUpdate: async (conversationId, workspaceId) =>
+            (await conversationRepository.findByIdAndWorkspaceId(conversationId, workspaceId)) !== null,
+        },
+        ownership: conversationOwnershipRepository,
+        reply: { messages: messageRepository, conversations: conversationRepository, outbox: actionOutbox },
+      }),
+    },
+    operators: conversationOperatorDirectory,
+    operatorIdentities: operatorIdentityResolver,
+    replies: operatorReplyService,
+    audit: auditService,
+    publisher: workspaceInvalidationPublisher,
+    logger,
   });
   const agentRetrievalScope = createAgentRetrievalScopeResolver({ agentRepository });
   const retrievalSearchService = new RetrievalSearchService(retrievalPipeline, agentRetrievalScope);
@@ -2437,7 +2477,7 @@ export const createTestDependencies = (overrides: {
     agentBundleExportService: agentBundleServices.exportService,
     agentBundleImportService: agentBundleServices.importService,
     agentBundleImportCleanupWorker: agentBundleServices.cleanupWorker,
-    workspaceInvalidationPublisher: { enqueue: () => ({ accepted: false, reason: "disabled" }) },
+    workspaceInvalidationPublisher,
     conversationLinks: { resolve: async () => null },
     realtimePublisherLifecycle: { shutdown: async () => undefined },
     credentialExpiryWarningLifecycle,
@@ -2566,7 +2606,8 @@ export const createTestDependencies = (overrides: {
     documentStorage,
     chatService,
     approvalDecisionService,
-    operatorReplyService,
+    conversationOwnershipService,
+    conversationOperatorDirectory,
     workbenchReplayRunner: workbenchReplayRunner as any,
     testExecutionService,
     revisionEvalRunService,
@@ -2638,7 +2679,6 @@ export const createTestDependencies = (overrides: {
     identityNonceRepository,
     bootstrapGreetingCacheRepository,
     conversationRepository,
-    conversationOwnershipRepository,
     messageRepository,
     connectorRegistry,
     connectorManagementService: new ConnectorManagementService({
@@ -2686,6 +2726,7 @@ export const createTestDependencies = (overrides: {
       conversationRepository,
       visitorRepository,
       conversationOwnershipRepository,
+      actionOutbox,
       messageRepository,
       agentRepository,
       agentRevisionRepository,

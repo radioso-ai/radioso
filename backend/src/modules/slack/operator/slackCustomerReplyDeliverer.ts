@@ -1,9 +1,6 @@
-import { createHash } from "node:crypto";
-
 import {
   enqueueSlackPostAction,
   slackPostIdempotencyKey,
-  type SlackPostOutboxPort,
 } from "../outbox/slackPostAction.js";
 import type {
   SlackInstallationRepositoryPort,
@@ -11,7 +8,8 @@ import type {
 } from "../install/slackInstallationService.js";
 import type {
   CustomerChannelReplyDeliverer,
-  CustomerReplyDeliveryInput,
+  CustomerReplyDeliveryConversation,
+  CustomerReplyRoute,
 } from "../../customerReplyDelivery/public.js";
 import type { SlackConversationLinkLookupPort } from "./slackConversationLinkLookup.js";
 
@@ -30,14 +28,6 @@ type SlackReplyTarget = {
   threadTs?: string;
 };
 
-const replySourceId = (input: CustomerReplyDeliveryInput): string => {
-  if (input.message.id) {
-    return `${input.conversation.id}:${input.message.id}`;
-  }
-  const digest = createHash("sha256").update(input.message.content).digest("hex");
-  return `${input.conversation.id}:content:${digest}`;
-};
-
 const parseLegacySlackKey = (slackKey: string):
   | { kind: "mention"; channelId: string; threadTs: string }
   | { kind: "dm"; userId: string }
@@ -53,6 +43,11 @@ const parseLegacySlackKey = (slackKey: string):
   return null;
 };
 
+/**
+ * Routes a teammate's reply to the Slack channel and thread its conversation came from. The route
+ * is resolved before the reply's transaction — a legacy DM link opens the DM with Slack's API — and
+ * queues a `slack.post` on the outbox the caller hands it, keyed by the message so a reply posts once.
+ */
 export class SlackCustomerReplyDeliverer implements CustomerChannelReplyDeliverer {
   constructor(private readonly dependencies: {
     // Resolve the installation that OWNS the conversation (by team / link id), never the
@@ -62,48 +57,51 @@ export class SlackCustomerReplyDeliverer implements CustomerChannelReplyDelivere
     installationService?: Pick<SlackInstallationService, "resolveBotTokenForInstallation">;
     persistence?: SlackConversationLinkLookupPort;
     slack?: SlackConversationOpenPort;
-    outbox: SlackPostOutboxPort;
     logger?: SlackReplyDelivererLogger;
   }) {}
 
-  async deliver(input: CustomerReplyDeliveryInput): Promise<void> {
-    if (input.conversation.sourceChannel !== "slack") {
-      return;
+  async route(conversation: CustomerReplyDeliveryConversation): Promise<CustomerReplyRoute | null> {
+    if (conversation.sourceChannel !== "slack") {
+      return null;
     }
 
-    const target = await this.resolveReplyTarget(input);
+    const target = await this.resolveReplyTarget(conversation);
     if (!target) {
       this.dependencies.logger?.warn(
         {
-          workspaceId: input.conversation.workspaceId,
-          conversationId: input.conversation.id,
+          workspaceId: conversation.workspaceId,
+          conversationId: conversation.id,
         },
         "Unable to resolve Slack customer reply target",
       );
-      return;
+      return null;
     }
 
-    await enqueueSlackPostAction(this.dependencies.outbox, {
-      workspaceId: input.conversation.workspaceId,
-      accountId: target.accountId,
-      conversationId: input.conversation.id,
-      idempotencyKey: slackPostIdempotencyKey({
-        kind: "human_reply",
-        sourceId: replySourceId(input),
-      }),
-      payload: {
-        installationId: target.installationId,
-        channelId: target.channelId,
-        text: input.message.content,
-        ...(target.threadTs ? { threadTs: target.threadTs } : {}),
-        conversationRef: input.conversation.id,
-        kind: "human_reply",
+    return {
+      enqueue: async (outbox, message) => {
+        await enqueueSlackPostAction(outbox, {
+          workspaceId: conversation.workspaceId,
+          accountId: target.accountId,
+          conversationId: conversation.id,
+          idempotencyKey: slackPostIdempotencyKey({
+            kind: "human_reply",
+            sourceId: `${conversation.id}:${message.id}`,
+          }),
+          payload: {
+            installationId: target.installationId,
+            channelId: target.channelId,
+            text: message.content,
+            ...(target.threadTs ? { threadTs: target.threadTs } : {}),
+            conversationRef: conversation.id,
+            kind: "human_reply",
+          },
+        });
       },
-    });
+    };
   }
 
-  private async resolveReplyTarget(input: CustomerReplyDeliveryInput): Promise<SlackReplyTarget | null> {
-    const channelContext = input.conversation.channelContext;
+  private async resolveReplyTarget(conversation: CustomerReplyDeliveryConversation): Promise<SlackReplyTarget | null> {
+    const channelContext = conversation.channelContext;
     if (channelContext?.provider === "slack") {
       // Resolve by the conversation's team (one installation per team_id), not the workspace.
       const installation = await this.dependencies.installations.findByTeamId(channelContext.team.id);
@@ -119,8 +117,8 @@ export class SlackCustomerReplyDeliverer implements CustomerChannelReplyDelivere
     }
 
     const link = await this.dependencies.persistence?.findConversationLinkByConversationId({
-      workspaceId: input.conversation.workspaceId,
-      conversationId: input.conversation.id,
+      workspaceId: conversation.workspaceId,
+      conversationId: conversation.id,
     });
     if (!link) {
       return null;

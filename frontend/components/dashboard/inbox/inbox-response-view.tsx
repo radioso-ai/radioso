@@ -21,11 +21,13 @@ import { LogoSpinner } from '@/components/ui/spinner'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useConversationTail } from '@/hooks/use-conversation-tail'
 import { hitlApi } from '@/lib/api-hitl'
+import { useOptionalAuth } from '@/lib/auth-context'
 import type { ChatConversationSummary, PendingApprovalDecision } from '@/lib/api-types'
 import { deriveConversationOutcome } from '@/lib/conversation-outcome'
 import {
   doneControlTooltip,
   findFirstVisitorMessage,
+  freshestOwnership,
   informativeChannelLabel,
   readOnlyHandledByLabel,
   resolveReadOnlySource,
@@ -44,6 +46,7 @@ import { useSkillCatalog } from '@/lib/skill-catalog'
 import { cn } from '@/lib/utils'
 import { InboxReadOnlyFooter } from './inbox-readonly-footer'
 import { InboxSituationCard } from './inbox-situation-card'
+import { useConversationOperators } from './use-conversation-operators'
 
 const noop = () => {}
 
@@ -64,6 +67,8 @@ export type InboxResponseSelection =
   | { source: 'readonly'; conversationId: string; conversation?: ChatConversationSummary }
 
 interface InboxResponseViewProps {
+  /** The workspace whose teammates Assign and Reassign offer. */
+  workspaceId: string
   selection: InboxResponseSelection | null
   now: Date
   pendingDecisions: PendingApprovalDecision[]
@@ -103,6 +108,7 @@ interface InboxResponseViewProps {
  * header, situation card, and the type-specific Done control.
  */
 export function InboxResponseView({
+  workspaceId,
   selection,
   now,
   pendingDecisions,
@@ -154,6 +160,18 @@ export function InboxResponseView({
     isAudiencePulseEvidence,
   })
 
+  // The freshest ownership the pane has seen: the detail fetch loads once (then
+  // only refreshes after an operator's own action), but the tail poll re-reads
+  // ownership every second and is the only one of the two that observes a
+  // transfer, take-over, or hand-back made elsewhere while this pane stays open. Every
+  // ownership-derived action and label below — the composer, its "X is
+  // handling this" state, Done's hand-back version, the situation card's
+  // reason — reads this instead of `conversationDetail.ownership` directly.
+  const effectiveOwnership = useMemo(
+    () => freshestOwnership(conversationDetail?.ownership, conversationTail.ownership),
+    [conversationDetail?.ownership, conversationTail.ownership],
+  )
+
   // The actionable/read-only split and the header's identity/waiting fields
   // prefer the independently-fetched conversation detail once it loads — see
   // `resolveReadOnlySource` for why (a page left open long enough for
@@ -173,6 +191,8 @@ export function InboxResponseView({
     [readOnlySource, now],
   )
   const effectiveItem = item ?? derivedHandoffItem
+  const currentUserId = useOptionalAuth()?.user?.userId ?? null
+  const teammates = useConversationOperators(workspaceId, effectiveItem !== null)
 
   const {
     isDocumentDialogOpen,
@@ -197,7 +217,7 @@ export function InboxResponseView({
     }
     if (effectiveItem.type === 'handoff') {
       const targetConversationId = effectiveItem.conversationId
-      const version = conversationDetail?.ownership?.version ?? null
+      const version = effectiveOwnership?.version ?? null
       void handBackRunner.run('done', async () => {
         if (version === null) {
           throw new Error('Missing conversation ownership version.')
@@ -210,11 +230,17 @@ export function InboxResponseView({
     if (effectiveItem.type === 'negative_feedback') {
       onRequestFeedbackClose(effectiveItem, anchor)
     }
-  }, [conversationDetail, effectiveItem, handBackRunner, onRequestFeedbackClose])
+  }, [effectiveItem, effectiveOwnership, handBackRunner, onRequestFeedbackClose])
 
   // See `shouldShowDoneControl` for the visibility rule (only renders when
-  // there's something to wrap up).
-  const showDoneControl = shouldShowDoneControl(effectiveItem?.type, conversationDetail)
+  // there's something to wrap up). `conversationDetail`'s own truthiness still
+  // gates "not loaded yet" (see that helper); the ownership value it reads is
+  // the freshest one once loaded.
+  const showDoneControl = shouldShowDoneControl(
+    effectiveItem?.type,
+    conversationDetail ? { ownership: effectiveOwnership } : null,
+    currentUserId,
+  )
   // A handoff selected from the All lens can render its composer immediately
   // from the row's own summary (see `readOnlySource` above), before
   // `conversationDetail` — the actual source of both the ownership check
@@ -252,9 +278,9 @@ export function InboxResponseView({
 
   const entryUrl = conversationDetail?.entryPageUrl ? stripTrackingParams(conversationDetail.entryPageUrl) : null
   const channelLabel = informativeChannelLabel(conversationDetail?.channelContext)
-  // Only a genuine escalation has a wait to report — a live conversation the
-  // operator hasn't claimed yet (still ai-owned, no ownership record) has no
-  // "waiting since" or "with them since" to show.
+  // Only a genuine escalation has a wait to report — a live conversation still
+  // with the agent (no ownership record, or an AI-owned one) has no "waiting
+  // since" or "with them since" to show.
   const waiting = effectiveItem?.escalatedAt ? inboxWaitingPresentation(effectiveItem, now) : null
   const identity = visitorIdentityLabel({
     anonymousSessionId: effectiveItem ? effectiveItem.anonymousSessionId : readOnlySource?.anonymousSessionId,
@@ -321,7 +347,7 @@ export function InboxResponseView({
           <div className="space-y-4">
             {effectiveItem ? (
               <InboxSituationCard
-                handoffReason={conversationDetail?.ownership?.reason ?? null}
+                handoffReason={effectiveOwnership?.reason ?? null}
                 firstVisitorMessage={findFirstVisitorMessage(effectiveConversationMessages)}
               />
             ) : null}
@@ -346,6 +372,7 @@ export function InboxResponseView({
               conversationId={conversationId ?? undefined}
               analyticsSurface="dashboard"
               skillCatalog={skillCatalog}
+              audience="operator"
             />
           </div>
         )}
@@ -354,7 +381,10 @@ export function InboxResponseView({
       {effectiveItem ? (
         <OperatorComposer
           conversationId={effectiveItem.conversationId}
-          ownership={conversationDetail?.ownership}
+          ownership={effectiveOwnership}
+          currentUserId={currentUserId}
+          teammates={teammates.operators}
+          onTeammatesStale={teammates.refresh}
           onChanged={handleChanged}
           externalError={handBackRunner.error}
           trailingActions={showDoneControl ? (

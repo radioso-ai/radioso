@@ -11,15 +11,28 @@ import { hitlApi } from '@/lib/api-hitl'
 
 const flush = async () => { await Promise.resolve(); await Promise.resolve() }
 
-const renderComposer = async (ownership: { state: 'ai_owned' | 'human_owned'; version: number }, onChanged = vi.fn()) => {
+const renderComposer = async (
+  ownership: { state: 'ai_owned' | 'human_owned'; version: number },
+  onChanged = vi.fn(),
+  currentUserId: string | null = 'user-me',
+  onTeammatesStale = vi.fn(),
+  teammates: { userId: string; label: string }[] = [],
+) => {
   const root = createRoot(document.createElement('div'))
   const container = (root as unknown as { _internalRoot: { containerInfo: HTMLElement } })._internalRoot.containerInfo
   await act(async () => {
     root.render(
-      <OperatorComposer conversationId="conversation-a" ownership={ownership as never} onChanged={onChanged} />,
+      <OperatorComposer
+        conversationId="conversation-a"
+        ownership={ownership as never}
+        currentUserId={currentUserId}
+        onChanged={onChanged}
+        onTeammatesStale={onTeammatesStale}
+        teammates={teammates}
+      />,
     )
   })
-  return { root, container, onChanged }
+  return { root, container, onChanged, onTeammatesStale }
 }
 
 const typeInto = async (textarea: HTMLTextAreaElement, value: string) => {
@@ -37,6 +50,25 @@ const clickSend = async (container: HTMLElement) => {
     await flush()
   })
 }
+
+// Opens the Assign/Reassign menu from the keyboard (jsdom has no pointer events) and picks an entry,
+// which Radix renders into a portal on the document body.
+const chooseOwnershipTarget = async (container: HTMLElement, menuLabel: string, entry: string) => {
+  const trigger = [...container.querySelectorAll('button')].find((button) => button.textContent?.trim() === menuLabel)
+  expect(trigger, `${menuLabel} menu`).toBeDefined()
+  await act(async () => {
+    trigger?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await flush()
+  })
+  const item = [...document.body.querySelectorAll('[role="menuitem"]')].find((element) => element.textContent?.trim() === entry)
+  expect(item, `${entry} entry`).toBeDefined()
+  await act(async () => {
+    ;(item as HTMLElement).click()
+    await flush()
+  })
+}
+
+const menuEntries = () => [...document.body.querySelectorAll('[role="menuitem"]')].map((element) => element.textContent?.trim())
 
 afterEach(() => vi.restoreAllMocks())
 
@@ -66,9 +98,12 @@ describe('OperatorComposer', () => {
       .mockResolvedValue({ ownership: { state: 'human_owned', version: 3 } } as never)
     const reply = vi.spyOn(hitlApi, 'replyAsHuman').mockResolvedValue({ message: {} } as never)
     const changed = vi.fn()
-    // "Awaiting a human": already human_owned, but unclaimed (ownerAccountId null) -
+    // "Awaiting a human": already human_owned, but unclaimed (no owner) -
     // still take-over-able, and FR-009 requires claiming it on send too.
-    const { root, container } = await renderComposer({ state: 'human_owned', ownerAccountId: null, version: 2 } as never, changed)
+    const { root, container } = await renderComposer(
+      { state: 'human_owned', ownerAccountId: null, ownerUserId: null, version: 2 } as never,
+      changed,
+    )
 
     await typeInto(container.querySelector('textarea')!, 'hi')
     await clickSend(container)
@@ -79,12 +114,12 @@ describe('OperatorComposer', () => {
     await act(async () => root.unmount())
   })
 
-  it('sends directly against the current version when already claimed by a specific human', async () => {
+  it('sends directly against the current version when the signed-in teammate already holds it', async () => {
     const takeover = vi.spyOn(hitlApi, 'takeOverConversation')
     const reply = vi.spyOn(hitlApi, 'replyAsHuman').mockResolvedValue({ message: {} } as never)
     const changed = vi.fn()
     const { root, container } = await renderComposer(
-      { state: 'human_owned', ownerAccountId: 'account-other', version: 5 } as never,
+      { state: 'human_owned', ownerAccountId: 'account-1', ownerUserId: 'user-me', version: 5 } as never,
       changed,
     )
 
@@ -99,7 +134,9 @@ describe('OperatorComposer', () => {
 
   it('clears the draft only after a successful send', async () => {
     vi.spyOn(hitlApi, 'replyAsHuman').mockResolvedValue({ message: {} } as never)
-    const { root, container } = await renderComposer({ state: 'human_owned', version: 1 })
+    const { root, container } = await renderComposer(
+      { state: 'human_owned', ownerAccountId: 'account-1', ownerUserId: 'user-me', version: 1 } as never,
+    )
 
     const textarea = container.querySelector('textarea') as HTMLTextAreaElement
     await typeInto(textarea, 'hi there')
@@ -124,6 +161,165 @@ describe('OperatorComposer', () => {
     expect(container.querySelector('[role="status"]')?.textContent).toContain('conversation changed')
     expect(textarea.value).toBe('my draft reply')
     await act(async () => root.unmount())
+  })
+
+  it('offers no reply to a conversation a teammate holds, and reassigns it to me by transferring it to the signed-in teammate', async () => {
+    const transfer = vi.spyOn(hitlApi, 'transferConversation')
+      .mockResolvedValue({ ownership: { state: 'human_owned', version: 8 } } as never)
+    const changed = vi.fn()
+    const { root, container } = await renderComposer(
+      { state: 'human_owned', ownerAccountId: 'account-1', ownerUserId: 'user-dana', ownerDisplayName: 'Dana', version: 7 } as never,
+      changed,
+    )
+
+    expect(container.querySelector('textarea')).toBeNull()
+    await chooseOwnershipTarget(container, 'Reassign', 'Me')
+
+    expect(transfer).toHaveBeenCalledWith('conversation-a', { toUserId: 'user-me', expectedVersion: 7 })
+    expect(changed).toHaveBeenCalledWith({ kind: 'ownership', conversationId: 'conversation-a', ownershipState: 'human_owned' })
+    await act(async () => root.unmount())
+  })
+
+  it('keeps the composer on a waiting handoff and assigns it to the teammate chosen after Me', async () => {
+    const transfer = vi.spyOn(hitlApi, 'transferConversation')
+      .mockResolvedValue({ ownership: { state: 'human_owned', version: 3 } } as never)
+    const changed = vi.fn()
+    const { root, container } = await renderComposer(
+      { state: 'human_owned', version: 2 },
+      changed,
+      'user-me',
+      vi.fn(),
+      [{ userId: 'user-me', label: 'Me Myself' }, { userId: 'user-dana', label: 'Dana' }],
+    )
+
+    expect(container.querySelector('textarea')).not.toBeNull()
+    await chooseOwnershipTarget(container, 'Assign', 'Dana')
+
+    expect(transfer).toHaveBeenCalledWith('conversation-a', { toUserId: 'user-dana', expectedVersion: 2 })
+    expect(changed).toHaveBeenCalledWith({ kind: 'ownership', conversationId: 'conversation-a', ownershipState: 'human_owned' })
+    await act(async () => root.unmount())
+  })
+
+  it('lists my teammates, and not me, on a conversation I hold', async () => {
+    const { root, container } = await renderComposer(
+      { state: 'human_owned', ownerAccountId: 'account-1', ownerUserId: 'user-me', ownerDisplayName: 'Me Myself', version: 4 } as never,
+      vi.fn(),
+      'user-me',
+      vi.fn(),
+      [{ userId: 'user-me', label: 'Me Myself' }, { userId: 'user-dana', label: 'Dana' }],
+    )
+    const trigger = [...container.querySelectorAll('button')].find((button) => button.textContent?.trim() === 'Reassign')
+
+    await act(async () => {
+      trigger?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+      await flush()
+    })
+
+    expect(container.querySelector('textarea')).not.toBeNull()
+    expect(menuEntries()).toEqual(['Dana'])
+    await act(async () => root.unmount())
+  })
+
+  it('refreshes the teammate list when a transfer target is no longer eligible, without a conflict refresh', async () => {
+    vi.spyOn(hitlApi, 'transferConversation').mockRejectedValue(Object.assign(new Error('not found'), {
+      status: 404,
+      error: { code: 'transfer_target_unavailable', message: 'Transfer target not found' },
+    }))
+    const changed = vi.fn()
+    const stale = vi.fn()
+    const { root, container } = await renderComposer(
+      { state: 'human_owned', ownerAccountId: 'account-1', ownerUserId: 'user-dana', ownerDisplayName: 'Dana', version: 7 } as never,
+      changed,
+      'user-me',
+      stale,
+    )
+
+    await chooseOwnershipTarget(container, 'Reassign', 'Me')
+
+    expect(stale).toHaveBeenCalledTimes(1)
+    expect(changed).not.toHaveBeenCalled()
+    expect(container.querySelector('[role="status"]')).not.toBeNull()
+    await act(async () => root.unmount())
+  })
+
+  it('leaves the teammate list alone when the transfer finds the conversation itself gone', async () => {
+    vi.spyOn(hitlApi, 'transferConversation').mockRejectedValue(Object.assign(new Error('not found'), {
+      status: 404,
+      error: { code: 'not_found', message: 'Conversation not found' },
+    }))
+    const changed = vi.fn()
+    const stale = vi.fn()
+    const { root, container } = await renderComposer(
+      { state: 'human_owned', ownerAccountId: 'account-1', ownerUserId: 'user-dana', ownerDisplayName: 'Dana', version: 7 } as never,
+      changed,
+      'user-me',
+      stale,
+    )
+
+    await chooseOwnershipTarget(container, 'Reassign', 'Me')
+
+    expect(stale).not.toHaveBeenCalled()
+    expect(changed).not.toHaveBeenCalled()
+    expect(container.querySelector('[role="status"]')).not.toBeNull()
+    await act(async () => root.unmount())
+  })
+
+  describe('before the signed-in teammate is known', () => {
+    const teammates = [{ userId: 'user-me', label: 'Me Myself' }, { userId: 'user-dana', label: 'Dana' }]
+    const menuTrigger = (container: HTMLElement) => container.querySelector('[aria-haspopup="menu"]')
+    const rerender = async (
+      root: ReturnType<typeof createRoot>,
+      ownership: Record<string, unknown>,
+      currentUserId: string | null,
+    ) => {
+      await act(async () => {
+        root.render(
+          <OperatorComposer
+            conversationId="conversation-a"
+            ownership={ownership as never}
+            currentUserId={currentUserId}
+            onChanged={vi.fn()}
+            teammates={teammates}
+          />,
+        )
+      })
+    }
+
+    it('offers neither the composer nor a menu on a held conversation, then restores them once the viewer is known', async () => {
+      const heldByMe = { state: 'human_owned', ownerAccountId: 'account-1', ownerUserId: 'user-me', ownerDisplayName: 'Me Myself', version: 4 }
+      const { root, container } = await renderComposer(heldByMe as never, vi.fn(), null, vi.fn(), teammates)
+
+      expect(container.querySelector('textarea')).toBeNull()
+      expect(menuTrigger(container)).toBeNull()
+
+      await rerender(root, heldByMe, 'user-me')
+
+      expect(container.querySelector('textarea')).not.toBeNull()
+      expect(menuTrigger(container)).not.toBeNull()
+      await act(async () => root.unmount())
+    })
+
+    it('keeps claim-on-send on an unclaimed handoff without a menu, and the draft survives the viewer becoming known', async () => {
+      const takeover = vi.spyOn(hitlApi, 'takeOverConversation')
+        .mockResolvedValue({ ownership: { state: 'human_owned', version: 3 } } as never)
+      const reply = vi.spyOn(hitlApi, 'replyAsHuman').mockResolvedValue({ message: {} } as never)
+      const waiting = { state: 'human_owned', ownerAccountId: null, ownerUserId: null, version: 2 }
+      const { root, container } = await renderComposer(waiting as never, vi.fn(), null, vi.fn(), teammates)
+
+      expect(menuTrigger(container)).toBeNull()
+      const textarea = container.querySelector('textarea') as HTMLTextAreaElement
+      await typeInto(textarea, 'draft while signing in')
+
+      await rerender(root, waiting, 'user-me')
+
+      expect(menuTrigger(container)).not.toBeNull()
+      expect((container.querySelector('textarea') as HTMLTextAreaElement).value).toBe('draft while signing in')
+
+      await clickSend(container)
+      expect(takeover).toHaveBeenCalledWith('conversation-a', {})
+      expect(reply).toHaveBeenCalledWith('conversation-a', { message: 'draft while signing in', expectedVersion: 3 })
+      await act(async () => root.unmount())
+    })
   })
 })
 

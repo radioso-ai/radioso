@@ -1003,8 +1003,10 @@ resource "google_cloud_run_v2_service" "document_worker" {
           value = env.value
         }
       }
+      # The worker sends the emails (transfer notices, contact and escalation notifications) whose
+      # links and logo resolve against APP_BASE_URL, in every edition.
       env {
-        name  = "RADIOSO_WIDGET_ORIGIN"
+        name  = "APP_BASE_URL"
         value = local.app_base_url
       }
       env {

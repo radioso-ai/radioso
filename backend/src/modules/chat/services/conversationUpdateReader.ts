@@ -6,8 +6,8 @@ import type {
   ConversationUpdateReader,
 } from "../contracts/conversationUpdates.js";
 
-// The tail omits ownership while the AI still owns the conversation, because the
-// ownership row is written lazily on the first takeover.
+// The tail carries no ownership until a teammate is first involved, because the ownership
+// row is written lazily; after a hand-back it carries the AI-owned record.
 const AI_OWNED: ConversationOwnershipState = { state: "ai_owned" };
 const HUMAN_OWNED: ConversationOwnershipState = { state: "human_owned" };
 

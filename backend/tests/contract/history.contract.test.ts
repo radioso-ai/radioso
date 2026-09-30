@@ -235,4 +235,117 @@ describe("history contract", () => {
     });
   });
 
+  it("names the teammate who owns a conversation, and signs their reply without an email", async () => {
+    const { app, repositories } = createTestApp();
+    const session = await issueTestSession(app, "history-owner@example.com");
+    const conversation = await repositories.conversationRepository.create({ workspaceId: session.workspaceId });
+    await repositories.userRepository.updateDisplayName(session.userId, "Dana Scully");
+    const claim = await request(app)
+      .post(`/api/v1/conversations/${conversation.id}/takeover`)
+      .set(adminSessionHeaders(session))
+      .send({});
+    await request(app)
+      .post(`/api/v1/conversations/${conversation.id}/reply`)
+      .set(adminSessionHeaders(session))
+      .send({ message: "Happy to help.", expectedVersion: claim.body.ownership.version });
+
+    const list = await request(app)
+      .get("/api/v1/history/chat?ownership=human_owned")
+      .set(adminSessionHeaders(session));
+    const detail = await request(app)
+      .get(`/api/v1/history/chat/${conversation.id}`)
+      .set(adminSessionHeaders(session));
+
+    expect(list.status).toBe(200);
+    expect(list.body.conversations).toEqual([expect.objectContaining({
+      id: conversation.id,
+      ownership: expect.objectContaining({ ownerUserId: session.userId, ownerDisplayName: "Dana Scully" }),
+    })]);
+    expect(detail.status).toBe(200);
+    expect(detail.body.ownership).toMatchObject({ ownerUserId: session.userId, ownerDisplayName: "Dana Scully" });
+    expect(detail.body.messages).toContainEqual(expect.objectContaining({
+      source: "human_agent",
+      content: "Happy to help.",
+      operatorDisplayName: "Dana Scully",
+    }));
+    expect(JSON.stringify(detail.body.messages)).not.toContain("history-owner@example.com");
+  });
+
+  it("names the teammate who replied to operators by their teammate label, read from their profile now", async () => {
+    const { app, repositories } = createTestApp();
+    const session = await issueTestSession(app, "history-carl@example.com");
+    const conversation = await repositories.conversationRepository.create({ workspaceId: session.workspaceId });
+    const claim = await request(app)
+      .post(`/api/v1/conversations/${conversation.id}/takeover`)
+      .set(adminSessionHeaders(session))
+      .send({});
+    const reply = await request(app)
+      .post(`/api/v1/conversations/${conversation.id}/reply`)
+      .set(adminSessionHeaders(session))
+      .send({ message: "On it.", expectedVersion: claim.body.ownership.version });
+
+    const detail = await request(app)
+      .get(`/api/v1/history/chat/${conversation.id}`)
+      .set(adminSessionHeaders(session));
+    const tail = await request(app)
+      .get(`/api/v1/history/chat/${conversation.id}/tail`)
+      .set(adminSessionHeaders(session));
+
+    expect(reply.status).toBe(201);
+    expect(detail.status).toBe(200);
+    expect(tail.status).toBe(200);
+    for (const messages of [detail.body.messages, tail.body.messages]) {
+      expect(messages).toContainEqual(expect.objectContaining({
+        id: reply.body.message.id,
+        operatorLabel: "history-carl@example.com",
+      }));
+    }
+
+    // A display name set after the reply shows at once: the label is not the one stored with it.
+    await repositories.userRepository.updateDisplayName(session.userId, "Carl Sagan");
+    const renamed = await request(app)
+      .get(`/api/v1/history/chat/${conversation.id}`)
+      .set(adminSessionHeaders(session));
+    expect(renamed.body.messages).toContainEqual(expect.objectContaining({
+      id: reply.body.message.id,
+      operatorLabel: "Carl Sagan",
+    }));
+  });
+
+  it("shows a reply stored before replies named their author by its organisation signature, never an email", async () => {
+    const { app, repositories } = createTestApp();
+    const session = await issueTestSession(app, "history-legacy-reply@example.com");
+    const conversation = await repositories.conversationRepository.create({ workspaceId: session.workspaceId });
+    const legacyOrganisationReply = await repositories.messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: session.workspaceId,
+      role: "assistant",
+      source: "human_agent",
+      content: "Replied before replies named their author.",
+      operatorAccountId: session.accountId,
+      operatorDisplayName: "Acme Support",
+    });
+    const legacyEmailReply = await repositories.messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: session.workspaceId,
+      role: "assistant",
+      source: "human_agent",
+      content: "Also replied before replies named their author.",
+      operatorAccountId: session.accountId,
+      operatorDisplayName: "history-legacy-reply@example.com",
+    });
+
+    const detail = await request(app)
+      .get(`/api/v1/history/chat/${conversation.id}`)
+      .set(adminSessionHeaders(session));
+
+    expect(detail.status).toBe(200);
+    expect(detail.body.messages).toContainEqual(expect.objectContaining({
+      id: legacyOrganisationReply.id,
+      operatorDisplayName: "Acme Support",
+    }));
+    expect(detail.body.messages.find((message: { id: string }) => message.id === legacyEmailReply.id))
+      .not.toHaveProperty("operatorDisplayName");
+    expect(JSON.stringify(detail.body.messages)).not.toContain("history-legacy-reply@example.com");
+  });
 });

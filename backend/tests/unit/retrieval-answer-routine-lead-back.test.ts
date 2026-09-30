@@ -9,6 +9,7 @@ import type { FallbackReplyComposer, FallbackReplyInput } from "../../src/module
 import { RetrievalAnswerComposer } from "../../src/modules/chat/services/retrievalTurnSkill.js";
 import type { TurnStreamResult } from "../../src/modules/chat/services/turnOutcome.js";
 import type { RetrievalPipelineResult } from "../../src/modules/retrieval/public.js";
+import { loadPromptTemplate } from "../../src/shared/infra/prompts/promptLoader.js";
 
 /**
  * A routine that yielded the turn stays parked on a step, and the answer to the visitor's
@@ -66,6 +67,7 @@ const session = (input: { handoffOnRetrievalMiss: boolean; yielded?: boolean; co
 const harness = (raw: string) => {
   const answerInputs: ChatGatewayInput[] = [];
   const declineInputs: FallbackReplyInput[] = [];
+  const metricWrites: Array<{ name: string; labels?: Record<string, string> }> = [];
   const gateway: ChatGateway = {
     async answer(input) {
       answerInputs.push(input);
@@ -88,9 +90,14 @@ const harness = (raw: string) => {
     supportsGroundedAnswer: () => true,
   });
   return {
-    composer: new RetrievalAnswerComposer(new ChatAnswerSupport(), gateway, presenter, fallback),
+    composer: new RetrievalAnswerComposer(new ChatAnswerSupport(), gateway, presenter, fallback, {
+      incrementCounter(name, options) {
+        metricWrites.push({ name, labels: options.labels });
+      },
+    }),
     answerInputs,
     declineInputs,
+    metricWrites,
   };
 };
 
@@ -104,77 +111,58 @@ const drain = async (generator: AsyncGenerator<string, TurnStreamResult>) => {
   return { chunks, result: step.value };
 };
 
+const HANDOFF_FRAGMENT = loadPromptTemplate("chat/routine-lead-back-decline-handoff.md");
+
+const groundedSystemPrompt = async (turnSession: PreparedSession): Promise<string> => {
+  const { composer, answerInputs } = harness(envelope("answer", "There is free parking[[1]]."));
+  await composer.composeAnswer(turnSession, "Is there parking?", undefined, undefined);
+  return answerInputs[0]?.systemPrompt ?? "";
+};
+
 describe("RetrievalAnswerComposer lead-back to a parked routine (#1377)", () => {
   it("closes the grounded answer's prompt with the pending step only when a routine yielded", async () => {
-    const parked = harness(envelope("answer", `There is free parking[[1]]. ${LEAD_BACK}`));
-    await parked.composer.composeAnswer(session({ handoffOnRetrievalMiss: false }), "Is there parking?", undefined, undefined);
-    const unparked = harness(envelope("answer", "There is free parking[[1]]."));
-    await unparked.composer.composeAnswer(
-      session({ handoffOnRetrievalMiss: false, yielded: false }),
-      "Is there parking?",
-      undefined,
-      undefined,
+    expect(await groundedSystemPrompt(session({ handoffOnRetrievalMiss: false }))).toContain(
+      `- ${pendingStep.instruction}`,
     );
-
-    expect(parked.answerInputs[0]?.systemPrompt).toContain(`- ${pendingStep.instruction}`);
-    expect(unparked.answerInputs[0]?.systemPrompt).not.toContain(pendingStep.instruction);
+    expect(await groundedSystemPrompt(session({ handoffOnRetrievalMiss: false, yielded: false }))).not.toContain(
+      pendingStep.instruction,
+    );
   });
 
-  it("keeps a declining draft's lead-back when the decline does not hand the visitor over", async () => {
-    const { composer, declineInputs } = harness(envelope("no_support", `${DECLINE} ${LEAD_BACK}`));
-
-    const presented = await composer.composeAnswer(
-      session({ handoffOnRetrievalMiss: false }),
-      "Is there parking?",
-      undefined,
-      undefined,
-    );
-
-    expect(presented.answer).toBe(`${DECLINE} ${LEAD_BACK}`);
-    expect(declineInputs).toEqual([]);
+  it("tells the grounded answer to leave the lead-back out of a no_support decline only on a hand-off agent", async () => {
+    expect(await groundedSystemPrompt(session({ handoffOnRetrievalMiss: true }))).toContain(HANDOFF_FRAGMENT);
+    expect(await groundedSystemPrompt(session({ handoffOnRetrievalMiss: false }))).not.toContain(HANDOFF_FRAGMENT);
   });
 
-  it("replaces a draft that declines into a hand-off with a composed decline that carries no lead-back", async () => {
-    const { composer, declineInputs } = harness(envelope("no_support", `${DECLINE} ${LEAD_BACK}`));
+  it("leaves a turn no routine yielded exactly as it was, hand-off agent or not", async () => {
+    const handoff = await groundedSystemPrompt(session({ handoffOnRetrievalMiss: true, yielded: false }));
+    const plain = await groundedSystemPrompt(session({ handoffOnRetrievalMiss: false, yielded: false }));
 
-    const presented = await composer.composeAnswer(
-      session({ handoffOnRetrievalMiss: true }),
-      "Is there parking?",
-      undefined,
-      undefined,
-    );
-
-    expect(presented.answer).toBe(COMPOSED_DECLINE);
-    expect(presented.skillOutcome).toBe("no_context");
-    expect(declineInputs).toHaveLength(1);
-    expect(declineInputs[0]?.pendingRoutineStep).toBeUndefined();
+    expect(handoff).toBe(plain);
+    expect(handoff).not.toContain(HANDOFF_FRAGMENT);
   });
 
-  it("streams none of a draft that declines into a hand-off, and commits the composed decline", async () => {
-    const { composer, declineInputs } = harness(envelope("no_support", `${DECLINE} ${LEAD_BACK}`));
+  it.each([false, true])(
+    "keeps a hand-off agent's declining draft and records its grounding outcome as usual (stream: %s)",
+    async (stream) => {
+      const draft = `${DECLINE} ${LEAD_BACK}`;
+      const { composer, declineInputs, metricWrites } = harness(envelope("no_support", draft));
+      const turnSession = session({ handoffOnRetrievalMiss: true });
 
-    const { chunks, result } = await drain(
-      composer.streamAnswer(session({ handoffOnRetrievalMiss: true }), "Is there parking?", undefined, undefined),
-    );
+      const answer = stream
+        ? (await drain(composer.streamAnswer(turnSession, "Is there parking?", undefined, undefined))).result
+          .finalPresentation.answer
+        : (await composer.composeAnswer(turnSession, "Is there parking?", undefined, undefined)).answer;
 
-    expect(chunks.join("")).not.toContain(LEAD_BACK);
-    expect(chunks.join("")).not.toContain(DECLINE);
-    expect(result.hasStreamedAnswer).toBe(false);
-    expect(result.finalPresentation.answer).toBe(COMPOSED_DECLINE);
-    expect(result.finalPresentation.skillOutcome).toBe("no_context");
-    expect(declineInputs[0]?.pendingRoutineStep).toBeUndefined();
-  });
-
-  it("keeps a hand-off agent's grounded answer and its lead-back", async () => {
-    const { composer, declineInputs } = harness(envelope("answer", `There is free parking[[1]]. ${LEAD_BACK}`));
-
-    const { result } = await drain(
-      composer.streamAnswer(session({ handoffOnRetrievalMiss: true }), "Is there parking?", undefined, undefined),
-    );
-
-    expect(result.finalPresentation.answer).toContain(LEAD_BACK);
-    expect(declineInputs).toEqual([]);
-  });
+      // The draft is the answer: the prompt, not the host, keeps a hand-off decline free of a lead-back.
+      expect(answer).toBe(draft);
+      expect(declineInputs).toEqual([]);
+      expect(metricWrites).toContainEqual({
+        name: "chat_grounding_assertion_outcomes_total",
+        labels: expect.objectContaining({ verdict: "no_support", stream: String(stream) }),
+      });
+    },
+  );
 
   it.each([false, true])(
     "gives a composed decline the lead-back only when it does not hand the visitor over (hand-off agent: %s)",
@@ -183,15 +171,17 @@ describe("RetrievalAnswerComposer lead-back to a parked routine (#1377)", () => 
       // composed decline.
       const { composer, declineInputs } = harness("");
 
-      await composer.composeAnswer(
+      const presented = await composer.composeAnswer(
         session({ handoffOnRetrievalMiss, contexts: 0 }),
         "Is there parking?",
         undefined,
         undefined,
       );
 
+      expect(presented.answer).toBe(COMPOSED_DECLINE);
       expect(declineInputs).toHaveLength(1);
       expect(declineInputs[0]?.pendingRoutineStep).toEqual(handoffOnRetrievalMiss ? undefined : pendingStep);
     },
   );
 });
+

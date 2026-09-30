@@ -98,29 +98,12 @@ const shouldSuppressUnsupportedDraft = (
 /**
  * A routine that yielded this turn stays parked on a step, and the answer closes by
  * pointing back to it (#1377) — unless the answer hands the visitor to a person. On an
- * agent set to hand retrieval misses over, a `no_support` decline is that hand-off, so a
- * composed decline gets no lead-back there, and a drafted answer whose own outcome declines
- * that way is replaced by a composed decline rather than trusted to leave it out.
+ * agent set to hand retrieval misses over, a `no_support` decline is that hand-off. A
+ * composed decline there gets no lead-back; a grounded answer commits its own outcome, so
+ * its prompt tells it to leave the lead-back out of a `no_support` decline.
  */
-const handsOffRetrievalMisses = (session: PreparedSession): boolean =>
-  session.agent.handoffOnRetrievalMiss === true;
-
 const declinePendingRoutineStep = (session: PreparedSession): RoutinePendingStep | undefined =>
-  handsOffRetrievalMisses(session) ? undefined : session.routineYield?.pendingStep;
-
-const draftHandsOffAfterLeadBack = (
-  session: PreparedSession,
-  outcome: GroundedAnswerEnvelope["outcome"],
-): boolean =>
-  outcome === "no_support" && handsOffRetrievalMisses(session) && session.routineYield?.pendingStep !== undefined;
-
-/** Aborts a streamed draft whose head declines into a hand-off after a lead-back. */
-class HandoffDraftReplacedError extends Error {
-  constructor() {
-    super("Grounded draft declines into a hand-off after a routine lead-back");
-    this.name = "HandoffDraftReplacedError";
-  }
-}
+  session.agent.handoffOnRetrievalMiss === true ? undefined : session.routineYield?.pendingStep;
 
 /**
  * Composes a grounded answer for a retrieval turn: the grounded system prompt, the
@@ -330,6 +313,7 @@ export class RetrievalAnswerComposer {
       conversationSummary: session.conversationSummary,
       steering: knownAssessment ? steeringForKnownVerdict(steering, knownAssessment) : steering,
       pendingRoutineStep: session.routineYield?.pendingStep,
+      noSupportHandsOff: session.agent.handoffOnRetrievalMiss === true,
       retrievalSenseOfferAlternatives: session.retrievalSenseOfferAlternatives,
     });
     if (session.directiveSteering) {
@@ -466,14 +450,13 @@ export class RetrievalAnswerComposer {
       if (zeroEvidenceVerdict?.decision === "yield_turn") {
         return this.yieldedPresentedAnswer();
       }
-      const drafted = await this.generateAnswerWithPageContext(
+      const fallback = await this.generateAnswerWithPageContext(
         session,
         query,
         accountId,
         undefined,
         zeroEvidenceAssessment,
       );
-      const fallback = drafted && !draftHandsOffAfterLeadBack(session, drafted.outcome) ? drafted : null;
       if (fallback) {
         answer = fallback.answer;
         plannedSuggestions = fallback.suggestions;
@@ -530,18 +513,6 @@ export class RetrievalAnswerComposer {
           envelopeAssessment,
         );
         this.recordUnsupportedAnswerDecline(decline.declineReason, false);
-        answer = decline.text;
-        declineReason = decline.declineReason;
-        grounding = "no_support";
-      } else if (draftHandsOffAfterLeadBack(session, envelope.outcome)) {
-        const decline = await this.composeFocusedDecline(
-          session,
-          query,
-          userExpectedLocale,
-          accountId,
-          "grounded_handoff_decline",
-          envelopeAssessment,
-        );
         answer = decline.text;
         declineReason = decline.declineReason;
         grounding = "no_support";
@@ -640,14 +611,13 @@ export class RetrievalAnswerComposer {
       if (zeroEvidenceVerdict?.decision === "yield_turn") {
         return this.yieldedStreamResult();
       }
-      const drafted = await this.generateAnswerWithPageContext(
+      const fallbackEnvelope = await this.generateAnswerWithPageContext(
         session,
         query,
         accountId,
         signal,
         zeroEvidenceAssessment,
       );
-      const fallbackEnvelope = drafted && !draftHandsOffAfterLeadBack(session, drafted.outcome) ? drafted : null;
       if (fallbackEnvelope) {
         rawAnswer = fallbackEnvelope.answer;
       } else {
@@ -697,7 +667,6 @@ export class RetrievalAnswerComposer {
       const composeStartedAt = performance.now();
       let bypassCitationGate = false;
       let yieldedTurn = false;
-      let handoffDraft = false;
       // Retained so a later decline (gate-bound, unsupported draft) can render its
       // coverage-gated steering against the verdict already reported to the sink,
       // rather than re-deriving it or rendering the conditional phrasing a decline
@@ -760,11 +729,6 @@ export class RetrievalAnswerComposer {
           // A decline commitment streams from its own text; the citation gate
           // exists only to hold an `answer` commitment until it earns one (FR-027).
           bypassCitationGate = headStatus.kind === "parsed" && headStatus.head.outcome !== "answer";
-          if (headStatus.kind === "parsed" && draftHandsOffAfterLeadBack(session, headStatus.head.outcome)) {
-            handoffDraft = true;
-            gateController.abort(new HandoffDraftReplacedError());
-            break;
-          }
         }
         const appliesCitationGate = requiresIndexedSourceGate && !bypassCitationGate;
         if (appliesCitationGate) {
@@ -804,31 +768,6 @@ export class RetrievalAnswerComposer {
       }
       if (yieldedTurn) {
         return this.yieldedStreamResult(coverageHeadMs);
-      }
-      if (handoffDraft) {
-        const decline = await this.composeFocusedDecline(
-          session,
-          query,
-          userExpectedLocale,
-          accountId,
-          "stream_grounded_handoff_decline",
-          headAssessment ?? buildInvalidHeadAssessment(),
-          signal,
-        );
-        if (signal?.aborted) {
-          throw signal.reason ?? new Error("chat_turn_aborted");
-        }
-        return {
-          finalPresentation: this.chatAnswerPresenter.presentRetrievalDeclineAnswer(
-            decline.text,
-            decline.declineReason,
-          ),
-          suggestions: { mode: "assistant", planned: [] },
-          hasStreamedAnswer: false,
-          streamedAnswer: "",
-          deliveryMode: "committed",
-          ...(coverageHeadMs === undefined ? {} : { traceMetrics: { coverageHeadMs } }),
-        };
       }
       if (gateBound) {
         const decline = await this.composeFocusedDecline(

@@ -22,6 +22,8 @@ interface GroundedAnswerSystemPromptInput {
   steering?: SteeringRule[];
   /** The step a routine that yielded this turn still waits on; the answer closes by pointing back to it. */
   pendingRoutineStep?: RoutinePendingStep;
+  /** The agent hands a `no_support` decline to a person, so that decline leaves the lead-back out. */
+  noSupportHandsOff?: boolean;
   /** Labels/descriptions for retrieval-sense alternatives to offer after the grounded answer. */
   retrievalSenseOfferAlternatives?: Array<{ label: string; description?: string }>;
 }
@@ -96,7 +98,9 @@ export const composeGroundedAnswerSystemPrompt = (
   );
   // A parked routine's lead-back shapes the answer's last sentence, so it closes the prompt.
   const withLeadBack = (prompt: string): string =>
-    appendRoutineLeadBack(prompt, input.steering ?? [], input.pendingRoutineStep);
+    appendRoutineLeadBack(prompt, input.steering ?? [], input.pendingRoutineStep, {
+      noSupportHandsOff: input.noSupportHandsOff,
+    });
   if (!suggestionsExpected) {
     return resultWithReusablePrefix(base, withLeadBack(withEnvelope), {
       conversationContextPrompt: input.conversationSummary?.trim() || alternatives

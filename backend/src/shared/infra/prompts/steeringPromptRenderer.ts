@@ -77,13 +77,25 @@ export const renderSteeringBlock = (
   return renderRoutineStepBlock(rules, options) ?? renderSteeringRules(rules, surfaceOptions(options));
 };
 
-const renderRoutineLeadBack = (pendingStep: RoutinePendingStep): string =>
+interface RoutineLeadBackOptions {
+  /**
+   * The agent hands a `no_support` decline to a person, so a reply that commits that
+   * outcome itself (a grounded answer) is told to leave the lead-back out of it. The model
+   * follows the instruction; nothing in code removes the sentence.
+   */
+  noSupportHandsOff?: boolean;
+}
+
+const renderRoutineLeadBack = (pendingStep: RoutinePendingStep, options: RoutineLeadBackOptions): string =>
   renderPromptTemplate("chat/routine-lead-back.md", {
     pending_step: `- ${pendingStep.instruction}`,
     missing_slots: pendingStep.missingSlotKeys.length > 0
       ? `\n${renderPromptTemplate("chat/routine-lead-back-missing-slots.md", {
         slot_keys: pendingStep.missingSlotKeys.join(", "),
       })}`
+      : "",
+    no_support_handoff: options.noSupportHandsOff
+      ? `\n\n${loadPromptTemplate("chat/routine-lead-back-decline-handoff.md")}`
       : "",
   });
 
@@ -101,6 +113,7 @@ export const appendRoutineLeadBack = (
   prompt: string,
   steering: SteeringRule[] = [],
   pendingStep?: RoutinePendingStep,
+  options: RoutineLeadBackOptions = {},
 ): string => {
   if (!pendingStep || (!pendingStep.instruction && pendingStep.missingSlotKeys.length === 0)) {
     return prompt;
@@ -108,7 +121,7 @@ export const appendRoutineLeadBack = (
   if (partitionRoutineStepSteering(surfaceRules(steering, {})).instructions.length > 0) {
     return prompt;
   }
-  return `${prompt}\n\n${renderRoutineLeadBack(pendingStep)}`;
+  return `${prompt}\n\n${renderRoutineLeadBack(pendingStep, options)}`;
 };
 
 export const appendSteeringBlock = (

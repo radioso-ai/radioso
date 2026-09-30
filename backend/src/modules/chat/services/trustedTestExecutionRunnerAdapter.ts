@@ -136,6 +136,13 @@ export class TrustedTestExecutionRunnerAdapter implements TrustedTestExecutionRu
       preResolvedHostVariables: sampleVariables(input.testValues, revision),
       executionMode: "safe_test",
       skillEffects: input.skillEffects,
+      // Test Chat is the one caller that reads routine slot values off the trace it gets
+      // back (test_chat_turn_trace). Its trace is stored in agent_test_execution_attempts
+      // under Test Chat's own retention (90 days by default) — the same store and
+      // retention as the rest of the Test Chat transcript, including a "Continue in Test
+      // Chat" run seeded from a customer conversation, whose seeded messages are already
+      // in that transcript.
+      includeSlotValues: true,
     });
     if (!replayed.continuation) {
       throw new Error("test_execution_continuation_missing");

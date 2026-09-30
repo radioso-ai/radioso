@@ -153,15 +153,13 @@ class RecordingOrganizationCreationGuard implements OrganizationCreationGuard {
   shouldReject: Error | null = null;
   /** Makes every reservation this guard hands out fail when it is released. */
   releaseError: Error | null = null;
-  /** Makes every reservation this guard hands out fail when it is committed. */
-  commitError: Error | null = null;
 
   async reserve(input: OrganizationCreationRequest): Promise<OrganizationCreationReservation> {
     this.requests.push(input);
     if (this.shouldReject) {
       throw this.shouldReject;
     }
-    const reservation = new RecordingOrganizationCreationReservation(this.releaseError, this.commitError);
+    const reservation = new RecordingOrganizationCreationReservation(this.releaseError);
     this.reservations.push(reservation);
     return reservation;
   }
@@ -176,15 +174,9 @@ class RecordingOrganizationCreationReservation implements OrganizationCreationRe
   released = false;
   accountId: string | null = null;
 
-  constructor(
-    private readonly releaseError: Error | null = null,
-    private readonly commitError: Error | null = null,
-  ) {}
+  constructor(private readonly releaseError: Error | null = null) {}
 
   async commit(input: { accountId: string }): Promise<void> {
-    if (this.commitError) {
-      throw this.commitError;
-    }
     this.committed = true;
     this.accountId = input.accountId;
   }
@@ -587,7 +579,7 @@ describe("AuthService rollback", () => {
     accountRepository.deleteById = async () => {
       throw new Error("account delete failed");
     };
-    const { authService, auditService } = createAuthService({
+    const { authService, auditService, userRepository } = createAuthService({
       accountRepository,
       organizationCreationGuard: guard,
       onAccountCreated: async () => {
@@ -600,6 +592,7 @@ describe("AuthService rollback", () => {
       password: "verysecurepassword",
     })).rejects.toThrow("account hook failed");
 
+    const survivingUser = await userRepository.findByEmail("register-rollback-fault@example.com");
     expect(guard.reservations[0]?.released).toBe(true);
     expect(failureEvents(auditService, "auth.register")).toEqual([
       expect.objectContaining({
@@ -607,9 +600,42 @@ describe("AuthService rollback", () => {
           email: "register-rollback-fault@example.com",
           reason: "account_provisioning_failed",
           // In OSS an account that outlives its signup closes registration for
-          // everyone, so it is named rather than swallowed.
-          detail: { orphanedAccountId: "account-1" },
+          // everyone, so it is named rather than swallowed. The user is only
+          // deleted after its account, so it survives too.
+          detail: { orphanedAccountId: "account-1", orphanedUserId: survivingUser?.id },
         },
+      }),
+    ]);
+  });
+
+  it("names only the user when the account is rolled back but the user delete fails", async () => {
+    const accountRepository = new TrackingAccountRepository();
+    const userRepository = new InMemoryUserRepository();
+    userRepository.deleteById = async () => {
+      throw new Error("user delete failed");
+    };
+    const { authService, auditService } = createAuthService({
+      accountRepository,
+      userRepository,
+      onAccountCreated: async () => {
+        throw new Error("account hook failed");
+      },
+    });
+
+    await expect(authService.register({
+      email: "register-user-delete-fault@example.com",
+      password: "verysecurepassword",
+    })).rejects.toThrow("account hook failed");
+
+    const survivingUser = await userRepository.findByEmail("register-user-delete-fault@example.com");
+    expect(accountRepository.deletedIds).toEqual(["account-1"]);
+    expect(survivingUser).toBeTruthy();
+    expect(failureEvents(auditService, "auth.register")).toEqual([
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          // The surviving user holds its email against a retry.
+          detail: { orphanedUserId: survivingUser?.id },
+        }),
       }),
     ]);
   });
@@ -656,22 +682,51 @@ describe("AuthService rollback", () => {
     })).rejects.toThrow("account hook failed");
   });
 
-  it("records no registration success when committing the reservation fails", async () => {
-    const guard = new RecordingOrganizationCreationGuard();
-    guard.commitError = new Error("reservation commit failed");
-    const accountRepository = new TrackingAccountRepository();
-    const { authService, auditService } = createAuthService({
-      accountRepository,
-      organizationCreationGuard: guard,
-    });
+  it("keeps a duplicate registration's own error when its failure cannot be recorded", async () => {
+    const { authService, auditService } = createAuthService({});
+    await authService.register({ email: "register-duplicate@example.com", password: "verysecurepassword" });
+    auditService.record = async () => {
+      throw new Error("audit write failed");
+    };
 
     await expect(authService.register({
-      email: "register-commit-fault@example.com",
+      email: "register-duplicate@example.com",
       password: "verysecurepassword",
-    })).rejects.toThrow("reservation commit failed");
+    })).rejects.toMatchObject({ statusCode: 409 });
+  });
 
-    expect(accountRepository.deletedIds).toEqual(["account-1"]);
-    expect(auditService.events.filter((event) => event.eventType === "auth.register")).toEqual([]);
+  it("keeps a signup denial's own error when its failure cannot be recorded", async () => {
+    const guard = new RecordingOrganizationCreationGuard();
+    guard.shouldReject = Object.assign(new Error("Registration is closed"), { statusCode: 403, code: "forbidden" });
+    const { authService, auditService } = createAuthService({ organizationCreationGuard: guard });
+    auditService.record = async () => {
+      throw new Error("audit write failed");
+    };
+
+    await expect(authService.register({
+      email: "register-denied@example.com",
+      password: "verysecurepassword",
+    })).rejects.toMatchObject({ statusCode: 403, code: "forbidden" });
+  });
+
+  // The success record is written once nothing that can throw is left, so a
+  // signup cannot leave both a success and a failure behind.
+  it("reports a registration before recording it as successful", async () => {
+    let successAlreadyRecorded: boolean | null = null;
+    const context: ReturnType<typeof createAuthService> = createAuthService({
+      productAnalytics: {
+        async track() {
+          successAlreadyRecorded = context.auditService.events.some(
+            (event) => event.eventType === "auth.register" && event.eventStatus === "success",
+          );
+          return null;
+        },
+      },
+    });
+
+    await context.authService.register({ email: "register-order@example.com", password: "verysecurepassword" });
+
+    expect(successAlreadyRecorded).toBe(false);
   });
 
   it("keeps the organization creation's own error when the rollback fails too", async () => {
@@ -1638,14 +1693,15 @@ describe("AuthService federated login failure auditing", () => {
       }),
     ).rejects.toThrow("link write failed");
 
+    const survivingUser = await context.userRepository.findByEmail("rollback-fault@example.com");
     expect(federatedFailures(context.auditService)).toEqual([
       expect.objectContaining({
         metadata: expect.objectContaining({
           reason: "identity_link_write_failed",
-          // The account row that outlived its signup. In OSS an orphan here is
+          // The rows that outlived their signup. In OSS an orphaned account is
           // what closes registration for everyone, so it is named rather than
           // swallowed.
-          detail: { orphanedAccountId: "account-1" },
+          detail: { orphanedAccountId: "account-1", orphanedUserId: survivingUser?.id },
         }),
       }),
     ]);

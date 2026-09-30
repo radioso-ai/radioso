@@ -33,7 +33,16 @@ export interface OrganizationCoreProvisioner {
 
 export interface OrganizationCreationReservation {
   coreProvisioner?: OrganizationCoreProvisioner;
+  /**
+   * Keeps the reservation, so a later `release()` no longer refunds it.
+   * Whatever the reservation counts is taken by `reserve()`; `commit()` only
+   * marks it kept and must not fail. Callers may record success before
+   * committing, so that a success record that cannot be written still leaves
+   * the reservation refundable, and a commit that failed after that record
+   * would leave a success behind for an attempt that was undone.
+   */
   commit(input: { accountId: string }): Promise<void>;
+  /** Returns an uncommitted reservation's quota; a no-op once committed. */
   release(): Promise<void>;
 }
 

@@ -46,6 +46,55 @@ describe("activity trace assembler", () => {
     );
   });
 
+  it("falls back to the whole measured group span when a branch carries no timing of its own", () => {
+    // The fixture's branches carry no semanticSearch*/lexicalSearch* fields (as an
+    // older code path or fixture would produce), so every branch stage falls back to
+    // the group-level window rather than an even split of it — an even split would
+    // report two 300ms searches for one 600ms window.
+    const trace = new ActivityTraceAssembler().assemble(baseInput());
+
+    for (const stage of trace.stages.filter((candidate) => candidate.kind === "semantic_rewritten")) {
+      expect(stage).toMatchObject({ startedAt: "2026-04-12T14:14:16.030Z", durationMs: 600 });
+    }
+    for (const stage of trace.stages.filter((candidate) => candidate.kind === "lexical")) {
+      expect(stage).toMatchObject({ startedAt: "2026-04-12T14:14:16.630Z", durationMs: 400 });
+    }
+  });
+
+  it("uses a branch's own measured timing for its stage instead of the group window", () => {
+    const assembler = new ActivityTraceAssembler();
+    const input = baseInput();
+    input.prompt.retrievalBranches = [
+      {
+        ...input.prompt.retrievalBranches[0],
+        semanticSearchStartedAtMs: Date.parse("2026-04-12T14:14:16.100Z"),
+        semanticSearchDurationMs: 50,
+        lexicalSearchStartedAtMs: Date.parse("2026-04-12T14:14:16.200Z"),
+        lexicalSearchDurationMs: 30,
+      },
+      {
+        ...input.prompt.retrievalBranches[1],
+        semanticSearchStartedAtMs: Date.parse("2026-04-12T14:14:16.400Z"),
+        semanticSearchDurationMs: 500,
+        lexicalSearchStartedAtMs: Date.parse("2026-04-12T14:14:16.900Z"),
+        lexicalSearchDurationMs: 5,
+      },
+    ];
+
+    const trace = assembler.assemble(input);
+
+    const semanticStages = trace.stages.filter((stage) => stage.kind === "semantic_rewritten");
+    const lexicalStages = trace.stages.filter((stage) => stage.kind === "lexical");
+    expect(semanticStages[0]).toMatchObject({ startedAt: "2026-04-12T14:14:16.100Z", durationMs: 50 });
+    expect(semanticStages[1]).toMatchObject({ startedAt: "2026-04-12T14:14:16.400Z", durationMs: 500 });
+    expect(lexicalStages[0]).toMatchObject({ startedAt: "2026-04-12T14:14:16.200Z", durationMs: 30 });
+    expect(lexicalStages[1]).toMatchObject({ startedAt: "2026-04-12T14:14:16.900Z", durationMs: 5 });
+    // Distinct from each other and from the group window — the whole point of
+    // per-branch timing: a 50ms branch must not read as the 600ms group window.
+    expect(semanticStages[0]?.durationMs).not.toBe(semanticStages[1]?.durationMs);
+    expect(semanticStages[0]?.durationMs).not.toBe(600);
+  });
+
   it("collapses branches that share a semantic query into a single semantic stage", () => {
     const assembler = new ActivityTraceAssembler();
     const input = baseInput();
@@ -67,6 +116,11 @@ describe("activity trace assembler", () => {
         lexicalContexts: [
           { chunkId: "l1", documentId: "d1", title: "Email", content: "email", similarity: 1 },
         ],
+        // Both branches share one semantic query, so they share this one search's timing.
+        semanticSearchStartedAtMs: Date.parse("2026-04-12T14:14:16.500Z"),
+        semanticSearchDurationMs: 120,
+        lexicalSearchStartedAtMs: Date.parse("2026-04-12T14:14:16.600Z"),
+        lexicalSearchDurationMs: 15,
       },
       {
         subqueryId: "subquery_2",
@@ -83,6 +137,10 @@ describe("activity trace assembler", () => {
         lexicalContexts: [
           { chunkId: "l2", documentId: "d1", title: "Phone", content: "phone", similarity: 1 },
         ],
+        semanticSearchStartedAtMs: Date.parse("2026-04-12T14:14:16.500Z"),
+        semanticSearchDurationMs: 120,
+        lexicalSearchStartedAtMs: Date.parse("2026-04-12T14:14:16.700Z"),
+        lexicalSearchDurationMs: 25,
       },
     ];
 
@@ -92,8 +150,12 @@ describe("activity trace assembler", () => {
     expect(semanticStages).toHaveLength(1);
     expect(semanticStages[0]?.stageId).toBe("semantic_rewritten");
     expect(semanticStages[0]?.label).toBe("Semantic retrieval");
-    // Lexical fan-out is preserved.
-    expect(trace.stages.filter((stage) => stage.kind === "lexical")).toHaveLength(2);
+    expect(semanticStages[0]).toMatchObject({ startedAt: "2026-04-12T14:14:16.500Z", durationMs: 120 });
+    // Lexical fan-out is preserved, each with its own branch timing.
+    const lexicalStages = trace.stages.filter((stage) => stage.kind === "lexical");
+    expect(lexicalStages).toHaveLength(2);
+    expect(lexicalStages[0]).toMatchObject({ startedAt: "2026-04-12T14:14:16.600Z", durationMs: 15 });
+    expect(lexicalStages[1]).toMatchObject({ startedAt: "2026-04-12T14:14:16.700Z", durationMs: 25 });
   });
 
   it("omits a semantic stage for lexical-only (capped) branches", () => {

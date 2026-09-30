@@ -1,6 +1,7 @@
 'use client'
 
 import type { ActivityTrace, ActivityStage } from '@/lib/api'
+import { activityStageLabel, activityStageSummary } from '@/lib/activity-stage-presentation'
 import { useCopilotEntity } from '@/lib/copilot-context'
 
 const STATUS_DOT: Record<ActivityStage['status'], string> = {
@@ -10,32 +11,6 @@ const STATUS_DOT: Record<ActivityStage['status'], string> = {
   rejected: 'bg-rose-500',
   unavailable: 'bg-zinc-400',
   failed: 'bg-red-500',
-}
-
-const DISPLAY_LABELS: Record<string, string> = {
-  routing: 'Route',
-  context: 'Context',
-  query_interpretation: 'Interpret query',
-  trigger_analysis: 'Triggers',
-  shape_selection: 'Strategy',
-  semantic_original: 'Semantic search',
-  semantic_rewritten: 'Semantic search',
-  lexical: 'Keyword search',
-  candidate_preparation: 'Merge',
-  context_selection: 'Rank',
-  prompt_assembly: 'Prompt',
-  diagnostics: 'Check',
-  answer_outcome: 'Answer',
-  generation: 'Generate',
-  availability_check: 'Contact settings',
-  intake_collect: 'Collect details',
-  trigger_evaluation: 'Follow-up intent',
-  draft_build: 'Prepare request',
-  request_submit: 'Queue request',
-  delivery_dispatch: 'Notify team',
-  audit_record: 'Audit log',
-  skill_execute: 'Run workflow',
-  conversation_summary: 'Conversation summary',
 }
 
 type LayoutSection =
@@ -149,102 +124,6 @@ const buildRenderItems = (sections: LayoutSection[]): RenderItem[] => {
   return items
 }
 
-const displayLabel = (stage: ActivityStage): string => DISPLAY_LABELS[stage.kind] ?? stage.label
-
-const chunkCount = (stage: ActivityStage) => {
-  if (typeof stage.metrics?.candidateCount === 'number') {
-    return stage.metrics.candidateCount
-  }
-  if (typeof stage.metrics?.finalContextCount === 'number') {
-    return stage.metrics.finalContextCount
-  }
-  if (typeof stage.metrics?.mergedCount === 'number') {
-    return stage.metrics.mergedCount
-  }
-  if (typeof stage.metrics?.promptContextCount === 'number') {
-    return stage.metrics.promptContextCount
-  }
-  return null
-}
-
-const summaryLine = (stage: ActivityStage): string => {
-  const outputs = (stage.outputs ?? {}) as Record<string, unknown>
-  const inputs = (stage.inputs ?? {}) as Record<string, unknown>
-  const metrics = stage.metrics ?? {}
-
-  switch (stage.kind) {
-    case 'routing': {
-      const retrievalInvoked = outputs.retrievalInvoked as boolean | undefined
-      if (retrievalInvoked === true) return 'evidence needed'
-      if (stage.reason === 'assistant_identity') return 'identity'
-      if (retrievalInvoked === false) return 'direct'
-      return stage.reason ?? ''
-    }
-    case 'context': {
-      const count = metrics.selectedHistoryCount
-      return typeof count === 'number' ? `${count} messages` : ''
-    }
-    case 'query_interpretation': {
-      const query = outputs.effectiveQuery as string | undefined
-      if (query) return query.length > 20 ? `"${query.slice(0, 20)}…"` : `"${query}"`
-      return stage.status === 'skipped' ? 'skipped' : ''
-    }
-    case 'trigger_analysis': {
-      const matchCount = metrics.matchCount
-      if (typeof matchCount === 'number') return matchCount === 0 ? 'none' : `${matchCount} matched`
-      return stage.status === 'skipped' ? 'skipped' : ''
-    }
-    case 'shape_selection': {
-      const shapeName = outputs.shapeName as string | undefined
-      return shapeName?.replaceAll('_', ' ') ?? ''
-    }
-    case 'semantic_original':
-    case 'semantic_rewritten':
-    case 'lexical': {
-      const count = metrics.candidateCount
-      return typeof count === 'number' ? `${count} passages` : ''
-    }
-    case 'candidate_preparation': {
-      const merged = metrics.mergedCount
-      const scored = metrics.scoredCount
-      if (typeof merged === 'number' && typeof scored === 'number' && merged !== scored)
-        return `${merged} → ${scored}`
-      return typeof merged === 'number' ? `${merged} merged` : ''
-    }
-    case 'context_selection': {
-      const final = metrics.finalContextCount
-      return typeof final === 'number' ? `top ${final}` : ''
-    }
-    case 'prompt_assembly': {
-      const citations = metrics.citationCount
-      return typeof citations === 'number' ? `${citations} citations` : ''
-    }
-    case 'diagnostics':
-      return outputs.fallbackApplied ? 'fallback' : 'ok'
-    case 'answer_outcome': {
-      const skillOutcome = outputs.skillOutcome as string | undefined
-      if (skillOutcome) return skillOutcome.replaceAll('_', ' ')
-      const outcome = outputs.outcome as string | undefined
-      if (outcome === 'non_retrieval_response' || outcome === 'non_retrieval_answer') return 'direct reply'
-      return outcome?.replaceAll('_', ' ') ?? ''
-    }
-    case 'generation': {
-      const model = inputs.model as string | undefined
-      return model ?? ''
-    }
-    case 'conversation_summary': {
-      const chars = outputs.summaryChars as number | undefined
-      if (typeof chars === 'number') return `${chars} chars`
-      return stage.status === 'skipped' ? 'none yet' : ''
-    }
-    default: {
-      const count = chunkCount(stage)
-      if (typeof count === 'number') return `${count}`
-      return stage.reason ?? ''
-    }
-  }
-}
-
 function CompactStageNode({
   stage,
   isSelected,
@@ -256,8 +135,8 @@ function CompactStageNode({
   onSelect: (stageId: string) => void
   className?: string
 }) {
-  useCopilotEntity('conversation', stage.stageId, `Trace stage: ${displayLabel(stage)}`)
-  const summary = summaryLine(stage)
+  useCopilotEntity('conversation', stage.stageId, `Trace stage: ${activityStageLabel(stage)}`)
+  const summary = activityStageSummary(stage)
 
   return (
     <button
@@ -273,7 +152,7 @@ function CompactStageNode({
           isSelected ? 'font-medium text-primary' : 'text-foreground'
         }`}
       >
-        {displayLabel(stage)}
+        {activityStageLabel(stage)}
       </span>
       {summary ? (
         <span className="shrink-0 text-[11px] text-muted-foreground">{summary}</span>

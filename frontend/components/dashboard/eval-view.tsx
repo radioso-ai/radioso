@@ -84,11 +84,12 @@ import {
 import type { ConversationTraceStage } from '@/lib/api-types'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
 import { useSkillCatalog } from '@/lib/skill-catalog'
-import { activityTraceToFlowGraph, envelopeToFlowGraph, type TurnFlowNode } from '@/lib/turn-flow'
+import { activityTraceToFlowGraph, envelopeToFlowGraph, leafTraceFor, type TurnFlowNode } from '@/lib/turn-flow'
 import { buildEvalSeedTurn } from '@/lib/eval-workbench-seed'
 import { getPrimaryLeafTrace } from '@/lib/turn-trace'
 import { RETRIEVAL_ANSWER_SKILL_NAME } from '@/lib/retrieval-skill-settings'
 import { TurnFlowGraph } from './turn-flow-graph'
+import { modelCallsDetailNode, TurnFlowTotalsSummary } from './turn-flow-overlay'
 import { getAgentOperatorLabel } from '@/lib/agent-label'
 
 type AnyStatus = EvalCaseStatus | EvalRunStatus | AssertionVerdictStatus
@@ -1706,7 +1707,6 @@ function EvalRunDiagnosticsPanel({ run }: { run: EvalRun }) {
     () =>
       flowGraph?.nodes.find((node) => node.id === 'input:message') ??
       flowGraph?.nodes.find((node) => node.nodeKind === 'input') ??
-      flowGraph?.nodes.find((node) => node.nodeKind === 'engine') ??
       flowGraph?.nodes.find((node) => node.nodeKind === 'skill') ??
       flowGraph?.nodes.find((node) => node.nodeKind === 'stage') ??
       null,
@@ -1837,12 +1837,20 @@ function EvalFlowOverlay({
   spineStages: ConversationTraceStage[]
   leafTrace?: EvalRun['observedOutput']['activityTrace']
 }) {
+  const modelCallsNode = modelCallsDetailNode(graph.totals)
   if (!open) return null
 
   return (
     <div className="fixed inset-0 z-[60] flex flex-col bg-background">
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
-        <p className="text-sm font-medium text-foreground">Eval flow</p>
+        <div className="flex min-w-0 items-center gap-3">
+          <p className="text-sm font-medium text-foreground">Eval flow</p>
+          <TurnFlowTotalsSummary
+            totals={graph.totals}
+            selected={selectedNode !== null && selectedNode.id === modelCallsNode?.id}
+            onSelectModelCalls={modelCallsNode ? () => onSelectNode(modelCallsNode) : undefined}
+          />
+        </div>
         <Button
           type="button"
           size="sm"
@@ -1861,7 +1869,6 @@ function EvalFlowOverlay({
             graph={graph}
             selectedNodeId={selectedNode?.id}
             onSelectNode={onSelectNode}
-            showMiniMap
           />
         </div>
         <div data-testid="eval-flow-stage-detail" className="min-h-0 overflow-y-auto border-l border-border p-4">
@@ -1893,8 +1900,9 @@ function EvalTurnFlowNodeDetail({
     )
   }
 
-  if (node.detail.kind === 'leaf' && leafTrace) {
-    return <ActivityTraceDetail activityTrace={leafTrace} selectedStageId={node.detail.leafStageId} />
+  const nodeLeafTrace = node.detail.kind === 'leaf' ? leafTraceFor(node.detail, spineStages, leafTrace) : undefined
+  if (node.detail.kind === 'leaf' && nodeLeafTrace) {
+    return <ActivityTraceDetail activityTrace={nodeLeafTrace} selectedStageId={node.detail.leafStageId} />
   }
 
   let spineStage: ConversationTraceStage | undefined

@@ -9,6 +9,27 @@ Cut a release with the **Cut Release** workflow. It reads the commits since the 
 tag, writes the entry above this line, tags the commit, and publishes a GitHub Release. A
 deploy then ships a release that already exists; it never mints one.
 
+## [1.11.0] - 2026-09-30
+
+### Added
+
+- record the teammate who owns a conversation and hand it to another ([#1346](https://github.com/radioso-ai/radioso/pull/1346))
+- add user profile with display name ([#1344](https://github.com/radioso-ai/radioso/pull/1344))
+- **auth:** redesign the signed-out screens around the broadcasting sun ([#1368](https://github.com/radioso-ai/radioso/pull/1368))
+
+### Fixed
+
+- **settings:** land on sign-in after deleting an organization ([#1367](https://github.com/radioso-ai/radioso/pull/1367))
+
+### Database migrations
+
+This release adds 2 migrations. They run at service startup, so deploy one stack at a time; overlapping deploys contend on the same DDL lock and stall until one gives up.
+
+- `202_user_display_name.sql`
+- `203_conversation_ownership_owner_user.sql`
+
+[1.11.0]: https://github.com/radioso-ai/radioso/compare/v1.10.0...v1.11.0
+
 ## [1.10.0] - 2026-09-30
 
 ### Added

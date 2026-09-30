@@ -427,8 +427,7 @@
   filter: drop-shadow(0 0 8px rgb(255 199 32 / 0.35));
   transition:
     filter 0.35s ease,
-    transform 0.35s ease,
-    scale 0.2s ease;
+    transform 0.35s ease;
 }
 
 /* The sun warms as the form fills in, is at full strength once the form is
@@ -455,12 +454,6 @@
 
 .auth-band:has(.auth-card input[type='password']:focus) .auth-glow {
   opacity: 0.55;
-}
-
-/* `scale` composes with the warming `transform` above instead of replacing it. */
-.auth-sun:active {
-  scale: 0.94;
-  transition-duration: 0.08s;
 }
 
 /* ── Sunrise ───────────────────────────────────────────────────────────

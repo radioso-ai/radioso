@@ -415,6 +415,7 @@ export class OperatorMcpApplicationService {
   async invoke(input: OperatorInvocationRequest): Promise<OperatorInvocationResponse> {
     const principal = await this.currentProofPrincipal(input.proof, "tools/call");
     let capabilityShape: "read" | "probe" | "act" | "propose" | null = null;
+    let receiptTakenOver = false;
     try {
       const expectedBodyDigest = digestOperatorMcpCall({
         name: input.name,
@@ -569,7 +570,12 @@ export class OperatorMcpApplicationService {
       }
       if (!readyToInvoke) throw new OperatorMcpApplicationError("operation_conflict");
       const claimed = await this.dependencies.invocations.claimRunning({ invocationId: input.proof.invocationId, now: this.now() });
-      if (!claimed) throw new OperatorMcpApplicationError("operation_conflict");
+      if (!claimed) {
+        // Only another request moves an admitted receipt this one prepared: a retry that found it
+        // past the recovery lease and reopened it, and may be applying under it right now.
+        receiptTakenOver = true;
+        throw new OperatorMcpApplicationError("operation_conflict");
+      }
       const output = await this.dependencies.catalog.invoke({
         name: input.name,
         arguments: parsed.data,
@@ -610,7 +616,7 @@ export class OperatorMcpApplicationService {
       const refused = error instanceof OperatorMcpApplicationError
         && ["unknown_tool", "invalid_arguments", "missing_configuration", "operation_conflict", "budget_exhausted"].includes(error.code);
       // A refusal here is always pre-effect for every one of those codes -- schema/proof/scope
-      // rejections, a tool's own 400/404/409, and a lost `claimRunning` race all happen before the
+      // rejections, a tool's own 400/404/409, and a lost preparation race all happen before the
       // owner is ever called. A derived key (`operationIdentity: "input"`) is the call itself, not
       // something the caller can change by retrying, so pinning it to this refusal would replay a
       // stale rejection forever, even after its cause (a revoked permission, a lost race) is fixed.
@@ -618,18 +624,25 @@ export class OperatorMcpApplicationService {
       // a stuck proposal-preparation attempt already relies on; the audit record below still carries
       // the real reason regardless.
       const abandonRefusalKey = refused && !refusalMayPinKey(this.dependencies.catalog.descriptor(input.name) ?? {});
-      await this.dependencies.invocations.recordOutcome({
-        invocationId: input.proof.invocationId,
-        status: refused ? "refused" : "failed",
-        safeOutcomeCode: abandonRefusalKey ? "abandoned_before_effect" : reason,
-        ...(error instanceof OperatorMcpApplicationError && error.code === "invalid_arguments" && error.details
-          ? { safeRejectionDetails: error.details }
-          : {}),
-        now: this.now(),
-      }).catch(() => undefined);
+      // A receipt another request took over is that request's to settle; overwriting it here would
+      // free its key mid-apply and turn later replays of a successful apply into `not_prepared`.
+      if (!receiptTakenOver) {
+        await this.dependencies.invocations.recordOutcome({
+          invocationId: input.proof.invocationId,
+          status: refused ? "refused" : "failed",
+          safeOutcomeCode: abandonRefusalKey ? "abandoned_before_effect" : reason,
+          ...(error instanceof OperatorMcpApplicationError && error.code === "invalid_arguments" && error.details
+            ? { safeRejectionDetails: error.details }
+            : {}),
+          now: this.now(),
+        }).catch(() => undefined);
+      }
+      // The caller still sees operation_conflict, but support must be able to tell a receipt whose
+      // change the retry may be applying from an ordinary refusal.
       await this.audit({
         principal, invocationId: input.proof.invocationId, method: "tools/call", descriptorName: input.name,
-        capabilityShape, eventStatus: "failure", outcome: refused ? "refused" : "failed", reason,
+        capabilityShape, eventStatus: "failure", outcome: refused ? "refused" : "failed",
+        reason: receiptTakenOver ? "operation_taken_over" : reason,
       });
       throw error;
     }

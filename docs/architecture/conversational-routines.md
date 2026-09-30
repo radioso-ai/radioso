@@ -396,10 +396,11 @@ model read from the message, not what the routine kept.
 
 A visitor partway through a routine sometimes asks about something else: "how much is
 the Pro plan?" while the routine waits for their work email. The selector reads the
-message as off-topic, and the routine yields the turn. It keeps its step and its
-captured values, the turn is answered like any other — from the documents, or directly
-for a question about the agent itself — and the routine resumes on the visitor's next
-message.
+message as off-topic, and the routine yields the turn. It keeps its step, its
+captured values, and its re-ask count: a yield is neither a re-ask nor a hold, even
+when the selector also flagged text posing as a system notice. The turn is answered
+like any other — from the documents, or directly for a question about the agent
+itself — and the routine resumes on the visitor's next message.
 
 The answer closes by pointing back to what the routine is waiting on. The runner
 reports the step it stays parked on: the step's authored instruction, and the keys of

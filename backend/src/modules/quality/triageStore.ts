@@ -18,6 +18,8 @@ type TriageRow = {
   conversation_id?: string;
   /** The effective state the accepted write moved from; only the write returns it. */
   prior_state?: string;
+  /** The transition row this write inserted; only the write returns it. */
+  transition_id?: string;
   state: string;
   version: number | string;
   resolution_reason: string | null;
@@ -79,13 +81,17 @@ export class QualityTriageStore {
       const closing = accepted && accepted.prior_state !== accepted.state
         ? CLOSING_ACTIVITY[accepted.state as QualityTriageState]
         : undefined;
-      if (accepted && closing && accepted.conversation_id) {
+      if (accepted && closing && accepted.conversation_id && accepted.transition_id) {
         await this.conversationActivity.record(trx, {
           kind: closing,
           conversationId: accepted.conversation_id,
           workspaceId,
           actorUserId: input.updatedBy,
-          detail: { assistantMessageId: input.assistantMessageId, resolution: accepted.resolution_reason },
+          detail: {
+            assistantMessageId: input.assistantMessageId,
+            triageTransitionId: accepted.transition_id,
+            resolution: accepted.resolution_reason,
+          },
         });
       }
       return accepted;
@@ -213,6 +219,7 @@ export class QualityTriageStore {
          SELECT
            (SELECT conversation_id FROM target) AS conversation_id,
            (SELECT prior_state FROM target) AS prior_state,
+           (SELECT id FROM transition) AS transition_id,
            state,
            version,
            resolution_reason,

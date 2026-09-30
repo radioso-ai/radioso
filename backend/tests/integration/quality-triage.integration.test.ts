@@ -394,6 +394,13 @@ describeIfDatabase("quality triage transitions", () => {
     [conversationId],
   );
 
+  /** The triage transitions this message recorded, oldest first — how the test learns the ids the
+   * live writer is expected to have copied into each closing activity row's detail. */
+  const transitionsOf = (assistantMessageId: string) => database.query<{ id: string; next_state: string }>(
+    "SELECT id, next_state FROM assistant_answer_triage_transitions WHERE assistant_message_id = $1 ORDER BY created_at",
+    [assistantMessageId],
+  );
+
   it("records who resolved and who dismissed the feedback, and nothing for other transitions", async () => {
     const fixture = await seedTurn();
     const service = new QualityTurnsService(
@@ -428,16 +435,28 @@ describeIfDatabase("quality triage transitions", () => {
       updatedBy: null,
     });
 
+    const transitions = await transitionsOf(fixture.assistantMessageId);
+    const resolvedTransitionId = transitions.find((t) => t.next_state === "resolved")?.id;
+    const dismissedTransitionId = transitions.find((t) => t.next_state === "dismissed")?.id;
+
     await expect(activityOf(fixture.conversationId)).resolves.toEqual([
       {
         kind: "feedback_resolved",
         actor_user_id: fixture.userId,
-        detail: { assistantMessageId: fixture.assistantMessageId, resolution: "knowledge_gap" },
+        detail: {
+          assistantMessageId: fixture.assistantMessageId,
+          triageTransitionId: resolvedTransitionId,
+          resolution: "knowledge_gap",
+        },
       },
       {
         kind: "feedback_dismissed",
         actor_user_id: null,
-        detail: { assistantMessageId: fixture.assistantMessageId, resolution: null },
+        detail: {
+          assistantMessageId: fixture.assistantMessageId,
+          triageTransitionId: dismissedTransitionId,
+          resolution: null,
+        },
       },
     ]);
   });
@@ -467,9 +486,19 @@ describeIfDatabase("quality triage transitions", () => {
     await expect(save("dismissed", 2, "out_of_scope")).resolves.toMatchObject({ kind: "updated" });
     await expect(save("dismissed", 3, "other")).resolves.toMatchObject({ kind: "updated" });
 
+    const transitions = await transitionsOf(fixture.assistantMessageId);
+    const firstResolvedTransitionId = transitions.find((t) => t.next_state === "resolved")?.id;
+    const firstDismissedTransitionId = transitions.find((t) => t.next_state === "dismissed")?.id;
+
     await expect(activityOf(fixture.conversationId)).resolves.toEqual([
-      expect.objectContaining({ kind: "feedback_resolved", detail: expect.objectContaining({ resolution: "knowledge_gap" }) }),
-      expect.objectContaining({ kind: "feedback_dismissed", detail: expect.objectContaining({ resolution: "out_of_scope" }) }),
+      expect.objectContaining({
+        kind: "feedback_resolved",
+        detail: expect.objectContaining({ resolution: "knowledge_gap", triageTransitionId: firstResolvedTransitionId }),
+      }),
+      expect.objectContaining({
+        kind: "feedback_dismissed",
+        detail: expect.objectContaining({ resolution: "out_of_scope", triageTransitionId: firstDismissedTransitionId }),
+      }),
     ]);
   });
 

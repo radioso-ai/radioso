@@ -90,26 +90,32 @@ describeIfDatabase("conversation activity migration's feedback backfill (204)", 
       to: string,
       at: Date,
       options: { actorId?: string | null; reason?: string | null } = {},
-    ) => {
+    ): Promise<string> => {
       const version = (versions.get(messageId) ?? 0) + 1;
       versions.set(messageId, version);
+      const id = randomUUID();
       await database.execute(
         `INSERT INTO assistant_answer_triage_transitions (
-           workspace_id, assistant_message_id, prior_state, next_state, resulting_version, actor_id,
+           id, workspace_id, assistant_message_id, prior_state, next_state, resulting_version, actor_id,
            resolution_reason, created_at
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-        [workspaceId, messageId, from, to, version, options.actorId ?? null, options.reason ?? null, at],
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [id, workspaceId, messageId, from, to, version, options.actorId ?? null, options.reason ?? null, at],
       );
+      return id;
     };
     const resolvedAt = daysAgo(4);
     const dismissedAt = daysAgo(2);
     const redismissedAt = daysAgo(1);
     await transition(reopened, "open", "acknowledged", daysAgo(5), { actorId: beaId });
-    await transition(reopened, "acknowledged", "resolved", resolvedAt, { actorId: beaId, reason: "knowledge_gap" });
+    const resolvedTransitionId = await transition(
+      reopened, "acknowledged", "resolved", resolvedAt, { actorId: beaId, reason: "knowledge_gap" },
+    );
     // A re-save of a closed state closes nothing.
     await transition(reopened, "resolved", "resolved", daysAgo(3), { actorId: beaId, reason: "other" });
-    await transition(reopened, "resolved", "dismissed", redismissedAt, { actorId: beaId, reason: "out_of_scope" });
-    await transition(dismissedOnce, "open", "dismissed", dismissedAt);
+    const redismissedTransitionId = await transition(
+      reopened, "resolved", "dismissed", redismissedAt, { actorId: beaId, reason: "out_of_scope" },
+    );
+    const dismissedOnceTransitionId = await transition(dismissedOnce, "open", "dismissed", dismissedAt);
     await transition(longAgo, "open", "resolved", daysAgo(40), { actorId: beaId, reason: "knowledge_gap" });
     await transition(inTestChat, "open", "resolved", daysAgo(1), { actorId: beaId, reason: "knowledge_gap" });
 
@@ -136,7 +142,7 @@ describeIfDatabase("conversation activity migration's feedback backfill (204)", 
         kind: "feedback_resolved",
         actor_user_id: beaId,
         subject_user_id: null,
-        detail: { assistantMessageId: reopened, resolution: "knowledge_gap" },
+        detail: { assistantMessageId: reopened, triageTransitionId: resolvedTransitionId, resolution: "knowledge_gap" },
         created_at: resolvedAt,
       },
       {
@@ -145,7 +151,7 @@ describeIfDatabase("conversation activity migration's feedback backfill (204)", 
         kind: "feedback_dismissed",
         actor_user_id: null,
         subject_user_id: null,
-        detail: { assistantMessageId: dismissedOnce, resolution: null },
+        detail: { assistantMessageId: dismissedOnce, triageTransitionId: dismissedOnceTransitionId, resolution: null },
         created_at: dismissedAt,
       },
       {
@@ -154,8 +160,73 @@ describeIfDatabase("conversation activity migration's feedback backfill (204)", 
         kind: "feedback_dismissed",
         actor_user_id: beaId,
         subject_user_id: null,
-        detail: { assistantMessageId: reopened, resolution: "out_of_scope" },
+        detail: { assistantMessageId: reopened, triageTransitionId: redismissedTransitionId, resolution: "out_of_scope" },
         created_at: redismissedAt,
+      },
+    ]);
+  });
+
+  it("does not duplicate a closure the live writer already recorded, though its own created_at differs from the transition's", async () => {
+    const accountId = randomUUID();
+    const workspaceId = randomUUID();
+    const beaId = randomUUID();
+    const conversationId = randomUUID();
+    await database.execute(
+      "INSERT INTO accounts (id, name, email, password_hash) VALUES ($1, 'Acct', $2, 'hash')",
+      [accountId, `mig204live-${accountId}@example.com`],
+    );
+    await database.execute(
+      "INSERT INTO workspaces (id, account_id, name, public_route_key) VALUES ($1, $2, 'WS', $3)",
+      [workspaceId, accountId, `rk-${workspaceId}`],
+    );
+    await database.execute(
+      "INSERT INTO users (id, email, password_hash, display_name) VALUES ($1, $2, 'hash', 'Bea')",
+      [beaId, `bea-${beaId}@example.com`],
+    );
+    await database.execute(
+      "INSERT INTO conversations (id, workspace_id, source_channel) VALUES ($1, $2, 'embed')",
+      [conversationId, workspaceId],
+    );
+    const messageId = randomUUID();
+    await database.execute(
+      "INSERT INTO messages (id, conversation_id, workspace_id, role, content) VALUES ($1, $2, $3, 'assistant', 'An answer.')",
+      [messageId, conversationId, workspaceId],
+    );
+    const transitionId = randomUUID();
+    const transitionAt = daysAgo(3);
+    await database.execute(
+      `INSERT INTO assistant_answer_triage_transitions (
+         id, workspace_id, assistant_message_id, prior_state, next_state, resulting_version, actor_id,
+         resolution_reason, created_at
+       ) VALUES ($1, $2, $3, 'acknowledged', 'resolved', 1, $4, $5, $6)`,
+      [transitionId, workspaceId, messageId, beaId, "knowledge_gap", transitionAt],
+    );
+    // The live writer's own row for this transition: same transition id in `detail`, but its own
+    // `clock_timestamp()`, milliseconds after the transition's `created_at` — never equal to it.
+    const liveWrittenAt = new Date(transitionAt.getTime() + 340);
+    await database.execute(
+      `INSERT INTO conversation_activity (
+         conversation_id, workspace_id, kind, actor_user_id, detail, created_at
+       ) VALUES ($1, $2, 'feedback_resolved', $3, $4::jsonb, $5)`,
+      [
+        conversationId,
+        workspaceId,
+        beaId,
+        JSON.stringify({ assistantMessageId: messageId, triageTransitionId: transitionId, resolution: "knowledge_gap" }),
+        liveWrittenAt,
+      ],
+    );
+
+    await applyTestMigration(database, migrationFile);
+
+    const rows = await database.query<{ created_at: Date; detail: Record<string, unknown> }>(
+      `SELECT created_at, detail FROM conversation_activity WHERE conversation_id = $1`,
+      [conversationId],
+    );
+    expect(rows).toEqual([
+      {
+        created_at: liveWrittenAt,
+        detail: { assistantMessageId: messageId, triageTransitionId: transitionId, resolution: "knowledge_gap" },
       },
     ]);
   });

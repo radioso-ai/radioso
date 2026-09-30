@@ -97,7 +97,7 @@ describeIntegration("conversation activity (Postgres)", () => {
       conversationId,
       workspaceId,
       actorUserId: carlId,
-      detail: { assistantMessageId: randomUUID(), resolution: null },
+      detail: { assistantMessageId: randomUUID(), triageTransitionId: randomUUID(), resolution: null },
     });
     const [claimed, dismissed] = await activity.listForConversation(workspaceId, conversationId, {
       kinds: ["claimed", "feedback_dismissed"],
@@ -187,7 +187,7 @@ describeIntegration("conversation activity (Postgres)", () => {
       ...scope,
       kind: "feedback_resolved",
       actorUserId: carlId,
-      detail: { assistantMessageId: randomUUID(), resolution: "knowledge_gap" },
+      detail: { assistantMessageId: randomUUID(), triageTransitionId: randomUUID(), resolution: "knowledge_gap" },
     });
 
     const withoutFeedback = await reads.listRecentlyClosed(isolatedWorkspace, 1, { includeFeedback: false });

@@ -894,7 +894,11 @@ describe("chat history service conversation activity", () => {
       ...scope,
       kind: "feedback_resolved",
       actorUserId: "user-carl",
-      detail: { assistantMessageId: "88888888-8888-4888-8888-888888888888", resolution: "knowledge_gap" },
+      detail: {
+        assistantMessageId: "88888888-8888-4888-8888-888888888888",
+        triageTransitionId: "99999999-9999-4999-8999-999999999999",
+        resolution: "knowledge_gap",
+      },
     });
     return { ...setup, conversation, scope };
   };

@@ -579,7 +579,7 @@ describe("conversation ownership routes", () => {
       ...scope,
       kind: "feedback_resolved",
       actorUserId: owner.userId,
-      detail: { assistantMessageId: randomUUID(), resolution: "knowledge_gap" },
+      detail: { assistantMessageId: randomUUID(), triageTransitionId: randomUUID(), resolution: "knowledge_gap" },
     });
 
     const read = async (session: { cookie: string; workspaceId: string }) => {

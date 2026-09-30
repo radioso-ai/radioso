@@ -2,6 +2,8 @@ import { sql } from "kysely";
 
 import type {
   AdmitOperatorMcpInvocationInput,
+  OperatorMcpBudgetKind,
+  OperatorMcpBudgetRetry,
   OperatorMcpInvocationAdmission,
   OperatorMcpInvocationRecord,
   OperatorMcpInvocationRepositoryPort,
@@ -25,6 +27,7 @@ interface OperatorMcpInvocationRow {
   operation_id: string | null;
   input_digest: string;
   verification_cost: number;
+  budget_kind: OperatorMcpBudgetKind;
   budget_reserved_at: Date | null;
   proof_nonce_digest: string;
   proof_consumed_at: Date | null;
@@ -40,10 +43,24 @@ interface OperatorMcpInvocationRow {
 const invocationColumns = sql<string>`
   id, credential_id, grant_id, grant_version::text AS grant_version,
   account_id, workspace_id, user_id, client_id, method, descriptor_name, shape,
-  operation_id, input_digest, verification_cost, budget_reserved_at,
+  operation_id, input_digest, verification_cost, budget_kind, budget_reserved_at,
   proof_nonce_digest, proof_consumed_at, status, safe_outcome_code, safe_rejection_details, result_reference,
   created_at, completed_at, retained_until
 `;
+
+/**
+ * Default per-grant ceilings for the two rolling one-minute budgets. Verification stays at the
+ * protocol maximum of six: every other probe or propose descriptor still shares it unchanged.
+ * Test Chat draws from its own, larger ceiling -- its turns are private, suppress skill effects,
+ * and are already metered as answers against the plan quota -- sized for a couple of parallel
+ * pre-release conversations at human-ish pacing (6-8 turns each) with headroom, while the cap
+ * still stops a runaway client loop.
+ */
+const DEFAULT_VERIFICATION_BUDGET_PER_MINUTE = 6;
+const MAX_VERIFICATION_BUDGET_PER_MINUTE = 6;
+const DEFAULT_TEST_CHAT_BUDGET_PER_MINUTE = 30;
+const MAX_TEST_CHAT_BUDGET_PER_MINUTE = 60;
+const BUDGET_WINDOW_MS = 60_000;
 
 const mapInvocation = (row: OperatorMcpInvocationRow): OperatorMcpInvocationRecord => ({
   id: row.id,
@@ -60,6 +77,7 @@ const mapInvocation = (row: OperatorMcpInvocationRow): OperatorMcpInvocationReco
   operationId: row.operation_id,
   inputDigest: row.input_digest,
   verificationCost: Number(row.verification_cost),
+  budgetKind: row.budget_kind,
   budgetReservedAt: row.budget_reserved_at ? new Date(row.budget_reserved_at) : null,
   proofNonceDigest: row.proof_nonce_digest,
   proofConsumedAt: row.proof_consumed_at ? new Date(row.proof_consumed_at) : null,
@@ -94,15 +112,78 @@ const sameOperationInput = (existing: OperatorMcpInvocationRecord, input: AdmitO
   && existing.shape === (input.shape ?? null)
   && existing.inputDigest === input.inputDigest;
 
+/**
+ * Checks a grant's rolling one-minute spend for one kind against its ceiling, and when the
+ * incoming `cost` does not fit, works out when it will.
+ *
+ * Waiting for the single oldest reservation to age out is only correct when every reservation
+ * costs one unit. A 1-unit probe reserved at T-59 and a 5-unit `run_eval_suite` reserved at T-30
+ * both count against a 6-unit ceiling; a 5-unit call at T needs the *second* reservation to expire
+ * (freeing 5 units), not the first (freeing 1) -- so this walks the window's reservations
+ * oldest-first, accumulating cost as each ages out, until enough has expired to admit `cost`
+ * alongside whatever is left. `excludeInvocationId` matters only for `prepareInvocation`'s retry,
+ * whose own row was admitted with no reservation yet and so would never match regardless, but the
+ * exclusion mirrors the row set the caller is about to update.
+ *
+ * A `cost` that exceeds the ceiling outright can never be admitted no matter how long the window
+ * empties, so that case returns `{}` rather than a `resetAt` that promises a retry which will fail
+ * the same way.
+ */
+const budgetExhaustion = async (
+  db: Db,
+  input: { grantId: string; kind: OperatorMcpBudgetKind; cost: number; limit: number; now: Date; excludeInvocationId: string | null },
+): Promise<Partial<OperatorMcpBudgetRetry> | null> => {
+  if (input.cost > input.limit) return {};
+  const reserved = await sql<{ verification_cost: string; budget_reserved_at: Date }>`
+    SELECT verification_cost, budget_reserved_at
+    FROM operator_mcp_invocations
+    WHERE grant_id = ${input.grantId} AND budget_kind = ${input.kind}
+      AND budget_reserved_at IS NOT NULL
+      AND budget_reserved_at >= (${input.now}::timestamptz - INTERVAL '60 seconds')
+      AND (${input.excludeInvocationId}::uuid IS NULL OR id <> ${input.excludeInvocationId}::uuid)
+    ORDER BY budget_reserved_at ASC
+  `.execute(db);
+  const spent = reserved.rows.reduce((sum, row) => sum + Number(row.verification_cost), 0);
+  if (spent + input.cost <= input.limit) return null;
+
+  // How much must age out of the window before `cost` fits alongside whatever remains.
+  const mustExpire = spent + input.cost - input.limit;
+  let expired = 0;
+  for (const row of reserved.rows) {
+    expired += Number(row.verification_cost);
+    if (expired >= mustExpire) {
+      const resetAt = new Date(new Date(row.budget_reserved_at).getTime() + BUDGET_WINDOW_MS);
+      return { resetAt, retryAfterSeconds: Math.max(1, Math.ceil((resetAt.getTime() - input.now.getTime()) / 1000)) };
+    }
+  }
+  // Unreachable: `mustExpire <= spent` whenever `cost <= limit`, and `expired` reaches `spent` by
+  // the last row, so the loop above always returns first. Kept as a safe fallback rather than an
+  // unhandled path if that invariant ever changes.
+  return { resetAt: input.now, retryAfterSeconds: 1 };
+};
+
 export class OperatorMcpInvocationRepository implements OperatorMcpInvocationRepositoryPort {
   private readonly verificationBudgetPerMinute: number;
+  private readonly testChatBudgetPerMinute: number;
 
-  constructor(private readonly db: Db, options: { verificationBudgetPerMinute?: number } = {}) {
-    const budget = options.verificationBudgetPerMinute ?? 6;
-    if (!Number.isInteger(budget) || budget < 1 || budget > 6) {
+  constructor(
+    private readonly db: Db,
+    options: { verificationBudgetPerMinute?: number; testChatBudgetPerMinute?: number } = {},
+  ) {
+    const verificationBudget = options.verificationBudgetPerMinute ?? DEFAULT_VERIFICATION_BUDGET_PER_MINUTE;
+    if (!Number.isInteger(verificationBudget) || verificationBudget < 1 || verificationBudget > MAX_VERIFICATION_BUDGET_PER_MINUTE) {
       throw new Error("verification budget per minute must be an integer between one and six");
     }
-    this.verificationBudgetPerMinute = budget;
+    this.verificationBudgetPerMinute = verificationBudget;
+    const testChatBudget = options.testChatBudgetPerMinute ?? DEFAULT_TEST_CHAT_BUDGET_PER_MINUTE;
+    if (!Number.isInteger(testChatBudget) || testChatBudget < 1 || testChatBudget > MAX_TEST_CHAT_BUDGET_PER_MINUTE) {
+      throw new Error(`test chat budget per minute must be an integer between one and ${MAX_TEST_CHAT_BUDGET_PER_MINUTE}`);
+    }
+    this.testChatBudgetPerMinute = testChatBudget;
+  }
+
+  private budgetLimit(kind: OperatorMcpBudgetKind): number {
+    return kind === "test_chat" ? this.testChatBudgetPerMinute : this.verificationBudgetPerMinute;
   }
 
   async admit(input: AdmitOperatorMcpInvocationInput): Promise<OperatorMcpInvocationAdmission> {
@@ -110,6 +191,7 @@ export class OperatorMcpInvocationRepository implements OperatorMcpInvocationRep
     const descriptorName = input.descriptorName ?? null;
     const shape = input.shape ?? null;
     const operationId = input.operationId ?? null;
+    const budgetKind = input.budgetKind ?? "verification";
 
     return this.db.transaction().execute(async (trx) => {
       // A grant lock serializes reservations across backend instances. The rolling sum is
@@ -137,25 +219,22 @@ export class OperatorMcpInvocationRepository implements OperatorMcpInvocationRep
       }
 
       if (input.verificationCost > 0) {
-        const spent = await sql<{ units: string }>`
-          SELECT COALESCE(SUM(verification_cost), 0)::text AS units
-          FROM operator_mcp_invocations
-          WHERE grant_id = ${input.grantId}
-            AND budget_reserved_at IS NOT NULL
-            AND budget_reserved_at >= (${input.now}::timestamptz - INTERVAL '60 seconds')
-        `.execute(trx);
-        if (Number(spent.rows[0]?.units ?? 0) + input.verificationCost > this.verificationBudgetPerMinute) return { status: "budget_exhausted" };
+        const exhaustion = await budgetExhaustion(trx, {
+          grantId: input.grantId, kind: budgetKind, cost: input.verificationCost, limit: this.budgetLimit(budgetKind),
+          now: input.now, excludeInvocationId: null,
+        });
+        if (exhaustion) return { status: "budget_exhausted", ...exhaustion };
       }
 
       const inserted = await sql<OperatorMcpInvocationRow>`
         INSERT INTO operator_mcp_invocations (
           id, credential_id, grant_id, grant_version, account_id, workspace_id, user_id, client_id,
-          method, descriptor_name, shape, operation_id, input_digest, verification_cost,
+          method, descriptor_name, shape, operation_id, input_digest, verification_cost, budget_kind,
           budget_reserved_at, proof_nonce_digest, status, created_at, retained_until
         ) VALUES (
           ${input.id}, ${input.credentialId}, ${input.grantId}, ${input.grantVersion}, ${input.accountId},
           ${input.workspaceId}, ${input.userId}, ${input.clientId}, ${input.method}, ${descriptorName},
-          ${shape}, ${operationId}, ${input.inputDigest}, ${input.verificationCost},
+          ${shape}, ${operationId}, ${input.inputDigest}, ${input.verificationCost}, ${budgetKind},
           ${input.verificationCost > 0 ? input.now : null}, ${input.proofNonceDigest}, 'admitted',
           ${input.now}, ${input.retainedUntil}
         )
@@ -254,8 +333,12 @@ export class OperatorMcpInvocationRepository implements OperatorMcpInvocationRep
 
   async prepareInvocation(input: {
     invocationId: string; operationId: string | null; descriptorName: string; shape: OperatorMcpInvocationShape;
-    inputDigest: string; verificationCost: number; now: Date;
-  }): Promise<{ status: "prepared" | "replay"; invocation: OperatorMcpInvocationRecord } | { status: "conflict" | "budget_exhausted" }> {
+    inputDigest: string; verificationCost: number; budgetKind: OperatorMcpBudgetKind; now: Date;
+  }): Promise<
+    | { status: "prepared" | "replay"; invocation: OperatorMcpInvocationRecord }
+    | { status: "conflict" }
+    | ({ status: "budget_exhausted" } & Partial<OperatorMcpBudgetRetry>)
+  > {
     if (!Number.isInteger(input.verificationCost) || input.verificationCost < 0 || input.verificationCost > 6) {
       throw new Error("verification cost must be an integer between zero and six");
     }
@@ -284,17 +367,15 @@ export class OperatorMcpInvocationRepository implements OperatorMcpInvocationRep
       }
       if (current.status !== "admitted" || current.descriptorName !== input.descriptorName) return { status: "conflict" as const };
       if (input.verificationCost > 0) {
-        const spent = await sql<{ units: string }>`
-          SELECT COALESCE(SUM(verification_cost), 0)::text AS units FROM operator_mcp_invocations
-          WHERE grant_id = ${current.grantId} AND id <> ${input.invocationId}
-            AND budget_reserved_at IS NOT NULL
-            AND budget_reserved_at >= (${input.now}::timestamptz - INTERVAL '60 seconds')
-        `.execute(trx);
-        if (Number(spent.rows[0]?.units ?? 0) + input.verificationCost > this.verificationBudgetPerMinute) return { status: "budget_exhausted" as const };
+        const exhaustion = await budgetExhaustion(trx, {
+          grantId: current.grantId, kind: input.budgetKind, cost: input.verificationCost, limit: this.budgetLimit(input.budgetKind),
+          now: input.now, excludeInvocationId: input.invocationId,
+        });
+        if (exhaustion) return { status: "budget_exhausted" as const, ...exhaustion };
       }
       const updated = await sql<OperatorMcpInvocationRow>`
         UPDATE operator_mcp_invocations SET operation_id = ${input.operationId}, shape = ${input.shape},
-          input_digest = ${input.inputDigest}, verification_cost = ${input.verificationCost},
+          input_digest = ${input.inputDigest}, verification_cost = ${input.verificationCost}, budget_kind = ${input.budgetKind},
           budget_reserved_at = ${input.verificationCost > 0 ? input.now : null}
         WHERE id = ${input.invocationId} AND status = 'admitted'
         RETURNING ${invocationColumns}

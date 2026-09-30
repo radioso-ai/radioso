@@ -11,6 +11,7 @@ import {
 } from "../../src/modules/auth/domain/authPrimitives.js";
 import {
   DISPLAY_NAME_MAX_LENGTH,
+  looksLikeEmailAddress,
   normalizeDisplayName,
 } from "../../src/modules/auth/domain/userDisplayName.js";
 
@@ -73,5 +74,43 @@ describe("user display name", () => {
     expect(normalizeDisplayName("Ada\tLovelace")).toEqual({ ok: false, reason: "control_characters" });
     expect(normalizeDisplayName("Ada\u0000")).toEqual({ ok: false, reason: "control_characters" });
     expect(normalizeDisplayName("Ada\u009bLovelace")).toEqual({ ok: false, reason: "control_characters" });
+  });
+
+  it("rejects text-direction overrides, embeddings, and isolates", () => {
+    expect(normalizeDisplayName("Ada‮ecalevol")).toEqual({ ok: false, reason: "direction_controls" });
+    expect(normalizeDisplayName("‪Ada")).toEqual({ ok: false, reason: "direction_controls" });
+    expect(normalizeDisplayName("⁦Ada⁩")).toEqual({ ok: false, reason: "direction_controls" });
+    expect(normalizeDisplayName("Ada⁨")).toEqual({ ok: false, reason: "direction_controls" });
+  });
+
+  it("rejects a name with no visible character", () => {
+    expect(normalizeDisplayName("​")).toEqual({ ok: false, reason: "no_visible_characters" });
+    expect(normalizeDisplayName("  ​⁠­  ")).toEqual({ ok: false, reason: "no_visible_characters" });
+    expect(normalizeDisplayName("ㅤ")).toEqual({ ok: false, reason: "no_visible_characters" });
+    expect(normalizeDisplayName("ᅟᅠ")).toEqual({ ok: false, reason: "no_visible_characters" });
+    expect(normalizeDisplayName("ﾠ")).toEqual({ ok: false, reason: "no_visible_characters" });
+    expect(normalizeDisplayName("‍‌")).toEqual({ ok: false, reason: "no_visible_characters" });
+  });
+
+  it("keeps joiners inside a visible name", () => {
+    expect(normalizeDisplayName("👩‍💻")).toEqual({ ok: true, displayName: "👩‍💻" });
+    expect(normalizeDisplayName("می‌خواهم")).toEqual({ ok: true, displayName: "می‌خواهم" });
+  });
+
+  it("rejects a name shaped like an email address", () => {
+    expect(normalizeDisplayName("dana@corp.com")).toEqual({ ok: false, reason: "email_address" });
+    expect(normalizeDisplayName("  Dana.Smith+ops@mail.example.org ")).toEqual({ ok: false, reason: "email_address" });
+    expect(normalizeDisplayName("Dana @ Acme")).toEqual({ ok: true, displayName: "Dana @ Acme" });
+    expect(normalizeDisplayName("@dana")).toEqual({ ok: true, displayName: "@dana" });
+  });
+});
+
+describe("email address shape", () => {
+  it("matches the structure of an address, not its validity", () => {
+    expect(looksLikeEmailAddress("dana@corp.com")).toBe(true);
+    expect(looksLikeEmailAddress("a@b.c")).toBe(true);
+    expect(looksLikeEmailAddress("Dana @ Acme")).toBe(false);
+    expect(looksLikeEmailAddress("dana@corp")).toBe(false);
+    expect(looksLikeEmailAddress("Dana Smith")).toBe(false);
   });
 });

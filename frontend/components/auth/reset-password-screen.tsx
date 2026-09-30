@@ -55,7 +55,7 @@ export function ResetPasswordScreen({ token, email: initialEmail }: { token?: st
       const response = await authApi.confirmPasswordReset({ token: token ?? '', password })
       seedWorkspaceSession(response.workspaceId, response.workspacePublicRouteKey)
       riseSun()
-      await login(response.email, response.userId, response.accountId, response.organizationName)
+      await login(response)
       // Resetting a password only happens for an account that already
       // exists — never a genuinely first-run workspace — so the Inbox is
       // the normal landing surface here, same as any other authenticated

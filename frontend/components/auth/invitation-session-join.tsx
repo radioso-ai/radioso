@@ -38,7 +38,7 @@ export function InvitationSessionJoin({
       const response = await authApi.acceptInvitationAsCurrentUser(invitationToken)
       seedWorkspaceSession(response.workspaceId, response.workspacePublicRouteKey)
       riseSun()
-      await login(signedInEmail, response.userId, response.accountId, response.organizationName)
+      await login({ ...response, email: signedInEmail })
       router.replace(buildDashboardHref(response.accountId, {
         section: 'activity',
         workspaceId: response.workspaceId,

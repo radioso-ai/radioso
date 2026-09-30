@@ -122,6 +122,11 @@ components:
         userId:
           type: string
           format: uuid
+        displayName:
+          type:
+            - string
+            - "null"
+          description: The name the person chose for themselves, or null when they have not set one.
         accountId:
           type: string
           format: uuid
@@ -138,6 +143,7 @@ components:
           type: boolean
       required:
         - userId
+        - displayName
         - accountId
         - organizationName
         - workspaceId
@@ -150,6 +156,11 @@ components:
         userId:
           type: string
           format: uuid
+        displayName:
+          type:
+            - string
+            - "null"
+          description: The name the person chose for themselves, or null when they have not set one.
         accountId:
           type: string
           format: uuid
@@ -164,6 +175,7 @@ components:
           type: string
       required:
         - userId
+        - displayName
         - accountId
         - organizationName
         - workspaceId
@@ -196,14 +208,8 @@ components:
             email:
               type: string
               format: email
-            displayName:
-              type:
-                - string
-                - "null"
-              description: The name the person chose for themselves, or null when they have not set one.
           required:
             - email
-            - displayName
     UserProfile:
       type: object
       properties:

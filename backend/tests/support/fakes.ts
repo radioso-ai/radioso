@@ -791,7 +791,7 @@ export class InMemoryAccountMembershipRepository implements AccountMembershipRep
       .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime());
   }
 
-  async updateRole(id: string, role: AccountMembershipRole): Promise<AccountMembershipRecord> {
+  async updateRole(id: string, role: AccountMembershipRole): Promise<AccountMembershipUserRecord> {
     const existing = this.items.get(id);
     if (!existing) {
       throw notFound("Membership not found");
@@ -802,7 +802,12 @@ export class InMemoryAccountMembershipRepository implements AccountMembershipRep
       updatedAt: new Date(),
     };
     this.items.set(id, updated);
-    return updated;
+    const user = await this.userRepository?.findById(updated.userId);
+    return {
+      ...updated,
+      email: user?.email ?? "unknown@example.com",
+      displayName: user?.displayName ?? null,
+    };
   }
 
   async deleteById(id: string): Promise<boolean> {

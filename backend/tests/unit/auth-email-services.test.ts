@@ -214,9 +214,10 @@ describe("PasswordResetService", () => {
     await passwordResetService.requestReset({ email: "ada@example.com" });
     const token = readTokenFromUrl(mailDriver.messages[0]?.metadata?.resetUrl ?? "");
 
-    await passwordResetService.confirmReset({ token, password: "new-secure-password" });
+    const response = await passwordResetService.confirmReset({ token, password: "new-secure-password" });
 
     expect((await userRepository.findById(user.id))?.displayName).toBeNull();
+    expect(response.displayName).toBeNull();
   });
 
   it("keeps a verified user's display name through an ordinary password reset", async () => {
@@ -224,9 +225,10 @@ describe("PasswordResetService", () => {
     await passwordResetService.requestReset({ email: "ada@example.com" });
     const token = readTokenFromUrl(mailDriver.messages[0]?.metadata?.resetUrl ?? "");
 
-    await passwordResetService.confirmReset({ token, password: "new-secure-password" });
+    const response = await passwordResetService.confirmReset({ token, password: "new-secure-password" });
 
     expect((await userRepository.findById(user.id))?.displayName).toBe("Ada Lovelace");
+    expect(response.displayName).toBe("Ada Lovelace");
   });
 
   it("rejects older active tokens after a newer token is requested", async () => {

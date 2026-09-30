@@ -34,10 +34,15 @@ export const registerIdentitySchemas = (registry: OpenAPIRegistry, schemas: Open
     "RegistrationAvailabilityResponse",
     z.object({ available: z.boolean() }),
   );
+  const displayNameSchema = z.string().nullable().openapi({
+    description: "The name the person chose for themselves, or null when they have not set one.",
+  });
+
   const RegisterResponseSchema = registry.register(
     "RegisterResponse",
     z.object({
       userId: z.string().uuid(),
+      displayName: displayNameSchema,
       accountId: z.string().uuid(),
       organizationName: z.string(),
       workspaceId: z.string().uuid(),
@@ -51,6 +56,7 @@ export const registerIdentitySchemas = (registry: OpenAPIRegistry, schemas: Open
     "LoginResponse",
     z.object({
       userId: z.string().uuid(),
+      displayName: displayNameSchema,
       accountId: z.string().uuid(),
       organizationName: z.string(),
       workspaceId: z.string().uuid(),
@@ -73,15 +79,10 @@ export const registerIdentitySchemas = (registry: OpenAPIRegistry, schemas: Open
     }),
   );
 
-  const displayNameSchema = z.string().nullable().openapi({
-    description: "The name the person chose for themselves, or null when they have not set one.",
-  });
-
   const SessionResponseSchema = registry.register(
     "SessionResponse",
     LoginResponseSchema.extend({
       email: z.string().email(),
-      displayName: displayNameSchema,
     }),
   );
 

@@ -49,7 +49,7 @@ export type AccountPermission =
 
 export type WorkspaceMachineRole = "admin" | "member";
 export type PublicAccessRole = "public" | "agent";
-export type PrincipalAccessRole = WorkspaceMachineRole | PublicAccessRole;
+type PrincipalAccessRole = WorkspaceMachineRole | PublicAccessRole;
 
 export type PublicChatPermission =
   | "public_chat.turn.create"
@@ -101,7 +101,7 @@ export type AuthenticatedPrincipal =
     publicSessionId: string;
   };
 
-export interface WorkspaceGrantSummary {
+interface WorkspaceGrantSummary {
   workspaceId: string;
   userId: string;
   role: WorkspaceGrantRole;
@@ -110,7 +110,7 @@ export interface WorkspaceGrantSummary {
 }
 
 /** A narrow outbound signal; account access never learns credential persistence. */
-export interface PersonalCredentialTenureTerminationPort {
+interface PersonalCredentialTenureTerminationPort {
   endMembership(input: { accountId: string; membershipId: string; actorUserId?: string | null }): Promise<void>;
 }
 
@@ -328,7 +328,7 @@ export class AccountAccessService {
     actorUserId: string;
     membershipId: string;
     role: Exclude<AccountMembershipRole, "owner">;
-  }): Promise<AccountMembershipRecord> {
+  }): Promise<AccountMembershipUserRecord> {
     await this.requirePermission({
       accountId: input.accountId,
       userId: input.actorUserId,

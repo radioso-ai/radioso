@@ -38,13 +38,13 @@ beforeAll(() => {
 
 // Renders as plain DOM attributes so assertions can read bootstrap state without a testing
 // library, matching this repo's manual createRoot/act component-test convention.
-type AuthLogin = ReturnType<typeof useAuth>['login']
+type AuthActions = Pick<ReturnType<typeof useAuth>, 'login' | 'setDisplayName'>
 
-function AuthProbe({ loginRef }: { loginRef?: { current: AuthLogin | null } }) {
-  const { user, isAuthenticated, isBootstrapping, login } = useAuth()
+function AuthProbe({ actionsRef }: { actionsRef?: { current: AuthActions | null } }) {
+  const { user, isAuthenticated, isBootstrapping, login, setDisplayName } = useAuth()
   useEffect(() => {
-    if (loginRef) loginRef.current = login
-  }, [login, loginRef])
+    if (actionsRef) actionsRef.current = { login, setDisplayName }
+  }, [actionsRef, login, setDisplayName])
   return (
     <div
       data-testid="auth-probe"
@@ -242,59 +242,113 @@ describe('AuthProvider bootstrap effect', () => {
     })
   })
 
-  it('keeps the display name when the same user signs in to another account', async () => {
+  const renderWithActions = async () => {
+    const actionsRef: { current: AuthActions | null } = { current: null }
+    await act(async () => {
+      root.render(
+        <AuthProvider>
+          <AuthProbe actionsRef={actionsRef} />
+        </AuthProvider>,
+      )
+    })
+    return actionsRef
+  }
+
+  const authUserWrites = (setItem: { mock: { calls: unknown[][] } }) =>
+    setItem.mock.calls.filter(([key]) => key === 'radioso.authUser')
+
+  it('takes the display name from the sign-in response and stores the user once', async () => {
     window.localStorage.setItem('radioso.authUser', JSON.stringify({
       userId: 'user-1',
       accountId: 'account-1',
       email: 'ada@example.com',
       displayName: 'Ada Lovelace',
     }))
+    const actionsRef = await renderWithActions()
+    const setItem = vi.spyOn(Storage.prototype, 'setItem')
 
-    const loginRef: { current: AuthLogin | null } = { current: null }
     await act(async () => {
-      root.render(
-        <AuthProvider>
-          <AuthProbe loginRef={loginRef} />
-        </AuthProvider>,
-      )
-    })
-    await act(async () => {
-      await loginRef.current?.('ada@example.com', 'user-1', 'account-2', 'Second Org')
+      await actionsRef.current?.login({
+        email: 'ada@example.com',
+        userId: 'user-1',
+        accountId: 'account-2',
+        organizationName: 'Second Org',
+        displayName: 'Ada King',
+      })
     })
 
     expect(probe()?.dataset.accountId).toBe('account-2')
-    expect(probe()?.dataset.displayName).toBe('Ada Lovelace')
+    expect(probe()?.dataset.displayName).toBe('Ada King')
     expect(apiMocks.getCurrentSession).not.toHaveBeenCalled()
+    expect(authUserWrites(setItem)).toHaveLength(1)
     expect(JSON.parse(window.localStorage.getItem('radioso.authUser') ?? 'null')).toMatchObject({
       accountId: 'account-2',
-      displayName: 'Ada Lovelace',
+      displayName: 'Ada King',
     })
+    setItem.mockRestore()
   })
 
-  it('asks the session for the name of a different user signing in', async () => {
+  it('shows a different user signing in without a name as unnamed, without asking the session', async () => {
     window.localStorage.setItem('radioso.authUser', JSON.stringify({
       userId: 'user-1',
       accountId: 'account-1',
       email: 'ada@example.com',
       displayName: 'Ada Lovelace',
     }))
-    apiMocks.getCurrentSession.mockResolvedValueOnce({ ...sessionFixture, userId: 'user-2', displayName: null })
+    const actionsRef = await renderWithActions()
 
-    const loginRef: { current: AuthLogin | null } = { current: null }
     await act(async () => {
-      root.render(
-        <AuthProvider>
-          <AuthProbe loginRef={loginRef} />
-        </AuthProvider>,
-      )
-    })
-    await act(async () => {
-      await loginRef.current?.('grace@example.com', 'user-2', 'account-3', 'Other Org')
+      await actionsRef.current?.login({
+        email: 'grace@example.com',
+        userId: 'user-2',
+        accountId: 'account-3',
+        organizationName: 'Other Org',
+        displayName: null,
+      })
     })
 
     expect(probe()?.dataset.email).toBe('grace@example.com')
     expect(probe()?.dataset.displayName).toBe('')
-    expect(apiMocks.getCurrentSession).toHaveBeenCalledOnce()
+    expect(apiMocks.getCurrentSession).not.toHaveBeenCalled()
+    expect(JSON.parse(window.localStorage.getItem('radioso.authUser') ?? 'null')).toMatchObject({
+      userId: 'user-2',
+      displayName: null,
+    })
+  })
+
+  it('stores a renamed profile', async () => {
+    window.localStorage.setItem('radioso.authUser', JSON.stringify({
+      userId: 'user-1',
+      accountId: 'account-1',
+      email: 'ada@example.com',
+      displayName: 'Ada Lovelace',
+    }))
+    const actionsRef = await renderWithActions()
+
+    await act(async () => {
+      actionsRef.current?.setDisplayName('Countess Lovelace')
+    })
+
+    expect(probe()?.dataset.displayName).toBe('Countess Lovelace')
+    expect(JSON.parse(window.localStorage.getItem('radioso.authUser') ?? 'null')).toMatchObject({
+      displayName: 'Countess Lovelace',
+    })
+  })
+
+  it('does not write a stored user back on load', async () => {
+    window.localStorage.setItem('radioso.authUser', JSON.stringify({
+      userId: 'user-1',
+      accountId: 'account-1',
+      email: 'ada@example.com',
+      displayName: 'Ada Lovelace',
+    }))
+    const setItem = vi.spyOn(Storage.prototype, 'setItem')
+
+    await renderWithActions()
+
+    expect(probe()?.dataset.authenticated).toBe('true')
+    expect(authUserWrites(setItem)).toEqual([])
+    setItem.mockRestore()
   })
 
   it('recovers a live session when local storage is empty and persists it', async () => {

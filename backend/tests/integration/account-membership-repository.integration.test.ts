@@ -102,6 +102,15 @@ describeIntegration("AccountMembershipRepository (Postgres)", () => {
     expect(updated.updatedAt.getTime()).toBeGreaterThanOrEqual(first!.updatedAt.getTime());
   });
 
+  it("updateRole answers with the member's email and display name", async () => {
+    const named = await repository.findActiveByAccountAndUser(accountId, userAId);
+    const updated = await repository.updateRole(named!.id, "owner");
+    expect(updated).toMatchObject({ id: named!.id, userId: userAId, email: userAEmail, displayName: "Member A" });
+
+    const unnamed = await repository.findActiveByAccountAndUser(accountId, userBId);
+    expect(await repository.updateRole(unnamed!.id, "member")).toMatchObject({ email: userBEmail, displayName: null });
+  });
+
   it("deleteById returns true then false", async () => {
     const first = await repository.findActiveByAccountAndUser(accountId, userBId);
     expect(await repository.deleteById(first!.id)).toBe(true);

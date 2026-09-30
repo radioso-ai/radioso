@@ -122,6 +122,7 @@ export class PasswordResetService {
     preferredWorkspaceId?: string | null;
   }): Promise<{
     userId: string;
+    displayName: string | null;
     accountId: string;
     email: string;
     organizationName: string;
@@ -162,8 +163,9 @@ export class PasswordResetService {
     await this.dependencies.userRepository.updatePassword(user.id, passwordHash);
     // A name chosen before the address was verified came from whoever registered it,
     // not necessarily the mailbox owner now reclaiming the account.
-    if (!user.emailVerifiedAt && user.displayName !== null) {
-      await this.dependencies.userRepository.updateDisplayName(user.id, null);
+    const displayName = user.emailVerifiedAt ? user.displayName : null;
+    if (displayName !== user.displayName) {
+      await this.dependencies.userRepository.updateDisplayName(user.id, displayName);
     }
     // Reset possession proves control of the mailbox, so a successful reset also verifies the email.
     await this.dependencies.userRepository.markEmailVerified(user.id, now);
@@ -203,6 +205,7 @@ export class PasswordResetService {
 
     return {
       userId: user.id,
+      displayName,
       accountId: membership.accountId,
       email: user.email,
       organizationName: account?.name ?? deriveOrganizationName(user.email),

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 
 import { AuthPage } from '@/components/auth/auth-page'
@@ -36,17 +36,24 @@ export default function LegacyAccountDashboardPage() {
   const params = useParams()
   const router = useRouter()
   const searchParams = useSearchParams()
-  const auth = useAuth()
+  const { isAuthenticated, isBootstrapping, login, user } = useAuth()
 
   const routeAccountId = getParamValue(params.accountId)
-  const segments = getParamList(params.segments)
-  const parsedRoute = parseDashboardRoute(segments, searchParams)
+  const segments = useMemo(() => getParamList(params.segments), [params.segments])
+  const searchParamsString = searchParams.toString()
+  const parsedRoute = useMemo(
+    () => parseDashboardRoute(segments, new URLSearchParams(searchParamsString)),
+    [searchParamsString, segments],
+  )
+  // The redirect depends on who is signed in, so an edit that replaces the user
+  // object — a renamed profile, a name learned in the background — leaves it be.
+  const signedInAccountId = user?.accountId ?? null
+  const signedInEmail = user?.email ?? null
 
   useEffect(() => {
-    if (auth.isBootstrapping || !auth.user) {
+    if (isBootstrapping || !signedInAccountId || !signedInEmail) {
       return
     }
-    const user = auth.user
 
     const redirectToCanonical = async () => {
       if (!parsedRoute) {
@@ -55,7 +62,7 @@ export default function LegacyAccountDashboardPage() {
         // the Inbox rather than a hardcoded section (see app/page.tsx).
         const workspaceId = getStoredActiveWorkspaceId() ?? undefined
         const workspacePublicRouteKey = getStoredActiveWorkspacePublicRouteKey() ?? undefined
-        router.replace(buildDashboardHref(user.accountId, {
+        router.replace(buildDashboardHref(signedInAccountId, {
           section: 'activity',
           workspaceId,
           workspacePublicRouteKey,
@@ -63,7 +70,7 @@ export default function LegacyAccountDashboardPage() {
         return
       }
 
-      if (routeAccountId && routeAccountId !== user.accountId) {
+      if (routeAccountId && routeAccountId !== signedInAccountId) {
         const pendingAccountSwitchId = getPendingAccountSwitchId()
         if (pendingAccountSwitchId && pendingAccountSwitchId !== routeAccountId) {
           return
@@ -72,7 +79,7 @@ export default function LegacyAccountDashboardPage() {
         try {
           const response = await accountApi.switchAccount(routeAccountId, parsedRoute.workspaceId)
           seedWorkspaceSession(response.workspaceId, response.workspacePublicRouteKey)
-          await auth.login(user.email, response.userId, response.accountId, response.organizationName)
+          await login({ ...response, email: signedInEmail })
           router.replace(buildDashboardHref(response.accountId, {
             ...parsedRoute,
             workspaceId: response.workspaceId,
@@ -100,7 +107,7 @@ export default function LegacyAccountDashboardPage() {
         }
 
         seedWorkspaceSession(workspace.id, workspace.publicRouteKey)
-        router.replace(buildDashboardHref(user.accountId, {
+        router.replace(buildDashboardHref(signedInAccountId, {
           ...parsedRoute,
           workspaceId: workspace.id,
           workspacePublicRouteKey: workspace.publicRouteKey,
@@ -111,9 +118,9 @@ export default function LegacyAccountDashboardPage() {
     }
 
     void redirectToCanonical()
-  }, [auth, parsedRoute, routeAccountId, router])
+  }, [isBootstrapping, login, parsedRoute, routeAccountId, router, signedInAccountId, signedInEmail])
 
-  if (auth.isBootstrapping) {
+  if (isBootstrapping) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <LogoSpinner imageClassName="h-7 w-7" />
@@ -121,7 +128,7 @@ export default function LegacyAccountDashboardPage() {
     )
   }
 
-  if (!auth.isAuthenticated || !auth.user) {
+  if (!isAuthenticated || !user) {
     return <AuthPage />
   }
 

@@ -46,6 +46,19 @@ const accountMembershipColumns = [
   "updated_at",
 ] as const;
 
+/** A membership joined to its user as `m` and `u`. */
+const membershipUserColumns = [
+  "m.id",
+  "m.account_id",
+  "m.user_id",
+  "m.role",
+  "m.status",
+  "m.created_at",
+  "m.updated_at",
+  "u.email",
+  "u.display_name",
+] as const;
+
 const mapMembership = (row: AccountMembershipRow): AccountMembershipRecord => ({
   id: row.id,
   accountId: row.account_id,
@@ -73,7 +86,8 @@ export interface AccountMembershipRepositoryPort {
   findById(id: string): Promise<AccountMembershipRecord | null>;
   listActiveByAccount(accountId: string): Promise<AccountMembershipUserRecord[]>;
   listActiveByUser(userId: string): Promise<AccountMembershipRecord[]>;
-  updateRole(id: string, role: AccountMembershipRole): Promise<AccountMembershipRecord>;
+  /** Answers with the member as a listing describes them, so a caller can show who changed. */
+  updateRole(id: string, role: AccountMembershipRole): Promise<AccountMembershipUserRecord>;
   deleteById(id: string): Promise<boolean>;
 }
 
@@ -132,17 +146,7 @@ export class AccountMembershipRepository implements AccountMembershipRepositoryP
     const rows = await this.db
       .selectFrom("account_memberships as m")
       .innerJoin("users as u", "u.id", "m.user_id")
-      .select([
-        "m.id",
-        "m.account_id",
-        "m.user_id",
-        "m.role",
-        "m.status",
-        "m.created_at",
-        "m.updated_at",
-        "u.email",
-        "u.display_name",
-      ])
+      .select(membershipUserColumns)
       .where("m.account_id", "=", accountId)
       .where("m.status", "=", "active")
       .orderBy("m.created_at", "asc")
@@ -163,15 +167,17 @@ export class AccountMembershipRepository implements AccountMembershipRepositoryP
     return rows.map((row) => mapMembership(row as AccountMembershipRow));
   }
 
-  async updateRole(id: string, role: AccountMembershipRole): Promise<AccountMembershipRecord> {
+  async updateRole(id: string, role: AccountMembershipRole): Promise<AccountMembershipUserRecord> {
     const row = await this.db
-      .updateTable("account_memberships")
+      .updateTable("account_memberships as m")
+      .from("users as u")
       .set({ role, updated_at: currentTimestamp() })
-      .where("id", "=", id)
-      .returning(accountMembershipColumns)
+      .whereRef("u.id", "=", "m.user_id")
+      .where("m.id", "=", id)
+      .returning(membershipUserColumns)
       .executeTakeFirstOrThrow();
 
-    return mapMembership(row as AccountMembershipRow);
+    return mapMembershipUser(row as AccountMembershipUserRow);
   }
 
   async deleteById(id: string): Promise<boolean> {

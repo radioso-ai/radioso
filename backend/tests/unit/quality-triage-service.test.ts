@@ -69,6 +69,7 @@ describe("QualityTurnsService triage transition", () => {
     const db = new SequencedDb([[
       {
         conversation_id: "44444444-4444-4444-8444-444444444444",
+        transition_id: "55555555-5555-5555-5555-555555555555",
         state: "dismissed",
         version: 2,
         resolution_reason: "out_of_scope",
@@ -94,7 +95,11 @@ describe("QualityTurnsService triage transition", () => {
       conversationId: "44444444-4444-4444-8444-444444444444",
       workspaceId: "11111111-1111-1111-1111-111111111111",
       actorUserId: "33333333-3333-3333-3333-333333333333",
-      detail: { assistantMessageId: "22222222-2222-2222-2222-222222222222", resolution: "out_of_scope" },
+      detail: {
+        assistantMessageId: "22222222-2222-2222-2222-222222222222",
+        triageTransitionId: "55555555-5555-5555-5555-555555555555",
+        resolution: "out_of_scope",
+      },
     });
   });
 

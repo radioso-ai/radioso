@@ -56,12 +56,21 @@ CREATE INDEX IF NOT EXISTS conversation_activity_workspace_closed_idx
 -- feedback — into resolved or dismissed from another state — as the live writer records them; a
 -- re-save of a closed state closes nothing. Handoffs and approvals leave no history to rebuild them
 -- from. Operator test traffic (the channels of `OPERATOR_TEST_SOURCE_CHANNELS`) is left out, as the
--- Inbox leaves it out. `NOT EXISTS` keeps a re-run from recording an event twice.
+-- Inbox leaves it out.
+--
+-- A closure is identified by the triage transition that produced it (`detail->>'triageTransitionId'`),
+-- never by `created_at`: the live writer stamps its row with its own `clock_timestamp()`, milliseconds
+-- after the transition's own timestamp, so the two never compare equal. `NOT EXISTS` on the transition
+-- id keeps a re-run of this migration, or a backfill that runs after the live writer already recorded
+-- the same transition, from recording the closure twice.
 --
 -- The 30-day bound keeps the backfill to recent history, and the transitions index on (workspace_id,
--- created_at) lets it read only those days, one workspace at a time. Transitions are teammates'
--- triage clicks, and every other join is by key, so it runs in milliseconds while it holds the locks
--- above.
+-- created_at) lets it read only those days, one workspace at a time. The guard's per-conversation scan
+-- stays cheap without a new index: `conversation_activity_conversation_created_idx` (conversation_id,
+-- created_at) narrows it to one conversation's handful of events before the detail comparison runs —
+-- an EXPLAIN against a workspace with thousands of transitions and a conversation with a dozen prior
+-- activity rows shows an index scan on that index, not a sequential scan. Every other join is by key,
+-- so the whole backfill runs in milliseconds while it holds the locks above.
 INSERT INTO conversation_activity (
     conversation_id, workspace_id, kind, actor_user_id, detail, created_at
   )
@@ -69,7 +78,11 @@ SELECT c.id,
        c.workspace_id,
        CASE t.next_state WHEN 'resolved' THEN 'feedback_resolved' ELSE 'feedback_dismissed' END,
        t.actor_id,
-       jsonb_build_object('assistantMessageId', t.assistant_message_id, 'resolution', t.resolution_reason),
+       jsonb_build_object(
+         'assistantMessageId', t.assistant_message_id,
+         'triageTransitionId', t.id,
+         'resolution', t.resolution_reason
+       ),
        t.created_at
   FROM workspaces w
   JOIN assistant_answer_triage_transitions t
@@ -88,9 +101,8 @@ SELECT c.id,
      SELECT 1
        FROM conversation_activity a
       WHERE a.conversation_id = c.id
-        AND a.created_at = t.created_at
         AND a.kind IN ('feedback_resolved', 'feedback_dismissed')
-        AND a.detail->>'assistantMessageId' = t.assistant_message_id::text
+        AND a.detail->>'triageTransitionId' = t.id::text
    );
 
 -- The teammate who decided an approval. `decided_by` names the organisation the workspace belongs

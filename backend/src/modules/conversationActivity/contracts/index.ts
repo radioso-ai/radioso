@@ -76,8 +76,13 @@ export type ConversationActivityEvent = ConversationActivityScope & (
   | {
       kind: "feedback_resolved" | "feedback_dismissed";
       actorUserId: string | null;
-      /** The answer the feedback was on, and the triage resolution code if one was given. */
-      detail: { assistantMessageId: string; resolution: string | null };
+      /**
+       * The answer the feedback was on, the triage transition that closed it — how a backfill or a
+       * later read tells this closure apart from any other on the same answer, since this row's own
+       * `created_at` is stamped independently of the transition's — and the resolution code if one
+       * was given.
+       */
+      detail: { assistantMessageId: string; triageTransitionId: string; resolution: string | null };
     }
 );
 

@@ -286,8 +286,8 @@ const reaskFor = (
 };
 
 /**
- * Consecutive no-progress re-asks of one step before the runner offers a way out (#1376):
- * the step's own hand-off exit, else a reply told to ask differently.
+ * Consecutive no-progress re-asks of one step before the reply is told to ask differently
+ * (#1376).
  */
 const DEFAULT_REASK_LIMIT = 3;
 
@@ -485,7 +485,7 @@ interface DefaultRoutineRunnerOptions {
    * replay (Test Chat, eval) sets this.
    */
   includeSlotValues?: boolean;
-  /** Consecutive no-progress re-asks of one step allowed before the runner offers a way out; defaults to 3. */
+  /** Consecutive no-progress re-asks of one step allowed before the reply asks differently; defaults to 3. */
   reaskLimit?: number;
 }
 
@@ -903,9 +903,9 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     }
 
     // Bound how often one step is asked again with nothing new captured (#1376). Past the
-    // limit the routine takes the step's own exit to a hand-off end, overriding that exit's
-    // guard; a hand-off reachable only through other steps is never jumped to, since that
-    // would skip what they do. Without one, the reply is told to ask differently.
+    // limit the reply is told to ask differently; the routine never leaves the step by itself.
+    // An authored exit — even one to a hand-off end — can be the step's confirmation edge, and
+    // taking it would submit what the visitor never confirmed.
     const reasked = !input.activationTurn &&
       currentStep.kind === "chat" &&
       step.id === currentStepId &&
@@ -913,22 +913,9 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     const reaskCount = reasked && !filledCollectedSlot(currentStep, state.variables, variables)
       ? (state.reaskCount ?? 0) + 1
       : 0;
-    let reaskExhausted = false;
-    if (reaskCount > (this.options.reaskLimit ?? DEFAULT_REASK_LIMIT)) {
-      const handoffExit = outgoing(currentStepId).find((transition) => terminalKindFor(stepById(transition.to)) === "handoff");
-      traceSteps.push({
-        stepId: currentStep.id,
-        kind: currentStep.kind,
-        event: "reask_limit_reached",
-        reaskCount,
-        reaskLimitOutcome: handoffExit ? "handoff" : "exhausted_reask",
-      });
-      if (handoffExit) {
-        step = stepById(handoffExit.to);
-        enterStep(step, path);
-      } else {
-        reaskExhausted = true;
-      }
+    const reaskExhausted = reaskCount > (this.options.reaskLimit ?? DEFAULT_REASK_LIMIT);
+    if (reaskExhausted) {
+      traceSteps.push({ stepId: currentStep.id, kind: currentStep.kind, event: "reask_limit_reached", reaskCount });
     }
 
     // Run through any transit steps — skill (dispatch a tool) and action (emit a

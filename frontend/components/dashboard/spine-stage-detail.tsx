@@ -903,14 +903,7 @@ interface RoutineTraceStepView {
   selection?: RoutineStepSelectionView
   /** Slot keys whose returned value did not fit the slot's type and was not stored (#1374). */
   rejectedSlotKeys?: string[]
-  /** On `reask_limit_reached`: whether the routine handed off or asked differently (#1376). */
-  reaskLimitOutcome?: RoutineReaskLimitOutcome
 }
-
-type RoutineReaskLimitOutcome = 'handoff' | 'exhausted_reask'
-
-const asReaskLimitOutcome = (value: unknown): RoutineReaskLimitOutcome | undefined =>
-  value === 'handoff' || value === 'exhausted_reask' ? value : undefined
 
 // Keys only: the runner never puts a rejected value on the trace, and this ignores one if present.
 const rejectedSlotKeysOf = (value: unknown): string[] =>
@@ -947,7 +940,6 @@ export const buildRoutineRunTrace = (
     .map((entry): RoutineTraceStepView => {
       const selection = buildRoutineStepSelection(entry.selection)
       const rejectedSlotKeys = rejectedSlotKeysOf(entry.rejectedSlots)
-      const reaskLimitOutcome = asReaskLimitOutcome(entry.reaskLimitOutcome)
       return {
         stepId: asString(entry.stepId) ?? '',
         kind: asString(entry.kind) ?? 'chat',
@@ -959,7 +951,6 @@ export const buildRoutineRunTrace = (
         ...(asString(entry.skillReason) ? { skillReason: asString(entry.skillReason) } : {}),
         ...(selection ? { selection } : {}),
         ...(rejectedSlotKeys.length > 0 ? { rejectedSlotKeys } : {}),
-        ...(reaskLimitOutcome ? { reaskLimitOutcome } : {}),
       }
     })
   return {
@@ -992,11 +983,7 @@ const ROUTINE_EVENT_DESCRIPTIONS: Record<string, string> = {
   skill_dispatched: 'Ran this step’s tool.',
   action_emitted: 'Emitted a fire-and-forget action.',
   rendered: 'The reply you saw was generated from this step.',
-}
-
-const ROUTINE_REASK_LIMIT_DESCRIPTIONS: Record<RoutineReaskLimitOutcome, string> = {
-  handoff: 'Asked too many times in a row, so the routine took this step’s hand-off exit.',
-  exhausted_reask: 'Asked too many times in a row, so the reply asked differently.',
+  reask_limit_reached: 'Asked too many times in a row, so the reply asked differently.',
 }
 
 const ROUTINE_SELECTION_OUTCOME_LABELS: Record<RoutineStepSelectionOutcome, string> = {
@@ -1081,9 +1068,6 @@ function RoutineStepsTimeline({ trace }: { trace: RoutineRunTraceView }) {
               ) : null}
               {ROUTINE_EVENT_DESCRIPTIONS[step.event] ? (
                 <p className="text-[11px] text-muted-foreground">{ROUTINE_EVENT_DESCRIPTIONS[step.event]}</p>
-              ) : null}
-              {step.reaskLimitOutcome ? (
-                <p className="text-[11px] text-muted-foreground">{ROUTINE_REASK_LIMIT_DESCRIPTIONS[step.reaskLimitOutcome]}</p>
               ) : null}
               {step.skillName ? (
                 <p className="text-[11px] text-muted-foreground">

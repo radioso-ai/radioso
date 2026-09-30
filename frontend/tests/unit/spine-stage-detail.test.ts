@@ -286,18 +286,6 @@ describe('buildRoutineRunTrace', () => {
     expect(JSON.stringify(view)).not.toContain('<script>')
   })
 
-  it('carries which way out a step past its re-ask limit took', () => {
-    const view = buildRoutineRunTrace(
-      routineStage({
-        steps: [
-          { stepId: 'ask_contact', kind: 'chat', event: 'reask_limit_reached', reaskLimitOutcome: 'handoff' },
-          { stepId: 'ask_other', kind: 'chat', event: 'reask_limit_reached', reaskLimitOutcome: 'somewhere' },
-        ],
-      }),
-    )
-    expect(view?.steps[0].reaskLimitOutcome).toBe('handoff')
-    expect(view?.steps[1]).not.toHaveProperty('reaskLimitOutcome')
-  })
 
   it('omits skillReason when the sub-trace does not carry one', () => {
     const view = buildRoutineRunTrace(

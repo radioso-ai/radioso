@@ -1209,8 +1209,7 @@ export interface RoutineStepReask {
   missingSlots: RoutineSlotSchema[];
   /**
    * True once the step has been asked again more times in a row than the runner's re-ask
-   * limit allows and it has no hand-off exit to take instead (#1376): the reply should ask
-   * differently rather than repeat the question.
+   * limit allows (#1376): the reply should ask differently rather than repeat the question.
    */
   exhausted?: boolean;
 }
@@ -1334,7 +1333,7 @@ export interface RoutineTraceStepEntry {
    * - `action_emitted`: an action step emitted a fire-and-forget request.
    * - `rendered`: the step whose reply the turn rendered.
    * - `reask_limit_reached`: the step was asked again more times in a row than the re-ask
-   *   limit allows; `reaskLimitOutcome` says which way out the runner took.
+   *   limit allows, so its reply was told to ask differently. The routine stays on the step.
    */
   event:
     | "resumed"
@@ -1354,11 +1353,6 @@ export interface RoutineTraceStepEntry {
   rejectedSlots?: RoutineTraceRejectedSlot[];
   /** On `reask_limit_reached`: how many times in a row the step has now been asked again. */
   reaskCount?: number;
-  /**
-   * On `reask_limit_reached`: `handoff` when the runner took the step's own exit to a hand-off
-   * end, `exhausted_reask` when it asked the step again with the exhausted signal.
-   */
-  reaskLimitOutcome?: "handoff" | "exhausted_reask";
   /** Whether the LLM next-step selector ran for this step's edges. */
   viaSelector?: boolean;
   /** What the selector's model returned for this step's edges, when it ran and reported. */

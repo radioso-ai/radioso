@@ -86,6 +86,7 @@ export interface MessageRepositoryPort {
     content: string;
     source?: MessageSource;
     operatorAccountId?: string;
+    operatorUserId?: string;
     operatorDisplayName?: string;
     inputMetadata?: UserMessageInputMetadata;
     metadata?: Record<string, unknown>;
@@ -506,6 +507,7 @@ export class MessageRepository implements MessageRepositoryPort {
     content: string;
     source?: MessageSource;
     operatorAccountId?: string;
+    operatorUserId?: string;
     operatorDisplayName?: string;
     inputMetadata?: UserMessageInputMetadata;
     metadata?: Record<string, unknown>;
@@ -517,10 +519,11 @@ export class MessageRepository implements MessageRepositoryPort {
   }): Promise<MessageRecord> {
     const metadata = {
       ...(input.metadata ?? input.inputMetadata ?? {}),
-      ...(input.operatorAccountId || input.operatorDisplayName
+      ...(input.operatorAccountId || input.operatorUserId || input.operatorDisplayName
         ? {
             humanAgent: {
               accountId: input.operatorAccountId,
+              userId: input.operatorUserId,
               displayName: input.operatorDisplayName,
             },
           }

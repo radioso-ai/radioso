@@ -14330,13 +14330,23 @@
               "string",
               "null"
             ],
-            "format": "uuid"
+            "format": "uuid",
+            "description": "The organisation the workspace belongs to while a teammate owns the conversation. Shared by every teammate, so it does not identify one."
+          },
+          "ownerUserId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "The teammate handling the conversation; a human-owned conversation is claimed exactly when this is set. Null while a handoff waits to be claimed, when AI-owned, and once the owner's user is deleted."
           },
           "ownerDisplayName": {
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "description": "The owner's teammate label: their display name, else their email. Null whenever `ownerUserId` is null. Operator-facing only."
           },
           "reason": {
             "type": [
@@ -14353,7 +14363,8 @@
               "string",
               "null"
             ],
-            "format": "date-time"
+            "format": "date-time",
+            "description": "When the owning teammate claimed the conversation. Null whenever `ownerUserId` is null."
           },
           "createdAt": {
             "type": "string",
@@ -14369,6 +14380,7 @@
           "workspaceId",
           "state",
           "ownerAccountId",
+          "ownerUserId",
           "ownerDisplayName",
           "reason",
           "version",
@@ -15460,6 +15472,10 @@
           },
           "turnFailure": {
             "$ref": "#/components/schemas/ChatConversationTurnFailure"
+          },
+          "operatorLabel": {
+            "type": "string",
+            "description": "Operator-only. On a human-agent reply, the teammate who wrote it: their display name, else their email, read from their profile now. A reply that names no teammate, or whose teammate is gone, carries its signature instead. Never returned by the public chat API."
           }
         },
         "required": [
@@ -15552,6 +15568,37 @@
           "ownership"
         ]
       },
+      "ConversationOperator": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "label": {
+            "type": "string",
+            "description": "The teammate label: display name, else email."
+          }
+        },
+        "required": [
+          "userId",
+          "label"
+        ]
+      },
+      "ConversationOperatorsResponse": {
+        "type": "object",
+        "properties": {
+          "operators": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConversationOperator"
+            }
+          }
+        },
+        "required": [
+          "operators"
+        ]
+      },
       "HumanReplyMessage": {
         "type": "object",
         "properties": {
@@ -15623,10 +15670,21 @@
         "properties": {
           "message": {
             "$ref": "#/components/schemas/HumanReplyMessage"
+          },
+          "ownership": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ConversationOwnership"
+              },
+              {
+                "description": "The conversation's ownership after the reply. A reply to an AI-owned or unclaimed conversation claims it for the replier, so its version moves on."
+              }
+            ]
           }
         },
         "required": [
-          "message"
+          "message",
+          "ownership"
         ]
       },
       "ChatConversationDetail": {
@@ -15789,7 +15847,14 @@
             }
           },
           "ownership": {
-            "$ref": "#/components/schemas/ConversationOwnership"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ConversationOwnership"
+              },
+              {
+                "description": "The conversation's ownership record whenever one exists, `ai_owned` included, the same as the tail's, so a reader holding an older record sees a hand-back by its higher version. Absent until a teammate is first involved."
+              }
+            ]
           }
         },
         "required": [
@@ -15831,7 +15896,14 @@
             ]
           },
           "ownership": {
-            "$ref": "#/components/schemas/ConversationOwnership"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ConversationOwnership"
+              },
+              {
+                "description": "The conversation's ownership record whenever one exists, `ai_owned` included, so a hand-back made elsewhere reaches a reader polling the tail. Absent until a teammate is first involved."
+              }
+            ]
           }
         },
         "required": [
@@ -46105,12 +46177,60 @@
         }
       }
     },
+    "/api/v1/conversations/operators": {
+      "get": {
+        "tags": [
+          "Conversation Ownership"
+        ],
+        "summary": "List the teammates who can own a conversation",
+        "description": "Returns the active teammates who hold conversation takeover permission on the workspace, labelled by display name, else email. These are the valid transfer targets.",
+        "operationId": "listConversationOperators",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Teammates returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationOperatorsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace conversation takeover permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/conversations/{conversationId}/takeover": {
       "post": {
         "tags": [
           "Conversation Ownership"
         ],
         "summary": "Take human ownership of a conversation",
+        "description": "Claims a conversation the AI owns or that waits for a teammate. A conversation another teammate holds returns 409; take it from them by transferring it to yourself.",
         "operationId": "takeOverConversation",
         "security": [
           {
@@ -46216,6 +46336,7 @@
           "Conversation Ownership"
         ],
         "summary": "Reply to a conversation as a human operator",
+        "description": "Only the teammate who owns the conversation replies. A reply to a conversation the AI owns, or one waiting for a teammate, claims it for you first. A conversation another teammate holds, or an `expectedVersion` that is no longer current, returns 409 with the current ownership.",
         "operationId": "replyToConversation",
         "security": [
           {
@@ -46329,6 +46450,7 @@
           "Conversation Ownership"
         ],
         "summary": "Transfer human ownership of a conversation",
+        "description": "Hands a human-owned conversation to another teammate, or to yourself to take it from the teammate holding it. The receiving teammate gets an email with a link to the conversation unless they made the transfer. A target who is not a teammate able to own conversations on the workspace returns 404 with code `transfer_target_unavailable`; a conversation that is not in the workspace returns 404 with code `not_found`.",
         "operationId": "transferConversationOwnership",
         "security": [
           {
@@ -46353,9 +46475,10 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "toAccountId": {
+                  "toUserId": {
                     "type": "string",
-                    "format": "uuid"
+                    "format": "uuid",
+                    "description": "The teammate to hand the conversation to. Pass your own user id to take a conversation another teammate holds."
                   },
                   "expectedVersion": {
                     "type": "integer",
@@ -46363,7 +46486,7 @@
                   }
                 },
                 "required": [
-                  "toAccountId",
+                  "toUserId",
                   "expectedVersion"
                 ],
                 "additionalProperties": false
@@ -46413,7 +46536,7 @@
             }
           },
           "404": {
-            "description": "Conversation not found",
+            "description": "Conversation not found (`not_found`), or transfer target unavailable (`transfer_target_unavailable`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -46441,6 +46564,7 @@
           "Conversation Ownership"
         ],
         "summary": "Return a human-owned conversation to AI ownership",
+        "description": "Only the teammate who owns the conversation hands it back; anyone may while it waits unclaimed. A conversation another teammate holds, or an `expectedVersion` that is no longer current, returns 409 with the current ownership.",
         "operationId": "handBackConversation",
         "security": [
           {

@@ -84,6 +84,7 @@ describe("conversation update reader", () => {
         workspaceId: "w-1",
         state: "human_owned",
         ownerAccountId: "account-1",
+        ownerUserId: "user-1",
         ownerDisplayName: "Dana",
         reason: "operator_takeover",
         version: 1,

@@ -145,6 +145,7 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
     context.registerActionHandler({
       type: CONTACT_SEND_ACTION_TYPE,
       requiredCapabilities: [capabilityNames.humanContact.request],
+      emittableByRoutines: true,
       handler: ({ database, logger, mailService, assertPublicWebsiteUrl, errorReporter }) => {
         const ownerFallback = new WorkspaceOwnerContactRecipientResolver(
           new WorkspaceRepository(database.kysely),
@@ -169,6 +170,7 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
     context.registerActionHandler({
       type: HANDOFF_NOTIFY_ACTION_TYPE,
       requiredCapabilities: [capabilityNames.humanContact.request],
+      emittableByRoutines: true,
       handler: ({ database, env, logger, mailService, assertPublicWebsiteUrl }) => {
         return new HandoffNotifyActionHandler(
           buildOperatorNotificationDispatcher({ database, env, logger, mailService, assertPublicWebsiteUrl }),
@@ -182,6 +184,7 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
     context.registerActionHandler({
       type: APPROVAL_REQUEST_ACTION_TYPE,
       requiredCapabilities: [capabilityNames.humanContact.request],
+      emittableByRoutines: true,
       handler: ({ database, env, logger, mailService, assertPublicWebsiteUrl }) => {
         return new ApprovalRequestActionHandler(
           buildOperatorNotificationDispatcher({ database, env, logger, mailService, assertPublicWebsiteUrl }),

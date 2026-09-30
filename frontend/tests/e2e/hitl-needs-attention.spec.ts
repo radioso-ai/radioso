@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import {
   accountId,
+  currentUserId,
   defaultAgentId,
   installDashboardApiMocks,
   nowIso,
@@ -18,6 +19,7 @@ test("operator opens the inbox, replies to a handoff, marks it done, and the deb
     workspaceId,
     state: "human_owned" as const,
     ownerAccountId: null,
+    ownerUserId: null,
     ownerDisplayName: null,
     reason: "agent had no weekly schedule information",
     version: 1,
@@ -28,6 +30,7 @@ test("operator opens the inbox, replies to a handoff, marks it done, and the deb
   const humanOwnership = {
     ...ownership,
     ownerAccountId: accountId,
+    ownerUserId: currentUserId,
     ownerDisplayName: "Test Operator",
     version: 2,
     takenOverAt: nowIso,
@@ -98,7 +101,7 @@ test("operator opens the inbox, replies to a handoff, marks it done, and the deb
     conversationDetail,
     takeOverConversationResponse: { ownership: humanOwnership },
     handBackConversationResponse: {
-      ownership: { ...humanOwnership, state: "ai_owned", ownerAccountId: null, ownerDisplayName: null, version: 3 },
+      ownership: { ...humanOwnership, state: "ai_owned", ownerAccountId: null, ownerUserId: null, ownerDisplayName: null, version: 3 },
     },
     requestLog,
   });
@@ -150,7 +153,8 @@ test("operator opens the inbox, replies to a handoff, marks it done, and the deb
   await expect(page.getByRole("heading", { name: "Conversation details" })).toBeAttached();
   await expect(drawer.getByText("dove trovo gli orari dei corsi di yoga settimanali")).toBeVisible();
   await expect(drawer.getByRole("textbox", { name: "Reply to the visitor" })).toHaveCount(0);
-  await expect(drawer.getByRole("button", { name: "Take over" })).toHaveCount(0);
+  await expect(drawer.getByRole("button", { name: "Reassign" })).toHaveCount(0);
+  await expect(drawer.getByRole("button", { name: "Assign", exact: true })).toHaveCount(0);
   await expect(drawer.getByRole("button", { name: "Hand back to AI" })).toHaveCount(0);
   // Exact match: the drawer's message thread legitimately renders a "Send to
   // eval" action (evalCaptureEnabled), which a substring match on "Send" would
@@ -690,4 +694,470 @@ test("the recently-closed strip shows the resolution and when it was closed", as
   // followed by non-empty content) rather than an exact date string.
   await expect(queue.getByText(/^Dismissed · .+/)).toBeVisible();
   await expect(queue.getByText("Dismissed", { exact: true })).toHaveCount(0);
+});
+
+// ── Per-teammate ownership ──────────────────────────────────────────────────
+
+const teammates = [
+  { userId: currentUserId, label: "Test Operator" },
+  { userId: "user-dana", label: "Dana Scully" },
+  { userId: "user-fox", label: "fox@example.com" },
+];
+
+const handoffOwnership = (conversationId: string, owner: { userId: string; label: string } | null, version: number) => ({
+  conversationId,
+  workspaceId,
+  state: "human_owned" as const,
+  ownerAccountId: owner ? accountId : null,
+  ownerUserId: owner?.userId ?? null,
+  ownerDisplayName: owner?.label ?? null,
+  reason: "visitor asked for a person",
+  version,
+  takenOverAt: owner ? nowIso : null,
+  createdAt: nowIso,
+  updatedAt: nowIso,
+});
+
+type HandoffOwnershipFixture = ReturnType<typeof handoffOwnership>;
+
+const handoffSummary = (id: string, preview: string, ownership: HandoffOwnershipFixture) => ({
+  id,
+  agentId: defaultAgentId,
+  agentName: "Gioia",
+  sourceChannel: "authenticated_chat",
+  sourceOrigin: null,
+  anonymousSessionId: null,
+  createdAt: nowIso,
+  updatedAt: nowIso,
+  messageCount: 1,
+  userMessageCount: 1,
+  assistantMessageCount: 0,
+  preview,
+  ownership,
+});
+
+const handoffDetail = (id: string, ownership: HandoffOwnershipFixture) => ({
+  conversationId: id,
+  workspaceId,
+  agentId: defaultAgentId,
+  agentName: "Gioia",
+  sourceChannel: "authenticated_chat",
+  sourceOrigin: null,
+  createdAt: nowIso,
+  updatedAt: nowIso,
+  messageCount: 1,
+  userMessageCount: 1,
+  assistantMessageCount: 0,
+  messagesTotal: 1,
+  messageWindowOffset: 0,
+  messageWindowLimit: 50,
+  hasOlderMessages: false,
+  nextCursor: null,
+  ownership,
+  messages: [
+    { id: `${id}-message`, role: "user" as const, source: "customer" as const, content: "Can I speak to someone?", createdAt: nowIso },
+  ],
+});
+
+const stubEmptyQualityQueue = async (page: import("@playwright/test").Page) => {
+  await page.route("**/backend/api/v1/quality/turns**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ items: [], total: 0, page: 1, pageSize: 25, totalPages: 1 }),
+    });
+  });
+};
+
+test("operator assigns a waiting handoff to a teammate, who then holds it", async ({ page }) => {
+  const conversationId = "conversation-hand-to";
+  const waiting = handoffOwnership(conversationId, null, 1);
+  const transferRequests: Array<{ toUserId: string; expectedVersion: number }> = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    historyList: { conversations: [handoffSummary(conversationId, "Refund for a cancelled class", waiting)], total: 1, nextCursor: null, hasMore: false },
+    conversationDetails: { [conversationId]: handoffDetail(conversationId, waiting) },
+    conversationOperators: teammates,
+    transferRequests,
+  });
+  await stubEmptyQualityQueue(page);
+
+  await page.goto(`/w/${workspaceKey}/activity`);
+  await page.getByLabel("Inbox queue").getByRole("button", { name: /Refund for a cancelled class/ }).click();
+
+  const response = page.getByLabel("Response", { exact: true });
+  await response.getByRole("textbox", { name: "Reply to the visitor" }).fill("Draft for Dana");
+  await response.getByRole("button", { name: "Assign", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Dana Scully" }).click();
+
+  await expect.poll(() => transferRequests).toEqual([{ toUserId: "user-dana", expectedVersion: 1 }]);
+  await expect(response.getByText("Dana Scully is handling this")).toBeVisible();
+  await expect(response.getByRole("textbox", { name: "Reply to the visitor" })).toHaveCount(0);
+  await expect(response.getByRole("button", { name: "Reassign" })).toBeVisible();
+});
+
+test("operator assigns a waiting handoff to themselves and keeps the composer", async ({ page }) => {
+  const conversationId = "conversation-assign-me";
+  const waiting = handoffOwnership(conversationId, null, 1);
+  const transferRequests: Array<{ toUserId: string; expectedVersion: number }> = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    historyList: { conversations: [handoffSummary(conversationId, "Lost parcel", waiting)], total: 1, nextCursor: null, hasMore: false },
+    conversationDetails: { [conversationId]: handoffDetail(conversationId, waiting) },
+    conversationOperators: teammates,
+    transferRequests,
+  });
+  await stubEmptyQualityQueue(page);
+
+  await page.goto(`/w/${workspaceKey}/activity`);
+  await page.getByLabel("Inbox queue").getByRole("button", { name: /Lost parcel/ }).click();
+
+  const response = page.getByLabel("Response", { exact: true });
+  const replyBox = response.getByRole("textbox", { name: "Reply to the visitor" });
+  await replyBox.fill("Draft I keep");
+  await response.getByRole("button", { name: "Assign", exact: true }).click();
+  const menu = page.getByRole("menu");
+  await expect(menu.getByRole("menuitem")).toHaveText(["Me", "Dana Scully", "fox@example.com"]);
+  await menu.getByRole("menuitem", { name: "Me" }).click();
+
+  await expect.poll(() => transferRequests).toEqual([{ toUserId: currentUserId, expectedVersion: 1 }]);
+  await expect(response.getByRole("button", { name: "Reassign" })).toBeVisible();
+  await expect(replyBox).toHaveValue("Draft I keep");
+});
+
+test("handing to a teammate who can no longer take it keeps the draft and re-reads the teammates", async ({ page }) => {
+  const conversationId = "conversation-hand-to-gone";
+  const waiting = handoffOwnership(conversationId, null, 1);
+  const requestLog: string[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    historyList: { conversations: [handoffSummary(conversationId, "Billing question", waiting)], total: 1, nextCursor: null, hasMore: false },
+    conversationDetails: { [conversationId]: handoffDetail(conversationId, waiting) },
+    conversationOperators: [...teammates, { userId: "user-skinner", label: "Walter Skinner" }],
+    ineligibleTransferTargets: ["user-skinner"],
+    requestLog,
+  });
+  await stubEmptyQualityQueue(page);
+
+  await page.goto(`/w/${workspaceKey}/activity`);
+  await page.getByLabel("Inbox queue").getByRole("button", { name: /Billing question/ }).click();
+
+  const response = page.getByLabel("Response", { exact: true });
+  const replyBox = response.getByRole("textbox", { name: "Reply to the visitor" });
+  const teammateReads = () => requestLog.filter((entry) => entry === "GET /conversations/operators").length;
+  await replyBox.fill("Draft that must survive");
+  await response.getByRole("button", { name: "Assign", exact: true }).click();
+  const readsBeforeHandOff = teammateReads();
+  await page.getByRole("menuitem", { name: "Walter Skinner" }).click();
+
+  await expect(response.getByRole("status")).toBeVisible();
+  await expect(replyBox).toHaveValue("Draft that must survive");
+  await expect.poll(teammateReads).toBeGreaterThan(readsBeforeHandOff);
+});
+
+test("operator reassigns a handoff a teammate holds to themselves and gets the composer back", async ({ page }) => {
+  const conversationId = "conversation-take-over";
+  const heldByDana = handoffOwnership(conversationId, teammates[1], 4);
+  const transferRequests: Array<{ toUserId: string; expectedVersion: number }> = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    historyList: { conversations: [handoffSummary(conversationId, "Invoice address change", heldByDana)], total: 1, nextCursor: null, hasMore: false },
+    conversationDetails: { [conversationId]: handoffDetail(conversationId, heldByDana) },
+    conversationOperators: teammates,
+    transferRequests,
+  });
+  await stubEmptyQualityQueue(page);
+
+  await page.goto(`/w/${workspaceKey}/activity`);
+  await page.getByLabel("Inbox queue").getByRole("button", { name: /Invoice address change/ }).click();
+
+  const response = page.getByLabel("Response", { exact: true });
+  await expect(response.getByText("Dana Scully is handling this")).toBeVisible();
+  await expect(response.getByRole("textbox", { name: "Reply to the visitor" })).toHaveCount(0);
+
+  await response.getByRole("button", { name: "Reassign" }).click();
+  // Me first, then everyone else but Dana, who holds it.
+  await expect(page.getByRole("menu").getByRole("menuitem")).toHaveText(["Me", "fox@example.com"]);
+  await page.getByRole("menuitem", { name: "Me" }).click();
+
+  await expect.poll(() => transferRequests).toEqual([{ toUserId: currentUserId, expectedVersion: 4 }]);
+  await expect(response.getByRole("textbox", { name: "Reply to the visitor" })).toBeVisible();
+  await expect(response.getByText("Dana Scully is handling this")).toHaveCount(0);
+});
+
+test("operator reassigns a handoff a teammate holds to a third teammate", async ({ page }) => {
+  const conversationId = "conversation-reassign-third";
+  const heldByDana = handoffOwnership(conversationId, teammates[1], 4);
+  const transferRequests: Array<{ toUserId: string; expectedVersion: number }> = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    historyList: { conversations: [handoffSummary(conversationId, "Change of delivery date", heldByDana)], total: 1, nextCursor: null, hasMore: false },
+    conversationDetails: { [conversationId]: handoffDetail(conversationId, heldByDana) },
+    conversationOperators: teammates,
+    transferRequests,
+  });
+  await stubEmptyQualityQueue(page);
+
+  await page.goto(`/w/${workspaceKey}/activity`);
+  await page.getByLabel("Inbox queue").getByRole("button", { name: /Change of delivery date/ }).click();
+
+  const response = page.getByLabel("Response", { exact: true });
+  await expect(response.getByText("Dana Scully is handling this")).toBeVisible();
+  await response.getByRole("button", { name: "Reassign" }).click();
+  await page.getByRole("menuitem", { name: "fox@example.com" }).click();
+
+  await expect.poll(() => transferRequests).toEqual([{ toUserId: "user-fox", expectedVersion: 4 }]);
+  await expect(response.getByText("fox@example.com is handling this")).toBeVisible();
+  await expect(response.getByRole("textbox", { name: "Reply to the visitor" })).toHaveCount(0);
+});
+
+test("ownership taken over elsewhere reaches an open pane through the tail poll, and the composer switches away", async ({ page }) => {
+  const conversationId = "conversation-tail-ownership";
+  const waiting = handoffOwnership(conversationId, null, 1);
+  const takenByDana = handoffOwnership(conversationId, teammates[1], 2);
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    historyList: { conversations: [handoffSummary(conversationId, "Order not received", waiting)], total: 1, nextCursor: null, hasMore: false },
+    conversationDetails: { [conversationId]: handoffDetail(conversationId, waiting) },
+    conversationOperators: teammates,
+  });
+  await stubEmptyQualityQueue(page);
+
+  // The conversation-detail fetch is never re-read in this test (no reply, no
+  // transfer, no hand-back from this operator) and keeps reporting the
+  // unclaimed handoff throughout. Only the tail poll — read every second while
+  // the pane is open — reports that Dana took it, standing in for a transfer
+  // made from another tab or teammate while this pane stayed open.
+  let tailCalls = 0;
+  await page.route(`**/backend/api/v1/history/chat/${conversationId}/tail**`, async (route) => {
+    tailCalls += 1;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ messages: [], cursor: null, ownership: tailCalls === 1 ? waiting : takenByDana }),
+    });
+  });
+
+  await page.goto(`/w/${workspaceKey}/activity`);
+  await page.getByLabel("Inbox queue").getByRole("button", { name: /Order not received/ }).click();
+
+  const response = page.getByLabel("Response", { exact: true });
+  await expect(response.getByRole("textbox", { name: "Reply to the visitor" })).toBeVisible();
+
+  await expect(response.getByText("Dana Scully is handling this")).toBeVisible();
+  await expect(response.getByRole("textbox", { name: "Reply to the visitor" })).toHaveCount(0);
+  await expect(response.getByRole("button", { name: "Reassign" })).toBeVisible();
+});
+
+// The record a hand-back leaves behind: AI-owned again, naming no teammate.
+const handedBackOwnership = (conversationId: string, version: number) => ({
+  ...handoffOwnership(conversationId, null, version),
+  state: "ai_owned" as const,
+  reason: null,
+});
+
+// The tail keeps reporting `held` until the returned callback runs, then the
+// hand-back record — standing in for Done pressed in another tab, by a
+// teammate, or from Slack while this pane stays open. The detail fetch is
+// never re-read before then, so it keeps reporting `held` throughout.
+const routeTailHandBack = async (
+  page: import("@playwright/test").Page,
+  conversationId: string,
+  held: HandoffOwnershipFixture,
+  handedBack: ReturnType<typeof handedBackOwnership>,
+) => {
+  let handedBackElsewhere = false;
+  await page.route(`**/backend/api/v1/history/chat/${conversationId}/tail**`, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ messages: [], cursor: null, ownership: handedBackElsewhere ? handedBack : held }),
+    });
+  });
+  return () => {
+    handedBackElsewhere = true;
+  };
+};
+
+test("a hand-back made elsewhere reaches an open pane on my conversation through the tail poll, and sending claims it again", async ({ page }) => {
+  const conversationId = "conversation-tail-hand-back-mine";
+  const heldByMe = handoffOwnership(conversationId, teammates[0], 2);
+  const requestLog: string[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    historyList: { conversations: [handoffSummary(conversationId, "Gift card balance", heldByMe)], total: 1, nextCursor: null, hasMore: false },
+    conversationDetails: { [conversationId]: handoffDetail(conversationId, heldByMe) },
+    conversationOperators: teammates,
+    requestLog,
+  });
+  await stubEmptyQualityQueue(page);
+  const handBackElsewhere = await routeTailHandBack(page, conversationId, heldByMe, handedBackOwnership(conversationId, 3));
+
+  await page.goto(`/w/${workspaceKey}/activity`);
+  await page.getByLabel("Inbox queue").getByRole("button", { name: /Gift card balance/ }).click();
+
+  const response = page.getByLabel("Response", { exact: true });
+  const replyBox = response.getByRole("textbox", { name: "Reply to the visitor" });
+  await expect(response.getByRole("button", { name: "Done" })).toBeVisible();
+  await expect(response.getByRole("button", { name: "Reassign" })).toBeVisible();
+
+  handBackElsewhere();
+
+  // Nothing left to hand back or reassign: the agent holds it again.
+  await expect(response.getByRole("button", { name: "Done" })).toHaveCount(0);
+  await expect(response.getByRole("button", { name: "Reassign" })).toHaveCount(0);
+  await expect(response.getByRole("button", { name: "Assign", exact: true })).toHaveCount(0);
+  await expect(replyBox).toBeVisible();
+
+  await replyBox.fill("I'm back on this one");
+  await response.getByRole("button", { name: "Send", exact: true }).click();
+  await expect.poll(() => requestLog).toContainEqual(`POST /conversations/${conversationId}/takeover`);
+});
+
+test("a hand-back made elsewhere on a conversation a teammate held brings the claim-on-send composer back", async ({ page }) => {
+  const conversationId = "conversation-tail-hand-back-teammate";
+  const heldByDana = handoffOwnership(conversationId, teammates[1], 4);
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    historyList: { conversations: [handoffSummary(conversationId, "Missing voucher code", heldByDana)], total: 1, nextCursor: null, hasMore: false },
+    conversationDetails: { [conversationId]: handoffDetail(conversationId, heldByDana) },
+    conversationOperators: teammates,
+  });
+  await stubEmptyQualityQueue(page);
+  const handBackElsewhere = await routeTailHandBack(page, conversationId, heldByDana, handedBackOwnership(conversationId, 5));
+
+  await page.goto(`/w/${workspaceKey}/activity`);
+  await page.getByLabel("Inbox queue").getByRole("button", { name: /Missing voucher code/ }).click();
+
+  const response = page.getByLabel("Response", { exact: true });
+  const replyBox = response.getByRole("textbox", { name: "Reply to the visitor" });
+  await expect(response.getByText("Dana Scully is handling this")).toBeVisible();
+  await expect(replyBox).toHaveCount(0);
+
+  handBackElsewhere();
+
+  await expect(replyBox).toBeVisible();
+  await expect(replyBox).toHaveAttribute("placeholder", /sending takes over the conversation/);
+  await expect(response.getByText("Dana Scully is handling this")).toHaveCount(0);
+  await expect(response.getByRole("button", { name: "Reassign" })).toHaveCount(0);
+  await expect(response.getByRole("button", { name: "Done" })).toHaveCount(0);
+});
+
+test("the Taken by: Me filter shows only the signed-in teammate's handoffs, not the whole organisation's", async ({ page }) => {
+  const mine = handoffOwnership("conversation-mine", teammates[0], 2);
+  const danas = handoffOwnership("conversation-danas", teammates[1], 2);
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    historyList: {
+      conversations: [
+        handoffSummary("conversation-mine", "Mine to answer", mine),
+        handoffSummary("conversation-danas", "Dana is on it", danas),
+      ],
+      total: 2,
+      nextCursor: null,
+      hasMore: false,
+    },
+  });
+  await stubEmptyQualityQueue(page);
+
+  await page.goto(`/w/${workspaceKey}/activity`);
+  const queue = page.getByLabel("Inbox queue");
+  await expect(queue.getByRole("button", { name: /Mine to answer/ })).toBeVisible();
+  await expect(queue.getByRole("button", { name: /Dana is on it/ })).toBeVisible();
+
+  await queue.getByLabel("Filter by taken by").click();
+  await page.getByRole("option", { name: "Me", exact: true }).click();
+
+  await expect(queue.getByRole("button", { name: /Mine to answer/ })).toBeVisible();
+  await expect(queue.getByRole("button", { name: /Dana is on it/ })).toHaveCount(0);
+
+  await queue.getByLabel("Filter by taken by").click();
+  await page.getByRole("option", { name: "Dana Scully" }).click();
+
+  await expect(queue.getByRole("button", { name: /Dana is on it/ })).toBeVisible();
+  await expect(queue.getByRole("button", { name: /Mine to answer/ })).toHaveCount(0);
+});
+
+test("a feedback item on a conversation a teammate holds still offers Done", async ({ page }) => {
+  const conversationId = "conversation-feedback-held";
+  const assistantMessageId = "assistant-feedback-held";
+  const heldByDana = handoffOwnership(conversationId, teammates[1], 3);
+  const feedbackTurn = {
+    assistantMessageId,
+    conversationId,
+    agentId: defaultAgentId,
+    agentName: "Gioia",
+    channel: "website_embed",
+    question: "Is the studio open on holidays?",
+    answerPreview: "The studio is open every day.",
+    skillName: "retrieval.answer",
+    skillOutcome: "grounded",
+    skillStatus: "completed",
+    totalLatencyMs: 900,
+    createdAt: nowIso,
+    feedback: {
+      upCount: 0,
+      downCount: 1,
+      latestDownUpdatedAt: nowIso,
+      comments: [{ value: "down", comment: "It is closed on holidays.", createdAt: nowIso, updatedAt: nowIso }],
+    },
+    triage: { state: "open", version: 0, resolution: null, legacyReason: null, closedAt: null, updatedAt: null },
+    verification: null,
+  };
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    conversationDetails: { [conversationId]: handoffDetail(conversationId, heldByDana) },
+    conversationOperators: teammates,
+  });
+  await page.route("**/backend/api/v1/quality/turns**", async (route) => {
+    const url = new URL(route.request().url());
+    const isWrittenFeedback =
+      url.searchParams.get("feedback") === "down" && url.searchParams.get("hasComment") === "true";
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        items: isWrittenFeedback ? [feedbackTurn] : [],
+        total: isWrittenFeedback ? 1 : 0,
+        page: 1,
+        pageSize: isWrittenFeedback ? 25 : 1,
+        totalPages: 1,
+      }),
+    });
+  });
+  await page.route("**/backend/api/v1/quality/turns/*/triage**", async (route) => {
+    const body = route.request().postDataJSON() as { state: string; expectedVersion: number };
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        state: body.state,
+        version: body.expectedVersion + 1,
+        resolution: null,
+        legacyReason: null,
+        closedAt: null,
+        updatedAt: nowIso,
+      }),
+    });
+  });
+
+  await page.goto(`/w/${workspaceKey}/activity?tab=needs-attention`);
+  await page.getByLabel("Inbox queue").getByRole("button", { name: /Is the studio open on holidays\?/ }).click();
+
+  const response = page.getByLabel("Response", { exact: true });
+  await expect(response.getByText("Dana Scully is handling this")).toBeVisible();
+  await expect(response.getByRole("textbox", { name: "Reply to the visitor" })).toHaveCount(0);
+
+  await response.getByRole("button", { name: "Done" }).click();
+  await expect(page.getByRole("heading", { name: "Resolve review" })).toBeVisible();
 });

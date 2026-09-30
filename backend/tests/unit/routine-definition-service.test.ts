@@ -15,6 +15,8 @@ import type { SkillAuthoringCatalog, SkillAuthoringDescriptor } from "../../src/
 import type { AgentContextVariableEnablement, ContextVariable } from "../../src/modules/context-variables/public.js";
 import { capabilityNames, type CapabilityPolicy } from "../../src/shared/domain/capabilityPolicy.js";
 import type { ActionCapabilityMap } from "../../src/shared/domain/actionCapabilities.js";
+import { createDefaultApplicationComposition } from "../../src/app/composition/defaultComposition.js";
+import { CONVERSATION_TRANSFER_NOTICE_ACTION_TYPE } from "../../src/modules/handoff/public.js";
 import { InMemoryRoutineDefinitionRepository } from "../support/fakes.js";
 
 const workspaceId = "11111111-1111-4111-8111-111111111111";
@@ -1055,6 +1057,27 @@ describe("RoutineDefinitionService", () => {
       ],
     });
     expect(validation.diagnostics[0]?.message).toContain("unknown.send");
+  });
+
+  it("reports an action step for a host-queued action a routine may not emit", async () => {
+    // The composed map is the one serving uses: a transfer notice has a worker handler, but only
+    // the transfer route may queue it.
+    const composition = createDefaultApplicationComposition({ logger: { error: () => undefined } });
+    const { service } = createService({
+      actionCapabilities: composition.actionCapabilityMap,
+      capabilityPolicy: new FakeCapabilityPolicy(),
+    });
+    const draft = await service.createDraft(workspaceId, agentId, actionDraft(CONVERSATION_TRANSFER_NOTICE_ACTION_TYPE));
+
+    const validation = await service.validate(workspaceId, agentId, { id: draft.routine.id });
+
+    expect(validation).toMatchObject({
+      ok: false,
+      diagnostics: [expect.objectContaining({ code: "unregistered_action_type", location: "step:step_send" })],
+    });
+    // A handler is registered for it; it is only not one a routine may emit.
+    expect(validation.diagnostics[0]?.message).not.toContain("no action handler is registered");
+    expect(validation.diagnostics[0]?.message).toContain("no action a routine may emit");
   });
 
   it("clears an action step when the workspace has the required capability", async () => {

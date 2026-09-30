@@ -1,7 +1,7 @@
 ---
 title: "Human Takeover"
 description: "Operator API and contract for taking over conversations and suppressing AI while handling manual responses."
-last_updated: 2026-09-22
+last_updated: 2026-09-30
 ---
 
 # Human Takeover
@@ -65,7 +65,31 @@ or directly through authenticated API endpoints under `/api/v1/conversations`.
 
 All endpoints require a bearer workspace session with the
 `workspace.conversation.takeover` permission. Every action records a
-`hitl.ownership` audit event.
+`hitl.ownership` audit event whose metadata names the acting teammate as
+`actorUserId`; a transfer also records the receiving teammate as `targetUserId`.
+The event is written once the action has committed, and the action stands even
+if that write fails: the endpoint still answers with the new ownership, and the
+failure is logged and reported with the conversation and teammate ids.
+
+Ownership belongs to a person, not to the organisation. The ownership record
+names the teammate handling the conversation in `ownerUserId`, and labels them in
+`ownerDisplayName` with their display name, or their email until they set one.
+The label is read from the teammate's profile each time, so a rename shows in the
+Inbox at once. `ownerAccountId` is the organisation the workspace belongs to and
+is the same for every teammate. The same ownership, label included, reaches
+anyone who reads the workspace's history with an API token or through the
+operator MCP server, so a teammate who has not set a display name is visible to
+them by email.
+
+A human-owned conversation is claimed exactly when it names a teammate in
+`ownerUserId`. One with `ownerUserId: null` waits for a teammate: the AI stays
+out of it, and the next teammate to take it over, reply, or receive a transfer
+claims it. A record with `ownerUserId: null` also has `ownerDisplayName: null`
+and `takenOverAt: null`. When a teammate's user is deleted, the conversations
+they held wait for a teammate this way, and nothing names the deleted teammate.
+
+The server applies the rules below on every surface: the dashboard, this API,
+and [Slack](./slack-channel.md#operator-actions-in-slack).
 
 ### Take over
 
@@ -79,7 +103,13 @@ Body:
 }
 ```
 
-`reason` is optional. The response returns the current ownership record.
+`reason` is optional. The response returns the current ownership record, with
+you as `ownerUserId`. Take over claims a conversation that is AI-owned or waiting
+for a teammate; on one you already hold it returns the record unchanged. One a
+teammate already holds returns `409` with the current ownership in
+`error.details.ownership`; you take it from them with a
+[transfer](#transfer-ownership) to yourself, which is what the dashboard's
+**Reassign → Me** does on a teammate's conversation.
 
 ### Reply as a human
 
@@ -95,10 +125,74 @@ Body:
 ```
 
 The reply is saved as an assistant-role message with `source:
-human_agent`. The message includes the operator identity in metadata. The
-`expectedVersion` value must match the current human-owned ownership record; if
-the conversation has been transferred or handed back, the endpoint returns
-`409` with the current ownership record in `error.details.ownership`.
+human_agent`. Its `metadata.humanAgent` records who sent it — `accountId`,
+`userId` — and the signature the visitor sees, `displayName`. The signature is
+your display name, or your organisation's name if you have not set one and that
+name holds no email address. With no display name and no usable organisation
+name, the reply goes out unsigned and the visitor sees it from "A teammate".
+
+Every surface — the visitor chat and embed, the dashboard, Ray, and this API —
+carries a reply's stored signature in `operatorDisplayName` as it was saved,
+with one exception: a signature with an email address anywhere in it is never
+shown, whether or not the reply records its author in `humanAgent.userId`, and
+the visitor sees that reply from "A teammate" instead.
+
+Operator reads also name the teammate who wrote each reply. The history detail
+and tail (`GET /api/v1/history/chat/{conversationId}` and its `/tail`) and Ray's
+transcript tools add `operatorLabel` to a human-agent reply: the teammate label
+of the user in `humanAgent.userId` — their display name, or their email until
+they set one — read from their profile each time, so it follows a rename. A reply
+that records no author, or whose author's user is deleted, carries its signature
+there instead, by the rule above. The dashboard badges a reply with
+`operatorLabel`, so teammates see who actually answered even when the visitor saw
+"A teammate". The public chat API never returns `operatorLabel`.
+
+Only the teammate who owns the conversation replies. A reply to a conversation
+the AI owns, or one waiting for a teammate, claims it for you first. When
+another teammate holds it, the endpoint returns `409` with code `conflict`, the
+message "Another teammate is handling this conversation", and the current
+ownership in `error.details.ownership`. `expectedVersion` must match the
+ownership record you replied from; a stale value also returns `409` with the
+current record.
+
+The ownership check, the saved reply, and its delivery to a customer channel
+such as Slack commit together, with the conversation and its ownership record
+locked in between. A transfer or hand-back that commits first refuses the reply
+with `409`, and no message is saved; one that arrives while the reply is being
+saved waits for it. The Slack post is queued on the action outbox in the same
+database transaction, keyed by the message, so the worker posts each reply once
+and retries a failed post. A reply that could not be saved or queued leaves
+nothing behind, so after a `5xx` you can send it again and the visitor sees it
+once.
+
+The visitor, the dashboard, and the customer channel hear of a reply only once
+it has committed, and from then on the reply stands: the endpoint answers `201`
+even when pushing it to the visitor's open chat or recording its audit event
+fails. Those failures are logged and reported with the conversation and message
+ids.
+
+The `201` response carries `message`, the saved reply, and `ownership`, the
+ownership after the reply. Its `version` moves on when the reply claimed the
+conversation, so use the returned record for your next call.
+
+### List teammates
+
+`GET /api/v1/conversations/operators`
+
+Returns the teammates a conversation can be handed to: active users of the
+workspace's organisation who hold `workspace.conversation.takeover` on it. A
+disabled teammate is left off the list and cannot receive a transfer.
+
+```json
+{
+  "operators": [
+    { "userId": "6f1c2d4e-8a90-4b7c-9d1e-2f3a4b5c6d7e", "label": "Dana Scully" },
+    { "userId": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d", "label": "fox@example.com" }
+  ]
+}
+```
+
+Each `label` is the teammate label: a display name, or the email until one is set.
 
 ### Transfer ownership
 
@@ -108,16 +202,35 @@ Body:
 
 ```json
 {
-  "toAccountId": "00000000-0000-0000-0000-000000000000",
+  "toUserId": "6f1c2d4e-8a90-4b7c-9d1e-2f3a4b5c6d7e",
   "expectedVersion": 3
 }
 ```
 
+Any teammate with the takeover permission can hand a human-owned conversation to
+a teammate — one waiting for a teammate, or one someone holds. Pass your own
+`userId` to take a conversation from the teammate holding it. The dashboard's
+**Assign** and **Reassign** menus make this call. `toUserId` must be
+one of the teammates [List teammates](#list-teammates) returns; anyone else,
+including a disabled teammate or a user in another organisation, returns `404`
+with code `transfer_target_unavailable`. A conversation outside the workspace
+returns `404` with code `not_found`.
+
 `expectedVersion` is an optimistic concurrency token from the ownership record.
 If ownership changed since the caller read it, the endpoint returns `409` with
 the current ownership record in `error.details.ownership`.
-`toAccountId` must be the account that owns the conversation workspace; targets
-outside the workspace are rejected.
+
+When you hand a conversation to someone else and email delivery is configured,
+they get an email with a link to it in the dashboard. The email names who handed
+it over and the workspace, and
+carries none of the transcript. The transfer and its notice commit together:
+the notice is queued on the action outbox in the same database transaction, and
+the document worker sends it, so the transfer returns without waiting for the
+mail provider and a failed send is retried. The worker sends the notice only if
+the recipient still holds the conversation at the ownership version the
+transfer produced, so a notice overtaken by a later transfer is dropped, even
+when the conversation comes back to the same teammate. Taking a conversation
+yourself sends nothing.
 
 ### Hand back to the AI
 
@@ -131,7 +244,10 @@ Body:
 }
 ```
 
-After hand-back, the next visitor message follows the normal assistant path.
+The teammate who owns the conversation hands it back, or anyone while it waits
+for a teammate. Anyone else gets `409` with the current ownership in
+`error.details.ownership`. After hand-back, the next visitor message follows the
+normal assistant path.
 
 ## Approvals
 
@@ -190,9 +306,16 @@ Conversation detail responses include `tailCursor`, which clients should use for
 follow-up tail calls. With no cursor, tail returns the newest bounded page and a
 cursor for the newest returned message. Messages include `source`, so a visitor
 sees a human reply distinctly, plus `operatorDisplayName` on a human-agent reply
-so the visitor can see who is answering (rendered as "👤 <name>"); only the name
-is exposed, never the operator's account id. The operator tail also includes
-`ownership`; the visitor tail never does.
+so the visitor can see who is answering (rendered as "👤 <name>"). That name is
+the reply's signature: the teammate's display name, or the organisation's name.
+Only the name is exposed — never an email, user id, or account id — and an
+unsigned reply, or one whose only signature is an email address, shows as
+"👤 A teammate". The operator tail also includes each reply's `operatorLabel`
+and, once a teammate has been involved in the conversation, its `ownership`
+record — AI-owned after a hand-back — so a reader polling the tail sees a claim,
+transfer, or hand-back made elsewhere. The operator conversation detail carries
+the same record, so whichever of the two a reader loaded last, the higher
+`version` is the current one. The visitor tail and detail carry neither.
 
 The third caller is an AI agent on the other side of the MCP converse surface. It
 holds a conversation with the agent but cannot watch a chat window, so it reads
@@ -220,7 +343,8 @@ message until a topic exists — with an outcome chip (In progress, Completed,
 or Handed off) plus search and filters for outcome, agent, and site.
 
 In **Needs you**, the left pane lists open items with search and filters for
-type, agent, and who has taken each one; critical escalations — an approval
+type, agent, and **Taken by**, which groups items by teammate — **Me** matches
+the conversations you hold; critical escalations — an approval
 to decide, a handoff awaiting or held by a human — sort to the top, followed
 by written negative feedback ordered by its latest creation or edit.
 Automatically detected signals and uncommented feedback stay in **Quality**
@@ -230,14 +354,31 @@ Both lenses share the same reading pane. For an actionable conversation —
 one awaiting a human or already human-owned — selecting it shows a one-line
 header naming the visitor, the page they were on, and how long they have
 been waiting; a situation card with the handoff reason and the visitor's
-opening request; the live transcript; and a reply composer that stays
-visible throughout. Sending a reply claims the item for you — there is no
-separate take-over step. Messages carry attribution (a badge for human-agent
-and system messages), and the pane reads the tail endpoint while open, so
-new visitor messages and your own replies appear without a manual refresh.
-**Done** closes a handoff and hands the conversation back to the agent; on a
-negative-feedback item, **Done** opens the same resolution-reason flow
-Quality → Review uses to classify it. An approval closes when you choose one
+opening request; the live transcript; and a reply composer. Sending a reply
+claims a conversation nobody holds yet — there is no separate take-over step.
+**Assign** next to Send places a conversation waiting for a teammate: **Me**
+first, then every teammate who can take it. Once someone holds the conversation,
+the menu reads **Reassign** and lists **Me** and every teammate except whoever
+holds it; on one you hold, it lists your teammates. Choosing a teammate transfers
+the conversation to them, and they get an email with a link when email delivery
+is configured. When a teammate holds the conversation, the composer gives way to
+"Dana Scully is handling this · **Reassign**", so two people never reply blind;
+Reassign → **Me** transfers it to you and brings the composer back, with anything
+you had drafted still in it. Messages carry attribution: a human reply's badge
+names the teammate who wrote it, by display name or email, and system messages
+have a badge of their own. The pane reads the tail endpoint while open, so new
+visitor messages, your own replies, and a take-over, reassignment, or hand-back
+made elsewhere appear without a manual refresh. Until the dashboard knows who
+you are, the pane shows none of the controls that depend on it — no "is handling
+this" line, no Assign or Reassign, and no Done on a handoff.
+**Done** closes a handoff and hands the conversation back to the agent; it shows
+when you hold the conversation or nobody has claimed it. A conversation shows as
+one row: while it also has an open handoff or approval, the Inbox folds its
+negative feedback into that row instead of listing it separately, so Done there
+closes the handoff or approval, not the feedback. Once the conversation is back
+with the agent, the feedback appears as its own item, and **Done** on it opens
+the same resolution-reason flow Quality → Review uses to classify it — closing
+it leaves ownership alone. An approval closes when you choose one
 of its decision options — it needs no separate Done step. For any other conversation, the
 reading pane is read-only, with an outcome footer in place of the composer.
 

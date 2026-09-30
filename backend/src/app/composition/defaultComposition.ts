@@ -50,6 +50,7 @@ import type { DirectiveMatchGatewayFactory } from "../../shared/infra/llm/contex
 import {
   ApplicationModuleCoordinator,
   createApplicationExtensionRegistry,
+  routineEmittableActionHandlers,
   type ApplicationDirectiveRegistration,
   type ApplicationModule,
 } from "./applicationModule.js";
@@ -63,6 +64,7 @@ import { createUsageReportingApplicationModule } from "./builtIn/usageReportingM
 import { createAnswerDirectivesApplicationModule } from "./builtIn/answerDirectivesModule.js";
 import { createContactRoutineApplicationModule } from "./builtIn/contactRoutineModule.js";
 import { createWebhookSendApplicationModule } from "./builtIn/webhookSendModule.js";
+import { createConversationTransferNoticeApplicationModule } from "./builtIn/conversationTransferNoticeModule.js";
 import { createCustomerEmailApplicationModule } from "../../modules/customerEmail/composition.js";
 import { createSlackApplicationModule } from "../../modules/slack/composition.js";
 import { createOssOrganizationCreationApplicationModule } from "../../modules/auth/composition.js";
@@ -106,7 +108,10 @@ export interface ApplicationComposition {
   publicChatActionAdvertiserRegistrations: ReturnType<typeof createApplicationExtensionRegistry>["publicChatActionAdvertiserRegistrations"];
   routineRegistrations: ReturnType<typeof createApplicationExtensionRegistry>["routineRegistrations"];
   publishedRoutineRegistrationSource: ReturnType<typeof createApplicationExtensionRegistry>["publishedRoutineRegistrationSource"];
+  /** Every registered handler; the worker dispatches all of them. */
   actionHandlerRegistrations: ReturnType<typeof createApplicationExtensionRegistry>["actionHandlerRegistrations"];
+  /** The handlers a routine step may emit: what routine authoring offers and serving admits. */
+  routineActionHandlerRegistrations: ReturnType<typeof createApplicationExtensionRegistry>["actionHandlerRegistrations"];
   contactHistoryProviderRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["contactHistoryProviderRegistration"];
   answerFeedbackHistoryProviderRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["answerFeedbackHistoryProviderRegistration"];
   agentSurfaceExtensions: ReturnType<typeof createApplicationExtensionRegistry>["agentSurfaceExtensions"];
@@ -156,15 +161,18 @@ export const createDefaultApplicationComposition = (options: {
     createAudiencePulseApplicationModule(),
     createContactRoutineApplicationModule(),
     createWebhookSendApplicationModule(),
+    createConversationTransferNoticeApplicationModule(),
     createOssOrganizationCreationApplicationModule(),
     createCustomerEmailApplicationModule(options.env),
     createSlackApplicationModule(options.env),
     ...(options.modules ?? []),
   ]);
 
+  const routineActionHandlerRegistrations = routineEmittableActionHandlers(registry.actionHandlerRegistrations);
+
   return {
     capabilityPolicy: registry.capabilityPolicy ?? new DefaultAllowCapabilityPolicy(),
-    actionCapabilityMap: new StaticActionCapabilityMap(registry.actionHandlerRegistrations),
+    actionCapabilityMap: new StaticActionCapabilityMap(routineActionHandlerRegistrations),
     connectors: registry.connectors,
     telemetrySinks: registry.telemetrySinks,
     productAnalyticsSinks: registry.productAnalyticsSinks,
@@ -187,6 +195,7 @@ export const createDefaultApplicationComposition = (options: {
     routineRegistrations: registry.routineRegistrations,
     publishedRoutineRegistrationSource: registry.publishedRoutineRegistrationSource,
     actionHandlerRegistrations: registry.actionHandlerRegistrations,
+    routineActionHandlerRegistrations,
     contactHistoryProviderRegistration: registry.contactHistoryProviderRegistration,
     answerFeedbackHistoryProviderRegistration: registry.answerFeedbackHistoryProviderRegistration,
     agentSurfaceExtensions: registry.agentSurfaceExtensions,

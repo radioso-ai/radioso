@@ -15,6 +15,14 @@ interface UseConversationTailInput {
 
 interface ConversationTailState {
   messages: ChatConversationMessage[]
+  /**
+   * The conversation's ownership record as of the latest poll, passed through
+   * as the tail reports it: present whenever the conversation has a record,
+   * whatever its state — including AI-owned after a hand-back — and absent
+   * only when it never had one. The Inbox pane weighs it against the detail
+   * fetch's record by `version` (`freshestOwnership`) rather than trusting
+   * either read alone.
+   */
   ownership: ConversationOwnership | undefined
   cursor: string | null
   error: unknown

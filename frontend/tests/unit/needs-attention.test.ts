@@ -38,6 +38,7 @@ const ownership = (overrides: Partial<ConversationOwnership> = {}): Conversation
   workspaceId: 'workspace-1',
   state: 'human_owned',
   ownerAccountId: null,
+  ownerUserId: null,
   ownerDisplayName: null,
   reason: null,
   version: 1,
@@ -96,13 +97,13 @@ describe('needs attention helpers', () => {
   })
 
   it('labels assigned human ownership with the owner display name', () => {
-    expect(ownershipLabel(ownership({ ownerAccountId: 'account-2', ownerDisplayName: 'Ada Lovelace' }))).toBe(
+    expect(ownershipLabel(ownership({ ownerAccountId: 'account-2', ownerUserId: 'user-ada', ownerDisplayName: 'Ada Lovelace' }))).toBe(
       'Handled by Ada Lovelace',
     )
   })
 
   it('falls back to teammate when assigned ownership has no display name', () => {
-    expect(ownershipLabel(ownership({ ownerAccountId: 'account-2', ownerDisplayName: null }))).toBe(
+    expect(ownershipLabel(ownership({ ownerAccountId: 'account-2', ownerUserId: 'user-ada', ownerDisplayName: null }))).toBe(
       'Handled by a teammate',
     )
   })
@@ -112,7 +113,7 @@ describe('toHandoffInboxItem', () => {
   it('maps a human-owned conversation to a handoff inbox item', () => {
     const humanOwnedConversation: HumanOwnedConversationSummary = {
       ...conversation({ id: 'conversation-handoff', preview: 'Weekly yoga schedule' }),
-      ownership: ownership({ conversationId: 'conversation-handoff', version: 3, ownerAccountId: 'account-2', ownerDisplayName: 'Anna' }),
+      ownership: ownership({ conversationId: 'conversation-handoff', version: 3, ownerAccountId: 'account-1', ownerUserId: 'user-anna', ownerDisplayName: 'Anna' }),
     }
 
     expect(toHandoffInboxItem(humanOwnedConversation)).toMatchObject({
@@ -121,8 +122,7 @@ describe('toHandoffInboxItem', () => {
       type: 'handoff',
       severity: 'critical',
       title: 'Weekly yoga schedule',
-      takenByAccountId: 'account-2',
-      takenByDisplayName: 'Anna',
+      takenBy: { userId: 'user-anna', label: 'Anna' },
     })
   })
 })
@@ -147,17 +147,17 @@ describe('deriveInboxResponseHandoffItem', () => {
   it('returns a handoff item for a conversation claimed by an operator', () => {
     const claimed = conversation({
       id: 'conversation-claimed',
-      ownership: ownership({ conversationId: 'conversation-claimed', ownerAccountId: 'account-2', ownerDisplayName: 'Anna' }),
+      ownership: ownership({ conversationId: 'conversation-claimed', ownerAccountId: 'account-1', ownerUserId: 'user-anna', ownerDisplayName: 'Anna' }),
     })
 
-    expect(deriveInboxResponseHandoffItem(claimed, now)?.takenByDisplayName).toBe('Anna')
+    expect(deriveInboxResponseHandoffItem(claimed, now)?.takenBy?.label).toBe('Anna')
   })
 
   it('returns an actionable item (take-over-able) for an AI-owned conversation still in progress', () => {
-    // The list/detail endpoints omit `ownership` entirely for AI-owned
-    // conversations, so a live one arrives with no ownership record and a
-    // recent `updatedAt`. It must still be actionable — sending a reply
-    // claims it, exactly like a handoff.
+    // The list endpoint omits `ownership` for AI-owned conversations, so a
+    // live one arrives with no ownership record and a recent `updatedAt`. It
+    // must still be actionable — sending a reply claims it, exactly like a
+    // handoff.
     const inProgress = conversation({ id: 'conversation-in-progress', updatedAt: '2026-06-19T10:00:00.000Z' })
 
     const result = deriveInboxResponseHandoffItem(inProgress, now)
@@ -165,8 +165,26 @@ describe('deriveInboxResponseHandoffItem', () => {
     expect(result).toMatchObject({ conversationId: 'conversation-in-progress', type: 'handoff' })
     // No ownership record exists yet for a live, unclaimed conversation — the
     // composer's own claim-on-send flow creates it once the operator sends.
-    expect(result?.takenByAccountId).toBeUndefined()
-    expect(result?.takenByDisplayName).toBeUndefined()
+    expect(result?.takenBy).toBeUndefined()
+  })
+
+  it('treats an AI-owned record like no record: live while recent, read-only once quiet, never a waiting handoff', () => {
+    // The detail read carries the ownership record whenever one exists, so a
+    // conversation handed back to the agent arrives with an AI-owned record.
+    const handedBack = conversation({
+      id: 'conversation-handed-back',
+      ownership: ownership({ conversationId: 'conversation-handed-back', state: 'ai_owned', version: 4, takenOverAt: null }),
+      updatedAt: '2026-06-19T10:00:00.000Z',
+    })
+
+    expect(deriveInboxResponseHandoffItem(handedBack, now)).toMatchObject({
+      key: 'live:conversation-handed-back',
+      detail: 'In progress',
+      escalatedAt: undefined,
+      takenOverAt: null,
+      takenBy: undefined,
+    })
+    expect(deriveInboxResponseHandoffItem(handedBack, new Date('2026-06-19T10:20:00.000Z'))).toBeNull()
   })
 
   it('returns null (read-only) for a conversation with no ownership record that has gone quiet', () => {
@@ -199,8 +217,8 @@ describe('deriveInboxResponseHandoffItem', () => {
 
   it('accepts a detail-shaped conversation with no ownership field, deriving from recency alone', () => {
     // Same narrow detail shape as above, but for a live AI-owned
-    // conversation the detail endpoint also omits `ownership` — the
-    // in-progress/completed split must still work without it.
+    // conversation no teammate has been involved in, which has no ownership
+    // record — the in-progress/completed split must still work without it.
     const detailShaped = {
       id: 'conversation-detail-in-progress',
       updatedAt: '2026-06-19T10:00:00.000Z',
@@ -841,6 +859,7 @@ describe('inboxWaitingPresentation', () => {
       conversations: [humanOwned({
         ownership: ownership({
           ownerAccountId: 'account-anna',
+          ownerUserId: 'user-anna',
           ownerDisplayName: 'Anna',
           takenOverAt: '2026-06-19T11:55:00.000Z',
         }),
@@ -883,26 +902,26 @@ describe('inbox item last-message time and taken-by', () => {
     expect(items[0]).toMatchObject({ lastMessageAt: '2026-06-19T09:15:00.000Z' })
   })
 
-  it('marks an unclaimed handoff with a null taken-by account', () => {
+  it('marks an unclaimed handoff with a null taken-by', () => {
     const items = buildInboxItems({
       decisions: [],
       conversations: [humanOwned({ ownership: ownership({ ownerAccountId: null, ownerDisplayName: null }) })],
       qualityTurns: [],
     })
 
-    expect(items[0]).toMatchObject({ takenByAccountId: null })
+    expect(items[0]).toMatchObject({ takenBy: null })
   })
 
   it('carries the claimant onto a taken handoff', () => {
     const items = buildInboxItems({
       decisions: [],
       conversations: [humanOwned({
-        ownership: ownership({ ownerAccountId: 'account-2', ownerDisplayName: 'Ada Lovelace' }),
+        ownership: ownership({ ownerAccountId: 'account-1', ownerUserId: 'user-ada', ownerDisplayName: 'Ada Lovelace' }),
       })],
       qualityTurns: [],
     })
 
-    expect(items[0]).toMatchObject({ takenByAccountId: 'account-2', takenByDisplayName: 'Ada Lovelace' })
+    expect(items[0]).toMatchObject({ takenBy: { userId: 'user-ada', label: 'Ada Lovelace' } })
   })
 
   it('carries the anonymous session id onto a handoff item', () => {
@@ -935,7 +954,7 @@ describe('inbox item last-message time and taken-by', () => {
     })
 
     for (const item of items) {
-      expect(item.takenByAccountId).toBeUndefined()
+      expect(item.takenBy).toBeUndefined()
     }
   })
 })
@@ -963,7 +982,7 @@ describe('matchesInboxSearch', () => {
 })
 
 describe('filterInboxItems', () => {
-  const context = { currentAccountId: 'account-me' }
+  const context = { currentUserId: 'user-me' }
 
   it('filters by item type', () => {
     const items = buildInboxItems({
@@ -1021,7 +1040,7 @@ describe('filterInboxItems', () => {
         humanOwned({ id: 'c-unclaimed' }),
         humanOwned({
           id: 'c-claimed',
-          ownership: ownership({ conversationId: 'c-claimed', ownerAccountId: 'account-other', ownerDisplayName: 'Anna' }),
+          ownership: ownership({ conversationId: 'c-claimed', ownerAccountId: 'account-1', ownerUserId: 'user-anna', ownerDisplayName: 'Anna' }),
         }),
       ],
       qualityTurns: [commentedQualityTurn({ conversationId: 'c-feedback' })],
@@ -1032,17 +1051,21 @@ describe('filterInboxItems', () => {
     expect(filtered.map((i) => i.conversationId)).toEqual(['c-unclaimed'])
   })
 
-  it('taken-by me matches only the current operator\'s claims', () => {
+  it('taken-by me matches only the current teammate\'s claims, not their organisation\'s', () => {
     const items = buildInboxItems({
       decisions: [],
       conversations: [
         humanOwned({
           id: 'c-mine',
-          ownership: ownership({ conversationId: 'c-mine', ownerAccountId: 'account-me', ownerDisplayName: 'Me' }),
+          ownership: ownership({ conversationId: 'c-mine', ownerAccountId: 'account-1', ownerUserId: 'user-me', ownerDisplayName: 'Me' }),
         }),
         humanOwned({
           id: 'c-theirs',
-          ownership: ownership({ conversationId: 'c-theirs', ownerAccountId: 'account-other', ownerDisplayName: 'Anna' }),
+          ownership: ownership({ conversationId: 'c-theirs', ownerAccountId: 'account-1', ownerUserId: 'user-anna', ownerDisplayName: 'Anna' }),
+        }),
+        humanOwned({
+          id: 'c-unclaimed',
+          ownership: ownership({ conversationId: 'c-unclaimed' }),
         }),
       ],
       qualityTurns: [],
@@ -1059,17 +1082,17 @@ describe('filterInboxItems', () => {
       conversations: [
         humanOwned({
           id: 'c-anna',
-          ownership: ownership({ conversationId: 'c-anna', ownerAccountId: 'account-anna', ownerDisplayName: 'Anna' }),
+          ownership: ownership({ conversationId: 'c-anna', ownerAccountId: 'account-1', ownerUserId: 'user-anna', ownerDisplayName: 'Anna' }),
         }),
         humanOwned({
           id: 'c-other',
-          ownership: ownership({ conversationId: 'c-other', ownerAccountId: 'account-other', ownerDisplayName: 'Someone' }),
+          ownership: ownership({ conversationId: 'c-other', ownerAccountId: 'account-1', ownerUserId: 'user-other', ownerDisplayName: 'Someone' }),
         }),
       ],
       qualityTurns: [],
     })
 
-    const filtered = filterInboxItems(items, { ...EMPTY_INBOX_FILTERS, takenBy: 'account-anna' }, context)
+    const filtered = filterInboxItems(items, { ...EMPTY_INBOX_FILTERS, takenBy: 'user-anna' }, context)
 
     expect(filtered.map((i) => i.conversationId)).toEqual(['c-anna'])
   })
@@ -1136,23 +1159,44 @@ describe('listTakenByOperators', () => {
       conversations: [
         humanOwned({
           id: 'c-1',
-          ownership: ownership({ conversationId: 'c-1', ownerAccountId: 'account-anna', ownerDisplayName: 'Anna' }),
+          ownership: ownership({ conversationId: 'c-1', ownerAccountId: 'account-1', ownerUserId: 'user-anna', ownerDisplayName: 'Anna' }),
         }),
         humanOwned({
           id: 'c-2',
-          ownership: ownership({ conversationId: 'c-2', ownerAccountId: 'account-anna', ownerDisplayName: 'Anna' }),
+          ownership: ownership({ conversationId: 'c-2', ownerAccountId: 'account-1', ownerUserId: 'user-anna', ownerDisplayName: 'Anna' }),
         }),
         humanOwned({
           id: 'c-3',
-          ownership: ownership({ conversationId: 'c-3', ownerAccountId: 'account-x', ownerDisplayName: null }),
+          ownership: ownership({ conversationId: 'c-3', ownerAccountId: 'account-1', ownerUserId: 'user-x', ownerDisplayName: null }),
         }),
       ],
       qualityTurns: [],
     })
 
-    expect(listTakenByOperators(items)).toEqual([
-      { accountId: 'account-anna', displayName: 'Anna' },
-      { accountId: 'account-x', displayName: 'A teammate' },
+    expect(listTakenByOperators(items, null)).toEqual([
+      { userId: 'user-anna', label: 'Anna' },
+      { userId: 'user-x', label: 'A teammate' },
+    ])
+  })
+
+  it('excludes the current user: they already appear as "Me"', () => {
+    const items = buildInboxItems({
+      decisions: [],
+      conversations: [
+        humanOwned({
+          id: 'c-1',
+          ownership: ownership({ conversationId: 'c-1', ownerAccountId: 'account-1', ownerUserId: 'user-anna', ownerDisplayName: 'Anna' }),
+        }),
+        humanOwned({
+          id: 'c-3',
+          ownership: ownership({ conversationId: 'c-3', ownerAccountId: 'account-1', ownerUserId: 'user-x', ownerDisplayName: null }),
+        }),
+      ],
+      qualityTurns: [],
+    })
+
+    expect(listTakenByOperators(items, 'user-anna')).toEqual([
+      { userId: 'user-x', label: 'A teammate' },
     ])
   })
 })
@@ -1269,6 +1313,7 @@ describe('countAiHandledConversationsByAgent', () => {
           conversationId: 'c-1',
           state: 'human_owned',
           ownerAccountId: 'account-1',
+          ownerUserId: 'user-anna',
           ownerDisplayName: 'Anna',
         }),
       }),
@@ -1300,7 +1345,7 @@ describe('summarizeAiHandledConversations', () => {
       conversation({
         id: 'c-2',
         agentId: 'agent-1',
-        ownership: ownership({ conversationId: 'c-2', state: 'human_owned', ownerAccountId: 'account-1', ownerDisplayName: 'Anna' }),
+        ownership: ownership({ conversationId: 'c-2', state: 'human_owned', ownerAccountId: 'account-1', ownerUserId: 'user-anna', ownerDisplayName: 'Anna' }),
       }),
     ])).toEqual({ totalCount: 1, agentCount: 1 })
   })

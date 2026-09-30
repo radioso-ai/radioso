@@ -111,6 +111,11 @@ import { RoutineStateRepository } from "../../db/repositories/routineStateReposi
 import { QUALITY_RESOLUTION_REASONS } from "../../modules/quality/domain/resolution.js";
 import { buildOperatorMcpServices } from "./builders/operatorMcp.js";
 import { createDefaultVisitorGeoResolver } from "../composition/visitorGeoResolver.js";
+import { createConversationOperatorDirectory } from "../composition/conversationOperatorDirectory.js";
+import { createTeammateLabelReader } from "../composition/teammateLabelReader.js";
+import { createPostgresOwnershipReplyUnitOfWork } from "../composition/conversationOwnershipReplies.js";
+import { createPostgresOwnershipTransferUnitOfWork } from "../composition/conversationOwnershipTransfers.js";
+import { ConversationOwnershipService, OperatorIdentityResolver } from "../../modules/handoff/public.js";
 import { buildConversationLinkResolver } from "../composition/conversationLinkResolver.js";
 import { resolveWorkspaceManagedLlmModels } from "../../shared/infra/llm/workspaceManagedModels.js";
 import type { OperatorMcpClientMetadataSnapshot } from "../../modules/operatorMcpAuthorization/public.js";
@@ -297,6 +302,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     ingestionSettingsService: settings.ingestionSettingsService,
     routineTriggerEmbeddingService,
     workspaceInvalidationPublisher: realtimePublisherComposition.publisher,
+    teammateLabels: createTeammateLabelReader({ users: repositories.userRepository }),
   });
   const skillCatalog = buildSkillCatalogServices({
     accessGrantService: access.accessGrantService,
@@ -433,6 +439,10 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     logger,
     createId: randomUUID,
   });
+  const operatorIdentityResolver = new OperatorIdentityResolver({
+    users: repositories.userRepository,
+    accounts: repositories.accountRepository,
+  });
   const evalServices = buildEvalServices({
     chat,
     infrastructure,
@@ -457,6 +467,30 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     evalSuiteService,
     operatorReplyService,
   } = evalServices;
+  const conversationOperatorDirectory = createConversationOperatorDirectory({ accountAccess: access.accountAccessService });
+  const conversationOwnershipService = new ConversationOwnershipService({
+    conversations: repositories.conversationRepository,
+    ownership: repositories.conversationOwnershipRepository,
+    transfers: createPostgresOwnershipTransferUnitOfWork({
+      db: infrastructure.database.kysely,
+      actionDrain: chat.actionDrainDispatcher,
+      logger,
+      errorReporter: infrastructure.errorReportingService,
+    }),
+    replyWrites: createPostgresOwnershipReplyUnitOfWork({
+      db: infrastructure.database.kysely,
+      actionDrain: chat.actionDrainDispatcher,
+      logger,
+      errorReporter: infrastructure.errorReportingService,
+    }),
+    operators: conversationOperatorDirectory,
+    operatorIdentities: operatorIdentityResolver,
+    replies: operatorReplyService,
+    audit: infrastructure.auditService,
+    publisher: realtimePublisherComposition.publisher,
+    logger,
+    errorReporter: infrastructure.errorReportingService,
+  });
   const qualitySignalsService = new QualityTurnsService(
     infrastructure.database.kysely,
     new SkillCatalogOutcomeSource(skillCatalogService),
@@ -1082,7 +1116,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     documentStorage: documents.documentStorage,
     chatService: chat.chatService,
     approvalDecisionService: chat.approvalDecisionService,
-    operatorReplyService,
+    conversationOwnershipService,
+    conversationOperatorDirectory,
     workbenchReplayRunner: chat.workbenchReplayRunner,
     testExecutionService,
     chatBootstrapService: chat.chatBootstrapService,
@@ -1132,7 +1167,6 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     identityNonceRepository: repositories.identityNonceRepository,
     bootstrapGreetingCacheRepository: repositories.bootstrapGreetingCacheRepository,
     conversationRepository: repositories.conversationRepository,
-    conversationOwnershipRepository: repositories.conversationOwnershipRepository,
     messageRepository: repositories.messageRepository,
     connectorRegistry,
     connectorManagementService,

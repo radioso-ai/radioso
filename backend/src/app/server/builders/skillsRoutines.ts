@@ -181,7 +181,7 @@ export const buildRoutineAuthoringServices = (input: {
         description: skill.description,
         outcomeStatuses: skill.outcomes?.map((outcome) => outcome.name),
       })),
-      ...input.composition.actionHandlerRegistrations.map((registration) => ({
+      ...input.composition.routineActionHandlerRegistrations.map((registration) => ({
         type: registration.type,
         kind: "action" as const,
       })),

@@ -1044,6 +1044,7 @@ function PublicChatContent({
                   analyticsSurface={surface === 'embed' ? 'embed' : 'public_chat'}
                   onEmbedAnalyticsEvent={surface === 'embed' ? trackAnalyticsEvent : undefined}
                   skillCatalog={skillCatalog}
+                  audience="visitor"
                 />
                 <div ref={messagesEndRef} />
               </div>

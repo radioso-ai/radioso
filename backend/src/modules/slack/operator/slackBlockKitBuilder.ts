@@ -70,6 +70,16 @@ const escapeMrkdwn = (text: string): string =>
 const dashboardLinkMrkdwn = (dashboardUrl: string | null): string | null =>
   dashboardUrl ? `<${escapeMrkdwn(dashboardUrl)}|Open in dashboard>` : null;
 
+/**
+ * The private notice for a teammate whose action was refused because someone else holds the
+ * conversation. Reassigning it happens only in the dashboard, so the notice links there when a
+ * link resolves. The label is a teammate label and can be an email: post it ephemerally only.
+ */
+export const heldByTeammateNotice = (input: { ownerLabel: string | null; dashboardUrl?: string | null }): string => {
+  const notice = `${escapeMrkdwn(input.ownerLabel ?? "A teammate")} is handling this.`;
+  return input.dashboardUrl ? `${notice} <${escapeMrkdwn(input.dashboardUrl)}|Reassign in dashboard>` : notice;
+};
+
 const encodeOwnershipValue = (input: Record<string, string | number>): string => {
   const value = JSON.stringify(input);
   if (value.length > 2_000) {
@@ -149,7 +159,8 @@ export const buildOwnershipMessage = (input: {
   const contextText = input.contextText.trim() || input.conversationId;
   const dashboardLink = dashboardLinkMrkdwn(input.dashboardUrl);
   if (input.state === "human_owned") {
-    const ownerName = input.ownerName?.trim() || "Operator";
+    // The owner's name is teammate-chosen text: escaped, it cannot mention the channel or forge a link.
+    const ownerName = escapeMrkdwn(input.ownerName?.trim() || "a teammate");
     const version = input.version ?? 0;
     const status = `Handled by ${ownerName}`;
     return {

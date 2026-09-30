@@ -10,9 +10,12 @@ import {
   verifyPassword,
 } from "../../src/modules/auth/domain/authPrimitives.js";
 import {
+  containsEmailAddress,
   DISPLAY_NAME_MAX_LENGTH,
-  looksLikeEmailAddress,
   normalizeDisplayName,
+  outwardFacingName,
+  teammateLabel,
+  visitorFacingName,
 } from "../../src/modules/auth/domain/userDisplayName.js";
 
 describe("auth primitives", () => {
@@ -107,21 +110,100 @@ describe("user display name", () => {
 
 describe("email address shape", () => {
   it("matches the structure of an address, not its validity", () => {
-    expect(looksLikeEmailAddress("dana@corp.com")).toBe(true);
-    expect(looksLikeEmailAddress("a@b.c")).toBe(true);
-    expect(looksLikeEmailAddress("Dana @ Acme")).toBe(false);
-    expect(looksLikeEmailAddress("dana@corp")).toBe(false);
-    expect(looksLikeEmailAddress("Dana Smith")).toBe(false);
-    expect(looksLikeEmailAddress("a@.b.c")).toBe(true);
-    expect(looksLikeEmailAddress("a@b.")).toBe(false);
-    expect(looksLikeEmailAddress("@b.c")).toBe(false);
-    expect(looksLikeEmailAddress("a@b@c.d")).toBe(false);
+    expect(containsEmailAddress("dana@corp.com")).toBe(true);
+    expect(containsEmailAddress("a@b.c")).toBe(true);
+    expect(containsEmailAddress("Dana @ Acme")).toBe(false);
+    expect(containsEmailAddress("dana@corp")).toBe(false);
+    expect(containsEmailAddress("Dana Smith")).toBe(false);
+    expect(containsEmailAddress("a@.b.c")).toBe(true);
+    expect(containsEmailAddress("a@b.")).toBe(false);
+    expect(containsEmailAddress("@b.c")).toBe(false);
+    expect(containsEmailAddress("@dana")).toBe(false);
+  });
+
+  it("finds an address written among other text", () => {
+    expect(containsEmailAddress("Jane jane@acme.com")).toBe(true);
+    expect(containsEmailAddress("Jane (jane@acme.com)")).toBe(true);
+    expect(containsEmailAddress("Jane\tjane@acme.com")).toBe(true);
+    expect(normalizeDisplayName("Jane jane@acme.com")).toEqual({ ok: false, reason: "email_address" });
+  });
+
+  it("finds an address with more than one '@'", () => {
+    expect(containsEmailAddress("jane@@acme.com")).toBe(true);
+    expect(containsEmailAddress("a@b@c.d")).toBe(true);
+    expect(normalizeDisplayName("jane@@acme.com")).toEqual({ ok: false, reason: "email_address" });
+  });
+
+  it("sees an address written with lookalike characters that normalise to '@' and '.'", () => {
+    // U+FF20 FULLWIDTH COMMERCIAL AT and U+2024 ONE DOT LEADER render as '@' and '.'.
+    expect(containsEmailAddress("ceo\uFF20corp.com")).toBe(true);
+    expect(containsEmailAddress("ceo@corp\u2024com")).toBe(true);
+    expect(normalizeDisplayName("ceo\uFF20corp.com")).toEqual({ ok: false, reason: "email_address" });
+  });
+
+  it("reads the ideographic full stops as dots", () => {
+    // U+3002 IDEOGRAPHIC FULL STOP and U+FF61 HALFWIDTH IDEOGRAPHIC FULL STOP, which NFKC keeps.
+    expect(containsEmailAddress("jane@acme\u3002com")).toBe(true);
+    expect(containsEmailAddress("jane@acme\uFF61com")).toBe(true);
+    expect(normalizeDisplayName("jane@acme\u3002com")).toEqual({ ok: false, reason: "email_address" });
   });
 
   it("checks the email shape in linear time on long stored text", () => {
-    const hostile = `!@!.${"!.".repeat(200_000)}\u0000`;
+    const oneToken = `!@!.${"!.".repeat(200_000)}\u0000`;
+    const manyTokens = `${"@. ".repeat(100_000)}x@y`;
+    const manyAts = "@".repeat(400_000);
     const started = performance.now();
-    expect(looksLikeEmailAddress(hostile)).toBe(true);
+    expect(containsEmailAddress(oneToken)).toBe(true);
+    expect(containsEmailAddress(manyTokens)).toBe(false);
+    expect(containsEmailAddress(manyAts)).toBe(false);
     expect(performance.now() - started).toBeLessThan(250);
+  });
+});
+
+describe("teammate label", () => {
+  it("uses the display name, and the email until one is chosen", () => {
+    expect(teammateLabel({ displayName: "Ada Lovelace", email: "ada@example.com" })).toBe("Ada Lovelace");
+    expect(teammateLabel({ displayName: null, email: "ada@example.com" })).toBe("ada@example.com");
+  });
+});
+
+describe("visitor-facing name", () => {
+  it("uses the display name, then the organisation name", () => {
+    expect(visitorFacingName({ displayName: "Ada Lovelace", organizationName: "Acme" })).toBe("Ada Lovelace");
+    expect(visitorFacingName({ displayName: null, organizationName: "  Acme  " })).toBe("Acme");
+  });
+
+  it("is null rather than falling back to anything private", () => {
+    expect(visitorFacingName({ displayName: null, organizationName: "   " })).toBeNull();
+    expect(visitorFacingName({ displayName: null, organizationName: null })).toBeNull();
+  });
+
+  it("drops an organisation name shaped like an email address instead of showing it to a visitor", () => {
+    expect(visitorFacingName({ displayName: null, organizationName: "alice@acme.example" })).toBeNull();
+    expect(visitorFacingName({ displayName: null, organizationName: "  alice@acme.example  " })).toBeNull();
+  });
+
+  it("skips a display name saved shaped like an email address, falling back to the organisation name", () => {
+    // Names saved before display names were validated can still hold an address.
+    expect(visitorFacingName({ displayName: "ada@example.com", organizationName: "Acme" })).toBe("Acme");
+    expect(visitorFacingName({ displayName: "ada\uFF20example.com", organizationName: "Acme" })).toBe("Acme");
+    expect(visitorFacingName({ displayName: "ada@example.com", organizationName: "alice@acme.example" })).toBeNull();
+  });
+});
+
+describe("outward-facing name", () => {
+  it("is the first candidate that is neither blank nor shaped like an email address", () => {
+    expect(outwardFacingName("Dana Scully", "Dana on Slack")).toBe("Dana Scully");
+    expect(outwardFacingName(null, "  Dana on Slack ")).toBe("Dana on Slack");
+    expect(outwardFacingName("dana@example.com", "Dana on Slack")).toBe("Dana on Slack");
+    expect(outwardFacingName("  ", undefined, "dana\uFF20example.com")).toBeNull();
+    expect(outwardFacingName()).toBeNull();
+  });
+
+  it("skips a name with an address anywhere in it", () => {
+    expect(outwardFacingName("Dana dana@example.com", "Dana on Slack")).toBe("Dana on Slack");
+    expect(outwardFacingName("dana@@example.com", "dana@example\u3002com")).toBeNull();
+    expect(visitorFacingName({ displayName: "Ada ada@example.com", organizationName: "Acme acme@example\uFF61com" })).toBeNull();
+    expect(outwardFacingName("Dana @ Acme")).toBe("Dana @ Acme");
   });
 });

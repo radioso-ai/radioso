@@ -157,6 +157,7 @@ export interface OpenApiSchemaCatalog {
   ChatSuggestionSchema: z.ZodTypeAny;
   ConversationOwnershipResponseSchema: z.ZodTypeAny;
   ConversationOwnershipSchema: z.ZodTypeAny;
+  ConversationOperatorsResponseSchema: z.ZodTypeAny;
   ContextVariableCreateRequestSchema: z.ZodTypeAny;
   ContextVariableListResponseSchema: z.ZodTypeAny;
   ContextVariableParamsSchema: RouteParameterSchema;

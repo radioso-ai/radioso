@@ -2916,6 +2916,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/conversations/operators": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the teammates who can own a conversation
+         * @description Returns the active teammates who hold conversation takeover permission on the workspace, labelled by display name, else email. These are the valid transfer targets.
+         */
+        get: operations["listConversationOperators"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/conversations/{conversationId}/takeover": {
         parameters: {
             query?: never;
@@ -2925,7 +2945,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Take human ownership of a conversation */
+        /**
+         * Take human ownership of a conversation
+         * @description Claims a conversation the AI owns or that waits for a teammate. A conversation another teammate holds returns 409; take it from them by transferring it to yourself.
+         */
         post: operations["takeOverConversation"];
         delete?: never;
         options?: never;
@@ -2942,7 +2965,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Reply to a conversation as a human operator */
+        /**
+         * Reply to a conversation as a human operator
+         * @description Only the teammate who owns the conversation replies. A reply to a conversation the AI owns, or one waiting for a teammate, claims it for you first. A conversation another teammate holds, or an `expectedVersion` that is no longer current, returns 409 with the current ownership.
+         */
         post: operations["replyToConversation"];
         delete?: never;
         options?: never;
@@ -2959,7 +2985,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Transfer human ownership of a conversation */
+        /**
+         * Transfer human ownership of a conversation
+         * @description Hands a human-owned conversation to another teammate, or to yourself to take it from the teammate holding it. The receiving teammate gets an email with a link to the conversation unless they made the transfer. A target who is not a teammate able to own conversations on the workspace returns 404 with code `transfer_target_unavailable`; a conversation that is not in the workspace returns 404 with code `not_found`.
+         */
         post: operations["transferConversationOwnership"];
         delete?: never;
         options?: never;
@@ -2976,7 +3005,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Return a human-owned conversation to AI ownership */
+        /**
+         * Return a human-owned conversation to AI ownership
+         * @description Only the teammate who owns the conversation hands it back; anyone may while it waits unclaimed. A conversation another teammate holds, or an `expectedVersion` that is no longer current, returns 409 with the current ownership.
+         */
         post: operations["handBackConversation"];
         delete?: never;
         options?: never;
@@ -7405,12 +7437,24 @@ export interface components {
             workspaceId: string;
             /** @enum {string} */
             state: "ai_owned" | "human_owned";
-            /** Format: uuid */
+            /**
+             * Format: uuid
+             * @description The organisation the workspace belongs to while a teammate owns the conversation. Shared by every teammate, so it does not identify one.
+             */
             ownerAccountId: string | null;
+            /**
+             * Format: uuid
+             * @description The teammate handling the conversation; a human-owned conversation is claimed exactly when this is set. Null while a handoff waits to be claimed, when AI-owned, and once the owner's user is deleted.
+             */
+            ownerUserId: string | null;
+            /** @description The owner's teammate label: their display name, else their email. Null whenever `ownerUserId` is null. Operator-facing only. */
             ownerDisplayName: string | null;
             reason: string | null;
             version: number;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @description When the owning teammate claimed the conversation. Null whenever `ownerUserId` is null.
+             */
             takenOverAt: string | null;
             /** Format: date-time */
             createdAt: string;
@@ -7697,6 +7741,8 @@ export interface components {
             operatorDisplayName?: string;
             debug?: components["schemas"]["ChatConversationMessageDebug"];
             turnFailure?: components["schemas"]["ChatConversationTurnFailure"];
+            /** @description Operator-only. On a human-agent reply, the teammate who wrote it: their display name, else their email, read from their profile now. A reply that names no teammate, or whose teammate is gone, carries its signature instead. Never returned by the public chat API. */
+            operatorLabel?: string;
         };
         PublicChatConversationMessage: {
             /** Format: uuid */
@@ -7717,6 +7763,15 @@ export interface components {
         };
         ConversationOwnershipResponse: {
             ownership: components["schemas"]["ConversationOwnership"];
+        };
+        ConversationOperator: {
+            /** Format: uuid */
+            userId: string;
+            /** @description The teammate label: display name, else email. */
+            label: string;
+        };
+        ConversationOperatorsResponse: {
+            operators: components["schemas"]["ConversationOperator"][];
         };
         HumanReplyMessage: {
             /** Format: uuid */
@@ -7742,6 +7797,7 @@ export interface components {
         };
         HumanReplyMessageResponse: {
             message: components["schemas"]["HumanReplyMessage"];
+            ownership: components["schemas"]["ConversationOwnership"] & unknown;
         };
         ChatConversationDetail: {
             /** Format: uuid */
@@ -7779,12 +7835,12 @@ export interface components {
             /** @description Cursor for subsequent tail requests. It marks the newest message included when this detail response was produced. */
             tailCursor: string | null;
             messages: components["schemas"]["ChatConversationMessage"][];
-            ownership?: components["schemas"]["ConversationOwnership"];
+            ownership?: components["schemas"]["ConversationOwnership"] & unknown;
         };
         ChatConversationTail: {
             messages: components["schemas"]["ChatConversationMessage"][];
             cursor: string | null;
-            ownership?: components["schemas"]["ConversationOwnership"];
+            ownership?: components["schemas"]["ConversationOwnership"] & unknown;
         };
         PublicChatConversationTail: {
             messages: components["schemas"]["PublicChatConversationMessage"][];
@@ -22516,6 +22572,44 @@ export interface operations {
             };
         };
     };
+    listConversationOperators: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Teammates returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationOperatorsResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace conversation takeover permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     takeOverConversation: {
         parameters: {
             query?: never;
@@ -22675,8 +22769,11 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    /** Format: uuid */
-                    toAccountId: string;
+                    /**
+                     * Format: uuid
+                     * @description The teammate to hand the conversation to. Pass your own user id to take a conversation another teammate holds.
+                     */
+                    toUserId: string;
                     expectedVersion: number;
                 };
             };
@@ -22718,7 +22815,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Conversation not found */
+            /** @description Conversation not found (`not_found`), or transfer target unavailable (`transfer_target_unavailable`) */
             404: {
                 headers: {
                     [name: string]: unknown;

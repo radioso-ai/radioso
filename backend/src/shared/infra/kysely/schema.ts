@@ -578,6 +578,7 @@ export interface ConversationOwnership {
   created_at: Generated<Timestamp>;
   owner_account_id: string | null;
   owner_display_name: string | null;
+  owner_user_id: string | null;
   reason: string | null;
   state: string;
   taken_over_at: Timestamp | null;

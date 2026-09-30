@@ -280,19 +280,29 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     }),
   );
 
-  // Declared before the conversation summary/detail schemas so both can carry it. Absent on
-  // the response means the conversation is AI-owned (the ownership table is lazy: no row).
+  // Declared before the conversation summary/detail schemas so both can carry it. Absent on a
+  // summary means the conversation is AI-owned (the ownership table is lazy: no row); detail and
+  // tail carry an AI-owned record too once a teammate has been involved.
   const ConversationOwnershipSchema = registry.register(
     "ConversationOwnership",
     z.object({
       conversationId: z.string().uuid(),
       workspaceId: z.string().uuid(),
       state: z.enum(["ai_owned", "human_owned"]),
-      ownerAccountId: z.string().uuid().nullable(),
-      ownerDisplayName: z.string().nullable(),
+      ownerAccountId: z.string().uuid().nullable().openapi({
+        description: "The organisation the workspace belongs to while a teammate owns the conversation. Shared by every teammate, so it does not identify one.",
+      }),
+      ownerUserId: z.string().uuid().nullable().openapi({
+        description: "The teammate handling the conversation; a human-owned conversation is claimed exactly when this is set. Null while a handoff waits to be claimed, when AI-owned, and once the owner's user is deleted.",
+      }),
+      ownerDisplayName: z.string().nullable().openapi({
+        description: "The owner's teammate label: their display name, else their email. Null whenever `ownerUserId` is null. Operator-facing only.",
+      }),
       reason: z.string().nullable(),
       version: z.number().int().nonnegative(),
-      takenOverAt: z.string().datetime().nullable(),
+      takenOverAt: z.string().datetime().nullable().openapi({
+        description: "When the owning teammate claimed the conversation. Null whenever `ownerUserId` is null.",
+      }),
       createdAt: z.string().datetime(),
       updatedAt: z.string().datetime(),
     }),
@@ -609,10 +619,11 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     }),
   );
 
-  // Shared by the operator and public message schemas. `debug` and `turnFailure` are
-  // operator-only and are added on top of this shape for the dashboard schema alone:
-  // both carry turn diagnostics (and `turnFailure` carries raw error text), and the
-  // public presenter strips them from every message it returns.
+  // Shared by the operator and public message schemas. `debug`, `turnFailure`, and
+  // `operatorLabel` are operator-only and are added on top of this shape for the dashboard
+  // schema alone: the first two carry turn diagnostics (and `turnFailure` carries raw error
+  // text), `operatorLabel` can be a teammate's email, and the public presenter strips all
+  // three from every message it returns.
   const chatConversationMessageShape = {
     id: z.string().uuid(),
     role: z.enum(["user", "assistant", "system"]),
@@ -633,6 +644,9 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       ...chatConversationMessageShape,
       debug: ChatConversationMessageDebugSchema.optional(),
       turnFailure: ChatConversationTurnFailureSchema.optional(),
+      operatorLabel: z.string().optional().openapi({
+        description: "Operator-only. On a human-agent reply, the teammate who wrote it: their display name, else their email, read from their profile now. A reply that names no teammate, or whose teammate is gone, carries its signature instead. Never returned by the public chat API.",
+      }),
     }),
   );
 
@@ -645,6 +659,21 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     "ConversationOwnershipResponse",
     z.object({
       ownership: ConversationOwnershipSchema,
+    }),
+  );
+
+  const ConversationOperatorSchema = registry.register(
+    "ConversationOperator",
+    z.object({
+      userId: z.string().uuid(),
+      label: z.string().openapi({ description: "The teammate label: display name, else email." }),
+    }),
+  );
+
+  const ConversationOperatorsResponseSchema = registry.register(
+    "ConversationOperatorsResponse",
+    z.object({
+      operators: z.array(ConversationOperatorSchema),
     }),
   );
 
@@ -670,6 +699,9 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     "HumanReplyMessageResponse",
     z.object({
       message: HumanReplyMessageSchema,
+      ownership: ConversationOwnershipSchema.openapi({
+        description: "The conversation's ownership after the reply. A reply to an AI-owned or unclaimed conversation claims it for the replier, so its version moves on.",
+      }),
     }),
   );
 
@@ -717,7 +749,9 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
         description: "Cursor for subsequent tail requests. It marks the newest message included when this detail response was produced.",
       }),
       messages: z.array(ChatConversationMessageSchema),
-      ownership: ConversationOwnershipSchema.optional(),
+      ownership: ConversationOwnershipSchema.optional().openapi({
+        description: "The conversation's ownership record whenever one exists, `ai_owned` included, the same as the tail's, so a reader holding an older record sees a hand-back by its higher version. Absent until a teammate is first involved.",
+      }),
     }),
   );
 
@@ -726,7 +760,9 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     z.object({
       messages: z.array(ChatConversationMessageSchema),
       cursor: z.string().nullable(),
-      ownership: ConversationOwnershipSchema.optional(),
+      ownership: ConversationOwnershipSchema.optional().openapi({
+        description: "The conversation's ownership record whenever one exists, `ai_owned` included, so a hand-back made elsewhere reaches a reader polling the tail. Absent until a teammate is first involved.",
+      }),
     }),
   );
 
@@ -829,6 +865,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     ChatSuggestionSchema,
     ConversationOwnershipSchema,
     ConversationOwnershipResponseSchema,
+    ConversationOperatorsResponseSchema,
     AssistantRouteSchema,
     AssistantRouteDiagnosticsSchema,
     CapabilitySubTraceSchema,

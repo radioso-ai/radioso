@@ -223,7 +223,7 @@ const readHandoffs = async (
         urgency: "blocking" as const,
         title: conversation.preview,
         // Null means nobody has taken the conversation over, which is the more urgent handoff.
-        detail: conversation.ownership?.takenOverAt ? conversation.ownership.ownerDisplayName : null,
+        detail: conversation.ownership?.ownerUserId ? conversation.ownership.ownerDisplayName : null,
         since: escalatedAt(conversation),
         count: 1,
         agentId: conversation.agentId,

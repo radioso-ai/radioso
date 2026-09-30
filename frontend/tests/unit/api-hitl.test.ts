@@ -57,7 +57,7 @@ describe('hitlApi', () => {
 
     await hitlApi.takeOverConversation('conversation/1', { reason: 'Needs review' })
     await hitlApi.replyAsHuman('conversation/1', { message: 'Human reply', expectedVersion: 2 })
-    await hitlApi.transferConversation('conversation/1', { toAccountId: 'account-2', expectedVersion: 3 })
+    await hitlApi.transferConversation('conversation/1', { toUserId: 'user-2', expectedVersion: 3 })
     await hitlApi.handBackConversation('conversation/1', { expectedVersion: 4 })
 
     expect(requestMock).toHaveBeenNthCalledWith(
@@ -75,7 +75,7 @@ describe('hitlApi', () => {
     expect(requestMock).toHaveBeenNthCalledWith(
       3,
       '/conversations/conversation%2F1/transfer',
-      { method: 'POST', body: JSON.stringify({ toAccountId: 'account-2', expectedVersion: 3 }) },
+      { method: 'POST', body: JSON.stringify({ toUserId: 'user-2', expectedVersion: 3 }) },
       { withSession: true },
     )
     expect(requestMock).toHaveBeenNthCalledWith(
@@ -84,6 +84,16 @@ describe('hitlApi', () => {
       { method: 'POST', body: JSON.stringify({ expectedVersion: 4 }) },
       { withSession: true },
     )
+  })
+
+  it('lists the teammates a conversation can be handed to', async () => {
+    const response = { operators: [{ userId: 'user-2', label: 'Dana Scully' }] }
+    requestMock.mockResolvedValueOnce(response)
+
+    const { hitlApi } = await import('@/lib/api-hitl')
+
+    await expect(hitlApi.listConversationOperators()).resolves.toEqual(response)
+    expect(requestMock).toHaveBeenCalledWith('/conversations/operators', { method: 'GET' }, { withSession: true })
   })
 
   it('tails a conversation with optional query params', async () => {
@@ -118,5 +128,18 @@ describe('hitlApi', () => {
     })).rejects.toBe(invalidOption)
     expect(getHitlApiErrorStatus(invalidOption)).toBe(422)
     expect(isHitlApiStatusError(invalidOption, 422)).toBe(true)
+  })
+
+  it('tells an ineligible transfer target from a missing conversation by error code', async () => {
+    const { transferFailureCause } = await import('@/lib/api-hitl')
+
+    expect(transferFailureCause({ status: 404, error: { code: 'transfer_target_unavailable', message: 'Transfer target not found' } }))
+      .toBe('target_unavailable')
+    expect(transferFailureCause({ status: 404, error: { code: 'not_found', message: 'Conversation not found' } }))
+      .toBe('conversation_missing')
+    expect(transferFailureCause({ status: 404, error: { code: 'HTTP_ERROR', message: 'Not Found' } })).toBeNull()
+    expect(transferFailureCause({ status: 404 })).toBeNull()
+    expect(transferFailureCause({ status: 409, error: { code: 'transfer_target_unavailable', message: 'x' } })).toBeNull()
+    expect(transferFailureCause(new Error('network'))).toBeNull()
   })
 })

@@ -2,28 +2,34 @@ import type { SlackInstallationRecord, SlackUserInfo } from "../public.js";
 
 export interface WorkspaceMemberLookupResult {
   accountId: string;
-  userId?: string | null;
+  /** The Radioso user whose email the Slack user carries. */
+  userId: string;
 }
 
 export interface WorkspaceMemberLookupPort {
   findByEmail(workspaceId: string, email: string): Promise<WorkspaceMemberLookupResult | null>;
 }
 
+/** Whether a teammate may act on conversations; answered by the same role rules the dashboard enforces. */
 export interface SlackOperatorPermissionPort {
   hasPermission(input: {
     accountId: string;
-    userId?: string | null;
+    userId: string;
     workspaceId: string;
     permission: "workspace.conversation.takeover";
   }): Promise<boolean>;
 }
 
-export interface SlackUserInfoLookupPort {
+interface SlackUserInfoLookupPort {
   usersInfo(slackUserId: string, installation?: SlackInstallationRecord): Promise<SlackUserInfo>;
 }
 
+/**
+ * `displayName` is the Slack profile name, used only on Slack-side surfaces (a resolved approval
+ * message, audit provenance). The teammate's Radioso name comes from handoff's operator identity.
+ */
 export type SlackOperatorIdentityResolution =
-  | { accountId: string; userId: string | null; displayName: string | null }
+  | { accountId: string; userId: string; displayName: string | null }
   | { rejected: true };
 
 const displayNameForSlackUser = (user: SlackUserInfo): string | null =>
@@ -68,7 +74,7 @@ export class SlackOperatorIdentityResolver {
     }
     return {
       accountId: member.accountId,
-      userId: member.userId ?? null,
+      userId: member.userId,
       displayName: displayNameForSlackUser(slackUser),
     };
   }

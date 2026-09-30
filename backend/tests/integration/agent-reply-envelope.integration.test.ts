@@ -107,7 +107,7 @@ const issueRestCredential = async (ctx: App) => {
     originConstraint: { mode: "allow-all", origins: [] },
     expiresAt: new Date(Date.now() + 60_000),
   });
-  return { agent, token, workspaceId: session.workspaceId, accountId: session.accountId };
+  return { agent, token, workspaceId: session.workspaceId, accountId: session.accountId, userId: session.userId };
 };
 
 const openConverseSession = async (ctx: App) => {
@@ -194,6 +194,7 @@ describe("agent reply envelope (US1)", () => {
       conversationId,
       workspaceId: rest.workspaceId,
       accountId: rest.accountId,
+      userId: rest.userId,
       displayName: "Sam",
     });
     expect(takeover.ok).toBe(true);
@@ -222,6 +223,7 @@ describe("agent reply envelope (US1)", () => {
       conversationId,
       workspaceId: converse.workspaceId,
       accountId: session.accountId,
+      userId: session.userId,
       displayName: "Sam",
     });
 

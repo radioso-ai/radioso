@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 
 import {
+  accountId,
   installDashboardApiMocks,
   seedDashboardStorage,
   workspaceKey,
@@ -10,9 +11,15 @@ const installAuthMocks = async (
   page: Page,
   available: boolean,
   beforeRegistrationResponse?: () => Promise<void>,
+  otherPaths: 'not_found' | 'fallback' = 'not_found',
 ) => {
   await page.route('**/backend/api/v1/**', async (route) => {
     const path = new URL(route.request().url()).pathname.replace(/^\/backend\/api\/v1/, '')
+    const isAuthProbe = path === '/auth/registration' || path === '/ee/auth/google/status'
+    if (!isAuthProbe && otherPaths === 'fallback') {
+      await route.fallback()
+      return
+    }
     if (path === '/auth/registration') {
       await beforeRegistrationResponse?.()
     }
@@ -23,7 +30,7 @@ const installAuthMocks = async (
         : { error: { code: 'not_found', message: 'Not found' } }
 
     await route.fulfill({
-      status: path === '/auth/registration' || path === '/ee/auth/google/status' ? 200 : 404,
+      status: isAuthProbe ? 200 : 404,
       contentType: 'application/json',
       body: JSON.stringify(body),
     })
@@ -213,4 +220,60 @@ test('keeps workspace creation while hiding additional organization creation in 
   await dialog.getByPlaceholder('Workspace name').fill('Research')
   await dialog.getByRole('button', { name: 'Create', exact: true }).click()
   await expect.poll(() => createdWorkspaceName).toBe('Research')
+})
+
+test('lands on the sign-in page, not /login, after an owner deletes the organization', async ({ page }) => {
+  let deleteAccountCalled = false
+
+  await seedDashboardStorage(page)
+  await installDashboardApiMocks(page)
+
+  // The fixture's GET /account/accounts reports role "admin"; the delete-organization
+  // action requires "owner", so override it to exercise the button.
+  await page.route('**/backend/api/v1/account/accounts', async (route) => {
+    if (route.request().method() !== 'GET') {
+      await route.fallback()
+      return
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        accounts: [
+          {
+            accountId,
+            organizationName: 'Radioso Test',
+            role: 'owner',
+            status: 'active',
+          },
+        ],
+      }),
+    })
+  })
+
+  await page.route('**/backend/api/v1/account', async (route) => {
+    if (route.request().method() !== 'DELETE') {
+      await route.fallback()
+      return
+    }
+    deleteAccountCalled = true
+    await route.fulfill({ status: 204, contentType: 'application/json', body: '' })
+  })
+
+  // Once signed out, '/' renders the auth page, which probes registration on mount.
+  await installAuthMocks(page, false, undefined, 'fallback')
+
+  await page.goto(`/w/${workspaceKey}/settings`)
+
+  await page.getByRole('button', { name: 'Delete organization' }).click()
+
+  const deleteDialog = page.getByRole('dialog')
+  await expect(deleteDialog.getByRole('heading', { name: 'Delete organization' })).toBeVisible()
+  await deleteDialog.getByLabel('Type Radioso Test to confirm').fill('Radioso Test')
+  await deleteDialog.getByRole('button', { name: 'Delete organization' }).click()
+
+  await expect.poll(() => deleteAccountCalled).toBe(true)
+  await expect.poll(() => new URL(page.url()).pathname).toBe('/')
+  await expect(page.getByRole('button', { name: 'Sign In', exact: true })).toBeVisible()
+  await expect.poll(() => page.evaluate(() => window.localStorage.getItem('radioso.authUser'))).toBeNull()
 })

@@ -18,6 +18,7 @@ import { normalizeAnswerCoverageCore, type AnswerCoverageAssessment } from '@/li
 const SPINE_STAGE_LABELS: Record<string, string> = {
   message: 'Message',
   gather: 'Gather',
+  turn_interpretation: 'Interpret',
   directive_match: 'Directives',
   // Routine turns co-compose directives at render time under this kind.
   directive_steering: 'Directives',

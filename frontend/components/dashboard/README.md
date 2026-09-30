@@ -26,6 +26,13 @@ services.
   reused by the Test Chat debug sheet and the activity `conversation-drawer.tsx`
   (driven by a surface-neutral `TurnDiagnosticsInput`) — change turn diagnostics
   here, not in either caller.
+- `turn-flow-graph.tsx` draws the **Flow** view that `turn-flow-overlay.tsx` and the
+  eval flow open. `frontend/lib/turn-flow.ts` decides what it shows: phase bands
+  (Understand, the skill or routine that ran, Answer), steps in execution order with
+  a tone and a measured duration, and capability steps folded under their skill node.
+  Stage labels and summaries come from `frontend/lib/activity-stage-presentation.ts`,
+  shared with the stage list in `activity-trace-graph.tsx`. Change what a step says
+  in those two modules; the graph component only draws.
 - `documents-view.tsx` and `documents/`: document list, import, crawl, edit, and
   inspection UI.
 - `audience-pulse-view.tsx`: saved topic, grounding-gap, and content-recommendation

@@ -127,6 +127,11 @@ export const buildTurnTraceSummary = (
       });
     }
     for (const capabilityStage of capabilityStagesFrom(stage)) {
+      // Only a measured span has a start. The answer-outcome stages mirror the whole
+      // turn's latency for the message record and would always win.
+      if (timestampMs(capabilityStage.startedAt) === undefined) {
+        continue;
+      }
       timedStages.push({
         name: typeof capabilityStage.stageId === "string"
           ? capabilityStage.stageId

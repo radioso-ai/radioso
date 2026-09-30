@@ -124,4 +124,39 @@ describe("retrieval pipeline activity trace builder", () => {
     expect(lexical.startedAtMs).toBe(RETRIEVAL_STARTED_AT_MS);
     expect(stageTiming(trace.stages, "semantic_rewritten").durationMs).toBe(900);
   });
+
+  it("threads a branch's own measured timing through to its stage, ahead of the group fallback", () => {
+    const stages = buildSourceStages(
+      {
+        semanticRetrievalStartedAtMs: RETRIEVAL_STARTED_AT_MS,
+        semanticRetrievalDurationMs: 900,
+        lexicalRetrievalStartedAtMs: RETRIEVAL_STARTED_AT_MS,
+        lexicalRetrievalDurationMs: 400,
+      },
+      1_000,
+    );
+    stages.prompt.result = {
+      ...stages.prompt.result,
+      retrievalBranches: [
+        {
+          ...stages.prompt.result.retrievalBranches[0],
+          semanticSearchStartedAtMs: RETRIEVAL_STARTED_AT_MS + 200,
+          semanticSearchDurationMs: 75,
+          lexicalSearchStartedAtMs: RETRIEVAL_STARTED_AT_MS + 250,
+          lexicalSearchDurationMs: 15,
+        },
+      ],
+    };
+
+    const trace = new RetrievalPipelineActivityTraceBuilder().buildActivityTrace(stages);
+
+    const semantic = stageTiming(trace.stages, "semantic_rewritten");
+    const lexical = stageTiming(trace.stages, "lexical");
+
+    // The branch's own measured timing wins over the group-level fallback set above.
+    expect(semantic.durationMs).toBe(75);
+    expect(semantic.startedAtMs).toBe(RETRIEVAL_STARTED_AT_MS + 200);
+    expect(lexical.durationMs).toBe(15);
+    expect(lexical.startedAtMs).toBe(RETRIEVAL_STARTED_AT_MS + 250);
+  });
 });

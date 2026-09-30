@@ -8,7 +8,7 @@ const now = new Date("2026-08-31T00:00:00.000Z");
 const expiresAt = new Date("2026-09-30T00:00:00.000Z");
 
 const createHarness = () => {
-  const repository = new InMemoryMachineAccessRepository();
+  const repository = new InMemoryMachineAccessRepository(() => now);
   const audit = createAuditService();
   const roles = new Map<string, "member" | "admin" | "owner">([
     ["owner-1", "admin"],

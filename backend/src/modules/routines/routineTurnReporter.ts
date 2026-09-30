@@ -131,5 +131,9 @@ export const createRoutineTurnReporter = (
       const outcome = options.invocation.outcome();
       return { toolName: options.invocation.toolName, outcome: outcome?.kind ?? "not_started" };
     },
+    describeRoutineName: (routineId: string): string | null => {
+      const routine = routinesById.get(routineId);
+      return routine ? routineDisplayName(routine) : null;
+    },
   };
 };

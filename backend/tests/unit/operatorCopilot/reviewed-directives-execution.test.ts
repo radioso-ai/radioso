@@ -246,12 +246,17 @@ class MemoryProposalRepository implements CopilotRepositoryPort {
     this.applyClaims.set(proposal.id, claimedAt);
     return { proposal, claimedAt, previousAttemptStartedAt };
   }
-  async releaseProposalApplyClaim(input: { id: string; workspaceId: string; operatorUserId: string; claimedAt: Date }): Promise<boolean> {
+  async releaseProposalApplyClaim(input: { id: string; workspaceId: string; operatorUserId: string; claimedAt: Date; previousAttemptStartedAt: Date | null }): Promise<boolean> {
     const proposal = await this.findProposal(input);
     if (!proposal || proposal.status !== "pending") return false;
     const claimedAt = this.applyClaims.get(proposal.id);
     if (!claimedAt || claimedAt.getTime() !== input.claimedAt.getTime()) return false;
-    this.applyClaims.delete(proposal.id);
+    if (input.previousAttemptStartedAt) {
+      this.applyClaims.set(proposal.id, input.previousAttemptStartedAt);
+    } else {
+      this.applyClaims.delete(proposal.id);
+      this.proposals[this.proposals.indexOf(proposal)] = { ...proposal, executionInvocationId: null };
+    }
     return true;
   }
   async claimMcpReviewedProposalApply(input: { proposalId: string; executionInvocationId: string; reviewDigest: string; workspaceId: string; operatorUserId: string; grantId: string; clientId: string; now: Date; claimTtlSeconds: number }): ReturnType<CopilotRepositoryPort["claimMcpReviewedProposalApply"]> {

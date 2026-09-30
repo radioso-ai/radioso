@@ -127,6 +127,31 @@ export const agentReviewedSettingsPatchSchema = z.object({
 export type AgentReviewedSettingsKey = keyof z.infer<typeof agentReviewedSettingsPatchSchema>;
 export type AgentReviewedSettingsPatch = z.infer<typeof agentReviewedSettingsPatchSchema>;
 
+/**
+ * Dot-paths, from the `agent_configuration` detail output's `agent` object, of authored fields
+ * whose write bound above exceeds the operator MCP's generic string-compaction limit (500
+ * characters — `MAX_STRING_CHARS` in `operatorCopilot/payloadCompaction.ts`). `prepare_agent_settings`
+ * and `propose_agent_setting` replace each of these fields whole (one key, one new value — see
+ * `proposalSettingPatch` in `services/agentService.ts`), so an operator whose read tool silently cut
+ * one of them could not safely resubmit it without also dropping the part they never saw. That gap
+ * is issue #1352, raised against `customInstruction`.
+ *
+ * Every other authored field is left out on purpose:
+ * - `name`, `internalName`, `greetingInstruction` (200), `assistantDefaultLocale` (35), and
+ *   `publicDescription` (500) already fit within 500 characters on write, so compaction never cuts
+ *   them.
+ * - `logo.filename`/`logo.mimeType`, `surfaceSettings.extensions`, and `skillSettings` tuning values
+ *   (e.g. `semanticRewriteInstructions`) carry no write-time bound at all — there is no worst case to
+ *   exempt against, so they stay generically compacted like any other unbounded string.
+ * - `contactRequestDelivery` and the website-embed token/origins are redacted to placeholders before
+ *   `agent_configuration` ever sees them, so their real values (and write bounds) never reach this
+ *   output in the first place.
+ */
+export const AGENT_CONFIG_FULL_TEXT_FIELD_PATHS: readonly string[] = [
+  "customInstruction", // agentInputFieldSchemas.customInstruction, max 2,000
+  "branding.privacyPolicyUrl", // agentInputFieldSchemas.branding (privacyPolicyUrl), max 2,048
+];
+
 export const agentSettingProposalEffect = (key: AgentReviewedSettingsKey): {
   readonly lifecycle: "live" | "agent_draft";
   readonly reach: boolean;

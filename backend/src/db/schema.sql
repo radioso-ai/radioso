@@ -2815,6 +2815,8 @@ CREATE TABLE public.operator_mcp_invocations (
     completed_at timestamp with time zone,
     retained_until timestamp with time zone NOT NULL,
     safe_rejection_details jsonb DEFAULT '[]'::jsonb NOT NULL,
+    budget_kind text DEFAULT 'verification'::text NOT NULL,
+    CONSTRAINT operator_mcp_invocations_budget_kind_check CHECK ((budget_kind = ANY (ARRAY['verification'::text, 'test_chat'::text]))),
     CONSTRAINT operator_mcp_invocations_grant_version_check CHECK ((grant_version > 0)),
     CONSTRAINT operator_mcp_invocations_method_check CHECK ((method = ANY (ARRAY['ping'::text, 'tools/list'::text, 'tools/call'::text]))),
     CONSTRAINT operator_mcp_invocations_shape_check CHECK (((shape IS NULL) OR (shape = ANY (ARRAY['read'::text, 'probe'::text, 'act'::text, 'propose'::text])))),

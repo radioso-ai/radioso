@@ -23,7 +23,7 @@ import {
 import type { AuditPort } from "../audit/contracts/index.js";
 import type { CopilotCurrentAuthorizationPort, CopilotToolInvocationContext } from "./contracts.js";
 import { OperatorMcpCatalogError, OperatorMcpCatalogService } from "./mcpCatalog.js";
-import type { OperatorMcpInvocationRecord, OperatorMcpInvocationRepositoryPort } from "./mcpContracts.js";
+import type { OperatorMcpBudgetKind, OperatorMcpBudgetRetry, OperatorMcpInvocationRecord, OperatorMcpInvocationRepositoryPort } from "./mcpContracts.js";
 import { AppError } from "../../shared/domain/errors.js";
 import { toolRejectionDetail, type OperatorMcpRejectionDetail } from "./invalidArgumentDetails.js";
 import { REVIEWED_APPROVAL_ACCEPT_WAIT_MS } from "./reviewedOperation.js";
@@ -42,7 +42,9 @@ export class OperatorMcpApplicationError extends Error {
     | "unknown_tool" | "invalid_arguments" | "missing_configuration" | "operation_conflict" | "budget_exhausted" | "result_too_large" | "invalid_result",
   readonly requiredScope?: OperatorMcpScope,
   /** Rejected argument paths, so a caller can correct the call instead of guessing. */
-  readonly details?: readonly OperatorMcpRejectionDetail[]) {
+  readonly details?: readonly OperatorMcpRejectionDetail[],
+  /** Set only for `budget_exhausted`, so the route can answer with `Retry-After` instead of leaving the caller to guess. */
+  readonly retry?: OperatorMcpBudgetRetry) {
     super(code);
   }
 }
@@ -221,6 +223,8 @@ export class OperatorMcpApplicationService {
     eventStatus: "success" | "failure";
     outcome: string;
     reason: string;
+    /** Only set on a `budget_exhausted` refusal, so a rejection is filterable by which ceiling it hit without decoding it from `descriptorName`. */
+    budgetKind?: OperatorMcpBudgetKind;
   }): Promise<void> {
     await this.dependencies.audit?.record({
       accountId: input.principal.accountId,
@@ -238,6 +242,7 @@ export class OperatorMcpApplicationService {
         capabilityShape: input.capabilityShape,
         outcome: input.outcome,
         reason: input.reason,
+        ...(input.budgetKind ? { budgetKind: input.budgetKind } : {}),
       },
     }).catch(() => undefined);
   }
@@ -415,6 +420,11 @@ export class OperatorMcpApplicationService {
   async invoke(input: OperatorInvocationRequest): Promise<OperatorInvocationResponse> {
     const principal = await this.currentProofPrincipal(input.proof, "tools/call");
     let capabilityShape: "read" | "probe" | "act" | "propose" | null = null;
+    let receiptTakenOver = false;
+    // Set once the descriptor resolves, so a refusal's audit record can name which ceiling a
+    // budget_exhausted outcome charged against without recomputing it from a descriptor lookup
+    // the catch block would otherwise have to repeat.
+    let budgetKind: OperatorMcpBudgetKind | null = null;
     try {
       const expectedBodyDigest = digestOperatorMcpCall({
         name: input.name,
@@ -432,6 +442,7 @@ export class OperatorMcpApplicationService {
       const parsed = descriptor.inputSchema.safeParse(input.arguments);
       if (!parsed.success) throw new OperatorMcpApplicationError("invalid_arguments", undefined, describeOperatorMcpRejection(parsed.error.issues));
       const verificationCost = descriptor.verificationCost(parsed.data);
+      budgetKind = descriptor.operatorMcpBudgetKind ?? "verification";
       const inputDigest = digestOperatorMcpInput({
         secret: this.dependencies.secret,
         descriptorName: input.name,
@@ -453,11 +464,18 @@ export class OperatorMcpApplicationService {
           shape: descriptor.shape,
           inputDigest,
           verificationCost,
+          budgetKind,
           now: this.now(),
         });
         if (!("invocation" in prepared)) {
           if (prepared.status === "conflict") throw new OperatorMcpApplicationError("operation_conflict");
-          throw new OperatorMcpApplicationError("budget_exhausted");
+          // Present together or not at all -- see `budgetExhaustion` in the repository. A caller
+          // whose cost can never fit gets no retry timing rather than one that promises a retry
+          // that will fail the same way.
+          const retry = prepared.retryAfterSeconds !== undefined && prepared.resetAt !== undefined
+            ? { retryAfterSeconds: prepared.retryAfterSeconds, resetAt: prepared.resetAt }
+            : undefined;
+          throw new OperatorMcpApplicationError("budget_exhausted", undefined, undefined, retry);
         }
         if (prepared.status === "prepared") {
           readyToInvoke = true;
@@ -569,7 +587,12 @@ export class OperatorMcpApplicationService {
       }
       if (!readyToInvoke) throw new OperatorMcpApplicationError("operation_conflict");
       const claimed = await this.dependencies.invocations.claimRunning({ invocationId: input.proof.invocationId, now: this.now() });
-      if (!claimed) throw new OperatorMcpApplicationError("operation_conflict");
+      if (!claimed) {
+        // Only another request moves an admitted receipt this one prepared: a retry that found it
+        // past the recovery lease and reopened it, and may be applying under it right now.
+        receiptTakenOver = true;
+        throw new OperatorMcpApplicationError("operation_conflict");
+      }
       const output = await this.dependencies.catalog.invoke({
         name: input.name,
         arguments: parsed.data,
@@ -610,7 +633,7 @@ export class OperatorMcpApplicationService {
       const refused = error instanceof OperatorMcpApplicationError
         && ["unknown_tool", "invalid_arguments", "missing_configuration", "operation_conflict", "budget_exhausted"].includes(error.code);
       // A refusal here is always pre-effect for every one of those codes -- schema/proof/scope
-      // rejections, a tool's own 400/404/409, and a lost `claimRunning` race all happen before the
+      // rejections, a tool's own 400/404/409, and a lost preparation race all happen before the
       // owner is ever called. A derived key (`operationIdentity: "input"`) is the call itself, not
       // something the caller can change by retrying, so pinning it to this refusal would replay a
       // stale rejection forever, even after its cause (a revoked permission, a lost race) is fixed.
@@ -618,18 +641,26 @@ export class OperatorMcpApplicationService {
       // a stuck proposal-preparation attempt already relies on; the audit record below still carries
       // the real reason regardless.
       const abandonRefusalKey = refused && !refusalMayPinKey(this.dependencies.catalog.descriptor(input.name) ?? {});
-      await this.dependencies.invocations.recordOutcome({
-        invocationId: input.proof.invocationId,
-        status: refused ? "refused" : "failed",
-        safeOutcomeCode: abandonRefusalKey ? "abandoned_before_effect" : reason,
-        ...(error instanceof OperatorMcpApplicationError && error.code === "invalid_arguments" && error.details
-          ? { safeRejectionDetails: error.details }
-          : {}),
-        now: this.now(),
-      }).catch(() => undefined);
+      // A receipt another request took over is that request's to settle; overwriting it here would
+      // free its key mid-apply and turn later replays of a successful apply into `not_prepared`.
+      if (!receiptTakenOver) {
+        await this.dependencies.invocations.recordOutcome({
+          invocationId: input.proof.invocationId,
+          status: refused ? "refused" : "failed",
+          safeOutcomeCode: abandonRefusalKey ? "abandoned_before_effect" : reason,
+          ...(error instanceof OperatorMcpApplicationError && error.code === "invalid_arguments" && error.details
+            ? { safeRejectionDetails: error.details }
+            : {}),
+          now: this.now(),
+        }).catch(() => undefined);
+      }
+      // The caller still sees operation_conflict, but support must be able to tell a receipt whose
+      // change the retry may be applying from an ordinary refusal.
       await this.audit({
         principal, invocationId: input.proof.invocationId, method: "tools/call", descriptorName: input.name,
-        capabilityShape, eventStatus: "failure", outcome: refused ? "refused" : "failed", reason,
+        capabilityShape, eventStatus: "failure", outcome: refused ? "refused" : "failed",
+        reason: receiptTakenOver ? "operation_taken_over" : reason,
+        ...(reason === "budget_exhausted" && budgetKind ? { budgetKind } : {}),
       });
       throw error;
     }

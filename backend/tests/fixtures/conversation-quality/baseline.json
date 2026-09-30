@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-22T10:51:07.911Z",
+  "generatedAt": "2026-09-30T10:44:03.370Z",
   "passThreshold": 1,
   "cases": {
     "clarification-ambiguous-plan": {
@@ -113,6 +113,11 @@
       "samples": 5
     },
     "routing-identity-direct": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "routine-step-outranks-always-on-handoff-directive": {
       "status": "pass",
       "passRate": 1,
       "samples": 5

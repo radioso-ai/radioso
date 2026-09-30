@@ -5,6 +5,22 @@ export type OperatorMcpInvocationShape = (typeof operatorMcpInvocationShapes)[nu
 
 export type OperatorMcpInvocationStatus = "admitted" | "running" | "completed" | "refused" | "failed";
 
+/**
+ * Which per-minute ceiling a call's verification cost is charged against. `verification` is the
+ * shared budget every probe or propose descriptor draws from by default. `test_chat` is Test
+ * Chat's own, larger ceiling: those turns are private, suppress skill effects, and are already
+ * metered as answers against the plan quota, so bounding them against the shared verification
+ * budget would stall an ordinary multi-turn routine test for no protective reason.
+ */
+export const operatorMcpBudgetKinds = ["verification", "test_chat"] as const;
+export type OperatorMcpBudgetKind = (typeof operatorMcpBudgetKinds)[number];
+
+/** What a caller may retry after once its budget is spent for the current rolling window. */
+export interface OperatorMcpBudgetRetry {
+  readonly retryAfterSeconds: number;
+  readonly resetAt: Date;
+}
+
 export interface OperatorMcpInvocationRecord {
   readonly id: string;
   readonly credentialId: string;
@@ -20,6 +36,7 @@ export interface OperatorMcpInvocationRecord {
   readonly operationId: string | null;
   readonly inputDigest: string;
   readonly verificationCost: number;
+  readonly budgetKind: OperatorMcpBudgetKind;
   readonly budgetReservedAt: Date | null;
   readonly proofNonceDigest: string;
   readonly proofConsumedAt: Date | null;
@@ -47,6 +64,8 @@ export interface AdmitOperatorMcpInvocationInput {
   readonly operationId?: string | null;
   readonly inputDigest: string;
   readonly verificationCost: number;
+  /** Omitted means the shared `verification` budget: only a `tools/call` admission ever needs another kind, and admission always reserves zero. */
+  readonly budgetKind?: OperatorMcpBudgetKind;
   readonly proofNonceDigest: string;
   readonly now: Date;
   readonly retainedUntil: Date;
@@ -54,7 +73,14 @@ export interface AdmitOperatorMcpInvocationInput {
 
 export type OperatorMcpInvocationAdmission =
   | { readonly status: "admitted" | "replay"; readonly invocation: OperatorMcpInvocationRecord }
-  | { readonly status: "conflict" | "budget_exhausted" };
+  | { readonly status: "conflict" }
+  /**
+   * `retryAfterSeconds`/`resetAt` are present together, or not at all: a cost that exceeds the
+   * kind's ceiling outright can never be admitted no matter how long the window empties, so that
+   * case is `budget_exhausted` with neither field rather than a `resetAt` promising a retry that
+   * will fail the same way.
+   */
+  | ({ readonly status: "budget_exhausted" } & Partial<OperatorMcpBudgetRetry>);
 
 export interface OperatorMcpInvocationRepositoryPort {
   admit(input: AdmitOperatorMcpInvocationInput): Promise<OperatorMcpInvocationAdmission>;
@@ -78,7 +104,12 @@ export interface OperatorMcpInvocationRepositoryPort {
     shape: OperatorMcpInvocationShape;
     inputDigest: string;
     verificationCost: number;
+    budgetKind: OperatorMcpBudgetKind;
     now: Date;
-  }): Promise<{ status: "prepared" | "replay"; invocation: OperatorMcpInvocationRecord } | { status: "conflict" | "budget_exhausted" }>;
+  }): Promise<
+    | { status: "prepared" | "replay"; invocation: OperatorMcpInvocationRecord }
+    | { status: "conflict" }
+    | ({ status: "budget_exhausted" } & Partial<OperatorMcpBudgetRetry>)
+  >;
 }
 import type { OperatorMcpRejectionDetail } from "./invalidArgumentDetails.js";

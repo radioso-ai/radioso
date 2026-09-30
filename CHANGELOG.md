@@ -9,6 +9,32 @@ Cut a release with the **Cut Release** workflow. It reads the commits since the 
 tag, writes the entry above this line, tags the commit, and publishes a GitHub Release. A
 deploy then ships a release that already exists; it never mints one.
 
+## [1.9.0] - 2026-09-30
+
+### Added
+
+- show routine slot values and the hand-off preview in Test Chat traces ([#1359](https://github.com/radioso-ai/radioso/pull/1359))
+
+### Fixed
+
+- **routines:** let the step instruction control routine replies over always-on directives ([#1360](https://github.com/radioso-ai/radioso/pull/1360))
+- **operator-mcp:** give Test Chat its own budget and tell clients when to retry ([#1358](https://github.com/radioso-ai/radioso/pull/1358))
+- **chat:** keep routine handoff endings in the visitor's language ([#1357](https://github.com/radioso-ai/radioso/pull/1357))
+- **operator-mcp:** exempt write-bounded authored fields from string compaction ([#1356](https://github.com/radioso-ai/radioso/pull/1356))
+- **operator-mcp:** let a reviewed execution retry after a post-claim permission denial ([#1350](https://github.com/radioso-ai/radioso/pull/1350))
+
+### Internal
+
+- **machine-access:** pin the in-memory repository to the harness clock ([#1349](https://github.com/radioso-ai/radioso/pull/1349))
+
+### Database migrations
+
+This release adds 1 migration. They run at service startup, so deploy one stack at a time; overlapping deploys contend on the same DDL lock and stall until one gives up.
+
+- `201_operator_mcp_invocation_budget_kind.sql`
+
+[1.9.0]: https://github.com/radioso-ai/radioso/compare/v1.8.2...v1.9.0
+
 ## [1.8.2] - 2026-09-29
 
 ### Fixed

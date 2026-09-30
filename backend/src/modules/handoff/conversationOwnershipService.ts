@@ -4,14 +4,18 @@ import type {
   ConversationOwnershipMutationResult,
   ConversationOwnershipRepository,
 } from "../../db/repositories/conversationOwnershipRepository.js";
-import type { ConversationRecord, ConversationRepositoryPort } from "../../db/repositories/conversationRepository.js";
+import type {
+  ConversationRecord,
+  ConversationRepository,
+  ConversationRepositoryPort,
+} from "../../db/repositories/conversationRepository.js";
 import type { MessageRecord } from "../../db/repositories/messageRepository.js";
 import { AppError, notFound } from "../../shared/domain/errors.js";
 import type { AuditService } from "../audit/contracts/index.js";
-import { recordCommittedOwnershipAudit, type CommittedAuditReporting } from "./committedOwnershipAudit.js";
+import { notifyAfterCommit, recordCommittedOwnershipAudit, type CommittedAuditReporting } from "./committedOwnershipAudit.js";
 import type { ConversationOperatorDirectory } from "./conversationOperatorDirectory.js";
 import type { OperatorIdentity, OperatorIdentityResolver } from "./operatorIdentity.js";
-import type { OperatorReply, OperatorReplyService, OperatorReplyWriteScope } from "./operatorReplyService.js";
+import type { OperatorReplyService, OperatorReplyWriteScope } from "./operatorReplyService.js";
 import type { ConversationOwnershipRecord } from "./ownershipState.js";
 import { transferNoticeRequest, type TransferNoticeOutboxPort } from "./transferNotice.js";
 
@@ -47,12 +51,15 @@ export interface OwnershipTransferUnitOfWork {
 }
 
 /**
- * Writes a reply and the ownership it stands on as one unit: the ownership row stays locked from
- * the moment it is read until the message is written, so a transfer or hand-back either commits
- * before the reply looks (and refuses it) or waits until the reply has committed.
+ * Writes a reply, its channel delivery, and the ownership it stands on as one unit: the
+ * conversation and ownership rows stay locked from the moment they are read until the message is
+ * written, so a transfer or hand-back either commits before the reply looks (and refuses it) or
+ * waits until the reply has committed. A delivery queued in it is pushed to the action worker once
+ * it commits.
  */
 export interface OwnershipReplyUnitOfWork {
   run<T>(work: (scope: {
+    conversations: Pick<ConversationRepository, "lockForUpdate">;
     ownership: Pick<ConversationOwnershipRepository, "loadForUpdate" | "takeOver">;
     reply: OperatorReplyWriteScope;
   }) => Promise<T>): Promise<T>;
@@ -85,10 +92,12 @@ const refusalFor = (record: ConversationOwnershipRecord | null, actor: Ownership
  * - a conversation is claimed when it names a teammate (`ownerUserId`); a handoff nobody has
  *   claimed, and an AI-owned conversation, can be taken over by any teammate;
  * - only the owner replies or hands back; replying to an unclaimed or AI-owned conversation
- *   claims it for the replier first, and a reply commits with the ownership it was checked against;
+ *   claims it for the replier first, and a reply commits with the ownership it was checked against
+ *   and with its delivery to the customer's channel;
  * - taking a conversation a teammate holds is an explicit transfer to yourself;
  * - a transfer and the notice it owes the recipient commit together;
- * - a committed change stands even when its audit record fails.
+ * - a committed change stands even when what follows it — telling the visitor and the dashboard,
+ *   and its audit record — fails.
  */
 export class ConversationOwnershipService {
   constructor(private readonly dependencies: {
@@ -98,7 +107,7 @@ export class ConversationOwnershipService {
     replyWrites: OwnershipReplyUnitOfWork;
     operators: Pick<ConversationOperatorDirectory, "find">;
     operatorIdentities: Pick<OperatorIdentityResolver, "resolve">;
-    replies: Pick<OperatorReplyService, "write" | "deliver">;
+    replies: Pick<OperatorReplyService, "prepare" | "write" | "announce" | "audit">;
     audit: Pick<AuditService, "record">;
     publisher?: WorkspaceInvalidationPublisher;
   } & CommittedAuditReporting) {}
@@ -118,8 +127,7 @@ export class ConversationOwnershipService {
     reason?: string;
     auditContext?: OwnershipAuditContext;
   }): Promise<OwnershipCommandResult> {
-    await this.requireConversation(actor, input.conversationId);
-    const operator = await this.resolveOperator(actor);
+    const [, operator] = await this.readConversationAndOperator(actor, input.conversationId);
     const result = await this.dependencies.ownership.takeOver(this.claimInput(actor, operator, input));
     if (result.ok) {
       await this.settle(actor, result, this.claimAudit(actor, input));
@@ -217,9 +225,10 @@ export class ConversationOwnershipService {
   /**
    * Sends the caller's reply to the visitor. The owner replies at the version they saw; a
    * conversation the AI owns or nobody has claimed is claimed for the caller first; one a teammate
-   * holds is refused. `expectedVersion` omitted skips the stale-view check. The check, the claim
-   * and the message commit together under the ownership row's lock; the visitor hears of the reply
-   * only after it has committed.
+   * holds is refused. `expectedVersion` omitted skips the stale-view check. The check, the claim,
+   * the message and its delivery to the customer's channel commit together under the conversation
+   * and ownership rows' locks; the visitor hears of the reply only after it has committed, and
+   * nothing after the commit fails it.
    */
   async reply(actor: OwnershipActor, input: {
     conversationId: string;
@@ -227,13 +236,24 @@ export class ConversationOwnershipService {
     expectedVersion?: number;
     auditContext?: OwnershipAuditContext;
   }): Promise<OwnershipReplyResult> {
-    const conversation = await this.requireConversation(actor, input.conversationId);
-    const operator = await this.resolveOperator(actor);
-    const reply: OperatorReply = { conversation, accountId: actor.accountId, operator, message: input.message };
+    const [conversation, operator] = await this.readConversationAndOperator(actor, input.conversationId);
+    const reply = await this.dependencies.replies.prepare({
+      conversation,
+      accountId: actor.accountId,
+      operator,
+      message: input.message,
+    });
 
     const outcome = await this.dependencies.replyWrites.run(async (scope): Promise<
       { ok: true; message: MessageRecord; record: ConversationOwnershipRecord; claim: SettledChange | null } | OwnershipRefused
     > => {
+      // Lock order: the conversation row, then its ownership row — the order a conversation or
+      // workspace delete takes them (it deletes the conversation, then the ownership row cascades),
+      // so the two never deadlock. Holding the conversation first also queues this message behind
+      // any writer already holding it, so the message dates after theirs and no cursor tail skips it.
+      if (!(await scope.conversations.lockForUpdate(conversation.id, conversation.workspaceId))) {
+        throw notFound("Conversation not found");
+      }
       const current = await scope.ownership.loadForUpdate(input.conversationId);
       if (heldByTeammate(current, actor.userId)) {
         return { ok: false, refusal: "held_by_teammate", record: current };
@@ -260,11 +280,25 @@ export class ConversationOwnershipService {
       return outcome;
     }
 
+    // Committed. The visitor and the dashboard hear first; the audits only record what happened,
+    // so they run after, side by side.
+    this.dependencies.replies.announce(reply, outcome.message);
     if (outcome.claim) {
-      await this.settle(actor, outcome.claim, this.claimAudit(actor, input));
+      this.announceChange(actor, outcome.claim);
     }
-    await this.dependencies.replies.deliver(reply, outcome.message);
+    await Promise.all([
+      outcome.claim ? this.auditChange(actor, this.claimAudit(actor, input)) : undefined,
+      this.dependencies.replies.audit(reply, outcome.message),
+    ]);
     return { ok: true, message: outcome.message, record: outcome.record };
+  }
+
+  /** The conversation, checked to be in the actor's workspace, and who the actor is: read together. */
+  private readConversationAndOperator(
+    actor: OwnershipActor,
+    conversationId: string,
+  ): Promise<[ConversationRecord, OperatorIdentity]> {
+    return Promise.all([this.requireConversation(actor, conversationId), this.resolveOperator(actor)]);
   }
 
   private resolveOperator(actor: OwnershipActor): Promise<OperatorIdentity> {
@@ -307,12 +341,28 @@ export class ConversationOwnershipService {
     return conversation;
   }
 
-  /** After a change has committed: tells the dashboard, and audits it without ever failing the change. */
+  /** After a change has committed: tells the dashboard, then audits it, neither ever failing the change. */
   private async settle(actor: OwnershipActor, result: SettledChange, metadata: OwnershipAuditMetadata): Promise<void> {
-    if (result.changed) {
-      this.dependencies.publisher?.enqueue(actor.workspaceId, ["conversation.ownership_changed"]);
+    this.announceChange(actor, result);
+    await this.auditChange(actor, metadata);
+  }
+
+  private announceChange(actor: OwnershipActor, result: SettledChange): void {
+    if (!result.changed) {
+      return;
     }
-    await recordCommittedOwnershipAudit(this.dependencies, {
+    notifyAfterCommit(this.dependencies, {
+      notification: "dashboard_refresh",
+      accountId: actor.accountId,
+      workspaceId: actor.workspaceId,
+      conversationId: result.record.conversationId,
+    }, () => {
+      this.dependencies.publisher?.enqueue(actor.workspaceId, ["conversation.ownership_changed"]);
+    });
+  }
+
+  private auditChange(actor: OwnershipActor, metadata: OwnershipAuditMetadata): Promise<void> {
+    return recordCommittedOwnershipAudit(this.dependencies, {
       accountId: actor.accountId,
       workspaceId: actor.workspaceId,
       metadata: { ...metadata, actorUserId: actor.userId },

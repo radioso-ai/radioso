@@ -278,9 +278,9 @@ export function InboxResponseView({
 
   const entryUrl = conversationDetail?.entryPageUrl ? stripTrackingParams(conversationDetail.entryPageUrl) : null
   const channelLabel = informativeChannelLabel(conversationDetail?.channelContext)
-  // Only a genuine escalation has a wait to report — a live conversation the
-  // operator hasn't claimed yet (still ai-owned, no ownership record) has no
-  // "waiting since" or "with them since" to show.
+  // Only a genuine escalation has a wait to report — a live conversation still
+  // with the agent (no ownership record, or an AI-owned one) has no "waiting
+  // since" or "with them since" to show.
   const waiting = effectiveItem?.escalatedAt ? inboxWaitingPresentation(effectiveItem, now) : null
   const identity = visitorIdentityLabel({
     anonymousSessionId: effectiveItem ? effectiveItem.anonymousSessionId : readOnlySource?.anonymousSessionId,

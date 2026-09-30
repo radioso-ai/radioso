@@ -113,7 +113,7 @@ Teammates see the name without the email beside it, so the rules refuse anything
 - a control character, such as a line break or tab
 - a text-direction override, embedding, or isolate (U+202A to U+202E, U+2066 to U+2069)
 - nothing visible, such as only zero-width spaces or Hangul fillers
-- the shape of an email address, such as `dana@corp.com`; `Dana @ Acme` is fine
+- an email address anywhere in it, such as `dana@corp.com` or `Dana dana@corp.com`, including one written with lookalike characters such as a fullwidth `＠` or an ideographic full stop; `Dana @ Acme` is fine
 
 A body with any field besides `displayName` returns `400` as well.
 

@@ -8,19 +8,22 @@ import { ActionRequestRepository } from "../../../src/db/repositories/actionRequ
 import { ConversationOwnershipRepository } from "../../../src/db/repositories/conversationOwnershipRepository.js";
 import type { ConversationRecord } from "../../../src/db/repositories/conversationRepository.js";
 import { MessageRepository } from "../../../src/db/repositories/messageRepository.js";
+import { CustomerReplyDeliveryDispatcher } from "../../../src/modules/customerReplyDelivery/public.js";
 import {
   CONVERSATION_TRANSFER_NOTICE_ACTION_TYPE,
   ConversationOwnershipService,
   OperatorReplyService,
   type OwnershipActor,
 } from "../../../src/modules/handoff/public.js";
+import { SlackCustomerReplyDeliverer } from "../../../src/modules/slack/public.js";
 import { Database } from "../../../src/shared/infra/database.js";
 import { resolveIntegrationDatabase } from "../support/integrationDatabase.js";
 
 // Real-Postgres checks of what ownership commits together: a transfer with the notice it owes the
 // recipient (an outbox failure rolls the transfer back, and the drain push goes out only once both
-// are durable), and a reply with the ownership it stands on (a transfer that commits first refuses
-// the old owner's reply, and a failed write leaves no claim behind).
+// are durable), and a reply with the ownership it stands on and its delivery to the customer's
+// channel (a transfer that commits first refuses the old owner's reply, a failed write leaves no
+// claim or message behind, and nothing after the commit fails a reply that committed).
 
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
@@ -43,25 +46,66 @@ describeIntegration("conversation transfer with its notice (Postgres)", () => {
     [conversationId],
   );
 
-  const replies = new OperatorReplyService({
-    auditService: { record: vi.fn(async () => undefined) },
-    publicConversationEventBus: { publish: vi.fn() },
-    customerReplyDelivery: { deliver: vi.fn(async () => undefined) },
-  });
+  const slackPostsFor = async (conversationId: string) => database.query<{ type: string; idempotency_key: string; payload: Record<string, unknown> }>(
+    `SELECT type, idempotency_key, payload FROM routine_action_requests WHERE conversation_id = $1`,
+    [conversationId],
+  );
 
-  const createService = (actionDrain: { requestDrain: () => Promise<void> }) => new ConversationOwnershipService({
+  // Conversations that came in over Slack; a reply to one is queued as a `slack.post`.
+  const slackConversationIds = new Set<string>();
+  const slackInstallation = {
+    id: randomUUID(),
+    connectionId: randomUUID(),
+    workspaceId,
+    accountId,
+    teamId: "T1",
+    teamName: "Acme",
+    botUserId: "UBOT",
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+  const conversationRecord = (id: string, inWorkspace: string): ConversationRecord => ({
+    id,
+    workspaceId: inWorkspace,
+    ...(slackConversationIds.has(id)
+      ? {
+          sourceChannel: "slack",
+          channelContext: {
+            provider: "slack",
+            team: { id: "T1", name: "Acme" },
+            channel: { id: "D1", type: "im" },
+            threadTs: "1700000000.000100",
+            user: { id: "U1" },
+          },
+        }
+      : { sourceChannel: null, channelContext: null }),
+  }) as ConversationRecord;
+
+  const createService = (
+    actionDrain: { requestDrain: () => Promise<void> },
+    options: { publish?: () => void } = {},
+  ) => new ConversationOwnershipService({
     conversations: {
-      findByIdAndWorkspaceId: async (id: string, inWorkspace: string) => ({ id, workspaceId: inWorkspace }) as ConversationRecord,
+      findByIdAndWorkspaceId: async (id: string, inWorkspace: string) => conversationRecord(id, inWorkspace),
     },
     ownership,
     transfers: createPostgresOwnershipTransferUnitOfWork({ db: database.kysely, actionDrain, logger: { warn: vi.fn() } }),
-    replyWrites: createPostgresOwnershipReplyUnitOfWork({ db: database.kysely }),
+    replyWrites: createPostgresOwnershipReplyUnitOfWork({ db: database.kysely, actionDrain, logger: { warn: vi.fn() } }),
     operators: {
       find: async ({ userId }: { userId: string }) =>
         userId === foxId ? { userId: foxId, label: "Fox Mulder" } : userId === danaId ? { userId: danaId, label: "Dana Scully" } : null,
     },
     operatorIdentities: { resolve: async () => ({ userId: danaId, teammateLabel: "Dana Scully", replySignature: null }) },
-    replies,
+    replies: new OperatorReplyService({
+      auditService: { record: vi.fn(async () => undefined) },
+      publicConversationEventBus: { publish: vi.fn(options.publish) },
+      customerReplyDelivery: new CustomerReplyDeliveryDispatcher({
+        slack: new SlackCustomerReplyDeliverer({
+          installations: { findByTeamId: async () => slackInstallation, findById: async () => slackInstallation },
+        }),
+      }),
+      logger: { warn: vi.fn() },
+    }),
     audit: { record: vi.fn(async () => undefined) },
   });
 
@@ -80,8 +124,11 @@ describeIntegration("conversation transfer with its notice (Postgres)", () => {
     }
   };
 
-  const seedClaimedConversation = async (): Promise<{ conversationId: string; version: number }> => {
+  const seedClaimedConversation = async (options: { slack?: boolean } = {}): Promise<{ conversationId: string; version: number }> => {
     const conversationId = randomUUID();
+    if (options.slack) {
+      slackConversationIds.add(conversationId);
+    }
     await database.query(`INSERT INTO conversations (id, workspace_id) VALUES ($1, $2)`, [conversationId, workspaceId]);
     const claim = await ownership.takeOver({ conversationId, workspaceId, accountId, userId: danaId, displayName: "Dana Scully" });
     if (!claim.ok) {
@@ -187,6 +234,80 @@ describeIntegration("conversation transfer with its notice (Postgres)", () => {
 
     expect(result).toMatchObject({ ok: true, record: { ownerUserId: danaId, version } });
     await expect(messagesIn(conversationId)).resolves.toEqual([{ content: "Hello" }]);
+  });
+
+  it("queues a Slack reply's post in the reply's transaction, keyed by the message, and pushes a drain that finds both", async () => {
+    const { conversationId, version } = await seedClaimedConversation({ slack: true });
+    const seenByDrain: unknown[] = [];
+    const service = createService({
+      requestDrain: async () => {
+        seenByDrain.push({ messages: await messagesIn(conversationId), posts: await slackPostsFor(conversationId) });
+      },
+    });
+
+    const result = await service.reply(dana, { conversationId, message: "On my way", expectedVersion: version });
+
+    expect(result).toMatchObject({ ok: true });
+    const messageId = result.ok ? result.message.id : "";
+    expect(seenByDrain).toEqual([{
+      messages: [{ content: "On my way" }],
+      posts: [{
+        type: "slack.post",
+        idempotency_key: `slack:human_reply:${conversationId}:${messageId}`,
+        payload: expect.objectContaining({ kind: "human_reply", channelId: "D1", threadTs: "1700000000.000100", text: "On my way" }),
+      }],
+    }]);
+  });
+
+  it("rolls the reply back when its Slack post cannot be queued, so sending it again delivers it once", async () => {
+    const { conversationId, version } = await seedClaimedConversation({ slack: true });
+    const requestDrain = vi.fn(async () => undefined);
+    vi.spyOn(ActionRequestRepository.prototype, "enqueue").mockRejectedValueOnce(new Error("outbox unavailable"));
+    const service = createService({ requestDrain });
+
+    await expect(service.reply(dana, { conversationId, message: "On my way", expectedVersion: version }))
+      .rejects.toThrow("outbox unavailable");
+    await expect(messagesIn(conversationId)).resolves.toEqual([]);
+    await expect(slackPostsFor(conversationId)).resolves.toEqual([]);
+    expect(requestDrain).not.toHaveBeenCalled();
+
+    const retried = await service.reply(dana, { conversationId, message: "On my way", expectedVersion: version });
+
+    expect(retried).toMatchObject({ ok: true, record: { version } });
+    await expect(messagesIn(conversationId)).resolves.toEqual([{ content: "On my way" }]);
+    await expect(slackPostsFor(conversationId)).resolves.toHaveLength(1);
+    expect(requestDrain).toHaveBeenCalledTimes(1);
+  });
+
+  it("answers a committed reply as sent when the push to the visitor or the drain push throws", async () => {
+    const { conversationId, version } = await seedClaimedConversation({ slack: true });
+    const service = createService(
+      { requestDrain: async () => { throw new Error("drain transport down"); } },
+      { publish: () => { throw new Error("listener failed"); } },
+    );
+
+    const result = await service.reply(dana, { conversationId, message: "On my way", expectedVersion: version });
+
+    expect(result).toMatchObject({ ok: true, record: { ownerUserId: danaId, version } });
+    await expect(messagesIn(conversationId)).resolves.toEqual([{ content: "On my way" }]);
+    await expect(slackPostsFor(conversationId)).resolves.toHaveLength(1);
+  });
+
+  it("waits for a delete holding the conversation, then answers not found instead of writing", async () => {
+    const { conversationId, version } = await seedClaimedConversation();
+    const service = createService({ requestDrain: async () => undefined });
+    let reply: ReturnType<typeof service.reply> | undefined;
+
+    await database.kysely.transaction().execute(async (trx) => {
+      // The conversation is deleted, and its ownership row with it, but not yet committed.
+      await trx.deleteFrom("conversations").where("id", "=", conversationId).execute();
+      reply = service.reply(dana, { conversationId, message: "Still here", expectedVersion: version });
+      reply.catch(() => undefined);
+      await untilSomeoneWaitsOnALock();
+    });
+
+    await expect(reply).rejects.toMatchObject({ statusCode: 404, code: "not_found" });
+    await expect(messagesIn(conversationId)).resolves.toEqual([]);
   });
 
   it("leaves no claim behind when the reply that would claim the conversation cannot be written", async () => {

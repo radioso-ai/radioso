@@ -2017,7 +2017,7 @@ export const createTestDependencies = (overrides: {
   const operatorReplyService = new OperatorReplyService({
     auditService,
     publicConversationEventBus,
-    customerReplyDelivery: { deliver: async () => {} },
+    customerReplyDelivery: { route: async () => null },
     logger,
   });
   const workspaceInvalidationPublisher: WorkspaceInvalidationPublisher = {
@@ -2030,8 +2030,12 @@ export const createTestDependencies = (overrides: {
     transfers: { run: (work) => work({ ownership: conversationOwnershipRepository, outbox: actionOutbox }) },
     replyWrites: {
       run: (work) => work({
+        conversations: {
+          lockForUpdate: async (conversationId, workspaceId) =>
+            (await conversationRepository.findByIdAndWorkspaceId(conversationId, workspaceId)) !== null,
+        },
         ownership: conversationOwnershipRepository,
-        reply: { messages: messageRepository, conversations: conversationRepository },
+        reply: { messages: messageRepository, conversations: conversationRepository, outbox: actionOutbox },
       }),
     },
     operators: conversationOperatorDirectory,

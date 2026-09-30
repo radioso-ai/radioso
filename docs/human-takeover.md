@@ -128,15 +128,14 @@ The reply is saved as an assistant-role message with `source:
 human_agent`. Its `metadata.humanAgent` records who sent it — `accountId`,
 `userId` — and the signature the visitor sees, `displayName`. The signature is
 your display name, or your organisation's name if you have not set one and that
-name is not itself shaped like an email address. With no display name and no
-usable organisation name, the reply goes out unsigned and the visitor sees it
-from "A teammate".
+name holds no email address. With no display name and no usable organisation
+name, the reply goes out unsigned and the visitor sees it from "A teammate".
 
 Every surface — the visitor chat and embed, the dashboard, Ray, and this API —
 carries a reply's stored signature in `operatorDisplayName` as it was saved,
-with one exception: an email-shaped signature is never shown, whether or not the
-reply records its author in `humanAgent.userId`, and the visitor sees that reply
-from "A teammate" instead.
+with one exception: a signature with an email address anywhere in it is never
+shown, whether or not the reply records its author in `humanAgent.userId`, and
+the visitor sees that reply from "A teammate" instead.
 
 Operator reads also name the teammate who wrote each reply. The history detail
 and tail (`GET /api/v1/history/chat/{conversationId}` and its `/tail`) and Ray's
@@ -156,11 +155,21 @@ ownership in `error.details.ownership`. `expectedVersion` must match the
 ownership record you replied from; a stale value also returns `409` with the
 current record.
 
-The ownership check and the saved reply commit together, with the ownership
-record locked in between. A transfer or hand-back that commits first refuses the
-reply with `409`, and no message is saved; one that arrives while the reply is
-being saved waits for it. The visitor, the dashboard, and a customer channel such
-as Slack hear of a reply only once it has committed.
+The ownership check, the saved reply, and its delivery to a customer channel
+such as Slack commit together, with the conversation and its ownership record
+locked in between. A transfer or hand-back that commits first refuses the reply
+with `409`, and no message is saved; one that arrives while the reply is being
+saved waits for it. The Slack post is queued on the action outbox in the same
+database transaction, keyed by the message, so the worker posts each reply once
+and retries a failed post. A reply that could not be saved or queued leaves
+nothing behind, so after a `5xx` you can send it again and the visitor sees it
+once.
+
+The visitor, the dashboard, and the customer channel hear of a reply only once
+it has committed, and from then on the reply stands: the endpoint answers `201`
+even when pushing it to the visitor's open chat or recording its audit event
+fails. Those failures are logged and reported with the conversation and message
+ids.
 
 The `201` response carries `message`, the saved reply, and `ownership`, the
 ownership after the reply. Its `version` moves on when the reply claimed the
@@ -304,7 +313,9 @@ unsigned reply, or one whose only signature is an email address, shows as
 "👤 A teammate". The operator tail also includes each reply's `operatorLabel`
 and, once a teammate has been involved in the conversation, its `ownership`
 record — AI-owned after a hand-back — so a reader polling the tail sees a claim,
-transfer, or hand-back made elsewhere. The visitor tail carries neither.
+transfer, or hand-back made elsewhere. The operator conversation detail carries
+the same record, so whichever of the two a reader loaded last, the higher
+`version` is the current one. The visitor tail and detail carry neither.
 
 The third caller is an AI agent on the other side of the MCP converse surface. It
 holds a conversation with the agent but cannot watch a chat window, so it reads

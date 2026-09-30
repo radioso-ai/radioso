@@ -2,10 +2,12 @@ import type { Kysely } from "kysely";
 
 import { ActionRequestRepository } from "../../db/repositories/actionRequestRepository.js";
 import { ConversationOwnershipRepository } from "../../db/repositories/conversationOwnershipRepository.js";
-import type { ActionDrainDispatcherPort } from "../../modules/chat/services/actions/actionDrainDispatcher.js";
+import type { ActionDrainDispatcherPort } from "../../modules/chat/composition.js";
 import type { OwnershipTransferUnitOfWork } from "../../modules/handoff/public.js";
+import type { ErrorReporter } from "../../shared/errors/errorReporter.js";
 import type { DB } from "../../shared/infra/kysely/types.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
+import { pushActionDrainAfterCommit, type QueuedOutboxRow } from "./actionDrainAfterCommit.js";
 
 /**
  * Runs a transfer and the notice it queues in one Postgres transaction, so a failed outbox write
@@ -17,9 +19,10 @@ export const createPostgresOwnershipTransferUnitOfWork = (deps: {
   db: Kysely<DB>;
   actionDrain: ActionDrainDispatcherPort;
   logger: Pick<AppLogger, "warn">;
+  errorReporter?: Pick<ErrorReporter, "report">;
 }): OwnershipTransferUnitOfWork => ({
   async run(work) {
-    let queued = false;
+    let queued: QueuedOutboxRow | null = null;
     const result = await deps.db.transaction().execute(async (trx) => {
       const outbox = new ActionRequestRepository(trx);
       return work({
@@ -27,21 +30,14 @@ export const createPostgresOwnershipTransferUnitOfWork = (deps: {
         outbox: {
           enqueue: async (request) => {
             const enqueued = await outbox.enqueue(request);
-            queued = true;
+            queued = request;
             return enqueued;
           },
         },
       });
     });
     if (queued) {
-      try {
-        await deps.actionDrain.requestDrain();
-      } catch (error) {
-        deps.logger.warn(
-          { event: "conversation_transfer_notice_drain_push_failed", errorClass: error instanceof Error ? error.name : typeof error },
-          "Action outbox drain push failed; the interval poller or recovery sweep will pick this up",
-        );
-      }
+      await pushActionDrainAfterCommit(deps, "conversation_transfer_notice_drain_push_failed", queued);
     }
     return result;
   },

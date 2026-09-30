@@ -6,6 +6,7 @@ import {
   CONVERSATION_TRANSFER_NOTICE_ACTION_TYPE,
   ConversationOwnershipService,
   type ConversationOperator,
+  type OperatorReplyService,
   type OwnershipActor,
 } from "../../../src/modules/handoff/public.js";
 import { InMemoryActionOutbox, InMemoryConversationOwnershipRepository } from "../../support/fakes.js";
@@ -23,6 +24,8 @@ const operators: Record<string, ConversationOperator> = {
 };
 
 const conversationRecord = { id: conversationId, workspaceId } as ConversationRecord;
+
+type OperatorReply = Parameters<OperatorReplyService["prepare"]>[0];
 
 const createService = (options: {
   outbox?: { enqueue: InMemoryActionOutbox["enqueue"] };
@@ -45,20 +48,48 @@ const createService = (options: {
       replySignature: null,
     })),
   };
-  const replyScope = { messages: { create: vi.fn() }, conversations: { touch: vi.fn() } };
-  const replies = {
-    write: vi.fn(async (_scope: unknown, reply: { conversation: ConversationRecord; message: string }): Promise<MessageRecord> => ({
-      id: "message-1",
-      conversationId: reply.conversation.id,
-      workspaceId: reply.conversation.workspaceId,
-      role: "assistant",
-      source: "human_agent",
-      content: reply.message,
-      createdAt: new Date("2026-01-01T00:00:00Z"),
-    })),
-    deliver: vi.fn(async () => undefined),
+  // Every step a reply takes, in order, so a test can assert what happens before what.
+  const steps: string[] = [];
+  const replyScope = { messages: { create: vi.fn() }, conversations: { touch: vi.fn() }, outbox: { enqueue: vi.fn() } };
+  const lockedConversations = {
+    lockForUpdate: vi.fn(async (id: string, inWorkspace: string) => {
+      steps.push("lock_conversation");
+      return id === conversationId && inWorkspace === workspaceId;
+    }),
   };
-  const loadForUpdate = vi.spyOn(ownership, "loadForUpdate");
+  const replies = {
+    prepare: vi.fn(async (reply: OperatorReply) => {
+      steps.push("prepare");
+      return { ...reply, channel: null };
+    }),
+    write: vi.fn(async (_scope: unknown, reply: { conversation: ConversationRecord; message: string }): Promise<MessageRecord> => {
+      steps.push("write");
+      return {
+        id: "message-1",
+        conversationId: reply.conversation.id,
+        workspaceId: reply.conversation.workspaceId,
+        role: "assistant",
+        source: "human_agent",
+        content: reply.message,
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+      };
+    }),
+    announce: vi.fn(() => {
+      steps.push("announce");
+    }),
+    audit: vi.fn(async () => {
+      steps.push("audit:replied");
+    }),
+  };
+  const originalLoadForUpdate = ownership.loadForUpdate.bind(ownership);
+  const loadForUpdate = vi.spyOn(ownership, "loadForUpdate").mockImplementation(async (id: string) => {
+    steps.push("lock_ownership");
+    return originalLoadForUpdate(id);
+  });
+  audit.record.mockImplementation(async (event: unknown) => {
+    steps.push(`audit:${(event as { metadata: { action: string } }).metadata.action}`);
+    await (options.audit?.record ?? (async () => undefined))(event);
+  });
   const service = new ConversationOwnershipService({
     conversations,
     ownership,
@@ -66,7 +97,7 @@ const createService = (options: {
       run: (work) => work({ ownership, outbox: options.outbox ?? outbox }),
     },
     replyWrites: {
-      run: (work) => work({ ownership, reply: replyScope }),
+      run: (work) => work({ conversations: lockedConversations, ownership, reply: replyScope }),
     },
     operators: {
       find: vi.fn(async (input: { userId: string }) => operators[input.userId] ?? null),
@@ -79,7 +110,8 @@ const createService = (options: {
     errorReporter,
   });
   return {
-    service, ownership, outbox, audit, publisher, replies, replyScope, conversations, operatorIdentities, loadForUpdate, logger, errorReporter,
+    service, ownership, outbox, audit, publisher, replies, replyScope, conversations, lockedConversations, operatorIdentities,
+    loadForUpdate, logger, errorReporter, steps,
   };
 };
 
@@ -95,13 +127,59 @@ describe("ConversationOwnershipService", () => {
       const result = await service.reply(dana, { conversationId, message: "Hello", expectedVersion: claim.record!.version });
 
       expect(result).toMatchObject({ ok: true, record: { ownerUserId: "user-dana", version: 1 } });
-      expect(replies.write).toHaveBeenCalledWith(replyScope, {
+      expect(replies.prepare).toHaveBeenCalledWith({
         conversation: conversationRecord,
         accountId,
         operator: { userId: "user-dana", teammateLabel: "Dana Scully", replySignature: null },
         message: "Hello",
       });
-      expect(replies.deliver).toHaveBeenCalledWith(replies.write.mock.calls[0][1], expect.objectContaining({ id: "message-1" }));
+      expect(replies.write).toHaveBeenCalledWith(replyScope, await replies.prepare.mock.results[0].value);
+      expect(replies.announce).toHaveBeenCalledWith(replies.write.mock.calls[0][1], expect.objectContaining({ id: "message-1" }));
+      expect(replies.audit).toHaveBeenCalledWith(replies.write.mock.calls[0][1], expect.objectContaining({ id: "message-1" }));
+    });
+
+    it("locks the conversation, then its ownership, then writes; and tells the visitor before auditing", async () => {
+      const { service, steps } = createService();
+
+      await service.reply(fox, { conversationId, message: "Hi", expectedVersion: 0 });
+
+      expect(steps).toEqual(["prepare", "lock_conversation", "lock_ownership", "write", "announce", "audit:taken_over", "audit:replied"]);
+    });
+
+    it("answers not found, writing nothing, when the conversation is gone by the time the reply locks it", async () => {
+      const { service, replies, lockedConversations } = createService();
+      lockedConversations.lockForUpdate.mockResolvedValueOnce(false);
+
+      await expect(service.reply(fox, { conversationId, message: "Hi", expectedVersion: 0 }))
+        .rejects.toMatchObject({ statusCode: 404, code: "not_found" });
+      expect(replies.write).not.toHaveBeenCalled();
+      expect(replies.announce).not.toHaveBeenCalled();
+    });
+
+    it("fails the reply, telling no one, when writing it fails", async () => {
+      const { service, replies, audit, publisher } = createService();
+      replies.write.mockRejectedValueOnce(new Error("outbox unavailable"));
+
+      await expect(service.reply(fox, { conversationId, message: "Hi", expectedVersion: 0 })).rejects.toThrow("outbox unavailable");
+      expect(replies.announce).not.toHaveBeenCalled();
+      expect(replies.audit).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
+      expect(publisher.enqueue).not.toHaveBeenCalled();
+    });
+
+    it("reads the conversation and the replier together", async () => {
+      const { service, conversations, operatorIdentities } = createService();
+      let releaseConversation: (() => void) | undefined;
+      conversations.findByIdAndWorkspaceId.mockImplementationOnce(async () => {
+        await new Promise<void>((resolve) => { releaseConversation = resolve; });
+        return conversationRecord;
+      });
+
+      const reply = service.reply(fox, { conversationId, message: "Hi", expectedVersion: 0 });
+      await vi.waitFor(() => expect(operatorIdentities.resolve).toHaveBeenCalledTimes(1));
+      releaseConversation?.();
+
+      await expect(reply).resolves.toMatchObject({ ok: true });
     });
 
     it("refuses a teammate's reply while another teammate owns the conversation", async () => {
@@ -112,7 +190,7 @@ describe("ConversationOwnershipService", () => {
 
       expect(result).toMatchObject({ ok: false, refusal: "held_by_teammate", record: { ownerUserId: "user-dana" } });
       expect(replies.write).not.toHaveBeenCalled();
-      expect(replies.deliver).not.toHaveBeenCalled();
+      expect(replies.announce).not.toHaveBeenCalled();
     });
 
     it("refuses the owner's reply from a stale view", async () => {
@@ -126,21 +204,21 @@ describe("ConversationOwnershipService", () => {
     });
 
     it("decides on the ownership it locked, so a transfer that lands first refuses the reply", async () => {
-      const { service, ownership, replies, operatorIdentities } = createService();
+      const { service, ownership, replies } = createService();
       const claim = await service.takeOver(dana, { conversationId });
       // Fox takes the conversation after Dana pressed Send, before her reply is written.
-      operatorIdentities.resolve.mockImplementationOnce(async (input: { userId: string }) => {
+      replies.prepare.mockImplementationOnce(async (reply: OperatorReply) => {
         await ownership.transfer({
           conversationId, accountId, userId: "user-fox", displayName: "Fox Mulder", expectedVersion: claim.record!.version,
         });
-        return { userId: input.userId, teammateLabel: "Dana Scully", replySignature: null };
+        return { ...reply, channel: null };
       });
 
       const result = await service.reply(dana, { conversationId, message: "Hello", expectedVersion: claim.record!.version });
 
       expect(result).toMatchObject({ ok: false, refusal: "held_by_teammate", record: { ownerUserId: "user-fox" } });
       expect(replies.write).not.toHaveBeenCalled();
-      expect(replies.deliver).not.toHaveBeenCalled();
+      expect(replies.announce).not.toHaveBeenCalled();
     });
 
     it("reads the conversation, the replier and the ownership once each, even when the reply claims it", async () => {
@@ -174,7 +252,7 @@ describe("ConversationOwnershipService", () => {
 
       expect(result).toMatchObject({ ok: true, record: { state: "human_owned", ownerUserId: "user-fox" } });
       expect(replies.write).toHaveBeenCalledTimes(1);
-      expect(replies.deliver).toHaveBeenCalledTimes(1);
+      expect(replies.announce).toHaveBeenCalledTimes(1);
       expect(publisher.enqueue).toHaveBeenCalledWith(workspaceId, ["conversation.ownership_changed"]);
     });
 
@@ -184,7 +262,21 @@ describe("ConversationOwnershipService", () => {
       const result = await service.reply(fox, { conversationId, message: "Hi", expectedVersion: 0 });
 
       expect(result).toMatchObject({ ok: true, record: { ownerUserId: "user-fox" } });
-      expect(replies.deliver).toHaveBeenCalledTimes(1);
+      expect(replies.announce).toHaveBeenCalledTimes(1);
+    });
+
+    it("answers a committed claim-and-reply when telling the dashboard of the claim throws", async () => {
+      const { service, publisher, replies, logger } = createService();
+      publisher.enqueue.mockImplementation(() => { throw new Error("publisher down"); });
+
+      const result = await service.reply(fox, { conversationId, message: "Hi", expectedVersion: 0 });
+
+      expect(result).toMatchObject({ ok: true, record: { ownerUserId: "user-fox" } });
+      expect(replies.audit).toHaveBeenCalledTimes(1);
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ event: "hitl_ownership_notification_failed", notification: "dashboard_refresh", conversationId }),
+        expect.any(String),
+      );
     });
   });
 

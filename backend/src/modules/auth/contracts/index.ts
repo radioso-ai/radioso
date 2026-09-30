@@ -6,4 +6,4 @@ export {
   sha256,
   tokenPrefix,
 } from "../domain/authPrimitives.js";
-export { looksLikeEmailAddress, outwardFacingName, teammateLabel, visitorFacingName } from "../domain/userDisplayName.js";
+export { outwardFacingName, teammateLabel, visitorFacingName } from "../domain/userDisplayName.js";

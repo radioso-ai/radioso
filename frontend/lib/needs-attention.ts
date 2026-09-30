@@ -266,33 +266,34 @@ export interface HandoffCandidateSource {
  * waiting-time presentation, Done semantics — without a second mapping to
  * drift from this one.
  *
- * `ownership` is optional: a human-owned conversation carries the full
- * record (claimed-by, waiting-since, taken-over-at), which populates the
- * corresponding fields below. A live ai-owned conversation the operator
- * hasn't claimed yet (still "in progress", not yet a handoff) has no
- * ownership record at all — those fields simply stay unset rather than
- * guessing, and the composer's own claim-on-send flow (see
- * `OperatorComposer`) is what creates the record once the operator sends.
+ * Only a human-owned `ownership` record makes it a handoff: it carries the
+ * claimed-by, waiting-since, and taken-over-at that populate the fields
+ * below. A live conversation with the agent — no record yet, or an AI-owned
+ * one left by a hand-back — is "in progress", not yet a handoff: those
+ * fields simply stay unset rather than guessing, and the composer's own
+ * claim-on-send flow (see `OperatorComposer`) is what claims it once the
+ * operator sends.
  */
-export const toHandoffInboxItem = (conversation: HandoffCandidateSource): InboxItem => ({
-  key: conversation.ownership
-    ? `handoff:${conversation.id}:${conversation.ownership.version}`
-    : `live:${conversation.id}`,
-  conversationId: conversation.id,
-  type: 'handoff',
-  severity: ESCALATION_SEVERITY.handoff,
-  title: resolveConversationDisplayTitle(conversation),
-  detail: conversation.ownership ? ownershipLabel(conversation.ownership) : 'In progress',
-  timestamp: conversation.updatedAt,
-  escalatedAt: conversation.ownership?.updatedAt,
-  takenOverAt: conversation.ownership?.takenOverAt ?? null,
-  agentId: conversation.agentId,
-  agentName: conversation.agentName,
-  agentInternalName: conversation.agentInternalName,
-  lastMessageAt: conversation.updatedAt,
-  takenBy: conversation.ownership ? conversationOwner(conversation.ownership) : undefined,
-  anonymousSessionId: conversation.anonymousSessionId,
-})
+export const toHandoffInboxItem = (conversation: HandoffCandidateSource): InboxItem => {
+  const handoff = conversation.ownership?.state === 'human_owned' ? conversation.ownership : undefined
+  return {
+    key: handoff ? `handoff:${conversation.id}:${handoff.version}` : `live:${conversation.id}`,
+    conversationId: conversation.id,
+    type: 'handoff',
+    severity: ESCALATION_SEVERITY.handoff,
+    title: resolveConversationDisplayTitle(conversation),
+    detail: handoff ? ownershipLabel(handoff) : 'In progress',
+    timestamp: conversation.updatedAt,
+    escalatedAt: handoff?.updatedAt,
+    takenOverAt: handoff?.takenOverAt ?? null,
+    agentId: conversation.agentId,
+    agentName: conversation.agentName,
+    agentInternalName: conversation.agentInternalName,
+    lastMessageAt: conversation.updatedAt,
+    takenBy: handoff ? conversationOwner(handoff) : undefined,
+    anonymousSessionId: conversation.anonymousSessionId,
+  }
+}
 
 /**
  * The All lens's actionable/read-only split for a selected conversation: any

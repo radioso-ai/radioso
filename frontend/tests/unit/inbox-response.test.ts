@@ -359,13 +359,13 @@ describe('resolveReadOnlySource', () => {
   })
 
   it('prefers a loaded detail that shows the conversation was handed back, over a stale owned row summary', () => {
-    // The reverse case: the row summary still shows the old human owner: the
-    // detail, fetched after a hand-back, carries no ownership at all. The
+    // The reverse case: the row summary still shows the old human owner; the
+    // detail, fetched after a hand-back, carries the AI-owned record. The
     // stale hint must not keep this rendering actionable as if still owned.
     const row = rowSummary({ ownership: ownership() })
-    const loaded = detail({ ownership: undefined })
+    const loaded = detail({ ownership: handedBack(2) })
 
-    expect(resolveReadOnlySource(row, loaded)?.ownership).toBeUndefined()
+    expect(resolveReadOnlySource(row, loaded)?.ownership).toMatchObject({ state: 'ai_owned', version: 2 })
   })
 
   it('carries anonymousSessionId and preview over from the row summary once detail loads, since the detail response has neither', () => {

@@ -154,10 +154,10 @@ describe('deriveInboxResponseHandoffItem', () => {
   })
 
   it('returns an actionable item (take-over-able) for an AI-owned conversation still in progress', () => {
-    // The list/detail endpoints omit `ownership` entirely for AI-owned
-    // conversations, so a live one arrives with no ownership record and a
-    // recent `updatedAt`. It must still be actionable — sending a reply
-    // claims it, exactly like a handoff.
+    // The list endpoint omits `ownership` for AI-owned conversations, so a
+    // live one arrives with no ownership record and a recent `updatedAt`. It
+    // must still be actionable — sending a reply claims it, exactly like a
+    // handoff.
     const inProgress = conversation({ id: 'conversation-in-progress', updatedAt: '2026-06-19T10:00:00.000Z' })
 
     const result = deriveInboxResponseHandoffItem(inProgress, now)
@@ -166,6 +166,25 @@ describe('deriveInboxResponseHandoffItem', () => {
     // No ownership record exists yet for a live, unclaimed conversation — the
     // composer's own claim-on-send flow creates it once the operator sends.
     expect(result?.takenBy).toBeUndefined()
+  })
+
+  it('treats an AI-owned record like no record: live while recent, read-only once quiet, never a waiting handoff', () => {
+    // The detail read carries the ownership record whenever one exists, so a
+    // conversation handed back to the agent arrives with an AI-owned record.
+    const handedBack = conversation({
+      id: 'conversation-handed-back',
+      ownership: ownership({ conversationId: 'conversation-handed-back', state: 'ai_owned', version: 4, takenOverAt: null }),
+      updatedAt: '2026-06-19T10:00:00.000Z',
+    })
+
+    expect(deriveInboxResponseHandoffItem(handedBack, now)).toMatchObject({
+      key: 'live:conversation-handed-back',
+      detail: 'In progress',
+      escalatedAt: undefined,
+      takenOverAt: null,
+      takenBy: undefined,
+    })
+    expect(deriveInboxResponseHandoffItem(handedBack, new Date('2026-06-19T10:20:00.000Z'))).toBeNull()
   })
 
   it('returns null (read-only) for a conversation with no ownership record that has gone quiet', () => {
@@ -198,8 +217,8 @@ describe('deriveInboxResponseHandoffItem', () => {
 
   it('accepts a detail-shaped conversation with no ownership field, deriving from recency alone', () => {
     // Same narrow detail shape as above, but for a live AI-owned
-    // conversation the detail endpoint also omits `ownership` — the
-    // in-progress/completed split must still work without it.
+    // conversation no teammate has been involved in, which has no ownership
+    // record — the in-progress/completed split must still work without it.
     const detailShaped = {
       id: 'conversation-detail-in-progress',
       updatedAt: '2026-06-19T10:00:00.000Z',

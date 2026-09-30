@@ -144,4 +144,31 @@ describe("public chat presenter", () => {
       expect(message).toMatchObject({ operatorDisplayName: "Acme Support" });
     }
   });
+
+  it("never forwards a conversation's ownership to the visitor, AI-owned included, even when a read carried it", () => {
+    // Operator reads carry the ownership record whenever one exists; it names the teammate
+    // handling the conversation, so a mis-wired read must still not hand it to the visitor.
+    const ownership = {
+      conversationId: "c1",
+      workspaceId: "w1",
+      state: "ai_owned" as const,
+      ownerAccountId: null,
+      ownerUserId: null,
+      ownerDisplayName: null,
+      reason: "operator_takeover",
+      version: 3,
+      takenOverAt: null,
+      createdAt: "2026-09-30T10:00:00.000Z",
+      updatedAt: "2026-09-30T10:00:00.000Z",
+    };
+    const tail = stripPublicConversationTailCitationArtifacts({ messages: [], cursor: null, ownership }, true);
+    const detail = stripPublicConversationCitationArtifacts(
+      { messages: [], ownership } as unknown as ChatConversationDetail,
+      "anonymous-session-1",
+      true,
+    );
+
+    expect(tail).not.toHaveProperty("ownership");
+    expect(detail).not.toHaveProperty("ownership");
+  });
 });

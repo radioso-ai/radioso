@@ -28,7 +28,7 @@ const conversation = (
 })
 
 describe('deriveConversationOutcome', () => {
-  it('is handed_off whenever ownership is present, regardless of recency', () => {
+  it('is handed_off whenever a human-owned record is present, regardless of recency', () => {
     const justUpdated = conversation({
       ownership,
       updatedAt: new Date(NOW.getTime() - 1000).toISOString(),
@@ -43,6 +43,18 @@ describe('deriveConversationOutcome', () => {
     })
 
     expect(deriveConversationOutcome(claimed, NOW)).toEqual({ kind: 'handed_off' })
+  })
+
+  it('decides from recency for an AI-owned record, which an operator read carries after a hand-back', () => {
+    const handedBack = { ...ownership, state: 'ai_owned' as const, takenOverAt: null, version: 3 }
+
+    expect(deriveConversationOutcome(conversation({ ownership: handedBack }), NOW)).toEqual({ kind: 'in_progress' })
+    expect(
+      deriveConversationOutcome(
+        conversation({ ownership: handedBack, updatedAt: new Date(NOW.getTime() - IN_PROGRESS_WINDOW_MS - 1).toISOString() }),
+        NOW,
+      ),
+    ).toEqual({ kind: 'completed' })
   })
 
   it('is in_progress when updated just under the window and unowned', () => {

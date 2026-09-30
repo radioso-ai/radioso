@@ -280,8 +280,9 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     }),
   );
 
-  // Declared before the conversation summary/detail schemas so both can carry it. Absent on
-  // the response means the conversation is AI-owned (the ownership table is lazy: no row).
+  // Declared before the conversation summary/detail schemas so both can carry it. Absent on a
+  // summary means the conversation is AI-owned (the ownership table is lazy: no row); detail and
+  // tail carry an AI-owned record too once a teammate has been involved.
   const ConversationOwnershipSchema = registry.register(
     "ConversationOwnership",
     z.object({
@@ -748,7 +749,9 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
         description: "Cursor for subsequent tail requests. It marks the newest message included when this detail response was produced.",
       }),
       messages: z.array(ChatConversationMessageSchema),
-      ownership: ConversationOwnershipSchema.optional(),
+      ownership: ConversationOwnershipSchema.optional().openapi({
+        description: "The conversation's ownership record whenever one exists, `ai_owned` included, the same as the tail's, so a reader holding an older record sees a hand-back by its higher version. Absent until a teammate is first involved.",
+      }),
     }),
   );
 

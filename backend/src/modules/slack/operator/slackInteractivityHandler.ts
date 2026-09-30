@@ -128,11 +128,10 @@ const readNumber = (value: unknown): number | null =>
 
 const ownershipContextText = (conversationId: string): string => `Conversation ${conversationId}`;
 
-/** Plain text naming whoever holds a conversation, for the teammate the refusal is shown to. */
-const heldByText = (record: ConversationOwnershipRecord | null): string =>
-  `${(record && ownerLabel(record)) ?? "A teammate"} is handling this.`;
-
-/** The same refusal as a private Slack notice, linking to the dashboard's Reassign when given a link. */
+/**
+ * The refusal naming whoever holds a conversation, for the teammate it is shown to: a private
+ * notice or a reply modal's field error. It links to the dashboard's Reassign when given a link.
+ */
 const heldByNotice = (record: ConversationOwnershipRecord | null, dashboardUrl: string | null = null): string =>
   heldByTeammateNotice({ ownerLabel: record && ownerLabel(record), dashboardUrl });
 
@@ -528,7 +527,7 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
     if (!result.ok) {
       return this.replyModalError(
         result.refusal === "held_by_teammate"
-          ? heldByText(result.record)
+          ? heldByNotice(result.record)
           : "This conversation changed. Take over again before replying.",
       );
     }

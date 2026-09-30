@@ -10715,7 +10715,9 @@ components:
           items:
             $ref: "#/components/schemas/ChatConversationMessage"
         ownership:
-          $ref: "#/components/schemas/ConversationOwnership"
+          allOf:
+            - $ref: "#/components/schemas/ConversationOwnership"
+            - description: The conversation's ownership record whenever one exists, `ai_owned` included, the same as the tail's, so a reader holding an older record sees a hand-back by its higher version. Absent until a teammate is first involved.
       required:
         - conversationId
         - workspaceId

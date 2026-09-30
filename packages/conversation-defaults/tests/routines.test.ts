@@ -104,6 +104,7 @@ describe("routine defaults", () => {
     await expect(selector.select({ routine, state, currentStep, transitions, turn })).resolves.toEqual({
       nextStepId: "ask_message",
       variables: { email: "a@b.c" },
+      selection: { outcome: "transition", returnedSlotKeys: ["email"] },
     });
   });
 
@@ -118,7 +119,11 @@ describe("routine defaults", () => {
     const decision = await new RoutineNextStepSelector(
       gateway('{"condition": null, "offTopic": true, "variables": {}}'),
     ).select({ routine, state, currentStep, transitions, turn });
-    expect(decision).toEqual({ nextStepId: "ask_email", yieldTurn: true });
+    expect(decision).toEqual({
+      nextStepId: "ask_email",
+      yieldTurn: true,
+      selection: { outcome: "off_topic", returnedSlotKeys: [] },
+    });
   });
 
   it("follows a decline transition instead of yielding or re-asking", async () => {
@@ -128,7 +133,11 @@ describe("routine defaults", () => {
     const decision = await new RoutineNextStepSelector(
       gateway('{"condition": 1, "offTopic": false, "variables": {}}'),
     ).select({ routine, state, currentStep, transitions: declineTransitions, turn });
-    expect(decision).toEqual({ nextStepId: "cancelled", variables: {} });
+    expect(decision).toEqual({
+      nextStepId: "cancelled",
+      variables: {},
+      selection: { outcome: "transition", returnedSlotKeys: [] },
+    });
   });
 
   it("throws when a prompt template leaves a variable unfilled", async () => {
@@ -596,6 +605,7 @@ describe("routine defaults", () => {
     await expect(selector.select({ routine: slotted, state, currentStep, transitions, turn })).resolves.toEqual({
       nextStepId: "ask_message",
       variables: { email: "a@b.c" },
+      selection: { outcome: "transition", returnedSlotKeys: ["email"], undeclaredKeyCount: 2 },
     });
   });
 
@@ -607,6 +617,182 @@ describe("routine defaults", () => {
     await expect(selector.select({ routine, state, currentStep, transitions, turn })).resolves.toEqual({
       nextStepId: "ask_message",
       variables: { email: "a@b.c" },
+      selection: { outcome: "transition", returnedSlotKeys: ["email"], undeclaredKeyCount: 1 },
+    });
+  });
+
+  describe("slot extraction (#1370)", () => {
+    const booking: Routine = {
+      ...routine,
+      slots: [
+        { id: "s_program", key: "program", type: "text", required: true, description: "The program.\nLeave this empty until they name one." },
+        { id: "s_arrival", key: "arrival", type: "date", required: true },
+      ],
+    };
+
+    it("lists each declared slot on its own line and extracts whether or not the step asks for it", async () => {
+      const gw = gateway('{"condition": null, "variables": {}}');
+      await new RoutineNextStepSelector(gw).select({ routine: booking, state, currentStep, transitions, turn });
+
+      const systemPrompt = vi.mocked(gw.complete).mock.calls[0][0].systemPrompt ?? "";
+      expect(systemPrompt).toContain("- program (text): The program. Leave this empty until they name one.");
+      expect(systemPrompt).toContain("- arrival (date)");
+      expect(systemPrompt).toContain("whether or not the current step asks for it");
+      expect(systemPrompt).toContain("a slot's description applies only to that slot");
+      expect(systemPrompt).not.toContain('"required"');
+    });
+
+    it("dates the turn so a date slot given without a year resolves to an ISO date", async () => {
+      const gw = gateway('{"condition": null, "variables": {}}');
+      await new RoutineNextStepSelector(gw, { clock: () => new Date("2026-09-30T12:00:00Z") })
+        .select({ routine: booking, state, currentStep, transitions, turn });
+
+      const systemPrompt = vi.mocked(gw.complete).mock.calls[0][0].systemPrompt ?? "";
+      expect(systemPrompt).toContain("Record a date slot's value as YYYY-MM-DD");
+      expect(systemPrompt).toContain("Today is 2026-09-30 (UTC)");
+    });
+
+    it("leaves the date rule out when no slot is a date", async () => {
+      const gw = gateway('{"condition": null, "variables": {}}');
+      const noDates: Routine = { ...booking, slots: [booking.slots![0]] };
+      await new RoutineNextStepSelector(gw).select({ routine: noDates, state, currentStep, transitions, turn });
+
+      expect(vi.mocked(gw.complete).mock.calls[0][0].systemPrompt).not.toContain("Today is");
+    });
+
+    it("tells the model which slots already hold a value, by key", async () => {
+      const gw = gateway('{"condition": null, "variables": {}}');
+      await new RoutineNextStepSelector(gw).select({
+        routine: booking,
+        state: { ...state, variables: { arrival: "2026-11-11" } },
+        currentStep,
+        transitions,
+        turn,
+      });
+
+      const systemPrompt = vi.mocked(gw.complete).mock.calls[0][0].systemPrompt ?? "";
+      expect(systemPrompt).toContain("Slots that already have a value from earlier turns: arrival.");
+      expect(systemPrompt).not.toContain("2026-11-11");
+    });
+
+    it("coerces numbers and booleans to their declared type and drops blank values", async () => {
+      const typed: Routine = {
+        ...routine,
+        slots: [
+          { id: "s_adults", key: "adults", type: "number", required: true },
+          { id: "s_pets", key: "pets", type: "boolean", required: false },
+          { id: "s_name", key: "name", type: "text", required: true },
+          { id: "s_email", key: "email", type: "email", required: true },
+        ],
+      };
+      const decision = await new RoutineNextStepSelector(
+        gateway('{"condition": null, "variables": {"adults": " 2 ", "pets": "false", "name": "   ", "email": null}}'),
+      ).select({ routine: typed, state, currentStep, transitions, turn });
+
+      expect(decision.variables).toEqual({ adults: 2, pets: false });
+      expect(decision.selection).toEqual({ outcome: "stay", returnedSlotKeys: ["adults", "pets"] });
+    });
+
+    it("reports a stay with the slot keys the model returned and the undeclared keys it dropped", async () => {
+      const decision = await new RoutineNextStepSelector(
+        gateway('{"condition": null, "offTopic": false, "variables": {"arrival": "2026-11-11", "nights": 3}}'),
+      ).select({ routine: booking, state, currentStep, transitions, turn });
+
+      expect(decision).toEqual({
+        nextStepId: "ask_email",
+        variables: { arrival: "2026-11-11" },
+        selection: { outcome: "stay", returnedSlotKeys: ["arrival"], undeclaredKeyCount: 1 },
+      });
+    });
+
+    it("reports a chosen transition", async () => {
+      const decision = await new RoutineNextStepSelector(
+        gateway('{"condition": 1, "variables": {"program": "Retreat"}}'),
+      ).select({ routine: booking, state, currentStep, transitions, turn });
+
+      expect(decision.selection).toEqual({ outcome: "transition", returnedSlotKeys: ["program"] });
+    });
+
+    it("reports an off-topic reading on the yielded decision", async () => {
+      const decision = await new RoutineNextStepSelector(
+        gateway('{"condition": null, "offTopic": true, "variables": {}}'),
+      ).select({ routine: booking, state, currentStep, transitions, turn });
+
+      expect(decision.selection).toEqual({ outcome: "off_topic", returnedSlotKeys: [] });
+    });
+
+    it("reports output it could not parse", async () => {
+      const decision = await new RoutineNextStepSelector(gateway("I think they want a retreat.")).select({
+        routine: booking,
+        state,
+        currentStep,
+        transitions,
+        turn,
+      });
+
+      expect(decision.selection).toEqual({ outcome: "unreadable", returnedSlotKeys: [] });
+    });
+  });
+
+  describe("re-asked and unfinished steps (#1369)", () => {
+    const sectionTemplate = "PROGRESS:{{step_progress_instruction}}\nREASK:{{reask_context}}";
+    const programSlot = { id: "s_program", key: "program", type: "text" as const, required: true, description: "The program they want to attend." };
+
+    it("tells a chat step reply that nothing is confirmed or submitted yet", async () => {
+      const gw = gateway("ok");
+      await new RoutineStepRenderer(gw).render({ step: currentStep, steering: [], turn });
+
+      const systemPrompt = vi.mocked(gw.complete).mock.calls[0][0].systemPrompt ?? "";
+      expect(systemPrompt).toMatch(/never say or imply that the request is confirmed.*unless the step instruction itself reports/is);
+    });
+
+    it("leaves a completing terminal free to confirm", async () => {
+      const gw = gateway("ok");
+      await new RoutineStepRenderer(gw, { promptTemplate: sectionTemplate }).render({
+        step: { id: "done", kind: "terminal", action: "Confirm the request was sent." },
+        steering: [],
+        turn,
+      });
+
+      expect(vi.mocked(gw.complete).mock.calls[0][0].systemPrompt).toBe("PROGRESS:\nREASK:");
+    });
+
+    it("tells a re-asked step that the reply fell short and what is still missing", async () => {
+      const gw = gateway("ok");
+      await new RoutineStepRenderer(gw, { promptTemplate: sectionTemplate }).render({
+        step: currentStep,
+        steering: [],
+        turn,
+        reask: { missingSlots: [programSlot] },
+      });
+
+      const systemPrompt = vi.mocked(gw.complete).mock.calls[0][0].systemPrompt ?? "";
+      const reaskSection = systemPrompt.slice(systemPrompt.indexOf("REASK:"));
+      expect(reaskSection).toMatch(/did not give everything this step needs/);
+      expect(reaskSection).toContain("Still missing: program.");
+      // The slot description is extractor guidance and never reaches the reply.
+      expect(reaskSection).not.toContain("The program they want to attend.");
+    });
+
+    it("re-asks a step that collects no slot without listing any", async () => {
+      const gw = gateway("ok");
+      await new RoutineStepRenderer(gw, { promptTemplate: sectionTemplate }).render({
+        step: currentStep,
+        steering: [],
+        turn,
+        reask: { missingSlots: [] },
+      });
+
+      const systemPrompt = vi.mocked(gw.complete).mock.calls[0][0].systemPrompt ?? "";
+      expect(systemPrompt).toMatch(/REASK:.*did not give everything this step needs/s);
+      expect(systemPrompt).not.toContain("Still missing");
+    });
+
+    it("adds no re-ask context to a step asked for the first time", async () => {
+      const gw = gateway("ok");
+      await new RoutineStepRenderer(gw, { promptTemplate: sectionTemplate }).render({ step: currentStep, steering: [], turn });
+
+      expect(vi.mocked(gw.complete).mock.calls[0][0].systemPrompt).toMatch(/REASK:$/);
     });
   });
 

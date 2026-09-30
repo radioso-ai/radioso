@@ -8,6 +8,7 @@ import {
 import { contactFormOnlyDirective } from "./directives.js";
 import {
   BOOK_DEMO_ROUTINE_ID,
+  BOOK_RETREAT_ROUTINE_ID,
   CONTACT_SUPPORT_ROUTINE_ID,
   CREATE_RETURN_TICKET_SKILL,
   START_RETURN_ROUTINE_ID,
@@ -215,6 +216,48 @@ export const conversationQualityCases: ConversationQualityCase[] = [
     assertions: [
       { type: "turn_activates_routine", routineId: BOOK_DEMO_ROUTINE_ID },
       { type: "routine_step_reached", routineId: BOOK_DEMO_ROUTINE_ID, stepId: "ask_name" },
+    ],
+  },
+  // #1370: a first message keeps every slot it states, even when the step it lands on
+  // asks for another. The demo routine starts on `ask_name`; this message gives the email
+  // and a date without a year but no name, so the step is re-asked with both slots filled.
+  // Italian, like the report.
+  {
+    id: "routine-first-message-keeps-stated-slots",
+    name: "A first message keeps the slots it states when its step asks for another",
+    tags: ["routine", "slot-extraction", "multilingual"],
+    query: "Vorrei prenotare una demo per il 14 novembre, la mia email di lavoro è jo@acme.example",
+    assertions: [
+      { type: "turn_activates_routine", routineId: BOOK_DEMO_ROUTINE_ID },
+      { type: "routine_slots_filled", routineId: BOOK_DEMO_ROUTINE_ID, slotKeys: ["email", "preferredDate"] },
+    ],
+  },
+  // #1369: a re-asked step asks again; it never announces a confirmation. The retreat step
+  // asks the visitor to confirm, and "sì" to a bare wish to stay names no retreat, so the
+  // step is re-asked. The reply must be a question, not "your stay is confirmed".
+  {
+    id: "routine-reasked-confirmation-step-asks-again",
+    name: "A re-asked confirmation step asks again instead of confirming",
+    tags: ["routine", "multiturn", "reask", "multilingual"],
+    history: [
+      { role: "user", content: "Vorrei venire a stare da voi dall'11 al 14 novembre." },
+      { role: "assistant", content: "Certamente — vuoi prenotare un soggiorno da noi dall'11 al 14 novembre?" },
+    ],
+    routineStartState: {
+      routineId: BOOK_RETREAT_ROUTINE_ID,
+      path: ["confirm_retreat"],
+      variables: {},
+      status: "active",
+    },
+    query: "sì",
+    assertions: [
+      { type: "turn_activates_routine", routineId: BOOK_RETREAT_ROUTINE_ID },
+      { type: "answer_contains", pattern: "\\?", matchMode: "regex" },
+      {
+        type: "llm_judge",
+        expectedAnswer: "Chiede quale ritiro del calendario il visitatore vuole prenotare.",
+        criteria: "Asks which retreat the visitor wants. Does not say or imply that the stay or booking is confirmed, booked, or submitted.",
+      },
     ],
   },
   // SC-002: the same routine driven by a human transcript and by one tool call reaches

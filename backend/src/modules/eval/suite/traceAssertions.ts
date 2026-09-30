@@ -21,6 +21,8 @@ export type SuiteTraceAssertion =
   | { type: "turn_skips_skill"; skillName: string }
   | { type: "turn_activates_routine"; routineId: string }
   | { type: "routine_step_reached"; routineId: string; stepId: string }
+  /** Every named slot is filled after the turn, whichever step the routine landed on. */
+  | { type: "routine_slots_filled"; routineId: string; slotKeys: string[] }
   | { type: "turn_asks_clarification" }
   | { type: "turn_grounding_verdict"; verdict: "grounded" | "degraded" | "no_support" }
   | { type: "turn_answer_coverage"; coverage: "answered" | "partial" | "unanswered" | "unclear" };
@@ -31,6 +33,7 @@ const TRACE_ASSERTION_TYPES = new Set<string>([
   "turn_skips_skill",
   "turn_activates_routine",
   "routine_step_reached",
+  "routine_slots_filled",
   "turn_asks_clarification",
   "turn_grounding_verdict",
   "turn_answer_coverage",
@@ -212,6 +215,24 @@ export const evaluateTraceAssertion = (
         landed
           ? `Routine "${assertion.routineId}" landed on ${landed}; expected "${assertion.stepId}".`
           : `Routine "${assertion.routineId}" recorded no step trace to match "${assertion.stepId}".`,
+      );
+    }
+    case "routine_slots_filled": {
+      if (!output.turnTrace) {
+        return missingTrace(assertion);
+      }
+      const matches = routineStages(output, assertion.routineId);
+      if (matches.length === 0) {
+        return fail(assertion, `Routine "${assertion.routineId}" did not claim the turn.`);
+      }
+      const filled = new Set(matches.flatMap((stage) => routineTrace(stage)?.filledSlotKeys ?? []));
+      const missing = assertion.slotKeys.filter((key) => !filled.has(key));
+      if (missing.length === 0) {
+        return pass(assertion, `Routine "${assertion.routineId}" filled ${assertion.slotKeys.join(", ")}.`);
+      }
+      return fail(
+        assertion,
+        `Routine "${assertion.routineId}" left ${missing.join(", ")} unfilled; filled: ${[...filled].join(", ") || "none"}.`,
       );
     }
     case "turn_asks_clarification": {

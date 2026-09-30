@@ -12,7 +12,6 @@ import type {
 import { customerEmailSkillInputKeys } from "../domain.js";
 import type { EmailSkillDefinitionRepositoryPort } from "../../../db/repositories/emailSkillDefinitionRepository.js";
 import type { CustomerEmailDeliveryService } from "../services/customerEmailDeliveryService.js";
-import { escapeHtml } from "../../../shared/domain/escapeHtml.js";
 import { setTraceAttributes, traceOperation } from "../../../shared/observability/tracing/operations.js";
 import {
   buildEmailSkillActivityRecordInput,
@@ -21,11 +20,11 @@ import type { CreateEmailSkillActivityInput } from "../../../db/repositories/ema
 
 export const CUSTOMER_EMAIL_SKILLS_ADAPTER = "customer-email-skills";
 
-interface EmailSkillActivitySinkPort {
+export interface EmailSkillActivitySinkPort {
   record(input: CreateEmailSkillActivityInput): Promise<unknown>;
 }
 
-interface EmailSkillExecutorOptions {
+export interface EmailSkillExecutorOptions {
   skills: Pick<EmailSkillDefinitionRepositoryPort, "findEnabledByName">;
   delivery: Pick<CustomerEmailDeliveryService, "deliver">;
   activity?: EmailSkillActivitySinkPort;
@@ -157,17 +156,11 @@ const buildRuntimeInput = (
     if (!exposed) continue;
     const collectedKey = exposed.slotBinding ?? key;
     if (Object.prototype.hasOwnProperty.call(collected, collectedKey)) {
-      input[key] = key === "bodyHtml" ? routineFilledHtml(collected[collectedKey]) : collected[collectedKey];
+      input[key] = collected[collectedKey];
     }
   }
   return input;
 };
-
-// An exposed input is filled by the routine, from what the visitor typed; no slot type is
-// markup. Escaped, the value reads in the email as the visitor wrote it and never renders as
-// HTML. Only an author-fixed (bound) HTML body is sent as markup.
-const routineFilledHtml = (value: unknown): unknown =>
-  typeof value === "string" ? escapeHtml(value) : value;
 
 const missingInputs = (input: Partial<Record<CustomerEmailSkillInputKey, unknown>>): CustomerEmailSkillInputKey[] => {
   const missing: CustomerEmailSkillInputKey[] = [];

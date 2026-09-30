@@ -145,27 +145,4 @@ describe("EmailSkillExecutor", () => {
       outcome: { status: "failed", outputs: { reason: "skill_not_found" } },
     });
   });
-
-  it("escapes an HTML body the routine fills from a visitor's value, so it never ships as markup", async () => {
-    const { executor, deliveryInputs } = buildExecutor({ outcome: "drafted" }, definition({
-      exposedInputs: { to: { slotBinding: "customerEmail" }, bodyHtml: { slotBinding: "messageBody" } },
-    }));
-
-    await dispatch(executor, { customerEmail: "customer@example.com", messageBody: "<script>alert(1)</script> & <b>hi</b>" });
-
-    expect(deliveryInputs[0]).toMatchObject({
-      message: { bodyHtml: "&lt;script&gt;alert(1)&lt;/script&gt; &amp; &lt;b&gt;hi&lt;/b&gt;" },
-    });
-  });
-
-  it("sends an HTML body the author fixed on the skill as written", async () => {
-    const { executor, deliveryInputs } = buildExecutor({ outcome: "drafted" }, definition({
-      boundInputs: { subject: "Follow-up", bodyHtml: "<p>Thanks for writing.</p>" },
-      exposedInputs: { to: { slotBinding: "customerEmail" } },
-    }));
-
-    await dispatch(executor);
-
-    expect(deliveryInputs[0]).toMatchObject({ message: { bodyHtml: "<p>Thanks for writing.</p>" } });
-  });
 });

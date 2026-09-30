@@ -2369,6 +2369,87 @@ describe("DefaultRoutineRunner slot values checked against their declared type (
     expect(result.trace?.steps[0]).toMatchObject({ rejectedSlots: [{ key: "email", reason: "type_mismatch" }] });
   });
 
+  describe("holds the answered step whatever kind of exit would fire", () => {
+    const withEmailExits = (transitions: Routine["transitions"]): Routine => ({
+      ...booking,
+      slots: [...booking.slots!, { id: "slot_name", key: "full_name", type: "text", required: false }],
+      steps: booking.steps.map((step) =>
+        step.id === "ask_email" ? { ...step, metadata: { collectsSlots: ["email", "full_name"] } } : step,
+      ),
+      transitions: [...transitions, { from: "ask_adults", to: "done", condition: "The user provided {{slot.adults}}." }],
+    });
+    const answer = async (routineUnderTest: Routine, variables: Record<string, unknown>) => {
+      const select = vi.fn(async () => ({ nextStepId: "ask_email", variables }));
+      const render = renderer();
+      const result = await new DefaultRoutineRunner([routineUnderTest], { select }, render)
+        .resume({ turn, state: state(["ask_email"]) });
+      return { result, select, render };
+    };
+    const expectHeld = (result: Awaited<ReturnType<typeof answer>>["result"], render: ConversationRoutineStepRenderer) => {
+      expect(result.nextState?.path).toEqual(["ask_email"]);
+      expect(result.trace?.steps[0]).toMatchObject({
+        stepId: "ask_email",
+        event: "reasked",
+        rejectedSlots: [{ key: "email", reason: "type_mismatch" }],
+      });
+      expect(render.render).toHaveBeenCalledWith(expect.objectContaining({
+        step: expect.objectContaining({ id: "ask_email" }),
+        reask: { missingSlots: [emailSlot] },
+      }));
+    };
+
+    it("with a bare default exit", async () => {
+      const { result, select, render } = await answer(
+        withEmailExits([{ from: "ask_email", to: "ask_adults", condition: "", guard: { kind: "default" } }]),
+        { email: "not an email" },
+      );
+
+      // The extraction-only pass read the message; its rejected value still holds the step.
+      expect(select).toHaveBeenCalledTimes(1);
+      expectHeld(result, render);
+      expect(result.nextState?.reaskCount).toBe(1);
+    });
+
+    it("with a slot_filled exit and a default fallback", async () => {
+      const { result, render } = await answer(
+        withEmailExits([
+          { from: "ask_email", to: "done", condition: "", guard: { kind: "slot_filled", slots: ["email"] } },
+          { from: "ask_email", to: "ask_adults", condition: "", guard: { kind: "default" } },
+        ]),
+        { email: "not an email" },
+      );
+
+      expectHeld(result, render);
+    });
+
+    it("with a field exit and a default fallback, still storing the values that fit", async () => {
+      const { result, render } = await answer(
+        withEmailExits([
+          { from: "ask_email", to: "done", condition: "", guard: { kind: "field", ref: "email", op: "is_present" } },
+          { from: "ask_email", to: "ask_adults", condition: "", guard: { kind: "default" } },
+        ]),
+        { email: "not an email", full_name: "Giulia Verdi" },
+      );
+
+      expectHeld(result, render);
+      expect(result.nextState?.variables).toEqual({ full_name: "Giulia Verdi" });
+      // A newly filled collected slot is progress, so the re-ask count starts over.
+      expect(result.nextState?.reaskCount ?? 0).toBe(0);
+    });
+
+    it("with a counter exit", async () => {
+      const { result, render } = await answer(
+        withEmailExits([
+          { from: "ask_email", to: "ask_adults", condition: "", guard: { kind: "counter", limit: 5 } },
+          { from: "ask_email", to: "done", condition: "", guard: { kind: "default" } },
+        ]),
+        { email: "not an email" },
+      );
+
+      expectHeld(result, render);
+    });
+  });
+
   it("leaves values the routine already holds alone on a later turn", async () => {
     const runner = new DefaultRoutineRunner([booking], choosing("ask_email", {}), renderer());
 

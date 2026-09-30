@@ -188,19 +188,13 @@ completed routine's slot goes through the same rules
 (`packages/conversation-engine/src/slotValue.ts`).
 
 A value that does not fit is dropped. When it belongs to a slot the step the
-visitor was answering collects, that step stays put this turn whatever its
-AI-decides exits say: it is asked again, and the slot is listed as missing even
-when an earlier value still fills it. A rejected value for another step's slot is
-dropped and the turn carries on. Rule exits (`field`, `slot_filled`, `default`)
-decide from the values that were kept, so to them a rejected value is simply
-absent. Values a tool step assigns to variables are the tool's output and keep
-whatever shape the tool returned.
-
-Slot values are visitor text wherever they travel. The hand-off notice and the
-contact email carry them as plain text, the completion export and webhook skills
-as JSON, and the dashboard renders them as text. An email skill whose HTML body is
-filled by the routine escapes it, so a visitor's `<b>` arrives as the characters
-`<b>`; only an HTML body fixed on the skill itself is sent as markup.
+visitor was answering collects, that step stays put this turn whatever exit would
+otherwise fire — AI-decides, `field`, `slot_filled`, `counter`, or `default`: it is
+asked again, and the slot is listed as missing even when an earlier value still
+fills it. The values from the same message that did fit are kept. A rejected value
+for another step's slot is dropped and the turn carries on. Values a tool step
+assigns to variables are the tool's output and keep whatever shape the tool
+returned.
 
 ### When a step keeps being asked
 
@@ -214,11 +208,14 @@ where it was, and so does the routine's first turn.
 
 On the fourth re-ask in a row the routine offers a way forward:
 
-- **The step has its own exit to a hand-off end.** The routine takes it, exactly as
-  if the selector had chosen it: the conversation goes to a person, the operators
-  are notified, and a completion export set to fire on hand-off runs. A hand-off
-  end that is reachable only through other steps stays where it is, because
-  jumping to it would skip what those steps do.
+- **The step has its own exit to a hand-off end.** The routine takes it. The limit
+  overrides that exit's own condition: an AI-decides "the visitor asks for a
+  person" or a rule guard is not evaluated, and the trace records a
+  `reask_limit_reached` entry for the step. From there the hand-off end runs as
+  it always does: the conversation goes to a person, the operators are notified,
+  and a completion export set to fire on hand-off runs. A hand-off end that is
+  reachable only through other steps stays where it is, because jumping to it
+  would skip what those steps do.
 - **It has none.** The step is asked again with the exhausted signal
   (`reask.exhausted`), and the renderer adds
   `backend/prompts/chat/routine-step-reask-exhausted.md` to the re-ask context:

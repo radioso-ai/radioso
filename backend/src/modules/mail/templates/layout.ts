@@ -1,5 +1,4 @@
 import { appUrl } from "../../../shared/domain/appUrl.js";
-import { escapeHtml } from "../../../shared/domain/escapeHtml.js";
 import { emailTheme as t } from "./theme.js";
 
 /**
@@ -43,6 +42,14 @@ interface EmailLayoutOptions {
   /** Public frontend origin. The logo is served from it, so links and art share one host. */
   appBaseUrl?: string | null;
 }
+
+const escapeHtml = (value: string): string =>
+  value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 
 const paragraph = (text: string): string =>
   `<p style="margin:0 0 16px 0;font-family:${t.font.body};font-size:15px;line-height:24px;color:${t.color.ink};" class="r-text">${escapeHtml(text)}</p>`;

@@ -270,24 +270,56 @@ const declaredSlotVariables = (
       .map((key) => [key, variables[key]]),
   );
 
-/** Narrows a captured slot value to the scalar shape a trace can carry. */
-const traceableSlotValue = (value: unknown): string | number | boolean =>
-  typeof value === "string" || typeof value === "number" || typeof value === "boolean"
+/** Per-value character bound for a traced slot value, matching the host's output-bounding magnitude. */
+const MAX_TRACE_SLOT_VALUE_CHARS = 500;
+/** Filled-slot count bound for one turn's traced slot values. */
+const MAX_TRACE_SLOT_VALUES = 50;
+
+/** Narrows a captured slot value to the scalar shape a trace can carry, and caps its length. */
+const traceableSlotValue = (value: unknown): { value: string | number | boolean; truncated?: boolean } => {
+  const scalar = typeof value === "string" || typeof value === "number" || typeof value === "boolean"
     ? value
     : JSON.stringify(value) ?? String(value);
+  if (typeof scalar === "string" && scalar.length > MAX_TRACE_SLOT_VALUE_CHARS) {
+    return { value: `${scalar.slice(0, MAX_TRACE_SLOT_VALUE_CHARS)}…`, truncated: true };
+  }
+  return { value: scalar };
+};
 
 /**
  * Every filled declared slot's value after this turn, self-described by its declared
- * type so a host redaction policy needs no separate routine lookup. Debug-only — this
- * is the one place the trace carries slot *values* rather than just keys.
+ * type, capped to `MAX_TRACE_SLOT_VALUES` entries with each value capped to
+ * `MAX_TRACE_SLOT_VALUE_CHARS`. Called only when the runner's `includeSlotValues`
+ * construction option is set — this is the one place the trace carries slot *values*
+ * rather than just keys, and it never runs otherwise.
  */
 const declaredSlotTraceValues = (
   routine: Routine,
   variables: Record<string, unknown>,
-): RoutineTraceSlotValue[] =>
-  (routine.slots ?? [])
-    .filter((slot) => hasVariable(variables, slot.key))
-    .map((slot) => ({ key: slot.key, type: slot.type, value: traceableSlotValue(variables[slot.key]) }));
+): { slotValues: RoutineTraceSlotValue[]; omittedSlotCount: number } => {
+  const filled = (routine.slots ?? []).filter((slot) => hasVariable(variables, slot.key));
+  const kept = filled.slice(0, MAX_TRACE_SLOT_VALUES);
+  return {
+    slotValues: kept.map((slot) => {
+      const { value, truncated } = traceableSlotValue(variables[slot.key]);
+      return { key: slot.key, type: slot.type, value, ...(truncated ? { truncated: true } : {}) };
+    }),
+    omittedSlotCount: filled.length - kept.length,
+  };
+};
+
+/** The `slotValues`/`omittedSlotCount` fields to spread onto a trace, present only when requested. */
+const slotValuesTraceFields = (
+  routine: Routine,
+  variables: Record<string, unknown>,
+  includeSlotValues: boolean | undefined,
+): Pick<RoutineRunTrace, "slotValues" | "omittedSlotCount"> => {
+  if (!includeSlotValues) {
+    return {};
+  }
+  const { slotValues, omittedSlotCount } = declaredSlotTraceValues(routine, variables);
+  return { slotValues, ...(omittedSlotCount > 0 ? { omittedSlotCount } : {}) };
+};
 
 const isSatisfiedSlotCollectionStep = (
   routine: Routine,
@@ -361,6 +393,14 @@ interface DefaultRoutineRunnerOptions {
   clock?: () => Date;
   /** Renders `{{context.<name>}}` references in step instructions; absent means they resolve to nothing. */
   contextRenderer?: RoutineContextRenderer;
+  /**
+   * Whether this runner's trace includes each filled slot's value. Absent/false (the
+   * default) is what every live customer conversation gets — the trace it builds is
+   * exactly what feeds a persisted audit record, so no value is ever produced for it in
+   * the first place. Only a construction the host builds specifically for a private
+   * replay (Test Chat, eval) sets this.
+   */
+  includeSlotValues?: boolean;
 }
 
 export class DefaultRoutineRunner implements ConversationRoutineRunner {
@@ -800,7 +840,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         landedStepId: step.id,
         capturedSlotKeys: [...new Set(traceSteps.flatMap((entry) => entry.capturedSlotKeys ?? []))],
         filledSlotKeys: [...declaredSlotKeys].filter((key) => hasVariable(variables, key)),
-        slotValues: declaredSlotTraceValues(routine, variables),
+        ...slotValuesTraceFields(routine, variables, this.options.includeSlotValues),
         steps: traceSteps,
       };
       const reason = typeof step.metadata?.reason === "string" ? step.metadata.reason : undefined;
@@ -859,7 +899,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       ...(terminalKind ? { terminalKind } : {}),
       capturedSlotKeys: [...new Set(traceSteps.flatMap((entry) => entry.capturedSlotKeys ?? []))],
       filledSlotKeys: [...declaredSlotKeys].filter((key) => hasVariable(variables, key)),
-      slotValues: declaredSlotTraceValues(routine, variables),
+      ...slotValuesTraceFields(routine, variables, this.options.includeSlotValues),
       steps: traceSteps,
     };
 

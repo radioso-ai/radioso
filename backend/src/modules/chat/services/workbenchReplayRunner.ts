@@ -333,11 +333,14 @@ export class WorkbenchReplayRunner {
       && this.options.chatAnswerPresenter
       ? this.options.routineProvider
       : undefined;
+    // Every replayed turn is a private surface (Test Chat, eval) whose trace never feeds a
+    // durable audit record, so it is the one caller that requests routine slot values.
     const assembly = this.options.turnAssemblyFactory?.create({
       chatSessionPreparer: preparer,
       directiveStateStore: effects.directiveStateStore,
       routineStore,
       coverageHeadRecorder: this.options.coverageHeadRecorder,
+      includeSlotValues: true,
     }) ?? new ChatTurnAssembly({
       chatGateway: this.options.chatGateway ?? unavailableRoutineGateway,
       chatAnswerPresenter: presenter,
@@ -351,6 +354,7 @@ export class WorkbenchReplayRunner {
       turnInterpreter: this.options.turnInterpreter,
       routineStore,
       routineProvider,
+      includeSlotValues: true,
       clarifier,
       recordClarificationDecision: this.options.recordClarificationDecision,
       retrievalSenseDetector: this.options.retrievalSenseDetector,
@@ -511,12 +515,17 @@ export class WorkbenchReplayRunner {
   }
 
   /**
-   * What the suppressed `handoff.notify` action would have delivered, built through the same
-   * payload builder and text formatter the real dispatch handler uses (`buildHandoffNotifyAction`,
-   * `handoffNotificationFromAction`, `formatHandoffNotification`) so it cannot drift from the
-   * email/webhook a live handoff actually sends. `routineReporter` resolves the routine's
-   * display name from the routines this turn ran against — the same authored name a live
-   * handoff's database-backed subject resolver would find — without a further lookup.
+   * The hand-off message content the suppressed `handoff.notify` action carries — the
+   * subject and body fields/values a real dispatch renders — built through the same
+   * payload builder and text formatter the real dispatch handler uses
+   * (`buildHandoffNotifyAction`, `handoffNotificationFromAction`, `formatHandoffNotification`)
+   * so this content cannot drift from what a live handoff sends. It is not the full
+   * delivered payload: live delivery additionally appends an `Open: <conversation URL>`
+   * line and, for a webhook, its own structured fields (see `emailWebhookSink.ts`) — a
+   * replayed turn has no durable conversation to link to, so this preview omits both.
+   * `routineReporter` resolves the routine's display name from the routines this turn ran
+   * against — the same authored name a live handoff's database-backed subject resolver
+   * would find — without a further lookup.
    */
   private handoffPreviewFor(input: {
     input: WorkbenchReplayInput;
@@ -570,11 +579,10 @@ export class WorkbenchReplayRunner {
       answerStartedAt: input.answerStartedAt,
       stream: false,
       engineTrace: input.engineTrace,
-      executionMode: input.input.executionMode,
     });
     // A Test Chat/eval replay never dispatches this turn's actions (the caller drops them,
     // see TrustedTestExecutionRunnerAdapter.run), so a hand-off notify never actually sends.
-    // Preview what it would have delivered directly on the trace.
+    // Carry its message content on the trace instead.
     const handoffPreview = this.handoffPreviewFor(input);
     return {
       answer: input.presentation.answer,

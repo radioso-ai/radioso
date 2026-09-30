@@ -39,7 +39,6 @@ export { createRoutineActivationPrefilter } from "./routineActivationPrefilter.j
 export { createRoutineTurnProvider } from "./turnProvider.js";
 export { createRoutineTurnReporter } from "./routineTurnReporter.js";
 export type { RoutineInvocationReport, RoutineTurnReporter, RoutineTurnState } from "./turnReport.js";
-export { maskRoutineSubTracesForCustomerSurface } from "./routineTraceRedaction.js";
 export {
   RoutineSkillExecutorDispatcher,
   type RoutineSkillResolver,

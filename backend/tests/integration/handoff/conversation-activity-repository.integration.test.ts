@@ -18,9 +18,10 @@ const { describeIntegration, integrationDatabaseUrl } = await resolveIntegration
 describeIntegration("conversation activity (Postgres)", () => {
   const database = new Database(integrationDatabaseUrl);
   const activity = new ConversationActivityRepository(database.kysely);
+  const labels = createTeammateLabelReader({ users: new UserRepository(database.kysely) });
   const reads = createConversationActivityComposition({
     store: activity,
-    teammateLabels: createTeammateLabelReader({ users: new UserRepository(database.kysely) }),
+    teammateLabels: labels,
     messages: new MessageRepository(database.kysely),
   }).reads;
   const accountId = randomUUID();
@@ -68,8 +69,11 @@ describeIntegration("conversation activity (Postgres)", () => {
     });
     await database.query(`UPDATE users SET display_name = 'Carl' WHERE id = $1`, [carlId]);
 
-    const timeline = await reads.listForConversation(workspaceId, conversationId);
+    const read = await reads.readTimeline(workspaceId, conversationId, { includeFeedback: true });
+    const timeline = read.present(await labels.labelsByUserIds(read.userIds));
 
+    expect([...read.userIds].sort()).toEqual([beaId, carlId].sort());
+    expect(read.cursor).toBe(timeline[1]?.id);
     expect(timeline).toEqual([
       expect.objectContaining({ kind: "handoff_requested", actor: null, handoffReason: "retrieval_miss", subject: null }),
       expect.objectContaining({
@@ -80,7 +84,51 @@ describeIntegration("conversation activity (Postgres)", () => {
         handoffReason: null,
       }),
     ]);
-    await expect(reads.listForConversation(randomUUID(), conversationId)).resolves.toEqual([]);
+    await expect(reads.readTimeline(randomUUID(), conversationId, { includeFeedback: true }))
+      .resolves.toMatchObject({ userIds: [], cursor: null });
+  });
+
+  it("reads only the events after a cursor, whatever the cursor's kind, and only the kinds asked for", async () => {
+    const conversationId = await seedConversation();
+    const other = await seedConversation();
+    await activity.record(database.kysely, { kind: "claimed", conversationId, workspaceId, actorUserId: beaId });
+    await activity.record(database.kysely, {
+      kind: "feedback_dismissed",
+      conversationId,
+      workspaceId,
+      actorUserId: carlId,
+      detail: { assistantMessageId: randomUUID(), resolution: null },
+    });
+    const [claimed, dismissed] = await activity.listForConversation(workspaceId, conversationId, {
+      kinds: ["claimed", "feedback_dismissed"],
+    });
+    await activity.record(database.kysely, { kind: "handed_back", conversationId, workspaceId, actorUserId: beaId });
+    await activity.record(database.kysely, { kind: "claimed", conversationId: other, workspaceId, actorUserId: beaId });
+    const withoutFeedback = ["claimed", "handed_back"] as const;
+
+    const afterClaimed = await activity.listForConversation(workspaceId, conversationId, {
+      kinds: withoutFeedback,
+      after: claimed.id,
+    });
+    // A cursor on an event the reader may not see still marks its place.
+    const afterDismissed = await activity.listForConversation(workspaceId, conversationId, {
+      kinds: withoutFeedback,
+      after: dismissed.id,
+    });
+    const afterNewest = await activity.listForConversation(workspaceId, conversationId, {
+      kinds: withoutFeedback,
+      after: afterClaimed[0].id,
+    });
+    const foreignCursor = await activity.listForConversation(workspaceId, other, {
+      kinds: withoutFeedback,
+      after: claimed.id,
+    });
+
+    expect(afterClaimed.map((record) => record.kind)).toEqual(["handed_back"]);
+    expect(afterDismissed.map((record) => record.kind)).toEqual(["handed_back"]);
+    expect(afterNewest).toEqual([]);
+    expect(foreignCursor).toEqual([]);
+    await expect(activity.listForConversation(workspaceId, conversationId, { kinds: [] })).resolves.toEqual([]);
   });
 
   it("lists the workspace's latest closing events with the conversation's title or preview, leaving out test chats", async () => {
@@ -102,7 +150,7 @@ describeIntegration("conversation activity (Postgres)", () => {
     });
     await activity.record(database.kysely, { kind: "handed_back", conversationId: testChat, workspaceId, actorUserId: beaId });
 
-    const closed = await reads.listRecentlyClosed(workspaceId, 10);
+    const closed = await reads.listRecentlyClosed(workspaceId, 10, { includeFeedback: true });
 
     expect(closed.filter((item) => [titled, untitled, testChat].includes(item.conversationId))).toEqual([
       expect.objectContaining({
@@ -122,7 +170,31 @@ describeIntegration("conversation activity (Postgres)", () => {
         title: "Refund for order 1042",
       }),
     ]);
-    await expect(reads.listRecentlyClosed(workspaceId, 1)).resolves.toHaveLength(1);
+    await expect(reads.listRecentlyClosed(workspaceId, 1, { includeFeedback: true })).resolves.toHaveLength(1);
+  });
+
+  it("leaves feedback outcomes out of recently closed for a scope without them, still filling the limit", async () => {
+    const isolatedWorkspace = randomUUID();
+    await database.query(
+      `INSERT INTO workspaces (id, account_id, name, public_route_key) VALUES ($1, $2, 'Activity scope', $3)`,
+      [isolatedWorkspace, accountId, `activity-${isolatedWorkspace}`],
+    );
+    const conversationId = randomUUID();
+    await database.query(`INSERT INTO conversations (id, workspace_id, source_channel) VALUES ($1, $2, 'embed')`, [conversationId, isolatedWorkspace]);
+    const scope = { conversationId, workspaceId: isolatedWorkspace };
+    await activity.record(database.kysely, { ...scope, kind: "handed_back", actorUserId: beaId });
+    await activity.record(database.kysely, {
+      ...scope,
+      kind: "feedback_resolved",
+      actorUserId: carlId,
+      detail: { assistantMessageId: randomUUID(), resolution: "knowledge_gap" },
+    });
+
+    const withoutFeedback = await reads.listRecentlyClosed(isolatedWorkspace, 1, { includeFeedback: false });
+    const withFeedback = await reads.listRecentlyClosed(isolatedWorkspace, 1, { includeFeedback: true });
+
+    expect(withoutFeedback.map((item) => item.outcome)).toEqual(["handed_back"]);
+    expect(withFeedback.map((item) => item.outcome)).toEqual(["feedback_resolved"]);
   });
 
   it("refuses an unknown kind and a detail that is not an object", async () => {
@@ -145,11 +217,11 @@ describeIntegration("conversation activity (Postgres)", () => {
     await activity.record(database.kysely, { kind: "handed_back", conversationId, workspaceId, actorUserId: leaverId });
 
     await database.query(`DELETE FROM users WHERE id = $1`, [leaverId]);
-    await expect(activity.listForConversation(workspaceId, conversationId)).resolves.toEqual([
+    await expect(activity.listForConversation(workspaceId, conversationId, { kinds: ["handed_back"] })).resolves.toEqual([
       expect.objectContaining({ kind: "handed_back", actorUserId: null }),
     ]);
 
     await database.query(`DELETE FROM conversations WHERE id = $1`, [conversationId]);
-    await expect(activity.listForConversation(workspaceId, conversationId)).resolves.toEqual([]);
+    await expect(activity.listForConversation(workspaceId, conversationId, { kinds: ["handed_back"] })).resolves.toEqual([]);
   });
 });

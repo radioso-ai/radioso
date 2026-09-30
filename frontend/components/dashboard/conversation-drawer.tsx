@@ -39,7 +39,7 @@ import {
   getConversationSourceBadge,
 } from '@/lib/history-source'
 import { getAgentOperatorLabel } from '@/lib/agent-label'
-import { freshestActivity } from '@/lib/conversation-activity'
+import { mergeActivity } from '@/lib/conversation-activity'
 import { useCopilotEntity } from '@/lib/copilot-context'
 import {
   presentActivityOutcome,
@@ -521,7 +521,7 @@ export function ConversationDrawer({
                     evalCaptureEnabled={selectedItem?.kind === 'chat'}
                     analyticsSurface="history"
                     audience="operator"
-                    activity={freshestActivity(conversationDetail.activity, conversationTail.activity)}
+                    activity={mergeActivity(conversationDetail.activity, conversationTail.activity)}
                     hasOlderMessages={conversationDetail.hasOlderMessages}
                     skillCatalog={skillCatalog}
                     routineMarkers={namedRoutineMarkers}

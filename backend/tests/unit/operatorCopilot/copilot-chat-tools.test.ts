@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { context, dependencies } from "./copilot-tools-test-helpers.js";
 
@@ -102,7 +102,7 @@ describe("copilot chat readers", () => {
       includeTurnFailureDebug: true,
       includeLatency: true,
       includeOperatorLabel: true,
-      includeActivity: true,
+      activity: { includeFeedback: true },
     });
     expect(result.transcript.messages[0]).toMatchObject({
       answerOutcome: "retrieval.answer",
@@ -261,6 +261,87 @@ describe("copilot chat readers", () => {
       expect.objectContaining({ kind: "handed_back", actor: carl }),
     ]);
     expect(result.transcript.activity[0]).not.toHaveProperty("id");
+    expect(tool.outputSchema.safeParse(result).success).toBe(true);
+  });
+
+  it("reads feedback outcomes only for an operator who holds Quality access now", async () => {
+    const ports = dependencies();
+    const tool = ports.descriptors.find((descriptor) => descriptor.name === "conversation_transcript")!;
+    const conversationId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+    ports.getConversation.mockResolvedValue({
+      conversationId,
+      agentId: null,
+      agentName: null,
+      sourceChannel: "website_embed",
+      callerKind: "human" as const,
+      createdAt: "2026-08-18T10:00:00.000Z",
+      updatedAt: "2026-08-18T10:00:05.000Z",
+      messageCount: 0,
+      messages: [],
+    });
+    const member = { ...context(null), currentAuthorization: { hasAllPermissions: vi.fn(async () => false) } };
+
+    await tool.createTool(member).invoke({ conversationId }, {} as never);
+
+    expect(member.currentAuthorization.hasAllPermissions).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      operatorUserId: "operator-1",
+      requiredPermissions: ["workspace.quality.read"],
+    });
+    expect(ports.getConversation).toHaveBeenCalledWith(
+      "workspace-1",
+      conversationId,
+      { limit: 100 },
+      expect.objectContaining({ activity: { includeFeedback: false } }),
+    );
+  });
+
+  it("keeps a long timeline's newest events, oldest first, and says it cut the rest", async () => {
+    const ports = dependencies();
+    const tool = ports.descriptors.find((descriptor) => descriptor.name === "conversation_transcript")!;
+    const conversationId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+    const bea = { userId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", label: "Bea" };
+    const events = Array.from({ length: 45 }, (_, index) => ({
+      id: `ffffffff-ffff-4fff-8fff-${String(index).padStart(12, "0")}`,
+      kind: index % 2 === 0 ? "claimed" : "handed_back",
+      createdAt: new Date(Date.UTC(2026, 7, 18, 10, 0, index)).toISOString(),
+      actor: bea,
+      subject: null,
+      from: null,
+      handoffReason: null,
+      decision: null,
+      resolution: null,
+      assistantMessageId: null,
+    }));
+    ports.getConversation.mockResolvedValue({
+      conversationId,
+      agentId: null,
+      agentName: null,
+      sourceChannel: "website_embed",
+      callerKind: "human" as const,
+      createdAt: "2026-08-18T10:00:00.000Z",
+      updatedAt: "2026-08-18T10:01:00.000Z",
+      messageCount: 0,
+      messages: [],
+      activity: events,
+    });
+
+    const result = await tool.createTool(context(null)).invoke({ conversationId }, {} as never) as {
+      transcript: {
+        activity: Array<{ createdAt: string }>;
+        truncation?: { entries: Array<Record<string, unknown>> };
+      };
+    };
+
+    expect(result.transcript.activity.map((entry) => entry.createdAt))
+      .toEqual(events.slice(-40).map((event) => event.createdAt));
+    expect(result.transcript.truncation?.entries).toContainEqual({
+      path: "$.activity",
+      reason: "array_length",
+      originalLength: 45,
+      retainedLength: 40,
+    });
     expect(tool.outputSchema.safeParse(result).success).toBe(true);
   });
 });

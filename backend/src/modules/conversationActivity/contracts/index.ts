@@ -1,3 +1,4 @@
+import type { AccountPermission } from "../../account/public.js";
 import type { Db } from "../../../shared/infra/kysely/types.js";
 
 /**
@@ -25,6 +26,24 @@ export const CLOSING_ACTIVITY_KINDS = [
 ] as const satisfies readonly ConversationActivityKind[];
 
 export type ClosingActivityKind = typeof CLOSING_ACTIVITY_KINDS[number];
+
+/** Negative feedback resolved or dismissed: a Quality triage outcome. */
+export const FEEDBACK_ACTIVITY_KINDS = [
+  "feedback_resolved",
+  "feedback_dismissed",
+] as const satisfies readonly ClosingActivityKind[];
+
+/**
+ * The permission a reader needs to see feedback triage outcomes. They are Quality data, and a
+ * teammate who can follow conversations does not always hold Quality access.
+ */
+export const FEEDBACK_ACTIVITY_PERMISSION = "workspace.quality.read" as const satisfies AccountPermission;
+
+/** Which events a read may carry, resolved once from the caller's permissions at the edge. */
+export interface ConversationActivityReadScope {
+  /** Feedback resolved or dismissed: only for a caller holding {@link FEEDBACK_ACTIVITY_PERMISSION}. */
+  includeFeedback: boolean;
+}
 
 interface ConversationActivityScope {
   conversationId: string;
@@ -88,7 +107,8 @@ export interface ConversationActivityRecord {
 }
 
 /** A closing event read back with its conversation's generated title, for the Inbox strip. */
-export interface ClosingConversationActivityRecord extends ConversationActivityRecord {
+export interface ClosingConversationActivityRecord extends Omit<ConversationActivityRecord, "kind"> {
+  kind: ClosingActivityKind;
   conversationTitle: string | null;
 }
 
@@ -144,7 +164,31 @@ export interface RecentlyClosedInboxItem {
   preview: string | null;
 }
 
-/** Operator reads of a conversation's activity: the timeline, oldest first. */
+/**
+ * A conversation's events as read, before its teammates are labelled, so a reader that labels other
+ * teammates too (the repliers on a transcript) resolves every label in one lookup.
+ */
+export interface ConversationActivityTimeline {
+  /** Every teammate the events name, once each. */
+  readonly userIds: readonly string[];
+  /**
+   * The newest event read, as the cursor for a read of only what comes after it; the cursor the read
+   * was given when nothing newer came; null when the conversation has no events.
+   */
+  readonly cursor: string | null;
+  /** The events, oldest first, each teammate labelled from `labels`. */
+  present(labels: ReadonlyMap<string, string>): ConversationActivityEntry[];
+}
+
+/** Operator reads of a conversation's activity. */
 export interface ConversationActivityTimelineReader {
-  listForConversation(workspaceId: string, conversationId: string): Promise<ConversationActivityEntry[]>;
+  /**
+   * The conversation's events, oldest first, within `scope`. With `after` — a cursor a previous read
+   * returned — only the events recorded after that one.
+   */
+  readTimeline(
+    workspaceId: string,
+    conversationId: string,
+    scope: ConversationActivityReadScope & { after?: string },
+  ): Promise<ConversationActivityTimeline>;
 }

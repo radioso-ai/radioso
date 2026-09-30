@@ -6,7 +6,7 @@ import type {
   PublicChatPermission,
 } from "../../../modules/account/services/accountAccessService.js";
 
-export interface PermissionDependencies {
+interface PermissionDependencies {
   accountAccessService: {
     requirePermission(input: {
       accountId?: string | null;
@@ -19,6 +19,43 @@ export interface PermissionDependencies {
 }
 
 type WorkspacePermissionDependencies = PermissionDependencies;
+
+interface PermissionCheckDependencies {
+  accountAccessService: {
+    hasPermission(input: {
+      accountId?: string;
+      userId?: string | null;
+      principal?: AuthenticatedPrincipal | null;
+      permission: AccountPermission;
+      workspaceId?: string | null;
+    }): Promise<boolean>;
+  };
+}
+
+/**
+ * Whether the caller holds `permission` on the request's workspace, for a route that shapes what it
+ * returns by a permission rather than refusing without it. Runs after the route's own permission
+ * middleware, which has already placed the workspace in the caller's account.
+ */
+export const holdsWorkspacePermission = (
+  dependencies: PermissionCheckDependencies,
+  res: Response,
+  permission: AccountPermission,
+): Promise<boolean> => {
+  const { accountId, userId, workspaceId, authPrincipal } = res.locals as {
+    accountId: string;
+    userId?: string;
+    workspaceId?: string;
+    authPrincipal?: AuthenticatedPrincipal;
+  };
+  return dependencies.accountAccessService.hasPermission({
+    accountId,
+    userId,
+    principal: authPrincipal,
+    permission,
+    workspaceId,
+  });
+};
 
 export const requireAccountPermission = (
   dependencies: WorkspacePermissionDependencies,

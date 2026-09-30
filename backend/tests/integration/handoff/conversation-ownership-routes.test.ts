@@ -568,6 +568,70 @@ describe("conversation ownership routes", () => {
     });
   });
 
+  it("shows feedback triage outcomes in the activity and recently closed only to teammates with Quality access", async () => {
+    const { app, repositories } = createTestApp();
+    const owner = await issueTestSession(app, "activity-quality-owner@example.com");
+    const member = await acceptInvite(app, owner.cookie, "activity-quality-member@example.com");
+    const conversation = await repositories.conversationRepository.create({ workspaceId: member.workspaceId, sourceChannel: "dashboard" });
+    const scope = { conversationId: conversation.id, workspaceId: member.workspaceId };
+    await repositories.conversationActivity.record(undefined, { ...scope, kind: "handed_back", actorUserId: member.userId });
+    await repositories.conversationActivity.record(undefined, {
+      ...scope,
+      kind: "feedback_resolved",
+      actorUserId: owner.userId,
+      detail: { assistantMessageId: randomUUID(), resolution: "knowledge_gap" },
+    });
+
+    const read = async (session: { cookie: string; workspaceId: string }) => {
+      const [detail, tail, closed] = await Promise.all([
+        request(app).get(`/api/v1/history/chat/${conversation.id}`).set(adminSessionHeaders(session)),
+        request(app).get(`/api/v1/history/chat/${conversation.id}/tail`).set(adminSessionHeaders(session)),
+        request(app).get("/api/v1/conversations/recently-closed").set(adminSessionHeaders(session)),
+      ]);
+      expect([detail.status, tail.status, closed.status]).toEqual([200, 200, 200]);
+      return {
+        detail: (detail.body.activity as Array<{ kind: string }>).map((entry) => entry.kind),
+        tail: (tail.body.activity as Array<{ kind: string }>).map((entry) => entry.kind),
+        closed: (closed.body.items as Array<{ outcome: string }>).map((item) => item.outcome),
+      };
+    };
+
+    // A member follows conversations but holds no Quality access, so triage outcomes stay out.
+    await expect(read(member)).resolves.toEqual({
+      detail: ["handed_back"],
+      tail: ["handed_back"],
+      closed: ["handed_back"],
+    });
+    await expect(read(owner)).resolves.toEqual({
+      detail: ["handed_back", "feedback_resolved"],
+      tail: ["handed_back", "feedback_resolved"],
+      closed: ["feedback_resolved", "handed_back"],
+    });
+  });
+
+  it("tails only the activity recorded since the caller's activity cursor", async () => {
+    const { app, repositories } = createTestApp();
+    const session = await issueTestSession(app, "activity-cursor@example.com");
+    const conversation = await repositories.conversationRepository.create({ workspaceId: session.workspaceId, sourceChannel: "dashboard" });
+    const scope = { conversationId: conversation.id, workspaceId: session.workspaceId };
+    await repositories.conversationActivity.record(undefined, { ...scope, kind: "claimed", actorUserId: session.userId });
+
+    const first = await request(app).get(`/api/v1/history/chat/${conversation.id}/tail`).set(adminSessionHeaders(session));
+    await repositories.conversationActivity.record(undefined, { ...scope, kind: "handed_back", actorUserId: session.userId });
+    const next = await request(app)
+      .get(`/api/v1/history/chat/${conversation.id}/tail?activityCursor=${first.body.activityCursor as string}`)
+      .set(adminSessionHeaders(session));
+    const invalid = await request(app)
+      .get(`/api/v1/history/chat/${conversation.id}/tail?activityCursor=not-an-id`)
+      .set(adminSessionHeaders(session));
+
+    expect(first.body.activity).toEqual([expect.objectContaining({ kind: "claimed" })]);
+    expect(first.body.activityCursor).toBe(first.body.activity[0].id);
+    expect(next.body.activity).toEqual([expect.objectContaining({ kind: "handed_back" })]);
+    expect(next.body.activityCursor).toBe(next.body.activity[0].id);
+    expect(invalid.status).toBe(400);
+  });
+
   it("keeps recently closed to teammates with takeover permission, and checks its limit", async () => {
     const { app, dependencies } = createTestApp();
     const session = await issueTestSession(app, "activity-denied@example.com");

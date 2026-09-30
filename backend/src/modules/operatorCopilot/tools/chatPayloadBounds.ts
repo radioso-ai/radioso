@@ -58,6 +58,9 @@ export const turnTraceEnvelopeSchema = z.object({
 });
 
 const MAX_MESSAGES = 20;
+// The newest events, as many as the default profile keeps whole. Compaction keeps an array's first
+// items, so the transcript is cut to its newest events first — the ones a question is about.
+const MAX_ACTIVITY = MAX_ARRAY_ITEMS;
 
 /**
  * A transcript read is context for a question, not the question itself, so it takes the smaller
@@ -75,7 +78,7 @@ export const TURN_TRACE_PAYLOAD_CHAR_BUDGET = copilotPayloadCharBudget(1 / 2);
 const DEFAULT_PROFILE = { maxStringChars: MAX_STRING_CHARS, maxArrayItems: MAX_ARRAY_ITEMS };
 
 /**
- * Chat's profile preserves recent turns and removes their debug payloads first.
+ * Chat's profile preserves recent turns and recent activity, and removes turns' debug payloads first.
  *
  * Dropping debug envelopes is a preference, not the bound: it says which content this reader would
  * rather lose, and it runs out once no message carries one. Whatever survives that preference is
@@ -93,6 +96,15 @@ export const boundConversationPayload = (payload: Record<string, unknown>): Reco
       retainedLength: MAX_MESSAGES,
     });
     source.messages = source.messages.slice(-MAX_MESSAGES);
+  }
+  if (Array.isArray(source.activity) && source.activity.length > MAX_ACTIVITY) {
+    truncation.push({
+      path: "$.activity",
+      reason: "array_length",
+      originalLength: source.activity.length,
+      retainedLength: MAX_ACTIVITY,
+    });
+    source.activity = source.activity.slice(-MAX_ACTIVITY);
   }
 
   // Copied before mutating: the caller's message objects are not this function's to edit.

@@ -806,11 +806,11 @@ export const buildChatServices = (input: {
     actionOutbox: pushingActionOutbox,
     assistantTurnPersistence: new PostgresAssistantTurnPersistence(
       input.database.kysely,
+      input.conversationActivity.recorder,
       undefined,
       input.conversationOwnershipRepository,
       actionDrainDispatcher,
       input.logger,
-      input.conversationActivity.recorder,
     ),
     actionCapabilities: input.composition.actionCapabilityMap,
     capabilityPolicy: input.composition.capabilityPolicy,

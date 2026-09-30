@@ -211,8 +211,8 @@ export const stripPublicConversationCitationArtifacts = (
 export const stripPublicConversationTailCitationArtifacts = (
   tail: ChatConversationTail,
   exposeCitations: boolean,
-): Omit<ChatConversationTail, "ownership" | "activity"> => {
-  const { ownership: _ownership, activity: _activity, ...publicTail } = tail;
+): Omit<ChatConversationTail, "ownership" | "activity" | "activityCursor"> => {
+  const { ownership: _ownership, activity: _activity, activityCursor: _activityCursor, ...publicTail } = tail;
   return {
     ...publicTail,
     messages: tail.messages.map((message) => {

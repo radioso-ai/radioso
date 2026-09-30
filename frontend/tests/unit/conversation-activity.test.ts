@@ -4,8 +4,8 @@ import type { ConversationActivityEntry } from '@/lib/api-types'
 import {
   activityLine,
   closedByLine,
-  freshestActivity,
   handoffReasonLabel,
+  mergeActivity,
   placeActivity,
 } from '@/lib/conversation-activity'
 
@@ -111,15 +111,32 @@ describe('placeActivity', () => {
   })
 })
 
-describe('freshestActivity', () => {
-  it('takes the longer read, since events are only ever added, preferring the tail on a tie', () => {
-    const one = [entry({ id: 'a' })]
-    const two = [entry({ id: 'a' }), entry({ id: 'b' })]
+describe('mergeActivity', () => {
+  it('unions the detail read with every tail poll, each event once, oldest first', () => {
+    const handoff = entry({ id: 'a', kind: 'handoff_requested', createdAt: '2026-09-30T10:00:00.000Z' })
+    const claim = entry({ id: 'b', kind: 'claimed', createdAt: '2026-09-30T10:01:00.000Z' })
+    const handBack = entry({ id: 'c', kind: 'handed_back', createdAt: '2026-09-30T10:02:00.000Z' })
 
-    expect(freshestActivity(two, one)).toBe(two)
-    expect(freshestActivity(one, two)).toBe(two)
-    expect(freshestActivity(one, [entry({ id: 'a' })])).not.toBe(one)
-    expect(freshestActivity(undefined, undefined)).toEqual([])
+    // The detail holds the first two; the first poll re-reads the whole timeline, later polls only
+    // what is new.
+    expect(mergeActivity([handoff, claim], [handoff, claim], [handBack]).map((event) => event.id))
+      .toEqual(['a', 'b', 'c'])
+    expect(mergeActivity(undefined, [handBack, handoff]).map((event) => event.id)).toEqual(['a', 'c'])
+    expect(mergeActivity(undefined, undefined)).toEqual([])
+  })
+
+  it('keeps the later read of an event, whose labels are the fresher', () => {
+    const before = entry({ id: 'a', actor: { userId: 'user-bea', label: 'bea@example.com' } })
+    const after = entry({ id: 'a', actor: bea })
+
+    expect(mergeActivity([before], [after])).toEqual([after])
+  })
+
+  it('keeps events recorded in the same millisecond in the order they were read', () => {
+    const first = entry({ id: 'z', createdAt: '2026-09-30T10:00:00.000Z' })
+    const second = entry({ id: 'a', createdAt: '2026-09-30T10:00:00.000Z' })
+
+    expect(mergeActivity([first, second]).map((event) => event.id)).toEqual(['z', 'a'])
   })
 })
 

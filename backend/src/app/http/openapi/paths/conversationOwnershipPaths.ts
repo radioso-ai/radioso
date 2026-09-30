@@ -66,7 +66,7 @@ export const registerConversationOwnershipPaths = (
     tags: ["Conversation Ownership"],
     summary: "List the Inbox items closed most recently",
     description:
-      "Returns the workspace's most recently closed Inbox items, newest first: handoffs handed back to the agent, approvals decided, and negative feedback resolved or dismissed. Each item names the teammate who closed it, labelled by display name, else email. Dashboard test chats are left out.",
+      "Returns the workspace's most recently closed Inbox items, newest first: handoffs handed back to the agent, approvals decided, and negative feedback resolved or dismissed. Negative feedback is listed only to a caller with Quality access (`workspace.quality.read`). Each item names the teammate who closed it, labelled by display name, else email. Dashboard test chats are left out.",
     operationId: "listRecentlyClosedInboxItems",
     security: bearerSecurity,
     request: {

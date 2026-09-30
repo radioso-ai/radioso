@@ -1322,7 +1322,12 @@ hand-back, and a reply's claim, through its units of work), chat turn persistenc
 (`handoff_requested`), approvals (`resolve`), and quality (`QualityTriageStore`).
 Reads label every teammate live (display name, else email) through the auth
 module's `TeammateLabelReaderPort`, so activity is operator-only; the public chat
-presenters strip it.
+presenters strip it. Every read takes a `ConversationActivityReadScope` resolved
+once at the edge: feedback outcomes are Quality data, so they reach only a caller
+holding `FEEDBACK_ACTIVITY_PERMISSION` (`workspace.quality.read`). The timeline
+read returns unlabelled events plus the teammates they name, so chat history labels
+them together with the transcript's repliers in one lookup; the operator tail
+passes an `activityCursor` to read only newer events.
 
 Should not own the changes it records, audit events, or message content — events
 carry ids and codes only.
@@ -1339,7 +1344,7 @@ Public surfaces and contracts:
 Focused checks:
 
 - `cd backend && pnpm exec vitest run tests/unit/handoff tests/unit/approval-decision-service.test.ts tests/unit/quality-triage-service.test.ts`
-- `cd backend && pnpm exec vitest run tests/integration/handoff tests/integration/approvals tests/integration/quality-triage.integration.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/handoff tests/integration/approvals tests/integration/quality-triage.integration.test.ts tests/integration/conversation-activity-backfill-migration.integration.test.ts`
 - `cd frontend && pnpm exec vitest run tests/unit/conversation-activity.test.ts`
 
 Related docs:

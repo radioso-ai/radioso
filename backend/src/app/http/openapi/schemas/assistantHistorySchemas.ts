@@ -715,7 +715,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
         description: "The answer the feedback was on, for `feedback_resolved` and `feedback_dismissed`.",
       }),
     }).openapi({
-      description: "Something a teammate or the agent did to the conversation. Operator reads only.",
+      description: "Something a teammate or the agent did to the conversation. Operator reads only. `feedback_resolved` and `feedback_dismissed` reach only a caller with Quality access (`workspace.quality.read`).",
     }),
   );
 
@@ -819,7 +819,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
         description: "The conversation's ownership record whenever one exists, `ai_owned` included, the same as the tail's, so a reader holding an older record sees a hand-back by its higher version. Absent until a teammate is first involved.",
       }),
       activity: z.array(ConversationActivityEntrySchema).optional().openapi({
-        description: "What teammates and the agent did to the conversation, oldest first: handoffs, claims, reassignments, hand-backs, approvals decided, feedback resolved or dismissed.",
+        description: "What teammates and the agent did to the conversation, oldest first: handoffs, claims, reassignments, hand-backs, approvals decided, and — for a caller with Quality access — feedback resolved or dismissed.",
       }),
     }),
   );
@@ -833,7 +833,10 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
         description: "The conversation's ownership record whenever one exists, `ai_owned` included, so a hand-back made elsewhere reaches a reader polling the tail. Absent until a teammate is first involved.",
       }),
       activity: z.array(ConversationActivityEntrySchema).optional().openapi({
-        description: "The conversation's whole activity timeline, oldest first, on every tail, so a reader polling the tail sees an event recorded elsewhere.",
+        description: "The conversation's activity, oldest first, so a reader polling the tail sees an event recorded elsewhere: the whole timeline, or with `activityCursor` only the events recorded since. Feedback outcomes reach only a caller with Quality access.",
+      }),
+      activityCursor: z.string().uuid().nullable().optional().openapi({
+        description: "Pass as the next tail's `activityCursor` to read only newer activity. Null while the conversation has no activity.",
       }),
     }),
   );

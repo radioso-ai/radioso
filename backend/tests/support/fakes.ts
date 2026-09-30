@@ -24,12 +24,13 @@ import type {
   WorkspaceGrantRole,
 } from "../../src/db/repositories/workspaceGrantRepository.js";
 import type { AccessGrantRepositoryPort } from "../../src/modules/accessGrants/ports.js";
-import {
-  CLOSING_ACTIVITY_KINDS,
-  type ClosingConversationActivityRecord,
-  type ConversationActivityEvent,
-  type ConversationActivityRecord,
-  type ConversationActivityRecorder,
+import type {
+  ClosingActivityKind,
+  ClosingConversationActivityRecord,
+  ConversationActivityEvent,
+  ConversationActivityKind,
+  ConversationActivityRecord,
+  ConversationActivityRecorder,
 } from "../../src/modules/conversationActivity/contracts/index.js";
 import type { ConversationActivityStore } from "../../src/modules/conversationActivity/public.js";
 import type { VisitorRecord } from "../../src/db/repositories/visitorRepository.js";
@@ -4378,13 +4379,29 @@ export class InMemoryConversationActivityStore implements ConversationActivityRe
     return { record: (event) => this.record(undefined, event) };
   }
 
-  async listForConversation(workspaceId: string, conversationId: string): Promise<ConversationActivityRecord[]> {
-    return this.items.filter((item) => item.workspaceId === workspaceId && item.conversationId === conversationId);
+  async listForConversation(
+    workspaceId: string,
+    conversationId: string,
+    options: { kinds: readonly ConversationActivityKind[]; after?: string },
+  ): Promise<ConversationActivityRecord[]> {
+    const timeline = this.items.filter((item) => item.workspaceId === workspaceId && item.conversationId === conversationId);
+    const anchor = options.after === undefined ? -1 : timeline.findIndex((item) => item.id === options.after);
+    if (options.after !== undefined && anchor === -1) {
+      return [];
+    }
+    return timeline.slice(anchor + 1).filter((item) => options.kinds.includes(item.kind));
   }
 
-  async listRecentClosing(workspaceId: string, limit: number): Promise<ClosingConversationActivityRecord[]> {
+  async listRecentClosing(
+    workspaceId: string,
+    limit: number,
+    kinds: readonly ClosingActivityKind[],
+  ): Promise<ClosingConversationActivityRecord[]> {
     const closing = this.items
-      .filter((item) => item.workspaceId === workspaceId && (CLOSING_ACTIVITY_KINDS as readonly string[]).includes(item.kind))
+      .flatMap((item) => {
+        const kind = kinds.find((candidate) => candidate === item.kind);
+        return item.workspaceId === workspaceId && kind ? [{ ...item, kind }] : [];
+      })
       .reverse()
       .slice(0, limit);
     return Promise.all(closing.map(async (item) => ({ ...item, conversationTitle: await this.titles(item.conversationId) })));

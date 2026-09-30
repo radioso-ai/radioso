@@ -16,6 +16,8 @@ import {
 
 type TriageRow = {
   conversation_id?: string;
+  /** The effective state the accepted write moved from; only the write returns it. */
+  prior_state?: string;
   state: string;
   version: number | string;
   resolution_reason: string | null;
@@ -68,11 +70,15 @@ export class QualityTriageStore {
   ): Promise<SetTriageStateResult> {
     // The accepted write and immutable transition are one data-modifying CTE:
     // either both persist or neither does. A transition that closes the feedback
-    // records who closed it in the same transaction. A separate current-row read
-    // after a lost CAS sees the winning concurrent commit under READ COMMITTED.
+    // records who closed it in the same transaction; re-saving a closed state (a
+    // new note, a changed reason) closes nothing, so it records nothing. A separate
+    // current-row read after a lost CAS sees the winning concurrent commit under
+    // READ COMMITTED.
     const row = await this.db.transaction().execute(async (trx) => {
       const accepted = await this.writeTransition(trx, workspaceId, input);
-      const closing = accepted ? CLOSING_ACTIVITY[accepted.state as QualityTriageState] : undefined;
+      const closing = accepted && accepted.prior_state !== accepted.state
+        ? CLOSING_ACTIVITY[accepted.state as QualityTriageState]
+        : undefined;
       if (accepted && closing && accepted.conversation_id) {
         await this.conversationActivity.record(trx, {
           kind: closing,
@@ -206,6 +212,7 @@ export class QualityTriageStore {
          )
          SELECT
            (SELECT conversation_id FROM target) AS conversation_id,
+           (SELECT prior_state FROM target) AS prior_state,
            state,
            version,
            resolution_reason,

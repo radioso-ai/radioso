@@ -131,15 +131,20 @@ export const placeActivity = (
 }
 
 /**
- * The newer of two reads of a conversation's timeline — the detail fetch and the tail poll. Events
- * are only ever added, so the longer read is the newer one; on a tie the tail, read more often, wins.
+ * A conversation's timeline from every read of it: the detail fetch, and the tail polls — the first
+ * reads the whole timeline, each later one only what was recorded since. Events are only ever
+ * added, so the union by id, oldest first, is the timeline. A later read of an event replaces an
+ * earlier one, its teammate labels being the fresher; events of one millisecond keep the order they
+ * were read in, which is the order they were recorded.
  */
-export const freshestActivity = (
-  detail: readonly ConversationActivityEntry[] | undefined,
-  tail: readonly ConversationActivityEntry[] | undefined,
-): readonly ConversationActivityEntry[] => {
-  if (!tail) {
-    return detail ?? []
+export const mergeActivity = (
+  ...reads: ReadonlyArray<readonly ConversationActivityEntry[] | undefined>
+): ConversationActivityEntry[] => {
+  const byId = new Map<string, ConversationActivityEntry>()
+  for (const read of reads) {
+    for (const event of read ?? []) {
+      byId.set(event.id, event)
+    }
   }
-  return detail && detail.length > tail.length ? detail : tail
+  return [...byId.values()].sort((left, right) => timeOf(left.createdAt) - timeOf(right.createdAt))
 }

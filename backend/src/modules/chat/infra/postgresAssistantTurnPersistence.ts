@@ -6,7 +6,6 @@ import type { RoutineState } from "@radioso/conversation-contract";
 import { DEFAULT_ROUTINE_STATE_TTL_MS } from "../../../db/repositories/routineStateRepository.js";
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import type { PendingDecisionCreateInput } from "../../../db/repositories/pendingDecisionRepository.js";
-import { ConversationActivityRepository } from "../../../db/repositories/conversationActivityRepository.js";
 import { ConversationOwnershipRepository } from "../../../db/repositories/conversationOwnershipRepository.js";
 import type { ConversationActivityRecorder } from "../../conversationActivity/contracts/index.js";
 import { toJsonb, toSanitizedJsonb } from "../../../shared/infra/kysely/sqlHelpers.js";
@@ -262,6 +261,8 @@ const insertAuditEvent = async (
 export class PostgresAssistantTurnPersistence implements AssistantTurnPersistencePort {
   constructor(
     private readonly db: Db,
+    // Records the handoff a turn requests in the turn's own transaction.
+    private readonly conversationActivity: ConversationActivityRecorder,
     private readonly routineStateTtlMs: number = DEFAULT_ROUTINE_STATE_TTL_MS,
     private readonly conversationOwnershipRepository = new ConversationOwnershipRepository(db),
     // Optional: when wired, a turn that enqueued routine actions (contact.send,
@@ -271,8 +272,6 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
     // interval-loop poller and the recovery sweep still drain the row.
     private readonly actionDrainDispatcher?: ActionDrainDispatcherPort,
     private readonly logger?: Pick<AppLogger, "warn">,
-    // Records the handoff a turn requests in the turn's own transaction.
-    private readonly conversationActivity: ConversationActivityRecorder = new ConversationActivityRepository(db),
   ) {}
 
   async completeAssistantTurn(input: CompleteAssistantTurnInput): Promise<AssistantTurnPersistenceReceipt> {

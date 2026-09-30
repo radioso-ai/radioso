@@ -442,6 +442,37 @@ describeIfDatabase("quality triage transitions", () => {
     ]);
   });
 
+  it("records nothing more when a closed state is saved again", async () => {
+    const fixture = await seedTurn();
+    const service = new QualityTurnsService(
+      database.kysely,
+      stubOutcomeCatalog(),
+      new ConversationActivityRepository(database.kysely),
+    );
+    const save = (
+      state: "resolved" | "dismissed",
+      expectedVersion: number,
+      reason: "knowledge_gap" | "out_of_scope" | "other",
+    ) =>
+      service.setTriageState(fixture.workspaceId, {
+        assistantMessageId: fixture.assistantMessageId,
+        state,
+        expectedVersion,
+        resolution: { reason, note: `Saved at version ${expectedVersion}` },
+        updatedBy: fixture.userId,
+      });
+
+    await expect(save("resolved", 0, "knowledge_gap")).resolves.toMatchObject({ kind: "updated" });
+    await expect(save("resolved", 1, "other")).resolves.toMatchObject({ kind: "updated" });
+    await expect(save("dismissed", 2, "out_of_scope")).resolves.toMatchObject({ kind: "updated" });
+    await expect(save("dismissed", 3, "other")).resolves.toMatchObject({ kind: "updated" });
+
+    await expect(activityOf(fixture.conversationId)).resolves.toEqual([
+      expect.objectContaining({ kind: "feedback_resolved", detail: expect.objectContaining({ resolution: "knowledge_gap" }) }),
+      expect.objectContaining({ kind: "feedback_dismissed", detail: expect.objectContaining({ resolution: "out_of_scope" }) }),
+    ]);
+  });
+
   it("leaves the feedback open, with no transition, when its closing activity cannot be recorded", async () => {
     const fixture = await seedTurn();
     const service = new QualityTurnsService(database.kysely, stubOutcomeCatalog(), {

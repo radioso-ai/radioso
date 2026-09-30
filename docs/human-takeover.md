@@ -258,7 +258,9 @@ normal assistant path.
 Returns the Inbox items the workspace closed most recently, newest first: handoffs
 handed back to the agent, approvals decided, and negative feedback resolved or
 dismissed. `limit` takes 1 to 50 and defaults to 10. Dashboard test chats are left
-out, as they are from the rest of the Inbox.
+out, as they are from the rest of the Inbox. Negative feedback is listed only to a
+teammate with Quality access (`workspace.quality.read`, which owners and admins
+hold); a member sees the handoffs and approvals, and the limit fills with those.
 
 ```json
 {
@@ -300,10 +302,21 @@ by the part of Radioso that makes the change, so an action never commits without
 its event, or an event without its action. Replies are not events; they are
 messages already.
 
+Feedback that was resolved or dismissed in the 30 days before the record began is
+in it too, rebuilt from the triage history, so "Recently closed" and each
+conversation's record start with that month's closed feedback.
+
 The operator history detail and tail (`GET /api/v1/history/chat/{conversationId}`
-and its `/tail`) carry the record as `activity`, oldest first. The tail carries the
-whole list on every call, so a reader polling it sees an event recorded elsewhere
-without tracking a second cursor.
+and its `/tail`) carry the record as `activity`, oldest first. The detail carries
+the whole list. The tail carries it too, along with an `activityCursor`; pass that
+back as the next tail's `activityCursor` and the tail carries only the events
+recorded since — an empty list when nothing happened, with the same cursor back.
+`activityCursor` is `null` while the conversation has no events.
+
+`feedback_resolved` and `feedback_dismissed` are Quality triage outcomes, so they
+reach only a teammate with Quality access (`workspace.quality.read`). A member,
+who can follow and take over conversations without that access, reads every other
+kind.
 
 ```json
 {
@@ -402,7 +415,7 @@ transport with an `approval.request` action, mirroring `handoff.notify`.
 Both surfaces can read forward for new messages instead of refetching the whole
 transcript. The public visitor surface can also subscribe to push notifications.
 
-- Operator: `GET /api/v1/history/chat/{conversationId}/tail?cursor=...`
+- Operator: `GET /api/v1/history/chat/{conversationId}/tail?cursor=...&activityCursor=...`
 - Visitor: `GET /api/v1/public/chat/{token}/tail/{conversationId}?cursor=...`
 - Visitor push: `GET /api/v1/public/chat/{token}/events/{conversationId}`
 - Calling agent: `GET /api/v1/mcp/converse/messages?cursor=...&waitMs=...`
@@ -496,7 +509,8 @@ reading pane is read-only, with an outcome footer in place of the composer.
 Below the queue, **Recently closed** lists the last ten items closed — handoffs
 handed back, approvals decided, and negative feedback resolved or dismissed —
 each with what it was and "Closed by Dana Scully · 30 Sept, 2:12 PM". Selecting
-one opens its conversation in the reading pane.
+one opens its conversation in the reading pane. Resolved and dismissed feedback,
+there and in the transcript's lines, shows only to teammates with Quality access.
 
 The browser tab title carries the count of open items, and a soft sound plays
 when a new handoff or approval arrives while the dashboard is open.
@@ -511,8 +525,10 @@ pane instead.
 Ray reads the same queue. Ask it what is waiting and it lists the open
 approvals, handoffs, and commented negative feedback longest wait first, each row
 carrying the decision or turn behind it and the number of rows its source
-matched. Its conversation transcript carries the conversation's activity, so it
-can say who took a handoff, who handed it back, and which option a teammate chose. Ask it to close a reviewed turn and it writes the triage state and
+matched. Its conversation transcript carries the conversation's latest 40 activity
+events, so it can say who took a handoff, who handed it back, and which option a
+teammate chose — and, for a teammate with Quality access, who resolved or
+dismissed the feedback. Ask it to close a reviewed turn and it writes the triage state and
 resolution reason against the version it read, reporting a conflict when another
 operator moved the row first. It also drafts a reply by replaying the agent over
 the conversation's own transcript, with every outward-reaching skill suppressed,

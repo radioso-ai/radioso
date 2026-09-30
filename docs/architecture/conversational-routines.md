@@ -411,8 +411,7 @@ takes the structural editor.
 
 A step whose slots were given on an earlier turn is usually rendered again
 rather than skipped: the fast-forward check asks the selector about the latest
-message (#1372). A turn with no detected response language can answer in the
-step instruction's language (#1373). Captured values are not checked against
+message (#1372). Captured values are not checked against
 their declared type beyond number and boolean coercion (#1374). A recap
 confirmation accepts a visitor message posing as a system notice (#1375). A step
 can be re-asked with no limit unless the author adds a `counter` exit (#1376),

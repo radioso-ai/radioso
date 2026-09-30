@@ -8,7 +8,12 @@ import type {
   SteeringRule,
   TurnContext,
 } from "@radioso/conversation-contract";
-import { buildResolvedSteering, knownAnswerCoverage, steeringForKnownVerdict } from "./steering.js";
+import {
+  buildResolvedSteering,
+  knownAnswerCoverage,
+  steeringForKnownVerdict,
+  withRoutineStepSteering,
+} from "./steering.js";
 import {
   createInputEvent,
   createProcessTurnResult,
@@ -49,8 +54,13 @@ export const resumeRoutine = async (input: {
         baseSteering,
         traceKind: "directive_steering",
       });
-      directiveSteeringStage = resolved.traceStage;
-      return steeringForKnownVerdict(resolved.steering, knownAnswerCoverage(turn));
+      const steering = steeringForKnownVerdict(resolved.steering, knownAnswerCoverage(turn));
+      directiveSteeringStage = withRoutineStepSteering(resolved.traceStage, {
+        routineId: state.routineId,
+        stepId: step.id,
+        steering,
+      });
+      return steering;
     },
   };
 

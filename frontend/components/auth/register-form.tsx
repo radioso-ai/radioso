@@ -80,7 +80,7 @@ export function RegisterForm({ onSwitchToLogin, onVerificationPending }: Registe
         throw new Error('Registration is unavailable outside the auth shell')
       }
       riseSun()
-      await auth.login(email, response.userId, response.accountId, response.organizationName)
+      await auth.login({ ...response, email })
     } catch (error) {
       setError(getErrorMessage(error))
     } finally {

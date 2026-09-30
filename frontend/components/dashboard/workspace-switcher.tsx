@@ -97,7 +97,7 @@ export function WorkspaceSwitcher({ accountId, currentView, routeState }: Worksp
       setPendingAccountSwitchId(targetAccountId)
       const response = await accountApi.switchAccount(targetAccountId, preferredWorkspaceId)
       seedWorkspaceSession(response.workspaceId, response.workspacePublicRouteKey)
-      await login(user.email, response.userId, response.accountId, response.organizationName)
+      await login({ ...response, email: user.email })
       router.replace(buildDashboardHref(response.accountId, {
         section: currentView,
         workspaceId: response.workspaceId,
@@ -121,7 +121,7 @@ export function WorkspaceSwitcher({ accountId, currentView, routeState }: Worksp
       const response = await accountApi.createOrganization(trimmed)
       setPendingAccountSwitchId(response.accountId)
       seedWorkspaceSession(response.workspaceId, response.workspacePublicRouteKey)
-      await login(user.email, response.userId, response.accountId, response.organizationName)
+      await login({ ...response, email: user.email })
       setNewOrganizationName('')
       setIsCreateOrganizationOpen(false)
       router.replace(buildDashboardHref(response.accountId, {

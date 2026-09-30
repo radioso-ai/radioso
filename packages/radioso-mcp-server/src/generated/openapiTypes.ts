@@ -4014,6 +4014,8 @@ export interface components {
         RegisterResponse: {
             /** Format: uuid */
             userId: string;
+            /** @description The name the person chose for themselves, or null when they have not set one. */
+            displayName: string | null;
             /** Format: uuid */
             accountId: string;
             organizationName: string;
@@ -4026,6 +4028,8 @@ export interface components {
         LoginResponse: {
             /** Format: uuid */
             userId: string;
+            /** @description The name the person chose for themselves, or null when they have not set one. */
+            displayName: string | null;
             /** Format: uuid */
             accountId: string;
             organizationName: string;
@@ -4045,8 +4049,6 @@ export interface components {
         SessionResponse: components["schemas"]["LoginResponse"] & {
             /** Format: email */
             email: string;
-            /** @description The name the person chose for themselves, or null when they have not set one. */
-            displayName: string | null;
         };
         UserProfile: {
             /** Format: uuid */

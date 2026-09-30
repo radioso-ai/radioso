@@ -1,7 +1,7 @@
 ---
 title: Accounts and users
 description: List accounts, invite users, accept invitations, manage organization roles, and switch account context.
-last_updated: 2026-09-29
+last_updated: 2026-09-30
 ---
 
 # Accounts and users
@@ -70,6 +70,19 @@ The responses are deliberately operational rather than conversational. They retu
 ## List users
 
 `GET /api/v1/account/users` returns the current account's members, the invitations still waiting to be accepted, and workspace grants. Owners and admins can read it. Each member carries `email` and `displayName`. `displayName` is the name that person set on [their profile](/api/auth-and-sessions#your-profile), or `null` until they set one, so show the email in its place.
+
+## Change a member's role
+
+Owners and admins change a member's organization role with the membership id from the list:
+
+```bash
+curl -sS -b cookies.txt -X PATCH \
+  -H 'Content-Type: application/json' \
+  -d '{"role":"admin"}' \
+  https://api.radioso.ai/api/v1/account/users/{membershipId}
+```
+
+`role` is `admin` or `member`. The response is the member as the list describes them, with `email`, `displayName`, and the new `role`, so a client can update its row in place. Changing your own role or an owner's returns `409`.
 
 ## Invite a user
 
@@ -160,6 +173,8 @@ Switching accounts changes which account subsequent session-scoped routes operat
 ```
 
 `accountId` is required. `preferredWorkspaceId` is optional.
+
+The response sets a new session cookie and returns the same payload as login: the account, its workspace, and your `displayName`. Creating an organization with `POST /api/v1/account/accounts` answers the same way.
 
 ## Remove account access
 

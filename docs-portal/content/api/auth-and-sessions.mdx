@@ -1,7 +1,7 @@
 ---
 title: Auth and sessions
 description: Check registration availability, register, log in, join an organization by invitation, and set the name teammates see.
-last_updated: 2026-09-29
+last_updated: 2026-09-30
 ---
 
 import { Steps } from 'nextra/components'
@@ -84,6 +84,8 @@ curl -sS -c cookies.txt \
 
 The login request can also include `preferredWorkspaceId` or `preferredAccountId` when you want to restore a known context.
 
+The response names where the session landed — `accountId`, `organizationName`, and the workspace — along with `userId` and `displayName`, the name you set on [your profile](#your-profile) or `null`. Every response that signs you in carries the same fields: registration, invitation acceptance, password reset confirmation, and the [organization create and switch routes](/api/accounts-and-users#switch-account-context). A client can show who signed in straight from that response.
+
 ## Your profile
 
 Your profile holds the name teammates see for you in the dashboard. Read it with the session cookie:
@@ -103,11 +105,23 @@ curl -sS -b cookies.txt -X PATCH \
   https://api.radioso.ai/api/v1/auth/profile
 ```
 
-The response is the updated profile. Radioso trims the name before storing it, and an empty string or `null` clears it. Any script works. A name holds at most 80 characters and cannot contain control characters such as line breaks or tabs; either returns `400`, as does a body with any field besides `displayName`.
+The response is the updated profile. Radioso trims the name before storing it, and an empty string or `null` clears it. Any script works, and joiners inside a name stay put: the zero-width joiner in an emoji sequence such as 👩‍💻, or the non-joiner in a Persian name such as می‌خواهم.
 
-`GET /api/v1/auth/session` returns the same `displayName` next to the account and workspace the session lands on. Each change writes an `auth.profile_updated` audit event that names the changed field, never its value.
+Teammates see the name without the email beside it, so the rules refuse anything that would let one person read as another. Each of these returns `400` with a message naming the rule:
 
-Profile routes accept only the signed-in session. Personal and service credentials act for a workspace, so they have no profile to read or edit.
+- more than 80 characters
+- a control character, such as a line break or tab
+- a text-direction override, embedding, or isolate (U+202A to U+202E, U+2066 to U+2069)
+- nothing visible, such as only zero-width spaces or Hangul fillers
+- the shape of an email address, such as `dana@corp.com`; `Dana @ Acme` is fine
+
+A body with any field besides `displayName` returns `400` as well.
+
+`GET /api/v1/auth/session` returns the same `displayName` next to the account and workspace the session lands on.
+
+The name belongs to you rather than to one organization, so every organization you belong to shows the change. Each of them records its own `auth.profile_updated` audit event, which names the changed field and never its value.
+
+Profile routes accept only the signed-in session. Personal and service credentials act for a workspace, so they have no profile to read or edit. Reading the profile works from any session. Changing it needs a session on an organization you still belong to: a session on one that removed you gets `401` with `Active account membership is required`, and [switching](/api/accounts-and-users#switch-account-context) to an organization you belong to clears it.
 
 ## Invitation flow
 
@@ -136,7 +150,7 @@ POST  /api/v1/auth/invitations/{invitationToken}/accept
 ## Common failure modes
 
 - `400` usually means the request body is incomplete or malformed, or a display name breaks the naming rules above.
-- `401` usually means the credentials are wrong, or the invitation accept flow is no longer valid.
+- `401` usually means the credentials are wrong, or the invitation accept flow is no longer valid. A profile change also returns `401` when the session's organization no longer counts you as a member.
 - `403` from registration means open registration is closed and the user needs an invitation. Login can also return `403` when email verification is required.
 - `404` means the invitation token does not exist.
 - `409` usually means the account or invitation state is in conflict with the requested action.

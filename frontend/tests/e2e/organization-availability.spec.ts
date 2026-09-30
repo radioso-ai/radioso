@@ -49,9 +49,14 @@ test('offers first-user registration when the server reports it available', asyn
 
 test('enters the workspace directly after a development auto-verified registration', async ({ page }) => {
   let registerBody: unknown = null
+  let sessionLookupsAfterSignIn = 0
   await page.route('**/backend/api/v1/**', async (route) => {
     const path = new URL(route.request().url()).pathname.replace(/^\/backend\/api\/v1/, '')
     const method = route.request().method()
+
+    if (path === '/auth/session' && registerBody !== null) {
+      sessionLookupsAfterSignIn += 1
+    }
 
     if (path === '/auth/registration') {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ available: true }) })
@@ -64,6 +69,7 @@ test('enters the workspace directly after a development auto-verified registrati
         contentType: 'application/json',
         body: JSON.stringify({
           userId: '11111111-1111-4111-8111-111111111111',
+          displayName: 'Local Dev',
           accountId: '22222222-2222-4222-8222-222222222222',
           organizationName: 'Local Dev Organization',
           workspaceId: '33333333-3333-4333-8333-333333333333',
@@ -118,6 +124,10 @@ test('enters the workspace directly after a development auto-verified registrati
   await expect.poll(() => registerBody).toMatchObject({ email: 'local-dev@example.com', displayName: 'Local Dev' })
   await expect(page.getByRole('heading', { name: 'Check your inbox' })).toHaveCount(0)
   await expect.poll(() => page.evaluate(() => localStorage.getItem('radioso.authUser'))).toContain('local-dev@example.com')
+  // The registration response names the person, so the name is there without asking the session.
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('radioso.authUser') ?? '{}').displayName))
+    .toBe('Local Dev')
+  expect(sessionLookupsAfterSignIn).toBe(0)
 })
 
 test('shows invitation guidance without flashing registration when registration is closed', async ({ page }) => {

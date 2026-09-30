@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, useEffect, useState, useCallback, ReactNode } from 'react'
+import { createContext, useContext, useEffect, useRef, useState, useCallback, ReactNode } from 'react'
 import { authApi, clearWorkspaceStorage, seedWorkspaceSession } from '@/lib/api'
 
 interface User {
@@ -12,11 +12,20 @@ interface User {
   organizationName?: string
 }
 
+/** Who just signed in, as every sign-in response describes them. */
+interface SignedInUser {
+  email: string
+  userId: string
+  accountId: string
+  organizationName?: string | null
+  displayName: string | null
+}
+
 interface AuthContextType {
   user: User | null
   isAuthenticated: boolean
   isBootstrapping: boolean
-  login: (email: string, userId: string, accountId: string, organizationName?: string | null) => Promise<void>
+  login: (signedIn: SignedInUser) => Promise<void>
   logout: () => void
   setDisplayName: (displayName: string | null) => void
 }
@@ -173,6 +182,18 @@ const persistAuthUser = (
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [isBootstrapping, setIsBootstrapping] = useState(true)
+  // The latest user, for callbacks that must read it without being re-created on every change.
+  const userRef = useRef<User | null>(null)
+
+  // The one path a changed user takes: stored first, so a navigation that
+  // follows at once still finds it, then shown.
+  const commitUser = useCallback((nextUser: User) => {
+    userRef.current = nextUser
+    if (typeof window !== 'undefined') {
+      persistAuthUser(window.localStorage, nextUser)
+    }
+    setUser(nextUser)
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -185,6 +206,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const storedUser = readStoredAuthUser(window.localStorage)
       if (storedUser) {
+        userRef.current = storedUser
         setUser(storedUser)
         setIsBootstrapping(false)
         return
@@ -198,16 +220,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!active) return
       if (session) {
         const organizationName = normalizeStoredOrganizationName(session.organizationName)
-        const recovered: User = {
+        seedWorkspaceSession(session.workspaceId, session.workspacePublicRouteKey)
+        commitUser({
           userId: session.userId,
           accountId: session.accountId,
           email: session.email,
           displayName: normalizeDisplayName(session.displayName) ?? null,
           ...(organizationName ? { organizationName } : {}),
-        }
-        persistAuthUser(window.localStorage, recovered)
-        seedWorkspaceSession(session.workspaceId, session.workspacePublicRouteKey)
-        setUser(recovered)
+        })
       }
       setIsBootstrapping(false)
     }
@@ -217,10 +237,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       active = false
     }
-  }, [])
+  }, [commitUser])
 
-  // Sign-in responses carry no display name, and a user stored before names
-  // existed has none either, so the session is asked once in the background.
+  // A user stored before names existed carries none, so the session is asked
+  // once in the background. Every sign-in response carries the name itself.
   const userAwaitingDisplayName = user && user.displayName === undefined ? user.userId : null
   useEffect(() => {
     if (!userAwaitingDisplayName) {
@@ -229,49 +249,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     let active = true
     void authApi.getCurrentSession().then((session) => {
+      const current = userRef.current
       if (!active || session?.userId !== userAwaitingDisplayName) return
-      setUser((current) => current?.userId === userAwaitingDisplayName && current.displayName === undefined
-        ? { ...current, displayName: normalizeDisplayName(session.displayName) ?? null }
-        : current)
+      if (current?.userId !== userAwaitingDisplayName || current.displayName !== undefined) return
+      commitUser({ ...current, displayName: normalizeDisplayName(session.displayName) ?? null })
     })
 
     return () => {
       active = false
     }
-  }, [userAwaitingDisplayName])
+  }, [commitUser, userAwaitingDisplayName])
 
-  // Keeps the stored copy in step with in-memory changes such as a renamed profile.
-  useEffect(() => {
-    if (user && typeof window !== 'undefined') {
-      persistAuthUser(window.localStorage, user)
-    }
-  }, [user])
-
-  const login = useCallback(async (email: string, userId: string, accountId: string, organizationName?: string | null) => {
+  const login = useCallback(async ({ email, userId, accountId, organizationName, displayName }: SignedInUser) => {
     const normalizedOrganizationName = normalizeStoredOrganizationName(organizationName)
-    const nextUser: User = {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('radioso:auth-session-ended'))
+    }
+    commitUser({
       userId,
       accountId,
       email,
+      displayName: normalizeDisplayName(displayName),
       ...(normalizedOrganizationName ? { organizationName: normalizedOrganizationName } : {}),
-    }
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new Event('radioso:auth-session-ended'))
-      persistAuthUser(window.localStorage, nextUser)
-    }
-
-    // Switching or creating an organization signs the same person in again; their
-    // name travels with them rather than being asked of the server once more.
-    setUser((current) => current?.userId === userId && current.displayName !== undefined
-      ? { ...nextUser, displayName: current.displayName }
-      : nextUser)
-  }, [])
+    })
+  }, [commitUser])
 
   const setDisplayName = useCallback((displayName: string | null) => {
-    setUser((current) => current && current.displayName !== displayName ? { ...current, displayName } : current)
-  }, [])
+    const current = userRef.current
+    if (current && current.displayName !== displayName) {
+      commitUser({ ...current, displayName })
+    }
+  }, [commitUser])
 
   const logout = useCallback(() => {
+    userRef.current = null
     setUser(null)
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new Event('radioso:auth-session-ended'))

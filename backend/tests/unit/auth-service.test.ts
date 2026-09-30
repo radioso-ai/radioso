@@ -2091,7 +2091,7 @@ describe("AuthService display name", () => {
       emailVerified: true,
       displayName: "Mary Jackson",
     });
-    await authService.updateProfile({ userId: first.userId, accountId: first.accountId, displayName: "Mary" });
+    await authService.updateProfile({ userId: first.userId, displayName: "Mary" });
 
     await authService.federatedLogin({
       provider: "google",
@@ -2159,15 +2159,20 @@ describe("AuthService display name", () => {
     expect((await userRepository.findById(squatted.userId))?.displayName).toBeNull();
   });
 
-  it("drops a provider name the display-name rules reject instead of failing the sign-in", async () => {
+  it.each([
+    ["too long", "x".repeat(81)],
+    ["shaped like an email address", "federated-name@example.com"],
+    ["invisible", "ㅤ"],
+    ["carrying a direction override", "Mary‮Jackson"],
+  ])("drops a provider name that is %s instead of failing the sign-in", async (_label, displayName) => {
     const { authService, userRepository } = createAuthService({ sessionRepository: new WorkingSessionRepository() });
 
     const result = await authService.federatedLogin({
       provider: "google",
-      subject: "google-long-name",
-      email: "federated-long-name@example.com",
+      subject: "google-rejected-name",
+      email: "federated-rejected-name@example.com",
       emailVerified: true,
-      displayName: "x".repeat(81),
+      displayName,
     });
 
     expect((await userRepository.findById(result.userId))?.displayName).toBeNull();
@@ -2184,7 +2189,6 @@ describe("AuthService display name", () => {
     });
     await expect(authService.updateProfile({
       userId: registration.userId,
-      accountId: registration.accountId,
       displayName: " Annie Easley ",
     })).resolves.toEqual({
       userId: registration.userId,
@@ -2193,7 +2197,6 @@ describe("AuthService display name", () => {
     });
     await expect(authService.updateProfile({
       userId: registration.userId,
-      accountId: registration.accountId,
       displayName: "",
     })).resolves.toMatchObject({ displayName: null });
   });
@@ -2204,7 +2207,6 @@ describe("AuthService display name", () => {
 
     await authService.updateProfile({
       userId: registration.userId,
-      accountId: registration.accountId,
       displayName: "Evelyn Boyd Granville",
     });
 
@@ -2227,7 +2229,7 @@ describe("AuthService display name", () => {
       displayName: "Gladys West",
     });
 
-    await authService.updateProfile({ userId: registration.userId, accountId: registration.accountId, displayName: "Gladys West " });
+    await authService.updateProfile({ userId: registration.userId, displayName: "Gladys West " });
 
     expect(auditService.events.filter((event) => event.eventType === "auth.profile_updated")).toEqual([]);
   });
@@ -2242,7 +2244,6 @@ describe("AuthService display name", () => {
 
     await expect(authService.updateProfile({
       userId: registration.userId,
-      accountId: registration.accountId,
       displayName: "y".repeat(81),
     })).rejects.toMatchObject({ statusCode: 400 });
     expect((await userRepository.findById(registration.userId))?.displayName).toBe("Valid Name");
@@ -2252,7 +2253,7 @@ describe("AuthService display name", () => {
     const { authService } = createAuthService({});
 
     await expect(authService.getProfile("missing-user")).rejects.toMatchObject({ statusCode: 401 });
-    await expect(authService.updateProfile({ userId: "missing-user", accountId: "missing-account", displayName: "Name" }))
+    await expect(authService.updateProfile({ userId: "missing-user", displayName: "Name" }))
       .rejects.toMatchObject({ statusCode: 401 });
   });
 });

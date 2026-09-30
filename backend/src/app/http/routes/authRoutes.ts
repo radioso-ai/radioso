@@ -175,6 +175,7 @@ export const createAuthRoutes = (dependencies: AuthRouteDependencies): Router =>
       }
       res.status(201).json({
         userId: result.userId,
+        displayName: result.displayName,
         accountId: result.accountId,
         organizationName: result.organizationName,
         workspaceId: result.workspaceId,
@@ -193,6 +194,7 @@ export const createAuthRoutes = (dependencies: AuthRouteDependencies): Router =>
       res.setHeader("Set-Cookie", result.sessionCookie);
       res.status(200).json({
         userId: result.userId,
+        displayName: result.displayName,
         accountId: result.accountId,
         organizationName: result.organizationName,
         workspaceId: result.workspaceId,
@@ -231,16 +233,17 @@ export const createAuthRoutes = (dependencies: AuthRouteDependencies): Router =>
     }
   });
 
+  // A change, unlike a read, is shown to teammates and recorded in their
+  // organizations' audit logs, so it needs a membership the session still holds.
   router.patch(
     "/profile",
-    requireSession(dependencies, { requireActiveMembership: false }),
+    requireSession(dependencies),
     validateBody(profileUpdateSchema),
     async (req, res, next) => {
       try {
-        const { userId, accountId } = res.locals as { userId: string; accountId: string };
+        const { userId } = res.locals as { userId: string };
         const profile = await dependencies.authService.updateProfile({
           userId,
-          accountId,
           displayName: req.body.displayName,
         });
         res.setHeader("Cache-Control", "no-store");
@@ -277,6 +280,7 @@ export const createAuthRoutes = (dependencies: AuthRouteDependencies): Router =>
         res.setHeader("Set-Cookie", result.sessionCookie);
         res.status(200).json({
           userId: result.userId,
+          displayName: result.displayName,
           accountId: result.accountId,
           organizationName: result.organizationName,
           workspaceId: result.workspaceId,
@@ -310,6 +314,7 @@ export const createAuthRoutes = (dependencies: AuthRouteDependencies): Router =>
         res.setHeader("Set-Cookie", result.sessionCookie);
         res.status(200).json({
           userId: result.userId,
+          displayName: result.displayName,
           accountId: result.accountId,
           organizationName: result.organizationName,
           workspaceId: result.workspaceId,
@@ -350,6 +355,7 @@ export const createAuthRoutes = (dependencies: AuthRouteDependencies): Router =>
         res.setHeader("Set-Cookie", result.sessionCookie);
         res.status(200).json({
           userId: result.userId,
+          displayName: result.displayName,
           accountId: result.accountId,
           email: result.email,
           organizationName: result.organizationName,

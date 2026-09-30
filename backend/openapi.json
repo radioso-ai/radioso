@@ -203,6 +203,13 @@
             "type": "string",
             "format": "uuid"
           },
+          "displayName": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The name the person chose for themselves, or null when they have not set one."
+          },
           "accountId": {
             "type": "string",
             "format": "uuid"
@@ -226,6 +233,7 @@
         },
         "required": [
           "userId",
+          "displayName",
           "accountId",
           "organizationName",
           "workspaceId",
@@ -240,6 +248,13 @@
           "userId": {
             "type": "string",
             "format": "uuid"
+          },
+          "displayName": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The name the person chose for themselves, or null when they have not set one."
           },
           "accountId": {
             "type": "string",
@@ -261,6 +276,7 @@
         },
         "required": [
           "userId",
+          "displayName",
           "accountId",
           "organizationName",
           "workspaceId",
@@ -312,18 +328,10 @@
               "email": {
                 "type": "string",
                 "format": "email"
-              },
-              "displayName": {
-                "type": [
-                  "string",
-                  "null"
-                ],
-                "description": "The name the person chose for themselves, or null when they have not set one."
               }
             },
             "required": [
-              "email",
-              "displayName"
+              "email"
             ]
           }
         ]

@@ -68,7 +68,7 @@ export function InvitationAcceptForm({
       })
       seedWorkspaceSession(response.workspaceId, response.workspacePublicRouteKey)
       riseSun()
-      await login(email, response.userId, response.accountId, response.organizationName)
+      await login({ ...response, email })
       // An invited teammate joins an existing workspace (invitations only
       // exist on workspaces someone already set up) — the Inbox, not
       // onboarding, is the normal landing surface here, same as any other

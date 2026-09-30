@@ -70,6 +70,51 @@ describe("RoutineChatModelGateway", () => {
     expect(calls[1].prompt).toBe(calls[0].prompt);
   });
 
+  it("meters the second and later completes in a turn under their own usage attempt", async () => {
+    const calls: ChatGatewayInput[] = [];
+    const chatGateway: Pick<ChatGateway, "answer"> = {
+      async answer(input) {
+        calls.push(input);
+        return "ok";
+      },
+    };
+    const gateway = new RoutineChatModelGateway(chatGateway, turnContext);
+
+    await gateway.complete({ messages: [{ role: "user", content: "first" }] });
+    await gateway.complete({ messages: [{ role: "user", content: "second" }] });
+
+    expect(calls).toHaveLength(2);
+    expect(calls[0].usageContext.attemptKey).toBe("routine_turn");
+    expect(calls[1].usageContext.attemptKey).toBe("routine_turn:2");
+  });
+
+  it("derives the blank retry key from the call's own usage attempt, not the turn's", async () => {
+    const calls: ChatGatewayInput[] = [];
+    let secondCallAttempts = 0;
+    const chatGateway: Pick<ChatGateway, "answer"> = {
+      async answer(input) {
+        calls.push(input);
+        if (calls.length === 1) {
+          return "ok";
+        }
+        secondCallAttempts += 1;
+        if (secondCallAttempts === 1) {
+          throw new BlankChatAnswerError();
+        }
+        return "recovered";
+      },
+    };
+    const gateway = new RoutineChatModelGateway(chatGateway, turnContext);
+
+    await gateway.complete({ messages: [{ role: "user", content: "first" }] });
+    const result = await gateway.complete({ messages: [{ role: "user", content: "second" }] });
+
+    expect(result.text).toBe("recovered");
+    expect(calls).toHaveLength(3);
+    expect(calls[1].usageContext.attemptKey).toBe("routine_turn:2");
+    expect(calls[2].usageContext.attemptKey).toBe("routine_turn:2:blank_retry");
+  });
+
   it("fails when the retry is blank too, and never retries other errors", async () => {
     const blankTwice: Pick<ChatGateway, "answer"> = {
       answer: async () => {

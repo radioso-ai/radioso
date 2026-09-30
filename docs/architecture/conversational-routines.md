@@ -91,7 +91,9 @@ condition hold.
 
 Routine model calls (selector and step replies) go through the chat gateway for
 the turn's workspace model. A blank completion is retried once, recorded under
-its own usage attempt; a second blank fails the turn.
+its own usage attempt; a second blank fails the turn. A turn that makes more than
+one routine model call meters each call under its own usage attempt, so a turn
+running both a selector pass and a step reply records both.
 
 On the routine's first turn the selector always reads the message, even when the
 activator already filled the first step's slot, so the rest of an opening message
@@ -258,7 +260,9 @@ debug surface. This is the first place to look when a routine "isn't filling
 slots": a step with an empty `returnedSlotKeys` means the model extracted nothing
 from that turn's message, while a key in `returnedSlotKeys` that is missing from
 `capturedSlotKeys` was returned but did not newly fill a slot (for example, it
-restated a value the slot already held).
+restated a value the slot already held). An `off_topic` outcome captures nothing
+that turn, even when `returnedSlotKeys` is non-empty — those keys show what the
+model read from the message, not what the routine kept.
 
 ## Activation and clarification
 

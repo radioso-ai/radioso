@@ -1036,7 +1036,12 @@ function RoutineStepsTimeline({ trace }: { trace: RoutineRunTraceView }) {
               {step.selection ? (
                 <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
                   <span>{ROUTINE_SELECTION_OUTCOME_LABELS[step.selection.outcome]}</span>
-                  <span className="text-[10px] uppercase tracking-wide text-muted-foreground">returned</span>
+                  <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                    {/* off_topic captures nothing this turn, so returned keys must not read as saved. */}
+                    {step.selection.outcome === 'off_topic' && step.selection.returnedSlotKeys.length > 0
+                      ? 'read, not captured'
+                      : 'returned'}
+                  </span>
                   {step.selection.returnedSlotKeys.length > 0 ? (
                     <SlotKeyChips keys={step.selection.returnedSlotKeys} tone="bg-muted text-muted-foreground" />
                   ) : (

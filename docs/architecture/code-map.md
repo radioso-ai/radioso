@@ -1172,7 +1172,7 @@ Primary internals:
 - `backend/src/db/repositories/routineDefinitionRepository.ts`, migrations `084`–`090` and `194` (exposure columns)
 - `backend/src/app/composition/routineDefinitionSource.ts` (loads + compiles the agent's enabled routines for activation and pinned routines for resume)
 - `packages/conversation-engine/src/routineRunner.ts` (runtime: activation, resume, guards, fast-forward)
-- `backend/prompts/chat/routine-next-step.md`, `routine-step-reply.md`, `routine-step-steering.md` (directives as guidance subordinate to the step instruction), `routine-step-answer-steering.md` (the same roles when a retrieval-fed step composes a grounded answer), `routine-ranked-activation.md`
+- `backend/prompts/chat/routine-next-step.md`, `routine-step-reply.md`, `routine-step-steering.md` (directives as guidance subordinate to the step instruction), `routine-step-answer-steering.md` (the same roles when a retrieval-fed step composes a grounded answer), `routine-ranked-activation.md`. Before editing `routine-next-step.md` or `routine-step-reply.md` (or the fragments built in `packages/conversation-defaults/src/routineNextStepSelector.ts` and `routineStepRenderer.ts`), read *Changing the routine prompts* in [Conversational Routines](conversational-routines.md): it lists the layout rules each prompt depends on and how to A/B a change live
 - `frontend/components/dashboard/settings/assistant-routines-section.tsx` (authoring UI)
 - `frontend/lib/routine-flow.ts` (block document → canvas graph, guard provenance, slot collection)
 - `frontend/components/dashboard/settings/routine-canvas.tsx` (read-only map over that graph)
@@ -1186,6 +1186,7 @@ Focused checks:
 - `cd frontend && pnpm exec vitest run tests/unit/routine-flow.test.ts`
 - `cd frontend && pnpm exec playwright test tests/e2e/routine-canvas.spec.ts`
 - `cd packages/conversation-engine && pnpm test`
+- `cd packages/conversation-defaults && pnpm exec vitest run tests/routines.test.ts` and `cd backend && pnpm exec vitest run tests/unit/routine-next-step-selector.test.ts tests/unit/routine-chat-model-gateway.test.ts` (selector prompt layout, slot coercion, re-ask context, blank retry)
 
 Related docs and specs:
 

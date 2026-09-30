@@ -163,6 +163,65 @@ describe('buildRoutineRunTrace', () => {
     })
   })
 
+  it('carries a valid selection trace for a step', () => {
+    const view = buildRoutineRunTrace(
+      routineStage({
+        steps: [{
+          stepId: 'ask_email',
+          kind: 'chat',
+          event: 'reasked',
+          selection: {
+            outcome: 'stay',
+            returnedSlotKeys: ['email'],
+            undeclaredKeyCount: 2,
+          },
+        }],
+      }),
+    )
+    expect(view?.steps[0].selection).toEqual({
+      outcome: 'stay',
+      returnedSlotKeys: ['email'],
+      undeclaredKeyCount: 2,
+    })
+  })
+
+  it('omits undeclaredKeyCount from the selection trace when it is zero or not a positive number', () => {
+    const view = buildRoutineRunTrace(
+      routineStage({
+        steps: [{
+          stepId: 'ask_email',
+          kind: 'chat',
+          event: 'reasked',
+          selection: { outcome: 'unreadable', returnedSlotKeys: [], undeclaredKeyCount: 0 },
+        }],
+      }),
+    )
+    expect(view?.steps[0].selection).toEqual({ outcome: 'unreadable', returnedSlotKeys: [] })
+  })
+
+  it('drops the selection trace entirely when the outcome is not one of the allowed values', () => {
+    const view = buildRoutineRunTrace(
+      routineStage({
+        steps: [{
+          stepId: 'ask_email',
+          kind: 'chat',
+          event: 'reasked',
+          selection: { outcome: 'bogus', returnedSlotKeys: ['email'] },
+        }],
+      }),
+    )
+    expect(view?.steps[0].selection).toBeUndefined()
+  })
+
+  it('omits the selection trace when the step has none', () => {
+    const view = buildRoutineRunTrace(
+      routineStage({
+        steps: [{ stepId: 'ask_email', kind: 'chat', event: 'reasked' }],
+      }),
+    )
+    expect(view?.steps[0].selection).toBeUndefined()
+  })
+
   it('carries skill name and status for a tool step', () => {
     const view = buildRoutineRunTrace(
       routineStage({

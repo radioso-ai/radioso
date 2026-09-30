@@ -11,9 +11,12 @@ import type {
   RoutineGuard,
   RoutineNextStepDecision,
   RoutineRunTrace,
+  RoutineSelectionTrace,
   RoutineSkillResult,
+  RoutineSlotSchema,
   RoutineState,
   RoutineStep,
+  RoutineStepReask,
   RoutineTraceSlotValue,
   RoutineTraceStepEntry,
   RoutineTransition,
@@ -259,6 +262,27 @@ const collectedSlotsFor = (step: RoutineStep): string[] => {
 const hasVariable = (variables: Record<string, unknown>, key: string): boolean =>
   Object.prototype.hasOwnProperty.call(variables, key);
 
+const requiredCollectedSlots = (routine: Routine, step: RoutineStep): RoutineSlotSchema[] => {
+  const collected = new Set(collectedSlotsFor(step));
+  return (routine.slots ?? []).filter((slot) => slot.required && collected.has(slot.key));
+};
+
+/**
+ * What a re-rendered step still lacks: its required collected slots that are unfilled, as
+ * declared schema — never values. `null` when the step collects required slots and holds
+ * them all: it stayed for another reason, and telling the renderer the reply "fell short"
+ * made it ask again for values it already had. An optional slot never counts as missing.
+ */
+const reaskFor = (
+  routine: Routine,
+  step: RoutineStep,
+  variables: Record<string, unknown>,
+): RoutineStepReask | null => {
+  const required = requiredCollectedSlots(routine, step);
+  const missingSlots = required.filter((slot) => !hasVariable(variables, slot.key));
+  return required.length > 0 && missingSlots.length === 0 ? null : { missingSlots };
+};
+
 const declaredSlotVariables = (
   routine: Routine,
   variables: Record<string, unknown>,
@@ -476,8 +500,10 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       );
     };
     // Set by `selectNext` each call: whether it consulted the LLM selector (vs taking a
-    // default/structured-guard edge). Read immediately after each awaited call.
+    // default/structured-guard edge), and what the selector reported its model returned.
+    // Read immediately after each awaited call.
     let lastSelectorRan = false;
+    let lastSelection: RoutineSelectionTrace | undefined;
 
     const attempts: Record<string, number> = { ...(state.attempts ?? {}) };
     if (state.path.length === 0) {
@@ -513,9 +539,12 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       state: RoutineState;
       skillResult?: RoutineSkillResult;
       defaultOnDecline?: boolean;
+      /** Extract even when the step's slots are filled: nothing has read this message yet. */
+      alwaysExtract?: boolean;
     };
     const selectNextRaw = async (input: SelectNextInput): Promise<RoutineNextStepDecision> => {
       lastSelectorRan = false;
+      lastSelection = undefined;
       const defaultTransition = input.transitions.find(isDefaultTransition);
       const conditionedTransitions = input.transitions.filter((transition) => !isDefaultTransition(transition));
 
@@ -536,7 +565,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       let extracted: Record<string, unknown> = {};
       if (
         collected.length > 0 &&
-        collected.some((key) => !hasVariable(input.variables, key)) &&
+        (input.alwaysExtract || collected.some((key) => !hasVariable(input.variables, key))) &&
         input.transitions.length > 0 &&
         !conditionedTransitions.some(isLlmTransition)
       ) {
@@ -549,6 +578,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
           turn,
           ...(input.skillResult ? { skillResult: input.skillResult } : {}),
         });
+        lastSelection = extraction.selection;
         // Off-topic on a slot step still yields the turn, same as the llm path.
         if (extraction.yieldTurn) {
           return extraction;
@@ -588,6 +618,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         turn,
         ...(input.skillResult ? { skillResult: input.skillResult } : {}),
       });
+      lastSelection = decision.selection;
       if (decision.yieldTurn) {
         return decision;
       }
@@ -619,11 +650,15 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       path = state.path.at(-1) === currentStep.id ? [...state.path] : [...state.path, currentStep.id];
     } else {
       // Select the step this turn lands on from the current step's outgoing edges.
+      // On the activation turn the activator may already have filled this step's slot
+      // from the message; the rest of the message (dates given with a program) still has
+      // to be read, or it is lost (#1370).
       const decision = await selectNext({
         step: currentStep,
         transitions: outgoing(currentStepId),
         variables: state.variables,
         state: { ...state, attempts },
+        ...(input.activationTurn ? { alwaysExtract: true } : {}),
       });
       // The user's message is off-topic for the routine → decline this turn and let
       // normal answering handle it; the routine stays at its current step to resume.
@@ -632,6 +667,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         return { yielded: true, response: { answer: "" }, nextState: null };
       }
       const mainSelectorRan = lastSelectorRan;
+      const mainSelection = lastSelection;
       const landedId = landingStepId(currentStepId, decision);
       step = landedId === currentStepId ? currentStep : stepById(landedId);
       variables = { ...state.variables, ...(decision.variables ?? {}) };
@@ -645,6 +681,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
           event: step.id === currentStepId ? "reasked" : "advanced",
           ...(captured.length > 0 ? { capturedSlotKeys: captured } : {}),
           viaSelector: mainSelectorRan,
+          ...(mainSelection ? { selection: mainSelection } : {}),
         });
       }
       // Append to the path only on a real advance; re-asking a step keeps it stable.
@@ -690,6 +727,9 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         }
         if (lastSelectorRan) {
           fastForwardEntry.viaSelector = true;
+        }
+        if (lastSelection) {
+          fastForwardEntry.selection = lastSelection;
         }
         const captured = capturedKeysFrom(beforeFastForward, fastForwardDecision);
         if (captured.length > 0) {
@@ -796,6 +836,9 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         if (lastSelectorRan) {
           skillEntry.viaSelector = true;
         }
+        if (lastSelection) {
+          skillEntry.selection = lastSelection;
+        }
         const capturedAtSkill = capturedKeysFrom(beforeSkill, skillDecision);
         if (capturedAtSkill.length > 0) {
           skillEntry.capturedSlotKeys = capturedAtSkill;
@@ -876,10 +919,18 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       ? await input.steeringResolver.resolve({ step, baseSteering, turn: turnWithStagedContext })
       : baseSteering;
 
+    // Rendering the chat step the user was answering means their reply did not satisfy
+    // it. The renderer must know, or it reads a bare "yes" to a confirmation question as
+    // the flow being done (#1369). On the activation turn the step is asked for the first time.
+    const reask =
+      !input.activationTurn && step.kind === "chat" && step.id === currentStepId
+        ? reaskFor(routine, step, variables)
+        : null;
     const response = await this.renderer.render({
       step: renderedStep,
       steering,
       turn: turnWithStagedContext,
+      ...(reask ? { reask } : {}),
     });
 
     const terminalKind = terminalKindFor(step);

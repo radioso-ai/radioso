@@ -6,6 +6,34 @@ import { DeferredClarificationStore } from "../../src/modules/chat/services/clar
 import { resolvePendingClarification } from "../../src/modules/chat/services/clarification/pendingClarificationResolver.js";
 
 describe("coverage routine assembly effects", () => {
+  it("meters the coverage pass's routine calls under their own usage key (#1378)", async () => {
+    const attemptKeys: string[] = [];
+    let modelGateway: { complete: (input: { messages: Array<{ role: string; content: string }> }) => Promise<unknown> } | undefined;
+    const session = { conversation: { id: "c", workspaceId: "w" }, agent: { id: "a", workspaceId: "w" }, userMessage: { id: "m" } };
+    const assembly = new ChatTurnAssembly({
+      coverageHeadRecorder: { createReactionRecorder: () => ({ record: async () => {} }) },
+      chatGateway: {
+        answer: async (input: { usageContext: { attemptKey: string } }) => {
+          attemptKeys.push(input.usageContext.attemptKey);
+          return "{}";
+        },
+      },
+      routineStore: { loadActive: vi.fn(async () => null), save: vi.fn(async () => {}), clear: vi.fn(async () => {}) },
+      routineProvider: {
+        forTurn: async (input: { modelGateway: typeof modelGateway }) => {
+          modelGateway = input.modelGateway;
+          return { coverageActivator: { evaluateCandidates: () => [], activate: async () => null }, activator: { activate: async () => null }, runner: { resume: async () => ({ response: { answer: "" }, nextState: null }) } };
+        },
+      },
+    } as never);
+
+    await (assembly as never as { coverageTurnRuntime: (s: unknown, i: unknown) => Promise<unknown> }).coverageTurnRuntime(session, { responseLanguage: Promise.resolve(undefined) });
+    await modelGateway!.complete({ messages: [{ role: "user", content: "hi" }] });
+
+    // The pre-retrieval routine attempt in the same turn meters under `routine_turn`.
+    expect(attemptKeys).toEqual(["routine_coverage_turn"]);
+  });
+
   it("captures state and reactions against the final session until the host commits", async () => {
     const durableStore = { loadActive: vi.fn(async () => null), save: vi.fn(async () => {}), clear: vi.fn(async () => {}) };
     const persistedReaction = vi.fn(async () => {});

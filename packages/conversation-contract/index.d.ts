@@ -1101,6 +1101,27 @@ export interface RoutineNextStepDecision {
    */
   yieldTurn?: boolean;
   rationale?: string;
+  /** What the model returned, for the debug trace. Absent when no model call ran. */
+  selection?: RoutineSelectionTrace;
+}
+
+/**
+ * The next-step selector's own reading of one turn, recorded on the routine trace so
+ * an operator can tell "the model returned nothing" from "the model returned a value
+ * that was not captured". Slot keys and counts only, never values.
+ */
+export interface RoutineSelectionTrace {
+  /**
+   * - `transition`: the model chose one of the step's conditions.
+   * - `stay`: the model chose none, so the step is not yet satisfied.
+   * - `off_topic`: the model chose none and read the message as a different request.
+   * - `unreadable`: the model's output could not be parsed, so nothing was chosen or extracted.
+   */
+  outcome: "transition" | "stay" | "off_topic" | "unreadable";
+  /** Slot keys the model returned a value for, including a value that replaces a filled slot. */
+  returnedSlotKeys: string[];
+  /** Keys the model returned that the routine does not declare; they are dropped, never captured. */
+  undeclaredKeyCount?: number;
 }
 
 /** The result of dispatching a Routine skill (tool) step. */
@@ -1151,7 +1172,8 @@ export interface ConversationRoutineNextStepSelector {
  * the Radioso composer (the projected step steering is passed in), so the pure
  * engine owns graph mechanics and the host owns generation/presentation. It is told
  * only what it needs to write the message — the step and its projected steering for
- * this turn — not the graph topology or slot state.
+ * this turn, and on a re-ask what the step still lacks — not the graph topology or
+ * slot values.
  *
  * The rules play two roles (#1351): a `source: "routine"` rule is the step's own
  * instruction and controls what the message asks for or does; every other rule
@@ -1163,7 +1185,18 @@ export interface ConversationRoutineStepRenderer {
     step: RoutineStep;
     steering: SteeringRule[];
     turn: TurnContext;
+    reask?: RoutineStepReask;
   }): Promise<RenderableTurn>;
+}
+
+/**
+ * Present when the turn renders the same chat step the user was answering, because
+ * their reply did not satisfy it. Absent on a step's first rendering, including the
+ * routine's activation turn.
+ */
+export interface RoutineStepReask {
+  /** The step's collected slots that are still unfilled. Schema only, never values. */
+  missingSlots: RoutineSlotSchema[];
 }
 
 /**
@@ -1300,6 +1333,8 @@ export interface RoutineTraceStepEntry {
   capturedSlotKeys?: string[];
   /** Whether the LLM next-step selector ran for this step's edges. */
   viaSelector?: boolean;
+  /** What the selector's model returned for this step's edges, when it ran and reported. */
+  selection?: RoutineSelectionTrace;
   skillName?: string;
   skillStatus?: string;
   /** Host-private failure reason for a failed skill dispatch (e.g. mcp_timeout, suppressed_for_safe_test). */

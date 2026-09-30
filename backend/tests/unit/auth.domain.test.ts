@@ -112,5 +112,16 @@ describe("email address shape", () => {
     expect(looksLikeEmailAddress("Dana @ Acme")).toBe(false);
     expect(looksLikeEmailAddress("dana@corp")).toBe(false);
     expect(looksLikeEmailAddress("Dana Smith")).toBe(false);
+    expect(looksLikeEmailAddress("a@.b.c")).toBe(true);
+    expect(looksLikeEmailAddress("a@b.")).toBe(false);
+    expect(looksLikeEmailAddress("@b.c")).toBe(false);
+    expect(looksLikeEmailAddress("a@b@c.d")).toBe(false);
+  });
+
+  it("checks the email shape in linear time on long stored text", () => {
+    const hostile = `!@!.${"!.".repeat(200_000)}\u0000`;
+    const started = performance.now();
+    expect(looksLikeEmailAddress(hostile)).toBe(true);
+    expect(performance.now() - started).toBeLessThan(250);
   });
 });

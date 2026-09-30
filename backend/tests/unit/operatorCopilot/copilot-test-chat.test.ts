@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { admittedAbuseControlDecision } from "../../support/fakes.js";
-import { AppError } from "../../../src/shared/domain/errors.js";
+import { AppError, notFound } from "../../../src/shared/domain/errors.js";
 import { USAGE_LIMIT_EXCEEDED_CODE } from "../../../src/shared/domain/usageLimitPolicy.js";
 import { operatorMcpToolSchemas } from "../../../src/modules/operatorCopilot/mcpToolSchema.js";
 import { OperatorMcpCatalogService } from "../../../src/modules/operatorCopilot/mcpCatalog.js";
@@ -273,14 +273,36 @@ describe("Test Chat copilot descriptors", () => {
     expect(output.turn.stages[0]).toEqual({ id: "stage-0", kind: "compose", status: "applied" });
   });
 
-  it("falls back to the agent the operator is looking at and refuses without one", async () => {
+  it("falls back to the agent the operator is looking at, and test_chat_sessions refuses without one since it has no session id to resolve one from", async () => {
     const testChat = port();
 
     await invoke(testChat, "test_chat_sessions", {}, AGENT_ID);
     expect(testChat.listSessions).toHaveBeenCalledWith(expect.objectContaining({ agentId: AGENT_ID }));
 
-    await expect(invoke(testChat, "send_test_chat_message", { message: "hi" }, null)).rejects.toThrow(/agent/i);
-    expect(testChat.sendMessage).not.toHaveBeenCalled();
+    await expect(invoke(testChat, "test_chat_sessions", {}, null)).rejects.toMatchObject({ code: "bad_request" });
+    expect(testChat.listSessions).toHaveBeenCalledTimes(1);
+  });
+
+  it("forwards an unresolved agent to the port instead of resolving or refusing it here", async () => {
+    // #1361: this descriptor used to query test-execution itself (whether via the dashboard's page
+    // context or a resolved testExecutionId) and decide what counted as "no agent." It now forwards
+    // exactly what the caller and page context gave it -- `undefined` when neither names one -- and
+    // leaves resolving (or refusing) a session-scoped call to test-execution, the module that owns
+    // the execution row (see TestExecutionService.resolveAgentId). A tool with a testExecutionId to
+    // fall back on must never block a call the owner could still answer.
+    const sendMessage = vi.fn(port().sendMessage);
+
+    const output = await invoke(port({ sendMessage }), "send_test_chat_message", { testExecutionId: EXECUTION_ID, message: "Can I book a demo?" }, null);
+
+    expect(sendMessage).toHaveBeenCalledWith(expect.objectContaining({ agentId: undefined, testExecutionId: EXECUTION_ID }));
+    expect(output.turn.outcome).toBe("completed");
+  });
+
+  it("propagates the port's own rejection of an unresolvable session unchanged", async () => {
+    const sendMessage = vi.fn(async () => { throw notFound("Test execution is unavailable."); });
+
+    await expect(invoke(port({ sendMessage }), "send_test_chat_message", { testExecutionId: EXECUTION_ID, message: "hi" }, null))
+      .rejects.toMatchObject({ code: "not_found" });
   });
 });
 
@@ -572,6 +594,29 @@ describe("TestChatService", () => {
     expect(executions.send).toHaveBeenCalledWith(expect.objectContaining({ executionId: EXECUTION_ID, generation: 2 }));
     expect(calls).toEqual(["transcript", "guard", "send"]);
     expect(result.started).toBe(false);
+  });
+
+  it("forwards no agentId when continuing a session the caller does not have one for, leaving test-execution to resolve it", async () => {
+    // #1361: an operator MCP client continuing a session by testExecutionId alone. This service
+    // must not resolve or verify the agent itself -- that decision belongs to test-execution (see
+    // TestExecutionService.resolveAgentId) -- so it only forwards what the caller gave it.
+    const { service, executions } = serviceHarness();
+
+    await service.sendMessage({ workspaceId: "workspace-1", accountId: "account-1", operatorUserId: "operator-1", message: "and on Friday?", testExecutionId: EXECUTION_ID });
+
+    expect(executions.transcript).toHaveBeenCalledWith({ workspaceId: "workspace-1", agentId: undefined, executionId: EXECUTION_ID });
+    expect(executions.send).toHaveBeenCalledWith(expect.objectContaining({ agentId: undefined }));
+  });
+
+  it("requires an explicit agent before starting a fresh session, and spends nothing", async () => {
+    // Starting has no execution yet for test-execution to resolve an agent from, so this is the one
+    // path that still validates locally rather than delegating.
+    const { service, executions, abuseControl } = serviceHarness();
+
+    await expect(service.sendMessage({ workspaceId: "workspace-1", accountId: "account-1", operatorUserId: "operator-1", message: "hi" }))
+      .rejects.toMatchObject({ code: "bad_request" });
+    expect(abuseControl.enforce).not.toHaveBeenCalled();
+    expect(executions.start).not.toHaveBeenCalled();
   });
 
   it("refuses to continue a comparison or a session whose skills act, before spending anything", async () => {

@@ -33,7 +33,7 @@ export const createAgentPublicationCopilotTools = (deps: AgentPublicationCopilot
   {
     name: "agent_publication_state", shape: "read", verificationCost: () => 0, uiLabel: "Reading publication state", contributingModule: "agentPublication", dashboardSubject: { type: "agent" }, requiredPermissions: ["workspace.agents.read"],
     description: "Read the saved draft generation and currently published revision for an agent.", inputSchema: readInput, outputSchema: publicationStateOutput,
-    createTool: (context) => ({ name: "agent_publication_state", description: "Read the saved draft generation and currently published revision for an agent.", inputSchema: readInput, outputSchema: publicationStateOutput, invoke: async ({ agentId }) => { const state = await deps.revisions.state(context.workspaceId, agentId ?? requiredPageAgent(context.pageContext.agentId)); return { draftGeneration: state.draft.generation, publishedRevisionId: state.publishedRevision?.id ?? null, canPublish: state.canPublish }; } }),
+    createTool: (context) => ({ name: "agent_publication_state", description: "Read the saved draft generation and currently published revision for an agent.", inputSchema: readInput, outputSchema: publicationStateOutput, invoke: async ({ agentId }) => { const state = await deps.revisions.state(context.workspaceId, agentId ?? requiredPageAgent(context.pageContext.agentId, { acceptsAgentName: false })); return { draftGeneration: state.draft.generation, publishedRevisionId: state.publishedRevision?.id ?? null, canPublish: state.canPublish }; } }),
     describeEntity: (input, context) => ({ type: "agent", id: (input as { agentId?: string }).agentId ?? context?.pageContext.agentId ?? "" }),
   },
   {
@@ -49,7 +49,7 @@ export const createAgentPublicationCopilotTools = (deps: AgentPublicationCopilot
       return { status: "recovered", output: { proposalId: recovered.proposal.id, reviewDigest: recovered.proposal.reviewDigest, expiresAt: recovered.proposal.expiresAt.toISOString(), confirmation, ...snapshot.data } };
     },
     createTool: (context) => ({ name: "prepare_agent_publication", description: "Create an immutable publication candidate and reviewed proposal. It does not publish. If validation names a routine, use validate_routine or prepare_routine_structure before preparing publication again.", inputSchema: prepareInput, outputSchema: z.unknown(), invoke: async ({ agentId }) => {
-      const selectedAgentId = agentId ?? requiredPageAgent(context.pageContext.agentId);
+      const selectedAgentId = agentId ?? requiredPageAgent(context.pageContext.agentId, { acceptsAgentName: false });
       await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
       const state = await deps.revisions.state(context.workspaceId, selectedAgentId);
       await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);

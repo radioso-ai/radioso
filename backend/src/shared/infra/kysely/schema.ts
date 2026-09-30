@@ -1325,6 +1325,7 @@ export interface RoutineStates {
   execution_id: string | null;
   expires_at: Timestamp | null;
   path: Generated<string[]>;
+  reask_count: Generated<number>;
   routine_id: string;
   session_id: string;
   status: Generated<string>;

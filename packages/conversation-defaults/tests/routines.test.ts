@@ -10,12 +10,14 @@ import type {
   Routine,
   RoutineState,
   RoutineStep,
+  RoutineStepReask,
   RoutineTransition,
   TurnContext,
 } from "@radioso/conversation-contract";
 import {
   DEFAULT_DIRECTIVE_MATCH_SYSTEM_PROMPT,
   DEFAULT_ROUTINE_NEXT_STEP_PROMPT,
+  DEFAULT_ROUTINE_STEP_REASK_EXHAUSTED_PROMPT,
   DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_DEFAULT_PROMPT,
   DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_WITH_MESSAGE_PROMPT,
   DEFAULT_ROUTINE_STEP_REPLY_PROMPT,
@@ -63,6 +65,7 @@ describe("routine defaults", () => {
     expect(DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_DEFAULT_PROMPT)
       .toBe(backendPrompt("chat/routine-step-terminal-handoff-default.md"));
     expect(DEFAULT_ROUTINE_STEP_STEERING_PROMPT).toBe(backendPrompt("chat/routine-step-steering.md"));
+    expect(DEFAULT_ROUTINE_STEP_REASK_EXHAUSTED_PROMPT).toBe(backendPrompt("chat/routine-step-reask-exhausted.md"));
   });
 
   it("keeps generated fallback prompt artifacts current", () => {
@@ -693,6 +696,23 @@ describe("routine defaults", () => {
       expect(decision.selection).toEqual({ outcome: "stay", returnedSlotKeys: ["adults", "pets"] });
     });
 
+    it("passes a value that does not fit its slot type through unchanged, for the runner to reject and record", async () => {
+      const typed: Routine = {
+        ...routine,
+        slots: [
+          { id: "s_adults", key: "adults", type: "number", required: true },
+          { id: "s_name", key: "name", type: "text", required: true },
+          { id: "s_email", key: "email", type: "email", required: true },
+        ],
+      };
+      const decision = await new RoutineNextStepSelector(
+        gateway('{"condition": null, "variables": {"adults": "two", "name": "  Giulia ", "email": "<script>alert(1)</script>"}}'),
+      ).select({ routine: typed, state, currentStep, transitions, turn });
+
+      expect(decision.variables).toEqual({ adults: "two", name: "Giulia", email: "<script>alert(1)</script>" });
+      expect(decision.selection?.returnedSlotKeys).toEqual(["adults", "name", "email"]);
+    });
+
     it("reports a stay with the slot keys the model returned and the undeclared keys it dropped", async () => {
       const decision = await new RoutineNextStepSelector(
         gateway('{"condition": null, "offTopic": false, "variables": {"arrival": "2026-11-11", "nights": 3}}'),
@@ -793,6 +813,45 @@ describe("routine defaults", () => {
       await new RoutineStepRenderer(gw, { promptTemplate: sectionTemplate }).render({ step: currentStep, steering: [], turn });
 
       expect(vi.mocked(gw.complete).mock.calls[0][0].systemPrompt).toMatch(/REASK:$/);
+    });
+
+    describe("past the re-ask limit (#1376)", () => {
+      const renderWith = async (reask: RoutineStepReask, options: { reaskExhaustedPromptTemplate?: string } = {}) => {
+        const gw = gateway("ok");
+        await new RoutineStepRenderer(gw, { promptTemplate: sectionTemplate, ...options }).render({
+          step: currentStep,
+          steering: [],
+          turn,
+          reask,
+        });
+        const systemPrompt = vi.mocked(gw.complete).mock.calls[0][0].systemPrompt ?? "";
+        return systemPrompt.slice(systemPrompt.indexOf("REASK:"));
+      };
+
+      it("adds the exhausted instruction after what is still missing", async () => {
+        const reaskSection = await renderWith(
+          { missingSlots: [programSlot], exhausted: true },
+          { reaskExhaustedPromptTemplate: "ASK DIFFERENTLY" },
+        );
+
+        expect(reaskSection).toMatch(/Still missing: program\.\nASK DIFFERENTLY$/);
+      });
+
+      it("words the exhausted instruction from the shipped prompt", async () => {
+        const reaskSection = await renderWith({ missingSlots: [], exhausted: true });
+
+        expect(reaskSection).toContain(DEFAULT_ROUTINE_STEP_REASK_EXHAUSTED_PROMPT);
+        expect(DEFAULT_ROUTINE_STEP_REASK_EXHAUSTED_PROMPT).toMatch(/several times/);
+      });
+
+      it("leaves the exhausted instruction out of an ordinary re-ask", async () => {
+        const reaskSection = await renderWith(
+          { missingSlots: [programSlot] },
+          { reaskExhaustedPromptTemplate: "ASK DIFFERENTLY" },
+        );
+
+        expect(reaskSection).not.toContain("ASK DIFFERENTLY");
+      });
     });
   });
 

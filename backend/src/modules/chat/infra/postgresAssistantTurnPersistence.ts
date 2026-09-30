@@ -101,7 +101,7 @@ const saveRoutineState = async (
 ): Promise<void> => {
   const expiresAt = state.status === "suspended" ? null : new Date(Date.now() + ttlMs).toISOString();
   await sql`
-    INSERT INTO routine_states (session_id, routine_id, execution_id, path, variables, attempts, status, expires_at, updated_at)
+    INSERT INTO routine_states (session_id, routine_id, execution_id, path, variables, attempts, reask_count, status, expires_at, updated_at)
     VALUES (
       ${state.sessionId},
       ${state.routineId},
@@ -109,6 +109,7 @@ const saveRoutineState = async (
       ${sql.val(state.path)}::text[],
       ${toJsonb(state.variables)},
       ${toJsonb(state.attempts ?? {})},
+      ${state.reaskCount ?? 0},
       ${state.status},
       ${expiresAt},
       now()
@@ -119,6 +120,7 @@ const saveRoutineState = async (
       path = EXCLUDED.path,
       variables = EXCLUDED.variables,
       attempts = EXCLUDED.attempts,
+      reask_count = EXCLUDED.reask_count,
       status = EXCLUDED.status,
       expires_at = EXCLUDED.expires_at,
       updated_at = now()

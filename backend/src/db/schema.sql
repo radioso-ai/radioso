@@ -3127,7 +3127,8 @@ CREATE TABLE public.routine_states (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     attempts jsonb DEFAULT '{}'::jsonb NOT NULL,
-    execution_id uuid
+    execution_id uuid,
+    reask_count integer DEFAULT 0 NOT NULL
 );
 
 

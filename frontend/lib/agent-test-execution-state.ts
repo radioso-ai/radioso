@@ -86,7 +86,7 @@ const latestAttemptByTurn = (attempts: readonly PersistedAttempt[], sideId: stri
   attempts.forEach((attempt) => {
     if (attempt.sideId !== sideId) return
     const current = latest.get(attempt.turnId)
-    if (!current || attempt.fence >= current.fence) latest.set(attempt.turnId, attempt)
+    if (!current || attempt.fence > current.fence) latest.set(attempt.turnId, attempt)
   })
   return latest
 }

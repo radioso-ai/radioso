@@ -69,6 +69,8 @@ type CockpitMockOptions = {
   keepEvalRunning?: boolean
   onlyForeignEvalCases?: boolean
   failMessage?: boolean
+  /** Fail the first side's first turn only; every other side and turn answers. */
+  failFirstTurnOnFirstSide?: boolean
   requestBodies?: unknown[]
   messageBodies?: unknown[]
   messageExecutionIds?: string[]
@@ -105,6 +107,8 @@ async function installCockpitMocks(page: Page, options: CockpitMockOptions = {})
   let publicationAttempts = 0
   const sideCountByGeneration = new Map<number, number>()
   const executions = new Map<string, TestExecution>()
+  // Persisted attempts per execution, as the detail read returns them (and a retain carries them).
+  const attemptsByExecution = new Map<string, Array<{ sideId: string; turnId: string; attemptId: string; fence: number; state: 'failed' | 'completed'; failureCode?: string; createdAt: string; updatedAt: string }>>()
   let releaseMessage: (() => void) | undefined
   let messageReceived: (() => void) | undefined
   const messageRequest = new Promise<void>((resolve) => { messageReceived = resolve })
@@ -198,7 +202,13 @@ async function installCockpitMocks(page: Page, options: CockpitMockOptions = {})
   await page.route(new RegExp(`/backend/api/v1/agents/${defaultAgentId}/test-executions/[^/]+$`), async (route) => {
     executionDetailReceived?.()
     if (options.delayExecutionDetail) await new Promise<void>((resolve) => { releaseExecutionDetail = resolve })
-    await route.fulfill({ json: { execution: options.executionDetail } })
+    const requestedId = route.request().url().match(/test-executions\/([^/?]+)$/)?.[1]
+    const known = requestedId ? executions.get(requestedId) : undefined
+    const detail = known && {
+      ...known, createdAt: nowIso, testValues: [], attempts: attemptsByExecution.get(known.id) ?? [],
+      state: known.sides.some((side) => side.state === 'failed') ? 'partial' : 'completed',
+    }
+    await route.fulfill({ json: { execution: options.executionDetail ?? detail } })
   })
   await page.route(new RegExp(`/backend/api/v1/agents/${defaultAgentId}/test-executions/[^/]+/messages$`), async (route) => {
     messageReceived?.()
@@ -224,6 +234,15 @@ async function installCockpitMocks(page: Page, options: CockpitMockOptions = {})
         const currentSideId = `side-${body.executionGeneration}-${index}`
         const answer = options.replyBySide?.[index] ?? (index === 0 ? 'A fenced answer.' : 'A comparison answer.')
         const activeSide = active?.sides.find((side) => side.id === currentSideId)
+        const attempts = attemptsByExecution.get(`execution-${body.executionGeneration}`) ?? []
+        attemptsByExecution.set(`execution-${body.executionGeneration}`, attempts)
+        if (options.failFirstTurnOnFirstSide && index === 0 && activeSide && !activeSide.history?.length) {
+          activeSide.history = [{ turnId: body.turnId, role: 'user', content: route.request().postDataJSON().message, attemptId: body.attemptId, createdAt: nowIso }]
+          activeSide.state = 'failed'
+          attempts.push({ sideId: currentSideId, turnId: body.turnId, attemptId: body.attemptId, fence: 1, state: 'failed', failureCode: 'runner_failed', createdAt: nowIso, updatedAt: nowIso })
+          return `data: ${JSON.stringify({ type: 'side_failed', executionId: `execution-${body.executionGeneration}`, generation: body.executionGeneration, sideId: currentSideId, code: 'runner_failed', retryable: true, turnId: body.turnId, attemptId: body.attemptId })}\n\n`
+        }
+        attempts.push({ sideId: currentSideId, turnId: body.turnId, attemptId: body.attemptId, fence: 1, state: 'completed', createdAt: nowIso, updatedAt: nowIso })
         if (activeSide) {
           activeSide.history = [...(activeSide.history ?? []),
             { turnId: body.turnId, role: 'user', content: route.request().postDataJSON().message, attemptId: body.attemptId, createdAt: nowIso },
@@ -255,6 +274,9 @@ async function installCockpitMocks(page: Page, options: CockpitMockOptions = {})
       sides: [{ ...side, id: `side-${executionNumber}-0`, conversationId: `conversation-${executionNumber}-0`, history: [...(side.history ?? [])] }],
     }
     executions.set(retained.id, retained)
+    attemptsByExecution.set(retained.id, (attemptsByExecution.get(source.id) ?? [])
+      .filter((attempt) => attempt.sideId === side.id)
+      .map((attempt) => ({ ...attempt, sideId: retained.sides[0].id })))
     sideCountByGeneration.set(retained.generation, 1)
     await route.fulfill({ status: 201, json: retained })
   })
@@ -712,6 +734,25 @@ test('reopens a later failed turn and retries that recorded turn only', async ({
   await page.getByRole('button', { name: 'Retry this side' }).click()
 
   expect(requestBodies).toContainEqual(expect.objectContaining({ executionGeneration: 4, turnId: 'later-turn', attemptId: expect.stringMatching(/^[0-9a-f-]{36}$/) }))
+})
+
+test('keeps a failed turn that a later message superseded when a comparison side is retained', async ({ page }) => {
+  await installCockpitMocks(page, { failFirstTurnOnFirstSide: true })
+  await page.goto(testUrl)
+  await page.getByRole('button', { name: 'Compare versions', exact: true }).click()
+  await testChatComposer(page).fill('How do I contact a human?')
+  await page.getByRole('button', { name: 'Send to both', exact: true }).click()
+  await expect(page.getByText('Test failed: runner_failed', { exact: true })).toBeVisible()
+  await testChatComposer(page).fill('guest@example.com')
+  await page.getByRole('button', { name: 'Send to both', exact: true }).click()
+  await expect(page.getByText('A fenced answer.', { exact: true })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Close Draft', exact: true }).click()
+
+  await expect(page.getByRole('combobox', { name: 'Revision 2', exact: true })).toHaveCount(0)
+  await expect(page.getByText('A comparison answer.', { exact: true })).toHaveCount(0)
+  await expect(page.getByText('Test failed: runner_failed', { exact: true })).toBeVisible()
+  await expect(page.getByText('A fenced answer.', { exact: true })).toBeVisible()
 })
 
 test('reopens a session with a failed turn that a later message superseded', async ({ page }) => {

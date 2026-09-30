@@ -7,7 +7,9 @@ independently retryable.
 
 Only a running turn blocks the next message (`test_turn_in_progress`, 409). A
 turn whose side failed is settled: the next message starts a new turn, and the
-failed side is retryable only while it is still the latest turn on that side. A
+failed side is retryable only while it is still the latest turn on that side.
+Retaining a comparison side copies its attempts and their turns into the new
+execution, so a failed turn a later message superseded still reads as failed. A
 runner failure is logged with its error type and code and the execution, side,
 turn, and attempt ids, never its message text.
 

@@ -764,9 +764,16 @@ export function AgentRevisionTestChat({
       const retained = execution && side
         ? await agentRevisionsApi.retainTestSide(agentId, execution.executionId, side.id)
         : null;
+      // The retained execution carries the side's attempts, so reading it back renders a failed
+      // turn a later message superseded exactly as reopening it from History does.
+      const retainedState = retained
+        ? await agentRevisionsApi.getTestExecution(agentId, retained.id)
+          .then(({ execution: detail }) => hydrateTestExecutionState(detail))
+          .catch(() => initializeTestExecutionState(retained))
+        : null;
       setMode("single");
       setSelected([revisionId]);
-      if (retained) setExecutionState(initializeTestExecutionState(retained));
+      if (retainedState) setExecutionState(retainedState);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Unable to continue this version as a single chat.");
     }

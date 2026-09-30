@@ -259,7 +259,7 @@ export class AuthService {
       );
       await this.recordDuplicateRegistration(email, error);
       await this.recordOrganizationCreationDenied("auth.register", "registration_closed", null, error);
-      await this.recordOrphanedAccount("auth.register", { email }, orphaned);
+      await this.recordProvisioningOrphans("auth.register", { email }, orphaned);
       throw error;
     }
   }
@@ -347,7 +347,7 @@ export class AuthService {
         organizationCreationReservation,
         core ? { accountId: core.account.id } : null,
       );
-      await this.recordOrphanedAccount("account.create", { actorUserId: user.id }, orphaned);
+      await this.recordProvisioningOrphans("account.create", { actorUserId: user.id }, orphaned);
       throw error;
     }
   }
@@ -363,24 +363,20 @@ export class AuthService {
       return;
     }
 
-    await this.dependencies.auditService.record({
-      eventType,
-      eventStatus: "failure",
-      metadata: {
-        ...(userId ? { actorUserId: userId } : {}),
-        reason: denial.rateLimited ? "rate_limited" : forbiddenReason,
-        ...(denial.rateLimit ? { rateLimit: denial.rateLimit } : {}),
-      },
+    await this.recordAttemptFailure(eventType, {
+      ...(userId ? { actorUserId: userId } : {}),
+      reason: denial.rateLimited ? "rate_limited" : forbiddenReason,
+      ...(denial.rateLimit ? { rateLimit: denial.rateLimit } : {}),
     });
   }
 
   /**
-   * Names an account that outlived a failed signup or organization creation.
+   * Names the rows that outlived a failed signup or organization creation.
    * Only an orphan earns a record: a failure that cleaned up after itself
    * leaves an operator nothing to act on, and its error still reaches the
    * caller.
    */
-  private async recordOrphanedAccount(
+  private async recordProvisioningOrphans(
     eventType: "auth.register" | "account.create",
     actor: Record<string, unknown>,
     orphaned: Record<string, unknown> | undefined,
@@ -389,27 +385,30 @@ export class AuthService {
       return;
     }
 
-    try {
-      await this.dependencies.auditService.record({
-        eventType,
-        eventStatus: "failure",
-        metadata: { ...actor, reason: "account_provisioning_failed", detail: orphaned },
-      });
-    } catch {
-      // A sink that cannot take the record must not replace the failure the
-      // caller has to handle.
-    }
+    await this.recordAttemptFailure(eventType, { ...actor, reason: "account_provisioning_failed", detail: orphaned });
   }
 
   private async recordDuplicateRegistration(email: string, error: unknown): Promise<void> {
     const candidate = error as { statusCode?: number; code?: string };
     if (candidate.statusCode !== 409 && candidate.code !== "conflict") return;
 
-    await this.dependencies.auditService.record({
-      eventType: "auth.register",
-      eventStatus: "failure",
-      metadata: { email },
-    });
+    await this.recordAttemptFailure("auth.register", { email });
+  }
+
+  /**
+   * Writes the failure record of an attempt that has already failed. A sink
+   * that cannot take the record must not replace the error the caller has to
+   * handle -- the database that refused the attempt usually refuses this too.
+   */
+  private async recordAttemptFailure(
+    eventType: "auth.register" | "account.create",
+    metadata: Record<string, unknown>,
+  ): Promise<void> {
+    try {
+      await this.dependencies.auditService.record({ eventType, eventStatus: "failure", metadata });
+    } catch {
+      // Deliberately swallowed: see above.
+    }
   }
 
   async login(input: {
@@ -740,8 +739,9 @@ export class AuthService {
    * hand the caller the delete's error and audit the attempt under a stage
    * that never ran.
    *
-   * An account that outlives its signup is not silent, though: in OSS one is
-   * what closes registration for everyone afterwards, so it is named on the
+   * What outlives the attempt is not silent, though: in OSS a surviving
+   * account is what closes registration for everyone afterwards, and a
+   * surviving user holds its email against a retry, so both are named on the
    * attempt's own failure record. Releasing a reservation only returns unused
    * quota, which the next attempt re-reserves, so that one just fails quietly.
    */
@@ -749,14 +749,7 @@ export class AuthService {
     reservation: OrganizationCreationReservation,
     created: { accountId: string; userId?: string } | null,
   ): Promise<Record<string, unknown> | undefined> {
-    let orphaned: Record<string, unknown> | undefined;
-    if (created) {
-      try {
-        await this.rollbackCreatedAccount(created.accountId, created.userId);
-      } catch {
-        orphaned = { orphanedAccountId: created.accountId };
-      }
-    }
+    const orphaned = created ? await this.rollbackCreatedAccount(created) : undefined;
 
     try {
       await reservation.release();
@@ -1125,11 +1118,33 @@ export class AuthService {
     return serializeSessionCookie(sessionToken, this.dependencies.env);
   }
 
-  private async rollbackCreatedAccount(accountId: string, createdUserId?: string): Promise<void> {
-    await this.dependencies.accountRepository.deleteById(accountId);
-    if (createdUserId) {
-      await this.dependencies.userRepository.deleteById(createdUserId);
+  /**
+   * Deletes the account an attempt created, then its user if the attempt
+   * created that too, and names whatever survived. The user is deleted only
+   * once its account is gone, so a failed account delete leaves both behind.
+   */
+  private async rollbackCreatedAccount(
+    created: { accountId: string; userId?: string },
+  ): Promise<Record<string, unknown> | undefined> {
+    try {
+      await this.dependencies.accountRepository.deleteById(created.accountId);
+    } catch {
+      return {
+        orphanedAccountId: created.accountId,
+        ...(created.userId ? { orphanedUserId: created.userId } : {}),
+      };
     }
+
+    if (!created.userId) {
+      return undefined;
+    }
+
+    try {
+      await this.dependencies.userRepository.deleteById(created.userId);
+    } catch {
+      return { orphanedUserId: created.userId };
+    }
+    return undefined;
   }
 
   async isRegistrationAvailable(): Promise<boolean> {

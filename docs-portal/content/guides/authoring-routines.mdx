@@ -154,6 +154,14 @@ steps. A skill step can use a fixed input or a value the routine holds, then
 assign its outputs to values that later steps can read. For example, a refund
 lookup can use `@order_number` and set `@refund_status` for a later branch.
 
+A chat step's instruction is the controlling instruction for its reply. The
+agent's directives still shape how the reply is said — tone, formality, what it
+must not claim — but they don't swap the step's question for a redirect or a
+hand-off, and they don't add contact details or links the step doesn't ask
+for. A step that asks for a name and email asks for them even when an
+**Always** directive tells open answers to send booking questions to
+reception. See [Directives on a routine turn](/guides/authoring-directives#directives-on-a-routine-turn).
+
 ## Set branches, approvals, and endings
 
 Add a condition row beneath a step — the round **+** under its branches, or
@@ -236,6 +244,10 @@ from a test that kept skills off.
   activates a coverage condition.
 - A step skips value collection: add the value with `@` in the instruction so the
   step refers to the stored information.
+- A step's reply carries text from a directive: directives shape every routine
+  reply. The turn trace lists them under `routineStep.steeringDirectives` on the
+  `directive_steering` stage; narrow or turn off the directive when its wording
+  does not belong in the flow.
 - A backward jump fails validation: set **Max N** so the loop has a bounded
   number of passes.
 - A routine never starts at all: check that its pill reads **Live**, not

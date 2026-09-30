@@ -1,14 +1,17 @@
 import { GENERATION_SURFACE, type GenerationSurface } from "../../domain/generationSurface.js";
 import {
   appendSteeringRules,
+  partitionRoutineStepSteering,
+  renderRoutineStepInstructions,
   renderSteeringRules,
+  routineStepSteeringOptions,
   steeringForSurface,
   type RenderSteeringRulesOptions,
   type SteeringRule,
 } from "../../domain/steeringRule.js";
-import { loadPromptTemplate } from "./promptLoader.js";
+import { loadPromptTemplate, renderPromptTemplate } from "./promptLoader.js";
 
-export interface SteeringBlockRenderOptions extends Pick<RenderSteeringRulesOptions, "includeRuleIds"> {
+interface SteeringBlockRenderOptions extends Pick<RenderSteeringRulesOptions, "includeRuleIds"> {
   /** Generator these rules are being rendered for. Defaults to the answering voice. */
   surface?: GenerationSurface;
 }
@@ -35,22 +38,52 @@ const surfaceOptions = (options: SteeringBlockRenderOptions): RenderSteeringRule
   };
 };
 
+const surfaceRules = (steering: SteeringRule[], options: SteeringBlockRenderOptions): SteeringRule[] =>
+  steeringForSurface(steering, options.surface ?? GENERATION_SURFACE.ANSWER);
+
+/**
+ * A routine chat step fed by a retrieval step composes its reply through the answer
+ * generators, which render the step's steering here (#1351). When a routine step's
+ * rule is present it controls the reply, as it does in the step renderer, and
+ * directives render through the same subordinate framing
+ * (`chat/routine-step-steering.md`) inside `chat/routine-step-answer-steering.md`.
+ * That layout opens with the step instruction and closes with a reminder to finish
+ * it: with the instruction after the rules, a grounded answer followed it literally
+ * and dropped the rules' tone and openings; without the reminder, it often answered
+ * and stopped before the step's question. Undefined without a routine rule, so every
+ * other answer renders exactly the generic block.
+ */
+const renderRoutineStepBlock = (rules: SteeringRule[], options: SteeringBlockRenderOptions): string | undefined => {
+  const { instructions, guidance } = partitionRoutineStepSteering(rules);
+  if (instructions.length === 0) {
+    return undefined;
+  }
+  const guidanceBlock = renderSteeringRules(guidance, {
+    ...routineStepSteeringOptions(loadPromptTemplate("chat/routine-step-steering.md")),
+    includeRuleIds: options.includeRuleIds,
+  });
+  return renderPromptTemplate("chat/routine-step-answer-steering.md", {
+    instructions: renderRoutineStepInstructions(instructions.map((rule) => rule.action)),
+    subordinate_guidance: guidanceBlock ? `${guidanceBlock}\n\n` : "",
+  });
+};
+
 export const renderSteeringBlock = (
   steering: SteeringRule[] = [],
   options: SteeringBlockRenderOptions = {},
-): string =>
-  renderSteeringRules(
-    steeringForSurface(steering, options.surface ?? GENERATION_SURFACE.ANSWER),
-    surfaceOptions(options),
-  );
+): string => {
+  const rules = surfaceRules(steering, options);
+  return renderRoutineStepBlock(rules, options) ?? renderSteeringRules(rules, surfaceOptions(options));
+};
 
 export const appendSteeringBlock = (
   prompt: string,
   steering: SteeringRule[] = [],
   options: SteeringBlockRenderOptions = {},
-): string =>
-  appendSteeringRules(
-    prompt,
-    steeringForSurface(steering, options.surface ?? GENERATION_SURFACE.ANSWER),
-    surfaceOptions(options),
-  );
+): string => {
+  const rules = surfaceRules(steering, options);
+  const routineStepBlock = renderRoutineStepBlock(rules, options);
+  return routineStepBlock === undefined
+    ? appendSteeringRules(prompt, rules, surfaceOptions(options))
+    : `${prompt}\n\n${routineStepBlock}`;
+};

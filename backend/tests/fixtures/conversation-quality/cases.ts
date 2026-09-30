@@ -1,9 +1,11 @@
 import type { ConversationQualityCase } from "../../../src/modules/eval/suite/index.js";
+import { seedDirectiveConfigWith } from "./agent.js";
 import {
   PRICING_DOC_ID,
   REFUND_POLICY_DOC_ID,
   SECURITY_DOC_ID,
 } from "./corpus.js";
+import { contactFormOnlyDirective } from "./directives.js";
 import {
   BOOK_DEMO_ROUTINE_ID,
   CONTACT_SUPPORT_ROUTINE_ID,
@@ -179,6 +181,29 @@ export const conversationQualityCases: ConversationQualityCase[] = [
         type: "llm_judge",
         expectedAnswer: "Confirms a support agent will follow up by email about the double charge.",
         criteria: "Acknowledges the described issue and confirms follow-up; does not re-ask for the email already provided.",
+      },
+    ],
+  },
+  // #1351: an always-on directive written for open answers must not replace a routine
+  // step's question. The directive sends follow-ups to a contact form instead of taking
+  // an email in chat; the contact routine's first step asks for an email. The step decides
+  // what the reply asks for, so the reply asks for the email and leaves the form out.
+  // Italian, like the report.
+  {
+    id: "routine-step-outranks-always-on-handoff-directive",
+    name: "An always-on redirect directive does not replace the contact step's question",
+    tags: ["routine", "directive", "multilingual", "directive-precedence"],
+    query: "Ho un addebito doppio sulla fattura e vorrei parlare con una persona del supporto.",
+    agentConfigOverride: { authoredDirectives: seedDirectiveConfigWith(contactFormOnlyDirective) },
+    assertions: [
+      { type: "turn_activates_routine", routineId: CONTACT_SUPPORT_ROUTINE_ID },
+      { type: "routine_step_reached", routineId: CONTACT_SUPPORT_ROUTINE_ID, stepId: "ask_email" },
+      { type: "answer_contains", pattern: "e-?mail|posta elettronica", matchMode: "regex" },
+      { type: "answer_does_not_contain", pattern: "acme\\.example/contact", matchMode: "regex" },
+      {
+        type: "llm_judge",
+        expectedAnswer: "Chiede a quale indirizzo email il supporto può ricontattare il cliente.",
+        criteria: "Asks the customer, in Italian, for the email address to reach them at. Does not send them to a contact form instead of asking.",
       },
     ],
   },

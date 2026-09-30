@@ -412,6 +412,7 @@ export const createRoutineTurnProvider = (
         terminalHandoffDefaultPromptTemplate: loadPromptTemplate("chat/routine-step-terminal-handoff-default.md"),
         responseLanguage,
         groundedAnswerRenderer,
+        steeringPromptTemplate: loadPromptTemplate("chat/routine-step-steering.md"),
       }),
       new RoutineSkillExecutorDispatcher(
         createRoutineSkillResolverChain({

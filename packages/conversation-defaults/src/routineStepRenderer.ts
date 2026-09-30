@@ -16,8 +16,9 @@ import {
   DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_DEFAULT_PROMPT,
   DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_WITH_MESSAGE_PROMPT,
 } from "./generated/defaultPrompts.js";
-import { steeringForSurface } from "./domain.js";
+import { partitionRoutineStepSteering, steeringForSurface, type RoutineStepSteering } from "./domain.js";
 import { renderPromptTemplate } from "./promptTemplate.js";
+import { renderRoutineStepInstructions, renderSteeringRules, routineStepSteeringOptions } from "./steeringPrompt.js";
 
 export {
   DEFAULT_ROUTINE_STEP_REPLY_PROMPT,
@@ -83,17 +84,20 @@ const unresolvedRequestBlock = (turn: TurnContext): string => {
   return "The agent could not resolve the visitor's latest message from its own knowledge, and this flow started because of that gap. Say plainly and briefly that you cannot answer it, then follow the step instruction(s) in the same message.";
 };
 
-const instructionsBlock = (step: RoutineStep, steering: SteeringRule[]): string => {
+/**
+ * The step's steering in its two roles (#1351), kept apart so an always-on rule
+ * written for open answers cannot pass itself off as the step instruction.
+ */
+const stepSteering = (step: RoutineStep, steering: SteeringRule[]): RoutineStepSteering => {
   // A routine step reply is text the agent says, so it takes the rules addressed to
   // the answering voice. A rule aimed at another generator steers that generator and
   // must not rewrite what the step says.
-  const actions = steeringForSurface(steering, "answer").map((rule) => rule.action);
+  const partitioned = partitionRoutineStepSteering(steeringForSurface(steering, "answer"));
   // The projected step steering is the source of truth; fall back to the step's own
-  // action so a step with no projected steering still renders something.
-  if (actions.length === 0 && step.action) {
-    actions.push(step.action);
-  }
-  return actions.map((action) => `- ${action}`).join("\n");
+  // action so a step with no projected steering still renders its instruction.
+  return partitioned.instructions.length === 0 && step.action
+    ? { ...partitioned, instructions: [{ action: step.action, source: "routine", lifespan: "response" }] }
+    : partitioned;
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -224,6 +228,7 @@ const handoffTerminalMessages = (turn: TurnContext, responseLanguage?: string): 
  * the wording stays LLM-owned and multilingual.
  */
 export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
+  private readonly steeringPromptTemplate: string | undefined;
   private readonly promptTemplate: string;
   private readonly terminalHandoffWithMessagePromptTemplate: string;
   private readonly terminalHandoffDefaultPromptTemplate: string;
@@ -236,8 +241,11 @@ export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
       terminalHandoffDefaultPromptTemplate?: string;
       responseLanguage?: string | Promise<string | undefined>;
       groundedAnswerRenderer?: RoutineGroundedAnswerRenderer;
+      /** Frames directive guidance as subordinate to the step instruction. */
+      steeringPromptTemplate?: string;
     } = {},
   ) {
+    this.steeringPromptTemplate = options.steeringPromptTemplate;
     this.promptTemplate = options.promptTemplate ?? DEFAULT_ROUTINE_STEP_REPLY_PROMPT;
     this.terminalHandoffWithMessagePromptTemplate =
       options.terminalHandoffWithMessagePromptTemplate ?? DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_WITH_MESSAGE_PROMPT;
@@ -273,12 +281,14 @@ export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
       return grounded;
     }
 
+    const { instructions, guidance } = stepSteering(input.step, input.steering);
     const systemPrompt = renderPromptTemplate("chat/routine-step-reply.md", this.promptTemplate, {
       answer_scope_reference: scopeReferenceBlock(input.turn.agent),
       terminal_behavior_instruction: "",
       response_language_instruction: responseLanguageInstruction(responseLanguage),
       unresolved_request_context: unresolvedRequestBlock(input.turn),
-      instructions: instructionsBlock(input.step, input.steering),
+      subordinate_guidance: renderSteeringRules(guidance, routineStepSteeringOptions(this.steeringPromptTemplate)),
+      instructions: renderRoutineStepInstructions(instructions.map((rule) => rule.action)),
     });
     const { text } = await this.modelGateway.complete({
       messages: turnMessages(input.turn),

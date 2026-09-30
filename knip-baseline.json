@@ -568,7 +568,6 @@
   "types|backend/src/shared/infra/llm/embeddingInferencePipeline.ts|EmbeddingInferenceRequest",
   "types|backend/src/shared/infra/llm/embeddingInferencePipeline.ts|EmbeddingUsageItem",
   "types|backend/src/shared/infra/llm/supportedEmbeddingModels.ts|SupportedEmbeddingModelId",
-  "types|backend/src/shared/infra/prompts/steeringPromptRenderer.ts|SteeringBlockRenderOptions",
   "types|backend/src/shared/observability/logging/cloudSeverity.ts|CloudLoggingSeverity",
   "types|backend/src/shared/observability/metrics/metricsRegistry.ts|HistogramWriteOptions",
   "types|backend/src/shared/observability/metrics/metricsRegistry.ts|MetricWriteOptions",

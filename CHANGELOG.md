@@ -9,6 +9,20 @@ Cut a release with the **Cut Release** workflow. It reads the commits since the 
 tag, writes the entry above this line, tags the commit, and publishes a GitHub Release. A
 deploy then ships a release that already exists; it never mints one.
 
+## [1.10.0] - 2026-09-30
+
+### Added
+
+- **activity:** make the debug turn flow read as a progression ([#1363](https://github.com/radioso-ai/radioso/pull/1363))
+
+### Fixed
+
+- **operator-mcp:** resolve Test Chat's agent without dashboard page context ([#1364](https://github.com/radioso-ai/radioso/pull/1364))
+- resume built-in routines on revision-bound turns and unlock failed Test Chat turns ([#1365](https://github.com/radioso-ai/radioso/pull/1365))
+- **auth:** keep the signup's own error when cleanup fails too ([#1366](https://github.com/radioso-ai/radioso/pull/1366))
+
+[1.10.0]: https://github.com/radioso-ai/radioso/compare/v1.9.0...v1.10.0
+
 ## [1.9.0] - 2026-09-30
 
 ### Added

@@ -243,19 +243,17 @@ export interface ChatConversationTurn {
 
 /**
  * Reads the signature from a human-agent reply's stored metadata, the same on every surface. A
- * reply that names its author (`humanAgent.userId`) was signed under the rule that a signature is
- * never an email. One that does not was stored before replies recorded their author: signed with
- * the organisation's name, which stays visible, or with the replier's email where the organisation
- * had none, which is dropped. Absent, the visitor surface labels the reply generically.
+ * stored signature is shown as-is unless it is email-shaped, whether or not the reply names its
+ * author in `humanAgent.userId`: an email is never shown to a visitor, whatever put it there.
+ * Absent, the visitor surface labels the reply generically.
  */
 const operatorDisplayNameFrom = (message: MessageRecord): string | undefined => {
-  const humanAgent = (message.metadata as { humanAgent?: { displayName?: unknown; userId?: unknown } } | undefined)?.humanAgent;
+  const humanAgent = (message.metadata as { humanAgent?: { displayName?: unknown } } | undefined)?.humanAgent;
   const displayName = humanAgent?.displayName;
   if (typeof displayName !== "string" || displayName.trim().length === 0) {
     return undefined;
   }
-  const attributed = typeof humanAgent?.userId === "string";
-  return attributed || !looksLikeEmailAddress(displayName.trim()) ? displayName : undefined;
+  return looksLikeEmailAddress(displayName.trim()) ? undefined : displayName;
 };
 
 export interface ChatConversationDetail {

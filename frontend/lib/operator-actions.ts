@@ -64,8 +64,14 @@ export const deriveOperatorActions = (
   }
 }
 
-/** The teammates a conversation can be handed to: everyone but whoever holds it now. */
+/**
+ * The teammates a conversation can be handed to: everyone but whoever holds it now, and never the
+ * signed-in operator themselves — sending or taking over already claims it, so "Hand to… → me"
+ * would be a no-op offer.
+ */
 export const listHandOffTargets = (
   operators: readonly ConversationOperator[],
-  ownership?: Pick<ConversationOwnership, 'ownerUserId'> | null,
-): ConversationOperator[] => operators.filter((operator) => operator.userId !== ownership?.ownerUserId)
+  ownership: Pick<ConversationOwnership, 'ownerUserId'> | null | undefined,
+  currentUserId: string | null,
+): ConversationOperator[] => operators.filter((operator) =>
+  operator.userId !== ownership?.ownerUserId && operator.userId !== currentUserId)

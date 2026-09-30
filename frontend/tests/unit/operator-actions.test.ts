@@ -125,13 +125,23 @@ describe('listHandOffTargets', () => {
   ]
 
   it('offers every teammate but me when I own the conversation', () => {
-    expect(listHandOffTargets(operators, ownedBy('user-me', 'Me Myself'))).toEqual([
+    expect(listHandOffTargets(operators, ownedBy('user-me', 'Me Myself'), 'user-me')).toEqual([
       { userId: 'user-dana', label: 'Dana Scully' },
       { userId: 'user-fox', label: 'fox@example.com' },
     ])
   })
 
-  it('offers every teammate, me included, while the handoff waits to be claimed', () => {
-    expect(listHandOffTargets(operators, ownership({ state: 'human_owned' }))).toEqual(operators)
+  it('excludes me too while the handoff waits to be claimed: claiming it is Send or Take over, not Hand to…', () => {
+    expect(listHandOffTargets(operators, ownership({ state: 'human_owned' }), 'user-me')).toEqual([
+      { userId: 'user-dana', label: 'Dana Scully' },
+      { userId: 'user-fox', label: 'fox@example.com' },
+    ])
+  })
+
+  it('excludes me from an ai-owned conversation too', () => {
+    expect(listHandOffTargets(operators, ownership({ state: 'ai_owned' }), 'user-me')).toEqual([
+      { userId: 'user-dana', label: 'Dana Scully' },
+      { userId: 'user-fox', label: 'fox@example.com' },
+    ])
   })
 })

@@ -4,6 +4,7 @@ import type { ChatConversationSummary, ConversationOwnership } from '@/lib/api'
 import {
   doneControlTooltip,
   findFirstVisitorMessage,
+  freshestOwnership,
   informativeChannelLabel,
   readOnlyHandledByLabel,
   resolveReadOnlySource,
@@ -226,6 +227,31 @@ describe('doneControlTooltip', () => {
   it('describes triage closure for feedback', () => {
     expect(doneControlTooltip({ type: 'negative_feedback' }))
       .toBe('Closes this item once you resolve or dismiss the feedback')
+  })
+})
+
+describe('freshestOwnership', () => {
+  it('picks the higher version, whichever side it came from', () => {
+    const stale = ownership({ version: 3, ownerDisplayName: 'Anna' })
+    const fresh = ownership({ version: 5, ownerDisplayName: 'Bea' })
+
+    expect(freshestOwnership(stale, fresh)).toBe(fresh)
+    expect(freshestOwnership(fresh, stale)).toBe(fresh)
+  })
+
+  it('falls back to whichever side exists when the other is missing', () => {
+    const only = ownership({ version: 2 })
+
+    expect(freshestOwnership(only, undefined)).toBe(only)
+    expect(freshestOwnership(undefined, only)).toBe(only)
+    expect(freshestOwnership(undefined, undefined)).toBeUndefined()
+  })
+
+  it('prefers the second argument on a tied version, since a poll result is never older than what it followed', () => {
+    const detailOwnership = ownership({ version: 4, ownerDisplayName: 'Anna' })
+    const tailOwnership = ownership({ version: 4, ownerDisplayName: 'Anna' })
+
+    expect(freshestOwnership(detailOwnership, tailOwnership)).toBe(tailOwnership)
   })
 })
 

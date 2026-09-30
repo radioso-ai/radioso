@@ -1154,8 +1154,29 @@ describe('listTakenByOperators', () => {
       qualityTurns: [],
     })
 
-    expect(listTakenByOperators(items)).toEqual([
+    expect(listTakenByOperators(items, null)).toEqual([
       { userId: 'user-anna', label: 'Anna' },
+      { userId: 'user-x', label: 'A teammate' },
+    ])
+  })
+
+  it('excludes the current user: they already appear as "Me"', () => {
+    const items = buildInboxItems({
+      decisions: [],
+      conversations: [
+        humanOwned({
+          id: 'c-1',
+          ownership: ownership({ conversationId: 'c-1', ownerAccountId: 'account-1', ownerUserId: 'user-anna', ownerDisplayName: 'Anna' }),
+        }),
+        humanOwned({
+          id: 'c-3',
+          ownership: ownership({ conversationId: 'c-3', ownerAccountId: 'account-1', ownerUserId: 'user-x', ownerDisplayName: null }),
+        }),
+      ],
+      qualityTurns: [],
+    })
+
+    expect(listTakenByOperators(items, 'user-anna')).toEqual([
       { userId: 'user-x', label: 'A teammate' },
     ])
   })

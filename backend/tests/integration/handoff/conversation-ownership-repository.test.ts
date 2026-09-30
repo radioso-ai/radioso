@@ -242,7 +242,7 @@ describeIfDatabase("ConversationOwnershipRepository Postgres integration", () =>
     expect(stale.record).toEqual(claimed.record);
   });
 
-  it("claims a requested handoff with CAS and bumps the version", async () => {
+  it("claims a requested handoff with CAS, bumps the version, and keeps the handoff's own reason", async () => {
     const { conversationId, workspaceId } = await seedConversation(database);
     await repository.requestHandoff({ conversationId, workspaceId, reason: "routine_handoff" });
 
@@ -260,9 +260,59 @@ describeIfDatabase("ConversationOwnershipRepository Postgres integration", () =>
       state: "human_owned",
       ownerProfile: { displayName: "Ada Operator", email: "ada@example.com" },
       ownerStoredLabel: "Ada Operator",
-      reason: "operator_takeover",
+      reason: "routine_handoff",
       version: 2,
     });
+  });
+
+  it("keeps a retrieval-miss handoff's reason too, claimed by Send instead of Hand to…", async () => {
+    const { conversationId, workspaceId } = await seedConversation(database);
+    await repository.requestHandoff({ conversationId, workspaceId, reason: "retrieval_miss" });
+
+    const claimed = await repository.takeOver({
+      conversationId,
+      workspaceId,
+      accountId: randomUUID(),
+      userId: await seedUser(database, { email: "bea@example.com", displayName: "Bea Operator" }),
+      displayName: "Bea Operator",
+    });
+
+    expect(claimed.ok).toBe(true);
+    expect(claimed.record).toMatchObject({ state: "human_owned", reason: "retrieval_miss", version: 2 });
+  });
+
+  it("sets operator_takeover for a takeover of an ai_owned conversation whose row already exists (after a hand-back)", async () => {
+    const { conversationId, workspaceId } = await seedConversation(database);
+    const ada = await seedUser(database, { email: `${randomUUID()}@example.com`, displayName: "Ada Operator" });
+    const firstClaim = await repository.takeOver({
+      conversationId,
+      workspaceId,
+      accountId: randomUUID(),
+      userId: ada,
+      displayName: "Ada Operator",
+    });
+    if (!firstClaim.ok) {
+      throw new Error("Expected first takeover to succeed");
+    }
+    const handedBack = await repository.handBack({
+      conversationId,
+      expectedVersion: firstClaim.record.version,
+      actingUserId: ada,
+    });
+    if (!handedBack.ok) {
+      throw new Error("Expected hand-back to succeed");
+    }
+
+    const retaken = await repository.takeOver({
+      conversationId,
+      workspaceId,
+      accountId: randomUUID(),
+      userId: await seedUser(database, { email: "bea@example.com", displayName: "Bea Operator" }),
+      displayName: "Bea Operator",
+    });
+
+    expect(retaken.ok).toBe(true);
+    expect(retaken.record).toMatchObject({ state: "human_owned", reason: "operator_takeover" });
   });
 
   it("transfers ownership to another teammate with CAS", async () => {

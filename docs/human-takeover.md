@@ -124,16 +124,16 @@ Body:
 The reply is saved as an assistant-role message with `source:
 human_agent`. Its `metadata.humanAgent` records who sent it — `accountId`,
 `userId` — and the signature the visitor sees, `displayName`. The signature is
-your display name, or your organisation's name if you have not set one. It is
-never your email: with neither a display name nor an organisation name, the reply
-goes out unsigned and the visitor sees it from "A teammate".
+your display name, or your organisation's name if you have not set one and that
+name is not itself shaped like an email address. With no display name and no
+usable organisation name, the reply goes out unsigned and the visitor sees it
+from "A teammate".
 
 Every surface — the visitor chat and embed, the dashboard, Ray, and this API —
-shows a reply's stored signature by one rule. A reply that records its author in
-`humanAgent.userId` shows its signature. A reply with no recorded author shows
-its signature too, typically the organisation's name, unless that signature is
-an email address: an email-shaped signature is never shown, and the visitor
-sees that reply from "A teammate".
+shows a reply's stored signature as it was saved, with one exception: an
+email-shaped signature is never shown, whether or not the reply records its
+author in `humanAgent.userId`, and the visitor sees that reply from
+"A teammate" instead.
 
 Only the teammate who owns the conversation replies. A reply to a conversation
 the AI owns, or one waiting for a teammate, claims it for you first. When
@@ -332,10 +332,13 @@ human-agent and system messages), and the pane reads the tail endpoint while
 open, so new visitor messages and your own replies appear without a manual
 refresh.
 **Done** closes a handoff and hands the conversation back to the agent; it shows
-when you hold the conversation or nobody has claimed it. On a negative-feedback
-item, **Done** opens the same resolution-reason flow Quality → Review uses to
-classify it, and shows even when a teammate holds the conversation, because
-closing feedback leaves ownership alone. An approval closes when you choose one
+when you hold the conversation or nobody has claimed it. A conversation shows as
+one row: while it also has an open handoff or approval, the Inbox folds its
+negative feedback into that row instead of listing it separately, so Done there
+closes the handoff or approval, not the feedback. Once the conversation is back
+with the agent, the feedback appears as its own item, and **Done** on it opens
+the same resolution-reason flow Quality → Review uses to classify it — closing
+it leaves ownership alone. An approval closes when you choose one
 of its decision options — it needs no separate Done step. For any other conversation, the
 reading pane is read-only, with an outcome footer in place of the composer.
 

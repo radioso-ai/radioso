@@ -97,6 +97,32 @@ export const resolveReadOnlySource = (
   return conversation ?? null
 }
 
+// ── Freshest ownership (open-pane live updates) ─────────────────────────────
+
+/**
+ * The response pane reads ownership from two places while open: the
+ * conversation-detail fetch (loaded once, then only refreshed after an
+ * operator's own action) and the tail poll (`useConversationTail`, re-read
+ * every second, and the only one of the two that observes a *transfer or
+ * take-over made elsewhere* — Hand to…/Take over from another tab, another
+ * teammate, or the Inbox list — while this pane stays open). The tail
+ * argument wins on a tied version: a poll result is never older than the
+ * refetch it happened to match, so preferring it avoids ever preferring a
+ * value we know is at best equally stale.
+ */
+export const freshestOwnership = (
+  detailOwnership: ConversationOwnership | null | undefined,
+  tailOwnership: ConversationOwnership | null | undefined,
+): ConversationOwnership | undefined => {
+  if (!detailOwnership) {
+    return tailOwnership ?? undefined
+  }
+  if (!tailOwnership) {
+    return detailOwnership
+  }
+  return tailOwnership.version >= detailOwnership.version ? tailOwnership : detailOwnership
+}
+
 // ── Channel label (FR-006) ──────────────────────────────────────────────────
 
 /**

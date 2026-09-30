@@ -552,11 +552,18 @@ export interface InboxOperatorOption {
   label: string
 }
 
-/** Distinct teammates who have taken an open item, for the "Taken by" filter's operator options. */
-export const listTakenByOperators = (items: readonly InboxItem[]): InboxOperatorOption[] => {
+/**
+ * Distinct teammates who have taken an open item, for the "Taken by" filter's per-person options.
+ * The current user is excluded — they already have their own "Me" option, so listing them again
+ * by name would offer the same filter twice.
+ */
+export const listTakenByOperators = (
+  items: readonly InboxItem[],
+  currentUserId: string | null,
+): InboxOperatorOption[] => {
   const byUserId = new Map<string, InboxOperatorOption>()
   for (const item of items) {
-    if (!item.takenBy || byUserId.has(item.takenBy.userId)) {
+    if (!item.takenBy || item.takenBy.userId === currentUserId || byUserId.has(item.takenBy.userId)) {
       continue
     }
     byUserId.set(item.takenBy.userId, { userId: item.takenBy.userId, label: item.takenBy.label ?? 'A teammate' })

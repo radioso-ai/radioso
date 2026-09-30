@@ -145,4 +145,9 @@ describe("visitor-facing name", () => {
     expect(visitorFacingName({ displayName: null, organizationName: "   " })).toBeNull();
     expect(visitorFacingName({ displayName: null, organizationName: null })).toBeNull();
   });
+
+  it("drops an organisation name shaped like an email address instead of showing it to a visitor", () => {
+    expect(visitorFacingName({ displayName: null, organizationName: "alice@acme.example" })).toBeNull();
+    expect(visitorFacingName({ displayName: null, organizationName: "  alice@acme.example  " })).toBeNull();
+  });
 });

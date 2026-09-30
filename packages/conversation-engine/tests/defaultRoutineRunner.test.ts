@@ -2592,27 +2592,7 @@ describe("DefaultRoutineRunner bounded re-asks (#1376)", () => {
     expect(result.trace?.steps.map((entry) => entry.event)).not.toContain("reask_limit_reached");
   });
 
-  it("hands off along the step's own hand-off exit once the limit is passed", async () => {
-    const render = renderer();
-    const select = vi.fn(async () => ({ nextStepId: "ask_contact", variables: {} }));
-    const runner = new DefaultRoutineRunner([withHandoff], { select }, render);
-
-    const result = await runner.resume({ turn, state: onContactStep(3) });
-
-    expect(select).toHaveBeenCalledTimes(1);
-    expect(result.nextState).toBeNull();
-    expect(result.terminal).toEqual({ kind: "handoff", stepId: "handoff", collected: {} });
-    expect(result.response.answer).toBe("[handoff]");
-    expect(vi.mocked(render.render).mock.calls[0][0]).not.toHaveProperty("reask");
-    expect(result.trace).toMatchObject({ landedStepId: "handoff", terminalKind: "handoff" });
-    expect(result.trace?.steps).toEqual([
-      expect.objectContaining({ stepId: "ask_contact", event: "reasked" }),
-      { stepId: "ask_contact", kind: "chat", event: "reask_limit_reached", reaskCount: 4, reaskLimitOutcome: "handoff" },
-      { stepId: "handoff", kind: "terminal", event: "rendered" },
-    ]);
-  });
-
-  it("asks differently when the step has no hand-off exit, and keeps counting", async () => {
+  it("asks differently past the limit, and keeps counting", async () => {
     const render = renderer();
     const runner = new DefaultRoutineRunner([withoutHandoff], staying(), render);
 
@@ -2627,9 +2607,32 @@ describe("DefaultRoutineRunner bounded re-asks (#1376)", () => {
         reask: { missingSlots: [nameSlot, emailSlot], exhausted: true },
       });
     }
-    expect(first.trace?.steps).toContainEqual(
-      { stepId: "ask_contact", kind: "chat", event: "reask_limit_reached", reaskCount: 4, reaskLimitOutcome: "exhausted_reask" },
-    );
+    expect(first.trace?.steps).toEqual([
+      expect.objectContaining({ stepId: "ask_contact", event: "reasked" }),
+      { stepId: "ask_contact", kind: "chat", event: "reask_limit_reached", reaskCount: 4 },
+    ]);
+  });
+
+  it("never takes the step's own exit to a hand-off end: past the limit it only asks differently", async () => {
+    // A direct exit to a hand-off end is often the step's confirmation edge ("the visitor
+    // confirmed" → hand off the booking request); the limit must never fire it.
+    const render = renderer();
+    const select = vi.fn(async () => ({ nextStepId: "ask_contact", variables: {} }));
+    const runner = new DefaultRoutineRunner([withHandoff], { select }, render);
+
+    const result = await runner.resume({ turn, state: onContactStep(3) });
+
+    expect(result.terminal).toBeUndefined();
+    expect(result.nextState?.path).toEqual(["ask_contact"]);
+    expect(result.nextState?.reaskCount).toBe(4);
+    expect(result.response.answer).toBe("[ask_contact]");
+    expect(render.render).toHaveBeenCalledTimes(1);
+    expect(render.render).toHaveBeenCalledWith(expect.objectContaining({
+      step: expect.objectContaining({ id: "ask_contact" }),
+      reask: { missingSlots: [nameSlot, emailSlot], exhausted: true },
+    }));
+    expect(result.trace).toMatchObject({ landedStepId: "ask_contact" });
+    expect(result.trace?.steps).toContainEqual({ stepId: "ask_contact", kind: "chat", event: "reask_limit_reached", reaskCount: 4 });
   });
 
   it("never jumps to a hand-off end the step has no exit to", async () => {

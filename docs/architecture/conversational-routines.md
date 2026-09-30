@@ -211,24 +211,20 @@ state, `reask_count` in `routine_states`) starts over when the routine enters a
 step or a turn fills one of the step's empty slots. A message the routine yields
 to normal answering leaves it where it was, and so does the routine's first turn.
 
-On the fourth re-ask in a row the routine offers a way forward:
+From the fourth re-ask in a row the step asks differently. It is rendered with the
+exhausted signal (`reask.exhausted`), and the renderer adds
+`backend/prompts/chat/routine-step-reask-exhausted.md` to the re-ask context: say
+plainly what is still needed and what a usable answer looks like, with an example
+the visitor could send back as it is ("12 November to 15 November",
+`name@example.com`), without blaming the visitor and without offering anything the
+step does not offer, such as a person. The trace records a `reask_limit_reached`
+entry with the `reaskCount`. The count keeps rising, so every later re-ask of that
+step gets the same instruction.
 
-- **The step has its own exit to a hand-off end.** The routine takes it. The limit
-  overrides that exit's own condition: an AI-decides "the visitor asks for a
-  person" or a rule guard is not evaluated, and the trace records a
-  `reask_limit_reached` entry for the step. From there the hand-off end runs as
-  it always does: the conversation goes to a person, the operators are notified,
-  and a completion export set to fire on hand-off runs. A hand-off end that is
-  reachable only through other steps stays where it is, because jumping to it
-  would skip what those steps do.
-- **It has none.** The step is asked again with the exhausted signal
-  (`reask.exhausted`), and the renderer adds
-  `backend/prompts/chat/routine-step-reask-exhausted.md` to the re-ask context:
-  say plainly what is still needed and what a usable answer looks like, with an
-  example the visitor could send back as it is ("12 November to 15 November",
-  `name@example.com`), without blaming the visitor and without offering anything
-  the step does not offer, such as a person. The count keeps rising, so every
-  later re-ask of that step gets the same instruction.
+The routine stays on the step. The limit never takes an exit the author drew, a
+hand-off included: a step's exit to a hand-off end is often its confirmation edge
+("the visitor confirmed the booking" → hand off the request), and taking it would
+submit a request the visitor never confirmed.
 
 The limit is three for every routine the backend runs; the engine's
 `DefaultRoutineRunner` takes a `reaskLimit` option for hosts that embed it. A
@@ -360,7 +356,7 @@ fast-forwarded, dispatched a tool, or rendered, plus which slot *keys* were
 captured this turn and which are now filled. A step whose returned value did not
 fit its slot lists it under `rejectedSlots` (key and reason, `type_mismatch` or
 `not_scalar`), and a step asked past the re-ask limit adds a `reask_limit_reached`
-entry with `reaskCount` and `reaskLimitOutcome` (`handoff` or `exhausted_reask`). A step the selector judged also
+entry with its `reaskCount`. A step the selector judged also
 records the selector's `selection`: its `outcome` (`transition`, `stay`,
 `off_topic`, or `unreadable` when the model's output could not be parsed), the
 `returnedSlotKeys` the model gave a value for, and `undeclaredKeyCount` for keys
@@ -524,6 +520,11 @@ The conversation-quality suite carries two of these as regression cases,
 Prose steps are positional, so the prose editor offers handoff and end branch
 targets but not step-to-step jumps. Authoring a jump from one step to another
 takes the structural editor.
+
+Past the re-ask limit a step asks differently, but the routine never leaves the
+step by itself. An author who wants a way out — to a person, or on to the next
+step — adds an explicit exit for it, such as an AI-decides "the visitor asks for
+a person" or a `counter` exit.
 
 A step whose slots were given earlier and whose exits are all AI-decides is
 judged against the latest message, which usually answered a different step, so

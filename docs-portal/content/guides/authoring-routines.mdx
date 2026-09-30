@@ -191,12 +191,14 @@ also sends the operators the routine's name and every value it collected, by
 email, the contact webhook, and Slack, so the person picking the conversation
 up starts with what the visitor already said.
 
-A step is asked again at most three times in a row when the visitor's replies
-give it nothing new. On the next miss, a step with its own **Hand off** row
-takes it and a person picks up the conversation; a step without one keeps
-asking, in different words, saying plainly what it needs. So give a step that
-collects something hard to get right — a booking reference, an exact date — a
-**Hand off** row, and the visitor never gets stuck on it.
+A step is asked the same way at most three times in a row when the visitor's
+replies give it nothing new. From then on it asks in different words, saying
+plainly what it needs and giving an example of an answer that works. The routine
+stays on the step until the visitor answers it: it takes only the rows you set,
+and a **Hand off** row may be the step's confirmation, so the limit never fires
+one. To give a visitor a way out of a step that collects something hard to get
+right — a booking reference, an exact date — add a row for it, such as **AI
+decides** "the visitor wants to talk to a person" → **Hand off**.
 
 ## Validation and publishing
 

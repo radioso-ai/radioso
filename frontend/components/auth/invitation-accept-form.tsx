@@ -11,6 +11,7 @@ import { authApi, seedWorkspaceSession } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { useAuth } from '@/lib/auth-context'
 import { buildDashboardHref } from '@/lib/dashboard-routes'
+import { useAuthSunrise } from './auth-shell'
 import { MethodDivider } from '@/components/ui/method-divider'
 import { InvitationGoogleButton } from './invitation-google-button'
 
@@ -35,6 +36,7 @@ export function InvitationAcceptForm({
 }) {
   const router = useRouter()
   const { login } = useAuth()
+  const riseSun = useAuthSunrise()
   const [email, setEmail] = useState(invitedEmail)
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -59,6 +61,7 @@ export function InvitationAcceptForm({
     try {
       const response = await authApi.acceptInvitation(invitationToken, { email, password })
       seedWorkspaceSession(response.workspaceId, response.workspacePublicRouteKey)
+      riseSun()
       await login(email, response.userId, response.accountId, response.organizationName)
       // An invited teammate joins an existing workspace (invitations only
       // exist on workspaces someone already set up) — the Inbox, not

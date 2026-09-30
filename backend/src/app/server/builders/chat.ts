@@ -9,6 +9,7 @@ import { PendingDecisionRepository } from "../../../db/repositories/pendingDecis
 import { ClarificationStateRepository } from "../../../db/repositories/clarificationStateRepository.js";
 import { createConversationEngine } from "@radioso/conversation-engine";
 import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
+import type { TeammateLabelReaderPort } from "../../../modules/chat/contracts/index.js";
 import { AuditEventRepository } from "../../../db/repositories/auditEventRepository.js";
 import { BootstrapGreetingCacheRepository } from "../../../db/repositories/bootstrapGreetingCacheRepository.js";
 import { ConversationRepository } from "../../../db/repositories/conversationRepository.js";
@@ -241,6 +242,7 @@ export const buildChatServices = (input: {
   ingestionSettingsService: IngestionSettingsService;
   routineTriggerEmbeddingService: RoutineTriggerEmbeddingService;
   workspaceInvalidationPublisher: WorkspaceInvalidationPublisher;
+  teammateLabels: TeammateLabelReaderPort;
 }) => {
   const chatGateway = input.llmRegistry.createChatGateway(input.usageEventRecorder);
   // Retrieval-sense clarification is answer-first: once a candidate set survives
@@ -876,6 +878,7 @@ export const buildChatServices = (input: {
     input.conversationOwnershipRepository,
     new AnswerCoverageRepository(input.database.kysely),
     visitorRepository,
+    input.teammateLabels,
   );
   // "Continue in test chat": a private test execution seeded from a live conversation's
   // thread and its current routine/clarification/directive position. Read-only on the source.

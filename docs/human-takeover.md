@@ -106,7 +106,7 @@ you as `ownerUserId`. Take over claims a conversation that is AI-owned or waitin
 for a teammate. One a teammate already holds returns `409` with the current
 ownership in `error.details.ownership`; you take it from them with a
 [transfer](#transfer-ownership) to yourself, which is what the dashboard's
-**Take over** does on a teammate's conversation.
+**Reassign → Me** does on a teammate's conversation.
 
 ### Reply as a human
 
@@ -130,10 +130,20 @@ usable organisation name, the reply goes out unsigned and the visitor sees it
 from "A teammate".
 
 Every surface — the visitor chat and embed, the dashboard, Ray, and this API —
-shows a reply's stored signature as it was saved, with one exception: an
-email-shaped signature is never shown, whether or not the reply records its
-author in `humanAgent.userId`, and the visitor sees that reply from
-"A teammate" instead.
+carries a reply's stored signature in `operatorDisplayName` as it was saved,
+with one exception: an email-shaped signature is never shown, whether or not the
+reply records its author in `humanAgent.userId`, and the visitor sees that reply
+from "A teammate" instead.
+
+Operator reads also name the teammate who wrote each reply. The history detail
+and tail (`GET /api/v1/history/chat/{conversationId}` and its `/tail`) and Ray's
+transcript tools add `operatorLabel` to a human-agent reply: the teammate label
+of the user in `humanAgent.userId` — their display name, or their email until
+they set one — read from their profile each time, so it follows a rename. A reply
+that records no author, or whose author's user is deleted, carries its signature
+there instead, by the rule above. The dashboard badges a reply with
+`operatorLabel`, so teammates see who actually answered even when the visitor saw
+"A teammate". The public chat API never returns `operatorLabel`.
 
 Only the teammate who owns the conversation replies. A reply to a conversation
 the AI owns, or one waiting for a teammate, claims it for you first. When
@@ -181,7 +191,8 @@ Body:
 
 Any teammate with the takeover permission can hand a human-owned conversation to
 a teammate — one waiting for a teammate, or one someone holds. Pass your own
-`userId` to take a conversation from the teammate holding it. `toUserId` must be
+`userId` to take a conversation from the teammate holding it. The dashboard's
+**Assign** and **Reassign** menus make this call. `toUserId` must be
 one of the teammates [List teammates](#list-teammates) returns; anyone else,
 including a disabled teammate or a user in another organisation, returns `404`
 with code `transfer_target_unavailable`. A conversation outside the workspace
@@ -281,8 +292,8 @@ so the visitor can see who is answering (rendered as "👤 <name>"). That name i
 the reply's signature: the teammate's display name, or the organisation's name.
 Only the name is exposed — never an email, user id, or account id — and an
 unsigned reply, or one whose only signature is an email address, shows as
-"👤 A teammate". The operator tail also includes
-`ownership`; the visitor tail never does.
+"👤 A teammate". The operator tail also includes `ownership` and each reply's
+`operatorLabel`; the visitor tail carries neither.
 
 The third caller is an AI agent on the other side of the MCP converse surface. It
 holds a conversation with the agent but cannot watch a chat window, so it reads
@@ -323,14 +334,18 @@ header naming the visitor, the page they were on, and how long they have
 been waiting; a situation card with the handoff reason and the visitor's
 opening request; the live transcript; and a reply composer. Sending a reply
 claims a conversation nobody holds yet — there is no separate take-over step.
-**Hand to…** next to Send gives a waiting conversation, or one you hold, to a
-teammate. When a teammate holds the conversation, the composer gives way to
-"Dana Scully is handling this · **Take over**", so two people never reply
-blind; Take over transfers it to you and brings the composer back, with
-anything you had drafted still in it. Messages carry attribution (a badge for
-human-agent and system messages), and the pane reads the tail endpoint while
-open, so new visitor messages and your own replies appear without a manual
-refresh.
+**Assign** next to Send places a conversation waiting for a teammate: **Me**
+first, then every teammate who can take it. Once someone holds the conversation,
+the menu reads **Reassign** and lists **Me** and every teammate except whoever
+holds it; on one you hold, it lists your teammates. Choosing a teammate transfers
+the conversation to them, and they get an email with a link when email delivery
+is configured. When a teammate holds the conversation, the composer gives way to
+"Dana Scully is handling this · **Reassign**", so two people never reply blind;
+Reassign → **Me** transfers it to you and brings the composer back, with anything
+you had drafted still in it. Messages carry attribution: a human reply's badge
+names the teammate who wrote it, by display name or email, and system messages
+have a badge of their own. The pane reads the tail endpoint while open, so new
+visitor messages and your own replies appear without a manual refresh.
 **Done** closes a handoff and hands the conversation back to the agent; it shows
 when you hold the conversation or nobody has claimed it. A conversation shows as
 one row: while it also has an open handoff or approval, the Inbox folds its

@@ -120,12 +120,13 @@ test("drawer opened from Conversations carries no operator mutation controls", a
   await expect(page.getByRole("heading", { name: "Conversation details" })).toBeAttached();
   await expect(drawer.getByText("I need help with my booking")).toBeVisible();
 
-  // No reply/take-over/hand-back/decision controls anywhere in the drawer, even
+  // No reply/assign/hand-back/decision controls anywhere in the drawer, even
   // though a pending decision exists for this conversation and it is AI-owned
   // (both would have rendered operator controls before spec 1116).
   await expect(drawer.getByRole("textbox", { name: "Reply to the visitor" })).toHaveCount(0);
   await expect(drawer.getByRole("textbox", { name: "Human reply" })).toHaveCount(0);
-  await expect(drawer.getByRole("button", { name: "Take over" })).toHaveCount(0);
+  await expect(drawer.getByRole("button", { name: "Reassign" })).toHaveCount(0);
+  await expect(drawer.getByRole("button", { name: "Assign", exact: true })).toHaveCount(0);
   await expect(drawer.getByRole("button", { name: "Hand back to AI" })).toHaveCount(0);
   await expect(drawer.getByRole("button", { name: "Send reply" })).toHaveCount(0);
   await expect(drawer.getByRole("button", { name: "Approve" })).toHaveCount(0);

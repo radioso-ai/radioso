@@ -112,6 +112,7 @@ import { QUALITY_RESOLUTION_REASONS } from "../../modules/quality/domain/resolut
 import { buildOperatorMcpServices } from "./builders/operatorMcp.js";
 import { createDefaultVisitorGeoResolver } from "../composition/visitorGeoResolver.js";
 import { createConversationOperatorDirectory } from "../composition/conversationOperatorDirectory.js";
+import { createTeammateLabelReader } from "../composition/teammateLabelReader.js";
 import { createPostgresOwnershipTransferUnitOfWork } from "../composition/conversationOwnershipTransfers.js";
 import { ConversationOwnershipService, OperatorIdentityResolver } from "../../modules/handoff/public.js";
 import { buildConversationLinkResolver } from "../composition/conversationLinkResolver.js";
@@ -300,6 +301,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     ingestionSettingsService: settings.ingestionSettingsService,
     routineTriggerEmbeddingService,
     workspaceInvalidationPublisher: realtimePublisherComposition.publisher,
+    teammateLabels: createTeammateLabelReader({ users: repositories.userRepository }),
   });
   const skillCatalog = buildSkillCatalogServices({
     accessGrantService: access.accessGrantService,

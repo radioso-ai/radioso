@@ -25,6 +25,7 @@ import {
   createFrontendProductAnalyticsEmitter,
 } from '@/lib/product-analytics'
 import type { WebsiteEmbedAnalyticsInput } from '@/lib/embed-analytics'
+import { humanReplyAuthor, type ReplyAttributionAudience } from '@/lib/reply-attribution'
 import type {
   AnswerFeedbackEntry,
   AnswerFeedbackState,
@@ -129,8 +130,10 @@ export interface ChatThreadMessage {
   persistedAssistantMessageId?: string
   status?: 'streaming' | 'done' | 'complete' | 'error'
   skill?: SkillStreamPayload
-  /** Display name of the human operator who authored a takeover reply. */
+  /** The signature the visitor sees on a human operator's reply. */
   operatorDisplayName?: string
+  /** Operator reads only: the teammate who wrote a human reply (display name, else email). */
+  operatorLabel?: string
 }
 
 /**
@@ -416,6 +419,7 @@ export function ChatMessageThread({
   onEmbedAnalyticsEvent,
   skillCatalog = [],
   routineMarkers,
+  audience = 'visitor',
 }: {
   messages: ChatThreadMessage[]
   onOpenDocument: (documentId: string) => Promise<CitationOpenResult>
@@ -453,6 +457,9 @@ export function ChatMessageThread({
   // Diagnostics-only: marks which turns a routine drove so the thread can band
   // the routine's span. Omitted on public chat/embed, which render plainly.
   routineMarkers?: readonly RoutineThreadMarker[]
+  // Who reads this thread. A human reply's badge names the teammate who wrote it for
+  // operators, and only the reply's signature for a visitor.
+  audience?: ReplyAttributionAudience
 }) {
   const skillGroupInfo = useMemo(() => computeSkillGroupInfo(messages), [messages])
   // The identity line sits on the earliest AI-authored turn currently rendered, so it
@@ -653,7 +660,7 @@ export function ChatMessageThread({
   const renderMessage = (message: ChatThreadMessage, index: number) => {
         const sourceBadgeLabel =
           message.source === 'human_agent' || message.source === 'human_agent_on_behalf_of_ai_agent'
-            ? `👤 ${message.operatorDisplayName?.trim() || 'A teammate'}`
+            ? `👤 ${humanReplyAuthor(message, audience)}`
             : message.source === 'system'
               ? 'System'
               : null

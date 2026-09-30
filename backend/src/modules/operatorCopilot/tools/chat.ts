@@ -41,6 +41,7 @@ const transcriptMessageSchema = z.object({
   latencyMs: z.number().nonnegative().nullable(),
   answerFeedback: z.array(jsonValueSchema),
   operatorDisplayName: z.string().nullable(),
+  operatorLabel: z.string().nullable(),
   turnFailure: turnFailureSchema,
 });
 const conversationTranscriptOutputSchema = z.object({
@@ -70,6 +71,7 @@ const turnTraceOutputSchema = z.object({
       citations: z.array(jsonValueSchema),
       answerFeedback: z.array(jsonValueSchema),
       operatorDisplayName: z.string().nullable(),
+      operatorLabel: z.string().nullable(),
       turnFailure: turnFailureSchema,
       debug: z.object({
         eventStatus: z.enum(["success", "failure", "cancelled"]),
@@ -133,6 +135,8 @@ interface CopilotConversationOptions {
   includeOwnership: boolean;
   includeTurnFailureDebug: boolean;
   includeLatency: boolean;
+  /** Names the teammate behind each human reply, by teammate label (can be an email). */
+  includeOperatorLabel: boolean;
 }
 
 interface CopilotOwnership {
@@ -176,7 +180,10 @@ interface CopilotConversationMessage {
   citations?: ReadonlyArray<unknown>;
   answerFeedbackEntries?: ReadonlyArray<unknown>;
   latencyMs?: number;
+  /** The signature the visitor saw on a human reply. */
   operatorDisplayName?: string;
+  /** The teammate who wrote a human reply, as teammates name each other. */
+  operatorLabel?: string;
   turnFailure?: CopilotTurnFailure;
   debug?: CopilotDebug;
 }
@@ -249,6 +256,7 @@ const projectTranscript = (conversation: CopilotConversationDetail): Record<stri
     latencyMs: message.latencyMs ?? null,
     answerFeedback: [...(message.answerFeedbackEntries ?? [])],
     operatorDisplayName: message.operatorDisplayName ?? null,
+    operatorLabel: message.operatorLabel ?? null,
     turnFailure: projectTurnFailure(message.turnFailure),
   })),
 });
@@ -295,6 +303,7 @@ const projectTurnTrace = (detail: CopilotConversationTurnDetail): Record<string,
       citations: [...(message.citations ?? [])],
       answerFeedback: [...(message.answerFeedbackEntries ?? [])],
       operatorDisplayName: message.operatorDisplayName ?? null,
+      operatorLabel: message.operatorLabel ?? null,
       turnFailure: projectTurnFailure(message.turnFailure),
       debug: debug
         ? {
@@ -349,6 +358,7 @@ export const createChatCopilotTools = (deps: ChatCopilotToolDependencies): Reado
             includeOwnership: true,
             includeTurnFailureDebug: true,
             includeLatency: true,
+            includeOperatorLabel: true,
           },
         ))),
       }),
@@ -373,6 +383,7 @@ export const createChatCopilotTools = (deps: ChatCopilotToolDependencies): Reado
             includeOwnership: true,
             includeTurnFailureDebug: true,
             includeLatency: true,
+            includeOperatorLabel: true,
           },
         ))),
       }),

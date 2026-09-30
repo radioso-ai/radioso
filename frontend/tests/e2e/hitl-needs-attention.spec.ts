@@ -153,7 +153,8 @@ test("operator opens the inbox, replies to a handoff, marks it done, and the deb
   await expect(page.getByRole("heading", { name: "Conversation details" })).toBeAttached();
   await expect(drawer.getByText("dove trovo gli orari dei corsi di yoga settimanali")).toBeVisible();
   await expect(drawer.getByRole("textbox", { name: "Reply to the visitor" })).toHaveCount(0);
-  await expect(drawer.getByRole("button", { name: "Take over" })).toHaveCount(0);
+  await expect(drawer.getByRole("button", { name: "Reassign" })).toHaveCount(0);
+  await expect(drawer.getByRole("button", { name: "Assign", exact: true })).toHaveCount(0);
   await expect(drawer.getByRole("button", { name: "Hand back to AI" })).toHaveCount(0);
   // Exact match: the drawer's message thread legitimately renders a "Send to
   // eval" action (evalCaptureEnabled), which a substring match on "Send" would
@@ -700,6 +701,7 @@ test("the recently-closed strip shows the resolution and when it was closed", as
 const teammates = [
   { userId: currentUserId, label: "Test Operator" },
   { userId: "user-dana", label: "Dana Scully" },
+  { userId: "user-fox", label: "fox@example.com" },
 ];
 
 const handoffOwnership = (conversationId: string, owner: { userId: string; label: string } | null, version: number) => ({
@@ -767,7 +769,7 @@ const stubEmptyQualityQueue = async (page: import("@playwright/test").Page) => {
   });
 };
 
-test("operator hands a waiting handoff to a teammate, who then holds it", async ({ page }) => {
+test("operator assigns a waiting handoff to a teammate, who then holds it", async ({ page }) => {
   const conversationId = "conversation-hand-to";
   const waiting = handoffOwnership(conversationId, null, 1);
   const transferRequests: Array<{ toUserId: string; expectedVersion: number }> = [];
@@ -786,13 +788,43 @@ test("operator hands a waiting handoff to a teammate, who then holds it", async 
 
   const response = page.getByLabel("Response", { exact: true });
   await response.getByRole("textbox", { name: "Reply to the visitor" }).fill("Draft for Dana");
-  await response.getByRole("button", { name: "Hand to…" }).click();
+  await response.getByRole("button", { name: "Assign", exact: true }).click();
   await page.getByRole("menuitem", { name: "Dana Scully" }).click();
 
   await expect.poll(() => transferRequests).toEqual([{ toUserId: "user-dana", expectedVersion: 1 }]);
   await expect(response.getByText("Dana Scully is handling this")).toBeVisible();
   await expect(response.getByRole("textbox", { name: "Reply to the visitor" })).toHaveCount(0);
-  await expect(response.getByRole("button", { name: "Take over" })).toBeVisible();
+  await expect(response.getByRole("button", { name: "Reassign" })).toBeVisible();
+});
+
+test("operator assigns a waiting handoff to themselves and keeps the composer", async ({ page }) => {
+  const conversationId = "conversation-assign-me";
+  const waiting = handoffOwnership(conversationId, null, 1);
+  const transferRequests: Array<{ toUserId: string; expectedVersion: number }> = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    historyList: { conversations: [handoffSummary(conversationId, "Lost parcel", waiting)], total: 1, nextCursor: null, hasMore: false },
+    conversationDetails: { [conversationId]: handoffDetail(conversationId, waiting) },
+    conversationOperators: teammates,
+    transferRequests,
+  });
+  await stubEmptyQualityQueue(page);
+
+  await page.goto(`/w/${workspaceKey}/activity`);
+  await page.getByLabel("Inbox queue").getByRole("button", { name: /Lost parcel/ }).click();
+
+  const response = page.getByLabel("Response", { exact: true });
+  const replyBox = response.getByRole("textbox", { name: "Reply to the visitor" });
+  await replyBox.fill("Draft I keep");
+  await response.getByRole("button", { name: "Assign", exact: true }).click();
+  const menu = page.getByRole("menu");
+  await expect(menu.getByRole("menuitem")).toHaveText(["Me", "Dana Scully", "fox@example.com"]);
+  await menu.getByRole("menuitem", { name: "Me" }).click();
+
+  await expect.poll(() => transferRequests).toEqual([{ toUserId: currentUserId, expectedVersion: 1 }]);
+  await expect(response.getByRole("button", { name: "Reassign" })).toBeVisible();
+  await expect(replyBox).toHaveValue("Draft I keep");
 });
 
 test("handing to a teammate who can no longer take it keeps the draft and re-reads the teammates", async ({ page }) => {
@@ -817,7 +849,7 @@ test("handing to a teammate who can no longer take it keeps the draft and re-rea
   const replyBox = response.getByRole("textbox", { name: "Reply to the visitor" });
   const teammateReads = () => requestLog.filter((entry) => entry === "GET /conversations/operators").length;
   await replyBox.fill("Draft that must survive");
-  await response.getByRole("button", { name: "Hand to…" }).click();
+  await response.getByRole("button", { name: "Assign", exact: true }).click();
   const readsBeforeHandOff = teammateReads();
   await page.getByRole("menuitem", { name: "Walter Skinner" }).click();
 
@@ -826,7 +858,7 @@ test("handing to a teammate who can no longer take it keeps the draft and re-rea
   await expect.poll(teammateReads).toBeGreaterThan(readsBeforeHandOff);
 });
 
-test("operator takes over a handoff a teammate holds and gets the composer back", async ({ page }) => {
+test("operator reassigns a handoff a teammate holds to themselves and gets the composer back", async ({ page }) => {
   const conversationId = "conversation-take-over";
   const heldByDana = handoffOwnership(conversationId, teammates[1], 4);
   const transferRequests: Array<{ toUserId: string; expectedVersion: number }> = [];
@@ -847,11 +879,41 @@ test("operator takes over a handoff a teammate holds and gets the composer back"
   await expect(response.getByText("Dana Scully is handling this")).toBeVisible();
   await expect(response.getByRole("textbox", { name: "Reply to the visitor" })).toHaveCount(0);
 
-  await response.getByRole("button", { name: "Take over" }).click();
+  await response.getByRole("button", { name: "Reassign" }).click();
+  // Me first, then everyone else but Dana, who holds it.
+  await expect(page.getByRole("menu").getByRole("menuitem")).toHaveText(["Me", "fox@example.com"]);
+  await page.getByRole("menuitem", { name: "Me" }).click();
 
   await expect.poll(() => transferRequests).toEqual([{ toUserId: currentUserId, expectedVersion: 4 }]);
   await expect(response.getByRole("textbox", { name: "Reply to the visitor" })).toBeVisible();
   await expect(response.getByText("Dana Scully is handling this")).toHaveCount(0);
+});
+
+test("operator reassigns a handoff a teammate holds to a third teammate", async ({ page }) => {
+  const conversationId = "conversation-reassign-third";
+  const heldByDana = handoffOwnership(conversationId, teammates[1], 4);
+  const transferRequests: Array<{ toUserId: string; expectedVersion: number }> = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    historyList: { conversations: [handoffSummary(conversationId, "Change of delivery date", heldByDana)], total: 1, nextCursor: null, hasMore: false },
+    conversationDetails: { [conversationId]: handoffDetail(conversationId, heldByDana) },
+    conversationOperators: teammates,
+    transferRequests,
+  });
+  await stubEmptyQualityQueue(page);
+
+  await page.goto(`/w/${workspaceKey}/activity`);
+  await page.getByLabel("Inbox queue").getByRole("button", { name: /Change of delivery date/ }).click();
+
+  const response = page.getByLabel("Response", { exact: true });
+  await expect(response.getByText("Dana Scully is handling this")).toBeVisible();
+  await response.getByRole("button", { name: "Reassign" }).click();
+  await page.getByRole("menuitem", { name: "fox@example.com" }).click();
+
+  await expect.poll(() => transferRequests).toEqual([{ toUserId: "user-fox", expectedVersion: 4 }]);
+  await expect(response.getByText("fox@example.com is handling this")).toBeVisible();
+  await expect(response.getByRole("textbox", { name: "Reply to the visitor" })).toHaveCount(0);
 });
 
 test("ownership taken over elsewhere reaches an open pane through the tail poll, and the composer switches away", async ({ page }) => {
@@ -890,7 +952,7 @@ test("ownership taken over elsewhere reaches an open pane through the tail poll,
 
   await expect(response.getByText("Dana Scully is handling this")).toBeVisible();
   await expect(response.getByRole("textbox", { name: "Reply to the visitor" })).toHaveCount(0);
-  await expect(response.getByRole("button", { name: "Take over" })).toBeVisible();
+  await expect(response.getByRole("button", { name: "Reassign" })).toBeVisible();
 });
 
 test("the Taken by: Me filter shows only the signed-in teammate's handoffs, not the whole organisation's", async ({ page }) => {

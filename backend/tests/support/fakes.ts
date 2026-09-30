@@ -307,6 +307,13 @@ export class InMemoryUserRepository implements UserRepositoryPort {
     return this.items.get(id) ?? null;
   }
 
+  async findByIds(ids: readonly string[]): Promise<UserRecord[]> {
+    return [...new Set(ids)].flatMap((id) => {
+      const record = this.items.get(id);
+      return record ? [record] : [];
+    });
+  }
+
   async updatePassword(id: string, passwordHash: string): Promise<UserRecord> {
     const existing = this.items.get(id);
     if (!existing) {

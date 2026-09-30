@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { ConversationOperator, ConversationOwnership } from '@/lib/api-types'
-import { conversationOwner, deriveOperatorActions, listHandOffTargets } from '@/lib/operator-actions'
+import { conversationOwner, deriveOperatorActions, ownershipMenu } from '@/lib/operator-actions'
 
 const ownership = (
   overrides: Partial<ConversationOwnership>,
@@ -54,39 +54,35 @@ describe('deriveOperatorActions', () => {
       status: 'ai_owned',
       claimsOnSend: true,
       canReply: true,
-      canHandOff: false,
       owner: null,
       version: null,
     })
   })
 
-  it('claims on send for an AI-owned conversation and keeps its version, without offering a hand-off', () => {
+  it('claims on send for an AI-owned conversation and keeps its version', () => {
     expect(deriveOperatorActions(ownership({ state: 'ai_owned', version: 4 }), 'user-me')).toMatchObject({
       status: 'ai_owned',
       claimsOnSend: true,
       canReply: true,
-      canHandOff: false,
       version: 4,
     })
   })
 
-  it('offers reply and hand-off on a handoff waiting to be claimed', () => {
+  it('offers reply on a handoff waiting to be claimed', () => {
     expect(deriveOperatorActions(ownership({ state: 'human_owned', version: 5 }), 'user-me')).toEqual({
       status: 'awaiting_human',
       claimsOnSend: true,
       canReply: true,
-      canHandOff: true,
       owner: null,
       version: 5,
     })
   })
 
-  it('lets the owner reply and hand off without claiming again', () => {
+  it('lets the owner reply without claiming again', () => {
     expect(deriveOperatorActions(ownedBy('user-me', 'Me Myself'), 'user-me')).toEqual({
       status: 'owned_by_me',
       claimsOnSend: false,
       canReply: true,
-      canHandOff: true,
       owner: { userId: 'user-me', label: 'Me Myself' },
       version: 6,
     })
@@ -97,7 +93,6 @@ describe('deriveOperatorActions', () => {
       status: 'owned_by_teammate',
       claimsOnSend: false,
       canReply: false,
-      canHandOff: false,
       owner: { userId: 'user-dana', label: 'Dana Scully' },
       version: 6,
     })
@@ -117,31 +112,71 @@ describe('deriveOperatorActions', () => {
   })
 })
 
-describe('listHandOffTargets', () => {
+describe('ownershipMenu', () => {
   const operators: ConversationOperator[] = [
-    { userId: 'user-me', label: 'Me Myself' },
     { userId: 'user-dana', label: 'Dana Scully' },
+    { userId: 'user-me', label: 'Me Myself' },
     { userId: 'user-fox', label: 'fox@example.com' },
   ]
+  const menuFor = (value: ConversationOwnership | undefined, currentUserId: string | null = 'user-me') =>
+    ownershipMenu(deriveOperatorActions(value, currentUserId), operators, currentUserId)
 
-  it('offers every teammate but me when I own the conversation', () => {
-    expect(listHandOffTargets(operators, ownedBy('user-me', 'Me Myself'), 'user-me')).toEqual([
-      { userId: 'user-dana', label: 'Dana Scully' },
-      { userId: 'user-fox', label: 'fox@example.com' },
-    ])
+  it('reassigns a teammate’s conversation to me first, then to anyone else but its owner', () => {
+    expect(menuFor(ownedBy('user-dana', 'Dana Scully'))).toEqual({
+      kind: 'reassign',
+      targets: [
+        { kind: 'me', userId: 'user-me' },
+        { kind: 'teammate', userId: 'user-fox', label: 'fox@example.com' },
+      ],
+    })
   })
 
-  it('excludes me too while the handoff waits to be claimed: claiming it is Send or Take over, not Hand to…', () => {
-    expect(listHandOffTargets(operators, ownership({ state: 'human_owned' }), 'user-me')).toEqual([
-      { userId: 'user-dana', label: 'Dana Scully' },
-      { userId: 'user-fox', label: 'fox@example.com' },
-    ])
+  it('reassigns my own conversation to every teammate but me, with no Me entry', () => {
+    expect(menuFor(ownedBy('user-me', 'Me Myself'))).toEqual({
+      kind: 'reassign',
+      targets: [
+        { kind: 'teammate', userId: 'user-dana', label: 'Dana Scully' },
+        { kind: 'teammate', userId: 'user-fox', label: 'fox@example.com' },
+      ],
+    })
   })
 
-  it('excludes me from an ai-owned conversation too', () => {
-    expect(listHandOffTargets(operators, ownership({ state: 'ai_owned' }), 'user-me')).toEqual([
-      { userId: 'user-dana', label: 'Dana Scully' },
-      { userId: 'user-fox', label: 'fox@example.com' },
-    ])
+  it('assigns a handoff nobody has claimed to me first, then to every teammate', () => {
+    const expected = {
+      kind: 'assign',
+      targets: [
+        { kind: 'me', userId: 'user-me' },
+        { kind: 'teammate', userId: 'user-dana', label: 'Dana Scully' },
+        { kind: 'teammate', userId: 'user-fox', label: 'fox@example.com' },
+      ],
+    }
+    expect(menuFor(ownership({ state: 'human_owned' }))).toEqual(expected)
+    // Claimed under organisation-level ownership: it names no user, so it waits for a teammate.
+    expect(menuFor(ownedBy(null, 'Acme'))).toEqual(expected)
+  })
+
+  it('offers no menu while the agent owns the conversation', () => {
+    expect(menuFor(undefined)).toBeNull()
+    expect(menuFor(ownership({ state: 'ai_owned' }))).toBeNull()
+  })
+
+  it('offers Me before the teammate list loads, and nothing when there is no one to offer', () => {
+    const teammateHeld = deriveOperatorActions(ownedBy('user-dana', 'Dana Scully'), 'user-me')
+    expect(ownershipMenu(teammateHeld, [], 'user-me')).toEqual({
+      kind: 'reassign',
+      targets: [{ kind: 'me', userId: 'user-me' }],
+    })
+    const mine = deriveOperatorActions(ownedBy('user-me', 'Me Myself'), 'user-me')
+    expect(ownershipMenu(mine, [{ userId: 'user-me', label: 'Me Myself' }], 'user-me')).toBeNull()
+  })
+
+  it('leaves Me out when the signed-in teammate is unknown', () => {
+    expect(menuFor(ownedBy('user-dana', 'Dana Scully'), null)).toEqual({
+      kind: 'reassign',
+      targets: [
+        { kind: 'teammate', userId: 'user-me', label: 'Me Myself' },
+        { kind: 'teammate', userId: 'user-fox', label: 'fox@example.com' },
+      ],
+    })
   })
 })

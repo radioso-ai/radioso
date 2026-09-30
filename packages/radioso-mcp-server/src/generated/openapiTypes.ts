@@ -7738,6 +7738,8 @@ export interface components {
             operatorDisplayName?: string;
             debug?: components["schemas"]["ChatConversationMessageDebug"];
             turnFailure?: components["schemas"]["ChatConversationTurnFailure"];
+            /** @description Operator-only. On a human-agent reply, the teammate who wrote it: their display name, else their email, read from their profile now. A reply that names no teammate, or whose teammate is gone, carries its signature instead. Never returned by the public chat API. */
+            operatorLabel?: string;
         };
         PublicChatConversationMessage: {
             /** Format: uuid */

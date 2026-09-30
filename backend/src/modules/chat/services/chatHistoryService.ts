@@ -3,6 +3,7 @@ import { decodeCursorWithKeys } from "../../../shared/domain/cursorPagination.js
 import type { CallerKind, ConversationSourceScope } from "../../../shared/domain/conversationSource.js";
 import type { ConversationOutcomeFilter } from "../../../shared/domain/conversationOutcome.js";
 import type { ConversationTurnStage } from "../contracts/interruption.js";
+import type { TeammateLabelReaderPort } from "../contracts/teammateLabels.js";
 import { looksLikeEmailAddress } from "../../auth/contracts/index.js";
 import { presentOwnership, type ConversationOwnershipScope } from "../../handoff/public.js";
 import type { AuditEventRecord, AuditEventRepositoryPort } from "../../../db/repositories/auditEventRepository.js";
@@ -111,6 +112,14 @@ interface VisitorProfileReaderPort {
 class NoopVisitorProfileReader implements VisitorProfileReaderPort {
   async findById(): Promise<VisitorRecord | null> {
     return null;
+  }
+}
+
+const NO_TEAMMATE_LABELS: ReadonlyMap<string, string> = new Map();
+
+class NoopTeammateLabelReader implements TeammateLabelReaderPort {
+  async labelsByUserIds(): Promise<ReadonlyMap<string, string>> {
+    return NO_TEAMMATE_LABELS;
   }
 }
 
@@ -239,6 +248,14 @@ export interface ChatConversationTurn {
    * is answering. Only the name is exposed — never the operator's account or user id.
    */
   operatorDisplayName?: string;
+  /**
+   * Set only when read with `includeOperatorLabel` (operator surfaces). The teammate who wrote a
+   * human-agent reply, named as teammates name each other — display name, else email — from their
+   * profile now, falling back to the reply's signature when the reply names no user or the user is
+   * gone. It can be an email, so it must never reach the public/embed visitor surface, which
+   * shares these reads and whose presenter forwards unrecognised fields.
+   */
+  operatorLabel?: string;
 }
 
 /**
@@ -254,6 +271,32 @@ const operatorDisplayNameFrom = (message: MessageRecord): string | undefined => 
     return undefined;
   }
   return looksLikeEmailAddress(displayName.trim()) ? undefined : displayName;
+};
+
+/** The teammate who wrote a human-agent reply, from its stored metadata; absent on older replies. */
+const replierUserIdFrom = (message: MessageRecord): string | undefined => {
+  const userId = (message.metadata as { humanAgent?: { userId?: unknown } } | undefined)?.humanAgent?.userId;
+  return typeof userId === "string" && userId.length > 0 ? userId : undefined;
+};
+
+const replierUserIds = (messages: readonly MessageRecord[]): string[] => [
+  ...new Set(messages.flatMap((message) => {
+    const userId = replierUserIdFrom(message);
+    return userId ? [userId] : [];
+  })),
+];
+
+/**
+ * The operator-facing name of a reply's author: their teammate label now, else the reply's own
+ * signature. Only human-agent replies carry either; every other message gets no field at all.
+ */
+const operatorLabelField = (
+  message: MessageRecord,
+  labels: ReadonlyMap<string, string>,
+): { operatorLabel?: string } => {
+  const userId = replierUserIdFrom(message);
+  const label = (userId ? labels.get(userId) : undefined) ?? operatorDisplayNameFrom(message);
+  return label === undefined ? {} : { operatorLabel: label };
 };
 
 export interface ChatConversationDetail {
@@ -863,6 +906,7 @@ export class ChatHistoryService {
     private readonly answerCoverageHistoryReader: AnswerCoverageHistoryReader =
       new NoopAnswerCoverageHistoryReader(),
     private readonly visitorRepository: VisitorProfileReaderPort = new NoopVisitorProfileReader(),
+    private readonly teammateLabels: TeammateLabelReaderPort = new NoopTeammateLabelReader(),
   ) {}
 
   async listConversations(
@@ -1029,6 +1073,7 @@ export class ChatHistoryService {
       includeAnswerFeedback?: boolean;
       includeOwnership?: boolean;
       includeAgentInternalName?: boolean;
+      includeOperatorLabel?: boolean;
     } = { includeAnswerFeedback: true },
   ): Promise<ContactHistoryDetailResponse> {
     const contact = await this.contactHistoryProvider.getById(workspaceId, requestId);
@@ -1098,6 +1143,9 @@ export class ChatHistoryService {
       // of the public chat contract. The public/embed visitor path shares this method, and its
       // presenter forwards unrecognised fields, so an ungated field here becomes public API.
       includeLatency?: boolean;
+      // OFF by default: names the teammate behind each human reply, which can be an email. The
+      // calling-agent update reader reads with ownership but must not get this either.
+      includeOperatorLabel?: boolean;
     } = {},
   ): Promise<ChatConversationDetail> {
     const conversation = await this.conversationRepository.findByIdAndWorkspaceId(conversationId, workspaceId);
@@ -1127,11 +1175,14 @@ export class ChatHistoryService {
     const userMessageIds = messages
       .filter((message) => message.role === "user")
       .map((message) => message.id);
-    const auditEvents = await this.auditEventRepository.listChatTurnEventsByAssistantMessageIds(
-      workspaceId,
-      conversation.id,
-      assistantMessageIds,
-    );
+    const [auditEvents, operatorLabels] = await Promise.all([
+      this.auditEventRepository.listChatTurnEventsByAssistantMessageIds(
+        workspaceId,
+        conversation.id,
+        assistantMessageIds,
+      ),
+      this.loadOperatorLabels(messages, options.includeOperatorLabel),
+    ]);
     const answerCoverageByRequestMessageId = await loadAnswerCoverageHistoryProjection(
       this.answerCoverageHistoryReader,
       workspaceId,
@@ -1209,6 +1260,7 @@ export class ChatHistoryService {
         debug: message.role === "assistant" ? debugByAssistantMessageId.get(message.id) : undefined,
         turnFailure: message.role === "user" ? turnFailureByUserMessageId.get(message.id) : undefined,
         operatorDisplayName: operatorDisplayNameFrom(message),
+        ...(options.includeOperatorLabel ? operatorLabelField(message, operatorLabels) : {}),
       })),
       ...(ownershipRecord?.state === "human_owned"
         ? { ownership: toChatConversationOwnership(ownershipRecord) }
@@ -1223,6 +1275,7 @@ export class ChatHistoryService {
       includeAnswerFeedback?: boolean;
       includeOwnership?: boolean;
       includeTurnFailureDebug?: boolean;
+      includeOperatorLabel?: boolean;
     } = {},
   ): Promise<ChatConversationTurnDetail> {
     const message = await this.messageRepository.findByIdAndWorkspaceId(workspaceId, messageId);
@@ -1232,7 +1285,7 @@ export class ChatHistoryService {
 
     const isAssistant = message.role === "assistant";
     const isUser = message.role === "user";
-    const [auditEvents, turnFailureEvents, feedbackByAssistantMessageId, ownershipRecord] = await Promise.all([
+    const [auditEvents, turnFailureEvents, feedbackByAssistantMessageId, ownershipRecord, operatorLabels] = await Promise.all([
       isAssistant
         ? this.auditEventRepository.listChatTurnEventsByAssistantMessageIds(
             workspaceId,
@@ -1253,6 +1306,7 @@ export class ChatHistoryService {
       options.includeOwnership
         ? this.conversationOwnership.load(message.conversationId)
         : Promise.resolve(null),
+      this.loadOperatorLabels([message], options.includeOperatorLabel),
     ]);
     const answerCoverageByRequestMessageId = await loadAnswerCoverageHistoryProjection(
       this.answerCoverageHistoryReader,
@@ -1284,6 +1338,7 @@ export class ChatHistoryService {
         debug,
         turnFailure,
         operatorDisplayName: operatorDisplayNameFrom(message),
+        ...(options.includeOperatorLabel ? operatorLabelField(message, operatorLabels) : {}),
       },
       ...(ownershipRecord?.state === "human_owned"
         ? { ownership: toChatConversationOwnership(ownershipRecord) }
@@ -1295,7 +1350,7 @@ export class ChatHistoryService {
     workspaceId: string,
     conversationId: string,
     input: { cursor?: string; limit: number },
-    options: { includeOwnership?: boolean; includeLatency?: boolean } = {},
+    options: { includeOwnership?: boolean; includeLatency?: boolean; includeOperatorLabel?: boolean } = {},
   ): Promise<ChatConversationTail> {
     const conversation = await this.conversationRepository.findByIdAndWorkspaceId(conversationId, workspaceId);
 
@@ -1313,8 +1368,10 @@ export class ChatHistoryService {
       options.includeOwnership ? this.conversationOwnership.load(conversation.id) : Promise.resolve(null),
     ]);
 
+    const operatorLabels = await this.loadOperatorLabels(messages, options.includeOperatorLabel);
+
     return {
-      messages: messages.map((message) => this.toLightweightConversationTurn(message, options)),
+      messages: messages.map((message) => this.toLightweightConversationTurn(message, options, operatorLabels)),
       cursor: latestCursor,
       ...(ownershipRecord?.state === "human_owned"
         ? { ownership: toChatConversationOwnership(ownershipRecord) }
@@ -1322,9 +1379,19 @@ export class ChatHistoryService {
     };
   }
 
+  /** One batched profile read for the repliers in `messages`, and none unless the caller opted in. */
+  private async loadOperatorLabels(
+    messages: readonly MessageRecord[],
+    include: boolean | undefined,
+  ): Promise<ReadonlyMap<string, string>> {
+    const userIds = include ? replierUserIds(messages) : [];
+    return userIds.length > 0 ? this.teammateLabels.labelsByUserIds(userIds) : NO_TEAMMATE_LABELS;
+  }
+
   private toLightweightConversationTurn(
     message: MessageRecord,
-    options: { includeLatency?: boolean },
+    options: { includeLatency?: boolean; includeOperatorLabel?: boolean },
+    operatorLabels: ReadonlyMap<string, string>,
   ): ChatConversationTurn {
     return {
       id: message.id,
@@ -1335,6 +1402,7 @@ export class ChatHistoryService {
       inputMetadata: message.inputMetadata,
       ...(options.includeLatency ? { latencyMs: message.totalLatencyMs } : {}),
       operatorDisplayName: operatorDisplayNameFrom(message),
+      ...(options.includeOperatorLabel ? operatorLabelField(message, operatorLabels) : {}),
     };
   }
 

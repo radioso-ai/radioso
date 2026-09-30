@@ -104,7 +104,7 @@ export const resolveReadOnlySource = (
  * conversation-detail fetch (loaded once, then only refreshed after an
  * operator's own action) and the tail poll (`useConversationTail`, re-read
  * every second, and the only one of the two that observes a *transfer or
- * take-over made elsewhere* — Hand to…/Take over from another tab, another
+ * take-over made elsewhere* — Assign/Reassign from another tab, another
  * teammate, or the Inbox list — while this pane stays open). The tail
  * argument wins on a tied version: a poll result is never older than the
  * refetch it happened to match, so preferring it avoids ever preferring a
@@ -205,7 +205,7 @@ export const doneControlTooltip = (item: {
  * ownership record has nothing to hand back — the composer alone is correct
  * there; Done appears once the first send claims it and the detail refetch
  * brings the record. A handoff a teammate holds hides Done too: only its
- * owner hands it back, and the composer offers Take over instead. Approvals
+ * owner hands it back, and the composer offers Reassign instead. Approvals
  * never render Done (they close when the decision resolves).
  */
 export const shouldShowDoneControl = (

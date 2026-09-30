@@ -9,6 +9,7 @@ import { createApp } from "../../src/app/server/createApp.js";
 import type { Env } from "../../src/app/config/env.js";
 import { createMailAccountInvitationNotifier } from "../../src/app/composition/accountInvitationNotifier.js";
 import { createConversationOperatorDirectory } from "../../src/app/composition/conversationOperatorDirectory.js";
+import { createTeammateLabelReader } from "../../src/app/composition/teammateLabelReader.js";
 import { createMailService } from "../../src/modules/mail/public.js";
 import { randomUUID } from "node:crypto";
 import type { ConversationRoutineStore, RoutineState } from "@radioso/conversation-contract";
@@ -1780,6 +1781,7 @@ export const createTestDependencies = (overrides: {
     conversationOwnershipRepository,
     undefined,
     visitorRepository,
+    createTeammateLabelReader({ users: userRepository }),
   );
   const routineStateStore = new InMemoryRoutineStateStore();
   const directiveStateStore = new InMemoryDirectiveStateStore();

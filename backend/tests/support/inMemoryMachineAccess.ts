@@ -41,6 +41,13 @@ export class InMemoryMachineAccessRepository implements Pick<
   failAuditPersistence: Error | null = null;
   private readonly warningClaims = new Set<string>();
 
+  /**
+   * Stands in for the database's `now()` on the ports that take no `now`.
+   * Tests that pin the service clock pass the same one, or fixture expiries
+   * start failing once the wall clock passes them.
+   */
+  constructor(private readonly clock: () => Date = () => new Date()) {}
+
   async createPersonalWithinLimit(input: InputOf<"createPersonalWithinLimit">) {
     const active = [...this.credentials.values()].filter((credential) =>
       credential.kind === "personal"
@@ -185,7 +192,7 @@ export class InMemoryMachineAccessRepository implements Pick<
       account.workspaceId === input.workspaceId && account.status !== "archived"
     ).length;
     if (count >= input.limit) return null;
-    const now = new Date();
+    const now = this.clock();
     const account: ServiceAccountRecord = {
       id: randomUUID(),
       workspaceId: input.workspaceId,
@@ -303,9 +310,9 @@ export class InMemoryMachineAccessRepository implements Pick<
 
   async relabelCredential(input: InputOf<"relabelCredential">): Promise<ApiCredentialRecord | null> {
     const credential = this.credentials.get(input.id);
-    if (!credential || credential.revokedAt || (credential.expiresAt && credential.expiresAt <= new Date())
+    if (!credential || credential.revokedAt || (credential.expiresAt && credential.expiresAt <= this.clock())
       || (input.expectedRevision !== undefined && credential.revision !== input.expectedRevision)) return null;
-    const updated = { ...credential, label: input.label, updatedAt: new Date(), revision: credential.revision + 1 };
+    const updated = { ...credential, label: input.label, updatedAt: this.clock(), revision: credential.revision + 1 };
     this.credentials.set(updated.id, updated);
     try {
       await this.persistAuditEvents(input.auditEvents?.(updated) ?? []);
@@ -318,9 +325,9 @@ export class InMemoryMachineAccessRepository implements Pick<
 
   async replaceCredential(input: InputOf<"replaceCredential">): Promise<ApiCredentialRecord | null> {
     const previous = this.credentials.get(input.credentialId);
-    if (!previous || previous.revokedAt || (previous.expiresAt && previous.expiresAt <= new Date()) || previous.revision !== input.expectedRevision) return null;
+    if (!previous || previous.revokedAt || (previous.expiresAt && previous.expiresAt <= this.clock()) || previous.revision !== input.expectedRevision) return null;
     if (previous.serviceAccountId && this.serviceAccounts.get(previous.serviceAccountId)?.status !== "enabled") return null;
-    const now = new Date();
+    const now = this.clock();
     const credentialsBefore = new Map(this.credentials);
     this.credentials.set(previous.id, { ...previous, revokedAt: now, revokedByUserId: input.createdByUserId, revocationReason: "rotated", updatedAt: now, revision: previous.revision + 1 });
     const replacement: ApiCredentialRecord = {
@@ -390,7 +397,7 @@ export class InMemoryMachineAccessRepository implements Pick<
     this.warningClaims.delete(`${credentialId}:${thresholdDays}`);
   }
 
-  private activeServiceCredentials(serviceAccountId: string, now = new Date()): ApiCredentialRecord[] {
+  private activeServiceCredentials(serviceAccountId: string, now = this.clock()): ApiCredentialRecord[] {
     return [...this.credentials.values()].filter((credential) =>
       credential.serviceAccountId === serviceAccountId
       && credential.revokedAt === null
@@ -450,8 +457,8 @@ export class InMemoryMachineAccessRepository implements Pick<
       accessTenureMembershipId: null,
       serviceAccountId: input.serviceAccountId,
       createdByUserId: input.createdByUserId,
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      createdAt: this.clock(),
+      updatedAt: this.clock(),
       expiresAt: input.expiresAt,
       lastUsedAt: null,
       revokedAt: null,

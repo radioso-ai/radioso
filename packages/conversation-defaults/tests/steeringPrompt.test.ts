@@ -28,6 +28,17 @@ describe("renderSteeringRules", () => {
     expect(block.indexOf("Higher.")).toBeLessThan(block.indexOf("Lower."));
   });
 
+  it("leads with a routine step's rule whatever the directives' priority (#1351)", () => {
+    // A routine step whose reply composes through the grounded answer path shares one
+    // steering block with the directives; listed first, the step wins a conflict.
+    const block = renderSteeringRules([
+      rule("Send billing questions to the billing desk.", 100),
+      { action: "Ask what email address we can reach them at.", source: "routine", lifespan: "response" },
+    ]);
+
+    expect(block.indexOf("Ask what email address")).toBeLessThan(block.indexOf("Send billing questions"));
+  });
+
   it("renders bracketed ids only when the caller opts in", () => {
     expect(renderSteeringRules([rule("Behave.", 90)])).not.toContain("[d90]");
     expect(renderSteeringRules([rule("Behave.", 90)], { includeRuleIds: true })).toContain("[d90]");

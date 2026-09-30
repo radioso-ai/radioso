@@ -59,6 +59,10 @@ const manifest = [
     source: "steering-clarification.md",
     exportName: "DEFAULT_CLARIFICATION_STEERING_PROMPT",
   },
+  {
+    source: "routine-step-steering.md",
+    exportName: "DEFAULT_ROUTINE_STEP_STEERING_PROMPT",
+  },
 ];
 
 const escapeTemplateLiteral = (value) =>

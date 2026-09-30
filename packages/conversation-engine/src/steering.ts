@@ -5,11 +5,12 @@ import type {
   Directive,
   DirectiveMatch,
   ProcessTurnInput,
+  RoutineStepSteeringTrace,
   SteeringResolver,
   SteeringRule,
   TurnContext,
 } from "@radioso/conversation-contract";
-import { effectiveSurfaces, resolveRenderSurfaces } from "./generationSurface.js";
+import { addressesSurface, effectiveSurfaces, resolveRenderSurfaces } from "./generationSurface.js";
 import { timedStage } from "./traceStages.js";
 import { summarizeDirectiveMatch } from "./traceSummaries.js";
 
@@ -176,6 +177,30 @@ const buildDirectiveTraceStage = (input: {
     ...(input.scopeFilteredCount !== undefined ? { scopeFilteredCount: input.scopeFilteredCount } : {}),
   },
 });
+
+/**
+ * Records on a routine step's directive stage which directives reached the step
+ * reply and that the step instruction controlled them (#1351). Reads the steering
+ * handed to the step renderer, so a rule withheld from steering, gated out by the
+ * coverage verdict, or addressed to another generator is not listed.
+ */
+export const withRoutineStepSteering = (
+  stage: ConversationTraceStage,
+  input: { routineId: string; stepId: string; steering: readonly SteeringRule[] },
+): ConversationTraceStage => {
+  const routineStep: RoutineStepSteeringTrace = {
+    routineId: input.routineId,
+    stepId: input.stepId,
+    directivesAppliedAs: "subordinate_to_step_instruction",
+    steeringDirectives: input.steering
+      .filter((rule) => rule.source === "directive" && addressesSurface(rule.surfaces, "answer"))
+      .map((rule) => ({
+        ...(rule.id ? { id: rule.id } : {}),
+        ...(rule.directiveName ? { name: rule.directiveName } : {}),
+      })),
+  };
+  return { ...stage, outputs: { ...stage.outputs, routineStep } };
+};
 
 export const buildResolvedSteering = async (input: {
   turn: TurnContext;

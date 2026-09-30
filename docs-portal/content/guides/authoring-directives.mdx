@@ -83,6 +83,30 @@ new directive with that built-in already selected in **Replaces**. Use the
 shortcut when you need to author a replacement for a built-in, then finish the
 name, condition, instruction, and priority yourself.
 
+## Directives on a routine turn
+
+While a [routine](/guides/authoring-routines) is running, the current step
+decides what the reply asks for or does. Your directives still apply to that
+reply, as guidance for how it is said: tone, formality, wording, and what it
+must not claim. Where a directive would change what the step asks — sending the
+visitor to reception when the step asks for their email, or pointing them to a
+fees page when the step asks for their dates — the step wins, and the agent
+still asks the step's question. Contact details, phone numbers, and links a
+directive mentions stay out of the routine's replies unless the step asks for
+them.
+
+In practice, an **Always** rule such as “hand accommodation questions to
+reception” keeps steering open answers, and a booking routine that collects
+the visitor's name and email keeps collecting them. The rule needs no
+carve-out for each routine. When you want a routine to hand off, give it a
+**Hand off** ending or a branch that reaches one.
+
+The turn trace names every directive that shaped a routine step. The routine
+turn's `directive_steering` stage carries `routineStep`: the routine, the step,
+`directivesAppliedAs: "subordinate_to_step_instruction"`, and each directive's
+id and name under `steeringDirectives`. Read it with `test_chat_turn_trace` or
+`turn_trace` from the operator MCP server.
+
 ## Turn a rule off
 
 Every authored directive has a switch on its row in the directive list. Turn
@@ -155,6 +179,9 @@ with.
   verdict to match.
 - Slack, email, webhook, or notify does not appear after `#`: add it as a
   routine step. It acts, rather than producing the reply a directive needs.
+- A directive's redirect or hand-off did not happen during a routine: the
+  routine's step decides what that reply asks for. Edit the step, or add a
+  branch to a **Hand off** ending, when the flow should stop there.
 - A selected skill is unavailable: enable it and set its invocation mode to
   **Agent selectable**, then reopen the directive.
 - Not sure whether a directive is the cause of a bad reply: turn it off with

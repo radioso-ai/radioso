@@ -1,7 +1,7 @@
 ---
 title: "Conversational Routines"
 description: "The engine-level design of multi-turn flows with slots, steps, guards, terminals, activation ranking, and runtime slot extraction mechanics."
-last_updated: 2026-09-10
+last_updated: 2026-09-30
 ---
 
 # Conversational Routines
@@ -170,8 +170,22 @@ On each turn, before normal skill selection, the engine checks for a routine:
 3. The active step is captured, its slots are filled from the user's message, and
    the routine advances along the first guard that holds. A message that supplies
    several values at once can advance through several steps in one turn.
-4. The current step is projected into a directive, so it steers the reply through
-   the normal steering set.
+4. The current step is projected into a steering rule (`source: "routine"`) and
+   resolved together with the directives that match the turn. The step renderer
+   gives the two different roles: the step's rule is the controlling instruction
+   for the reply, and every directive renders beneath it as subordinate guidance
+   (`backend/prompts/chat/routine-step-steering.md`). The guidance shapes tone,
+   wording, and what the reply must not claim; unless the step asks for it, the
+   reply carries no redirect, hand-off, or contact details from a directive. The
+   step renderer places the guidance next to the agent's scope and the step
+   instruction last. A chat step fed by a retrieval skill step composes its
+   grounded answer through the retrieval answer path instead: there the step's
+   rule leads the shared steering block (`orderSteeringRules`), so it wins a
+   conflict with a directive, and the directives render as ordinary answer
+   steering without the step renderer's redirect guidance. The turn's `directive_steering` stage records `routineStep` — the
+   routine, the step, `directivesAppliedAs: "subordinate_to_step_instruction"`, and
+   the id and name of each directive that reached the step reply — so an operator
+   can see every rule that touched the step without the directive text.
 
 A routine keeps its position and captured values in session state until it
 completes or expires. If an action cannot run — for example, the agent no longer

@@ -1152,6 +1152,11 @@ export interface ConversationRoutineNextStepSelector {
  * engine owns graph mechanics and the host owns generation/presentation. It is told
  * only what it needs to write the message — the step and its projected steering for
  * this turn — not the graph topology or slot state.
+ *
+ * The rules play two roles (#1351): a `source: "routine"` rule is the step's own
+ * instruction and controls what the message asks for or does; every other rule
+ * (authored directives) is subordinate guidance that shapes how it is said and
+ * never replaces the step's question or action.
  */
 export interface ConversationRoutineStepRenderer {
   render(input: {
@@ -1159,6 +1164,21 @@ export interface ConversationRoutineStepRenderer {
     steering: SteeringRule[];
     turn: TurnContext;
   }): Promise<RenderableTurn>;
+}
+
+/**
+ * Which directives steered one routine step's reply, recorded as
+ * `outputs.routineStep` on the routine turn's `directive_steering` stage (#1351) so
+ * an operator can see every rule that touched the step. Ids and names only — never
+ * the directive text.
+ */
+export interface RoutineStepSteeringTrace {
+  routineId: string;
+  stepId: string;
+  /** The step instruction controlled the reply; these directives only shaped it. */
+  directivesAppliedAs: "subordinate_to_step_instruction";
+  /** Directives addressed to the step reply after matching and verdict gating. */
+  steeringDirectives: Array<{ id?: string; name?: string }>;
 }
 
 export interface ConversationRoutineSteeringInput {

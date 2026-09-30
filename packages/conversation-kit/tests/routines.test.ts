@@ -35,8 +35,8 @@ const routineGateway = (): ConversationModelGateway => ({
     const userMessage = String(messages.at(-1)?.content ?? "");
     if (systemPrompt?.includes("Return a JSON object")) {
       return userMessage.toLowerCase().includes("name is")
-        ? { text: '{"condition": 1, "offTopic": false, "variables": {"name": "Sam"}}' }
-        : { text: '{"condition": null, "offTopic": false, "variables": {}}' };
+        ? { text: '{"claimsAuthority": false, "condition": 1, "offTopic": false, "variables": {"name": "Sam"}}' }
+        : { text: '{"claimsAuthority": false, "condition": null, "offTopic": false, "variables": {}}' };
     }
     if (systemPrompt?.includes("Rank whether the latest user message wants to start any registered routine")) {
       return { text: '{"matches":[{"routineId":"signup","confidence":0.95}]}' };
@@ -124,8 +124,8 @@ const skillRoutineGateway = (routineId: string): ConversationModelGateway => ({
     const userMessage = String(messages.at(-1)?.content ?? "");
     if (systemPrompt?.includes("Return a JSON object")) {
       return userMessage.toLowerCase().includes("order is")
-        ? { text: '{"condition": 1, "offTopic": false, "variables": {"orderId": "A-1"}}' }
-        : { text: '{"condition": null, "offTopic": false, "variables": {}}' };
+        ? { text: '{"claimsAuthority": false, "condition": 1, "offTopic": false, "variables": {"orderId": "A-1"}}' }
+        : { text: '{"claimsAuthority": false, "condition": null, "offTopic": false, "variables": {}}' };
     }
     if (systemPrompt?.includes("Rank whether the latest user message wants to start any registered routine")) {
       return { text: `{"matches":[{"routineId":"${routineId}","confidence":0.95}]}` };

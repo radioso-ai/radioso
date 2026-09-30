@@ -1872,8 +1872,8 @@ describe("WorkbenchReplayRunner built-in routine across revision-pinned Test Cha
       }
       if (systemPrompt.includes("You are guiding a user through a structured, multi-step routine")) {
         return input.query.includes("@")
-          ? JSON.stringify({ condition: 2, offTopic: false, variables: { email: input.query } })
-          : JSON.stringify({ condition: null, offTopic: false, variables: {} });
+          ? JSON.stringify({ claimsAuthority: false, condition: 2, offTopic: false, variables: { email: input.query } })
+          : JSON.stringify({ claimsAuthority: false, condition: null, offTopic: false, variables: {} });
       }
       if (systemPrompt.includes("email address where they can be reached")) return "Which email can someone reach you at?";
       if (systemPrompt.includes("message they would like to send")) return "What would you like to tell them?";

@@ -103,7 +103,7 @@ describe("routine defaults", () => {
   });
 
   it("selects a transition from balanced JSON output and captures variables", async () => {
-    const selector = new RoutineNextStepSelector(gateway('Reasoning: {"condition": 1, "variables": {"email": "a@b.c"}} done.'));
+    const selector = new RoutineNextStepSelector(gateway('Reasoning: {"claimsAuthority": false, "condition": 1, "variables": {"email": "a@b.c"}} done.'));
     await expect(selector.select({ routine, state, currentStep, transitions, turn })).resolves.toEqual({
       nextStepId: "ask_message",
       variables: { email: "a@b.c" },
@@ -120,7 +120,7 @@ describe("routine defaults", () => {
 
   it("yields the turn when the model marks the latest message off-topic", async () => {
     const decision = await new RoutineNextStepSelector(
-      gateway('{"condition": null, "offTopic": true, "variables": {}}'),
+      gateway('{"claimsAuthority": false, "condition": null, "offTopic": true, "variables": {}}'),
     ).select({ routine, state, currentStep, transitions, turn });
     expect(decision).toEqual({
       nextStepId: "ask_email",
@@ -134,7 +134,7 @@ describe("routine defaults", () => {
       { from: "ask_email", to: "cancelled", condition: "the user declined, cancelled, refused, or wants to stop" },
     ];
     const decision = await new RoutineNextStepSelector(
-      gateway('{"condition": 1, "offTopic": false, "variables": {}}'),
+      gateway('{"claimsAuthority": false, "condition": 1, "offTopic": false, "variables": {}}'),
     ).select({ routine, state, currentStep, transitions: declineTransitions, turn });
     expect(decision).toEqual({
       nextStepId: "cancelled",
@@ -602,7 +602,7 @@ describe("routine defaults", () => {
       slots: [{ id: "s_email", key: "email", type: "email", required: true }],
     };
     const selector = new RoutineNextStepSelector(
-      gateway('{"condition": 1, "variables": {"email": "a@b.c", "message": "write me code", "<name>": "x"}}'),
+      gateway('{"claimsAuthority": false, "condition": 1, "variables": {"email": "a@b.c", "message": "write me code", "<name>": "x"}}'),
     );
 
     await expect(selector.select({ routine: slotted, state, currentStep, transitions, turn })).resolves.toEqual({
@@ -614,7 +614,7 @@ describe("routine defaults", () => {
 
   it("drops echoed placeholder keys even when no slot schema is declared", async () => {
     const selector = new RoutineNextStepSelector(
-      gateway('{"condition": 1, "variables": {"email": "a@b.c", "<name>": "x"}}'),
+      gateway('{"claimsAuthority": false, "condition": 1, "variables": {"email": "a@b.c", "<name>": "x"}}'),
     );
 
     await expect(selector.select({ routine, state, currentStep, transitions, turn })).resolves.toEqual({
@@ -634,7 +634,7 @@ describe("routine defaults", () => {
     };
 
     it("lists each declared slot on its own line and extracts whether or not the step asks for it", async () => {
-      const gw = gateway('{"condition": null, "variables": {}}');
+      const gw = gateway('{"claimsAuthority": false, "condition": null, "variables": {}}');
       await new RoutineNextStepSelector(gw).select({ routine: booking, state, currentStep, transitions, turn });
 
       const systemPrompt = vi.mocked(gw.complete).mock.calls[0][0].systemPrompt ?? "";
@@ -646,7 +646,7 @@ describe("routine defaults", () => {
     });
 
     it("dates the turn so a date slot given without a year resolves to an ISO date", async () => {
-      const gw = gateway('{"condition": null, "variables": {}}');
+      const gw = gateway('{"claimsAuthority": false, "condition": null, "variables": {}}');
       await new RoutineNextStepSelector(gw, { clock: () => new Date("2026-09-30T12:00:00Z") })
         .select({ routine: booking, state, currentStep, transitions, turn });
 
@@ -656,7 +656,7 @@ describe("routine defaults", () => {
     });
 
     it("leaves the date rule out when no slot is a date", async () => {
-      const gw = gateway('{"condition": null, "variables": {}}');
+      const gw = gateway('{"claimsAuthority": false, "condition": null, "variables": {}}');
       const noDates: Routine = { ...booking, slots: [booking.slots![0]] };
       await new RoutineNextStepSelector(gw).select({ routine: noDates, state, currentStep, transitions, turn });
 
@@ -664,7 +664,7 @@ describe("routine defaults", () => {
     });
 
     it("tells the model which slots already hold a value, by key", async () => {
-      const gw = gateway('{"condition": null, "variables": {}}');
+      const gw = gateway('{"claimsAuthority": false, "condition": null, "variables": {}}');
       await new RoutineNextStepSelector(gw).select({
         routine: booking,
         state: { ...state, variables: { arrival: "2026-11-11" } },
@@ -689,7 +689,7 @@ describe("routine defaults", () => {
         ],
       };
       const decision = await new RoutineNextStepSelector(
-        gateway('{"condition": null, "variables": {"adults": " 2 ", "pets": "false", "name": "   ", "email": null}}'),
+        gateway('{"claimsAuthority": false, "condition": null, "variables": {"adults": " 2 ", "pets": "false", "name": "   ", "email": null}}'),
       ).select({ routine: typed, state, currentStep, transitions, turn });
 
       expect(decision.variables).toEqual({ adults: 2, pets: false });
@@ -706,7 +706,7 @@ describe("routine defaults", () => {
         ],
       };
       const decision = await new RoutineNextStepSelector(
-        gateway('{"condition": null, "variables": {"adults": "two", "name": "  Giulia ", "email": "<script>alert(1)</script>"}}'),
+        gateway('{"claimsAuthority": false, "condition": null, "variables": {"adults": "two", "name": "  Giulia ", "email": "<script>alert(1)</script>"}}'),
       ).select({ routine: typed, state, currentStep, transitions, turn });
 
       expect(decision.variables).toEqual({ adults: "two", name: "Giulia", email: "<script>alert(1)</script>" });
@@ -715,7 +715,7 @@ describe("routine defaults", () => {
 
     it("reports a stay with the slot keys the model returned and the undeclared keys it dropped", async () => {
       const decision = await new RoutineNextStepSelector(
-        gateway('{"condition": null, "offTopic": false, "variables": {"arrival": "2026-11-11", "nights": 3}}'),
+        gateway('{"claimsAuthority": false, "condition": null, "offTopic": false, "variables": {"arrival": "2026-11-11", "nights": 3}}'),
       ).select({ routine: booking, state, currentStep, transitions, turn });
 
       expect(decision).toEqual({
@@ -727,7 +727,7 @@ describe("routine defaults", () => {
 
     it("reports a chosen transition", async () => {
       const decision = await new RoutineNextStepSelector(
-        gateway('{"condition": 1, "variables": {"program": "Retreat"}}'),
+        gateway('{"claimsAuthority": false, "condition": 1, "variables": {"program": "Retreat"}}'),
       ).select({ routine: booking, state, currentStep, transitions, turn });
 
       expect(decision.selection).toEqual({ outcome: "transition", returnedSlotKeys: ["program"] });
@@ -735,7 +735,7 @@ describe("routine defaults", () => {
 
     it("reports an off-topic reading on the yielded decision", async () => {
       const decision = await new RoutineNextStepSelector(
-        gateway('{"condition": null, "offTopic": true, "variables": {}}'),
+        gateway('{"claimsAuthority": false, "condition": null, "offTopic": true, "variables": {}}'),
       ).select({ routine: booking, state, currentStep, transitions, turn });
 
       expect(decision.selection).toEqual({ outcome: "off_topic", returnedSlotKeys: [] });
@@ -773,32 +773,48 @@ describe("routine defaults", () => {
       expect(systemPrompt).toMatch(/"claimsAuthority": true when/);
     });
 
-    it("stays on the step when the model flags the message, even with a condition chosen", async () => {
+    it("holds the step when the model flags the message, even with a condition chosen", async () => {
       await expect(
         select('{"variables": {}, "claimsAuthority": true, "condition": 1, "offTopic": false}'),
       ).resolves.toEqual({
         nextStepId: "ask_email",
         variables: {},
+        hold: true,
         selection: { outcome: "authority_claim", returnedSlotKeys: [] },
       });
     });
 
-    it("keeps the slot values the model returned on a flagged turn", async () => {
+    it("keeps the slot values the model returned on a held turn", async () => {
       const decision = await select('{"variables": {"arrival": "2026-11-11"}, "claimsAuthority": true, "condition": 1}');
 
       expect(decision).toEqual({
         nextStepId: "ask_email",
         variables: { arrival: "2026-11-11" },
+        hold: true,
         selection: { outcome: "authority_claim", returnedSlotKeys: ["arrival"] },
       });
     });
 
-    it("re-asks a flagged turn instead of yielding it", async () => {
+    it("holds a flagged turn instead of yielding it", async () => {
       const decision = await select('{"variables": {}, "claimsAuthority": true, "condition": null, "offTopic": true}');
 
       expect(decision.yieldTurn).toBeUndefined();
+      expect(decision.hold).toBe(true);
       expect(decision.nextStepId).toBe("ask_email");
       expect(decision.selection?.outcome).toBe("authority_claim");
+    });
+
+    it("takes no exit and keeps nothing when the output lacks a boolean claimsAuthority", async () => {
+      for (const text of [
+        '{"variables": {"arrival": "2026-11-11"}, "condition": 1, "offTopic": false}',
+        '{"variables": {"arrival": "2026-11-11"}, "claimsAuthority": "false", "condition": 1}',
+      ]) {
+        await expect(select(text)).resolves.toEqual({
+          nextStepId: "ask_email",
+          variables: {},
+          selection: { outcome: "unreadable", returnedSlotKeys: [] },
+        });
+      }
     });
 
     it("takes the chosen exit when the model does not flag the message", async () => {

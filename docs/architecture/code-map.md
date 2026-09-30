@@ -1530,6 +1530,18 @@ Agent settings and channels entry points:
   — owns the website widget placement and persistence of every `websiteEmbed*`
   settings key
 
+Turn debug view entry points:
+
+- `frontend/components/dashboard/turn-inspector/turn-diagnostics-panel.tsx` — the
+  inline Debug panel shared by Activity and Test Chat
+- `frontend/lib/turn-flow.ts` — turn envelope → **Flow** progression: phases, steps
+  in execution order, tone, measured durations, folded capability steps
+- `frontend/lib/activity-stage-presentation.ts` — activity-stage labels, summaries,
+  and attention flags shared by the Flow and the stage list
+- `frontend/components/dashboard/turn-flow-graph.tsx` and `turn-flow-overlay.tsx` —
+  the draw layer and its full-screen host
+- `cd frontend && pnpm exec vitest run tests/unit/turn-flow.test.ts`
+
 Useful searches:
 
 - `rg "api[A-Z]|fetchJson|workspace" frontend/lib frontend/components`

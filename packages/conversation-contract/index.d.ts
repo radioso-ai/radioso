@@ -911,9 +911,10 @@ export interface RoutineState {
   /** Per-step entry counts, used by deterministic counter guards. */
   attempts?: Record<string, number>;
   /**
-   * Consecutive times the current step was asked again without the visitor filling any slot
-   * it collects (#1376). Back to 0 (or absent) when the routine enters a step or a turn fills
-   * one of the step's slots; a turn yielded to normal answering leaves it unchanged.
+   * Consecutive times the current step was asked again without the visitor filling any of the
+   * step's empty slots (#1376); replacing a value the step already held does not count. Back to
+   * 0 (or absent) when the routine enters a step or a turn fills one of the step's empty slots;
+   * a turn yielded to normal answering leaves it unchanged.
    */
   reaskCount?: number;
   status: "active" | "suspended" | "completed" | "expired";

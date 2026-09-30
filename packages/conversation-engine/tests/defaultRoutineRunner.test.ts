@@ -2346,6 +2346,31 @@ describe("DefaultRoutineRunner slot values checked against their declared type (
     expect(vi.mocked(render.render).mock.calls[0][0]).not.toHaveProperty("reask");
   });
 
+  it("holds the first step on the activator's rejected value when the selector gives no replacement", async () => {
+    const withDefault: Routine = {
+      ...booking,
+      transitions: [
+        { from: "ask_email", to: "ask_adults", condition: "", guard: { kind: "default" } },
+        { from: "ask_adults", to: "done", condition: "The user provided {{slot.adults}}." },
+      ],
+    };
+    for (const routineUnderTest of [withDefault, booking]) {
+      const render = renderer();
+      const runner = new DefaultRoutineRunner([routineUnderTest], choosing("ask_adults", {}), render);
+
+      const result = await runner.resume({
+        turn,
+        state: state([], { email: "giulia at example" }),
+        activationTurn: true,
+      });
+
+      expect(result.response.answer).toBe("[ask_email]");
+      expect(result.trace?.landedStepId).toBe("ask_email");
+      expect(result.nextState?.variables).toEqual({});
+      expect(result.trace?.steps[0]).toMatchObject({ rejectedSlots: [{ key: "email", reason: "type_mismatch" }] });
+    }
+  });
+
   it("moves on when the selector reads a valid value where the activator's was rejected", async () => {
     const withCancel: Routine = {
       ...booking,
@@ -2508,6 +2533,20 @@ describe("DefaultRoutineRunner bounded re-asks (#1376)", () => {
     expect(result.nextState?.path).toEqual(["ask_contact"]);
     expect(result.nextState?.reaskCount ?? 0).toBe(0);
     expect(result.response.answer).toBe("[ask_contact]");
+  });
+
+  it("keeps counting when the turn only replaces a value the step already held", async () => {
+    const optionalName = { ...contactWith([forward, toPerson, messageDone]), slots: [{ ...nameSlot, required: false }, emailSlot] };
+    const runner = new DefaultRoutineRunner(
+      [optionalName],
+      staying({ email: "not an email", full_name: "Giulia Verdi" }),
+      renderer(),
+    );
+
+    const result = await runner.resume({ turn, state: onContactStep(1, { full_name: "Giulia" }) });
+
+    expect(result.nextState?.variables).toEqual({ full_name: "Giulia Verdi" });
+    expect(result.nextState?.reaskCount).toBe(2);
   });
 
   it("starts the count again when the routine moves to another step", async () => {

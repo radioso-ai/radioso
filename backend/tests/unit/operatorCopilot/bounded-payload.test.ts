@@ -35,6 +35,35 @@ describe("boundPayload", () => {
       ]),
     });
   });
+
+  it("leaves an exempted path's string untouched regardless of length", () => {
+    // #1352: a field a write tool replaces whole, and whose write-time bound already exceeds
+    // the generic per-string cap, must round-trip in full through the read side — otherwise an
+    // operator who can only see a compacted prefix cannot safely resubmit the field.
+    const longValue = "x".repeat(2_000);
+    const bounded = boundPayload(
+      { customInstruction: longValue, other: "y".repeat(2_000) },
+      new Set(["$.customInstruction"]),
+    ) as Record<string, unknown>;
+
+    expect(bounded.customInstruction).toBe(longValue);
+    expect((bounded.other as string).length).toBe(501);
+    expect(bounded.truncation).toMatchObject({
+      truncated: true,
+      entries: [expect.objectContaining({ path: "$.other", reason: "string_length" })],
+    });
+  });
+
+  it("exempts a path only at its own position, not same-named siblings elsewhere in the tree", () => {
+    const longValue = "z".repeat(1_000);
+    const bounded = boundPayload(
+      { branding: { privacyPolicyUrl: longValue }, other: { privacyPolicyUrl: longValue } },
+      new Set(["$.branding.privacyPolicyUrl"]),
+    ) as Record<string, unknown>;
+
+    expect((bounded.branding as { privacyPolicyUrl: string }).privacyPolicyUrl).toBe(longValue);
+    expect(((bounded.other as { privacyPolicyUrl: string }).privacyPolicyUrl).length).toBe(501);
+  });
 });
 
 describe("boundConversationPayload", () => {

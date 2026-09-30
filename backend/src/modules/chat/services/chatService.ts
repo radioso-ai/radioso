@@ -124,6 +124,7 @@ import {
   type TurnPlanCoordinator,
 } from "./turnPlanCoordinator.js";
 import type { TurnPlanDirectiveCandidate } from "./turnPlanService.js";
+import { detectTurnResponseLanguage } from "./turnResponseLanguage.js";
 import { steeringDirectivesFromAuthored } from "../../agents/public.js";
 import {
   type ClarificationMetricDecision,
@@ -649,26 +650,25 @@ export class ChatService {
     },
     session: PreparedSession,
   ): Promise<string | undefined> {
-    if (!this.responseLanguageDetector) {
-      return Promise.resolve(undefined);
-    }
-    return this.responseLanguageDetector.detect({
-      query: input.query,
-      history: session.history,
-      workspaceContext: { workspaceId: input.workspaceId },
-      usageContext: {
-        accountId: input.accountId,
-        workspaceId: input.workspaceId,
-        conversationId: session.conversation.id,
-        messageId: session.userMessage.id,
-        surface: "assistant",
-        operation: "response_language_detection",
-        attemptKey: "response_language",
+    return detectTurnResponseLanguage({
+      detector: this.responseLanguageDetector,
+      request: {
+        query: input.query,
+        history: session.history,
+        workspaceContext: { workspaceId: input.workspaceId },
+        usageContext: {
+          accountId: input.accountId,
+          workspaceId: input.workspaceId,
+          conversationId: session.conversation.id,
+          messageId: session.userMessage.id,
+          surface: "assistant",
+          operation: "response_language_detection",
+          attemptKey: "response_language",
+        },
       },
-    }).then((result) => {
-      setTraceAttributes({ "chat.response.language": result.responseLanguage });
-      return result.responseLanguage;
-    }).catch(() => undefined);
+      logContext: { workspaceId: input.workspaceId, conversationId: session.conversation.id },
+      logger: this.logger,
+    });
   }
 
   /**

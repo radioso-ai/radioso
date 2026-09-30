@@ -510,7 +510,10 @@ export const planAwareResponseLanguage = async (deps: {
   if (!outcome || outcome.status !== "planned") {
     return deps.fallback();
   }
-  setTraceAttributes({ "chat.response.language": outcome.plan.responseLanguage });
+  setTraceAttributes({
+    "chat.response.language": outcome.plan.responseLanguage,
+    "chat.response.language.source": "planner",
+  });
   return outcome.plan.responseLanguage;
 };
 

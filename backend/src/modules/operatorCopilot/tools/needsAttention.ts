@@ -287,8 +287,9 @@ const readHandoffQueue = async (
         since: escalatedAt(conversation),
         agentId: conversation.agentId,
         conversationId: conversation.id,
+        // A handoff that names no teammate is waiting, whatever label or claim time its row kept.
         ownerDisplayName: conversation.ownership?.ownerUserId ? conversation.ownership.ownerDisplayName : null,
-        takenOverAt: conversation.ownership?.takenOverAt ?? null,
+        takenOverAt: conversation.ownership?.ownerUserId ? conversation.ownership.takenOverAt : null,
         subject: { type: "conversation", id: conversation.id },
       })),
   };

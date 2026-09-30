@@ -67,6 +67,9 @@ All endpoints require a bearer workspace session with the
 `workspace.conversation.takeover` permission. Every action records a
 `hitl.ownership` audit event whose metadata names the acting teammate as
 `actorUserId`; a transfer also records the receiving teammate as `targetUserId`.
+The event is written once the action has committed, and the action stands even
+if that write fails: the endpoint still answers with the new ownership, and the
+failure is logged and reported with the conversation and teammate ids.
 
 Ownership belongs to a person, not to the organisation. The ownership record
 names the teammate handling the conversation in `ownerUserId`, and labels them in
@@ -81,10 +84,9 @@ them by email.
 A human-owned conversation is claimed exactly when it names a teammate in
 `ownerUserId`. One with `ownerUserId: null` waits for a teammate: the AI stays
 out of it, and the next teammate to take it over, reply, or receive a transfer
-claims it. A conversation claimed under organisation-level ownership named no
-teammate, so it waits for a teammate again, with no label. When a teammate's
-user is deleted, the conversations they held wait for a teammate too, and
-`ownerDisplayName` may still carry the label stored when they claimed them.
+claims it. A record with `ownerUserId: null` also has `ownerDisplayName: null`
+and `takenOverAt: null`. When a teammate's user is deleted, the conversations
+they held wait for a teammate this way, and nothing names the deleted teammate.
 
 The server applies the rules below on every surface: the dashboard, this API,
 and [Slack](./slack-channel.md#operator-actions-in-slack).
@@ -103,8 +105,9 @@ Body:
 
 `reason` is optional. The response returns the current ownership record, with
 you as `ownerUserId`. Take over claims a conversation that is AI-owned or waiting
-for a teammate. One a teammate already holds returns `409` with the current
-ownership in `error.details.ownership`; you take it from them with a
+for a teammate; on one you already hold it returns the record unchanged. One a
+teammate already holds returns `409` with the current ownership in
+`error.details.ownership`; you take it from them with a
 [transfer](#transfer-ownership) to yourself, which is what the dashboard's
 **Reassign → Me** does on a teammate's conversation.
 
@@ -152,6 +155,12 @@ message "Another teammate is handling this conversation", and the current
 ownership in `error.details.ownership`. `expectedVersion` must match the
 ownership record you replied from; a stale value also returns `409` with the
 current record.
+
+The ownership check and the saved reply commit together, with the ownership
+record locked in between. A transfer or hand-back that commits first refuses the
+reply with `409`, and no message is saved; one that arrives while the reply is
+being saved waits for it. The visitor, the dashboard, and a customer channel such
+as Slack hear of a reply only once it has committed.
 
 The `201` response carries `message`, the saved reply, and `ownership`, the
 ownership after the reply. Its `version` moves on when the reply claimed the
@@ -292,8 +301,10 @@ so the visitor can see who is answering (rendered as "👤 <name>"). That name i
 the reply's signature: the teammate's display name, or the organisation's name.
 Only the name is exposed — never an email, user id, or account id — and an
 unsigned reply, or one whose only signature is an email address, shows as
-"👤 A teammate". The operator tail also includes `ownership` and each reply's
-`operatorLabel`; the visitor tail carries neither.
+"👤 A teammate". The operator tail also includes each reply's `operatorLabel`
+and, once a teammate has been involved in the conversation, its `ownership`
+record — AI-owned after a hand-back — so a reader polling the tail sees a claim,
+transfer, or hand-back made elsewhere. The visitor tail carries neither.
 
 The third caller is an AI agent on the other side of the MCP converse surface. It
 holds a conversation with the agent but cannot watch a chat window, so it reads
@@ -345,7 +356,10 @@ Reassign → **Me** transfers it to you and brings the composer back, with anyth
 you had drafted still in it. Messages carry attribution: a human reply's badge
 names the teammate who wrote it, by display name or email, and system messages
 have a badge of their own. The pane reads the tail endpoint while open, so new
-visitor messages and your own replies appear without a manual refresh.
+visitor messages, your own replies, and a take-over, reassignment, or hand-back
+made elsewhere appear without a manual refresh. Until the dashboard knows who
+you are, the pane shows none of the controls that depend on it — no "is handling
+this" line, no Assign or Reassign, and no Done on a handoff.
 **Done** closes a handoff and hands the conversation back to the agent; it shows
 when you hold the conversation or nobody has claimed it. A conversation shows as
 one row: while it also has an open handoff or approval, the Inbox folds its

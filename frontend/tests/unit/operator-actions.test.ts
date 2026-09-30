@@ -107,8 +107,36 @@ describe('deriveOperatorActions', () => {
     })
   })
 
-  it('treats every owned conversation as a teammate’s when the signed-in user is unknown', () => {
-    expect(deriveOperatorActions(ownedBy('user-dana', 'Dana Scully'), null).status).toBe('owned_by_teammate')
+  it('treats a handed-back record, which names no one, as AI-owned and claims it on send', () => {
+    const handedBack = ownership({ state: 'ai_owned', ownerAccountId: null, ownerUserId: null, ownerDisplayName: null, version: 9 })
+
+    expect(deriveOperatorActions(handedBack, 'user-me')).toEqual({
+      status: 'ai_owned',
+      claimsOnSend: true,
+      canReply: true,
+      owner: null,
+      version: 9,
+    })
+  })
+
+  it('withholds the composer from a held conversation until the signed-in user is known, whoever holds it', () => {
+    expect(deriveOperatorActions(ownedBy('user-dana', 'Dana Scully'), null)).toEqual({
+      status: 'owned_viewer_unknown',
+      claimsOnSend: false,
+      canReply: false,
+      owner: { userId: 'user-dana', label: 'Dana Scully' },
+      version: 6,
+    })
+    // Possibly my own: it must not read as a teammate's either.
+    expect(deriveOperatorActions(ownedBy('user-me', 'Me Myself'), null).status).toBe('owned_viewer_unknown')
+  })
+
+  it('keeps claim-on-send for a conversation nobody holds while the signed-in user is unknown', () => {
+    const claimsOnSend = { claimsOnSend: true, canReply: true, owner: null }
+
+    expect(deriveOperatorActions(undefined, null)).toMatchObject({ status: 'ai_owned', ...claimsOnSend })
+    expect(deriveOperatorActions(ownership({ state: 'ai_owned', version: 3 }), null)).toMatchObject({ status: 'ai_owned', ...claimsOnSend })
+    expect(deriveOperatorActions(ownership({ state: 'human_owned', version: 3 }), null)).toMatchObject({ status: 'awaiting_human', ...claimsOnSend })
   })
 })
 
@@ -170,13 +198,10 @@ describe('ownershipMenu', () => {
     expect(ownershipMenu(mine, [{ userId: 'user-me', label: 'Me Myself' }], 'user-me')).toBeNull()
   })
 
-  it('leaves Me out when the signed-in teammate is unknown', () => {
-    expect(menuFor(ownedBy('user-dana', 'Dana Scully'), null)).toEqual({
-      kind: 'reassign',
-      targets: [
-        { kind: 'teammate', userId: 'user-me', label: 'Me Myself' },
-        { kind: 'teammate', userId: 'user-fox', label: 'fox@example.com' },
-      ],
-    })
+  it('offers no menu while the signed-in teammate is unknown, since "Me" cannot be told from a teammate', () => {
+    expect(menuFor(ownedBy('user-dana', 'Dana Scully'), null)).toBeNull()
+    expect(menuFor(ownedBy('user-me', 'Me Myself'), null)).toBeNull()
+    expect(menuFor(ownership({ state: 'human_owned' }), null)).toBeNull()
+    expect(ownershipMenu({ status: 'owned_by_teammate', owner: { userId: 'user-dana', label: 'Dana Scully' } }, operators, null)).toBeNull()
   })
 })

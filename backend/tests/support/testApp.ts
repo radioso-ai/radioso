@@ -2015,12 +2015,10 @@ export const createTestDependencies = (overrides: {
   const assistantHistoryService = new AssistantHistoryService(chatHistoryService);
   const publicConversationEventBus = new InMemoryPublicConversationEventBus();
   const operatorReplyService = new OperatorReplyService({
-    conversationRepository,
-    messageRepository,
     auditService,
     publicConversationEventBus,
     customerReplyDelivery: { deliver: async () => {} },
-    operatorIdentities: operatorIdentityResolver,
+    logger,
   });
   const workspaceInvalidationPublisher: WorkspaceInvalidationPublisher = {
     enqueue: () => ({ accepted: false, reason: "disabled" }),
@@ -2030,11 +2028,18 @@ export const createTestDependencies = (overrides: {
     ownership: conversationOwnershipRepository,
     // The in-memory stores have no transactions; atomicity is covered against Postgres.
     transfers: { run: (work) => work({ ownership: conversationOwnershipRepository, outbox: actionOutbox }) },
+    replyWrites: {
+      run: (work) => work({
+        ownership: conversationOwnershipRepository,
+        reply: { messages: messageRepository, conversations: conversationRepository },
+      }),
+    },
     operators: conversationOperatorDirectory,
     operatorIdentities: operatorIdentityResolver,
     replies: operatorReplyService,
     audit: auditService,
     publisher: workspaceInvalidationPublisher,
+    logger,
   });
   const agentRetrievalScope = createAgentRetrievalScopeResolver({ agentRepository });
   const retrievalSearchService = new RetrievalSearchService(retrievalPipeline, agentRetrievalScope);

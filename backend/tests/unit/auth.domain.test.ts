@@ -13,6 +13,7 @@ import {
   DISPLAY_NAME_MAX_LENGTH,
   looksLikeEmailAddress,
   normalizeDisplayName,
+  outwardFacingName,
   teammateLabel,
   visitorFacingName,
 } from "../../src/modules/auth/domain/userDisplayName.js";
@@ -120,6 +121,13 @@ describe("email address shape", () => {
     expect(looksLikeEmailAddress("a@b@c.d")).toBe(false);
   });
 
+  it("sees an address written with lookalike characters that normalise to '@' and '.'", () => {
+    // U+FF20 FULLWIDTH COMMERCIAL AT and U+2024 ONE DOT LEADER render as '@' and '.'.
+    expect(looksLikeEmailAddress("ceo\uFF20corp.com")).toBe(true);
+    expect(looksLikeEmailAddress("ceo@corp\u2024com")).toBe(true);
+    expect(normalizeDisplayName("ceo\uFF20corp.com")).toEqual({ ok: false, reason: "email_address" });
+  });
+
   it("checks the email shape in linear time on long stored text", () => {
     const hostile = `!@!.${"!.".repeat(200_000)}\u0000`;
     const started = performance.now();
@@ -149,5 +157,22 @@ describe("visitor-facing name", () => {
   it("drops an organisation name shaped like an email address instead of showing it to a visitor", () => {
     expect(visitorFacingName({ displayName: null, organizationName: "alice@acme.example" })).toBeNull();
     expect(visitorFacingName({ displayName: null, organizationName: "  alice@acme.example  " })).toBeNull();
+  });
+
+  it("skips a display name saved shaped like an email address, falling back to the organisation name", () => {
+    // Names saved before display names were validated can still hold an address.
+    expect(visitorFacingName({ displayName: "ada@example.com", organizationName: "Acme" })).toBe("Acme");
+    expect(visitorFacingName({ displayName: "ada\uFF20example.com", organizationName: "Acme" })).toBe("Acme");
+    expect(visitorFacingName({ displayName: "ada@example.com", organizationName: "alice@acme.example" })).toBeNull();
+  });
+});
+
+describe("outward-facing name", () => {
+  it("is the first candidate that is neither blank nor shaped like an email address", () => {
+    expect(outwardFacingName("Dana Scully", "Dana on Slack")).toBe("Dana Scully");
+    expect(outwardFacingName(null, "  Dana on Slack ")).toBe("Dana on Slack");
+    expect(outwardFacingName("dana@example.com", "Dana on Slack")).toBe("Dana on Slack");
+    expect(outwardFacingName("  ", undefined, "dana\uFF20example.com")).toBeNull();
+    expect(outwardFacingName()).toBeNull();
   });
 });

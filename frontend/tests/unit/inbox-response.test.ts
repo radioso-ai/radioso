@@ -30,7 +30,17 @@ const ownership = (overrides: Partial<ConversationOwnership> = {}): Conversation
   ...overrides,
 })
 
-const rowSummary = (overrides: Partial<ChatConversationSummary> = {}): ChatConversationSummary => ({
+// The record a hand-back leaves: AI-owned again, naming no teammate.
+const handedBack = (version: number): ConversationOwnership => ownership({
+  state: 'ai_owned',
+  ownerAccountId: null,
+  ownerUserId: null,
+  ownerDisplayName: null,
+  takenOverAt: null,
+  version,
+})
+
+const rowSummary =(overrides: Partial<ChatConversationSummary> = {}): ChatConversationSummary => ({
   id: 'conversation-1',
   agentId: 'agent-1',
   agentName: 'Marta',
@@ -253,6 +263,19 @@ describe('freshestOwnership', () => {
 
     expect(freshestOwnership(detailOwnership, tailOwnership)).toBe(tailOwnership)
   })
+
+  it('lets a hand-back reported by the tail replace a stale human-owned detail record', () => {
+    const heldInDetail = ownership({ version: 4 })
+    const handedBackOnTail = handedBack(5)
+
+    expect(freshestOwnership(heldInDetail, handedBackOnTail)).toBe(handedBackOnTail)
+  })
+
+  it('keeps a newer claim from the detail refetch over an older hand-back still on the tail', () => {
+    const claimedAgain = ownership({ version: 6 })
+
+    expect(freshestOwnership(claimedAgain, handedBack(5))).toBe(claimedAgain)
+  })
 })
 
 describe('shouldShowDoneControl', () => {
@@ -291,11 +314,22 @@ describe('shouldShowDoneControl', () => {
 
   it('hides Done for a handoff a teammate holds — only the owner hands it back', () => {
     expect(shouldShowDoneControl('handoff', detail({ ownership: ownership() }), viewer)).toBe(false)
-    expect(shouldShowDoneControl('handoff', detail({ ownership: ownership() }), null)).toBe(false)
   })
 
   it('hides Done for a handoff once the loaded detail shows no ownership record — a live AI-owned conversation with nothing to hand back', () => {
     expect(shouldShowDoneControl('handoff', detail({ ownership: undefined }), viewer)).toBe(false)
+  })
+
+  it('hides Done for a handoff whose freshest record is AI-owned — already handed back, nothing left to hand back', () => {
+    expect(shouldShowDoneControl('handoff', detail({ ownership: handedBack(5) }), viewer)).toBe(false)
+    expect(shouldShowDoneControl('negative_feedback', detail({ ownership: handedBack(5) }), viewer)).toBe(true)
+  })
+
+  it('hides a handoff’s Done until the signed-in teammate is known, whoever holds it or whether the detail has loaded', () => {
+    expect(shouldShowDoneControl('handoff', null, null)).toBe(false)
+    expect(shouldShowDoneControl('handoff', detail({ ownership: ownership() }), null)).toBe(false)
+    expect(shouldShowDoneControl('handoff', detail({ ownership: unclaimed() }), null)).toBe(false)
+    expect(shouldShowDoneControl('negative_feedback', null, null)).toBe(true)
   })
 
   it('hides Done when there is no effective item at all (undefined type)', () => {

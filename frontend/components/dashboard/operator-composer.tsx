@@ -139,10 +139,14 @@ interface OperatorComposerProps {
  * shows who is handling it and Reassign instead of the composer, so two people
  * never reply blind; Reassign → Me brings the composer back. Assign (nobody
  * holds it) and Reassign (I or a teammate hold it) both transfer the
- * conversation to the chosen teammate. A 409/422 surfaces as a conflict
- * message while preserving the drafted text (FR-012) — the draft lives here,
- * not in the textarea, so it survives the composer being swapped for the
- * handling line; only a successful send clears it.
+ * conversation to the chosen teammate. Until the signed-in teammate is known,
+ * nothing that depends on who holds the conversation shows: no handling line,
+ * no Assign/Reassign, and no composer on a held conversation; one nobody holds
+ * keeps its claim-on-send composer, since the server claims it for whoever is
+ * signed in. A 409/422 surfaces as a conflict message while preserving the
+ * drafted text (FR-012) — the draft lives here, not in the textarea, so it
+ * survives the composer being swapped for the handling line; only a
+ * successful send clears it.
  */
 export function OperatorComposer({
   conversationId,
@@ -248,6 +252,8 @@ export function OperatorComposer({
 
   // A teammate's conversation keeps the trailing actions: Done on a feedback
   // item is triage, not a reply, so it never waits on reassigning the conversation.
+  // While the signed-in teammate is unknown, a held conversation shows only
+  // those: naming its holder as "a teammate" could be telling me about myself.
   if (!actions.canReply) {
     return (
       <div className={containerClassName}>
@@ -257,9 +263,11 @@ export function OperatorComposer({
           </p>
         ) : null}
         <div className="flex items-center gap-2 text-sm">
-          <span className="text-muted-foreground">
-            {actions.owner?.label ?? 'A teammate'} is handling this
-          </span>
+          {actions.status === 'owned_by_teammate' ? (
+            <span className="text-muted-foreground">
+              {actions.owner?.label ?? 'A teammate'} is handling this
+            </span>
+          ) : null}
           {ownershipControl ? (
             <>
               <span aria-hidden className="text-muted-foreground">·</span>

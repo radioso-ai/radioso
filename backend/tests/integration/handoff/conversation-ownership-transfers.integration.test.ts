@@ -2,20 +2,25 @@ import { randomUUID } from "node:crypto";
 
 import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
 
+import { createPostgresOwnershipReplyUnitOfWork } from "../../../src/app/composition/conversationOwnershipReplies.js";
 import { createPostgresOwnershipTransferUnitOfWork } from "../../../src/app/composition/conversationOwnershipTransfers.js";
 import { ActionRequestRepository } from "../../../src/db/repositories/actionRequestRepository.js";
 import { ConversationOwnershipRepository } from "../../../src/db/repositories/conversationOwnershipRepository.js";
 import type { ConversationRecord } from "../../../src/db/repositories/conversationRepository.js";
+import { MessageRepository } from "../../../src/db/repositories/messageRepository.js";
 import {
   CONVERSATION_TRANSFER_NOTICE_ACTION_TYPE,
   ConversationOwnershipService,
+  OperatorReplyService,
   type OwnershipActor,
 } from "../../../src/modules/handoff/public.js";
 import { Database } from "../../../src/shared/infra/database.js";
 import { resolveIntegrationDatabase } from "../support/integrationDatabase.js";
 
-// Real-Postgres check that a transfer and the notice it owes the recipient commit together: an
-// outbox failure rolls the transfer back, and the drain push goes out only once both are durable.
+// Real-Postgres checks of what ownership commits together: a transfer with the notice it owes the
+// recipient (an outbox failure rolls the transfer back, and the drain push goes out only once both
+// are durable), and a reply with the ownership it stands on (a transfer that commits first refuses
+// the old owner's reply, and a failed write leaves no claim behind).
 
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
@@ -33,18 +38,47 @@ describeIntegration("conversation transfer with its notice (Postgres)", () => {
     [conversationId],
   );
 
+  const messagesIn = async (conversationId: string) => database.query<{ content: string }>(
+    `SELECT content FROM messages WHERE conversation_id = $1`,
+    [conversationId],
+  );
+
+  const replies = new OperatorReplyService({
+    auditService: { record: vi.fn(async () => undefined) },
+    publicConversationEventBus: { publish: vi.fn() },
+    customerReplyDelivery: { deliver: vi.fn(async () => undefined) },
+  });
+
   const createService = (actionDrain: { requestDrain: () => Promise<void> }) => new ConversationOwnershipService({
-    conversations: { findByIdAndWorkspaceId: async (id: string) => ({ id }) as ConversationRecord },
+    conversations: {
+      findByIdAndWorkspaceId: async (id: string, inWorkspace: string) => ({ id, workspaceId: inWorkspace }) as ConversationRecord,
+    },
     ownership,
     transfers: createPostgresOwnershipTransferUnitOfWork({ db: database.kysely, actionDrain, logger: { warn: vi.fn() } }),
+    replyWrites: createPostgresOwnershipReplyUnitOfWork({ db: database.kysely }),
     operators: {
       find: async ({ userId }: { userId: string }) =>
         userId === foxId ? { userId: foxId, label: "Fox Mulder" } : userId === danaId ? { userId: danaId, label: "Dana Scully" } : null,
     },
     operatorIdentities: { resolve: async () => ({ userId: danaId, teammateLabel: "Dana Scully", replySignature: null }) },
-    replies: { reply: vi.fn() },
+    replies,
     audit: { record: vi.fn(async () => undefined) },
   });
+
+  // Waits until some session in this database is blocked on a lock, i.e. the reply is queued behind
+  // the uncommitted transfer; gives up after a few seconds so a reply that never waits fails its
+  // assertions instead of hanging.
+  const untilSomeoneWaitsOnALock = async (): Promise<void> => {
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const waiting = await database.query<{ waiting: string }>(
+        `SELECT count(*)::text AS waiting FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`,
+      );
+      if (Number(waiting[0]?.waiting ?? 0) > 0) {
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  };
 
   const seedClaimedConversation = async (): Promise<{ conversationId: string; version: number }> => {
     const conversationId = randomUUID();
@@ -124,5 +158,46 @@ describeIntegration("conversation transfer with its notice (Postgres)", () => {
     expect(result).toMatchObject({ ok: true, changed: true, record: { ownerUserId: foxId } });
     await expect(outboxRows(conversationId)).resolves.toEqual([]);
     expect(requestDrain).not.toHaveBeenCalled();
+  });
+
+  it("refuses the old owner's reply when a transfer commits while the reply waits for the ownership", async () => {
+    const { conversationId, version } = await seedClaimedConversation();
+    const service = createService({ requestDrain: async () => undefined });
+    let reply: ReturnType<typeof service.reply> | undefined;
+
+    await database.kysely.transaction().execute(async (trx) => {
+      // Fox takes the conversation; the transfer has written but not committed when Dana sends.
+      const moved = await new ConversationOwnershipRepository(trx).transfer({
+        conversationId, accountId, userId: foxId, displayName: "Fox Mulder", expectedVersion: version,
+      });
+      expect(moved.ok).toBe(true);
+      reply = service.reply(dana, { conversationId, message: "Still here", expectedVersion: version });
+      await untilSomeoneWaitsOnALock();
+    });
+
+    await expect(reply).resolves.toMatchObject({ ok: false, refusal: "held_by_teammate", record: { ownerUserId: foxId } });
+    await expect(messagesIn(conversationId)).resolves.toEqual([]);
+  });
+
+  it("writes the owner's reply once nothing has moved the conversation", async () => {
+    const { conversationId, version } = await seedClaimedConversation();
+    const service = createService({ requestDrain: async () => undefined });
+
+    const result = await service.reply(dana, { conversationId, message: "Hello", expectedVersion: version });
+
+    expect(result).toMatchObject({ ok: true, record: { ownerUserId: danaId, version } });
+    await expect(messagesIn(conversationId)).resolves.toEqual([{ content: "Hello" }]);
+  });
+
+  it("leaves no claim behind when the reply that would claim the conversation cannot be written", async () => {
+    const conversationId = randomUUID();
+    await database.query(`INSERT INTO conversations (id, workspace_id) VALUES ($1, $2)`, [conversationId, workspaceId]);
+    vi.spyOn(MessageRepository.prototype, "create").mockRejectedValueOnce(new Error("messages unavailable"));
+    const service = createService({ requestDrain: async () => undefined });
+
+    await expect(service.reply(dana, { conversationId, message: "Hi", expectedVersion: 0 })).rejects.toThrow("messages unavailable");
+
+    await expect(ownership.load(conversationId)).resolves.toBeNull();
+    await expect(messagesIn(conversationId)).resolves.toEqual([]);
   });
 });

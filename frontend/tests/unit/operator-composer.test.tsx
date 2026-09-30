@@ -263,6 +263,64 @@ describe('OperatorComposer', () => {
     expect(container.querySelector('[role="status"]')).not.toBeNull()
     await act(async () => root.unmount())
   })
+
+  describe('before the signed-in teammate is known', () => {
+    const teammates = [{ userId: 'user-me', label: 'Me Myself' }, { userId: 'user-dana', label: 'Dana' }]
+    const menuTrigger = (container: HTMLElement) => container.querySelector('[aria-haspopup="menu"]')
+    const rerender = async (
+      root: ReturnType<typeof createRoot>,
+      ownership: Record<string, unknown>,
+      currentUserId: string | null,
+    ) => {
+      await act(async () => {
+        root.render(
+          <OperatorComposer
+            conversationId="conversation-a"
+            ownership={ownership as never}
+            currentUserId={currentUserId}
+            onChanged={vi.fn()}
+            teammates={teammates}
+          />,
+        )
+      })
+    }
+
+    it('offers neither the composer nor a menu on a held conversation, then restores them once the viewer is known', async () => {
+      const heldByMe = { state: 'human_owned', ownerAccountId: 'account-1', ownerUserId: 'user-me', ownerDisplayName: 'Me Myself', version: 4 }
+      const { root, container } = await renderComposer(heldByMe as never, vi.fn(), null, vi.fn(), teammates)
+
+      expect(container.querySelector('textarea')).toBeNull()
+      expect(menuTrigger(container)).toBeNull()
+
+      await rerender(root, heldByMe, 'user-me')
+
+      expect(container.querySelector('textarea')).not.toBeNull()
+      expect(menuTrigger(container)).not.toBeNull()
+      await act(async () => root.unmount())
+    })
+
+    it('keeps claim-on-send on an unclaimed handoff without a menu, and the draft survives the viewer becoming known', async () => {
+      const takeover = vi.spyOn(hitlApi, 'takeOverConversation')
+        .mockResolvedValue({ ownership: { state: 'human_owned', version: 3 } } as never)
+      const reply = vi.spyOn(hitlApi, 'replyAsHuman').mockResolvedValue({ message: {} } as never)
+      const waiting = { state: 'human_owned', ownerAccountId: null, ownerUserId: null, version: 2 }
+      const { root, container } = await renderComposer(waiting as never, vi.fn(), null, vi.fn(), teammates)
+
+      expect(menuTrigger(container)).toBeNull()
+      const textarea = container.querySelector('textarea') as HTMLTextAreaElement
+      await typeInto(textarea, 'draft while signing in')
+
+      await rerender(root, waiting, 'user-me')
+
+      expect(menuTrigger(container)).not.toBeNull()
+      expect((container.querySelector('textarea') as HTMLTextAreaElement).value).toBe('draft while signing in')
+
+      await clickSend(container)
+      expect(takeover).toHaveBeenCalledWith('conversation-a', {})
+      expect(reply).toHaveBeenCalledWith('conversation-a', { message: 'draft while signing in', expectedVersion: 3 })
+      await act(async () => root.unmount())
+    })
+  })
 })
 
 describe('ApprovalDecisionPanel', () => {

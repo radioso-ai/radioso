@@ -351,6 +351,10 @@ interface ChatConversationTurnDetail {
 export interface ChatConversationTail {
   messages: ChatConversationTurn[];
   cursor: string | null;
+  /**
+   * The ownership record whenever one exists, AI-owned included, so a reader that polls the tail
+   * sees a hand-back made elsewhere. Absent until a teammate is first involved: the row is lazy.
+   */
   ownership?: ChatConversationOwnership;
 }
 
@@ -1373,9 +1377,7 @@ export class ChatHistoryService {
     return {
       messages: messages.map((message) => this.toLightweightConversationTurn(message, options, operatorLabels)),
       cursor: latestCursor,
-      ...(ownershipRecord?.state === "human_owned"
-        ? { ownership: toChatConversationOwnership(ownershipRecord) }
-        : {}),
+      ...(ownershipRecord ? { ownership: toChatConversationOwnership(ownershipRecord) } : {}),
     };
   }
 

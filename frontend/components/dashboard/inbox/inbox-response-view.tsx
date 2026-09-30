@@ -163,7 +163,7 @@ export function InboxResponseView({
   // The freshest ownership the pane has seen: the detail fetch loads once (then
   // only refreshes after an operator's own action), but the tail poll re-reads
   // ownership every second and is the only one of the two that observes a
-  // transfer or take-over made elsewhere while this pane stays open. Every
+  // transfer, take-over, or hand-back made elsewhere while this pane stays open. Every
   // ownership-derived action and label below — the composer, its "X is
   // handling this" state, Done's hand-back version, the situation card's
   // reason — reads this instead of `conversationDetail.ownership` directly.

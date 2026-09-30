@@ -412,7 +412,7 @@ describe("chat history service ownership read surface", () => {
     expect(untitledDetail.title).toBeNull();
   });
 
-  it("tails dashboard messages with ownership only while human-owned", async () => {
+  it("tails dashboard messages with the ownership record, including an AI-owned one after a hand-back", async () => {
     const { conversationRepository, messageRepository, conversationOwnershipRepository, service } = createService();
     const conversation = await conversationRepository.create({ workspaceId: "workspace-1" });
     const baseline = await messageRepository.create({
@@ -484,7 +484,54 @@ describe("chat history service ownership read surface", () => {
       { includeOwnership: true },
     );
 
-    expect(aiOwnedTail.ownership).toBeUndefined();
+    // A hand-back made elsewhere reaches an open pane: the record comes back AI-owned at a newer version.
+    expect(aiOwnedTail.ownership).toMatchObject({
+      conversationId: conversation.id,
+      state: "ai_owned",
+      ownerUserId: null,
+      ownerDisplayName: null,
+      takenOverAt: null,
+      version: claimed.record.version + 1,
+    });
+  });
+
+  it("tails no ownership for a conversation no teammate has ever been involved in", async () => {
+    const { conversationRepository, service } = createService();
+    const conversation = await conversationRepository.create({ workspaceId: "workspace-1" });
+
+    const tail = await service.tailConversation("workspace-1", conversation.id, { limit: 10 }, { includeOwnership: true });
+
+    expect(tail).not.toHaveProperty("ownership");
+  });
+
+  it("presents a conversation whose owner's user is gone as waiting, without their label or claim time", async () => {
+    const { conversationRepository, conversationOwnershipRepository, service } = createService();
+    const conversation = await conversationRepository.create({ workspaceId: "workspace-1" });
+    const claimedAt = new Date("2026-09-01T10:00:00.000Z");
+    // What the foreign key leaves behind when the owner's user is deleted: only owner_user_id is nulled.
+    conversationOwnershipRepository.items.set(conversation.id, {
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      state: "human_owned",
+      ownerAccountId: "account-1",
+      ownerUserId: null,
+      ownerProfile: null,
+      ownerStoredLabel: "gone@example.com",
+      reason: "operator_takeover",
+      version: 2,
+      takenOverAt: claimedAt,
+      createdAt: claimedAt,
+      updatedAt: claimedAt,
+    });
+
+    const list = await service.listConversations("workspace-1", { limit: 50, offset: 0 });
+    const detail = await service.getConversation("workspace-1", conversation.id, { limit: 50 }, { includeOwnership: true });
+    const tail = await service.tailConversation("workspace-1", conversation.id, { limit: 10 }, { includeOwnership: true });
+
+    for (const ownership of [list.conversations.find((row) => row.id === conversation.id)?.ownership, detail.ownership, tail.ownership]) {
+      expect(ownership).toMatchObject({ state: "human_owned", ownerUserId: null, ownerDisplayName: null, takenOverAt: null });
+    }
+    expect(JSON.stringify([list, detail, tail])).not.toContain("gone@example.com");
   });
 
   it("never includes ownership on public tail even when the conversation is human-owned", async () => {

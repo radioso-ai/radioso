@@ -295,11 +295,13 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
         description: "The teammate handling the conversation; a human-owned conversation is claimed exactly when this is set. Null while a handoff waits to be claimed, when AI-owned, and once the owner's user is deleted.",
       }),
       ownerDisplayName: z.string().nullable().openapi({
-        description: "The owner's teammate label: their display name, else their email. Operator-facing only.",
+        description: "The owner's teammate label: their display name, else their email. Null whenever `ownerUserId` is null. Operator-facing only.",
       }),
       reason: z.string().nullable(),
       version: z.number().int().nonnegative(),
-      takenOverAt: z.string().datetime().nullable(),
+      takenOverAt: z.string().datetime().nullable().openapi({
+        description: "When the owning teammate claimed the conversation. Null whenever `ownerUserId` is null.",
+      }),
       createdAt: z.string().datetime(),
       updatedAt: z.string().datetime(),
     }),
@@ -755,7 +757,9 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     z.object({
       messages: z.array(ChatConversationMessageSchema),
       cursor: z.string().nullable(),
-      ownership: ConversationOwnershipSchema.optional(),
+      ownership: ConversationOwnershipSchema.optional().openapi({
+        description: "The conversation's ownership record whenever one exists, `ai_owned` included, so a hand-back made elsewhere reaches a reader polling the tail. Absent until a teammate is first involved.",
+      }),
     }),
   );
 

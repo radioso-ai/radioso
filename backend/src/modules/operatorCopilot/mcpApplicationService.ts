@@ -469,7 +469,13 @@ export class OperatorMcpApplicationService {
         });
         if (!("invocation" in prepared)) {
           if (prepared.status === "conflict") throw new OperatorMcpApplicationError("operation_conflict");
-          throw new OperatorMcpApplicationError("budget_exhausted", undefined, undefined, { retryAfterSeconds: prepared.retryAfterSeconds, resetAt: prepared.resetAt });
+          // Present together or not at all -- see `budgetExhaustion` in the repository. A caller
+          // whose cost can never fit gets no retry timing rather than one that promises a retry
+          // that will fail the same way.
+          const retry = prepared.retryAfterSeconds !== undefined && prepared.resetAt !== undefined
+            ? { retryAfterSeconds: prepared.retryAfterSeconds, resetAt: prepared.resetAt }
+            : undefined;
+          throw new OperatorMcpApplicationError("budget_exhausted", undefined, undefined, retry);
         }
         if (prepared.status === "prepared") {
           readyToInvoke = true;

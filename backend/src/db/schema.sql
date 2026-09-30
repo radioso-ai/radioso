@@ -7831,7 +7831,7 @@ CREATE INDEX operator_mcp_grants_workspace_created_idx ON public.operator_mcp_gr
 -- Name: operator_mcp_invocations_budget_idx; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX operator_mcp_invocations_budget_idx ON public.operator_mcp_invocations USING btree (grant_id, budget_kind, budget_reserved_at) WHERE (budget_reserved_at IS NOT NULL);
+CREATE INDEX operator_mcp_invocations_budget_idx ON public.operator_mcp_invocations USING btree (grant_id, budget_reserved_at) WHERE (budget_reserved_at IS NOT NULL);
 
 
 --

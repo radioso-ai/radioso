@@ -3,9 +3,11 @@ export {
   addressesSurface,
   effectiveSurfaces,
   orderSteeringRules,
+  partitionRoutineStepSteering,
   resolveRenderSurfaces,
   resolveDirectiveRelationships,
   steeringForSurface,
+  type RoutineStepSteering,
   type Directive,
   type DirectiveCondition,
   type DirectiveLifecycle,
@@ -17,10 +19,13 @@ export {
 } from "./domain.js";
 export {
   DEFAULT_CLARIFICATION_STEERING_PROMPT,
+  DEFAULT_ROUTINE_STEP_STEERING_PROMPT,
   DEFAULT_STEERING_PROMPT,
   appendSteeringRules,
   clarificationSteeringOptions,
+  renderRoutineStepInstructions,
   renderSteeringRules,
+  routineStepSteeringOptions,
   type RenderSteeringRulesOptions,
 } from "./steeringPrompt.js";
 export {
@@ -127,7 +132,6 @@ export {
 } from "./routineNextStepSelector.js";
 export {
   DEFAULT_ROUTINE_STEP_REPLY_PROMPT,
-  DEFAULT_ROUTINE_STEP_STEERING_PROMPT,
   DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_DEFAULT_PROMPT,
   DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_WITH_MESSAGE_PROMPT,
   RoutineStepRenderer,

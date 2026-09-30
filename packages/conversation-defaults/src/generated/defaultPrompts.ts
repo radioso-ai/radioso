@@ -212,9 +212,9 @@ export const DEFAULT_CLARIFICATION_STEERING_PROMPT = `Also follow this guidance 
 {{steering_rules}}`;
 
 export const DEFAULT_ROUTINE_STEP_STEERING_PROMPT = `The operator's standing rules below also apply to this message. They are
-subordinate to the step instruction(s) that follow: they shape how you say it —
-tone, formality, wording, and what you should not claim — not what this message
-asks for or does.
+subordinate to the step instruction(s), labelled as the controlling instruction
+for this message: they shape how you say it — tone, formality, wording, and what
+you should not claim — not what this message asks for or does.
 
 Standing rules, in priority order:
 {{steering_rules}}

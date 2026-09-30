@@ -1172,7 +1172,7 @@ Primary internals:
 - `backend/src/db/repositories/routineDefinitionRepository.ts`, migrations `084`–`090` and `194` (exposure columns)
 - `backend/src/app/composition/routineDefinitionSource.ts` (loads + compiles the agent's enabled routines for activation and pinned routines for resume)
 - `packages/conversation-engine/src/routineRunner.ts` (runtime: activation, resume, guards, fast-forward)
-- `backend/prompts/chat/routine-next-step.md`, `routine-step-reply.md`, `routine-step-steering.md` (directives as guidance subordinate to the step instruction), `routine-ranked-activation.md`
+- `backend/prompts/chat/routine-next-step.md`, `routine-step-reply.md`, `routine-step-steering.md` (directives as guidance subordinate to the step instruction), `routine-step-answer-steering.md` (the same roles when a retrieval-fed step composes a grounded answer), `routine-ranked-activation.md`
 - `frontend/components/dashboard/settings/assistant-routines-section.tsx` (authoring UI)
 - `frontend/lib/routine-flow.ts` (block document → canvas graph, guard provenance, slot collection)
 - `frontend/components/dashboard/settings/routine-canvas.tsx` (read-only map over that graph)

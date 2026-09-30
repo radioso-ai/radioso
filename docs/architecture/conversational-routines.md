@@ -171,18 +171,22 @@ On each turn, before normal skill selection, the engine checks for a routine:
    the routine advances along the first guard that holds. A message that supplies
    several values at once can advance through several steps in one turn.
 4. The current step is projected into a steering rule (`source: "routine"`) and
-   resolved together with the directives that match the turn. The step renderer
-   gives the two different roles: the step's rule is the controlling instruction
-   for the reply, and every directive renders beneath it as subordinate guidance
-   (`backend/prompts/chat/routine-step-steering.md`). The guidance shapes tone,
+   resolved together with the directives that match the turn. Every reply the
+   step produces gives the two different roles: the step's rule is the controlling
+   instruction, and every directive renders as subordinate guidance through
+   `backend/prompts/chat/routine-step-steering.md`. The guidance shapes tone,
    wording, and what the reply must not claim; unless the step asks for it, the
-   reply carries no redirect, hand-off, or contact details from a directive. The
-   step renderer places the guidance next to the agent's scope and the step
-   instruction last. A chat step fed by a retrieval skill step composes its
-   grounded answer through the retrieval answer path instead: there the step's
-   rule leads the shared steering block (`orderSteeringRules`), so it wins a
-   conflict with a directive, and the directives render as ordinary answer
-   steering without the step renderer's redirect guidance. The turn's `directive_steering` stage records `routineStep` — the
+   reply carries no redirect, hand-off, or contact details from a directive.
+   - A chat step's reply comes from the step renderer, which places the guidance
+     next to the agent's scope and the step instruction last.
+   - A chat step fed by a retrieval skill step composes a grounded answer through
+     the answer composers instead. Their steering adapter
+     (`backend/src/shared/infra/prompts/steeringPromptRenderer.ts`) sees the
+     routine rule and renders `backend/prompts/chat/routine-step-answer-steering.md`:
+     the step instruction first, the same guidance, then a reminder to finish the
+     step. An answer with no routine rule renders the generic steering block.
+
+   The turn's `directive_steering` stage records `routineStep` — the
    routine, the step, `directivesAppliedAs: "subordinate_to_step_instruction"`, and
    the id and name of each directive that reached the step reply — so an operator
    can see every rule that touched the step without the directive text.

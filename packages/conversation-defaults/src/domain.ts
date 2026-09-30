@@ -74,22 +74,27 @@ export const resolveDirectiveRelationships = (
   return { kept: survivors, omissions };
 };
 
-const leadsSteering = (rule: SteeringRule): number => (rule.source === "routine" ? 1 : 0);
-
-/**
- * Priority order, except that a routine step's own rule always leads (#1351): on a
- * routine turn the step is the controlling instruction, and a block that says "follow
- * the earlier rule on conflict" must list it ahead of every directive.
- */
 export const orderSteeringRules = (rules: SteeringRule[]): SteeringRule[] =>
   [...rules].sort((a, b) => {
-    const leadDelta = leadsSteering(b) - leadsSteering(a);
-    if (leadDelta !== 0) {
-      return leadDelta;
-    }
     const priorityDelta = (b.priority ?? 0) - (a.priority ?? 0);
     if (priorityDelta !== 0) {
       return priorityDelta;
     }
     return 0;
   });
+
+/**
+ * A routine step reply's steering in its two roles (#1351). The step's own projected
+ * rule (`source: "routine"`) is the controlling instruction: it decides what the
+ * message asks for or does. Every other rule — authored directives above all — is
+ * subordinate guidance that shapes how it is said and never replaces the step.
+ */
+export interface RoutineStepSteering {
+  instructions: SteeringRule[];
+  guidance: SteeringRule[];
+}
+
+export const partitionRoutineStepSteering = (rules: readonly SteeringRule[]): RoutineStepSteering => ({
+  instructions: rules.filter((rule) => rule.source === "routine"),
+  guidance: rules.filter((rule) => rule.source !== "routine"),
+});

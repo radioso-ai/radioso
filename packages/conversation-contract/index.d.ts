@@ -1108,11 +1108,15 @@ export interface RoutineNextStepDecision {
    */
   yieldTurn?: boolean;
   /**
-   * When true, the step the user is answering takes no exit this turn, of any kind —
-   * AI-decides, rule, or default — and is asked again. `variables` are still merged into
-   * routine state, so they count from the next turn. The selector sets it when the message
-   * carries text posing as a system, operator, or assistant message; the runner applies the
-   * same hold when a value for one of the step's own slots does not fit its declared type.
+   * When true on a chat step's decision, that step takes no exit this turn — AI-decides,
+   * rule, or default — nothing is fast-forwarded past it, and it is asked again.
+   * `variables` are still merged into routine state, so they count from the next turn. The
+   * selector sets it when the message carries text posing as a system, operator, or
+   * assistant message; it can only do so on a turn where it is consulted, which a chat step
+   * whose exits are all rules and that has nothing to extract never does. The runner applies
+   * the same hold when a value for one of the step's own slots does not fit its declared
+   * type. On a tool step's follow-up exits a decline still takes the default exit, because
+   * holding the tool step could run its tool again.
    */
   hold?: boolean;
   rationale?: string;
@@ -1134,7 +1138,7 @@ export interface RoutineSelectionTrace {
    *   flag, so nothing was chosen or extracted.
    * - `authority_claim`: the model flagged text posing as a system, operator, or assistant
    *   message, or claiming the request is already confirmed; the decision carries `hold`,
-   *   so the step takes no exit and is asked again, whatever condition the model chose.
+   *   so a chat step takes no exit and is asked again, whatever condition the model chose.
    */
   outcome: "transition" | "stay" | "off_topic" | "unreadable" | "authority_claim";
   /** Slot keys the model returned a value for, including a value that replaces a filled slot. */

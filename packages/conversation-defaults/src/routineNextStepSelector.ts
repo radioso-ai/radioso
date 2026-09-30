@@ -280,8 +280,8 @@ export class RoutineNextStepSelector implements ConversationRoutineNextStepSelec
     const variables = sanitized.captured;
     const selection = selectionTrace(decision, conditionMatched, sanitized);
 
-    // A flagged message holds the step: no exit of any kind this turn, whatever condition
-    // the model chose, because the model flags such text yet still picks the exit it asks for.
+    // A flagged message holds the step (see `hold` on the decision), whatever condition the
+    // model chose, because the model flags such text yet still picks the exit it asks for.
     if (decision.claimsAuthority) {
       return { nextStepId: input.currentStep.id, variables, hold: true, selection };
     }

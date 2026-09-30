@@ -1,4 +1,4 @@
-import { badRequest, conflict, notFound } from "../../shared/domain/errors.js";
+import { AppError, badRequest, conflict, notFound } from "../../shared/domain/errors.js";
 import {
   isUsageLimitExceededError,
   USAGE_LIMIT_EXCEEDED_CODE,
@@ -234,7 +234,11 @@ export interface TestExecutionRepositoryPort {
   summarizeTranscripts(input: { workspaceId: string; agentId: string; executionIds: readonly string[] }): Promise<ReadonlyMap<string, Pick<TestExecutionSummary, "turnCount" | "firstMessage">>>;
   listAttempts(input: { workspaceId: string; agentId: string; executionId: string }): Promise<readonly TestExecutionAttemptRecord[]>;
   /** Claims one aligned turn and every selected side in one short transaction. */
-  claimTurn(input: { workspaceId: string; agentId: string; executionId: string; sideIds: readonly string[]; generation: number; turnId: string; attemptId: string; message: string; inputFingerprint: string; now: Date; leaseMs: number; retry: boolean }): Promise<"generation_conflict" | "turn_conflict" | "retry_invalid" | "attempt_conflict" | { claims: readonly TestExecutionClaim[] }>;
+  /**
+   * `turn_in_progress`: another turn is still running. A settled turn, a failed one included,
+   * never blocks the next message; its failed side stays retryable until a later turn starts.
+   */
+  claimTurn(input: { workspaceId: string; agentId: string; executionId: string; sideIds: readonly string[]; generation: number; turnId: string; attemptId: string; message: string; inputFingerprint: string; now: Date; leaseMs: number; retry: boolean }): Promise<"generation_conflict" | "turn_in_progress" | "turn_conflict" | "retry_invalid" | "attempt_conflict" | { claims: readonly TestExecutionClaim[] }>;
   complete(input: { workspaceId: string; agentId: string; executionId: string; sideId: string; turnId: string; attemptId: string; fence: number; result: TestExecutionRunnerResult; now: Date }): Promise<"stale" | TestExecution>;
   fail(input: { workspaceId: string; agentId: string; executionId: string; sideId: string; turnId: string; attemptId: string; fence: number; code: string; now: Date }): Promise<"stale" | TestExecution>;
 }
@@ -259,6 +263,18 @@ interface TestExecutionServiceOptions {
 }
 
 const fingerprint = (message: string): string => JSON.stringify(message);
+
+/** Typed so a caller (the dashboard, operator MCP) can tell "resend once it settles" from bad input. */
+const TEST_TURN_IN_PROGRESS_CODE = "test_turn_in_progress";
+
+/** An error's structural fields only: its message can carry visitor text, so it is never logged. */
+const runnerFailureLogFields = (error: unknown): { errorType: string; errorCode?: string } => {
+  const code = error instanceof Error ? (error as { code?: unknown }).code : undefined;
+  return {
+    errorType: error instanceof Error ? error.name : typeof error,
+    ...(typeof code === "string" ? { errorCode: code.slice(0, 80) } : {}),
+  };
+};
 
 export class TestExecutionService {
   private readonly now: () => Date;
@@ -476,7 +492,8 @@ export class TestExecutionService {
   private async claimTurn(execution: TestExecution, sideIds: readonly string[], input: TestExecutionMessageInput, retry: boolean): Promise<readonly TestExecutionClaim[]> {
     const claimed = await this.options.repository.claimTurn({ ...input, sideIds, retry, inputFingerprint: fingerprint(input.message), now: this.now(), leaseMs: this.leaseMs });
     if (claimed === "generation_conflict") throw conflict("Test execution generation is stale.");
-    if (claimed === "turn_conflict") throw conflict("A test turn is already active or must be resolved before another turn.");
+    if (claimed === "turn_in_progress") throw new AppError(409, TEST_TURN_IN_PROGRESS_CODE, "Another test turn is still running. Send the next message after it settles.");
+    if (claimed === "turn_conflict") throw conflict("This test turn was already sent. Send the next message as a new turn.");
     if (claimed === "retry_invalid") throw conflict("Only the failed side of the original turn may be retried.");
     if (claimed === "attempt_conflict") throw conflict("A retry must use a new attempt identity unless replaying its completed response.");
     return claimed.claims;
@@ -532,6 +549,18 @@ export class TestExecutionService {
       // failed. That work remains chargeable even when no result could be delivered.
       await reservation?.commit();
       const code = isUsageLimitExceededError(error) ? USAGE_LIMIT_EXCEEDED_CODE : "runner_failed";
+      if (code === "runner_failed") {
+        this.options.logger?.warn({
+          workspaceId: identity.workspaceId,
+          agentId: identity.agentId,
+          executionId: identity.executionId,
+          sideId: side.id,
+          turnId: identity.turnId,
+          attemptId: identity.attemptId,
+          failureCode: code,
+          ...runnerFailureLogFields(error),
+        }, "Test execution side failed");
+      }
       const stored = await this.options.repository.fail({ workspaceId: identity.workspaceId, agentId: identity.agentId, executionId: identity.executionId, sideId: side.id, turnId: identity.turnId, attemptId: identity.attemptId, fence: claim.attempt.fence, code, now: this.now() });
       return { failed: true, events: [this.failedEvent(identity, side.id, stored === "stale" ? "stale_attempt" : code, stored !== "stale")] };
     }

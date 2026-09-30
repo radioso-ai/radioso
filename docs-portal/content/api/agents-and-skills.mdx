@@ -45,6 +45,11 @@ and inputs it used; changing the draft does not relabel earlier evidence.
 Selected eval cases can be run from Test Chat, and a failed side or case can be
 retried without replacing successful comparison evidence.
 
+A test turn that fails settles like any other: the next message starts a new turn,
+and the failed side stays retryable until it does. A message sent while another
+turn is still running is refused with `409` and the error code
+`test_turn_in_progress`; send it again once that turn settles.
+
 Use `GET /api/v1/agents/{agentId}/test-executions?limit=50` to page through
 private Test Chat history, then `GET /api/v1/agents/{agentId}/test-executions/{executionId}`
 to reopen one execution with its frozen values, side transcripts, and retry

@@ -35,6 +35,16 @@ import type { RetrievalPipelineRequest, RetrievalPipelineResult } from "../../sr
 import { createAuditService } from "../support/fakes.js";
 import { unpublishedAgentPublicIdentity } from "../../src/modules/agents/public.js";
 import type { ChatRoutineTurnReporter } from "../../src/modules/chat/contracts/routineTurnState.js";
+import type { AgentRevision } from "../../src/modules/agents/agentRevision.js";
+import type { RoutineRegistration } from "@radioso/conversation-defaults";
+import {
+  ApplicationModuleCoordinator,
+  createApplicationExtensionRegistry,
+} from "../../src/app/composition/applicationModule.js";
+import { createContactRoutineApplicationModule } from "../../src/app/composition/builtIn/contactRoutineModule.js";
+import { createPublishedRoutineRegistrationSource } from "../../src/app/composition/routineDefinitionSource.js";
+import { contactRoutineDefinition } from "../../src/modules/chat/services/routines/contactRoutine.js";
+import { createRoutineTurnProvider } from "../../src/modules/routines/turnProvider.js";
 
 const emptyTrace = () => {
   const now = new Date().toISOString();
@@ -1798,5 +1808,107 @@ describe("WorkbenchReplayRunner", () => {
     });
 
     expect(result.answer).toContain("Answer from the operator baseline.");
+  });
+});
+
+// #1362: a Test Chat turn runs on a pinned candidate revision, and the built-in contact
+// routine is never part of any revision. Turn 1 starts it; turn 2 resumes it by id, which
+// must resolve to the built-in registration rather than fail the revision snapshot lookup.
+describe("WorkbenchReplayRunner built-in routine across revision-pinned Test Chat turns", () => {
+  const candidateRevision: AgentRevision = {
+    id: "44444444-4444-4444-8444-444444444444",
+    snapshot: { customInstruction: "Answer from the operator baseline.", directives: [], routines: [], contextVariableEnablements: [] },
+    sourceDraftGeneration: 3,
+    sourceBasePublishedRevisionId: null,
+    createdAt: new Date(0),
+    publishedAt: null,
+    publishedVersion: null,
+  };
+
+  const builtInRegistrations = (): RoutineRegistration[] => {
+    const registry = createApplicationExtensionRegistry();
+    new ApplicationModuleCoordinator({ logger: { error: () => {} }, registry }).apply([
+      createContactRoutineApplicationModule(),
+    ]);
+    return registry.routineRegistrations;
+  };
+
+  const realRoutineProvider = (): ChatRoutineProvider => createRoutineTurnProvider({
+    agentSkillRepository: { listByAgent: vi.fn(async () => []) },
+    capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+    clusteringEmbeddings: {
+      embedForClustering: vi.fn(async ({ texts }: { texts: string[] }) => ({ vectors: texts.map(() => [1, 0]) })),
+    } as never,
+    embeddingModelForWorkspace: vi.fn(async () => "test-embedding"),
+    logger: { debug: vi.fn(), warn: vi.fn() },
+    publishedRoutineSource: createPublishedRoutineRegistrationSource({
+      listActiveByAgent: vi.fn(async () => []),
+      listVersionsByAgent: vi.fn(async () => []),
+      findPinnedById: vi.fn(async () => null),
+      findById: vi.fn(async () => null),
+    }, { revisionReader: { findRevision: vi.fn(async () => candidateRevision) } }),
+    routineDefinitionRepository: {
+      searchActivationTriggerEmbeddings: vi.fn(async () => ({ matches: [], noVectorRoutineIds: [] })),
+    },
+    routineInvocableSkillNames: { listByKindForAgent: vi.fn(async () => ({ webhook: [], customer_email: [], slack: [] })) } as never,
+    routineRegistrations: builtInRegistrations(),
+    routineTriggerEmbeddingService: { persistPublished: vi.fn() },
+    skillExecutorRegistry: {} as never,
+    turnPlanAdapters: {
+      activator: ({ fallback }) => fallback,
+      reentryGate: ({ fallback }) => fallback,
+      slotCorrection: ({ fallback }) => fallback,
+    },
+  });
+
+  // Answers each model call by the prompt it carries: the ranked activation picks the
+  // contact routine, the step selector advances once an email arrives, and every
+  // rendered step reply echoes the step it renders.
+  const scriptedGateway = () => ({
+    answer: vi.fn(async (input: ChatGatewayInput) => {
+      const systemPrompt = input.systemPrompt ?? "";
+      if (systemPrompt.includes("Rank whether the latest user message wants to start any registered routine")) {
+        return JSON.stringify({ matches: [{ routineId: contactRoutineDefinition.id, confidence: 0.95, variables: {} }] });
+      }
+      if (systemPrompt.includes("You are guiding a user through a structured, multi-step routine")) {
+        return input.query.includes("@")
+          ? JSON.stringify({ condition: 2, offTopic: false, variables: { email: input.query } })
+          : JSON.stringify({ condition: null, offTopic: false, variables: {} });
+      }
+      if (systemPrompt.includes("email address where they can be reached")) return "Which email can someone reach you at?";
+      if (systemPrompt.includes("message they would like to send")) return "What would you like to tell them?";
+      return "unexpected model call";
+    }),
+  });
+
+  it("starts the contact routine on the first message and completes the second turn that resumes it", async () => {
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn([]),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: new DefaultConversationEngine(),
+      turnRouter: stubTurnRouter("retrieval"),
+      routineProvider: realRoutineProvider(),
+      chatGateway: scriptedGateway(),
+      chatAnswerPresenter: presenterStub(),
+    });
+    const turn = { workspaceId: "ws-1", executionMode: "safe_test" as const, sourceAgentId: "agent-1", conversationId: "private-side-1", baselineAgentConfig: projectInternalAgentConfig(agent()), candidateRevision, history: [] };
+
+    const first = await runner.run({ ...turn, query: "How do I contact a human?" });
+    const second = await runner.run({
+      ...turn,
+      query: "guest@example.com",
+      routineStartState: first.continuation!.routineState,
+    });
+
+    expect(first.answer).toBe("Which email can someone reach you at?");
+    expect(first.continuation?.routineState).toMatchObject({ routineId: contactRoutineDefinition.id, status: "active" });
+    expect(second.answer).toBe("What would you like to tell them?");
+    expect(second.continuation?.routineState).toMatchObject({
+      routineId: contactRoutineDefinition.id,
+      path: expect.arrayContaining(["ask_message"]),
+      variables: { email: "guest@example.com" },
+      status: "active",
+    });
   });
 });

@@ -86,9 +86,11 @@ class MemoryRepository implements TestExecutionRepositoryPort {
     return new Map([...this.transcriptSummaries].filter(([id]) => input.executionIds.includes(id)));
   }
   lastLeaseMs: number | null = null;
+  claimRefusal: "turn_in_progress" | null = null;
   async claimTurn(input: Parameters<TestExecutionRepositoryPort["claimTurn"]>[0]) {
     this.calls.push(`claim:${input.sideIds.join(",")}`);
     this.lastLeaseMs = input.leaseMs;
+    if (this.claimRefusal) return this.claimRefusal;
     if (this.replay) {
       return { claims: input.sideIds.map((sideId) => ({ sideId, attempt: { executionId: input.executionId, sideId, turnId: input.turnId, attemptId: input.attemptId, message: input.message, inputFingerprint: input.inputFingerprint, fence: 1, leaseExpiresAt: input.now, state: "completed" as const }, replay: this.replay })) };
     }
@@ -123,7 +125,7 @@ class MemoryRepository implements TestExecutionRepositoryPort {
 const setup = (
   runner = vi.fn(async (_input: Parameters<TrustedTestExecutionRunnerPort["run"]>[0]): Promise<TestExecutionRunnerResult> => ({ answer: "answer", messageId: ids[6], continuation: { routine: "next" } })),
   usageLimitPolicy: Pick<UsageLimitPolicy, "reserveAnswer"> = new NoopUsageLimitPolicy(),
-  options: { defaultRevision?: TestExecutionDefaultRevisionPort; draftGeneration?: number } = {},
+  options: { defaultRevision?: TestExecutionDefaultRevisionPort; draftGeneration?: number; logger?: { warn(bindings: Record<string, unknown>, message: string): void } } = {},
 ) => {
   const repository = new MemoryRepository();
   let next = 2;
@@ -131,6 +133,7 @@ const setup = (
   const service = new TestExecutionService({
     revisions,
     ...(options.defaultRevision ? { defaultRevision: options.defaultRevision } : {}),
+    ...(options.logger ? { logger: options.logger } : {}),
     contextCatalog: { get: vi.fn(async () => ({ id: "40000000-0000-4000-8000-000000000001", workspaceId, name: "account_tier", description: null, valueType: "string" as const, trustTier: "signed" as const, sensitivity: "normal" as const, defaultSurfacing: "always" as const, createdAt: new Date(0), updatedAt: new Date(0) })) },
     repository, runner: { run: runner }, usageLimitPolicy, createId: () => ids[next++], now: () => new Date(1000),
   });
@@ -355,6 +358,40 @@ describe("TestExecutionService", () => {
     await service.message({ workspaceId, agentId, accountId: "account-1", executionId: execution.id, message: "first", generation: 1, turnId: ids[6], attemptId: ids[7] });
 
     expect(commit).toHaveBeenCalledOnce();
+  });
+
+  // #1362: a runner failure used to be recorded as `runner_failed` with nothing in the logs.
+  it("logs a runner failure's error name and code with its IDs, never its message text", async () => {
+    const warn = vi.fn();
+    const runner = vi.fn(async (): Promise<TestExecutionRunnerResult> => {
+      throw Object.assign(new Error("visitor wrote: call me at guest@example.com"), { name: "PinnedRevisionRoutineNotFoundError", code: "pinned_revision_routine_not_found" });
+    });
+    const { service } = setup(runner, new NoopUsageLimitPolicy(), { logger: { warn } });
+    const execution = await service.start({ idempotencyKey: "idem-test", workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [] });
+
+    await service.message({ workspaceId, agentId, accountId: null, executionId: execution.id, message: "guest@example.com", generation: 1, turnId: ids[6], attemptId: ids[7] });
+
+    expect(warn).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceId,
+      agentId,
+      executionId: execution.id,
+      sideId: execution.sides[0].id,
+      turnId: ids[6],
+      attemptId: ids[7],
+      failureCode: "runner_failed",
+      errorType: "PinnedRevisionRoutineNotFoundError",
+      errorCode: "pinned_revision_routine_not_found",
+    }), expect.any(String));
+    expect(JSON.stringify(warn.mock.calls)).not.toContain("guest@example.com");
+  });
+
+  it("refuses a message while another turn is still running with a typed conflict", async () => {
+    const { service, repository } = setup();
+    const execution = await service.start({ idempotencyKey: "idem-test", workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [] });
+    repository.claimRefusal = "turn_in_progress";
+
+    await expect(service.message({ workspaceId, agentId, accountId: null, executionId: execution.id, message: "next", generation: 1, turnId: ids[6], attemptId: ids[7] }))
+      .rejects.toMatchObject({ statusCode: 409, code: "test_turn_in_progress" });
   });
 
   it("yields a fast side before a slow comparison side settles", async () => {

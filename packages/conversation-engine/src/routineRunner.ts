@@ -714,11 +714,6 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       if (decision.yieldTurn) {
         return decision;
       }
-      // The visitor gave a value for this step's own slot that does not fit its type: the step
-      // is not answered, whatever the model judged, so it is asked again (#1374).
-      if (input.holdOnRejectedSlot && rejectedCollectedKeys(input.step, lastRejectedSlots).size > 0) {
-        return { ...decision, nextStepId: input.step.id };
-      }
       const allowed = new Set([input.step.id, ...llmTransitions.map((transition) => transition.to)]);
       const chosen = allowed.has(decision.nextStepId) ? decision.nextStepId : input.step.id;
       if (chosen === input.step.id) {
@@ -742,8 +737,15 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       // On the activation turn the user's message is the routine's trigger, not a reply
       // to the current step (which has never been rendered) — an off-topic yield here
       // would silently drop the activation, so land on the step and render it instead.
-      return decision.yieldTurn && input.activationTurn
-        ? { nextStepId: selectInput.step.id }
+      if (decision.yieldTurn) {
+        return input.activationTurn ? { nextStepId: selectInput.step.id } : decision;
+      }
+      // Rejected-slot hold (#1374): the visitor gave a value for one of this step's own slots
+      // that does not fit its type, so the step is not answered. It stays and is asked again,
+      // whichever exit — AI-decides, rule, or default — would otherwise have fired. The values
+      // that did fit are still kept.
+      return selectInput.holdOnRejectedSlot && rejectedCollectedKeys(selectInput.step, lastRejectedSlots).size > 0
+        ? { ...decision, nextStepId: selectInput.step.id }
         : decision;
     };
 
@@ -886,8 +888,8 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     }
 
     // Bound how often one step is asked again with nothing new captured (#1376). Past the
-    // limit the routine takes the step's own exit to a hand-off end, as if that exit had been
-    // chosen; a hand-off reachable only through other steps is never jumped to, since that
+    // limit the routine takes the step's own exit to a hand-off end, overriding that exit's
+    // guard; a hand-off reachable only through other steps is never jumped to, since that
     // would skip what they do. Without one, the reply is told to ask differently.
     const reasked = !input.activationTurn &&
       currentStep.kind === "chat" &&

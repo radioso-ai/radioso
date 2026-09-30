@@ -327,6 +327,7 @@ const fixtureConversationSummaries = () => [{
   updatedAt: "2026-08-26T08:10:00.000Z",
   ownership: {
     state: "human_owned",
+    ownerUserId: null,
     ownerDisplayName: null,
     reason: "customer_requested_human",
     takenOverAt: null,

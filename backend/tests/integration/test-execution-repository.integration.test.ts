@@ -91,6 +91,29 @@ describeDb("test execution repository", () => {
     await expect(service.transcript({ workspaceId: randomUUID(), executionId: execution.id })).rejects.toMatchObject({ statusCode: 404 });
   });
 
+  it("rejects send with another agent's id against this execution as not found, and creates no turn or attempt row", async () => {
+    const otherAgentId = randomUUID();
+    await database.query("INSERT INTO agents (id,workspace_id,name) VALUES ($1,$2,$3)", [otherAgentId, workspaceId, "other-agent"]);
+    const service = new TestExecutionService({
+      revisions: repository,
+      contextCatalog: new ContextVariableRepository(database.kysely),
+      repository,
+      runner: { run: async () => ({ answer: "answer", messageId: randomUUID(), continuation: null }) },
+      usageLimitPolicy: new NoopUsageLimitPolicy(),
+      createId: randomUUID,
+    });
+    const execution = await service.start({ workspaceId, agentId, accountId: null, mode: "single", revisionIds: [revisionId], testValues: [], skillEffects: "suppressed", idempotencyKey: randomUUID() });
+    const turnId = randomUUID();
+
+    // A real agent's own id, but not the one this execution belongs to: rejected exactly like a
+    // testExecutionId this workspace does not own, before any claim is attempted.
+    await expect(service.send({ workspaceId, agentId: otherAgentId, accountId: null, executionId: execution.id, message: "hello", generation: execution.generation, turnId, attemptId: randomUUID() }))
+      .rejects.toMatchObject({ statusCode: 404 });
+
+    expect(await database.query("SELECT 1 FROM agent_test_execution_turns WHERE execution_id = $1 AND turn_id = $2", [execution.id, turnId])).toEqual([]);
+    expect(await database.query("SELECT 1 FROM agent_test_execution_attempts WHERE execution_id = $1 AND turn_id = $2", [execution.id, turnId])).toEqual([]);
+  });
+
   it("summarizes each listed execution's operator turns and opening message from its first side only", async () => {
     const executionId = randomUUID(), emptyId = randomUUID(), turnA = randomUUID(), turnB = randomUUID();
     const entry = (turnId: string, role: "user" | "assistant", content: string, at: number) => ({ turnId, attemptId: randomUUID(), role, content, createdAt: new Date(at) });

@@ -1289,33 +1289,33 @@ describe("WorkbenchReplayRunner", () => {
     expect(result.handoff).toEqual({ routineId: "contact", stepId: "handoff" });
   });
 
-  it("requests routine slot values from the provider on every replayed turn (Test Chat / eval, never a live conversation)", async () => {
-    const forTurn = vi.fn(async () => ({ activator: {} as never, runner: {} as never }));
-    const fakeEngine = {
-      async attemptRoutine(input: AttemptRoutineInput): Promise<ProcessTurnResult | null> {
-        await input.routineStore!.save({
-          sessionId: input.sessionId,
-          routineId: "contact",
-          path: ["done"],
-          variables: {},
-          status: "completed",
-        });
-        return {
-          response: { answer: "All set." },
-          trace: emptyTrace(),
-          decision: { reason: "routine_completed" },
-        } as unknown as ProcessTurnResult;
-      },
-      async processTurn(): Promise<ProcessTurnResult> {
-        throw new Error("grounding must not run when a routine claims the turn");
-      },
-    } as unknown as ConversationEngine;
+  const slotValuesFakeEngine = (): ConversationEngine => ({
+    async attemptRoutine(input: AttemptRoutineInput): Promise<ProcessTurnResult | null> {
+      await input.routineStore!.save({
+        sessionId: input.sessionId,
+        routineId: "contact",
+        path: ["done"],
+        variables: {},
+        status: "completed",
+      });
+      return {
+        response: { answer: "All set." },
+        trace: emptyTrace(),
+        decision: { reason: "routine_completed" },
+      } as unknown as ProcessTurnResult;
+    },
+    async processTurn(): Promise<ProcessTurnResult> {
+      throw new Error("grounding must not run when a routine claims the turn");
+    },
+  } as unknown as ConversationEngine);
 
+  it("requests routine slot values from the provider only when the caller (Test Chat) opts in", async () => {
+    const forTurn = vi.fn(async () => ({ activator: {} as never, runner: {} as never }));
     const runner = new WorkbenchReplayRunner({
       retrievalTurn: retrievalTurn([]),
       auditService: createAuditService(),
       turnSkills: [answerSkill()],
-      conversationEngine: fakeEngine,
+      conversationEngine: slotValuesFakeEngine(),
       turnRouter: stubTurnRouter("retrieval"),
       routineProvider: { forTurn },
       chatGateway: chatGatewayStub(),
@@ -1329,9 +1329,36 @@ describe("WorkbenchReplayRunner", () => {
       baselineAgentConfig: projectInternalAgentConfig(agent()),
       query: "Please help me",
       history: [],
+      includeSlotValues: true,
     });
 
     expect(forTurn).toHaveBeenCalledWith(expect.objectContaining({ includeSlotValues: true }));
+  });
+
+  it("never requests routine slot values when the caller does not opt in — the eval replay default", async () => {
+    const forTurn = vi.fn(async () => ({ activator: {} as never, runner: {} as never }));
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn([]),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: slotValuesFakeEngine(),
+      turnRouter: stubTurnRouter("retrieval"),
+      routineProvider: { forTurn },
+      chatGateway: chatGatewayStub(),
+      chatAnswerPresenter: presenterStub(),
+    });
+
+    // No `includeSlotValues` on the input — the shape every eval replay call uses today.
+    await runner.run({
+      workspaceId: "ws-1",
+      executionMode: "safe_test" as const,
+      sourceAgentId: "agent-1",
+      baselineAgentConfig: projectInternalAgentConfig(agent()),
+      query: "Please help me",
+      history: [],
+    });
+
+    expect(forTurn).toHaveBeenCalledWith(expect.objectContaining({ includeSlotValues: false }));
   });
 
   it("carries a hand-off preview matching the real notification builder, without dispatching it", async () => {

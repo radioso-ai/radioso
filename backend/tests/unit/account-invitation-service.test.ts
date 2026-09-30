@@ -141,6 +141,7 @@ describe("AccountInvitationService", () => {
         email: "teammate@example.com",
         acceptancePath: invitation.acceptanceUrl,
         invitedByEmail: "owner@example.com",
+        invitedByName: null,
         expiresAt: new Date(invitation.expiresAt),
       },
     ]);
@@ -152,6 +153,26 @@ describe("AccountInvitationService", () => {
         metadata: expect.objectContaining({ email: "teammate@example.com", emailDelivered: true }),
       }),
     );
+  });
+
+  it("names the inviter by their display name in the notification", async () => {
+    const userRepository = new InMemoryUserRepository();
+    const membershipRepository = new InMemoryAccountMembershipRepository();
+    membershipRepository.setUserRepository(userRepository);
+    const notifier = new RecordingAccountInvitationNotifier();
+    const service = new AccountInvitationService(
+      new InMemoryAccountInvitationRepository(),
+      userRepository,
+      new AccountAccessService(membershipRepository, createAuditService()),
+      createAuditService(),
+      notifier,
+    );
+    const inviter = await userRepository.create({ email: "owner@example.com", passwordHash: "hash", displayName: "Olivia Owner" });
+    await membershipRepository.create({ accountId: "account-1", userId: inviter.id, role: "owner" });
+
+    await service.createInvitation({ accountId: "account-1", invitedByUserId: inviter.id, email: "teammate@example.com" });
+
+    expect(notifier.notifications[0]).toMatchObject({ invitedByEmail: "owner@example.com", invitedByName: "Olivia Owner" });
   });
 
   it("keeps the invitation usable and reports it undelivered when notification fails", async () => {

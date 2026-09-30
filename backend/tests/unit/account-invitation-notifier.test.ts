@@ -28,6 +28,7 @@ const notification = {
   email: "teammate@example.com",
   acceptancePath: "/invite/token-123",
   invitedByEmail: "owner@example.com",
+  invitedByName: "Olivia Owner",
   expiresAt: new Date("2026-09-09T10:00:00.000Z"),
 };
 
@@ -45,6 +46,7 @@ describe("createMailAccountInvitationNotifier", () => {
     expect(driver.sent).toHaveLength(1);
     expect(driver.sent[0]?.to).toBe("teammate@example.com");
     expect(driver.sent[0]?.text).toContain("https://app.radioso.ai/invite/token-123");
+    expect(driver.sent[0]?.text).toContain("Olivia Owner (owner@example.com) invited you");
   });
 
   it("falls back to the local app origin when APP_BASE_URL is unset", async () => {

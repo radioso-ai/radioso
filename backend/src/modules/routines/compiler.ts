@@ -138,9 +138,15 @@ export const compileRoutineDefinition = (definition: RoutineDefinition): Routine
     }),
   );
   // Slot-aware condition for the promoted edge, mirroring authored llm guardText so the
-  // selector can judge "did the user answer?" by meaning (no keyword matching).
-  const autoGateCondition = (collected: string[]): string =>
-    `The user provided ${collected.map((slot) => `{{slot.${slot}}}`).join(" and ")}.`;
+  // selector can judge "did the user answer?" by meaning (no keyword matching). It names
+  // the step's required slots — an optional slot never holds a step (#1371) — and falls
+  // back to every collected slot when the step collects only optional ones.
+  const requiredSlotKeys = new Set(definition.slots.filter((slot) => slot.required).map((slot) => slot.key));
+  const autoGateCondition = (collected: string[]): string => {
+    const required = collected.filter((slot) => requiredSlotKeys.has(slot));
+    const gating = required.length > 0 ? required : collected;
+    return `The user provided ${gating.map((slot) => `{{slot.${slot}}}`).join(" and ")}.`;
+  };
 
   const slots: RoutineSlotSchema[] = [...definition.slots]
     .sort((left, right) => left.ordinal - right.ordinal)

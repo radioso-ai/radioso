@@ -23,17 +23,35 @@ interface SafeRoutineValidationDiagnostic {
   readonly message: string;
 }
 
-const safeRoutineValidationMessages: Partial<Record<RoutineValidationCode, string>> = {
+const DECLARED_UNUSED_SLOT_LOCATION_PREFIX = "slot:";
+
+/**
+ * A slot key is an author-chosen identifier (`slotKeyPattern`: `[A-Za-z_][A-Za-z0-9_]*`, bounded
+ * length) -- schema-shaped, not authored free text -- and this diagnostic's `location` already
+ * carries it unfiltered. Naming it in the message too means a caller that renders only the message
+ * (not the structured `location`) still learns which slot to fix, instead of just that some
+ * unspecified slot failed.
+ */
+const declaredUnusedSlotMessage = (location: string): string => {
+  const key = location.startsWith(DECLARED_UNUSED_SLOT_LOCATION_PREFIX) ? location.slice(DECLARED_UNUSED_SLOT_LOCATION_PREFIX.length) : null;
+  return key
+    ? `Slot "${key}" is declared but not referenced by any step or terminal instruction. Reference it as {{slot.${key}}} where it belongs, or remove the slot declaration.`
+    : "A declared slot is not referenced by any step or terminal instruction.";
+};
+
+const safeRoutineValidationMessages: Partial<Record<RoutineValidationCode, string | ((location: string) => string)>> = {
   node_id_collision: "A step or terminal identifier is used more than once.",
   missing_terminal: "The routine needs at least one terminal.",
+  declared_unused_slot: declaredUnusedSlotMessage,
 };
 
 /** External diagnostic DTO: preserves only structural location, never authored validation text. */
-export const toSafeRoutineValidationDiagnostic = (diagnostic: { readonly code: string; readonly location: string }): SafeRoutineValidationDiagnostic => ({
-  code: diagnostic.code,
-  location: diagnostic.location.slice(0, 240),
-  message: safeRoutineValidationMessages[diagnostic.code as RoutineValidationCode] ?? "The routine structure is not valid for serving.",
-});
+export const toSafeRoutineValidationDiagnostic = (diagnostic: { readonly code: string; readonly location: string }): SafeRoutineValidationDiagnostic => {
+  const location = diagnostic.location.slice(0, 240);
+  const entry = safeRoutineValidationMessages[diagnostic.code as RoutineValidationCode];
+  const message = typeof entry === "function" ? entry(location) : entry ?? "The routine structure is not valid for serving.";
+  return { code: diagnostic.code, location, message };
+};
 
 export interface RoutineValidationResult {
   ok: boolean;

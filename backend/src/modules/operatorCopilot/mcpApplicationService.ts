@@ -163,10 +163,18 @@ const notRetainedReplayResponse = (invocation: OperatorMcpInvocationRecord): Ope
 // failures and must remain visible as outages rather than directing the caller to alter input.
 const CALLER_REJECTION_STATUSES = new Set([400, 404, 409]);
 const CALLER_REJECTION_422_CODES = new Set(["revision_invalid"]);
+// A 409 that names one of these settles on its own once a concurrent operation finishes: the
+// caller made no mistake, so an identical retry is the correct next call, not a rewritten one.
+// invalid_arguments would tell it to change input that was never wrong; operation_conflict is the
+// same retryable shape the MCP receipt/replay machinery below already answers with.
+const RETRYABLE_CONFLICT_CODES = new Set(["test_turn_in_progress"]);
 
 const toApplicationError = (rawError: unknown): unknown => {
   if (!(rawError instanceof AppError)) return rawError;
   if (rawError.code === "retrieval_not_configured") return new OperatorMcpApplicationError("missing_configuration");
+  if (rawError.statusCode === 409 && RETRYABLE_CONFLICT_CODES.has(rawError.code)) {
+    return new OperatorMcpApplicationError("operation_conflict", undefined, toolRejectionDetail(rawError.message));
+  }
   if (CALLER_REJECTION_STATUSES.has(rawError.statusCode)
     || (rawError.statusCode === 422 && CALLER_REJECTION_422_CODES.has(rawError.code))) {
     // The tool's own rejection sentence is the only account of what was wrong with the call;

@@ -5,7 +5,6 @@ import {
   isHumanOwned,
   ownerLabel,
   presentOwnership,
-  resolveOwnership,
   type ConversationOwnershipRecord,
 } from "../../../src/modules/handoff/public.js";
 
@@ -28,32 +27,6 @@ const humanOwnedRecord = (
 });
 
 describe("ownership state helpers", () => {
-  it("resolves a missing ownership row as ai_owned", () => {
-    expect(resolveOwnership(null)).toEqual({
-      state: "ai_owned",
-      ownerAccountId: null,
-      ownerUserId: null,
-      ownerDisplayName: null,
-      reason: null,
-      version: null,
-      takenOverAt: null,
-    });
-  });
-
-  it("resolves an existing row without changing its ownership fields", () => {
-    const record = humanOwnedRecord();
-
-    expect(resolveOwnership(record)).toEqual({
-      state: "human_owned",
-      ownerAccountId: record.ownerAccountId,
-      ownerUserId: record.ownerUserId,
-      ownerDisplayName: "Ada Operator",
-      reason: record.reason,
-      version: record.version,
-      takenOverAt: record.takenOverAt,
-    });
-  });
-
   it("detects human-owned conversations", () => {
     expect(isHumanOwned(humanOwnedRecord())).toBe(true);
     expect(isHumanOwned(humanOwnedRecord({ state: "ai_owned", ownerAccountId: null, ownerUserId: null, ownerProfile: null, ownerStoredLabel: null }))).toBe(false);

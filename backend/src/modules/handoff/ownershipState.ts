@@ -73,16 +73,6 @@ export const presentOwnership = (record: ConversationOwnershipRecord): Conversat
 
 type ResumeClassification = "message_emitting" | "side_effect_only";
 
-interface ResolvedOwnership {
-  state: ConversationOwnershipState;
-  ownerAccountId: string | null;
-  ownerUserId: string | null;
-  ownerDisplayName: string | null;
-  reason: string | null;
-  version: number | null;
-  takenOverAt: Date | null;
-}
-
 interface CanResumeInput {
   classification?: ResumeClassification;
 }
@@ -91,34 +81,8 @@ type CanResumeResult =
   | { ok: true }
   | { ok: false; reason: "human_owned_message_emitting_resume_deferred" };
 
-export const resolveOwnership = (
-  record: ConversationOwnershipRecord | null,
-): ResolvedOwnership => {
-  if (!record) {
-    return {
-      state: "ai_owned",
-      ownerAccountId: null,
-      ownerUserId: null,
-      ownerDisplayName: null,
-      reason: null,
-      version: null,
-      takenOverAt: null,
-    };
-  }
-
-  return {
-    state: record.state,
-    ownerAccountId: record.ownerAccountId,
-    ownerUserId: record.ownerUserId,
-    ownerDisplayName: ownerLabel(record),
-    reason: record.reason,
-    version: record.version,
-    takenOverAt: record.takenOverAt,
-  };
-};
-
 export const isHumanOwned = (record: ConversationOwnershipRecord | null): boolean =>
-  resolveOwnership(record).state === "human_owned";
+  record?.state === "human_owned";
 
 // FR-022 compatibility stub: resume work is message-emitting unless the host marks it
 // side-effect-only/safe. Message-emitting resumes must park while a human owns the

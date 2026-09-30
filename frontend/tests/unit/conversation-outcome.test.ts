@@ -39,7 +39,7 @@ describe('deriveConversationOutcome', () => {
 
   it('is handed_off for a claimed (non-null owner) conversation too', () => {
     const claimed = conversation({
-      ownership: { ...ownership, ownerAccountId: 'account-1', ownerDisplayName: 'Dana' },
+      ownership: { ...ownership, ownerAccountId: 'account-1', ownerUserId: 'user-dana', ownerDisplayName: 'Dana' },
     })
 
     expect(deriveConversationOutcome(claimed, NOW)).toEqual({ kind: 'handed_off' })

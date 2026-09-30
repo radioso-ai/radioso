@@ -246,6 +246,12 @@ imports from `services/`.
   default-off option, and `AssistantHistoryService` is the only place that turns
   them on (`dashboardConversationDetailOptions`) — the public routes call
   `chatHistoryService.getConversation` directly and never set them.
+  A human-agent reply's `operatorDisplayName` follows one rule on every surface
+  that reads it (visitor chat and embed, dashboard, Ray, API), applied in
+  `operatorDisplayNameFrom`: the stored `humanAgent.displayName` shows unless the
+  reply records no `humanAgent.userId` and the signature looks like an email
+  address (`looksLikeEmailAddress` from `auth/contracts`). Then it is omitted,
+  and the visitor surface labels the reply "A teammate".
   `includeTurnFailureDebug` attaches a `turnFailure` fact (failed or superseded,
   never both classified as the same) to the user message of a turn that never
   produced an assistant reply — the read-side counterpart to

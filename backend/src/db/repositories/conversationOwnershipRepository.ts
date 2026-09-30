@@ -1,4 +1,4 @@
-import { sql } from "kysely";
+import { sql, type RawBuilder } from "kysely";
 
 import type { Db } from "../../shared/infra/kysely/types.js";
 // The domain module owns the ownership record shape; this repository is its
@@ -51,6 +51,8 @@ export interface ConversationOwnershipTransferInput {
 export interface ConversationOwnershipHandBackInput {
   conversationId: string;
   expectedVersion: number;
+  /** The teammate handing it back: only its owner may, or anyone while nobody has claimed it. */
+  actingUserId: string;
 }
 
 export type ConversationOwnershipMutationResult =
@@ -76,7 +78,7 @@ interface ConversationOwnershipRow {
 // The full conversation_ownership projection over an ownership row aliased `o`, plus the owning
 // user's current name and email, so the handoff module can name the owner as they are now (a
 // rename shows at once). Every read and every write selects through this one fragment — writes
-// via a `written` CTE over their RETURNING rows — so all paths map the same way.
+// through `selectWritten` — so all paths map the same way.
 const conversationOwnershipProjection = sql`
   o.conversation_id,
   o.workspace_id,
@@ -94,6 +96,17 @@ const conversationOwnershipProjection = sql`
 `;
 
 const ownerUserJoin = sql`LEFT JOIN users owner_user ON owner_user.id = o.owner_user_id`;
+
+// Runs an INSERT or UPDATE and reads its written rows back through the shared projection.
+const selectWritten = (write: RawBuilder<unknown>): RawBuilder<ConversationOwnershipRow> => sql<ConversationOwnershipRow>`
+  WITH written AS (
+    ${write}
+    RETURNING *
+  )
+  SELECT ${conversationOwnershipProjection}
+    FROM written o
+    ${ownerUserJoin}
+`;
 
 const mapRecord = (row: ConversationOwnershipRow): ConversationOwnershipRecord => ({
   conversationId: row.conversation_id,
@@ -159,37 +172,31 @@ export class ConversationOwnershipRepository {
     // to re-enter human ownership). An already human_owned row is left untouched so a
     // present operator is never clobbered — the conditional upsert returns no row in
     // that case and we read back the current record.
-    const result = await sql<ConversationOwnershipRow>`
-      WITH written AS (
-        INSERT INTO conversation_ownership (
-            conversation_id,
-            workspace_id,
-            state,
-            owner_account_id,
-            owner_user_id,
-            owner_display_name,
-            reason,
-            version,
-            taken_over_at,
-            updated_at
-          )
-          VALUES (${input.conversationId}, ${input.workspaceId}, 'human_owned', NULL, NULL, NULL, ${input.reason}, 1, NULL, now())
-          ON CONFLICT (conversation_id) DO UPDATE
-            SET state = 'human_owned',
-                owner_account_id = NULL,
-                owner_user_id = NULL,
-                owner_display_name = NULL,
-                reason = EXCLUDED.reason,
-                taken_over_at = NULL,
-                version = conversation_ownership.version + 1,
-                updated_at = now()
-            WHERE conversation_ownership.state = 'ai_owned'
-          RETURNING *
-      )
-      SELECT ${conversationOwnershipProjection}
-        FROM written o
-        ${ownerUserJoin}
-    `.execute(db);
+    const result = await selectWritten(sql`
+      INSERT INTO conversation_ownership (
+          conversation_id,
+          workspace_id,
+          state,
+          owner_account_id,
+          owner_user_id,
+          owner_display_name,
+          reason,
+          version,
+          taken_over_at,
+          updated_at
+        )
+        VALUES (${input.conversationId}, ${input.workspaceId}, 'human_owned', NULL, NULL, NULL, ${input.reason}, 1, NULL, now())
+        ON CONFLICT (conversation_id) DO UPDATE
+          SET state = 'human_owned',
+              owner_account_id = NULL,
+              owner_user_id = NULL,
+              owner_display_name = NULL,
+              reason = EXCLUDED.reason,
+              taken_over_at = NULL,
+              version = conversation_ownership.version + 1,
+              updated_at = now()
+          WHERE conversation_ownership.state = 'ai_owned'
+    `).execute(db);
 
     const row = result.rows[0];
     if (row) {
@@ -208,28 +215,22 @@ export class ConversationOwnershipRepository {
     input: ConversationOwnershipTakeOverInput,
     db: Db = this.db,
   ): Promise<ConversationOwnershipMutationResult> {
-    const insertedResult = await sql<ConversationOwnershipRow>`
-      WITH written AS (
-        INSERT INTO conversation_ownership (
-            conversation_id,
-            workspace_id,
-            state,
-            owner_account_id,
-            owner_user_id,
-            owner_display_name,
-            reason,
-            version,
-            taken_over_at,
-            updated_at
-          )
-          VALUES (${input.conversationId}, ${input.workspaceId}, 'human_owned', ${input.accountId}, ${input.userId}, ${input.displayName}, 'operator_takeover', 1, now(), now())
-          ON CONFLICT (conversation_id) DO NOTHING
-          RETURNING *
-      )
-      SELECT ${conversationOwnershipProjection}
-        FROM written o
-        ${ownerUserJoin}
-    `.execute(db);
+    const insertedResult = await selectWritten(sql`
+      INSERT INTO conversation_ownership (
+          conversation_id,
+          workspace_id,
+          state,
+          owner_account_id,
+          owner_user_id,
+          owner_display_name,
+          reason,
+          version,
+          taken_over_at,
+          updated_at
+        )
+        VALUES (${input.conversationId}, ${input.workspaceId}, 'human_owned', ${input.accountId}, ${input.userId}, ${input.displayName}, 'operator_takeover', 1, now(), now())
+        ON CONFLICT (conversation_id) DO NOTHING
+    `).execute(db);
 
     const inserted = insertedResult.rows[0];
     if (inserted) {
@@ -237,32 +238,26 @@ export class ConversationOwnershipRepository {
     }
 
     // CAS on the version only when an expected version is supplied; otherwise claim any
-    // ai-owned / unowned row. The predicate is spliced as a trusted `sql` fragment so the
+    // ai-owned / unclaimed row. The predicate is spliced as a trusted `sql` fragment so the
     // optional `AND version = ...` clause matches the original conditional exactly.
     const versionPredicate = input.expectedVersion === undefined
       ? sql``
       : sql`AND version = ${input.expectedVersion}`;
-    const updatedResult = await sql<ConversationOwnershipRow>`
-      WITH written AS (
-        UPDATE conversation_ownership
-            SET state = 'human_owned',
-                workspace_id = ${input.workspaceId},
-                owner_account_id = ${input.accountId},
-                owner_user_id = ${input.userId},
-                owner_display_name = ${input.displayName},
-                reason = 'operator_takeover',
-                version = version + 1,
-                taken_over_at = now(),
-                updated_at = now()
-          WHERE conversation_id = ${input.conversationId}
-            AND (state = 'ai_owned' OR owner_account_id IS NULL)
-            ${versionPredicate}
-          RETURNING *
-      )
-      SELECT ${conversationOwnershipProjection}
-        FROM written o
-        ${ownerUserJoin}
-    `.execute(db);
+    const updatedResult = await selectWritten(sql`
+      UPDATE conversation_ownership
+          SET state = 'human_owned',
+              workspace_id = ${input.workspaceId},
+              owner_account_id = ${input.accountId},
+              owner_user_id = ${input.userId},
+              owner_display_name = ${input.displayName},
+              reason = 'operator_takeover',
+              version = version + 1,
+              taken_over_at = now(),
+              updated_at = now()
+        WHERE conversation_id = ${input.conversationId}
+          AND (state = 'ai_owned' OR owner_user_id IS NULL)
+          ${versionPredicate}
+    `).execute(db);
 
     const updated = updatedResult.rows[0];
     if (updated) {
@@ -279,26 +274,20 @@ export class ConversationOwnershipRepository {
     // Transfer is also how a teammate takes a conversation someone else holds (takeOver refuses
     // an owned row), and how an unclaimed handoff is assigned. Handing it to its current owner
     // is an idempotent no-op.
-    const result = await sql<ConversationOwnershipRow>`
-      WITH written AS (
-        UPDATE conversation_ownership
-            SET owner_account_id = ${input.accountId},
-                owner_user_id = ${input.userId},
-                owner_display_name = ${input.displayName},
-                -- Assigning a handoff nobody had claimed is its first claim.
-                taken_over_at = COALESCE(taken_over_at, now()),
-                version = version + 1,
-                updated_at = now()
-          WHERE conversation_id = ${input.conversationId}
-            AND state = 'human_owned'
-            AND version = ${input.expectedVersion}
-            AND (owner_account_id IS DISTINCT FROM ${input.accountId} OR owner_user_id IS DISTINCT FROM ${input.userId})
-          RETURNING *
-      )
-      SELECT ${conversationOwnershipProjection}
-        FROM written o
-        ${ownerUserJoin}
-    `.execute(db);
+    const result = await selectWritten(sql`
+      UPDATE conversation_ownership
+          SET owner_account_id = ${input.accountId},
+              owner_user_id = ${input.userId},
+              owner_display_name = ${input.displayName},
+              -- Assigning a handoff nobody had claimed is its first claim.
+              taken_over_at = COALESCE(taken_over_at, now()),
+              version = version + 1,
+              updated_at = now()
+        WHERE conversation_id = ${input.conversationId}
+          AND state = 'human_owned'
+          AND version = ${input.expectedVersion}
+          AND (owner_account_id IS DISTINCT FROM ${input.accountId} OR owner_user_id IS DISTINCT FROM ${input.userId})
+    `).execute(db);
 
     const row = result.rows[0];
     if (row) {
@@ -316,29 +305,24 @@ export class ConversationOwnershipRepository {
     input: ConversationOwnershipHandBackInput,
     db: Db = this.db,
   ): Promise<ConversationOwnershipMutationResult> {
-    const result = await sql<ConversationOwnershipRow>`
-      WITH written AS (
-        UPDATE conversation_ownership
-            SET state = 'ai_owned',
-                owner_account_id = NULL,
-                owner_user_id = NULL,
-                owner_display_name = NULL,
-                version = version + 1,
-                updated_at = now()
-          WHERE conversation_id = ${input.conversationId}
-            AND version = ${input.expectedVersion}
-            AND (
-              state IS DISTINCT FROM 'ai_owned'
-              OR owner_account_id IS NOT NULL
-              OR owner_user_id IS NOT NULL
-              OR owner_display_name IS NOT NULL
-            )
-          RETURNING *
-      )
-      SELECT ${conversationOwnershipProjection}
-        FROM written o
-        ${ownerUserJoin}
-    `.execute(db);
+    const result = await selectWritten(sql`
+      UPDATE conversation_ownership
+          SET state = 'ai_owned',
+              owner_account_id = NULL,
+              owner_user_id = NULL,
+              owner_display_name = NULL,
+              version = version + 1,
+              updated_at = now()
+        WHERE conversation_id = ${input.conversationId}
+          AND version = ${input.expectedVersion}
+          AND (owner_user_id IS NULL OR owner_user_id = ${input.actingUserId})
+          AND (
+            state IS DISTINCT FROM 'ai_owned'
+            OR owner_account_id IS NOT NULL
+            OR owner_user_id IS NOT NULL
+            OR owner_display_name IS NOT NULL
+          )
+    `).execute(db);
 
     const row = result.rows[0];
     if (row) {

@@ -3,6 +3,7 @@ import { decodeCursorWithKeys } from "../../../shared/domain/cursorPagination.js
 import type { CallerKind, ConversationSourceScope } from "../../../shared/domain/conversationSource.js";
 import type { ConversationOutcomeFilter } from "../../../shared/domain/conversationOutcome.js";
 import type { ConversationTurnStage } from "../contracts/interruption.js";
+import { looksLikeEmailAddress } from "../../auth/contracts/index.js";
 import { presentOwnership, type ConversationOwnershipScope } from "../../handoff/public.js";
 import type { AuditEventRecord, AuditEventRepositoryPort } from "../../../db/repositories/auditEventRepository.js";
 import type {
@@ -241,23 +242,20 @@ export interface ChatConversationTurn {
 }
 
 /**
- * Reads the signature from a human-agent reply's stored metadata. A reply that names its author
- * (`humanAgent.userId`) was signed under the rule that a signature is never an email. One that
- * does not was stored before replies recorded their author, when an email could stand in for a
- * missing organisation name, so its signature is shown only where the caller opts in: operator
- * surfaces. Absent, the visitor surface labels the reply generically.
+ * Reads the signature from a human-agent reply's stored metadata, the same on every surface. A
+ * reply that names its author (`humanAgent.userId`) was signed under the rule that a signature is
+ * never an email. One that does not was stored before replies recorded their author: signed with
+ * the organisation's name, which stays visible, or with the replier's email where the organisation
+ * had none, which is dropped. Absent, the visitor surface labels the reply generically.
  */
-const operatorDisplayNameFrom = (
-  message: MessageRecord,
-  options: { includeUnattributedReplySignatures?: boolean },
-): string | undefined => {
+const operatorDisplayNameFrom = (message: MessageRecord): string | undefined => {
   const humanAgent = (message.metadata as { humanAgent?: { displayName?: unknown; userId?: unknown } } | undefined)?.humanAgent;
   const displayName = humanAgent?.displayName;
   if (typeof displayName !== "string" || displayName.trim().length === 0) {
     return undefined;
   }
   const attributed = typeof humanAgent?.userId === "string";
-  return attributed || options.includeUnattributedReplySignatures ? displayName : undefined;
+  return attributed || !looksLikeEmailAddress(displayName.trim()) ? displayName : undefined;
 };
 
 export interface ChatConversationDetail {
@@ -1102,10 +1100,6 @@ export class ChatHistoryService {
       // of the public chat contract. The public/embed visitor path shares this method, and its
       // presenter forwards unrecognised fields, so an ungated field here becomes public API.
       includeLatency?: boolean;
-      // OFF by default: a reply stored before replies named their author can carry the
-      // replier's email as its signature. Operator surfaces may show it; the public/embed
-      // visitor path shares this method and must never set it.
-      includeUnattributedReplySignatures?: boolean;
     } = {},
   ): Promise<ChatConversationDetail> {
     const conversation = await this.conversationRepository.findByIdAndWorkspaceId(conversationId, workspaceId);
@@ -1216,7 +1210,7 @@ export class ChatHistoryService {
         ...(options.includeLatency ? { latencyMs: message.totalLatencyMs } : {}),
         debug: message.role === "assistant" ? debugByAssistantMessageId.get(message.id) : undefined,
         turnFailure: message.role === "user" ? turnFailureByUserMessageId.get(message.id) : undefined,
-        operatorDisplayName: operatorDisplayNameFrom(message, options),
+        operatorDisplayName: operatorDisplayNameFrom(message),
       })),
       ...(ownershipRecord?.state === "human_owned"
         ? { ownership: toChatConversationOwnership(ownershipRecord) }
@@ -1231,7 +1225,6 @@ export class ChatHistoryService {
       includeAnswerFeedback?: boolean;
       includeOwnership?: boolean;
       includeTurnFailureDebug?: boolean;
-      includeUnattributedReplySignatures?: boolean;
     } = {},
   ): Promise<ChatConversationTurnDetail> {
     const message = await this.messageRepository.findByIdAndWorkspaceId(workspaceId, messageId);
@@ -1292,7 +1285,7 @@ export class ChatHistoryService {
         latencyMs: message.totalLatencyMs,
         debug,
         turnFailure,
-        operatorDisplayName: operatorDisplayNameFrom(message, options),
+        operatorDisplayName: operatorDisplayNameFrom(message),
       },
       ...(ownershipRecord?.state === "human_owned"
         ? { ownership: toChatConversationOwnership(ownershipRecord) }
@@ -1304,7 +1297,7 @@ export class ChatHistoryService {
     workspaceId: string,
     conversationId: string,
     input: { cursor?: string; limit: number },
-    options: { includeOwnership?: boolean; includeLatency?: boolean; includeUnattributedReplySignatures?: boolean } = {},
+    options: { includeOwnership?: boolean; includeLatency?: boolean } = {},
   ): Promise<ChatConversationTail> {
     const conversation = await this.conversationRepository.findByIdAndWorkspaceId(conversationId, workspaceId);
 
@@ -1333,7 +1326,7 @@ export class ChatHistoryService {
 
   private toLightweightConversationTurn(
     message: MessageRecord,
-    options: { includeLatency?: boolean; includeUnattributedReplySignatures?: boolean },
+    options: { includeLatency?: boolean },
   ): ChatConversationTurn {
     return {
       id: message.id,
@@ -1343,7 +1336,7 @@ export class ChatHistoryService {
       createdAt: toIsoString(message.createdAt),
       inputMetadata: message.inputMetadata,
       ...(options.includeLatency ? { latencyMs: message.totalLatencyMs } : {}),
-      operatorDisplayName: operatorDisplayNameFrom(message, options),
+      operatorDisplayName: operatorDisplayNameFrom(message),
     };
   }
 

@@ -2950,7 +2950,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Take human ownership of a conversation */
+        /**
+         * Take human ownership of a conversation
+         * @description Claims a conversation the AI owns or that waits for a teammate. A conversation another teammate holds returns 409; take it from them by transferring it to yourself.
+         */
         post: operations["takeOverConversation"];
         delete?: never;
         options?: never;
@@ -2967,7 +2970,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Reply to a conversation as a human operator */
+        /**
+         * Reply to a conversation as a human operator
+         * @description Only the teammate who owns the conversation replies. A reply to a conversation the AI owns, or one waiting for a teammate, claims it for you first. A conversation another teammate holds, or an `expectedVersion` that is no longer current, returns 409 with the current ownership.
+         */
         post: operations["replyToConversation"];
         delete?: never;
         options?: never;
@@ -2986,7 +2992,7 @@ export interface paths {
         put?: never;
         /**
          * Transfer human ownership of a conversation
-         * @description Hands a human-owned conversation to another teammate, or to yourself to take it from the teammate holding it. The receiving teammate gets an email with a link to the conversation unless they made the transfer. A target who is not a teammate able to own conversations on the workspace returns 404.
+         * @description Hands a human-owned conversation to another teammate, or to yourself to take it from the teammate holding it. The receiving teammate gets an email with a link to the conversation unless they made the transfer. A target who is not a teammate able to own conversations on the workspace returns 404 with code `transfer_target_unavailable`; a conversation that is not in the workspace returns 404 with code `not_found`.
          */
         post: operations["transferConversationOwnership"];
         delete?: never;
@@ -3004,7 +3010,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Return a human-owned conversation to AI ownership */
+        /**
+         * Return a human-owned conversation to AI ownership
+         * @description Only the teammate who owns the conversation hands it back; anyone may while it waits unclaimed. A conversation another teammate holds, or an `expectedVersion` that is no longer current, returns 409 with the current ownership.
+         */
         post: operations["handBackConversation"];
         delete?: never;
         options?: never;
@@ -7440,7 +7449,7 @@ export interface components {
             ownerAccountId: string | null;
             /**
              * Format: uuid
-             * @description The teammate handling the conversation. Null while a handoff waits to be claimed, when AI-owned, and on conversations claimed before per-teammate ownership.
+             * @description The teammate handling the conversation; a human-owned conversation is claimed exactly when this is set. Null while a handoff waits to be claimed, when AI-owned, and once the owner's user is deleted.
              */
             ownerUserId: string | null;
             /** @description The owner's teammate label: their display name, else their email. Operator-facing only. */
@@ -7788,6 +7797,7 @@ export interface components {
         };
         HumanReplyMessageResponse: {
             message: components["schemas"]["HumanReplyMessage"];
+            ownership: components["schemas"]["ConversationOwnership"] & unknown;
         };
         ChatConversationDetail: {
             /** Format: uuid */
@@ -22805,7 +22815,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Conversation or transfer target not found */
+            /** @description Conversation not found (`not_found`), or transfer target unavailable (`transfer_target_unavailable`) */
             404: {
                 headers: {
                     [name: string]: unknown;

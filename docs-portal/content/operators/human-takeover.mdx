@@ -35,9 +35,9 @@ The dashboard surfaces this work in the **Inbox**, a top-level sidebar item ahea
 
 The Inbox opens with a lens toggle at the top of its left pane. **Needs you** is the default: the queue of everything waiting on a person — handoffs, approvals, and negative feedback. **All** lists every conversation, newest first, each row titled with a short topic the model generates from the conversation — falling back to the visitor's opening message until a topic exists — with an outcome chip (In progress, Completed, or Handed off) plus search and filters for outcome, agent, and site.
 
-In **Needs you**, the left pane lists open items with search and filters for type, agent, and who has taken each one — **Me** is you, not your whole organisation; critical escalations — an approval to decide, a handoff awaiting or held by a human — sort to the top, then written thumbs-down feedback, ordered by its latest creation or edit. Automatically detected signals and uncommented feedback stay in **Quality** instead of adding one inbox row per answer.
+In **Needs you**, the left pane lists open items with search and filters for type, agent, and **Taken by**, which groups items by teammate — **Me** matches the conversations you hold; critical escalations — an approval to decide, a handoff awaiting or held by a human — sort to the top, then written thumbs-down feedback, ordered by its latest creation or edit. Automatically detected signals and uncommented feedback stay in **Quality** instead of adding one inbox row per answer.
 
-Both lenses share the same reading pane. Select an actionable conversation — one waiting on a human or already human-owned — and it opens: a one-line header naming the visitor, the page they were on, and how long they've been waiting; a situation card with the handoff reason and the visitor's opening request; the live transcript; and a reply composer. Send a reply to a conversation nobody holds yet and you've claimed it — there's no separate take-over step first. **Hand to…** next to Send gives a waiting conversation, or one you hold, to a teammate, who gets an email with a link to it when email delivery is configured. When a teammate already holds the conversation, the composer gives way to "Dana Scully is handling this · **Take over**", so two people never reply blind; Take over moves it to you and brings the composer back, with anything you'd drafted still in it. While the item is open, new visitor messages and your own replies appear without a manual refresh. Choose **Done** to close a handoff and hand the conversation back to the agent; on a negative-feedback item, **Done** opens the same resolution-reason flow Quality → Review uses to classify it. An approval closes when you choose one of its decision options — it needs no separate Done step. Select any other conversation and the reading pane is read-only, with an outcome footer in place of the composer.
+Both lenses share the same reading pane. Select an actionable conversation — one waiting on a human or already human-owned — and it opens: a one-line header naming the visitor, the page they were on, and how long they've been waiting; a situation card with the handoff reason and the visitor's opening request; the live transcript; and a reply composer. Send a reply to a conversation nobody holds yet and you've claimed it — there's no separate take-over step first. **Hand to…** next to Send gives a waiting conversation, or one you hold, to a teammate, who gets an email with a link to it when email delivery is configured. When a teammate already holds the conversation, the composer gives way to "Dana Scully is handling this · **Take over**", so two people never reply blind; Take over transfers it to you and brings the composer back, with anything you'd drafted still in it. While the item is open, new visitor messages and your own replies appear without a manual refresh. Choose **Done** to close a handoff and hand the conversation back to the agent; it shows when you hold the conversation or nobody has claimed it. On a negative-feedback item, **Done** opens the same resolution-reason flow Quality → Review uses to classify it, and shows even when a teammate holds the conversation, because closing feedback leaves ownership alone. An approval closes when you choose one of its decision options — it needs no separate Done step. Select any other conversation and the reading pane is read-only, with an outcome footer in place of the composer.
 
 The browser tab title shows how many items are open, and a soft sound plays when a new handoff or approval arrives while you have the dashboard open.
 
@@ -57,7 +57,11 @@ A turn counts as a grounding gap only when the agent tried to ground an answer a
 
 You can act from the console or directly through authenticated endpoints under `/api/v1/conversations`. All of them require a workspace session with the `workspace.conversation.takeover` permission, and every action records a `hitl.ownership` audit event naming the acting teammate as `actorUserId` — and, on a transfer, the receiving teammate as `targetUserId`.
 
-Ownership belongs to a person. The ownership record names the teammate handling the conversation in `ownerUserId` and labels them in `ownerDisplayName`: their display name, or their email until they set one. The label is read from their profile each time, so a rename shows in the Inbox at once. `ownerAccountId` is the workspace's organisation, the same for every teammate. A conversation claimed before ownership named a person keeps the label it was claimed under, with `ownerUserId` set to `null`. The same ownership, label included, reaches anyone who reads the workspace's history with an API token or through the operator MCP server, so a teammate who hasn't set a display name is visible to them by email.
+Ownership belongs to a person. The ownership record names the teammate handling the conversation in `ownerUserId` and labels them in `ownerDisplayName`: their display name, or their email until they set one. The label is read from their profile each time, so a rename shows in the Inbox at once. `ownerAccountId` is the workspace's organisation, the same for every teammate. The same ownership, label included, reaches anyone who reads the workspace's history with an API token or through the operator MCP server, so a teammate who hasn't set a display name is visible to them by email.
+
+A human-owned conversation is claimed exactly when it names a teammate in `ownerUserId`. One with `ownerUserId: null` waits for a teammate: the AI stays out of it, and the next teammate to take it over, reply, or receive a transfer claims it. A conversation claimed under organisation-level ownership named no teammate, so it waits for a teammate again, with no label. When a teammate's user is deleted, the conversations they held wait for a teammate too, and `ownerDisplayName` may still carry the label stored when they claimed them.
+
+The server applies the rules below on every surface: the dashboard, this API, and [Slack](/operators/slack-channel#operator-actions-in-slack).
 
 ### Take over
 
@@ -69,7 +73,7 @@ POST /api/v1/conversations/{conversationId}/takeover
 { "reason": "operator_takeover" }
 ```
 
-`reason` is optional. The response returns the current ownership record, with you as `ownerUserId`. Take over claims a conversation that is AI-owned or waiting unclaimed; one a teammate holds returns `409` — take it from them with a [transfer](#transfer-ownership) to yourself.
+`reason` is optional. The response returns the current ownership record, with you as `ownerUserId`. Take over claims a conversation that is AI-owned or waiting for a teammate. One a teammate holds returns `409` with the current ownership in `error.details.ownership` — take it from them with a [transfer](#transfer-ownership) to yourself, which is what the dashboard's **Take over** does on a teammate's conversation.
 
 ### Reply as a human
 
@@ -81,7 +85,13 @@ POST /api/v1/conversations/{conversationId}/reply
 { "message": "Thanks for waiting. I can help with this.", "expectedVersion": 3 }
 ```
 
-The reply is saved as an assistant-role message with `source: human_agent`. Its `metadata.humanAgent` records who sent it — `accountId` and `userId` — and the signature the visitor sees, `displayName`: your display name, or your organisation's name if you haven't set one. It is never your email; with neither, the reply goes out unsigned and the visitor sees it from "A teammate". `expectedVersion` must match the current human-owned ownership record; if the conversation was transferred or handed back, the endpoint returns `409` with the current record in `error.details.ownership`.
+The reply is saved as an assistant-role message with `source: human_agent`. Its `metadata.humanAgent` records who sent it — `accountId` and `userId` — and the signature the visitor sees, `displayName`: your display name, or your organisation's name if you haven't set one. It is never your email; with neither, the reply goes out unsigned and the visitor sees it from "A teammate".
+
+Every surface — the visitor chat and embed, the dashboard, Ray, and this API — shows a reply's stored signature by one rule. A reply that records its author in `humanAgent.userId` shows its signature. A reply with no recorded author shows its signature too, typically the organisation's name, unless that signature is an email address: an email-shaped signature is never shown, and the visitor sees that reply from "A teammate".
+
+Only the teammate who owns the conversation replies. A reply to a conversation the AI owns, or one waiting for a teammate, claims it for you first. When another teammate holds it, the endpoint returns `409` with code `conflict`, the message "Another teammate is handling this conversation", and the current ownership in `error.details.ownership`. `expectedVersion` must match the ownership record you replied from; a stale value also returns `409` with the current record.
+
+The `201` response carries `message`, the saved reply, and `ownership`, the ownership after the reply. Its `version` moves on when the reply claimed the conversation, so use the returned record for your next call.
 
 ### List teammates
 
@@ -98,7 +108,7 @@ GET /api/v1/conversations/operators
 }
 ```
 
-The teammates a conversation can be handed to: active users of the workspace's organisation who hold `workspace.conversation.takeover` on it, each labelled by display name, or by email until they set one.
+The teammates a conversation can be handed to: active users of the workspace's organisation who hold `workspace.conversation.takeover` on it, each labelled by display name, or by email until they set one. A disabled teammate is left off the list and cannot receive a transfer.
 
 ### Transfer ownership
 
@@ -110,9 +120,9 @@ POST /api/v1/conversations/{conversationId}/transfer
 { "toUserId": "6f1c2d4e-8a90-4b7c-9d1e-2f3a4b5c6d7e", "expectedVersion": 3 }
 ```
 
-Transfer hands a human-owned conversation to a teammate — one waiting unclaimed, or one someone holds. Pass your own `userId` to take a conversation from the teammate holding it. `toUserId` must be one of the teammates [List teammates](#list-teammates) returns; anyone else, including a user in another organisation, returns `404`. `expectedVersion` is an optimistic-concurrency token from the ownership record; a stale value returns `409` with the current record.
+Any teammate with the takeover permission can hand a human-owned conversation to a teammate — one waiting for a teammate, or one someone holds. Pass your own `userId` to take a conversation from the teammate holding it. `toUserId` must be one of the teammates [List teammates](#list-teammates) returns; anyone else, including a disabled teammate or a user in another organisation, returns `404` with code `transfer_target_unavailable`. A conversation outside the workspace returns `404` with code `not_found`. `expectedVersion` is an optimistic-concurrency token from the ownership record; a stale value returns `409` with the current record.
 
-When you hand a conversation to someone else and email delivery is configured, they get an email with a link to it in the dashboard, naming who handed it over and the workspace, and carrying none of the transcript. It is queued and sent by the worker, so the transfer returns without waiting on the mail provider and a failed send is retried. Taking a conversation yourself sends nothing.
+When you hand a conversation to someone else and email delivery is configured, they get an email with a link to it in the dashboard, naming who handed it over and the workspace, and carrying none of the transcript. The transfer and its notice commit together: the notice is queued in the same database transaction and sent by the document worker, so the transfer returns without waiting on the mail provider and a failed send is retried. The worker sends the notice only if the recipient still holds the conversation at the ownership version the transfer produced, so a notice overtaken by a later transfer is dropped, even when the conversation comes back to the same teammate. Taking a conversation yourself sends nothing.
 
 ### Hand back to the AI
 
@@ -124,7 +134,7 @@ POST /api/v1/conversations/{conversationId}/handback
 { "expectedVersion": 4 }
 ```
 
-After hand-back, the next visitor message follows the normal assistant path again.
+The teammate who owns the conversation hands it back, or anyone while it waits for a teammate. Anyone else gets `409` with the current ownership in `error.details.ownership`. After hand-back, the next visitor message follows the normal assistant path again.
 
 ## Approvals
 
@@ -160,14 +170,16 @@ GET /api/v1/public/chat/{token}/tail/{conversationId}?cursor=...      (visitor)
 GET /api/v1/public/chat/{token}/events/{conversationId}              (visitor push, SSE)
 ```
 
-Each tail call returns messages created after the cursor plus an advanced cursor. With no cursor, tail returns the newest bounded page. Messages include `source`, so a visitor sees a human reply distinctly, plus `operatorDisplayName` on a human-agent reply so the visitor can see who is answering. That name is the reply's signature — the teammate's display name, or the organisation's name — and never an email, user id, or account id; an unsigned reply shows as "A teammate". The operator tail also includes `ownership`; the visitor tail never does.
+Each tail call returns messages created after the cursor plus an advanced cursor. With no cursor, tail returns the newest bounded page. Messages include `source`, so a visitor sees a human reply distinctly, plus `operatorDisplayName` on a human-agent reply so the visitor can see who is answering. That name is the reply's signature — the teammate's display name, or the organisation's name — and never an email, user id, or account id; an unsigned reply, or one whose only signature is an email address, shows as "A teammate". The operator tail also includes `ownership`; the visitor tail never does.
 
 ## Common failure modes
 
 - A `409` on reply, transfer, or handback means the ownership record moved since you read it. Re-read the current ownership from `error.details.ownership` and retry with the new `expectedVersion`.
+- A reply or handback returns `409` with "Another teammate is handling this conversation": a teammate holds it. Leave it to them, or transfer it to yourself first.
 - The AI keeps answering a conversation you meant to own: no one has taken it over yet. Ownership flips only on an explicit takeover, a routine handoff, or a retrieval-miss handoff.
-- A transfer returns `404`: `toUserId` is not a teammate who can own conversations in this workspace. Pick a target from [List teammates](#list-teammates).
+- A transfer returns `404` with `transfer_target_unavailable`: `toUserId` is not an active, enabled teammate who can own conversations in this workspace. Pick a target from [List teammates](#list-teammates).
 - A takeover returns `409` although nobody replied yet: a teammate holds the conversation. Transfer it to yourself to take it from them.
+- A conversation someone handled shows as waiting for a teammate: it was claimed under organisation-level ownership, or its owner's user was deleted. The next teammate to act on it claims it.
 - The visitor never sees a "joining" line: the line is model-generated, and a conversation where an operator has already replied gets no waiting line at all — later messages just wait.
 
 ## Read next

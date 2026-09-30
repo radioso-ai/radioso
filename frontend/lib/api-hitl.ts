@@ -1,4 +1,5 @@
 import { request, type ErrorResponse } from './api-client'
+import { getApiErrorCode } from './api-error'
 import { withQuery } from './api-query'
 import type {
   ChatConversationTail,
@@ -29,6 +30,27 @@ export const isHitlApiStatusError = (
   error: unknown,
   status: HitlApiStatus,
 ): error is ErrorResponse & { status: HitlApiStatus } => getHitlApiErrorStatus(error) === status
+
+type TransferFailureCause = 'target_unavailable' | 'conversation_missing'
+
+/**
+ * Why a transfer 404'd, read from the error code: the target teammate is no
+ * longer eligible (`transfer_target_unavailable`), or the conversation itself
+ * is gone (`not_found`). Null for any other failure.
+ */
+export const transferFailureCause = (error: unknown): TransferFailureCause | null => {
+  if (!isHitlApiStatusError(error, 404)) {
+    return null
+  }
+  switch (getApiErrorCode(error)) {
+    case 'transfer_target_unavailable':
+      return 'target_unavailable'
+    case 'not_found':
+      return 'conversation_missing'
+    default:
+      return null
+  }
+}
 
 export const hitlApi = {
   async listPendingDecisions(signal?: AbortSignal): Promise<PendingApprovalDecisionListResponse> {

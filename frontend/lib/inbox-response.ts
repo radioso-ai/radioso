@@ -1,6 +1,7 @@
 import type { ChatConversationDetail, ChatConversationSummary, ConversationChannelContext, ConversationOwnership } from '@/lib/api'
 import { getAgentOperatorLabel } from '@/lib/agent-label'
 import type { EscalationType, HandoffCandidateSource } from '@/lib/needs-attention'
+import { conversationOwner } from '@/lib/operator-actions'
 
 /**
  * Pure presentation helpers for the operator inbox's response view (spec
@@ -128,7 +129,7 @@ export interface SituationSource {
 export const selectSituationBody = (source: SituationSource): string | null =>
   source.summary ?? source.firstVisitorMessage ?? null
 
-export interface ConversationMessageLike {
+interface ConversationMessageLike {
   source?: string
   role: string
   content: string
@@ -165,22 +166,26 @@ export const doneControlTooltip = (item: {
 }
 
 /**
- * Whether the Done control renders at all: only when there's something to
- * wrap up. A handoff needs an ownership record — the only state the wire
- * ever sends non-null `ownership` for, covering both "awaiting a human"
+ * Whether the Done control renders at all: only when there's something this
+ * viewer can wrap up. Negative feedback never depends on ownership — closing
+ * a feedback item is triage, so it shows even on a conversation a teammate
+ * holds. A handoff needs an ownership record — the only state the wire ever
+ * sends non-null `ownership` for, covering both "awaiting a human"
  * (unclaimed) and "human-owned" (claimed) — or the detail simply hasn't
  * loaded yet (unknown, not "no ownership"; the composer alone renders
  * meanwhile and Done stays disabled — see the caller — rather than hidden,
  * so a fast click can't mistake "not loaded" for "definitely nothing to hand
- * back"). Negative feedback never depends on ownership. A live AI-owned
- * conversation with a *loaded* detail showing no ownership record has
- * nothing to hand back — the composer alone is correct there; Done appears
- * once the first send claims it and the detail refetch brings the record.
- * Approvals never render Done (they close when the decision resolves).
+ * back"). A live AI-owned conversation with a *loaded* detail showing no
+ * ownership record has nothing to hand back — the composer alone is correct
+ * there; Done appears once the first send claims it and the detail refetch
+ * brings the record. A handoff a teammate holds hides Done too: only its
+ * owner hands it back, and the composer offers Take over instead. Approvals
+ * never render Done (they close when the decision resolves).
  */
 export const shouldShowDoneControl = (
   itemType: EscalationType | undefined,
-  conversationDetail: { ownership?: unknown } | null,
+  conversationDetail: Pick<ChatConversationDetail, 'ownership'> | null,
+  currentUserId: string | null,
 ): boolean => {
   if (itemType === 'negative_feedback') {
     return true
@@ -188,7 +193,14 @@ export const shouldShowDoneControl = (
   if (itemType !== 'handoff') {
     return false
   }
-  return !conversationDetail || Boolean(conversationDetail.ownership)
+  if (!conversationDetail) {
+    return true
+  }
+  if (!conversationDetail.ownership) {
+    return false
+  }
+  const owner = conversationOwner(conversationDetail.ownership)
+  return owner === null || owner.userId === currentUserId
 }
 
 // ── Read-only footer (All lens, non-actionable conversations) ──────────────

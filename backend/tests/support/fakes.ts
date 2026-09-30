@@ -273,6 +273,16 @@ export class InMemoryAccountRepository implements AccountRepositoryPort {
 
 export class InMemoryUserRepository implements UserRepositoryPort {
   private readonly items = new Map<string, UserRecord>();
+  // `users.disabled_at` is set outside the user repository (staff tooling); tests set it here.
+  private readonly disabledAtById = new Map<string, Date>();
+
+  disable(userId: string, at: Date = new Date()): void {
+    this.disabledAtById.set(userId, at);
+  }
+
+  disabledAt(userId: string): Date | null {
+    return this.disabledAtById.get(userId) ?? null;
+  }
 
   async create(params: CreateUserParams): Promise<UserRecord> {
     const record: UserRecord = {
@@ -718,9 +728,9 @@ export class InMemoryEmailVerificationTokenRepository implements EmailVerificati
 
 export class InMemoryAccountMembershipRepository implements AccountMembershipRepositoryPort {
   private readonly items = new Map<string, AccountMembershipRecord>();
-  private userRepository: UserRepositoryPort | null = null;
+  private userRepository: (UserRepositoryPort & Partial<Pick<InMemoryUserRepository, "disabledAt">>) | null = null;
 
-  setUserRepository(userRepository: UserRepositoryPort): void {
+  setUserRepository(userRepository: UserRepositoryPort & Partial<Pick<InMemoryUserRepository, "disabledAt">>): void {
     this.userRepository = userRepository;
   }
 
@@ -782,7 +792,7 @@ export class InMemoryAccountMembershipRepository implements AccountMembershipRep
       ...membership,
       email: user?.email ?? "unknown@example.com",
       displayName: user?.displayName ?? null,
-      disabledAt: null,
+      disabledAt: this.userRepository?.disabledAt?.(membership.userId) ?? null,
     }));
   }
 
@@ -812,6 +822,7 @@ export class InMemoryAccountMembershipRepository implements AccountMembershipRep
       ...updated,
       email: user?.email ?? "unknown@example.com",
       displayName: user?.displayName ?? null,
+      disabledAt: this.userRepository?.disabledAt?.(updated.userId) ?? null,
     };
   }
 
@@ -4392,7 +4403,7 @@ export class InMemoryConversationOwnershipRepository implements Pick<
       return { ok: false, changed: false, record: existing };
     }
 
-    if (existing.state !== "ai_owned" && existing.ownerAccountId !== null) {
+    if (existing.state !== "ai_owned" && existing.ownerUserId !== null) {
       return { ok: false, changed: false, record: existing };
     }
 
@@ -4438,6 +4449,9 @@ export class InMemoryConversationOwnershipRepository implements Pick<
     const existing = this.items.get(input.conversationId);
     if (!existing || existing.version !== input.expectedVersion) {
       return { ok: false, changed: false, record: existing ?? null };
+    }
+    if (existing.ownerUserId !== null && existing.ownerUserId !== input.actingUserId) {
+      return { ok: false, changed: false, record: existing };
     }
     if (existing.state === "ai_owned" && existing.ownerAccountId === null && existing.ownerUserId === null
       && existing.ownerStoredLabel === null) {

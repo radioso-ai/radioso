@@ -67,8 +67,9 @@ export const startApiRuntime = async (options: StartApiRuntimeOptions): Promise<
     chat: createConnectorChatPort(dependencies.chatService),
     ingestion: dependencies.connectorIngestionPort,
     approvalDecisionService: dependencies.approvalDecisionService,
-    operatorReplyService: dependencies.operatorReplyService,
-    operatorIdentityResolver: dependencies.operatorIdentityResolver,
+    conversationOwnershipService: dependencies.conversationOwnershipService,
+    // Slack operators are authorised by the same role and grant rules as the dashboard.
+    operatorPermissions: dependencies.accountAccessService,
     auditService: dependencies.auditService,
     metricsRegistry: dependencies.metricsRegistry,
     workspaceInvalidationPublisher: dependencies.workspaceInvalidationPublisher,

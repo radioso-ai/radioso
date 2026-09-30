@@ -129,4 +129,17 @@ describe('hitlApi', () => {
     expect(getHitlApiErrorStatus(invalidOption)).toBe(422)
     expect(isHitlApiStatusError(invalidOption, 422)).toBe(true)
   })
+
+  it('tells an ineligible transfer target from a missing conversation by error code', async () => {
+    const { transferFailureCause } = await import('@/lib/api-hitl')
+
+    expect(transferFailureCause({ status: 404, error: { code: 'transfer_target_unavailable', message: 'Transfer target not found' } }))
+      .toBe('target_unavailable')
+    expect(transferFailureCause({ status: 404, error: { code: 'not_found', message: 'Conversation not found' } }))
+      .toBe('conversation_missing')
+    expect(transferFailureCause({ status: 404, error: { code: 'HTTP_ERROR', message: 'Not Found' } })).toBeNull()
+    expect(transferFailureCause({ status: 404 })).toBeNull()
+    expect(transferFailureCause({ status: 409, error: { code: 'transfer_target_unavailable', message: 'x' } })).toBeNull()
+    expect(transferFailureCause(new Error('network'))).toBeNull()
+  })
 })

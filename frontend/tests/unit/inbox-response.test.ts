@@ -230,31 +230,50 @@ describe('doneControlTooltip', () => {
 })
 
 describe('shouldShowDoneControl', () => {
+  // `ownership()` is held by user-anna; the viewer here is someone else unless a case says otherwise.
+  const viewer = 'user-me'
+  const unclaimed = () => ownership({ ownerAccountId: null, ownerUserId: null, ownerDisplayName: null, takenOverAt: null })
+
   it('never shows Done for an approval', () => {
-    expect(shouldShowDoneControl('approval', null)).toBe(false)
-    expect(shouldShowDoneControl('approval', detail({ ownership: ownership() }))).toBe(false)
+    expect(shouldShowDoneControl('approval', null, viewer)).toBe(false)
+    expect(shouldShowDoneControl('approval', detail({ ownership: ownership({ ownerUserId: viewer }) }), viewer)).toBe(false)
+    expect(shouldShowDoneControl('approval', detail({ ownership: unclaimed() }), viewer)).toBe(false)
   })
 
   it('always shows Done for negative feedback, regardless of ownership or load state', () => {
-    expect(shouldShowDoneControl('negative_feedback', null)).toBe(true)
-    expect(shouldShowDoneControl('negative_feedback', detail({ ownership: undefined }))).toBe(true)
-    expect(shouldShowDoneControl('negative_feedback', detail({ ownership: ownership() }))).toBe(true)
+    expect(shouldShowDoneControl('negative_feedback', null, viewer)).toBe(true)
+    expect(shouldShowDoneControl('negative_feedback', detail({ ownership: undefined }), viewer)).toBe(true)
+    expect(shouldShowDoneControl('negative_feedback', detail({ ownership: ownership({ ownerUserId: viewer }) }), viewer)).toBe(true)
+  })
+
+  it('shows Done for negative feedback on a conversation a teammate holds', () => {
+    expect(shouldShowDoneControl('negative_feedback', detail({ ownership: ownership() }), viewer)).toBe(true)
+    expect(shouldShowDoneControl('negative_feedback', detail({ ownership: ownership() }), null)).toBe(true)
   })
 
   it('shows Done for a handoff while the detail has not loaded yet — unknown, not "nothing to hand back"', () => {
-    expect(shouldShowDoneControl('handoff', null)).toBe(true)
+    expect(shouldShowDoneControl('handoff', null, viewer)).toBe(true)
   })
 
-  it('shows Done for a handoff once the loaded detail carries an ownership record', () => {
-    expect(shouldShowDoneControl('handoff', detail({ ownership: ownership() }))).toBe(true)
+  it('shows Done for a handoff the viewer holds', () => {
+    expect(shouldShowDoneControl('handoff', detail({ ownership: ownership({ ownerUserId: viewer }) }), viewer)).toBe(true)
+  })
+
+  it('shows Done for a handoff waiting unclaimed', () => {
+    expect(shouldShowDoneControl('handoff', detail({ ownership: unclaimed() }), viewer)).toBe(true)
+  })
+
+  it('hides Done for a handoff a teammate holds — only the owner hands it back', () => {
+    expect(shouldShowDoneControl('handoff', detail({ ownership: ownership() }), viewer)).toBe(false)
+    expect(shouldShowDoneControl('handoff', detail({ ownership: ownership() }), null)).toBe(false)
   })
 
   it('hides Done for a handoff once the loaded detail shows no ownership record — a live AI-owned conversation with nothing to hand back', () => {
-    expect(shouldShowDoneControl('handoff', detail({ ownership: undefined }))).toBe(false)
+    expect(shouldShowDoneControl('handoff', detail({ ownership: undefined }), viewer)).toBe(false)
   })
 
   it('hides Done when there is no effective item at all (undefined type)', () => {
-    expect(shouldShowDoneControl(undefined, detail({ ownership: ownership() }))).toBe(false)
+    expect(shouldShowDoneControl(undefined, detail({ ownership: ownership() }), viewer)).toBe(false)
   })
 })
 

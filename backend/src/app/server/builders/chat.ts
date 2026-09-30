@@ -974,8 +974,9 @@ export const buildChatServices = (input: {
     contactHistoryProvider,
     retrievalAnswerService,
     actionDispatchWorker,
-    // The drain-pushing outbox, for producers outside the turn (e.g. conversation transfer notices).
-    actionOutbox: pushingActionOutbox,
+    // For producers outside the turn that write the outbox in their own transaction (a
+    // conversation transfer and its notice) and push a drain once it commits.
+    actionDrainDispatcher,
     approvalDecisionService,
   };
 };

@@ -163,8 +163,10 @@ describe('OperatorComposer', () => {
   })
 
   it('refreshes the teammate list when a transfer target is no longer eligible, without a conflict refresh', async () => {
-    vi.spyOn(hitlApi, 'transferConversation')
-      .mockRejectedValue(Object.assign(new Error('not found'), { status: 404 }))
+    vi.spyOn(hitlApi, 'transferConversation').mockRejectedValue(Object.assign(new Error('not found'), {
+      status: 404,
+      error: { code: 'transfer_target_unavailable', message: 'Transfer target not found' },
+    }))
     const changed = vi.fn()
     const stale = vi.fn()
     const { root, container } = await renderComposer(
@@ -180,6 +182,31 @@ describe('OperatorComposer', () => {
     })
 
     expect(stale).toHaveBeenCalledTimes(1)
+    expect(changed).not.toHaveBeenCalled()
+    expect(container.querySelector('[role="status"]')).not.toBeNull()
+    await act(async () => root.unmount())
+  })
+
+  it('leaves the teammate list alone when the transfer finds the conversation itself gone', async () => {
+    vi.spyOn(hitlApi, 'transferConversation').mockRejectedValue(Object.assign(new Error('not found'), {
+      status: 404,
+      error: { code: 'not_found', message: 'Conversation not found' },
+    }))
+    const changed = vi.fn()
+    const stale = vi.fn()
+    const { root, container } = await renderComposer(
+      { state: 'human_owned', ownerAccountId: 'account-1', ownerUserId: 'user-dana', ownerDisplayName: 'Dana', version: 7 } as never,
+      changed,
+      'user-me',
+      stale,
+    )
+
+    await act(async () => {
+      ;[...container.querySelectorAll('button')].find((button) => button.textContent?.includes('Take over'))?.click()
+      await flush()
+    })
+
+    expect(stale).not.toHaveBeenCalled()
     expect(changed).not.toHaveBeenCalled()
     expect(container.querySelector('[role="status"]')).not.toBeNull()
     await act(async () => root.unmount())

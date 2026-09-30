@@ -35,17 +35,16 @@ describe('conversationOwner', () => {
     expect(conversationOwner(ownership({ state: 'human_owned' }))).toBeNull()
   })
 
-  it('keys a teammate by user', () => {
-    expect(conversationOwner(ownedBy('user-dana', 'Dana Scully'))).toEqual({
-      key: 'user-dana',
+  it('names the teammate by user, with a trimmed label', () => {
+    expect(conversationOwner(ownedBy('user-dana', ' Dana Scully '))).toEqual({
       userId: 'user-dana',
       label: 'Dana Scully',
     })
+    expect(conversationOwner(ownedBy('user-dana', null))).toEqual({ userId: 'user-dana', label: null })
   })
 
-  it('keys an owner claimed before per-teammate ownership by label, with no user', () => {
-    expect(conversationOwner(ownedBy(null, ' Acme '))).toEqual({ key: 'label:Acme', userId: null, label: 'Acme' })
-    expect(conversationOwner(ownedBy(null, null))).toEqual({ key: 'label:', userId: null, label: null })
+  it('has no owner when the ownership names no user, whatever else it carries', () => {
+    expect(conversationOwner(ownedBy(null, 'Acme'))).toBeNull()
   })
 })
 
@@ -88,7 +87,7 @@ describe('deriveOperatorActions', () => {
       claimsOnSend: false,
       canReply: true,
       canHandOff: true,
-      owner: { key: 'user-me', userId: 'user-me', label: 'Me Myself' },
+      owner: { userId: 'user-me', label: 'Me Myself' },
       version: 6,
     })
   })
@@ -99,14 +98,18 @@ describe('deriveOperatorActions', () => {
       claimsOnSend: false,
       canReply: false,
       canHandOff: false,
-      owner: { key: 'user-dana', userId: 'user-dana', label: 'Dana Scully' },
+      owner: { userId: 'user-dana', label: 'Dana Scully' },
       version: 6,
     })
   })
 
-  it('never treats a conversation claimed before per-teammate ownership as mine', () => {
-    expect(deriveOperatorActions(ownedBy(null, 'Acme'), 'user-me').status).toBe('owned_by_teammate')
-    expect(deriveOperatorActions(ownedBy(null, 'Acme'), null).status).toBe('owned_by_teammate')
+  it('treats a human-owned conversation that names no user as waiting to be claimed', () => {
+    expect(deriveOperatorActions(ownedBy(null, 'Acme'), 'user-me')).toMatchObject({
+      status: 'awaiting_human',
+      claimsOnSend: true,
+      canReply: true,
+      owner: null,
+    })
   })
 
   it('treats every owned conversation as a teammate’s when the signed-in user is unknown', () => {

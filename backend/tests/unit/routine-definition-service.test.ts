@@ -1075,6 +1075,9 @@ describe("RoutineDefinitionService", () => {
       ok: false,
       diagnostics: [expect.objectContaining({ code: "unregistered_action_type", location: "step:step_send" })],
     });
+    // A handler is registered for it; it is only not one a routine may emit.
+    expect(validation.diagnostics[0]?.message).not.toContain("no action handler is registered");
+    expect(validation.diagnostics[0]?.message).toContain("no action a routine may emit");
   });
 
   it("clears an action step when the workspace has the required capability", async () => {

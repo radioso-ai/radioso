@@ -341,6 +341,15 @@ imports from `services/`.
   while the lifecycle suppresses external actions, ownership handoffs, customer
   analytics, and summary regeneration. Chat does not own the caller's identity,
   provenance, or authorization policy; application composition supplies those.
+  The same mode gates routine slot-value redaction on the turn trace
+  (`buildTurnTraceForPresentation` in `chatTurnLifecycle.ts`): a safe-test turn
+  keeps every captured value in full, and any other turn masks a PII-typed one
+  through the routines module's `maskRoutineSubTracesForCustomerSurface`. A Test
+  Chat turn that ends on a routine hand-off terminal — whose `handoff.notify`
+  action a replayed turn never dispatches — carries a preview of the operator
+  notification that terminal would have sent, built through the same
+  `operatorNotifications` text formatter the real dispatch uses
+  (`WorkbenchReplayRunner.handoffPreviewFor`).
 - Fused turn planning: `turnPlanService.ts` (one `turn_planning` call on the
   agent's chat model + prompt `backend/prompts/chat/turn-planning.md`, strict
   parse and semantic validation) and `turnPlanCoordinator.ts` (gate, eligibility bounds from

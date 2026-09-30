@@ -49,6 +49,15 @@ export interface TurnTraceEnvelope {
    * walking the spine. Kept generic so this stays free of capability types.
    */
   summary?: Record<string, unknown>;
+  /**
+   * Present only on a Test Chat turn that ended on a routine hand-off terminal, whose
+   * `handoff.notify` action never dispatches (a replayed turn's actions are never sent —
+   * see `WorkbenchReplayRunner`). Carries what that notification would have delivered, built
+   * by the same operator-notification text formatter the real dispatch uses, so an operator
+   * can check the email/webhook content before release. Never set on a real conversation's
+   * envelope — a live hand-off actually sends, so it needs no preview.
+   */
+  handoffPreview?: { subject: string; lines: string[] };
 }
 
 export interface TurnTraceOpenTelemetryCorrelation {

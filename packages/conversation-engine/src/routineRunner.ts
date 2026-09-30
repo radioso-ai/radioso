@@ -14,6 +14,7 @@ import type {
   RoutineSkillResult,
   RoutineState,
   RoutineStep,
+  RoutineTraceSlotValue,
   RoutineTraceStepEntry,
   RoutineTransition,
   SteeringRule,
@@ -268,6 +269,25 @@ const declaredSlotVariables = (
       .filter((key) => hasVariable(variables, key))
       .map((key) => [key, variables[key]]),
   );
+
+/** Narrows a captured slot value to the scalar shape a trace can carry. */
+const traceableSlotValue = (value: unknown): string | number | boolean =>
+  typeof value === "string" || typeof value === "number" || typeof value === "boolean"
+    ? value
+    : JSON.stringify(value) ?? String(value);
+
+/**
+ * Every filled declared slot's value after this turn, self-described by its declared
+ * type so a host redaction policy needs no separate routine lookup. Debug-only — this
+ * is the one place the trace carries slot *values* rather than just keys.
+ */
+const declaredSlotTraceValues = (
+  routine: Routine,
+  variables: Record<string, unknown>,
+): RoutineTraceSlotValue[] =>
+  (routine.slots ?? [])
+    .filter((slot) => hasVariable(variables, slot.key))
+    .map((slot) => ({ key: slot.key, type: slot.type, value: traceableSlotValue(variables[slot.key]) }));
 
 const isSatisfiedSlotCollectionStep = (
   routine: Routine,
@@ -780,6 +800,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         landedStepId: step.id,
         capturedSlotKeys: [...new Set(traceSteps.flatMap((entry) => entry.capturedSlotKeys ?? []))],
         filledSlotKeys: [...declaredSlotKeys].filter((key) => hasVariable(variables, key)),
+        slotValues: declaredSlotTraceValues(routine, variables),
         steps: traceSteps,
       };
       const reason = typeof step.metadata?.reason === "string" ? step.metadata.reason : undefined;
@@ -838,6 +859,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       ...(terminalKind ? { terminalKind } : {}),
       capturedSlotKeys: [...new Set(traceSteps.flatMap((entry) => entry.capturedSlotKeys ?? []))],
       filledSlotKeys: [...declaredSlotKeys].filter((key) => hasVariable(variables, key)),
+      slotValues: declaredSlotTraceValues(routine, variables),
       steps: traceSteps,
     };
 

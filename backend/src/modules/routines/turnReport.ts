@@ -58,4 +58,10 @@ export interface RoutineTurnReporter {
   describeDeclined(): RoutineTurnState | null;
   /** The tool call this turn carried and its outcome; null on a message turn. */
   describeInvocation(): RoutineInvocationReport | null;
+  /**
+   * A routine's authored display name by id alone, for a caller with no {@link RoutineState}
+   * to describe — a handoff whose routine already completed and cleared its state, for
+   * instance. Null for a routine this turn does not know.
+   */
+  describeRoutineName(routineId: string): string | null;
 }

@@ -1485,11 +1485,39 @@ describe("DefaultRoutineRunner trace", () => {
       landedStepId: "ask_message",
       capturedSlotKeys: ["email"],
       filledSlotKeys: ["email"],
+      slotValues: [{ key: "email", type: "email", value: "a@b.c" }],
     });
     expect(result.trace?.steps).toEqual([
       { stepId: "ask_email", kind: "chat", event: "advanced", capturedSlotKeys: ["email"], viaSelector: true },
       { stepId: "ask_message", kind: "chat", event: "rendered" },
     ]);
+  });
+
+  it("carries each filled slot's value, self-described by its declared type, in declared order", async () => {
+    const runner = new DefaultRoutineRunner(
+      [slotRoutine],
+      { select: vi.fn(async () => ({ nextStepId: "ask_message" })) },
+      { render: vi.fn(echoRenderer.render) },
+    );
+
+    const result = await runner.resume({ turn, state: state(["ask_email"], { email: "a@b.c", message: "hi" }) });
+
+    expect(result.trace?.slotValues).toEqual([
+      { key: "email", type: "email", value: "a@b.c" },
+      { key: "message", type: "text", value: "hi" },
+    ]);
+  });
+
+  it("carries no slot values before any slot is filled", async () => {
+    const runner = new DefaultRoutineRunner(
+      [slotRoutine],
+      { select: vi.fn(async () => ({ nextStepId: "ask_email" })) },
+      { render: vi.fn(echoRenderer.render) },
+    );
+
+    const result = await runner.resume({ turn, state: state(["ask_email"]) });
+
+    expect(result.trace?.slotValues).toEqual([]);
   });
 
   it("records a re-ask (no advance) and carries no slot value, only the key", async () => {

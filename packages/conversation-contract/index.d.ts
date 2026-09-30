@@ -1307,9 +1307,22 @@ export interface RoutineTraceStepEntry {
 }
 
 /**
+ * One declared slot's value in a {@link RoutineRunTrace}, self-describing by the slot's
+ * declared type so a host-owned redaction policy can decide what to mask without a
+ * separate routine-definition lookup.
+ */
+export interface RoutineTraceSlotValue {
+  key: string;
+  type: RoutineSlotType;
+  value: string | number | boolean;
+}
+
+/**
  * A step-by-step record of one routine turn's traversal, surfaced to the debug panel
- * as a {@link CapabilitySubTrace} (`namespace: "routine"`). Names and structure only —
- * no slot values, prompts, or completions.
+ * as a {@link CapabilitySubTrace} (`namespace: "routine"`). Per-step entries carry slot
+ * *keys* only, never values. The trace as a whole additionally carries the routine's own
+ * slot *values* (see {@link RoutineTraceSlotValue}) for a host to show a private test
+ * surface in full and redact a customer-facing one — still no prompts or completions.
  */
 export interface RoutineRunTrace {
   routineId: string;
@@ -1322,6 +1335,8 @@ export interface RoutineRunTrace {
   capturedSlotKeys: string[];
   /** Declared slot keys filled after this turn (names only). */
   filledSlotKeys: string[];
+  /** Every filled declared slot's value after this turn, in the routine's declared order. */
+  slotValues: RoutineTraceSlotValue[];
   steps: RoutineTraceStepEntry[];
 }
 

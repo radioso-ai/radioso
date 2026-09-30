@@ -23,7 +23,6 @@ import {
   SlackCustomerReplyDeliverer,
   SlackWebApiClient,
 } from "../../../modules/slack/public.js";
-import { ActionRequestRepository } from "../../../db/repositories/actionRequestRepository.js";
 import { RoutineStateRepository } from "../../../db/repositories/routineStateRepository.js";
 import { ConversationSummaryRepository } from "../../../db/repositories/conversationSummaryRepository.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
@@ -120,7 +119,6 @@ export const buildEvalServices = (input: {
         conversationsOpen: async ({ users, botToken }) =>
           new SlackWebApiClient({ botToken }).conversationsOpen({ users }),
       },
-      outbox: new ActionRequestRepository(input.infrastructure.database.kysely),
       logger: input.logger,
     }),
   });

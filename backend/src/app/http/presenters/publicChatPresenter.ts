@@ -174,10 +174,10 @@ export const stripPublicChatCitationArtifacts = <T extends {
 };
 
 export const stripPublicConversationCitationArtifacts = (
-  detail: ChatConversationDetail,
+  { ownership: _ownership, ...detail }: ChatConversationDetail,
   anonymousSessionId: string,
   exposeCitations: boolean,
-): ChatConversationDetail => ({
+): Omit<ChatConversationDetail, "ownership"> => ({
   ...detail,
   messages: detail.messages.map((message) => {
     const {

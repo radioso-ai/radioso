@@ -299,7 +299,9 @@ complete.
    or form submission to `/api/connectors/slack/interactivity`. Radioso verifies
    the signature, identifies the operator by email, and resolves the action
    through the same approval and conversation-ownership services the dashboard
-   uses. A human reply is delivered to the customer's original channel.
+   uses. A human reply to a Slack conversation is queued as a `slack.post`
+   action in the same transaction that saves it, keyed by the message, and the
+   action worker posts it to the customer's original channel and thread.
 
 Logs and telemetry must use identifiers and counts only. They must not include
 Slack tokens, signing secrets, message text, prompts, completions, retrieved

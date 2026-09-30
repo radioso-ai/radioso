@@ -6,6 +6,7 @@ import type { MessageRecord } from "../../../src/db/repositories/messageReposito
 import {
   ConversationOwnershipService,
   type ConversationOwnershipRecord,
+  type OperatorReplyService,
 } from "../../../src/modules/handoff/public.js";
 import type { SlackInstallationRecord } from "../../../src/modules/slack/public.js";
 import { InMemoryActionOutbox, InMemoryConversationOwnershipRepository } from "../../support/fakes.js";
@@ -472,13 +473,18 @@ describe("SlackInteractivityHandler ownership rules through the ownership servic
     const { responsePosts, responseUrlClient } = slackResponses();
     const ownership = new InMemoryConversationOwnershipRepository();
     const outbox = new InMemoryActionOutbox();
-    const replies = { write: vi.fn(async () => message), deliver: vi.fn(async () => undefined) };
-    const replyScope = { messages: { create: vi.fn() }, conversations: { touch: vi.fn() } };
+    const replies = {
+      prepare: vi.fn(async (reply: Parameters<OperatorReplyService["prepare"]>[0]) => ({ ...reply, channel: null })),
+      write: vi.fn(async () => message),
+      announce: vi.fn(),
+      audit: vi.fn(async () => undefined),
+    };
+    const replyScope = { messages: { create: vi.fn() }, conversations: { touch: vi.fn() }, outbox: { enqueue: vi.fn() } };
     const service = new ConversationOwnershipService({
       conversations: { findByIdAndWorkspaceId: async (id: string) => ({ id }) as ConversationRecord },
       ownership,
       transfers: { run: (work) => work({ ownership, outbox }) },
-      replyWrites: { run: (work) => work({ ownership, reply: replyScope }) },
+      replyWrites: { run: (work) => work({ conversations: { lockForUpdate: async () => true }, ownership, reply: replyScope }) },
       operators: { find: async ({ userId }: { userId: string }) => operators[userId] ?? null },
       operatorIdentities: {
         resolve: async ({ userId }: { userId: string }) => ({ userId, teammateLabel: operators[userId].label, replySignature: null }),

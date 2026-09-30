@@ -4449,7 +4449,7 @@ export class InMemoryConversationOwnershipRepository implements Pick<
       ownerAccountId: input.accountId,
       ownerUserId: input.userId,
       ownerStoredLabel: input.displayName,
-      takenOverAt: existing.takenOverAt ?? new Date(),
+      takenOverAt: existing.ownerUserId === null ? new Date() : existing.takenOverAt,
       version: existing.version + 1,
       createdAt: existing.createdAt,
     });

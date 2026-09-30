@@ -7840,7 +7840,7 @@ export interface components {
             /** @description Cursor for subsequent tail requests. It marks the newest message included when this detail response was produced. */
             tailCursor: string | null;
             messages: components["schemas"]["ChatConversationMessage"][];
-            ownership?: components["schemas"]["ConversationOwnership"];
+            ownership?: components["schemas"]["ConversationOwnership"] & unknown;
         };
         ChatConversationTail: {
             messages: components["schemas"]["ChatConversationMessage"][];

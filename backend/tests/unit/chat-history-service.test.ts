@@ -227,9 +227,17 @@ describe("chat history service ownership read surface", () => {
     expect(detail.ownership).toBeUndefined();
   });
 
-  it("omits ownership after hand-back leaves an ai_owned row", async () => {
-    const { conversationRepository, conversationOwnershipRepository, service } = createService();
+  it("carries the AI-owned record after a hand-back on operator detail reads, never on the public one", async () => {
+    // The same rule as the tail: a pane that loads the detail after a hand-back must see the
+    // hand-back's version, or a stale human-owned record from an earlier tail poll would win.
+    const { conversationRepository, conversationOwnershipRepository, messageRepository, service } = createService();
     const conversation = await conversationRepository.create({ workspaceId: "workspace-1" });
+    const message = await messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "user",
+      content: "hello",
+    });
     await conversationOwnershipRepository.requestHandoff({
       conversationId: conversation.id,
       workspaceId: "workspace-1",
@@ -245,7 +253,7 @@ describe("chat history service ownership read surface", () => {
     if (!claimed.ok) {
       throw new Error("expected takeover to succeed");
     }
-    await conversationOwnershipRepository.handBack({
+    const handedBack = await conversationOwnershipRepository.handBack({
       conversationId: conversation.id,
       expectedVersion: claimed.record.version,
       actingUserId: claimed.record.ownerUserId!,
@@ -254,8 +262,14 @@ describe("chat history service ownership read surface", () => {
     const detail = await service.getConversation("workspace-1", conversation.id, detailInput, {
       includeOwnership: true,
     });
+    const turn = await service.getConversationTurn("workspace-1", message.id, { includeOwnership: true });
+    const publicDetail = await service.getConversation("workspace-1", conversation.id, detailInput);
+    const publicTurn = await service.getConversationTurn("workspace-1", message.id);
 
-    expect(detail.ownership).toBeUndefined();
+    expect(detail.ownership).toMatchObject({ state: "ai_owned", ownerUserId: null, version: handedBack.record!.version });
+    expect(turn.ownership).toMatchObject({ state: "ai_owned", version: handedBack.record!.version });
+    expect(publicDetail).not.toHaveProperty("ownership");
+    expect(publicTurn).not.toHaveProperty("ownership");
   });
 
   it("returns a tail cursor for the newest message in the detail snapshot", async () => {
@@ -658,6 +672,15 @@ describe("chat history service ownership read surface", () => {
       operatorUserId: "user-2",
       operatorDisplayName: "carl@acme.example",
     });
+    const embeddedEmailReply = await setup.messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "assistant",
+      source: "human_agent",
+      content: "Replied with an address inside the signature.",
+      operatorAccountId: "operator-1",
+      operatorDisplayName: "Erin erin@acme\u3002example",
+    });
     return {
       ...setup,
       conversation,
@@ -666,6 +689,7 @@ describe("chat history service ownership read surface", () => {
       legacyOrganisationReply,
       attributedReply,
       attributedEmailReply,
+      embeddedEmailReply,
     };
   };
 
@@ -679,6 +703,7 @@ describe("chat history service ownership read surface", () => {
       legacyOrganisationReply,
       attributedReply,
       attributedEmailReply,
+      embeddedEmailReply,
     } = await seedLegacyAndAttributedReplies();
     const cursor = { cursor: messageRepository.cursorFor(baseline), limit: 10 };
     const page = { limit: 50, offset: 0 };
@@ -695,9 +720,11 @@ describe("chat history service ownership read surface", () => {
       expect(messages.find((message) => message.id === legacyOrganisationReply.id)?.operatorDisplayName).toBe("Acme Support");
       expect(messages.find((message) => message.id === attributedReply.id)?.operatorDisplayName).toBe("Dana Scully");
       expect(messages.find((message) => message.id === attributedEmailReply.id)?.operatorDisplayName).toBeUndefined();
+      expect(messages.find((message) => message.id === embeddedEmailReply.id)?.operatorDisplayName).toBeUndefined();
     }
     expect(JSON.stringify(surfaces)).not.toContain("dana@example.com");
     expect(JSON.stringify(surfaces)).not.toContain("carl@acme.example");
+    expect(JSON.stringify(surfaces)).not.toContain("erin@");
     await expect(service.getConversationTurn("workspace-1", legacyEmailReply.id))
       .resolves.toMatchObject({ message: { operatorDisplayName: undefined } });
     await expect(service.getConversationTurn("workspace-1", legacyOrganisationReply.id))

@@ -304,8 +304,10 @@ export class ConversationOwnershipRepository {
           SET owner_account_id = ${input.accountId},
               owner_user_id = ${input.userId},
               owner_display_name = ${input.displayName},
-              -- Assigning a handoff nobody had claimed is its first claim.
-              taken_over_at = COALESCE(taken_over_at, now()),
+              -- A row that names no user is unclaimed — a handoff nobody took, or one whose owner's
+              -- user was deleted, leaving their claim time behind — so this is its first claim.
+              -- SET reads the row as it was before the update.
+              taken_over_at = CASE WHEN owner_user_id IS NULL THEN now() ELSE taken_over_at END,
               version = version + 1,
               updated_at = now()
         WHERE conversation_id = ${input.conversationId}

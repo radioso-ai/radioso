@@ -1,5 +1,7 @@
 export {
   CustomerReplyDeliveryDispatcher,
   type CustomerChannelReplyDeliverer,
-  type CustomerReplyDeliveryInput,
+  type CustomerReplyDeliveryConversation,
+  type CustomerReplyOutboxPort,
+  type CustomerReplyRoute,
 } from "./customerReplyDelivery.js";

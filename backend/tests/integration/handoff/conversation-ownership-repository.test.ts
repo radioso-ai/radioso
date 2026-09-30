@@ -527,6 +527,33 @@ describeIfDatabase("ConversationOwnershipRepository Postgres integration", () =>
     expect(reclaimed).toMatchObject({ ok: true, changed: true, record: { ownerUserId: fox, ownerStoredLabel: "Fox Mulder" } });
   });
 
+  it("stamps a fresh claim time when a conversation whose owner's user is gone is assigned, and keeps it on a later transfer", async () => {
+    const { accountId, conversationId, workspaceId } = await seedConversation(database);
+    const dana = await seedUser(database, { email: "dana@example.com", displayName: "Dana Scully" });
+    const claimed = await repository.takeOver({ conversationId, workspaceId, accountId, userId: dana, displayName: "Dana Scully" });
+    if (!claimed.ok) {
+      throw new Error("Expected takeover to succeed");
+    }
+    const staleClaimTime = new Date("2026-01-01T00:00:00.000Z");
+    await database.execute("UPDATE conversation_ownership SET taken_over_at = $2 WHERE conversation_id = $1", [conversationId, staleClaimTime]);
+    await database.execute("DELETE FROM users WHERE id = $1", [dana]);
+    const fox = await seedUser(database, { email: "fox@example.com", displayName: "Fox Mulder" });
+    const beforeTransfer = new Date(Date.now() - 1_000);
+
+    const assigned = await repository.transfer({
+      conversationId, accountId, userId: fox, displayName: "Fox Mulder", expectedVersion: claimed.record.version,
+    });
+    const walter = await seedUser(database, { email: "walter@example.com", displayName: "Walter Skinner" });
+    const reassigned = await repository.transfer({
+      conversationId, accountId, userId: walter, displayName: "Walter Skinner", expectedVersion: assigned.record!.version,
+    });
+
+    expect(assigned).toMatchObject({ ok: true, changed: true, record: { ownerUserId: fox } });
+    expect(assigned.record!.takenOverAt!.getTime()).toBeGreaterThan(beforeTransfer.getTime());
+    expect(reassigned).toMatchObject({ ok: true, changed: true, record: { ownerUserId: walter } });
+    expect(reassigned.record!.takenOverAt).toEqual(assigned.record!.takenOverAt);
+  });
+
   it("lets a teammate take a conversation from another by transfer, but never by takeover", async () => {
     const { accountId, conversationId, workspaceId } = await seedConversation(database);
     const dana = await seedUser(database, { email: "dana@example.com", displayName: "Dana Scully" });

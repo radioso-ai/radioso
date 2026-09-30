@@ -4,7 +4,7 @@ import type { CallerKind, ConversationSourceScope } from "../../../shared/domain
 import type { ConversationOutcomeFilter } from "../../../shared/domain/conversationOutcome.js";
 import type { ConversationTurnStage } from "../contracts/interruption.js";
 import type { TeammateLabelReaderPort } from "../contracts/teammateLabels.js";
-import { looksLikeEmailAddress } from "../../auth/contracts/index.js";
+import { outwardFacingName } from "../../auth/contracts/index.js";
 import { presentOwnership, type ConversationOwnershipScope } from "../../handoff/public.js";
 import type { AuditEventRecord, AuditEventRepositoryPort } from "../../../db/repositories/auditEventRepository.js";
 import type {
@@ -133,6 +133,16 @@ const toChatConversationOwnership = (record: ConversationOwnershipRecord): ChatC
   };
 };
 
+/**
+ * The ownership field of an operator read of one conversation — detail, turn, or tail: the record
+ * whenever one exists, AI-owned included, so a reader that holds an older record sees a hand-back
+ * by its higher version. Absent until a teammate is first involved: the row is lazy. A read that
+ * did not opt in to ownership passes null; the visitor surfaces never opt in.
+ */
+const operatorOwnershipField = (
+  record: ConversationOwnershipRecord | null,
+): { ownership?: ChatConversationOwnership } => (record ? { ownership: toChatConversationOwnership(record) } : {});
+
 export interface ChatConversationSummary {
   id: string;
   agentId: string | null;
@@ -260,17 +270,13 @@ export interface ChatConversationTurn {
 
 /**
  * Reads the signature from a human-agent reply's stored metadata, the same on every surface. A
- * stored signature is shown as-is unless it is email-shaped, whether or not the reply names its
- * author in `humanAgent.userId`: an email is never shown to a visitor, whatever put it there.
- * Absent, the visitor surface labels the reply generically.
+ * stored signature is shown by the outward-facing name rule — never when it holds an email —
+ * whether or not the reply names its author in `humanAgent.userId`: an email is never shown to a
+ * visitor, whatever put it there. Absent, the visitor surface labels the reply generically.
  */
 const operatorDisplayNameFrom = (message: MessageRecord): string | undefined => {
-  const humanAgent = (message.metadata as { humanAgent?: { displayName?: unknown } } | undefined)?.humanAgent;
-  const displayName = humanAgent?.displayName;
-  if (typeof displayName !== "string" || displayName.trim().length === 0) {
-    return undefined;
-  }
-  return looksLikeEmailAddress(displayName.trim()) ? undefined : displayName;
+  const displayName = (message.metadata as { humanAgent?: { displayName?: unknown } } | undefined)?.humanAgent?.displayName;
+  return typeof displayName === "string" ? outwardFacingName(displayName) ?? undefined : undefined;
 };
 
 /** The teammate who wrote a human-agent reply, from its stored metadata; absent on older replies. */
@@ -334,6 +340,7 @@ export interface ChatConversationDetail {
   nextCursor: string | null;
   tailCursor: string | null;
   messages: ChatConversationTurn[];
+  /** See {@link ChatConversationTail.ownership}: the same record, on operator reads only. */
   ownership?: ChatConversationOwnership;
 }
 
@@ -1266,9 +1273,7 @@ export class ChatHistoryService {
         operatorDisplayName: operatorDisplayNameFrom(message),
         ...(options.includeOperatorLabel ? operatorLabelField(message, operatorLabels) : {}),
       })),
-      ...(ownershipRecord?.state === "human_owned"
-        ? { ownership: toChatConversationOwnership(ownershipRecord) }
-        : {}),
+      ...operatorOwnershipField(ownershipRecord),
     };
   }
 
@@ -1344,9 +1349,7 @@ export class ChatHistoryService {
         operatorDisplayName: operatorDisplayNameFrom(message),
         ...(options.includeOperatorLabel ? operatorLabelField(message, operatorLabels) : {}),
       },
-      ...(ownershipRecord?.state === "human_owned"
-        ? { ownership: toChatConversationOwnership(ownershipRecord) }
-        : {}),
+      ...operatorOwnershipField(ownershipRecord),
     };
   }
 
@@ -1377,7 +1380,7 @@ export class ChatHistoryService {
     return {
       messages: messages.map((message) => this.toLightweightConversationTurn(message, options, operatorLabels)),
       cursor: latestCursor,
-      ...(ownershipRecord ? { ownership: toChatConversationOwnership(ownershipRecord) } : {}),
+      ...operatorOwnershipField(ownershipRecord),
     };
   }
 

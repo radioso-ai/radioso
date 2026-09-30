@@ -4,6 +4,7 @@ import type { ConversationChannelContext } from "@radioso/conversation-contract"
 import {
   CustomerReplyDeliveryDispatcher,
   type CustomerChannelReplyDeliverer,
+  type CustomerReplyRoute,
 } from "../../src/modules/customerReplyDelivery/public.js";
 import { SlackCustomerReplyDeliverer } from "../../src/modules/slack/public.js";
 
@@ -15,49 +16,44 @@ const slackContext: ConversationChannelContext = {
   user: { id: "U1" },
 };
 
+const slackConversation = {
+  id: "conversation-1",
+  workspaceId: "workspace-1",
+  sourceChannel: "slack",
+  channelContext: slackContext,
+};
+
+const legacySlackConversation = { ...slackConversation, channelContext: null };
+
+const message = { id: "message-1", content: "Human reply" };
+
+const fakeOutbox = () => ({ enqueue: vi.fn(async () => ({ id: "action-1", duplicate: false })) });
+
 describe("CustomerReplyDeliveryDispatcher", () => {
   it("routes Slack-origin conversations to the registered Slack deliverer", async () => {
-    const slackDeliverer: CustomerChannelReplyDeliverer = { deliver: vi.fn() };
+    const route: CustomerReplyRoute = { enqueue: vi.fn(async () => undefined) };
+    const slackDeliverer: CustomerChannelReplyDeliverer = { route: vi.fn(async () => route) };
     const dispatcher = new CustomerReplyDeliveryDispatcher({ slack: slackDeliverer });
-    const input = {
-      conversation: {
-        id: "conversation-1",
-        workspaceId: "workspace-1",
-        sourceChannel: "slack",
-        channelContext: slackContext,
-      },
-      message: { content: "Human reply" },
-    };
 
-    await dispatcher.deliver(input);
+    await expect(dispatcher.route(slackConversation)).resolves.toBe(route);
 
-    expect(slackDeliverer.deliver).toHaveBeenCalledWith(input);
+    expect(slackDeliverer.route).toHaveBeenCalledWith(slackConversation);
   });
 
-  it("falls back to sourceChannel for older Slack conversations and no-ops for web", async () => {
-    const slackDeliverer: CustomerChannelReplyDeliverer = { deliver: vi.fn() };
+  it("falls back to sourceChannel for older Slack conversations and routes web nowhere", async () => {
+    const slackDeliverer: CustomerChannelReplyDeliverer = { route: vi.fn(async () => null) };
     const dispatcher = new CustomerReplyDeliveryDispatcher({ slack: slackDeliverer });
 
-    await dispatcher.deliver({
-      conversation: {
-        id: "legacy-slack",
-        workspaceId: "workspace-1",
-        sourceChannel: "slack",
-        channelContext: null,
-      },
-      message: { content: "Human reply" },
-    });
-    await dispatcher.deliver({
-      conversation: {
-        id: "web-conversation",
-        workspaceId: "workspace-1",
-        sourceChannel: "authenticated_chat",
-        channelContext: { provider: "web", origin: "authenticated_chat" },
-      },
-      message: { content: "Human reply" },
+    await dispatcher.route({ ...legacySlackConversation, id: "legacy-slack" });
+    const web = await dispatcher.route({
+      id: "web-conversation",
+      workspaceId: "workspace-1",
+      sourceChannel: "authenticated_chat",
+      channelContext: { provider: "web", origin: "authenticated_chat" },
     });
 
-    expect(slackDeliverer.deliver).toHaveBeenCalledTimes(1);
+    expect(slackDeliverer.route).toHaveBeenCalledTimes(1);
+    expect(web).toBeNull();
   });
 });
 
@@ -74,45 +70,37 @@ describe("SlackCustomerReplyDeliverer", () => {
     updatedAt: new Date(),
   };
 
-  it("enqueues a human_reply slack.post to the customer channel and thread", async () => {
-    const outbox = { enqueue: vi.fn(async () => ({ id: "action-1", duplicate: false })) };
+  it("queues a human_reply slack.post to the customer channel and thread, on the outbox it is given, once per message", async () => {
+    const outbox = fakeOutbox();
     const deliverer = new SlackCustomerReplyDeliverer({
       installations: {
         findByTeamId: vi.fn(async () => installation),
         findById: vi.fn(async () => installation),
       },
-      outbox,
     });
 
-    await deliverer.deliver({
-      conversation: {
-        id: "conversation-1",
-        workspaceId: "workspace-1",
-        sourceChannel: "slack",
-        channelContext: slackContext,
-      },
-      message: { id: "message-1", content: "Human reply" },
-    });
+    const route = await deliverer.route(slackConversation);
+    await route?.enqueue(outbox, message);
 
-    expect(outbox.enqueue).toHaveBeenCalledWith(expect.objectContaining({
+    expect(outbox.enqueue).toHaveBeenCalledWith({
       type: "slack.post",
       workspaceId: "workspace-1",
       accountId: installation.accountId,
       conversationId: "conversation-1",
       idempotencyKey: "slack:human_reply:conversation-1:message-1",
-      payload: expect.objectContaining({
+      payload: {
         installationId: "11111111-1111-1111-1111-111111111111",
         channelId: "D1",
         threadTs: "1700000000.000100",
         conversationRef: "conversation-1",
         kind: "human_reply",
         text: "Human reply",
-      }),
-    }));
+      },
+    });
   });
 
-  it("enqueues a legacy mention reply using the conversation link channel and thread", async () => {
-    const outbox = { enqueue: vi.fn(async () => ({ id: "action-1", duplicate: false })) };
+  it("routes a legacy mention reply to the conversation link's channel and thread", async () => {
+    const outbox = fakeOutbox();
     const deliverer = new SlackCustomerReplyDeliverer({
       installations: { findByTeamId: vi.fn(async () => installation), findById: vi.fn(async () => installation) },
       persistence: {
@@ -121,18 +109,10 @@ describe("SlackCustomerReplyDeliverer", () => {
           installationId: installation.id,
         })),
       },
-      outbox,
     });
 
-    await deliverer.deliver({
-      conversation: {
-        id: "conversation-1",
-        workspaceId: "workspace-1",
-        sourceChannel: "slack",
-        channelContext: null,
-      },
-      message: { id: "message-1", content: "Human reply" },
-    });
+    const route = await deliverer.route(legacySlackConversation);
+    await route?.enqueue(outbox, message);
 
     expect(outbox.enqueue).toHaveBeenCalledWith(expect.objectContaining({
       accountId: installation.accountId,
@@ -146,8 +126,8 @@ describe("SlackCustomerReplyDeliverer", () => {
     }));
   });
 
-  it("opens a legacy DM channel before enqueueing the reply", async () => {
-    const outbox = { enqueue: vi.fn(async () => ({ id: "action-1", duplicate: false })) };
+  it("opens a legacy DM channel while routing, before any reply is queued", async () => {
+    const outbox = fakeOutbox();
     const conversationsOpen = vi.fn(async () => ({ channelId: "DOPENED" }));
     const deliverer = new SlackCustomerReplyDeliverer({
       installations: {
@@ -164,20 +144,13 @@ describe("SlackCustomerReplyDeliverer", () => {
           installationId: installation.id,
         })),
       },
-      outbox,
     });
 
-    await deliverer.deliver({
-      conversation: {
-        id: "conversation-1",
-        workspaceId: "workspace-1",
-        sourceChannel: "slack",
-        channelContext: null,
-      },
-      message: { id: "message-1", content: "Human reply" },
-    });
+    const route = await deliverer.route(legacySlackConversation);
 
     expect(conversationsOpen).toHaveBeenCalledWith({ users: "UUSER", botToken: "xoxb-token" });
+    expect(outbox.enqueue).not.toHaveBeenCalled();
+    await route?.enqueue(outbox, message);
     expect(outbox.enqueue).toHaveBeenCalledWith(expect.objectContaining({
       accountId: installation.accountId,
       payload: expect.objectContaining({
@@ -189,29 +162,18 @@ describe("SlackCustomerReplyDeliverer", () => {
     }));
   });
 
-  it("warns and no-ops when a legacy Slack conversation has no resolvable link", async () => {
-    const outbox = { enqueue: vi.fn(async () => ({ id: "action-1", duplicate: false })) };
+  it("warns and routes nowhere when a legacy Slack conversation has no resolvable link", async () => {
     const logger = { warn: vi.fn() };
     const deliverer = new SlackCustomerReplyDeliverer({
       installations: { findByTeamId: vi.fn(async () => installation), findById: vi.fn(async () => installation) },
       persistence: {
         findConversationLinkByConversationId: vi.fn(async () => null),
       },
-      outbox,
       logger,
     });
 
-    await deliverer.deliver({
-      conversation: {
-        id: "conversation-1",
-        workspaceId: "workspace-1",
-        sourceChannel: "slack",
-        channelContext: null,
-      },
-      message: { id: "message-1", content: "Human reply" },
-    });
+    await expect(deliverer.route(legacySlackConversation)).resolves.toBeNull();
 
-    expect(outbox.enqueue).not.toHaveBeenCalled();
     expect(logger.warn).toHaveBeenCalledWith(
       expect.objectContaining({ conversationId: "conversation-1", workspaceId: "workspace-1" }),
       expect.any(String),

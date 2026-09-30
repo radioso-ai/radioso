@@ -250,8 +250,8 @@ imports from `services/`.
   `conversation_transcript` and `turn_trace` read with the same flags.
   A human-agent reply's `operatorDisplayName` follows one rule on every surface
   that reads it (visitor chat and embed, dashboard, Ray, API), applied in
-  `operatorDisplayNameFrom`: the stored `humanAgent.displayName` shows as-is
-  unless it looks like an email address (`looksLikeEmailAddress` from
+  `operatorDisplayNameFrom`: the stored `humanAgent.displayName` shows, trimmed,
+  unless it holds an email address anywhere in it (`outwardFacingName` from
   `auth/contracts`), whether or not the reply records a `humanAgent.userId`.
   Then it is omitted, and the visitor surface labels the reply "A teammate".
   Operator reads add `operatorLabel` (`includeOperatorLabel`): the replier's

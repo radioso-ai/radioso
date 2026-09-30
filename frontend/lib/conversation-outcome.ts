@@ -16,10 +16,11 @@ export type ConversationOutcome =
 export const IN_PROGRESS_WINDOW_MS = 10 * 60 * 1000
 
 /**
- * Priority order: an `ownership` record (present only for human-owned
- * conversations — the list endpoint omits it entirely for AI-owned rows)
- * always wins over recency, since a conversation someone claimed a moment
- * ago is handed off, not "in progress." Otherwise recency decides.
+ * Priority order: a human-owned `ownership` record always wins over recency,
+ * since a conversation someone claimed a moment ago is handed off, not "in
+ * progress." Otherwise recency decides — with no record (the list omits
+ * AI-owned rows) or an AI-owned one (the detail read carries it after a
+ * hand-back) alike.
  *
  * `now` is an explicit parameter rather than read from `Date.now()` so the
  * boundary is deterministically testable.
@@ -28,7 +29,7 @@ export function deriveConversationOutcome(
   conversation: Pick<ChatConversationSummary, 'ownership' | 'updatedAt'>,
   now: Date,
 ): ConversationOutcome {
-  if (conversation.ownership) {
+  if (conversation.ownership?.state === 'human_owned') {
     return { kind: 'handed_off' }
   }
 

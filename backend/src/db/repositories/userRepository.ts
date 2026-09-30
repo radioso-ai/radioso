@@ -23,6 +23,10 @@ interface UserRow {
   updated_at: Date;
 }
 
+// `humanAgent.userId` and similar references are read from stored JSON, so a batch read skips any
+// value Postgres could not cast to the uuid column rather than failing the whole read.
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
+
 const userColumns = ["id", "email", "password_hash", "display_name", "email_verified_at", "created_at", "updated_at"] as const;
 
 const mapUser = (row: UserRow): UserRecord => ({
@@ -47,6 +51,8 @@ export interface UserRepositoryPort {
   create(params: CreateUserParams): Promise<UserRecord>;
   findByEmail(email: string): Promise<UserRecord | null>;
   findById(id: string): Promise<UserRecord | null>;
+  /** The users with these ids, in no particular order; an id with no user is skipped. */
+  findByIds(ids: readonly string[]): Promise<UserRecord[]>;
   updatePassword(id: string, passwordHash: string): Promise<UserRecord>;
   updateDisplayName(id: string, displayName: string | null): Promise<UserRecord>;
   markEmailVerified(id: string, verifiedAt: Date): Promise<UserRecord>;
@@ -90,6 +96,20 @@ export class UserRepository implements UserRepositoryPort {
       .executeTakeFirst();
 
     return row ? mapUser(row) : null;
+  }
+
+  async findByIds(ids: readonly string[]): Promise<UserRecord[]> {
+    const lookupIds = [...new Set(ids)].filter((id) => uuidPattern.test(id));
+    if (lookupIds.length === 0) {
+      return [];
+    }
+    const rows = await this.db
+      .selectFrom("users")
+      .select(userColumns)
+      .where("id", "in", lookupIds)
+      .execute();
+
+    return rows.map(mapUser);
   }
 
   async updatePassword(id: string, passwordHash: string): Promise<UserRecord> {

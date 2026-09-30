@@ -35,6 +35,25 @@ describeIntegration("UserRepository (Postgres)", () => {
     expect(await repository.findByEmail("missing@example.com")).toBeNull();
   });
 
+  it("finds several users by id in one read, skipping ids with no user", async () => {
+    const named = newUser();
+    const unnamed = newUser();
+    await repository.create({ ...named, displayName: "Ada Lovelace" });
+    await repository.create(unnamed);
+
+    const found = await repository.findByIds([named.id, unnamed.id, randomUUID()]);
+
+    expect(found.map((user) => ({ id: user.id, email: user.email, displayName: user.displayName }))
+      .sort((left, right) => left.id.localeCompare(right.id)))
+      .toEqual([
+        { id: named.id, email: named.email, displayName: "Ada Lovelace" },
+        { id: unnamed.id, email: unnamed.email, displayName: null },
+      ].sort((left, right) => left.id.localeCompare(right.id)));
+    await expect(repository.findByIds([])).resolves.toEqual([]);
+    // A malformed id read from stored JSON is skipped, not cast into a failed query.
+    await expect(repository.findByIds(["not-a-uuid", named.id])).resolves.toHaveLength(1);
+  });
+
   it("stores a display name on create and leaves it null when none is given", async () => {
     const named = newUser();
     const unnamed = newUser();

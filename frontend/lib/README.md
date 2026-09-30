@@ -32,7 +32,10 @@ constructing ad hoc fetches.
   else email. Visitor-facing surfaces never fall back to an email.
 - `operator-actions.ts`: who holds a conversation — keyed by the owning user,
   compared to the signed-in user for "mine" — and what the response view offers:
-  reply, Hand to…, or Take over from a teammate.
+  reply, and Assign or Reassign (Me first, never the current owner).
+- `reply-attribution.ts`: who a human reply's badge names — the replying
+  teammate (`operatorLabel`) on operator surfaces, only the signature
+  (`operatorDisplayName`) on visitor surfaces.
 - `agent-draft-save-port.ts`: the agent-scoped async bridge that lets Test Chat
   await the mounted editor's real private draft save before execution.
 - `agent-revision-test-chat-session.ts`: the in-memory Test Chat session store,

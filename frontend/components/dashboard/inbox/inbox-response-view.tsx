@@ -67,7 +67,7 @@ export type InboxResponseSelection =
   | { source: 'readonly'; conversationId: string; conversation?: ChatConversationSummary }
 
 interface InboxResponseViewProps {
-  /** The workspace whose teammates "Hand to…" offers. */
+  /** The workspace whose teammates Assign and Reassign offer. */
   workspaceId: string
   selection: InboxResponseSelection | null
   now: Date
@@ -372,6 +372,7 @@ export function InboxResponseView({
               conversationId={conversationId ?? undefined}
               analyticsSurface="dashboard"
               skillCatalog={skillCatalog}
+              audience="operator"
             />
           </div>
         )}

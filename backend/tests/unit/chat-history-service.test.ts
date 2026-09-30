@@ -31,7 +31,24 @@ class InMemoryVisitorProfileReader {
   }
 }
 
-const createService = (visitorRepository: InMemoryVisitorProfileReader = new InMemoryVisitorProfileReader()) => {
+/** Fake of the narrow teammate-label port: labels by user id, counting each batched read. */
+class RecordingTeammateLabelReader {
+  readonly labels = new Map<string, string>();
+  readonly reads: string[][] = [];
+
+  async labelsByUserIds(userIds: readonly string[]): Promise<ReadonlyMap<string, string>> {
+    this.reads.push([...userIds]);
+    return new Map(userIds.flatMap((userId) => {
+      const label = this.labels.get(userId);
+      return label === undefined ? [] : [[userId, label] as const];
+    }));
+  }
+}
+
+const createService = (
+  visitorRepository: InMemoryVisitorProfileReader = new InMemoryVisitorProfileReader(),
+  teammateLabels: RecordingTeammateLabelReader = new RecordingTeammateLabelReader(),
+) => {
   const conversationRepository = new InMemoryConversationRepository();
   const messageRepository = new InMemoryMessageRepository();
   const auditRepository = new InMemoryAuditEventRepository();
@@ -43,6 +60,7 @@ const createService = (visitorRepository: InMemoryVisitorProfileReader = new InM
     auditRepository,
     conversationOwnershipRepository,
     visitorRepository,
+    teammateLabels,
     service: new ChatHistoryService(
       conversationRepository,
       messageRepository,
@@ -53,6 +71,7 @@ const createService = (visitorRepository: InMemoryVisitorProfileReader = new InM
       conversationOwnershipRepository,
       undefined,
       visitorRepository,
+      teammateLabels,
     ),
   };
 };
@@ -638,6 +657,124 @@ describe("chat history service ownership read surface", () => {
       .resolves.toMatchObject({ message: { operatorDisplayName: "Acme Support" } });
     await expect(service.getConversationTurn("workspace-1", attributedEmailReply.id))
       .resolves.toMatchObject({ message: { operatorDisplayName: undefined } });
+  });
+});
+
+describe("chat history service reply attribution for operators", () => {
+  // Replies from Dana (a display name set since she replied), Carl (no display name, so his
+  // teammate label is his email, under an email-shaped organisation name that left his reply
+  // unsigned), a teammate whose user is gone, and one stored before replies named their author.
+  const seedReplies = async () => {
+    const setup = createService();
+    setup.teammateLabels.labels.set("user-dana", "Dana Scully");
+    setup.teammateLabels.labels.set("user-carl", "carl@acme.example");
+    const conversation = await setup.conversationRepository.create({ workspaceId: "workspace-1" });
+    const baseline = await setup.messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "user",
+      content: "baseline",
+    });
+    const reply = (content: string, operator: { userId?: string; displayName?: string }) =>
+      setup.messageRepository.create({
+        conversationId: conversation.id,
+        workspaceId: "workspace-1",
+        role: "assistant",
+        source: "human_agent",
+        content,
+        operatorAccountId: "account-1",
+        ...(operator.userId ? { operatorUserId: operator.userId } : {}),
+        ...(operator.displayName ? { operatorDisplayName: operator.displayName } : {}),
+      });
+    const danaReply = await reply("From Dana.", { userId: "user-dana", displayName: "Dana" });
+    const danaFollowUp = await reply("Dana again.", { userId: "user-dana", displayName: "Dana" });
+    const carlReply = await reply("From Carl.", { userId: "user-carl" });
+    const goneReply = await reply("From someone who left.", { userId: "user-gone", displayName: "Walter Skinner" });
+    const legacyReply = await reply("Before replies named their author.", { displayName: "Acme Support" });
+    const aiReply = await setup.messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "assistant",
+      content: "An AI answer.",
+    });
+    return { ...setup, conversation, baseline, danaReply, danaFollowUp, carlReply, goneReply, legacyReply, aiReply };
+  };
+
+  it("names the teammate who replied on operator reads, from their profile now, in one batched read", async () => {
+    const seeded = await seedReplies();
+    const { service, teammateLabels, messageRepository, conversation, baseline } = seeded;
+
+    const detail = await service.getConversation("workspace-1", conversation.id, { limit: 50, offset: 0 }, {
+      includeOperatorLabel: true,
+    });
+    const tail = await service.tailConversation("workspace-1", conversation.id, {
+      cursor: messageRepository.cursorFor(baseline),
+      limit: 10,
+    }, { includeOperatorLabel: true });
+
+    for (const messages of [detail.messages, tail.messages]) {
+      const labelOf = (id: string) => messages.find((message) => message.id === id)?.operatorLabel;
+      expect(labelOf(seeded.danaReply.id)).toBe("Dana Scully");
+      expect(labelOf(seeded.danaFollowUp.id)).toBe("Dana Scully");
+      expect(labelOf(seeded.carlReply.id)).toBe("carl@acme.example");
+      // No profile to read: the reply's stored signature stands in.
+      expect(labelOf(seeded.goneReply.id)).toBe("Walter Skinner");
+      expect(labelOf(seeded.legacyReply.id)).toBe("Acme Support");
+      expect(messages.find((message) => message.id === seeded.aiReply.id)).not.toHaveProperty("operatorLabel");
+      // The visitor-facing signature is unchanged alongside it.
+      expect(messages.find((message) => message.id === seeded.carlReply.id)?.operatorDisplayName).toBeUndefined();
+      expect(messages.find((message) => message.id === seeded.danaReply.id)?.operatorDisplayName).toBe("Dana");
+    }
+    // One read per request, each teammate once.
+    expect(teammateLabels.reads).toHaveLength(2);
+    for (const read of teammateLabels.reads) {
+      expect([...read].sort()).toEqual(["user-carl", "user-dana", "user-gone"]);
+    }
+  });
+
+  it("names the replier on a single operator turn read", async () => {
+    const { service, carlReply } = await seedReplies();
+
+    await expect(service.getConversationTurn("workspace-1", carlReply.id, { includeOperatorLabel: true }))
+      .resolves.toMatchObject({ message: { operatorLabel: "carl@acme.example" } });
+  });
+
+  it("keeps the replier's label off every read that does not ask for it, the visitor surface included", async () => {
+    const { service, teammateLabels, messageRepository, conversation, baseline, carlReply } = await seedReplies();
+    const cursor = { cursor: messageRepository.cursorFor(baseline), limit: 10 };
+    const page = { limit: 50, offset: 0 };
+
+    // The public/embed routes read with no options; the calling-agent update reader reads the
+    // tail with ownership only. Neither may carry a teammate label, which can be an email.
+    const reads = [
+      (await service.tailConversation("workspace-1", conversation.id, cursor)).messages,
+      (await service.getConversation("workspace-1", conversation.id, page, { includeAnswerFeedback: true })).messages,
+      (await service.tailConversation("workspace-1", conversation.id, cursor, { includeOwnership: true })).messages,
+      [(await service.getConversationTurn("workspace-1", carlReply.id)).message],
+    ];
+
+    for (const messages of reads) {
+      for (const message of messages) {
+        expect(message).not.toHaveProperty("operatorLabel");
+      }
+    }
+    expect(JSON.stringify(reads)).not.toContain("carl@acme.example");
+    expect(teammateLabels.reads).toEqual([]);
+  });
+
+  it("reads no profiles when no reply names its author", async () => {
+    const { service, teammateLabels, conversationRepository, messageRepository } = createService();
+    const conversation = await conversationRepository.create({ workspaceId: "workspace-1" });
+    await messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "user",
+      content: "hello",
+    });
+
+    await service.getConversation("workspace-1", conversation.id, { limit: 50, offset: 0 }, { includeOperatorLabel: true });
+
+    expect(teammateLabels.reads).toEqual([]);
   });
 });
 

@@ -242,16 +242,25 @@ imports from `services/`.
   `conversationRepository`, `quality/service.ts`, and `pendingDecisionRepository`.
   `chatHistoryService.getConversation` is shared by the dashboard and the
   public/embed visitor surface; every operator-only fact (`includeOwnership`,
-  `includeAgentInternalName`, `includeTurnFailureDebug`) is an explicit,
-  default-off option, and `AssistantHistoryService` is the only place that turns
-  them on (`dashboardConversationDetailOptions`) — the public routes call
-  `chatHistoryService.getConversation` directly and never set them.
+  `includeAgentInternalName`, `includeTurnFailureDebug`, `includeOperatorLabel`)
+  is an explicit, default-off option, and `AssistantHistoryService` is the only
+  history-route place that turns them on (`dashboardConversationDetailOptions`,
+  and the operator tail) — the public routes call
+  `chatHistoryService.getConversation` directly and never set them. Ray's
+  `conversation_transcript` and `turn_trace` read with the same flags.
   A human-agent reply's `operatorDisplayName` follows one rule on every surface
   that reads it (visitor chat and embed, dashboard, Ray, API), applied in
   `operatorDisplayNameFrom`: the stored `humanAgent.displayName` shows as-is
   unless it looks like an email address (`looksLikeEmailAddress` from
   `auth/contracts`), whether or not the reply records a `humanAgent.userId`.
   Then it is omitted, and the visitor surface labels the reply "A teammate".
+  Operator reads add `operatorLabel` (`includeOperatorLabel`): the replier's
+  teammate label (display name, else email) read now through the narrow
+  `TeammateLabelReaderPort` — one batched lookup per read, wired in
+  `app/composition/teammateLabelReader.ts` — falling back to the signature rule
+  above when the reply names no user or the user is gone. It can be an email, so
+  the public presenters also strip it; the calling-agent update reader reads the
+  tail with ownership only and never gets it.
   `includeTurnFailureDebug` attaches a `turnFailure` fact (failed or superseded,
   never both classified as the same) to the user message of a turn that never
   produced an assistant reply — the read-side counterpart to

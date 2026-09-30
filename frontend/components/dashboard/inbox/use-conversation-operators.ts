@@ -14,7 +14,7 @@ const OPERATORS_STALE_TIME_MS = 60_000
 
 /**
  * The workspace's teammates who can own a conversation, for the response
- * view's "Hand to…" menu. Cached per workspace and read again on `refresh` —
+ * view's Assign and Reassign menus. Cached per workspace and read again on `refresh` —
  * after a transfer finds its target no longer eligible. A failed read leaves
  * the menu out rather than blocking the composer.
  */

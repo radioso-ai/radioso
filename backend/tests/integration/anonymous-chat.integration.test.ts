@@ -217,7 +217,8 @@ describe("anonymous chat bootstrap integration", () => {
       source: "human_agent",
       content: "Signed by name.",
       operatorAccountId: "account-legacy",
-      operatorUserId: "user-dana",
+      // The workspace admin has no display name, so teammates see them by email.
+      operatorUserId: session.userId,
       operatorDisplayName: "Dana Scully",
     });
 
@@ -242,6 +243,30 @@ describe("anonymous chat bootstrap integration", () => {
     ]);
     expect(tail.body.messages[1]).not.toHaveProperty("operatorDisplayName");
     expect(JSON.stringify(tail.body)).not.toContain("operator@example.com");
+
+    // Operators see who replied by teammate label, which can be an email; the visitor never does.
+    const operatorTail = await request(app)
+      .get(`/api/v1/history/chat/${followUp.body.conversationId}/tail`)
+      .query({ cursor: baseline.body.cursor })
+      .set(headers);
+    expect(operatorTail.status).toBe(200);
+    expect(operatorTail.body.messages).toContainEqual(expect.objectContaining({
+      id: signedReply.id,
+      operatorDisplayName: "Dana Scully",
+      operatorLabel: "anon-chat-bootstrap-integration@example.com",
+    }));
+    const publicDetail = await request(app)
+      .get(`/api/v1/public/chat/${chatToken}/history/${followUp.body.conversationId}`)
+      .set("x-radioso-public-session", publicSession.publicSessionToken)
+      .set("Cookie", anonCookie!);
+    expect(publicDetail.status).toBe(200);
+    for (const publicMessages of [tail.body.messages, publicDetail.body.messages]) {
+      for (const message of publicMessages) {
+        expect(message).not.toHaveProperty("operatorLabel");
+      }
+    }
+    expect(JSON.stringify(tail.body)).not.toContain("anon-chat-bootstrap-integration@example.com");
+    expect(JSON.stringify(publicDetail.body)).not.toContain("anon-chat-bootstrap-integration@example.com");
   });
 
   it("returns 404 when a public session tails another session's conversation", async () => {

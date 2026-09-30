@@ -13,7 +13,7 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import { hitlApi, isHitlApiStatusError, transferFailureCause } from '@/lib/api-hitl'
 import type { ConversationOperator, ConversationOwnership, PendingApprovalDecision } from '@/lib/api-types'
-import { deriveOperatorActions, listHandOffTargets } from '@/lib/operator-actions'
+import { deriveOperatorActions, ownershipMenu } from '@/lib/operator-actions'
 import { cn } from '@/lib/utils'
 
 /**
@@ -107,7 +107,7 @@ interface OperatorComposerProps {
   ownership: ConversationOwnership | undefined
   /** The signed-in teammate, compared to the ownership's user to tell "mine" from a teammate's. */
   currentUserId: string | null
-  /** Teammates who can own the conversation, offered by "Hand to…". */
+  /** Teammates who can own the conversation, offered by Assign and Reassign. */
   teammates?: readonly ConversationOperator[]
   /** Re-reads the teammates when a transfer finds its target no longer eligible (not when the conversation is gone). */
   onTeammatesStale?: () => void
@@ -136,12 +136,13 @@ interface OperatorComposerProps {
  * The reply composer (FR-009). Sending implicitly claims a conversation that
  * is AI-owned or waiting unclaimed: it is taken over first, then the reply is
  * sent against the fresh ownership version. A conversation a teammate holds
- * shows who is handling it and a Take over action instead, so two people never
- * reply blind; taking over transfers it to the signed-in teammate. "Hand to…"
- * transfers a waiting or own conversation to a teammate. A 409/422 surfaces as
- * a conflict message while preserving the drafted text (FR-012) — the draft
- * lives here, not in the textarea, so it survives the composer being swapped
- * for the take-over line; only a successful send clears it.
+ * shows who is handling it and Reassign instead of the composer, so two people
+ * never reply blind; Reassign → Me brings the composer back. Assign (nobody
+ * holds it) and Reassign (I or a teammate hold it) both transfer the
+ * conversation to the chosen teammate. A 409/422 surfaces as a conflict
+ * message while preserving the drafted text (FR-012) — the draft lives here,
+ * not in the textarea, so it survives the composer being swapped for the
+ * handling line; only a successful send clears it.
  */
 export function OperatorComposer({
   conversationId,
@@ -156,17 +157,18 @@ export function OperatorComposer({
 }: OperatorComposerProps) {
   const [message, setMessage] = useState('')
   const actions = useMemo(() => deriveOperatorActions(ownership, currentUserId), [ownership, currentUserId])
-  const handOffTargets = useMemo(
-    () => (actions.canHandOff ? listHandOffTargets(teammates, ownership, currentUserId) : []),
-    [actions.canHandOff, currentUserId, ownership, teammates],
+  const menu = useMemo(
+    () => ownershipMenu(actions, teammates, currentUserId),
+    [actions, currentUserId, teammates],
   )
   const runner = useOperatorActionRunner(conversationId, onChanged)
   const trimmedMessage = message.trim()
   const isDisabled = disabled || runner.isBusy
   const visibleError = runner.error ?? externalError ?? null
 
-  const transferTo = useCallback((actionId: 'hand-off' | 'take-over', toUserId: string) => {
-    void runner.run(actionId, async () => {
+  const transferTo = useCallback((target: { kind: 'me' | 'teammate'; userId: string }) => {
+    const toUserId = target.userId
+    void runner.run('transfer', async () => {
       if (actions.version === null) {
         throw new Error('Missing conversation ownership version.')
       }
@@ -176,7 +178,7 @@ export function OperatorComposer({
       switch (transferFailureCause(caught)) {
         case 'target_unavailable':
           return {
-            message: actionId === 'take-over' ? 'You can no longer take this over.' : 'That teammate can no longer take this.',
+            message: target.kind === 'me' ? 'You can no longer take this.' : 'That teammate can no longer take this.',
             followUp: onTeammatesStale,
           }
         case 'conversation_missing':
@@ -220,8 +222,32 @@ export function OperatorComposer({
     trailingActions ? 'pb-12' : 'pb-4',
   )
 
+  const ownershipControl = menu ? (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          size="sm"
+          variant={actions.canReply ? 'ghost' : 'outline'}
+          className="gap-1"
+          disabled={isDisabled}
+        >
+          {menu.kind === 'assign' ? 'Assign' : 'Reassign'}
+          <ChevronDown className="h-3.5 w-3.5" aria-hidden />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start">
+        {menu.targets.map((target) => (
+          <DropdownMenuItem key={target.userId} onSelect={() => transferTo(target)}>
+            {target.kind === 'me' ? 'Me' : target.label}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  ) : null
+
   // A teammate's conversation keeps the trailing actions: Done on a feedback
-  // item is triage, not a reply, so it never waits on taking the conversation over.
+  // item is triage, not a reply, so it never waits on reassigning the conversation.
   if (!actions.canReply) {
     return (
       <div className={containerClassName}>
@@ -234,20 +260,12 @@ export function OperatorComposer({
           <span className="text-muted-foreground">
             {actions.owner?.label ?? 'A teammate'} is handling this
           </span>
-          <span aria-hidden className="text-muted-foreground">·</span>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={isDisabled || currentUserId === null}
-            onClick={() => {
-              if (currentUserId !== null) {
-                transferTo('take-over', currentUserId)
-              }
-            }}
-          >
-            Take over
-          </Button>
+          {ownershipControl ? (
+            <>
+              <span aria-hidden className="text-muted-foreground">·</span>
+              {ownershipControl}
+            </>
+          ) : null}
           <span className="flex-1" />
           {trailingActions}
         </div>
@@ -281,23 +299,7 @@ export function OperatorComposer({
           <Send className="h-3.5 w-3.5" aria-hidden />
           Send
         </Button>
-        {handOffTargets.length > 0 ? (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button type="button" size="sm" variant="ghost" className="gap-1" disabled={isDisabled}>
-                Hand to…
-                <ChevronDown className="h-3.5 w-3.5" aria-hidden />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
-              {handOffTargets.map((teammate) => (
-                <DropdownMenuItem key={teammate.userId} onSelect={() => transferTo('hand-off', teammate.userId)}>
-                  {teammate.label}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        ) : null}
+        {ownershipControl}
         <span className="flex-1" />
         {trailingActions}
       </div>

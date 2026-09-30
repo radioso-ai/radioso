@@ -271,6 +271,47 @@ describe("history contract", () => {
     expect(JSON.stringify(detail.body.messages)).not.toContain("history-owner@example.com");
   });
 
+  it("names the teammate who replied to operators by their teammate label, read from their profile now", async () => {
+    const { app, repositories } = createTestApp();
+    const session = await issueTestSession(app, "history-carl@example.com");
+    const conversation = await repositories.conversationRepository.create({ workspaceId: session.workspaceId });
+    const claim = await request(app)
+      .post(`/api/v1/conversations/${conversation.id}/takeover`)
+      .set(adminSessionHeaders(session))
+      .send({});
+    const reply = await request(app)
+      .post(`/api/v1/conversations/${conversation.id}/reply`)
+      .set(adminSessionHeaders(session))
+      .send({ message: "On it.", expectedVersion: claim.body.ownership.version });
+
+    const detail = await request(app)
+      .get(`/api/v1/history/chat/${conversation.id}`)
+      .set(adminSessionHeaders(session));
+    const tail = await request(app)
+      .get(`/api/v1/history/chat/${conversation.id}/tail`)
+      .set(adminSessionHeaders(session));
+
+    expect(reply.status).toBe(201);
+    expect(detail.status).toBe(200);
+    expect(tail.status).toBe(200);
+    for (const messages of [detail.body.messages, tail.body.messages]) {
+      expect(messages).toContainEqual(expect.objectContaining({
+        id: reply.body.message.id,
+        operatorLabel: "history-carl@example.com",
+      }));
+    }
+
+    // A display name set after the reply shows at once: the label is not the one stored with it.
+    await repositories.userRepository.updateDisplayName(session.userId, "Carl Sagan");
+    const renamed = await request(app)
+      .get(`/api/v1/history/chat/${conversation.id}`)
+      .set(adminSessionHeaders(session));
+    expect(renamed.body.messages).toContainEqual(expect.objectContaining({
+      id: reply.body.message.id,
+      operatorLabel: "Carl Sagan",
+    }));
+  });
+
   it("shows a reply stored before replies named their author by its organisation signature, never an email", async () => {
     const { app, repositories } = createTestApp();
     const session = await issueTestSession(app, "history-legacy-reply@example.com");

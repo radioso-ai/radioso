@@ -26,10 +26,8 @@ interface OperatorActions {
   status: OperatorActionStatus
   /** Sending takes the conversation first: it is AI-owned or waits unclaimed. */
   claimsOnSend: boolean
-  /** The reply composer shows. A teammate's conversation must be taken over first. */
+  /** The reply composer shows. A teammate's conversation must be reassigned to me first. */
   canReply: boolean
-  /** "Hand to…" applies: a handoff waiting to be claimed, or one the operator holds. */
-  canHandOff: boolean
   owner: ConversationOwner | null
   version: number | null
 }
@@ -58,20 +56,54 @@ export const deriveOperatorActions = (
     status,
     claimsOnSend: status === 'ai_owned' || status === 'awaiting_human',
     canReply: status !== 'owned_by_teammate',
-    canHandOff: status === 'awaiting_human' || status === 'owned_by_me',
     owner,
     version: ownership?.version ?? null,
   }
 }
 
+/** Who a human-owned conversation can go to: the signed-in teammate ("Me"), or another teammate. */
+type OwnershipTarget =
+  | { kind: 'me'; userId: string }
+  | { kind: 'teammate'; userId: string; label: string }
+
 /**
- * The teammates a conversation can be handed to: everyone but whoever holds it now, and never the
- * signed-in operator themselves — sending or taking over already claims it, so "Hand to… → me"
- * would be a no-op offer.
+ * "Assign" places a handoff nobody has claimed; "Reassign" moves one someone holds. Both are a
+ * transfer to the chosen teammate.
  */
-export const listHandOffTargets = (
+interface OwnershipMenu {
+  kind: 'assign' | 'reassign'
+  targets: OwnershipTarget[]
+}
+
+const MENU_KIND: Record<OperatorActionStatus, OwnershipMenu['kind'] | null> = {
+  ai_owned: null,
+  awaiting_human: 'assign',
+  owned_by_me: 'reassign',
+  owned_by_teammate: 'reassign',
+}
+
+/**
+ * The ownership menu for a conversation, or null when it has none. An AI-owned conversation has
+ * none: sending claims it. Otherwise "Me" comes first unless I already hold it, then every other
+ * eligible teammate except whoever holds it now. "Me" does not wait on the teammate list, so a
+ * teammate's conversation can be taken before the list loads.
+ */
+export const ownershipMenu = (
+  actions: Pick<OperatorActions, 'status' | 'owner'>,
   operators: readonly ConversationOperator[],
-  ownership: Pick<ConversationOwnership, 'ownerUserId'> | null | undefined,
   currentUserId: string | null,
-): ConversationOperator[] => operators.filter((operator) =>
-  operator.userId !== ownership?.ownerUserId && operator.userId !== currentUserId)
+): OwnershipMenu | null => {
+  const kind = MENU_KIND[actions.status]
+  if (!kind) {
+    return null
+  }
+  const ownerUserId = actions.owner?.userId ?? null
+  const me: OwnershipTarget[] = currentUserId !== null && currentUserId !== ownerUserId
+    ? [{ kind: 'me', userId: currentUserId }]
+    : []
+  const teammates: OwnershipTarget[] = operators
+    .filter((operator) => operator.userId !== ownerUserId && operator.userId !== currentUserId)
+    .map((operator) => ({ kind: 'teammate', userId: operator.userId, label: operator.label }))
+  const targets = [...me, ...teammates]
+  return targets.length > 0 ? { kind, targets } : null
+}

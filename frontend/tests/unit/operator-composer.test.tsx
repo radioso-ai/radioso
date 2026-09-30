@@ -16,6 +16,7 @@ const renderComposer = async (
   onChanged = vi.fn(),
   currentUserId: string | null = 'user-me',
   onTeammatesStale = vi.fn(),
+  teammates: { userId: string; label: string }[] = [],
 ) => {
   const root = createRoot(document.createElement('div'))
   const container = (root as unknown as { _internalRoot: { containerInfo: HTMLElement } })._internalRoot.containerInfo
@@ -27,6 +28,7 @@ const renderComposer = async (
         currentUserId={currentUserId}
         onChanged={onChanged}
         onTeammatesStale={onTeammatesStale}
+        teammates={teammates}
       />,
     )
   })
@@ -48,6 +50,25 @@ const clickSend = async (container: HTMLElement) => {
     await flush()
   })
 }
+
+// Opens the Assign/Reassign menu from the keyboard (jsdom has no pointer events) and picks an entry,
+// which Radix renders into a portal on the document body.
+const chooseOwnershipTarget = async (container: HTMLElement, menuLabel: string, entry: string) => {
+  const trigger = [...container.querySelectorAll('button')].find((button) => button.textContent?.trim() === menuLabel)
+  expect(trigger, `${menuLabel} menu`).toBeDefined()
+  await act(async () => {
+    trigger?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await flush()
+  })
+  const item = [...document.body.querySelectorAll('[role="menuitem"]')].find((element) => element.textContent?.trim() === entry)
+  expect(item, `${entry} entry`).toBeDefined()
+  await act(async () => {
+    ;(item as HTMLElement).click()
+    await flush()
+  })
+}
+
+const menuEntries = () => [...document.body.querySelectorAll('[role="menuitem"]')].map((element) => element.textContent?.trim())
 
 afterEach(() => vi.restoreAllMocks())
 
@@ -142,7 +163,7 @@ describe('OperatorComposer', () => {
     await act(async () => root.unmount())
   })
 
-  it('offers no reply to a conversation a teammate holds, and takes it over by transferring it to the signed-in teammate', async () => {
+  it('offers no reply to a conversation a teammate holds, and reassigns it to me by transferring it to the signed-in teammate', async () => {
     const transfer = vi.spyOn(hitlApi, 'transferConversation')
       .mockResolvedValue({ ownership: { state: 'human_owned', version: 8 } } as never)
     const changed = vi.fn()
@@ -152,13 +173,50 @@ describe('OperatorComposer', () => {
     )
 
     expect(container.querySelector('textarea')).toBeNull()
-    await act(async () => {
-      ;[...container.querySelectorAll('button')].find((button) => button.textContent?.includes('Take over'))?.click()
-      await flush()
-    })
+    await chooseOwnershipTarget(container, 'Reassign', 'Me')
 
     expect(transfer).toHaveBeenCalledWith('conversation-a', { toUserId: 'user-me', expectedVersion: 7 })
     expect(changed).toHaveBeenCalledWith({ kind: 'ownership', conversationId: 'conversation-a', ownershipState: 'human_owned' })
+    await act(async () => root.unmount())
+  })
+
+  it('keeps the composer on a waiting handoff and assigns it to the teammate chosen after Me', async () => {
+    const transfer = vi.spyOn(hitlApi, 'transferConversation')
+      .mockResolvedValue({ ownership: { state: 'human_owned', version: 3 } } as never)
+    const changed = vi.fn()
+    const { root, container } = await renderComposer(
+      { state: 'human_owned', version: 2 },
+      changed,
+      'user-me',
+      vi.fn(),
+      [{ userId: 'user-me', label: 'Me Myself' }, { userId: 'user-dana', label: 'Dana' }],
+    )
+
+    expect(container.querySelector('textarea')).not.toBeNull()
+    await chooseOwnershipTarget(container, 'Assign', 'Dana')
+
+    expect(transfer).toHaveBeenCalledWith('conversation-a', { toUserId: 'user-dana', expectedVersion: 2 })
+    expect(changed).toHaveBeenCalledWith({ kind: 'ownership', conversationId: 'conversation-a', ownershipState: 'human_owned' })
+    await act(async () => root.unmount())
+  })
+
+  it('lists my teammates, and not me, on a conversation I hold', async () => {
+    const { root, container } = await renderComposer(
+      { state: 'human_owned', ownerAccountId: 'account-1', ownerUserId: 'user-me', ownerDisplayName: 'Me Myself', version: 4 } as never,
+      vi.fn(),
+      'user-me',
+      vi.fn(),
+      [{ userId: 'user-me', label: 'Me Myself' }, { userId: 'user-dana', label: 'Dana' }],
+    )
+    const trigger = [...container.querySelectorAll('button')].find((button) => button.textContent?.trim() === 'Reassign')
+
+    await act(async () => {
+      trigger?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+      await flush()
+    })
+
+    expect(container.querySelector('textarea')).not.toBeNull()
+    expect(menuEntries()).toEqual(['Dana'])
     await act(async () => root.unmount())
   })
 
@@ -176,10 +234,7 @@ describe('OperatorComposer', () => {
       stale,
     )
 
-    await act(async () => {
-      ;[...container.querySelectorAll('button')].find((button) => button.textContent?.includes('Take over'))?.click()
-      await flush()
-    })
+    await chooseOwnershipTarget(container, 'Reassign', 'Me')
 
     expect(stale).toHaveBeenCalledTimes(1)
     expect(changed).not.toHaveBeenCalled()
@@ -201,10 +256,7 @@ describe('OperatorComposer', () => {
       stale,
     )
 
-    await act(async () => {
-      ;[...container.querySelectorAll('button')].find((button) => button.textContent?.includes('Take over'))?.click()
-      await flush()
-    })
+    await chooseOwnershipTarget(container, 'Reassign', 'Me')
 
     expect(stale).not.toHaveBeenCalled()
     expect(changed).not.toHaveBeenCalled()

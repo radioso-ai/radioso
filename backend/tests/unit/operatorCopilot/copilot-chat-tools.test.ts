@@ -45,6 +45,7 @@ describe("copilot chat readers", () => {
       includeOwnership: true,
       includeTurnFailureDebug: true,
       includeLatency: true,
+      includeOperatorLabel: true,
     });
   });
 
@@ -100,6 +101,7 @@ describe("copilot chat readers", () => {
       includeOwnership: true,
       includeTurnFailureDebug: true,
       includeLatency: true,
+      includeOperatorLabel: true,
     });
     expect(result.transcript.messages[0]).toMatchObject({
       answerOutcome: "retrieval.answer",
@@ -109,6 +111,43 @@ describe("copilot chat readers", () => {
     });
     expect(result.transcript.messages[0]).not.toHaveProperty("debug");
     expect(tool.outputSchema.safeParse(result).success).toBe(true);
+  });
+
+  it("names the teammate who wrote a human reply, alongside the signature the visitor saw", async () => {
+    const ports = dependencies();
+    const transcriptTool = ports.descriptors.find((descriptor) => descriptor.name === "conversation_transcript")!;
+    const traceTool = ports.descriptors.find((descriptor) => descriptor.name === "turn_trace")!;
+    const conversationId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+    const reply = {
+      id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      role: "assistant" as const,
+      source: "human_agent",
+      content: "Happy to help.",
+      createdAt: "2026-08-18T10:00:02.000Z",
+      operatorLabel: "carl@acme.example",
+    };
+    ports.getConversation.mockResolvedValue({
+      conversationId,
+      agentId: null,
+      agentName: null,
+      sourceChannel: "website_embed",
+      callerKind: "human" as const,
+      createdAt: "2026-08-18T10:00:00.000Z",
+      updatedAt: "2026-08-18T10:00:02.000Z",
+      messageCount: 1,
+      messages: [reply],
+    });
+    ports.getConversationTurn.mockResolvedValue({ conversationId, message: reply });
+
+    const transcript = await transcriptTool.createTool(context(null)).invoke({ conversationId }, {} as never);
+    const trace = await traceTool.createTool(context(null)).invoke({ messageId: reply.id }, {} as never);
+
+    expect(transcript).toMatchObject({
+      transcript: { messages: [{ operatorLabel: "carl@acme.example", operatorDisplayName: null }] },
+    });
+    expect(trace).toMatchObject({ trace: { message: { operatorLabel: "carl@acme.example", operatorDisplayName: null } } });
+    expect(transcriptTool.outputSchema.safeParse(transcript).success).toBe(true);
+    expect(traceTool.outputSchema.safeParse(trace).success).toBe(true);
   });
 
   /**

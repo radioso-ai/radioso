@@ -616,10 +616,11 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     }),
   );
 
-  // Shared by the operator and public message schemas. `debug` and `turnFailure` are
-  // operator-only and are added on top of this shape for the dashboard schema alone:
-  // both carry turn diagnostics (and `turnFailure` carries raw error text), and the
-  // public presenter strips them from every message it returns.
+  // Shared by the operator and public message schemas. `debug`, `turnFailure`, and
+  // `operatorLabel` are operator-only and are added on top of this shape for the dashboard
+  // schema alone: the first two carry turn diagnostics (and `turnFailure` carries raw error
+  // text), `operatorLabel` can be a teammate's email, and the public presenter strips all
+  // three from every message it returns.
   const chatConversationMessageShape = {
     id: z.string().uuid(),
     role: z.enum(["user", "assistant", "system"]),
@@ -640,6 +641,9 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       ...chatConversationMessageShape,
       debug: ChatConversationMessageDebugSchema.optional(),
       turnFailure: ChatConversationTurnFailureSchema.optional(),
+      operatorLabel: z.string().optional().openapi({
+        description: "Operator-only. On a human-agent reply, the teammate who wrote it: their display name, else their email, read from their profile now. A reply that names no teammate, or whose teammate is gone, carries its signature instead. Never returned by the public chat API.",
+      }),
     }),
   );
 

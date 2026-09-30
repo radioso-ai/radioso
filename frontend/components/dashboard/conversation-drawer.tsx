@@ -519,6 +519,7 @@ export function ConversationDrawer({
                     conversationId={selectedItem?.kind === 'chat' ? selectedItem.id : undefined}
                     evalCaptureEnabled={selectedItem?.kind === 'chat'}
                     analyticsSurface="history"
+                    audience="operator"
                     skillCatalog={skillCatalog}
                     routineMarkers={namedRoutineMarkers}
                   />

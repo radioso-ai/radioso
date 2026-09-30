@@ -187,6 +187,7 @@ export const stripPublicConversationCitationArtifacts = (
       answerFeedbackEntries,
       debug: _debug,
       turnFailure: _turnFailure,
+      operatorLabel: _operatorLabel,
       ...publicMessage
     } = message;
     const publicAnswerFeedbackEntries = message.role === "assistant"
@@ -222,6 +223,7 @@ export const stripPublicConversationTailCitationArtifacts = (
         answerFeedbackEntries: _answerFeedbackEntries,
         debug: _debug,
         turnFailure: _turnFailure,
+        operatorLabel: _operatorLabel,
         ...publicMessage
       } = message;
 

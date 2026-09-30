@@ -64,6 +64,13 @@ export interface ChatRoutineProvider {
     groundedAnswerRenderer?: RoutineGroundedAnswerRenderer;
     throwIfCancelled?: () => void;
     turnPlan?: ChatTurnPlanHandle;
+    /**
+     * Includes each filled slot's value on the routine sub-trace this turn's runner
+     * produces. Absent/false for every live conversation — the trace it builds is what
+     * feeds a persisted audit record, so a slot value is never produced for it in the
+     * first place. Only a private replay (Test Chat, eval) sets this.
+     */
+    includeSlotValues?: boolean;
   }): Promise<{
     routines?: readonly Routine[];
     activator: ConversationRoutineActivator;

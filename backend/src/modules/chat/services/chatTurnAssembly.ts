@@ -358,11 +358,18 @@ export interface ChatTurnAssemblyOptions {
   coverageHeadRecorder?: AnswerCoverageHeadRecorder;
   /** Off-critical-path #1260 shadow; absent (replay/draft, or the flag disabled) never calls the old assessor. */
   coverageShadowAssessor?: AnswerCoverageShadowAssessor;
+  /**
+   * Includes each filled routine slot's value on this assembly's routine sub-traces.
+   * Never set for the durable, customer-facing assembly (its trace is what a persisted
+   * audit record's metadata copies verbatim) — only the ephemeral replay assembly
+   * (Test Chat, eval) sets it, once per replayed turn.
+   */
+  includeSlotValues?: boolean;
 }
 
 type ChatTurnAssemblySharedOptions = Omit<
   ChatTurnAssemblyOptions,
-  "chatSessionPreparer" | "directiveStateStore" | "routineStore"
+  "chatSessionPreparer" | "directiveStateStore" | "routineStore" | "includeSlotValues"
 >;
 
 interface ChatTurnAssemblyEffectPorts {
@@ -371,6 +378,7 @@ interface ChatTurnAssemblyEffectPorts {
   routineStore?: ConversationRoutineStore;
   coverageHeadRecorder?: AnswerCoverageHeadRecorder;
   coverageShadowAssessor?: AnswerCoverageShadowAssessor;
+  includeSlotValues?: boolean;
 }
 
 /**
@@ -475,6 +483,7 @@ export class ChatTurnAssembly {
         ? () => input.coordination?.checkpoint("routing")
         : undefined,
       turnPlan: session.turnPlan,
+      includeSlotValues: this.options.includeSlotValues,
     });
     if (!routineTurnPorts) {
       return null;
@@ -701,6 +710,7 @@ export class ChatTurnAssembly {
         ? () => input.coordination?.checkpoint("routing")
         : undefined,
       turnPlan: session.turnPlan,
+      includeSlotValues: this.options.includeSlotValues,
     });
     if (!routineTurnPorts?.coverageActivator) {
       return {

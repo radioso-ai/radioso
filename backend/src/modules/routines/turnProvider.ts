@@ -114,6 +114,12 @@ interface RoutineTurnProvider {
     turnPlan?: unknown;
     skillEffects?: SkillEffectPolicy;
     conversationDurability?: ConversationDurability;
+    /**
+     * Includes each filled slot's value on the routine sub-trace this turn's runner
+     * produces. Absent/false for every live conversation; only a private replay (Test
+     * Chat, eval) sets this.
+     */
+    includeSlotValues?: boolean;
   }): Promise<{
     routines?: readonly Routine[];
     activator: ConversationRoutineActivator;
@@ -263,6 +269,7 @@ export const createRoutineTurnProvider = (
     turnPlan,
     skillEffects,
     conversationDurability,
+    includeSlotValues,
   }) {
     const effectiveRegistrations = await loadEffectiveRegistrations(dependencies, {
       agentId,
@@ -435,7 +442,7 @@ export const createRoutineTurnProvider = (
       ),
       // `{{context.<name>}}` in a step instruction reads staged visitor context through
       // the context-variables module, which owns what each variable may show.
-      { contextRenderer: routineContextRenderer },
+      { contextRenderer: routineContextRenderer, includeSlotValues },
     );
 
     if (routineInvocation) {

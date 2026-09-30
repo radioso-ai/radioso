@@ -1485,39 +1485,14 @@ describe("DefaultRoutineRunner trace", () => {
       landedStepId: "ask_message",
       capturedSlotKeys: ["email"],
       filledSlotKeys: ["email"],
-      slotValues: [{ key: "email", type: "email", value: "a@b.c" }],
     });
+    // A default construction never includes slot values — only a runner built with
+    // `includeSlotValues: true` does (see the describe block below).
+    expect(result.trace).not.toHaveProperty("slotValues");
     expect(result.trace?.steps).toEqual([
       { stepId: "ask_email", kind: "chat", event: "advanced", capturedSlotKeys: ["email"], viaSelector: true },
       { stepId: "ask_message", kind: "chat", event: "rendered" },
     ]);
-  });
-
-  it("carries each filled slot's value, self-described by its declared type, in declared order", async () => {
-    const runner = new DefaultRoutineRunner(
-      [slotRoutine],
-      { select: vi.fn(async () => ({ nextStepId: "ask_message" })) },
-      { render: vi.fn(echoRenderer.render) },
-    );
-
-    const result = await runner.resume({ turn, state: state(["ask_email"], { email: "a@b.c", message: "hi" }) });
-
-    expect(result.trace?.slotValues).toEqual([
-      { key: "email", type: "email", value: "a@b.c" },
-      { key: "message", type: "text", value: "hi" },
-    ]);
-  });
-
-  it("carries no slot values before any slot is filled", async () => {
-    const runner = new DefaultRoutineRunner(
-      [slotRoutine],
-      { select: vi.fn(async () => ({ nextStepId: "ask_email" })) },
-      { render: vi.fn(echoRenderer.render) },
-    );
-
-    const result = await runner.resume({ turn, state: state(["ask_email"]) });
-
-    expect(result.trace?.slotValues).toEqual([]);
   });
 
   it("records a re-ask (no advance) and carries no slot value, only the key", async () => {
@@ -1753,5 +1728,112 @@ describe("DefaultRoutineRunner trace", () => {
 
     expect(result.yielded).toBe(true);
     expect(result.trace).toBeUndefined();
+  });
+});
+
+describe("DefaultRoutineRunner includeSlotValues", () => {
+  const slotRoutine: Routine = {
+    id: "contact",
+    rootStepId: "ask_email",
+    slots: [
+      { id: "slot_email", key: "email", type: "email", required: true },
+      { id: "slot_message", key: "message", type: "text", required: true },
+    ],
+    steps: [
+      { id: "ask_email", kind: "chat", action: "Ask for {{slot.email}}.", metadata: { collectsSlots: ["email"] } },
+      { id: "ask_message", kind: "chat", action: "Ask for {{slot.message}}.", metadata: { collectsSlots: ["message"] } },
+      { id: "done", kind: "terminal", action: "Confirm sent." },
+    ],
+    transitions: [
+      { from: "ask_email", to: "ask_message", condition: "The user provided {{slot.email}}." },
+      { from: "ask_message", to: "done", condition: "The user provided {{slot.message}}." },
+    ],
+  };
+
+  it("carries each filled slot's value, self-described by its declared type, in declared order, only when the construction opts in", async () => {
+    const runner = new DefaultRoutineRunner(
+      [slotRoutine],
+      { select: vi.fn(async () => ({ nextStepId: "ask_message" })) },
+      { render: vi.fn(echoRenderer.render) },
+      undefined,
+      { includeSlotValues: true },
+    );
+
+    const result = await runner.resume({ turn, state: state(["ask_email"], { email: "a@b.c", message: "hi" }) });
+
+    expect(result.trace?.slotValues).toEqual([
+      { key: "email", type: "email", value: "a@b.c" },
+      { key: "message", type: "text", value: "hi" },
+    ]);
+    expect(result.trace?.omittedSlotCount).toBeUndefined();
+  });
+
+  it("carries an empty slotValues array before any slot is filled, when the construction opts in", async () => {
+    const runner = new DefaultRoutineRunner(
+      [slotRoutine],
+      { select: vi.fn(async () => ({ nextStepId: "ask_email" })) },
+      { render: vi.fn(echoRenderer.render) },
+      undefined,
+      { includeSlotValues: true },
+    );
+
+    const result = await runner.resume({ turn, state: state(["ask_email"]) });
+
+    expect(result.trace?.slotValues).toEqual([]);
+  });
+
+  it("caps an oversized value and marks the entry truncated", async () => {
+    const longValue = "x".repeat(600);
+    const runner = new DefaultRoutineRunner(
+      [slotRoutine],
+      { select: vi.fn(async () => ({ nextStepId: "ask_message" })) },
+      { render: vi.fn(echoRenderer.render) },
+      undefined,
+      { includeSlotValues: true },
+    );
+
+    const result = await runner.resume({ turn, state: state(["ask_email"], { email: longValue }) });
+
+    const emailValue = result.trace?.slotValues?.find((entry) => entry.key === "email");
+    expect(emailValue?.truncated).toBe(true);
+    expect(emailValue?.value).toHaveLength(501); // 500 chars + the ellipsis
+    expect(typeof emailValue?.value === "string" && emailValue.value.endsWith("…")).toBe(true);
+  });
+
+  it("caps the number of traced slot values and reports how many filled slots were omitted", async () => {
+    const manySlotsRoutine: Routine = {
+      id: "many-slots",
+      rootStepId: "ask",
+      slots: Array.from({ length: 55 }, (_, index) => ({
+        id: `slot_${index}`,
+        key: `field_${index}`,
+        type: "text" as const,
+        required: false,
+      })),
+      steps: [
+        { id: "ask", kind: "chat", action: "Ask." },
+        { id: "done", kind: "terminal", action: "Done." },
+      ],
+      transitions: [{ from: "ask", to: "done", condition: "always", guard: { kind: "default" } }],
+    };
+    const filledVariables = Object.fromEntries(
+      Array.from({ length: 55 }, (_, index) => [`field_${index}`, `value_${index}`]),
+    );
+    const runner = new DefaultRoutineRunner(
+      [manySlotsRoutine],
+      { select: vi.fn() },
+      { render: vi.fn(echoRenderer.render) },
+      undefined,
+      { includeSlotValues: true },
+    );
+
+    const result = await runner.resume({
+      turn,
+      state: { sessionId: "session_1", routineId: "many-slots", path: [], variables: filledVariables, status: "active" },
+      activationTurn: true,
+    });
+
+    expect(result.trace?.slotValues).toHaveLength(50);
+    expect(result.trace?.omittedSlotCount).toBe(5);
   });
 });

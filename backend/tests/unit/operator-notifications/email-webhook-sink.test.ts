@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { EmailWebhookOperatorNotificationSink } from "../../../src/modules/chat/services/actions/emailWebhookSink.js";
+import { buildHandoffNotifyAction } from "../../../src/modules/chat/services/handoffOwnership.js";
 import type {
   ContactNotificationMailer,
   ContactWebhookHttpClient,
 } from "../../../src/modules/chat/services/actions/contactSendActionHandler.js";
+import { formatHandoffNotification, handoffNotificationFromAction } from "../../../src/modules/operatorNotifications/public.js";
 
 type SentMessage = Parameters<ContactNotificationMailer["send"]>[0];
 type WebhookRequest = Parameters<ContactWebhookHttpClient["post"]>[0];
@@ -298,6 +300,50 @@ describe("EmailWebhookOperatorNotificationSink", () => {
       "  Program: Yoga retreat",
       "  Arrival date: 2026-10-12",
       "  Guests: 2",
+      "Open: https://app.radioso.ai/w/support-abc/activity?itemId=conv_1",
+    ].join("\n"));
+  });
+
+  it("matches the Test Chat hand-off preview for the same hand-off, minus the delivered link line", async () => {
+    const { mailer, sent } = recordingMailer();
+    const sink = new EmailWebhookOperatorNotificationSink(
+      mailer,
+      { resolve: async () => ({ emails: ["desk@business.example"], webhook: null }) },
+      undefined,
+      undefined,
+      { resolve: async () => "https://app.radioso.ai/w/support-abc/activity?itemId=conv_1" },
+    );
+
+    // The identical construction `WorkbenchReplayRunner.handoffPreviewFor` uses for a
+    // Test Chat turn's preview: build the action a routine's handoff terminal would
+    // emit, then run its payload through the same shared parser and text formatter the
+    // real dispatch handler below also runs — so the two cannot drift from each other.
+    const action = buildHandoffNotifyAction({
+      conversationId: "conv_1",
+      workspaceId: "ws_1",
+      agentId: "agent_1",
+      userMessageId: "message_1",
+      reason: "routine_handoff",
+      routineId: "routine_1",
+      stepId: "handoff",
+      collected: { program: "Yoga retreat", arrival_date: "2026-10-12", guests: 2 },
+    });
+    const notification = handoffNotificationFromAction({
+      payload: action.payload,
+      fallback: { conversationId: "conv_1", workspaceId: "ws_1" },
+      subject: { agentName: "Retreat desk", routineName: "Book accommodation" },
+    });
+    const preview = formatHandoffNotification(notification);
+
+    await sink.deliver(notification, { ...context, idempotencyKey: "routine-action:conv_1:handoff.notify" });
+
+    expect(sent).toHaveLength(1);
+    // The preview is the message content only: the sink's delivered text is exactly
+    // that content plus one line the preview never has — the conversation link a
+    // replayed turn has no durable conversation to point to.
+    expect(sent[0].subject).toBe(preview.subject);
+    expect(sent[0].text).toBe([
+      ...preview.lines,
       "Open: https://app.radioso.ai/w/support-abc/activity?itemId=conv_1",
     ].join("\n"));
   });

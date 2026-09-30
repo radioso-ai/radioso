@@ -341,15 +341,21 @@ imports from `services/`.
   while the lifecycle suppresses external actions, ownership handoffs, customer
   analytics, and summary regeneration. Chat does not own the caller's identity,
   provenance, or authorization policy; application composition supplies those.
-  The same mode gates routine slot-value redaction on the turn trace
-  (`buildTurnTraceForPresentation` in `chatTurnLifecycle.ts`): a safe-test turn
-  keeps every captured value in full, and any other turn masks a PII-typed one
-  through the routines module's `maskRoutineSubTracesForCustomerSurface`. A Test
-  Chat turn that ends on a routine hand-off terminal — whose `handoff.notify`
-  action a replayed turn never dispatches — carries a preview of the operator
-  notification that terminal would have sent, built through the same
-  `operatorNotifications` text formatter the real dispatch uses
-  (`WorkbenchReplayRunner.handoffPreviewFor`).
+  A routine's captured slot values are opt-in at the source rather than masked
+  after the fact: `ChatTurnAssemblyOptions.includeSlotValues` (set only by
+  `WorkbenchReplayRunner`, once per replayed Test Chat/eval turn) threads through
+  `ChatRoutineProvider.forTurn` to the engine's `DefaultRoutineRunner`
+  construction, which is the only place a slot value is ever produced on a
+  routine trace. A live conversation — and a Ray `test_agent_turn` probe turn,
+  which persists to `audit_events` the same way a live turn does — never sets
+  it, so its trace reports only which slots were filled (`filledSlotKeys`,
+  `capturedSlotKeys`), exactly as before slot values existed at all. A Test Chat
+  turn that ends on a routine hand-off terminal — whose `handoff.notify` action
+  a replayed turn never dispatches — carries the hand-off message content
+  (subject and body) that terminal's operator notification would send, built
+  through the same `operatorNotifications` text formatter the real dispatch uses
+  (`WorkbenchReplayRunner.handoffPreviewFor`); live delivery additionally appends
+  the conversation link, which a replayed turn has none of.
 - Fused turn planning: `turnPlanService.ts` (one `turn_planning` call on the
   agent's chat model + prompt `backend/prompts/chat/turn-planning.md`, strict
   parse and semantic validation) and `turnPlanCoordinator.ts` (gate, eligibility bounds from

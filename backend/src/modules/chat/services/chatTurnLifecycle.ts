@@ -69,7 +69,6 @@ import type { ModelCallTraceCollector } from "../../../shared/observability/trac
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import type { TurnExecutionMode } from "../../../shared/domain/turnExecutionMode.js";
 import { CONTACT_SEND_ACTION_TYPE } from "./routines/contactRoutine.js";
-import { maskRoutineSubTracesForCustomerSurface } from "../../routines/public.js";
 import type {
   PageReadCandidateSource,
   PageReadDecision,
@@ -272,13 +271,6 @@ interface BuildTurnTraceForPresentationInput {
   stream: boolean;
   engineTrace?: ConversationTrace;
   modelCallTrace?: ModelCallTraceCollector;
-  /**
-   * Gates routine slot-value redaction on the trace this builds: a `safe_test` turn (Test
-   * Chat, or Ray's turn probe) is a private operator surface and keeps every value in full;
-   * any other turn is a real customer conversation, so a PII-typed slot value is masked
-   * before the trace is returned or persisted (never logged, metered, or spanned raw).
-   */
-  executionMode?: TurnExecutionMode;
 }
 
 interface TurnTracePresentation {
@@ -382,21 +374,16 @@ export const buildTurnTraceForPresentation = (
   // its dispatch stage, while redacted host variables and the content-free page
   // diagnostic ride on gather. Engine always runs the assistant turn, so
   // engineTrace is present — but stay defensive: no spine means no envelope.
-  const assembledSpine = input.engineTrace
-    ? attachPreparationTimingsToGather(
-      attachContextVariablesToGather(
-        attachRetrievalActivityTrace(input.engineTrace, activityTrace),
-        contextVariablesSnapshot,
-        pageReadDiagnostic,
-      ),
-      input.session.preparationTimings,
-    )
-    : undefined;
-  const turnTrace = assembledSpine
+  const turnTrace = input.engineTrace
     ? buildTurnTraceEnvelope({
-      spine: input.executionMode === "safe_test"
-        ? assembledSpine
-        : maskRoutineSubTracesForCustomerSurface(assembledSpine),
+      spine: attachPreparationTimingsToGather(
+        attachContextVariablesToGather(
+          attachRetrievalActivityTrace(input.engineTrace, activityTrace),
+          contextVariablesSnapshot,
+          pageReadDiagnostic,
+        ),
+        input.session.preparationTimings,
+      ),
       modelCallTrace: input.modelCallTrace,
     })
     : undefined;
@@ -699,7 +686,6 @@ export class ChatTurnLifecycle {
       stream: input.stream,
       engineTrace: input.engineTrace,
       modelCallTrace: input.modelCallTrace,
-      executionMode: input.executionMode,
     });
     let assistantMessage: MessageRecord;
     let postCommitReceipt: PostCommitInvalidationReceipt;

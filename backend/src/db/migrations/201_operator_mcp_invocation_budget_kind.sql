@@ -3,9 +3,9 @@
 -- verification budget every other probe/propose descriptor draws from. `budget_kind` lets the
 -- rolling-window query in operatorMcpInvocationRepository.ts sum each grant's spend per ceiling.
 --
--- The inline CHECK does not scan existing rows: every pre-existing row is implicitly extended
--- with the literal DEFAULT, so Postgres proves the constraint from that one literal rather than
--- from each row, and this ALTER TABLE stays a fast, metadata-only change.
+-- The constant DEFAULT keeps ADD COLUMN free of a table rewrite. The inline CHECK still costs one
+-- verification scan of existing rows under the ALTER's lock; this table holds only operator MCP
+-- invocations inside their retention window, so that scan is short.
 --
 -- The existing `operator_mcp_invocations_budget_idx (grant_id, budget_reserved_at)` already
 -- narrows a lookup to one grant's last-minute rows before `budget_kind` is even checked, so it is

@@ -230,7 +230,10 @@ describe("needs_attention", () => {
       takenOverAt: "2026-08-26T07:30:00.000Z",
       ownerDisplayName: "Ada",
     });
-    expect(result.items.find((item) => item.conversationId === "conversation-orphaned")).toMatchObject({ ownerDisplayName: null });
+    expect(result.items.find((item) => item.conversationId === "conversation-orphaned")).toMatchObject({
+      ownerDisplayName: null,
+      takenOverAt: null,
+    });
     expect(result.items[0].waitingMinutes).toEqual(expect.any(Number));
     expect(result.items[0].waitingMinutes as number).toBeGreaterThanOrEqual(0);
   });

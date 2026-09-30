@@ -7447,11 +7447,14 @@ export interface components {
              * @description The teammate handling the conversation; a human-owned conversation is claimed exactly when this is set. Null while a handoff waits to be claimed, when AI-owned, and once the owner's user is deleted.
              */
             ownerUserId: string | null;
-            /** @description The owner's teammate label: their display name, else their email. Operator-facing only. */
+            /** @description The owner's teammate label: their display name, else their email. Null whenever `ownerUserId` is null. Operator-facing only. */
             ownerDisplayName: string | null;
             reason: string | null;
             version: number;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @description When the owning teammate claimed the conversation. Null whenever `ownerUserId` is null.
+             */
             takenOverAt: string | null;
             /** Format: date-time */
             createdAt: string;
@@ -7837,7 +7840,7 @@ export interface components {
         ChatConversationTail: {
             messages: components["schemas"]["ChatConversationMessage"][];
             cursor: string | null;
-            ownership?: components["schemas"]["ConversationOwnership"];
+            ownership?: components["schemas"]["ConversationOwnership"] & unknown;
         };
         PublicChatConversationTail: {
             messages: components["schemas"]["PublicChatConversationMessage"][];

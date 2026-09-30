@@ -24,7 +24,10 @@ export interface ConversationOwnershipRecord {
   ownerUserId: string | null;
   /** The owner's profile, read with the row. Null when the row names no user or the user is gone. */
   ownerProfile: ConversationOwnerProfile | null;
-  /** The owner's teammate label as it was when they claimed the conversation. */
+  /**
+   * The owner's teammate label as it was when they claimed the conversation. It names them only
+   * while the row still names their user; once the user is deleted it is never presented.
+   */
   ownerStoredLabel: string | null;
   reason: ConversationOwnershipReason | null;
   version: number;
@@ -35,12 +38,19 @@ export interface ConversationOwnershipRecord {
 
 /**
  * How operator surfaces name the owner: their teammate label from the profile as it is now, so a
- * rename shows at once, else the label stored at claim time for a row that names no user.
- * Operator-facing only — a teammate label can be an email, so it never reaches a visitor.
+ * rename shows at once, else the label stored at claim time. A row that names no user has no
+ * owner to name: it waits for a teammate, even when deleting its owner's user left the stored
+ * label behind. Operator-facing only — a teammate label can be an email, so it never reaches a
+ * visitor.
  */
 export const ownerLabel = (
-  record: Pick<ConversationOwnershipRecord, "ownerProfile" | "ownerStoredLabel">,
-): string | null => (record.ownerProfile ? teammateLabel(record.ownerProfile) : record.ownerStoredLabel);
+  record: Pick<ConversationOwnershipRecord, "ownerUserId" | "ownerProfile" | "ownerStoredLabel">,
+): string | null => {
+  if (record.ownerUserId === null) {
+    return null;
+  }
+  return record.ownerProfile ? teammateLabel(record.ownerProfile) : record.ownerStoredLabel;
+};
 
 /** The ownership as operator surfaces present it: the owner named by `ownerDisplayName`. */
 interface ConversationOwnershipView {
@@ -57,6 +67,10 @@ interface ConversationOwnershipView {
   updatedAt: Date;
 }
 
+/**
+ * A record that names no teammate presents no owner and no claim time, whatever the row kept:
+ * deleting the owner's user nulls only `owner_user_id`, and a hand-back leaves `taken_over_at`.
+ */
 export const presentOwnership = (record: ConversationOwnershipRecord): ConversationOwnershipView => ({
   conversationId: record.conversationId,
   workspaceId: record.workspaceId,
@@ -66,7 +80,7 @@ export const presentOwnership = (record: ConversationOwnershipRecord): Conversat
   ownerDisplayName: ownerLabel(record),
   reason: record.reason,
   version: record.version,
-  takenOverAt: record.takenOverAt,
+  takenOverAt: record.ownerUserId === null ? null : record.takenOverAt,
   createdAt: record.createdAt,
   updatedAt: record.updatedAt,
 });

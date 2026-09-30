@@ -20,13 +20,18 @@ export const conversationOwner = (ownership?: OwnershipIdentity | null): Convers
   return { userId: ownership.ownerUserId, label: ownership.ownerDisplayName?.trim() || null }
 }
 
-type OperatorActionStatus = 'ai_owned' | 'awaiting_human' | 'owned_by_me' | 'owned_by_teammate'
+/**
+ * `owned_viewer_unknown`: someone holds the conversation, but the signed-in teammate is not known
+ * yet (auth still bootstrapping), so it can be neither "mine" nor a teammate's. It offers no
+ * owner-specific action until the viewer is known.
+ */
+type OperatorActionStatus = 'ai_owned' | 'awaiting_human' | 'owned_by_me' | 'owned_by_teammate' | 'owned_viewer_unknown'
 
 interface OperatorActions {
   status: OperatorActionStatus
   /** Sending takes the conversation first: it is AI-owned or waits unclaimed. */
   claimsOnSend: boolean
-  /** The reply composer shows. A teammate's conversation must be reassigned to me first. */
+  /** The reply composer shows: nobody holds the conversation, or I do. */
   canReply: boolean
   owner: ConversationOwner | null
   version: number | null
@@ -37,11 +42,15 @@ const statusFor = (
   owner: ConversationOwner | null,
   currentUserId: string | null,
 ): OperatorActionStatus => {
+  // A hand-back leaves an AI-owned record behind; it reads like no record at all.
   if (!ownership || ownership.state === 'ai_owned') {
     return 'ai_owned'
   }
   if (!owner) {
     return 'awaiting_human'
+  }
+  if (currentUserId === null) {
+    return 'owned_viewer_unknown'
   }
   return owner.userId === currentUserId ? 'owned_by_me' : 'owned_by_teammate'
 }
@@ -52,10 +61,11 @@ export const deriveOperatorActions = (
 ): OperatorActions => {
   const owner = conversationOwner(ownership)
   const status = statusFor(ownership, owner, currentUserId)
+  const claimsOnSend = status === 'ai_owned' || status === 'awaiting_human'
   return {
     status,
-    claimsOnSend: status === 'ai_owned' || status === 'awaiting_human',
-    canReply: status !== 'owned_by_teammate',
+    claimsOnSend,
+    canReply: claimsOnSend || status === 'owned_by_me',
     owner,
     version: ownership?.version ?? null,
   }
@@ -80,13 +90,15 @@ const MENU_KIND: Record<OperatorActionStatus, OwnershipMenu['kind'] | null> = {
   awaiting_human: 'assign',
   owned_by_me: 'reassign',
   owned_by_teammate: 'reassign',
+  owned_viewer_unknown: null,
 }
 
 /**
  * The ownership menu for a conversation, or null when it has none. An AI-owned conversation has
- * none: sending claims it. Otherwise "Me" comes first unless I already hold it, then every other
- * eligible teammate except whoever holds it now. "Me" does not wait on the teammate list, so a
- * teammate's conversation can be taken before the list loads.
+ * none: sending claims it. No conversation has one while the signed-in teammate is unknown, since
+ * "Me" can't be told apart from the teammates yet. Otherwise "Me" comes first unless I
+ * already hold it, then every other eligible teammate except whoever holds it now. "Me" does not
+ * wait on the teammate list, so a teammate's conversation can be taken before the list loads.
  */
 export const ownershipMenu = (
   actions: Pick<OperatorActions, 'status' | 'owner'>,
@@ -94,11 +106,11 @@ export const ownershipMenu = (
   currentUserId: string | null,
 ): OwnershipMenu | null => {
   const kind = MENU_KIND[actions.status]
-  if (!kind) {
+  if (!kind || currentUserId === null) {
     return null
   }
   const ownerUserId = actions.owner?.userId ?? null
-  const me: OwnershipTarget[] = currentUserId !== null && currentUserId !== ownerUserId
+  const me: OwnershipTarget[] = currentUserId !== ownerUserId
     ? [{ kind: 'me', userId: currentUserId }]
     : []
   const teammates: OwnershipTarget[] = operators

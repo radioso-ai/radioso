@@ -4,6 +4,7 @@ import type { PendingDecisionRepository } from "../../../db/repositories/pending
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import { resolveConversationLink, type ConversationLinkResolver } from "../../../shared/domain/conversationLinkResolver.js";
 import type { SlackInstallationRecord, SlackInstallationRepositoryPort } from "../public.js";
+import { outwardFacingName } from "../../auth/contracts/index.js";
 import {
   ownerLabel,
   type ConversationOwnershipRecord,
@@ -16,7 +17,7 @@ import {
   buildOwnershipMessage,
   buildReplyModal,
   buildResolvedDecisionMessage,
-  escapeMrkdwn,
+  heldByTeammateNotice,
 } from "./slackBlockKitBuilder.js";
 import type {
   SlackOperatorIdentityResolution,
@@ -130,6 +131,10 @@ const ownershipContextText = (conversationId: string): string => `Conversation $
 /** Plain text naming whoever holds a conversation, for the teammate the refusal is shown to. */
 const heldByText = (record: ConversationOwnershipRecord | null): string =>
   `${(record && ownerLabel(record)) ?? "A teammate"} is handling this.`;
+
+/** The same refusal as a private Slack notice, linking to the dashboard's Reassign when given a link. */
+const heldByNotice = (record: ConversationOwnershipRecord | null, dashboardUrl: string | null = null): string =>
+  heldByTeammateNotice({ ownerLabel: record && ownerLabel(record), dashboardUrl });
 
 const decisionErrorOutcome = (error: ApprovalDecisionServiceError): "stale" | "forbidden" | "invalid" => {
   switch (error.reason) {
@@ -383,14 +388,19 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
       await this.postEphemeral(payload, "You're not a Radioso operator on this workspace.");
       return;
     }
+    // A card can be stale, so Take over never takes a conversation from the teammate holding it:
+    // reassigning a held conversation is the dashboard's explicit Reassign.
     const result = await ownership.takeOver(ownershipActor(resolved, input.workspaceId), {
       conversationId: input.conversationId,
-      // A click on Take over is explicit, so it takes the conversation from a teammate who holds it.
-      takeFromTeammate: true,
       auditContext: slackAuditContext(resolved),
     });
     if (!result.ok) {
-      await this.postEphemeral(payload, "Conversation ownership changed. Refreshing.");
+      await this.postEphemeral(
+        payload,
+        result.refusal === "held_by_teammate"
+          ? heldByNotice(result.record, await this.conversationLink(input))
+          : "Conversation ownership changed. Refreshing.",
+      );
       return;
     }
     const message = buildOwnershipMessage({
@@ -398,9 +408,9 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
       workspaceId: input.workspaceId,
       state: "human_owned",
       contextText: ownershipContextText(input.conversationId),
-      dashboardUrl: await resolveConversationLink(this.options.conversationLinks, input, this.options.logger),
+      dashboardUrl: await this.conversationLink(input),
       // The channel can include people outside the workspace, so the card never names anyone by email.
-      ownerName: result.record.ownerProfile?.displayName ?? resolved.identity.displayName,
+      ownerName: outwardFacingName(result.record.ownerProfile?.displayName, resolved.identity.displayName),
       version: result.record.version,
     });
     await this.postResponseUrl(payload, {
@@ -437,7 +447,7 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
     if (!result.ok) {
       await this.postEphemeral(
         payload,
-        result.refusal === "held_by_teammate" ? escapeMrkdwn(heldByText(result.record)) : "Conversation ownership changed. Refreshing.",
+        result.refusal === "held_by_teammate" ? heldByNotice(result.record) : "Conversation ownership changed. Refreshing.",
       );
       return;
     }
@@ -446,11 +456,7 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
       workspaceId,
       state: "ai_owned",
       contextText: ownershipContextText(input.conversationId),
-      dashboardUrl: await resolveConversationLink(
-        this.options.conversationLinks,
-        { workspaceId, conversationId: input.conversationId },
-        this.options.logger,
-      ),
+      dashboardUrl: await this.conversationLink({ workspaceId, conversationId: input.conversationId }),
     });
     await this.postResponseUrl(payload, {
       replace_original: true,
@@ -475,7 +481,7 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
     }
     const refusal = await ownership.replyRefusal(ownershipActor(resolved, input.workspaceId), input.conversationId);
     if (refusal) {
-      await this.postEphemeral(payload, escapeMrkdwn(heldByText(refusal.record)));
+      await this.postEphemeral(payload, heldByNotice(refusal.record));
       return;
     }
     const triggerId = readString(payload.trigger_id);
@@ -553,6 +559,10 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
       case "invalid":
         return "This Slack action can’t be completed.";
     }
+  }
+
+  private conversationLink(input: { workspaceId: string; conversationId: string }): Promise<string | null> {
+    return resolveConversationLink(this.options.conversationLinks, input, this.options.logger);
   }
 
   private async postEphemeral(payload: SlackInteractivityPayload, text: string): Promise<void> {

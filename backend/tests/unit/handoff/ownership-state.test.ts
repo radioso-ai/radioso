@@ -58,9 +58,26 @@ describe("owner label", () => {
     expect(ownerLabel(humanOwnedRecord({ ownerProfile: { displayName: null, email: "ada@example.com" } }))).toBe("ada@example.com");
   });
 
-  it("falls back to the label stored at claim when the row names no user", () => {
-    expect(ownerLabel(humanOwnedRecord({ ownerUserId: null, ownerProfile: null, ownerStoredLabel: "Acme" }))).toBe("Acme");
+  it("falls back to the label stored at claim while the row still names its user", () => {
+    expect(ownerLabel(humanOwnedRecord({ ownerProfile: null, ownerStoredLabel: "Ada Operator" }))).toBe("Ada Operator");
+  });
+
+  it("names nobody once the row names no user, whatever label it kept", () => {
+    // The owner's user was deleted: the foreign key nulled owner_user_id and left the rest.
+    expect(ownerLabel(humanOwnedRecord({ ownerUserId: null, ownerProfile: null, ownerStoredLabel: "ada@example.com" }))).toBeNull();
     expect(ownerLabel(humanOwnedRecord({ ownerUserId: null, ownerProfile: null, ownerStoredLabel: null }))).toBeNull();
+  });
+
+  it("presents a conversation whose owner is gone as waiting for a teammate: no label, no taken-over time", () => {
+    const orphaned = humanOwnedRecord({ ownerUserId: null, ownerProfile: null, ownerStoredLabel: "ada@example.com" });
+
+    expect(presentOwnership(orphaned)).toMatchObject({
+      state: "human_owned",
+      ownerUserId: null,
+      ownerDisplayName: null,
+      takenOverAt: null,
+    });
+    expect(JSON.stringify(presentOwnership(orphaned))).not.toContain("ada@example.com");
   });
 
   it("presents the record with the label as ownerDisplayName and none of the raw owner fields", () => {

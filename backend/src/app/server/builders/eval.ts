@@ -17,7 +17,7 @@ import { TtlRetentionWorker } from "../../../shared/domain/ttlRetentionWorker.js
 import {
   CustomerReplyDeliveryDispatcher,
 } from "../../../modules/customerReplyDelivery/public.js";
-import { OperatorReplyService, type OperatorIdentityResolver } from "../../../modules/handoff/public.js";
+import { OperatorReplyService } from "../../../modules/handoff/public.js";
 import {
   PostgresSlackConversationLinkLookup,
   SlackCustomerReplyDeliverer,
@@ -47,7 +47,6 @@ export const buildEvalServices = (input: {
   skillSettingsResolver: NonNullable<ConstructorParameters<typeof RetrievalPipelineEvalRunner>[5]>;
   workspaceInvalidationPublisher: WorkspaceInvalidationPublisher;
   revisionEvalRunRetentionDays: number;
-  operatorIdentityResolver: Pick<OperatorIdentityResolver, "resolve">;
 }) => {
   const evalRepository = new EvalRepository(input.infrastructure.database.kysely);
   const evalSnapshotService = new EvalSnapshotService(
@@ -126,13 +125,12 @@ export const buildEvalServices = (input: {
     }),
   });
   const operatorReplyService = new OperatorReplyService({
-    conversationRepository: input.repositories.conversationRepository,
-    messageRepository: input.repositories.messageRepository,
     auditService: input.infrastructure.auditService,
     publicConversationEventBus: input.publicConversationEventBus,
     customerReplyDelivery,
-    operatorIdentities: input.operatorIdentityResolver,
     publisher: input.workspaceInvalidationPublisher,
+    logger: input.logger,
+    errorReporter: input.infrastructure.errorReportingService,
   });
   return {
     evalCaseService,

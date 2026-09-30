@@ -63,12 +63,22 @@ const mrkdwnContext = (text: string): Record<string, unknown> => ({
 });
 
 /** Slack mrkdwn reserves `&`, `<`, `>`; the permalink's query string carries `&`. */
-export const escapeMrkdwn = (text: string): string =>
+const escapeMrkdwn = (text: string): string =>
   text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 
 /** Null when there is no link: a post without one beats a post with a link that does not route. */
 const dashboardLinkMrkdwn = (dashboardUrl: string | null): string | null =>
   dashboardUrl ? `<${escapeMrkdwn(dashboardUrl)}|Open in dashboard>` : null;
+
+/**
+ * The private notice for a teammate whose action was refused because someone else holds the
+ * conversation. Reassigning it happens only in the dashboard, so the notice links there when a
+ * link resolves. The label is a teammate label and can be an email: post it ephemerally only.
+ */
+export const heldByTeammateNotice = (input: { ownerLabel: string | null; dashboardUrl?: string | null }): string => {
+  const notice = `${escapeMrkdwn(input.ownerLabel ?? "A teammate")} is handling this.`;
+  return input.dashboardUrl ? `${notice} <${escapeMrkdwn(input.dashboardUrl)}|Reassign in dashboard>` : notice;
+};
 
 const encodeOwnershipValue = (input: Record<string, string | number>): string => {
   const value = JSON.stringify(input);

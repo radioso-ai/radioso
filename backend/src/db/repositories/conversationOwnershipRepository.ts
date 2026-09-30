@@ -145,6 +145,27 @@ export class ConversationOwnershipRepository {
     return row ? mapRecord(row) : null;
   }
 
+  /**
+   * Reads the row and locks it until the caller's transaction ends, so no transfer, hand-back or
+   * claim can commit in between; call it inside a transaction. Locks only the ownership row, not the
+   * joined user. Null (and nothing locked) while no teammate has ever been involved.
+   */
+  async loadForUpdate(
+    conversationId: string,
+    db: Db = this.db,
+  ): Promise<ConversationOwnershipRecord | null> {
+    const result = await sql<ConversationOwnershipRow>`
+      SELECT ${conversationOwnershipProjection}
+        FROM conversation_ownership o
+        ${ownerUserJoin}
+       WHERE o.conversation_id = ${conversationId}
+         FOR UPDATE OF o
+    `.execute(db);
+
+    const row = result.rows[0];
+    return row ? mapRecord(row) : null;
+  }
+
   // Batch read for list surfaces: one query for a page of conversations (no N+1). Returns a
   // map keyed by conversationId; a missing key means AI-owned (the table is lazy, no row).
   async loadByConversationIds(

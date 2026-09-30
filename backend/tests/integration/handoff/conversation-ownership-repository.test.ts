@@ -4,7 +4,7 @@ import type { PoolClient, QueryResultRow } from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { ConversationOwnershipRepository } from "../../../src/db/repositories/conversationOwnershipRepository.js";
-import { ownerLabel } from "../../../src/modules/handoff/public.js";
+import { ownerLabel, presentOwnership } from "../../../src/modules/handoff/public.js";
 import { Database } from "../../../src/shared/infra/database.js";
 import { createKyselyDatabase } from "../../../src/shared/infra/kysely/kyselyDatabase.js";
 import { applyTestMigration } from "../../support/databaseMigrations.js";
@@ -501,7 +501,7 @@ describeIfDatabase("ConversationOwnershipRepository Postgres integration", () =>
     expect(cleared && ownerLabel(cleared)).toBe("dana@example.com");
   });
 
-  it("falls back to the label stored at claim time once the owner's user is gone", async () => {
+  it("names nobody, and no claim time, once the owner's user is gone", async () => {
     const { accountId, conversationId, workspaceId } = await seedConversation(database);
     const dana = await seedUser(database, { email: "dana@example.com", displayName: "Dana Scully" });
     await repository.takeOver({ conversationId, workspaceId, accountId, userId: dana, displayName: "Dana Scully" });
@@ -516,7 +516,10 @@ describeIfDatabase("ConversationOwnershipRepository Postgres integration", () =>
       ownerProfile: null,
       ownerStoredLabel: "Dana Scully",
     });
-    expect(orphaned && ownerLabel(orphaned)).toBe("Dana Scully");
+    // The foreign key nulls only owner_user_id; what the row kept is not presented.
+    expect(orphaned?.takenOverAt).not.toBeNull();
+    expect(orphaned && ownerLabel(orphaned)).toBeNull();
+    expect(orphaned && presentOwnership(orphaned)).toMatchObject({ ownerUserId: null, ownerDisplayName: null, takenOverAt: null });
 
     // A claim that names nobody is no claim: the next teammate takes the conversation over.
     const fox = await seedUser(database, { email: "fox@example.com", displayName: "Fox Mulder" });

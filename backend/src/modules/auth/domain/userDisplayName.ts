@@ -39,16 +39,19 @@ const WHITESPACE = /\s/u;
 
 /**
  * Structural only: something@domain.tld with no spaces, whatever the script.
- * String scanning rather than a pattern, so the cost stays linear on stored
- * text of any length.
+ * Read after NFKC normalisation, so lookalikes that normalise to "@" or "." —
+ * U+FF20 FULLWIDTH COMMERCIAL AT, U+2024 ONE DOT LEADER — count as the real
+ * thing. String scanning rather than a pattern, so the cost stays linear on
+ * stored text of any length.
  */
 export const looksLikeEmailAddress = (value: string): boolean => {
-  const at = value.indexOf("@");
-  if (at <= 0 || at !== value.lastIndexOf("@") || WHITESPACE.test(value)) {
+  const normalized = value.normalize("NFKC");
+  const at = normalized.indexOf("@");
+  if (at <= 0 || at !== normalized.lastIndexOf("@") || WHITESPACE.test(normalized)) {
     return false;
   }
   // A dot with at least one character on each side somewhere in the domain.
-  return value.slice(at + 2, -1).includes(".");
+  return normalized.slice(at + 2, -1).includes(".");
 };
 
 /** Trims the input; blank clears the name. Length counts characters, not UTF-16 units. */
@@ -83,21 +86,27 @@ export const teammateLabel = (user: { displayName: string | null; email: string 
   user.displayName ?? user.email;
 
 /**
+ * A name shown outside the workspace — to a visitor, or in a Slack channel that
+ * can include people who are not teammates: the first candidate that is neither
+ * blank nor shaped like an email address, trimmed, else null. An email is private
+ * to the workspace, and a stored name is checked again on the way out because
+ * names saved before validation can still hold one.
+ */
+export const outwardFacingName = (...candidates: ReadonlyArray<string | null | undefined>): string | null => {
+  for (const candidate of candidates) {
+    const name = candidate?.trim() ?? "";
+    if (name.length > 0 && !looksLikeEmailAddress(name)) {
+      return name;
+    }
+  }
+  return null;
+};
+
+/**
  * The name a visitor sees on a teammate's reply: the name they chose, else the
- * organisation's name, else nothing. An email is private to the workspace, so it
- * is never a fallback here — not the teammate's, and not an organisation renamed
- * to something email-shaped either.
+ * organisation's name, else nothing — never anything shaped like an email.
  */
 export const visitorFacingName = (input: {
   displayName: string | null;
   organizationName: string | null;
-}): string | null => {
-  if (input.displayName) {
-    return input.displayName;
-  }
-  const organizationName = input.organizationName?.trim() ?? "";
-  if (organizationName.length === 0 || looksLikeEmailAddress(organizationName)) {
-    return null;
-  }
-  return organizationName;
-};
+}): string | null => outwardFacingName(input.displayName, input.organizationName);

@@ -224,6 +224,33 @@ describe("conversation ownership routes", () => {
       .resolves.toMatchObject({ state: "human_owned", ownerUserId: member.userId, version });
   });
 
+  it("answers a committed take over, reply and hand back even when their audit records fail", async () => {
+    const { app, repositories } = createTestApp();
+    const owner = await issueTestSession(app, "ownership-audit-owner@example.com");
+    const conversation = await repositories.conversationRepository.create({ workspaceId: owner.workspaceId, sourceChannel: "dashboard" });
+    const auditEvents = repositories.auditEventRepository;
+    const createAuditEvent = auditEvents.create.bind(auditEvents);
+    vi.spyOn(auditEvents, "create").mockImplementation(async (event) =>
+      event.eventType === "hitl.ownership" ? Promise.reject(new Error("audit unavailable")) : createAuditEvent(event));
+
+    const takeover = await request(app)
+      .post(`/api/v1/conversations/${conversation.id}/takeover`)
+      .set(adminSessionHeaders(owner))
+      .send({});
+    const reply = await request(app)
+      .post(`/api/v1/conversations/${conversation.id}/reply`)
+      .set(adminSessionHeaders(owner))
+      .send({ message: "On it.", expectedVersion: takeover.body.ownership?.version });
+    const handback = await request(app)
+      .post(`/api/v1/conversations/${conversation.id}/handback`)
+      .set(adminSessionHeaders(owner))
+      .send({ expectedVersion: reply.body.ownership?.version });
+
+    expect([takeover.status, reply.status, handback.status]).toEqual([200, 201, 200]);
+    expect(handback.body.ownership).toMatchObject({ state: "ai_owned" });
+    expect(await repositories.messageRepository.listByConversationId(owner.workspaceId, conversation.id)).toHaveLength(1);
+  });
+
   it("claims a waiting handoff for the teammate who replies to it", async () => {
     const { app, repositories } = createTestApp();
     const owner = await issueTestSession(app, "ownership-claim-reply-owner@example.com");

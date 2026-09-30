@@ -116,9 +116,8 @@ Three kinds of events arrive in the operator channel:
 From these messages an operator can:
 
 - Approve or deny a decision. The routine resumes with the chosen option.
-- Take over a conversation. The agent stops answering it and the conversation
-  is yours. On a conversation a teammate holds, **Take over** takes it from
-  them, the same as a transfer to yourself; no email is sent.
+- Take over a conversation the agent is handling or nobody has claimed. The
+  agent stops answering it and the conversation is yours.
 - Talk to the customer. A short Slack form opens, and the reply goes to the
   customer where the conversation started: back in their Slack direct message,
   or in the website chat.
@@ -126,11 +125,14 @@ From these messages an operator can:
 
 Slack follows the same ownership rules as the dashboard and the API, enforced by
 the server. When a teammate holds a conversation, only they talk to the customer
-or hand it back. Anyone else who clicks **Talk to customer** or **Hand back to
-AI** sees "Dana Scully is handling this.", shown only to them; no reply form
-opens and the card stays as it is. A reply form opened on an older version of
-the conversation refuses to send with "This conversation changed. Take over
-again before replying."
+or hand it back. Anyone else who clicks **Take over**, **Talk to customer**, or
+**Hand back to AI** sees "Dana Scully is handling this.", shown only to them; no
+reply form opens and the card stays as it is. A card in the channel can be out
+of date, so Slack never takes a conversation away from the teammate holding it:
+the notice after **Take over** links to the conversation in the dashboard, where
+**Reassign** moves it. A reply form opened on an older version of the
+conversation refuses to send with "This conversation changed. Take over again
+before replying."
 
 Once taken over, the card reads "Handled by Dana Scully". The name is the
 teammate's Radioso display name, else their Slack profile name, else "a

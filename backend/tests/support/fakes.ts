@@ -4345,11 +4345,16 @@ export class InMemoryActionOutbox {
 
 export class InMemoryConversationOwnershipRepository implements Pick<
   ConversationOwnershipRepository,
-  "load" | "loadByConversationIds" | "requestHandoff" | "takeOver" | "transfer" | "handBack"
+  "load" | "loadForUpdate" | "loadByConversationIds" | "requestHandoff" | "takeOver" | "transfer" | "handBack"
 > {
   readonly items = new Map<string, ConversationOwnershipRecord>();
 
   async load(conversationId: string): Promise<ConversationOwnershipRecord | null> {
+    return this.items.get(conversationId) ?? null;
+  }
+
+  // The in-memory store has no transactions to lock within; the lock is covered against Postgres.
+  async loadForUpdate(conversationId: string): Promise<ConversationOwnershipRecord | null> {
     return this.items.get(conversationId) ?? null;
   }
 

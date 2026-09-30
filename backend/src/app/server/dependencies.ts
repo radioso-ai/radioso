@@ -113,6 +113,7 @@ import { buildOperatorMcpServices } from "./builders/operatorMcp.js";
 import { createDefaultVisitorGeoResolver } from "../composition/visitorGeoResolver.js";
 import { createConversationOperatorDirectory } from "../composition/conversationOperatorDirectory.js";
 import { createTeammateLabelReader } from "../composition/teammateLabelReader.js";
+import { createPostgresOwnershipReplyUnitOfWork } from "../composition/conversationOwnershipReplies.js";
 import { createPostgresOwnershipTransferUnitOfWork } from "../composition/conversationOwnershipTransfers.js";
 import { ConversationOwnershipService, OperatorIdentityResolver } from "../../modules/handoff/public.js";
 import { buildConversationLinkResolver } from "../composition/conversationLinkResolver.js";
@@ -455,7 +456,6 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     skillSettingsResolver,
     workspaceInvalidationPublisher: realtimePublisherComposition.publisher,
     revisionEvalRunRetentionDays: env.AGENT_REVISION_EVAL_RUN_RETENTION_DAYS,
-    operatorIdentityResolver,
   });
   const {
     evalCaseService,
@@ -476,11 +476,14 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       actionDrain: chat.actionDrainDispatcher,
       logger,
     }),
+    replyWrites: createPostgresOwnershipReplyUnitOfWork({ db: infrastructure.database.kysely }),
     operators: conversationOperatorDirectory,
     operatorIdentities: operatorIdentityResolver,
     replies: operatorReplyService,
     audit: infrastructure.auditService,
     publisher: realtimePublisherComposition.publisher,
+    logger,
+    errorReporter: infrastructure.errorReportingService,
   });
   const qualitySignalsService = new QualityTurnsService(
     infrastructure.database.kysely,

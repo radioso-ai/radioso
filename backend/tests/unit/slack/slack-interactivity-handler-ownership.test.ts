@@ -178,7 +178,7 @@ describe("SlackInteractivityHandler ownership branch", () => {
     expect(JSON.stringify(responsePosts[0].body.blocks)).toContain(`<${permalink.replaceAll("&", "&amp;")}|Open in dashboard>`);
   });
 
-  it("takes over as the resolved teammate, taking it from a teammate who holds it, and shows talk and handback", async () => {
+  it("takes over as the resolved teammate and shows talk and handback", async () => {
     const { handler, ownership, responsePosts, identityResolver } = createHandler();
 
     await handler.handleBlockActions(blockPayload("ownership_takeover", {
@@ -189,7 +189,6 @@ describe("SlackInteractivityHandler ownership branch", () => {
     expect(identityResolver.resolve).toHaveBeenCalledWith({ installation, workspaceId: "ws_conversation", slackUserId: "U1" });
     expect(ownership.takeOver).toHaveBeenCalledWith(actor, {
       conversationId: "conv_1",
-      takeFromTeammate: true,
       auditContext: slackAudit,
     });
     expect(responsePosts[0].body).toMatchObject({ replace_original: true, text: "Handled by Dana Scully" });
@@ -214,6 +213,71 @@ describe("SlackInteractivityHandler ownership branch", () => {
 
     expect(responsePosts[0].body.text).toBe("Handled by Dana on Slack");
     expect(JSON.stringify(responsePosts[0].body)).not.toContain("dana@example.com");
+  });
+
+  it("names an owner whose saved display name is shaped like an email by their Slack name instead", async () => {
+    const { handler, responsePosts } = createHandler({
+      takeOverResult: {
+        ok: true,
+        changed: true,
+        // Saved before display names were validated.
+        record: ownershipRecord({ version: 2, ownerProfile: { displayName: "dana@example.com", email: "dana@example.com" } }),
+      },
+    });
+
+    await handler.handleBlockActions(blockPayload("ownership_takeover", { conversationId: "conv_1", workspaceId: "ws_conversation" }));
+
+    expect(responsePosts[0].body.text).toBe("Handled by Dana on Slack");
+    expect(JSON.stringify(responsePosts[0].body)).not.toContain("dana@example.com");
+  });
+
+  it("names an owner a teammate when the Slack name is shaped like an email too", async () => {
+    const { handler, responsePosts } = createHandler({
+      identity: { accountId: "acct_1", userId: "user_1", displayName: "dana\uFF20example.com" },
+      takeOverResult: {
+        ok: true,
+        changed: true,
+        record: ownershipRecord({ version: 2, ownerProfile: { displayName: null, email: "dana@example.com" } }),
+      },
+    });
+
+    await handler.handleBlockActions(blockPayload("ownership_takeover", { conversationId: "conv_1", workspaceId: "ws_conversation" }));
+
+    expect(responsePosts[0].body.text).toBe("Handled by a teammate");
+  });
+
+  it("refuses Take over on a conversation a teammate holds, privately, pointing at Reassign in the dashboard", async () => {
+    const { handler, responsePosts } = createHandler({
+      takeOverResult: {
+        ok: false,
+        refusal: "held_by_teammate",
+        record: ownershipRecord({ ownerUserId: "user_fox", ownerProfile: { displayName: "Fox <Mulder>", email: "fox@example.com" } }),
+      },
+      conversationLinks: { resolve: async () => "https://app.radioso.test/w/ws/inbox?conversation=conv_1" },
+    });
+
+    await handler.handleBlockActions(blockPayload("ownership_takeover", { conversationId: "conv_1", workspaceId: "ws_conversation" }));
+
+    expect(responsePosts).toHaveLength(1);
+    expect(responsePosts[0].body).toEqual({
+      response_type: "ephemeral",
+      replace_original: false,
+      text: "Fox &lt;Mulder&gt; is handling this. <https://app.radioso.test/w/ws/inbox?conversation=conv_1|Reassign in dashboard>",
+    });
+  });
+
+  it("refuses Take over on a teammate's conversation without a link when none resolves", async () => {
+    const { handler, responsePosts } = createHandler({
+      takeOverResult: { ok: false, refusal: "held_by_teammate", record: ownershipRecord({ ownerUserId: "user_fox" }) },
+    });
+
+    await handler.handleBlockActions(blockPayload("ownership_takeover", { conversationId: "conv_1", workspaceId: "ws_conversation" }));
+
+    expect(responsePosts[0].body).toEqual({
+      response_type: "ephemeral",
+      replace_original: false,
+      text: "Dana Scully is handling this.",
+    });
   });
 
   it("names an owner with neither name a teammate", async () => {
@@ -404,21 +468,24 @@ describe("SlackInteractivityHandler ownership rules through the ownership servic
     user_fox: { userId: "user_fox", label: "fox@example.com" },
   };
 
-  const createRealHandler = () => {
+  const createRealHandler = (options: { auditFails?: boolean } = {}) => {
     const { responsePosts, responseUrlClient } = slackResponses();
     const ownership = new InMemoryConversationOwnershipRepository();
     const outbox = new InMemoryActionOutbox();
-    const replies = { reply: vi.fn(async () => message) };
+    const replies = { write: vi.fn(async () => message), deliver: vi.fn(async () => undefined) };
+    const replyScope = { messages: { create: vi.fn() }, conversations: { touch: vi.fn() } };
     const service = new ConversationOwnershipService({
       conversations: { findByIdAndWorkspaceId: async (id: string) => ({ id }) as ConversationRecord },
       ownership,
       transfers: { run: (work) => work({ ownership, outbox }) },
+      replyWrites: { run: (work) => work({ ownership, reply: replyScope }) },
       operators: { find: async ({ userId }: { userId: string }) => operators[userId] ?? null },
       operatorIdentities: {
         resolve: async ({ userId }: { userId: string }) => ({ userId, teammateLabel: operators[userId].label, replySignature: null }),
       },
       replies,
-      audit: { record: vi.fn(async () => undefined) },
+      audit: { record: vi.fn(options.auditFails ? async () => { throw new Error("audit unavailable"); } : async () => undefined) },
+      logger: { warn: vi.fn() },
     });
     const bySlackUser: Record<string, typeof dana> = { U_DANA: dana, U_FOX: fox };
     const viewsOpen = vi.fn(async () => {});
@@ -434,15 +501,30 @@ describe("SlackInteractivityHandler ownership rules through the ownership servic
     return { handler, ownership, outbox, responsePosts, viewsOpen, replies };
   };
 
-  it("takes a conversation a teammate holds by transferring it to the clicker, without a notice", async () => {
+  it("leaves a conversation a teammate holds with them when another clicks a stale Take over", async () => {
     const { handler, ownership, outbox, responsePosts } = createRealHandler();
     await handler.handleBlockActions(blockPayload("ownership_takeover", { conversationId: "conv_1", workspaceId: "ws_conversation" }, "U_DANA"));
 
     await handler.handleBlockActions(blockPayload("ownership_takeover", { conversationId: "conv_1", workspaceId: "ws_conversation" }, "U_FOX"));
 
-    await expect(ownership.load("conv_1")).resolves.toMatchObject({ ownerUserId: "user_fox", version: 2 });
+    await expect(ownership.load("conv_1")).resolves.toMatchObject({ ownerUserId: "user_dana", version: 1 });
     expect(outbox.items).toEqual([]);
-    expect(responsePosts.at(-1)?.body).toMatchObject({ replace_original: true, text: "Handled by Fox on Slack" });
+    expect(responsePosts.at(-1)?.body).toEqual({
+      response_type: "ephemeral",
+      replace_original: false,
+      text: "dana@example.com is handling this.",
+    });
+  });
+
+  it("keeps the card current when a taken-over conversation's audit record fails", async () => {
+    const { handler, ownership, responsePosts } = createRealHandler({ auditFails: true });
+
+    await handler.handleBlockActions(blockPayload("ownership_takeover", { conversationId: "conv_1", workspaceId: "ws_conversation" }, "U_DANA"));
+    await handler.handleBlockActions(blockPayload("ownership_handback", { conversationId: "conv_1", version: 1 }, "U_DANA"));
+
+    await expect(ownership.load("conv_1")).resolves.toMatchObject({ state: "ai_owned", version: 2 });
+    expect(responsePosts.map((post) => post.body.replace_original)).toEqual([true, true]);
+    expect(responsePosts[0].body).toMatchObject({ text: "Handled by Dana on Slack" });
   });
 
   it("refuses Talk and Hand back from a teammate who does not own the conversation", async () => {

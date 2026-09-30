@@ -955,6 +955,102 @@ test("ownership taken over elsewhere reaches an open pane through the tail poll,
   await expect(response.getByRole("button", { name: "Reassign" })).toBeVisible();
 });
 
+// The record a hand-back leaves behind: AI-owned again, naming no teammate.
+const handedBackOwnership = (conversationId: string, version: number) => ({
+  ...handoffOwnership(conversationId, null, version),
+  state: "ai_owned" as const,
+  reason: null,
+});
+
+// The tail keeps reporting `held` until the returned callback runs, then the
+// hand-back record — standing in for Done pressed in another tab, by a
+// teammate, or from Slack while this pane stays open. The detail fetch is
+// never re-read before then, so it keeps reporting `held` throughout.
+const routeTailHandBack = async (
+  page: import("@playwright/test").Page,
+  conversationId: string,
+  held: HandoffOwnershipFixture,
+  handedBack: ReturnType<typeof handedBackOwnership>,
+) => {
+  let handedBackElsewhere = false;
+  await page.route(`**/backend/api/v1/history/chat/${conversationId}/tail**`, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ messages: [], cursor: null, ownership: handedBackElsewhere ? handedBack : held }),
+    });
+  });
+  return () => {
+    handedBackElsewhere = true;
+  };
+};
+
+test("a hand-back made elsewhere reaches an open pane on my conversation through the tail poll, and sending claims it again", async ({ page }) => {
+  const conversationId = "conversation-tail-hand-back-mine";
+  const heldByMe = handoffOwnership(conversationId, teammates[0], 2);
+  const requestLog: string[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    historyList: { conversations: [handoffSummary(conversationId, "Gift card balance", heldByMe)], total: 1, nextCursor: null, hasMore: false },
+    conversationDetails: { [conversationId]: handoffDetail(conversationId, heldByMe) },
+    conversationOperators: teammates,
+    requestLog,
+  });
+  await stubEmptyQualityQueue(page);
+  const handBackElsewhere = await routeTailHandBack(page, conversationId, heldByMe, handedBackOwnership(conversationId, 3));
+
+  await page.goto(`/w/${workspaceKey}/activity`);
+  await page.getByLabel("Inbox queue").getByRole("button", { name: /Gift card balance/ }).click();
+
+  const response = page.getByLabel("Response", { exact: true });
+  const replyBox = response.getByRole("textbox", { name: "Reply to the visitor" });
+  await expect(response.getByRole("button", { name: "Done" })).toBeVisible();
+  await expect(response.getByRole("button", { name: "Reassign" })).toBeVisible();
+
+  handBackElsewhere();
+
+  // Nothing left to hand back or reassign: the agent holds it again.
+  await expect(response.getByRole("button", { name: "Done" })).toHaveCount(0);
+  await expect(response.getByRole("button", { name: "Reassign" })).toHaveCount(0);
+  await expect(response.getByRole("button", { name: "Assign", exact: true })).toHaveCount(0);
+  await expect(replyBox).toBeVisible();
+
+  await replyBox.fill("I'm back on this one");
+  await response.getByRole("button", { name: "Send", exact: true }).click();
+  await expect.poll(() => requestLog).toContainEqual(`POST /conversations/${conversationId}/takeover`);
+});
+
+test("a hand-back made elsewhere on a conversation a teammate held brings the claim-on-send composer back", async ({ page }) => {
+  const conversationId = "conversation-tail-hand-back-teammate";
+  const heldByDana = handoffOwnership(conversationId, teammates[1], 4);
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    historyList: { conversations: [handoffSummary(conversationId, "Missing voucher code", heldByDana)], total: 1, nextCursor: null, hasMore: false },
+    conversationDetails: { [conversationId]: handoffDetail(conversationId, heldByDana) },
+    conversationOperators: teammates,
+  });
+  await stubEmptyQualityQueue(page);
+  const handBackElsewhere = await routeTailHandBack(page, conversationId, heldByDana, handedBackOwnership(conversationId, 5));
+
+  await page.goto(`/w/${workspaceKey}/activity`);
+  await page.getByLabel("Inbox queue").getByRole("button", { name: /Missing voucher code/ }).click();
+
+  const response = page.getByLabel("Response", { exact: true });
+  const replyBox = response.getByRole("textbox", { name: "Reply to the visitor" });
+  await expect(response.getByText("Dana Scully is handling this")).toBeVisible();
+  await expect(replyBox).toHaveCount(0);
+
+  handBackElsewhere();
+
+  await expect(replyBox).toBeVisible();
+  await expect(replyBox).toHaveAttribute("placeholder", /sending takes over the conversation/);
+  await expect(response.getByText("Dana Scully is handling this")).toHaveCount(0);
+  await expect(response.getByRole("button", { name: "Reassign" })).toHaveCount(0);
+  await expect(response.getByRole("button", { name: "Done" })).toHaveCount(0);
+});
+
 test("the Taken by: Me filter shows only the signed-in teammate's handoffs, not the whole organisation's", async ({ page }) => {
   const mine = handoffOwnership("conversation-mine", teammates[0], 2);
   const danas = handoffOwnership("conversation-danas", teammates[1], 2);

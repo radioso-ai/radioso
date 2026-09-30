@@ -44,7 +44,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { LogoSpinner } from '@/components/ui/spinner'
 import { getApiErrorMessage } from '@/lib/api-error'
-import { storeAccountOrganizationName } from '@/lib/auth-context'
+import { storeAccountOrganizationName, useAuth } from '@/lib/auth-context'
 import {
   accountApi,
   agentsApi,
@@ -142,6 +142,7 @@ export function WorkspaceAssistantChannelsTab({
   onDraftDirtyChange?: (dirty: boolean) => void
 }) {
   const router = useRouter()
+  const { logout } = useAuth()
   const { activeWorkspaceId, activeWorkspace, workspaces, renameWorkspace, deleteWorkspace, isLoading: isWorkspaceLoading } = useWorkspace()
   const [workspaceNameDraft, setWorkspaceNameDraft] = useState<string | null>(null)
   const [organizationName, setOrganizationName] = useState(() => readCachedOrganizationName(accountId))
@@ -411,9 +412,10 @@ export function WorkspaceAssistantChannelsTab({
       await accountApi.deleteOrganization()
       setDeleteOrgDialogOpen(false)
       setDeleteOrgConfirmName('')
-      if (typeof window !== 'undefined') {
-        window.location.href = '/login'
-      }
+      // The backend already cleared the session cookie; drop the local session
+      // and land on the root route, which renders sign-in when signed out.
+      logout()
+      router.replace('/')
     } catch (error) {
       setDeleteOrgError(getApiErrorMessage(error, 'Failed to delete the organization.'))
       setIsDeletingOrg(false)

@@ -74,7 +74,13 @@ export interface AdmitOperatorMcpInvocationInput {
 export type OperatorMcpInvocationAdmission =
   | { readonly status: "admitted" | "replay"; readonly invocation: OperatorMcpInvocationRecord }
   | { readonly status: "conflict" }
-  | ({ readonly status: "budget_exhausted" } & OperatorMcpBudgetRetry);
+  /**
+   * `retryAfterSeconds`/`resetAt` are present together, or not at all: a cost that exceeds the
+   * kind's ceiling outright can never be admitted no matter how long the window empties, so that
+   * case is `budget_exhausted` with neither field rather than a `resetAt` promising a retry that
+   * will fail the same way.
+   */
+  | ({ readonly status: "budget_exhausted" } & Partial<OperatorMcpBudgetRetry>);
 
 export interface OperatorMcpInvocationRepositoryPort {
   admit(input: AdmitOperatorMcpInvocationInput): Promise<OperatorMcpInvocationAdmission>;
@@ -103,7 +109,7 @@ export interface OperatorMcpInvocationRepositoryPort {
   }): Promise<
     | { status: "prepared" | "replay"; invocation: OperatorMcpInvocationRecord }
     | { status: "conflict" }
-    | ({ status: "budget_exhausted" } & OperatorMcpBudgetRetry)
+    | ({ status: "budget_exhausted" } & Partial<OperatorMcpBudgetRetry>)
   >;
 }
 import type { OperatorMcpRejectionDetail } from "./invalidArgumentDetails.js";

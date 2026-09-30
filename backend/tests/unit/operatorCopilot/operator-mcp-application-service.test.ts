@@ -533,6 +533,20 @@ describe("OperatorMcpApplicationService", () => {
     }));
   });
 
+  it("omits retry timing entirely when the repository reports a cost that can never fit", async () => {
+    const { service, invocations } = build();
+    invocations.prepareInvocation.mockResolvedValueOnce({ status: "budget_exhausted" });
+    const argumentsValue = { section: "retrieval" };
+    const admitted = await service.admit({
+      accessToken: "operator-access", invocationId: uuid("13"), method: "tools/call", descriptorName: descriptor.name,
+      resource: principal.resource, timestamp: "1788480000", nonce: "budget-exhausted-no-retry", bodyDigest: callDigest(argumentsValue),
+    });
+
+    const invoked = service.invoke({ proof: admitted.proof, name: descriptor.name, arguments: argumentsValue, bodyDigest: callDigest(argumentsValue) });
+
+    await expect(invoked).rejects.toMatchObject({ code: "budget_exhausted", retry: undefined });
+  });
+
   it("charges a descriptor's own budget kind rather than the shared verification ceiling", async () => {
     const testChatDescriptor: CopilotToolDescriptor = { ...descriptor, name: "send_test_chat_message", operatorMcpBudgetKind: "test_chat" };
     const { service, invocations } = build(testChatDescriptor);

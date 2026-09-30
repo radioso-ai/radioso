@@ -150,6 +150,38 @@ describeIntegration("OperatorMcpInvocationRepository", () => {
     }))).resolves.toEqual({ status: "budget_exhausted", retryAfterSeconds: 60, resetAt: new Date(now.getTime() + 60_000) });
   });
 
+  it("waits for enough cost to expire for the incoming call, not just the single oldest reservation", async () => {
+    await clearInvocations();
+    const t = new Date("2026-09-04T00:00:00.000Z");
+    const tMinus59 = new Date(t.getTime() - 59_000);
+    const tMinus30 = new Date(t.getTime() - 30_000);
+
+    // A 1-unit probe and a 5-unit run_eval_suite-style call fill the default six-unit ceiling.
+    await expect(repository.admit(baseInput({
+      id: randomUUID(), operationId: "variable-cost-small", verificationCost: 1, proofNonceDigest: randomUUID().replaceAll("-", ""), now: tMinus59,
+    }))).resolves.toMatchObject({ status: "admitted" });
+    await expect(repository.admit(baseInput({
+      id: randomUUID(), operationId: "variable-cost-large", verificationCost: 5, proofNonceDigest: randomUUID().replaceAll("-", ""), now: tMinus30,
+    }))).resolves.toMatchObject({ status: "admitted" });
+
+    // The 1-unit reservation ages out first, at t+1s, but freeing one unit cannot admit a 5-unit
+    // call; only the 5-unit reservation aging out, at t+30s, frees enough room for it.
+    await expect(repository.admit(baseInput({
+      id: randomUUID(), operationId: "variable-cost-request", verificationCost: 5, proofNonceDigest: randomUUID().replaceAll("-", ""), now: t,
+    }))).resolves.toEqual({ status: "budget_exhausted", retryAfterSeconds: 30, resetAt: new Date(tMinus30.getTime() + 60_000) });
+  });
+
+  it("answers a cost that exceeds the ceiling outright without a retry time that would mislead", async () => {
+    await clearInvocations();
+    const limited = new OperatorMcpInvocationRepository(database.kysely, { verificationBudgetPerMinute: 2 });
+
+    // No amount of waiting admits a 5-unit call against a 2-unit ceiling, so there is nothing
+    // honest to put in retryAfterSeconds or resetAt.
+    await expect(limited.admit(baseInput({
+      id: randomUUID(), operationId: "cost-exceeds-ceiling", verificationCost: 5, proofNonceDigest: randomUUID().replaceAll("-", ""),
+    }))).resolves.toEqual({ status: "budget_exhausted" });
+  });
+
   it("meters Test Chat turns against their own ceiling, independent of the shared verification budget", async () => {
     await clearInvocations();
     const limited = new OperatorMcpInvocationRepository(database.kysely, { verificationBudgetPerMinute: 1, testChatBudgetPerMinute: 2 });

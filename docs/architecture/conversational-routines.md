@@ -116,7 +116,9 @@ the same slot needs an explicit `llm`/structured edge on the other branch.
 
 - **Auto-gating (compiler).** When a collection step's outgoing edges are all
   `default`, the compiler promotes those edges to `llm` (a selector-running
-  transition with a slot-aware condition). The stored routine keeps the `default`
+  transition with a slot-aware condition such as "The user provided
+  {{slot.full_name}} and {{slot.email}}."). The condition names the step's
+  required slots, or all of its slots when it collects only optional ones. The stored routine keeps the `default`
   edge; only the compiled graph changes, and the change applies on the next load,
   so every routine picks it up as soon as it is loaded again.
 - **Extraction-only pass (runner).** A collection step can branch on the slot it
@@ -130,6 +132,37 @@ the same slot needs an explicit `llm`/structured edge on the other branch.
 The net rule: a slot-collection step always extracts before it advances. A step
 that does not collect a slot and is deliberately shaped (a structured or `llm`
 exit) is left exactly as authored.
+
+### When a step is answered
+
+A slot-collection step is **satisfied** when every required slot it collects holds
+a value, or when one of its `slot_filled` exits already passes. Optional slots
+never hold a step: a contact step that asks for a name, an email and, if the
+visitor offers one, a phone number is satisfied by the name and email. A step that
+collects only optional slots waits until one of them is given.
+
+A satisfied step moves on by its structure: the first rule exit that matches,
+otherwise its `default` exit. That applies in two places.
+
+- **The step the visitor answered.** When the selector finds that no AI-decides
+  exit holds (the visitor did not cancel), yet the reply filled what the step
+  asks for, the runner takes the rule or default exit. A step with a `default`
+  exit and an AI-decides cancel exit therefore advances once it is answered.
+- **Steps the visitor answered earlier.** On the way to the next step to render,
+  the runner skips every satisfied step along its rule or default exit, with no
+  model call. The visitor's message answered an earlier step and has already been
+  read, so judging a skipped step's exits against it asks a question the visitor
+  never saw. In a booking routine that asks for the program, dates, party size,
+  contact details and then a recap, the opening message "Vorrei prenotare un
+  soggiorno personale dal 11 al 14 novembre. Sono Giulia Verdi,
+  giulia.verdi@example.com" fills the program, dates and contact steps at once.
+  The routine asks how many adults are coming, and the answer to that goes
+  straight to the recap.
+
+A satisfied step whose only ways on are AI-decides exits still asks the selector,
+because only the author's condition text says which exit goes forward. For
+collection steps, write the forward exit as a `slot_filled` rule or a `default`
+exit and keep AI-decides exits for branches such as cancelling.
 
 ## Text routine formats
 
@@ -413,9 +446,9 @@ Prose steps are positional, so the prose editor offers handoff and end branch
 targets but not step-to-step jumps. Authoring a jump from one step to another
 takes the structural editor.
 
-A step whose slots were given on an earlier turn is usually rendered again
-rather than skipped: the fast-forward check asks the selector about the latest
-message (#1372). Captured values are not checked against
+A step whose slots were given earlier and whose exits are all AI-decides is
+judged against the latest message, which usually answered a different step, so
+it is often rendered again rather than skipped (#1372). Captured values are not checked against
 their declared type beyond number and boolean coercion (#1374). A recap
 confirmation accepts a visitor message posing as a system notice (#1375). A step
 can be re-asked with no limit unless the author adds a `counter` exit (#1376),

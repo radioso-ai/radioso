@@ -12,6 +12,7 @@ import type { OperatorMcpInvocationRecord, OperatorMcpInvocationRepositoryPort }
 import { AppError, badRequest, conflict, notFound, serviceUnavailable } from "../../../src/shared/domain/errors.js";
 import { OperatorCopilotService, type CopilotRepositoryPort } from "../../../src/modules/operatorCopilot/service.js";
 import { operatorMcpDispositions } from "../../../src/modules/operatorCopilot/operatorMcpDisposition.js";
+import { routineValidationRefusal } from "../../../src/modules/operatorCopilot/routineValidationRefusal.js";
 import { createCancelReviewedProposalTool } from "../../../src/modules/operatorCopilot/tools/cancelReviewedProposal.js";
 import { createReviewedProposalExecutionTool } from "../../../src/modules/operatorCopilot/tools/reviewedProposalExecution.js";
 import { REVIEWED_APPROVAL_ACCEPT_WAIT_MS } from "../../../src/modules/operatorCopilot/reviewedOperation.js";
@@ -371,6 +372,39 @@ describe("OperatorMcpApplicationService", () => {
       .then(() => null, (error: OperatorMcpApplicationError) => error);
 
     expect(rejection).toMatchObject({ code: "invalid_arguments", details: [{ routineId: uuid("91"), code: "node_id_collision", location: "step:return", message: "A step or terminal identifier is used more than once." }, "The requested revision cannot be served. Use the diagnostic code and location to correct it."] });
+  });
+
+  it("names the rule and the slot for prepare_routine_structure's declared_unused_slot refusal, not a bare code (issue #1371)", async () => {
+    // Mirrors what prepare_routine_structure's real "edit" path throws when an operator drops a
+    // slot's only reference: routineValidationRefusal wrapping the validator's own raw diagnostic.
+    const rejectingDescriptor: CopilotToolDescriptor = {
+      ...descriptor,
+      createTool: () => ({
+        name: "workspace_settings", description: "Read settings",
+        inputSchema: z.object({ section: z.string() }), outputSchema: z.object({ section: z.string() }),
+        invoke: vi.fn(async () => {
+          throw routineValidationRefusal(
+            "The routine cannot be served. Disable it to park it, or use validate_routine to correct the reported diagnostics.",
+            uuid("91"),
+            [{ code: "declared_unused_slot", location: "slot:phone", message: "declared-but-unused slot: \"phone\" is declared but never referenced." }],
+          );
+        }),
+      }),
+    };
+    const { service } = build(rejectingDescriptor);
+    const argumentsValue = { section: "retrieval" };
+    const bodyDigest = callDigest(argumentsValue);
+    const admitted = await service.admit({ accessToken: "operator-access", invocationId: uuid("12"), method: "tools/call", descriptorName: rejectingDescriptor.name, resource: principal.resource, timestamp: "1788480000", nonce: "edge-unused-slot", bodyDigest });
+
+    const rejection = await service.invoke({ proof: admitted.proof, name: rejectingDescriptor.name, arguments: argumentsValue, bodyDigest })
+      .then(() => null, (error: OperatorMcpApplicationError) => error);
+
+    expect(rejection).toMatchObject({ code: "invalid_arguments" });
+    const diagnostic = rejection?.details?.[0];
+    expect(diagnostic).toMatchObject({ code: "declared_unused_slot", location: "slot:phone" });
+    // The message, not just the structured code/location, must name the slot: a caller that only
+    // renders free text (not every field of every detail entry) still learns what to fix.
+    expect(typeof diagnostic === "object" && diagnostic !== null && "message" in diagnostic ? diagnostic.message : null).toMatch(/phone/);
   });
 
   it("replays a persisted caller rejection with its structured diagnostics", async () => {

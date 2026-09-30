@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { validateRoutineDefinition } from "../../../src/modules/routines/validator.js";
+import { toSafeRoutineValidationDiagnostic, validateRoutineDefinition } from "../../../src/modules/routines/validator.js";
 import type { RoutineDefinition } from "../../../src/modules/routines/domain.js";
 import type { SkillAuthoringDescriptor } from "../../../src/modules/skills/public.js";
 
@@ -526,5 +526,45 @@ describe("validateRoutineDefinition node id uniqueness", () => {
     expect(result.diagnostics).toEqual(expect.arrayContaining([
       expect.objectContaining({ code: "node_id_collision", location: "node:handoff" }),
     ]));
+  });
+});
+
+describe("validateRoutineDefinition declared-but-unused slots", () => {
+  it("flags a declared slot once its only reference is removed from a step instruction", () => {
+    const definition: RoutineDefinition = {
+      ...definitionWithTool(null),
+      slots: [{ stableSlotId: "slot_phone", key: "phone", type: "text", required: false, description: "Phone number", ordinal: 0 }],
+      steps: [
+        // The operator's edit: the step no longer mentions {{slot.phone}} anywhere.
+        { stableStepId: "lookup", kind: "chat", instruction: "Ask for the account details.", toolRef: null, ordinal: 0, metadata: {} },
+      ],
+    };
+
+    const result = validateRoutineDefinition(definition);
+
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "declared_unused_slot", location: "slot:phone" }),
+    ]));
+  });
+});
+
+describe("toSafeRoutineValidationDiagnostic", () => {
+  it("names the rule and the slot for a declared-but-unused slot, not a generic fallback", () => {
+    // Issue #1371: the operator got a bare `invalid_arguments` with no way to tell which rule
+    // fired or which slot it named. `location` already carries the slot key safely (it is a
+    // structural identifier, not authored free text), so the safe message should too.
+    const safe = toSafeRoutineValidationDiagnostic({ code: "declared_unused_slot", location: "slot:phone" });
+
+    expect(safe.code).toBe("declared_unused_slot");
+    expect(safe.location).toBe("slot:phone");
+    expect(safe.message).toMatch(/phone/);
+    expect(safe.message).not.toBe("The routine structure is not valid for serving.");
+  });
+
+  it("still falls back to the generic message for a code with no dedicated mapping", () => {
+    const safe = toSafeRoutineValidationDiagnostic({ code: "unreachable_step", location: "step:foo" });
+
+    expect(safe.message).toBe("The routine structure is not valid for serving.");
   });
 });

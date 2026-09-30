@@ -2027,3 +2027,189 @@ describe("DefaultRoutineRunner re-ask signal and selector trace (#1369, #1370)",
     expect(result.trace?.steps[0]).toMatchObject({ stepId: "program", event: "reasked", viaSelector: true, selection });
   });
 });
+
+describe("DefaultRoutineRunner satisfied slot steps (#1371, #1372)", () => {
+  const slots: Routine["slots"] = [
+    { id: "slot_arrival", key: "arrival", type: "date", required: true },
+    { id: "slot_departure", key: "departure", type: "date", required: true },
+    { id: "slot_full_name", key: "full_name", type: "text", required: true },
+    { id: "slot_phone", key: "phone", type: "text", required: false },
+  ];
+  const steps: Routine["steps"] = [
+    { id: "dates", kind: "chat", action: "Ask for {{slot.arrival}} and {{slot.departure}}.", metadata: { collectsSlots: ["arrival", "departure"] } },
+    { id: "contact", kind: "chat", action: "Ask for {{slot.full_name}} and, optionally, {{slot.phone}}.", metadata: { collectsSlots: ["full_name", "phone"] } },
+    { id: "done", kind: "terminal", action: "Say the request was sent." },
+    { id: "cancelled", kind: "terminal", action: "Say the request was cancelled." },
+  ];
+  const cancelExit = (from: string) => ({ from, to: "cancelled", condition: "The user wants to stop." });
+  const bookingWith = (transitions: Routine["transitions"]): Routine => ({ id: "contact", rootStepId: "dates", slots, steps, transitions });
+  // The visitor answers the dates step and also gives their name; no AI-decides exit holds.
+  const answeredDatesAndName = { arrival: "2026-11-11", departure: "2026-11-14", full_name: "Giulia Verdi" };
+  const stayingSelector = (variables: Record<string, unknown>) =>
+    ({ select: vi.fn(async () => ({ nextStepId: "dates", variables })) }) satisfies ConversationRoutineNextStepSelector;
+  const renderer = (): ConversationRoutineStepRenderer => ({
+    render: vi.fn(async ({ step }) => ({ answer: `[${step.id}]` })),
+  });
+
+  it("skips a step whose required slots are filled even when its optional slot is empty", async () => {
+    const booking = bookingWith([
+      { from: "dates", to: "contact", condition: "", guard: { kind: "slot_filled", slots: ["arrival", "departure"] } },
+      cancelExit("dates"),
+      { from: "contact", to: "done", condition: "", guard: { kind: "slot_filled", slots: ["full_name"] } },
+      cancelExit("contact"),
+    ]);
+    const selector = stayingSelector(answeredDatesAndName);
+    const runner = new DefaultRoutineRunner([booking], selector, renderer());
+
+    const result = await runner.resume({ turn, state: state(["dates"]) });
+
+    expect(result.response.answer).toBe("[done]");
+    expect(result.trace?.steps.map(({ stepId, event }) => `${stepId}:${event}`)).toEqual([
+      "dates:advanced",
+      "contact:fast_forwarded",
+      "done:rendered",
+    ]);
+    expect(selector.select).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips a step whose only exit is taken once its required slots are filled, optional slot empty", async () => {
+    const booking = bookingWith([
+      { from: "dates", to: "contact", condition: "", guard: { kind: "slot_filled", slots: ["arrival", "departure"] } },
+      { from: "contact", to: "done", condition: "The user provided {{slot.full_name}}." },
+    ]);
+    const runner = new DefaultRoutineRunner([booking], stayingSelector(answeredDatesAndName), renderer());
+
+    const result = await runner.resume({ turn, state: state(["dates"]) });
+
+    expect(result.response.answer).toBe("[done]");
+  });
+
+  it("treats a step as satisfied when its slot_filled exit passes, even with another required slot empty", async () => {
+    const booking: Routine = {
+      ...bookingWith([
+        { from: "dates", to: "contact", condition: "", guard: { kind: "slot_filled", slots: ["arrival", "departure"] } },
+        { from: "contact", to: "done", condition: "", guard: { kind: "slot_filled", slots: ["full_name"] } },
+        cancelExit("contact"),
+      ]),
+      slots: slots.map((slot) => (slot.key === "phone" ? { ...slot, required: true } : slot)),
+    };
+    const runner = new DefaultRoutineRunner([booking], stayingSelector(answeredDatesAndName), renderer());
+
+    const result = await runner.resume({ turn, state: state(["dates"]) });
+
+    expect(result.response.answer).toBe("[done]");
+  });
+
+  it("still asks a step that collects only optional slots until one is given", async () => {
+    const optionalOnly: Routine = {
+      id: "contact",
+      rootStepId: "dates",
+      slots: [...slots.slice(0, 2), { id: "slot_phone", key: "phone", type: "text", required: false }],
+      steps: [
+        steps[0],
+        { id: "phone", kind: "chat", action: "Offer to take {{slot.phone}}.", metadata: { collectsSlots: ["phone"] } },
+        steps[2],
+      ],
+      transitions: [
+        { from: "dates", to: "phone", condition: "", guard: { kind: "slot_filled", slots: ["arrival", "departure"] } },
+        { from: "phone", to: "done", condition: "", guard: { kind: "default" } },
+      ],
+    };
+    const runner = new DefaultRoutineRunner(
+      [optionalOnly],
+      stayingSelector({ arrival: "2026-11-11", departure: "2026-11-14" }),
+      renderer(),
+    );
+
+    const result = await runner.resume({ turn, state: state(["dates"]) });
+
+    expect(result.response.answer).toBe("[phone]");
+  });
+
+  it("advances along the default exit when the reply fills the step and no AI-decides exit holds", async () => {
+    const booking = bookingWith([
+      { from: "dates", to: "contact", condition: "", guard: { kind: "default" } },
+      cancelExit("dates"),
+      { from: "contact", to: "done", condition: "", guard: { kind: "default" } },
+      cancelExit("contact"),
+    ]);
+    const selector = stayingSelector({ arrival: "2026-11-11", departure: "2026-11-14" });
+    const runner = new DefaultRoutineRunner([booking], selector, renderer());
+
+    const result = await runner.resume({ turn, state: state(["dates"]) });
+
+    expect(result.response.answer).toBe("[contact]");
+    expect(result.trace?.steps[0]).toMatchObject({ stepId: "dates", event: "advanced" });
+    expect(selector.select).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-asks a step with a default exit while its required slots are still empty", async () => {
+    const booking = bookingWith([
+      { from: "dates", to: "contact", condition: "", guard: { kind: "default" } },
+      cancelExit("dates"),
+    ]);
+    const runner = new DefaultRoutineRunner([booking], stayingSelector({ arrival: "2026-11-11" }), renderer());
+
+    const result = await runner.resume({ turn, state: state(["dates"]) });
+
+    expect(result.response.answer).toBe("[dates]");
+    expect(result.trace?.steps[0]).toMatchObject({ stepId: "dates", event: "reasked" });
+  });
+
+  it("skips a later filled step along its default exit without asking the selector again", async () => {
+    const booking = bookingWith([
+      { from: "dates", to: "contact", condition: "", guard: { kind: "default" } },
+      cancelExit("dates"),
+      { from: "contact", to: "done", condition: "", guard: { kind: "default" } },
+      cancelExit("contact"),
+    ]);
+    const selector = stayingSelector(answeredDatesAndName);
+    const runner = new DefaultRoutineRunner([booking], selector, renderer());
+
+    const result = await runner.resume({ turn, state: state(["dates"]) });
+
+    expect(result.response.answer).toBe("[done]");
+    expect(result.trace?.steps.map(({ stepId, event }) => `${stepId}:${event}`)).toEqual([
+      "dates:advanced",
+      "contact:fast_forwarded",
+      "done:rendered",
+    ]);
+    expect(selector.select).toHaveBeenCalledTimes(1);
+  });
+
+  it("still takes a cancel exit the selector chose on the step the visitor answered", async () => {
+    const booking = bookingWith([
+      { from: "dates", to: "contact", condition: "", guard: { kind: "default" } },
+      cancelExit("dates"),
+      { from: "contact", to: "done", condition: "", guard: { kind: "default" } },
+    ]);
+    const runner = new DefaultRoutineRunner(
+      [booking],
+      { select: vi.fn(async () => ({ nextStepId: "cancelled", variables: answeredDatesAndName })) },
+      renderer(),
+    );
+
+    const result = await runner.resume({ turn, state: state(["dates"]) });
+
+    expect(result.response.answer).toBe("[cancelled]");
+  });
+
+  it("asks the selector about a filled step whose exits are all AI-decides", async () => {
+    const booking = bookingWith([
+      { from: "dates", to: "contact", condition: "", guard: { kind: "slot_filled", slots: ["arrival", "departure"] } },
+      { from: "contact", to: "done", condition: "The user provided {{slot.full_name}}." },
+      cancelExit("contact"),
+    ]);
+    const select = vi.fn(async ({ currentStep }: { currentStep: { id: string } }) => ({
+      nextStepId: currentStep.id === "contact" ? "done" : "dates",
+      variables: currentStep.id === "dates" ? answeredDatesAndName : {},
+    }));
+    const runner = new DefaultRoutineRunner([booking], { select }, renderer());
+
+    const result = await runner.resume({ turn, state: state(["dates"]) });
+
+    expect(result.response.answer).toBe("[done]");
+    // One extraction pass on the answered step, then the AI-decides judgement for `contact`.
+    expect(select.mock.calls.map(([input]) => input.currentStep.id)).toEqual(["dates", "contact"]);
+  });
+});

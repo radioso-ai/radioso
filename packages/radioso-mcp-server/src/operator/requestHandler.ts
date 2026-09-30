@@ -102,8 +102,18 @@ const insufficientScope = (metadataUrl: string | undefined, scope: string | unde
   return new Response(JSON.stringify({ error: "insufficient_scope" }), { headers, status: 403 });
 };
 
-const throttled = (error: "budget_exhausted" | "rate_limit_exceeded"): Response =>
-  new Response(JSON.stringify({ error }), { headers: { "content-type": "application/json" }, status: 429 });
+const throttled = (
+  error: "budget_exhausted" | "rate_limit_exceeded",
+  retry?: { retryAfterSeconds?: number; resetAt?: string },
+): Response => {
+  const headers = new Headers({ "content-type": "application/json" });
+  if (retry?.retryAfterSeconds !== undefined) headers.set("retry-after", String(retry.retryAfterSeconds));
+  return new Response(JSON.stringify({
+    error,
+    ...(retry?.retryAfterSeconds !== undefined ? { retryAfterSeconds: retry.retryAfterSeconds } : {}),
+    ...(retry?.resetAt !== undefined ? { resetAt: retry.resetAt } : {}),
+  }), { headers, status: 429 });
+};
 
 const objectParams = (value: unknown): Record<string, unknown> | null =>
   value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
@@ -374,7 +384,7 @@ const createModernOperatorMcpRequestHandler = (dependencies: OperatorMcpRequestH
     }
     if (error instanceof OperatorBackendAdapterError && isBackendRateLimit(error)) {
       reportOutcome(dependencies, { method, outcome: "denied", descriptorName, shape: shapeForScope(error.requiredScope), reason: "rate_limit_exceeded" });
-      return throttled(error.code);
+      return throttled(error.code, { retryAfterSeconds: error.retryAfterSeconds, resetAt: error.resetAt });
     }
     reportOutcome(dependencies, { method, outcome: "error", descriptorName, reason: "runtime_unavailable" });
     return rpcError(id, -32002, "Operator MCP runtime is unavailable.");

@@ -3,7 +3,7 @@ import type { OperatorMcpScope } from "@radioso/operator-mcp-contract";
 
 import type { AccountPermission } from "../account/public.js";
 import type { AgentTool } from "../../shared/agent-runtime/index.js";
-import type { OperatorMcpInvocationRecord } from "./mcpContracts.js";
+import type { OperatorMcpBudgetKind, OperatorMcpInvocationRecord } from "./mcpContracts.js";
 import type { OwnerCommitHook } from "../../shared/infra/kysely/types.js";
 import type { ReviewedChangeEffect } from "../../shared/domain/reviewedChangeEffect.js";
 import type { ReviewedConfirmationRequirement } from "./reviewedOperation.js";
@@ -568,6 +568,17 @@ export interface CopilotToolDescriptor<TInput = unknown, TOutput = unknown> {
    * {@link describeEntity} does.
    */
   verificationCost(input: TInput): number;
+  /**
+   * Which operator MCP per-minute ceiling {@link verificationCost} is charged against. Omitted
+   * means the shared `verification` budget every other probe or propose descriptor draws from.
+   * Test Chat's `send_test_chat_message` is the one exception: its turns are private, suppress
+   * skill effects, and are already metered as answers against the plan quota, so it draws from
+   * its own, larger `test_chat` ceiling instead of stalling a normal multi-turn routine test
+   * against the same six-per-minute budget every read/probe tool shares. Has no effect outside
+   * the operator MCP surface -- Ray's own per-turn probe budget still meters every descriptor
+   * the same way, by {@link verificationCost} alone.
+   */
+  readonly operatorMcpBudgetKind?: OperatorMcpBudgetKind;
   readonly uiLabel: string;
   readonly description: string;
   readonly inputSchema: ZodType<TInput>;

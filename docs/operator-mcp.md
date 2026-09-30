@@ -1,7 +1,7 @@
 ---
 title: "Operator MCP OAuth Access"
 description: "Connect an OAuth-capable MCP client to Ray's governed workspace tools and manage its access."
-last_updated: 2026-09-28
+last_updated: 2026-09-30
 ---
 
 # Operator MCP OAuth Access
@@ -97,7 +97,7 @@ Production resource and issuer URLs must use HTTPS. Local development may use HT
 
 `OPERATOR_MCP_CREDENTIAL_EPOCH` is an external monotonic generation, not data recovered from a database backup. All enabled backend replicas and the standalone service must use the same epoch and internal-secret fingerprint.
 
-Operator MCP starts when its resource URL, issuer URL, internal secret, and credential epoch are all configured in both processes. It is available to every workspace; there is no deployment allowlist. The verification budget stays capped at six operations per credential each minute.
+Operator MCP starts when its resource URL, issuer URL, internal secret, and credential epoch are all configured in both processes. It is available to every workspace; there is no deployment allowlist. The verification budget stays capped at six operations per credential each minute. Test Chat's `send_test_chat_message` draws from its own, larger 30-per-minute ceiling instead, because those turns are private, suppress skill effects, and are already metered as answers against the plan quota.
 
 Deployment availability does not grant a client access. Each connection still needs browser OAuth consent, an active membership in the selected workspace, approved scopes, and the canonical resource URL. Every tool request rechecks the grant, client, membership, scopes, and current permissions; it remains subject to source and principal rate limits and is recorded in audit logs.
 
@@ -119,6 +119,7 @@ Startup never advances a persisted epoch. A replica with an older epoch, a newer
 - **Credential epoch mismatch:** complete the explicit rotation step and deploy the same epoch and secret to every replica.
 - **Rejected request:** a malformed envelope answers `-32600 Invalid Request` and lists what was wrong in the JSON-RPC `error.data`, one `<path>: <reason>` line each, such as `params._meta.io.modelcontextprotocol/clientCapabilities: invalid_type` when a self-describing request leaves out the client capabilities. Send `{}` there if the client declares none.
 - **Rejected arguments:** a refused call answers `-32602 invalid_arguments` and carries what was wrong in the JSON-RPC `error.data`. A schema rejection names fields and array positions, never the values at them. A routine or publication validation refusal carries bounded diagnostic objects with the routine id, name when available, code, location, and message, so correct the routine with `validate_routine` or `prepare_routine_structure`. A `propose_*` proposal id passed to `reviewed_proposal_outcome` or `cancel_reviewed_proposal` identifies the dashboard review and directs the client to `proposal_detail` only for a caller holding that proposal's target read permission — the same permission `proposal_detail` itself requires; without it, and for an unknown id, the call gets the same not-found refusal.
+- **Budget exhausted:** a call that would exceed its per-minute ceiling answers HTTP 429 with a `Retry-After` header, in seconds, and the same value repeated as `retryAfterSeconds` alongside an ISO `resetAt` in the JSON body, so a client can wait the exact amount instead of guessing.
 - **Client reports an unavailable runtime:** search the backend logs for `operator_mcp_route_failed`, which names the cause and carries the invocation id the audit record is keyed by. `operator_mcp_route_not_ready` instead means the replica has not reached credential readiness.
 
 ## Read next

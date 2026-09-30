@@ -48,6 +48,11 @@ class MemoryRepository implements TestExecutionRepositoryPort {
     return this.byIdempotencyKey.get(input.idempotencyKey) ?? null;
   }
   async find(): Promise<TestExecution | null> { return this.execution; }
+  async findAgentId(input: Parameters<TestExecutionRepositoryPort["findAgentId"]>[0]): Promise<string | null> {
+    return this.execution && this.execution.id === input.executionId && this.execution.workspaceId === input.workspaceId
+      ? this.execution.agentId
+      : null;
+  }
   recoverExpiredSidesCalls = 0;
   async recoverExpiredSides(input: Parameters<TestExecutionRepositoryPort["recoverExpiredSides"]>[0]): Promise<TestExecution | null> {
     this.recoverExpiredSidesCalls += 1;

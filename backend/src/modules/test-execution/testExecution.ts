@@ -225,6 +225,8 @@ export interface TestExecutionRepositoryPort {
   /** `idempotencyKey` fences a start: a repeated key for the same workspace/agent replays the execution it already created instead of starting a second one. */
   create(input: Omit<TestExecution, "createdAt" | "state"> & { state?: TestExecutionState; idempotencyKey: string }): Promise<TestExecution>;
   find(input: { workspaceId: string; agentId: string; executionId: string }): Promise<TestExecution | null>;
+  /** Scoped by workspace alone: the read a caller with only an execution id, not yet an agent id, needs. Null for an id this workspace does not own. */
+  findAgentId(input: { workspaceId: string; executionId: string }): Promise<string | null>;
   findByIdempotencyKey(input: { workspaceId: string; agentId: string; idempotencyKey: string }): Promise<TestExecution | null>;
   /** Self-heals a side stuck "running" past its lease (an abandoned attempt) into "failed, retryable". */
   recoverExpiredSides(input: { workspaceId: string; agentId: string; executionId: string; now: Date }): Promise<TestExecution | null>;
@@ -392,6 +394,17 @@ export class TestExecutionService {
 
   list(input: { workspaceId: string; agentId: string; limit: number; cursor?: string }): Promise<TestExecutionHistoryPage> {
     return this.options.repository.list(input);
+  }
+
+  /**
+   * Which agent owns an execution id, scoped by workspace alone. For a caller that has a session
+   * id but not yet an agent id -- an operator MCP client continuing a Test Chat session by
+   * `testExecutionId` -- rather than one that already knows both. An id this workspace does not
+   * own answers null, so a cross-workspace id reads as not-found rather than leaking whether it
+   * exists elsewhere.
+   */
+  async findAgentId(input: { workspaceId: string; executionId: string }): Promise<string | null> {
+    return this.options.repository.findAgentId(input);
   }
 
   /** A list page with each execution's turn count and opening message, read in one projection rather than per execution. */

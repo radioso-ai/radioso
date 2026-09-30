@@ -15,6 +15,7 @@ import { operatorMcpDispositions } from "../../../src/modules/operatorCopilot/op
 import { createCancelReviewedProposalTool } from "../../../src/modules/operatorCopilot/tools/cancelReviewedProposal.js";
 import { createReviewedProposalExecutionTool } from "../../../src/modules/operatorCopilot/tools/reviewedProposalExecution.js";
 import { REVIEWED_APPROVAL_ACCEPT_WAIT_MS } from "../../../src/modules/operatorCopilot/reviewedOperation.js";
+import { createTestChatCopilotTools, type CopilotTestChatPort } from "../../../src/modules/operatorCopilot/tools/testChat.js";
 import { realCatalog } from "./realCatalogTestSupport.js";
 
 const uuid = (suffix: string) => `00000000-0000-4000-8000-${suffix.padStart(12, "0")}`;
@@ -1212,5 +1213,165 @@ describe("operator MCP operation identity", () => {
     expect(proposals.cancelPendingProposal).toHaveBeenCalledOnce();
     expect(ownerAudit.record).toHaveBeenCalledOnce();
     expect(ownerAudit.record).toHaveBeenCalledWith(expect.objectContaining({ eventType: "copilot.proposal.dismissed" }));
+  });
+});
+
+// #1361: over operator MCP the dashboard page context this catalog otherwise falls back to
+// (`pageContext.agentId`) is always null, so a Test Chat call naming only a `testExecutionId` used
+// to fall through to a plain thrown Error the boundary above could not classify -- recorded as an
+// opaque `dependency_error` and reported to the caller as a 503 runtime outage instead of a call it
+// could correct. These exercise the real `createTestChatCopilotTools` descriptors through the same
+// `enrichCopilotToolCatalog` + `OperatorMcpCatalogService` + `OperatorMcpApplicationService` stack
+// operator MCP runs in production, not a stand-in.
+describe("Test Chat tools resolve an agent without dashboard page context", () => {
+  const mcpNow = new Date("2026-09-30T00:00:00Z");
+  const mcpRevision = { id: uuid("60"), kind: "candidate" as const, versionNumber: null, createdAt: mcpNow.toISOString() };
+  const readScope: OperatorMcpPrincipal = { ...principal, currentToolScopes: ["operator:read"] };
+  const probeScope: OperatorMcpPrincipal = { ...principal, currentToolScopes: ["operator:probe"] };
+  const unkeyedCall = async (service: OperatorMcpApplicationService, name: string, argumentsValue: Record<string, unknown>, nonce = "edge-unkeyed") => {
+    const bodyDigest = digestOperatorMcpCall({ name, arguments: argumentsValue });
+    const admitted = await service.admit({ accessToken: "operator-access", invocationId: uuid("12"), method: "tools/call", descriptorName: name, resource: principal.resource, timestamp: "1788480000", nonce, bodyDigest });
+    return service.invoke({ proof: admitted.proof, name, arguments: argumentsValue, bodyDigest });
+  };
+
+  const stubTestChat = (overrides: Partial<CopilotTestChatPort> = {}): CopilotTestChatPort => ({
+    listSessions: vi.fn(async () => ({ sessions: [], nextCursor: null })),
+    readSession: vi.fn(async () => ({
+      testExecutionId: uuid("61"), mode: "single" as const, state: "completed" as const, skillEffects: "suppressed" as const, createdAt: mcpNow.toISOString(),
+      sides: [{ sideId: uuid("62"), revision: mcpRevision, state: "completed" as const, turns: [] }],
+    })),
+    readTurn: vi.fn(async () => ({
+      testExecutionId: uuid("61"), sideId: uuid("62"), revision: mcpRevision,
+      turn: { turnId: uuid("63"), userMessage: "hi", answer: { messageId: uuid("64"), content: "hello" }, state: "completed" as const, failureCode: null, createdAt: mcpNow.toISOString(), turnTrace: undefined },
+    })),
+    sendMessage: vi.fn(async () => ({
+      testExecutionId: uuid("61"), started: false, sideId: uuid("62"), revision: mcpRevision, turnId: uuid("63"),
+      outcome: "completed" as const, failureCode: null, answer: "hello", messageId: uuid("64"), turnTrace: undefined,
+    })),
+    findAgentId: vi.fn(async () => uuid("6")),
+    ...overrides,
+  });
+
+  /** One real, enriched, MCP-dispositioned Test Chat descriptor -- the same shape `dependencies.ts` assembles. */
+  const testChatMcpDescriptor = (
+    name: "test_chat_sessions" | "test_chat_transcript" | "test_chat_turn_trace" | "send_test_chat_message",
+    testChat: CopilotTestChatPort,
+    agentLookup: { listExisting: (workspaceId: string) => Promise<ReadonlyArray<{ id: string; name: string; isDefault: boolean; assistantBootstrapActive: boolean }>> } = { listExisting: async () => [] },
+  ): CopilotToolDescriptor => {
+    const [enriched] = enrichCopilotToolCatalog(
+      createTestChatCopilotTools({ testChat, agentLookup })
+        .filter((candidate) => candidate.name === name)
+        .map((candidate) => ({ ...candidate, mcpDisposition: operatorMcpDispositions[candidate.name] })),
+      { resolveWorkspaceKey: async () => "acme" },
+    );
+    if (!enriched) throw new Error(`missing test chat descriptor ${name}`);
+    return enriched;
+  };
+
+  const notDependencyError = (invocations: { recordOutcome: ReturnType<typeof vi.fn> }, audit: { record: ReturnType<typeof vi.fn> }) => {
+    expect(invocations.recordOutcome).not.toHaveBeenCalledWith(expect.objectContaining({ safeOutcomeCode: "dependency_error" }));
+    expect(audit.record).not.toHaveBeenCalledWith(expect.objectContaining({ metadata: expect.objectContaining({ reason: "dependency_error" }) }));
+  };
+
+  it("(a) resolves send_test_chat_message's agent from testExecutionId alone, and never records a dependency_error", async () => {
+    const testExecutionId = uuid("70");
+    const testChat = stubTestChat();
+    const send = testChatMcpDescriptor("send_test_chat_message", testChat);
+    const { service, invocations, audit } = build(send, probeScope);
+
+    const response = await unkeyedCall(service, send.name, { testExecutionId, message: "Can I book a demo?" });
+
+    expect(response).toMatchObject({ safeOutcomeCode: "completed" });
+    expect(testChat.findAgentId).toHaveBeenCalledWith({ workspaceId: principal.workspaceId, testExecutionId });
+    expect(testChat.sendMessage).toHaveBeenCalledWith(expect.objectContaining({ agentId: uuid("6"), testExecutionId }));
+    notDependencyError(invocations, audit);
+  });
+
+  it("(b) resolves test_chat_transcript's and test_chat_turn_trace's agent from testExecutionId alone", async () => {
+    const testExecutionId = uuid("71");
+    const turnId = uuid("72");
+    const testChat = stubTestChat();
+
+    const transcript = testChatMcpDescriptor("test_chat_transcript", testChat);
+    const transcriptCall = build(transcript, readScope);
+    const transcriptResponse = await unkeyedCall(transcriptCall.service, transcript.name, { testExecutionId }, "edge-transcript");
+    expect(transcriptResponse).toMatchObject({ safeOutcomeCode: "completed" });
+    expect(testChat.readSession).toHaveBeenCalledWith(expect.objectContaining({ agentId: uuid("6"), testExecutionId }));
+    notDependencyError(transcriptCall.invocations, transcriptCall.audit);
+
+    const turnTrace = testChatMcpDescriptor("test_chat_turn_trace", testChat);
+    const turnTraceCall = build(turnTrace, readScope);
+    const turnTraceResponse = await unkeyedCall(turnTraceCall.service, turnTrace.name, { testExecutionId, turnId }, "edge-turn-trace");
+    expect(turnTraceResponse).toMatchObject({ safeOutcomeCode: "completed" });
+    expect(testChat.readTurn).toHaveBeenCalledWith(expect.objectContaining({ agentId: uuid("6"), testExecutionId, turnId }));
+    notDependencyError(turnTraceCall.invocations, turnTraceCall.audit);
+
+    expect(testChat.findAgentId).toHaveBeenCalledTimes(2);
+  });
+
+  it("(c) rejects test_chat_sessions with no agent as invalid_arguments, not a runtime outage -- it has no testExecutionId to fall back on", async () => {
+    const testChat = stubTestChat();
+    const sessions = testChatMcpDescriptor("test_chat_sessions", testChat);
+    const { service, invocations, audit } = build(sessions, readScope);
+
+    const rejection = await unkeyedCall(service, sessions.name, {})
+      .then(() => null, (error: OperatorMcpApplicationError) => error);
+
+    expect(rejection).toMatchObject({ code: "invalid_arguments" });
+    expect(rejection?.details?.[0]).toBe("No agent is selected. Pass agentId or agentName.");
+    expect(invocations.recordOutcome).toHaveBeenCalledWith(expect.objectContaining({ status: "refused", safeOutcomeCode: "invalid_arguments" }));
+    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
+      eventStatus: "failure", metadata: expect.objectContaining({ outcome: "refused", reason: "invalid_arguments" }),
+    }));
+    expect(testChat.listSessions).not.toHaveBeenCalled();
+  });
+
+  it("(d) resolves agentName the same way Ray does: a unique match runs the call; an unknown or ambiguous name reports a resolution, not a runtime error", async () => {
+    const agentLookup = { listExisting: vi.fn(async () => [
+      { id: uuid("80"), name: "Support", isDefault: true, assistantBootstrapActive: false },
+      { id: uuid("81"), name: "Support", isDefault: false, assistantBootstrapActive: false },
+      { id: uuid("82"), name: "Sales", isDefault: false, assistantBootstrapActive: false },
+    ]) };
+    const testChat = stubTestChat();
+    const sessions = testChatMcpDescriptor("test_chat_sessions", testChat, agentLookup);
+
+    const unique = build(sessions, readScope);
+    await expect(unkeyedCall(unique.service, sessions.name, { agentName: "Sales" }, "edge-name-unique"))
+      .resolves.toMatchObject({ safeOutcomeCode: "completed" });
+    expect(testChat.listSessions).toHaveBeenCalledWith(expect.objectContaining({ agentId: uuid("82") }));
+
+    const ambiguousCall = build(sessions, readScope);
+    const ambiguous = await unkeyedCall(ambiguousCall.service, sessions.name, { agentName: "Support" }, "edge-name-ambiguous");
+    expect(ambiguous).toMatchObject({ safeOutcomeCode: "completed" });
+    expect(ambiguous.structuredContent).toMatchObject({
+      resolution: { status: "ambiguous", candidates: expect.arrayContaining([expect.objectContaining({ id: uuid("80") }), expect.objectContaining({ id: uuid("81") })]) },
+    });
+
+    const unknownCall = build(sessions, readScope);
+    const unknown = await unkeyedCall(unknownCall.service, sessions.name, { agentName: "Nonexistent" }, "edge-name-unknown");
+    expect(unknown).toMatchObject({ safeOutcomeCode: "completed" });
+    expect(unknown.structuredContent).toMatchObject({ resolution: { status: "not_found" } });
+
+    // Only the one unique-name call actually reached the read; ambiguous/unknown resolved to a
+    // dashboard-style answer instead of ever calling the owning port.
+    expect(testChat.listSessions).toHaveBeenCalledTimes(1);
+  });
+
+  it("(e) reads a cross-workspace testExecutionId as not found, not as a missing-agent rejection", async () => {
+    const testExecutionId = uuid("90");
+    const testChat = stubTestChat({ findAgentId: vi.fn(async () => null) });
+    const send = testChatMcpDescriptor("send_test_chat_message", testChat);
+    const { service, invocations, audit } = build(send, probeScope);
+
+    const rejection = await unkeyedCall(service, send.name, { testExecutionId, message: "hi" })
+      .then(() => null, (error: OperatorMcpApplicationError) => error);
+
+    expect(rejection).toMatchObject({ code: "invalid_arguments" });
+    expect(rejection?.details?.[0]).toBe("Test execution is unavailable.");
+    expect(invocations.recordOutcome).toHaveBeenCalledWith(expect.objectContaining({ status: "refused", safeOutcomeCode: "invalid_arguments" }));
+    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
+      eventStatus: "failure", metadata: expect.objectContaining({ outcome: "refused", reason: "invalid_arguments" }),
+    }));
+    expect(testChat.sendMessage).not.toHaveBeenCalled();
   });
 });

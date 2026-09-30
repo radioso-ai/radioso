@@ -52,9 +52,14 @@ is a separate port from the revision reader because choosing can freeze a
 candidate, which is a write.
 
 Operator Copilot reads and drives Test Chat through `summaries`, `transcript`,
-`turn`, `start`, and `send`, from `operatorCopilot/services/testChatService.ts`,
-which adds its spend guard, output bounds, and surface policy. This module knows
-nothing about the copilot.
+`turn`, `start`, `send`, and `findAgentId`, from
+`operatorCopilot/services/testChatService.ts`, which adds its spend guard,
+output bounds, and surface policy. `findAgentId` resolves which agent owns an
+execution id, scoped by workspace alone: the read a caller with a session id
+but no agent id yet (an operator MCP client continuing a Test Chat session by
+`testExecutionId`) needs before it can call any of the reads above; an id this
+workspace does not own answers `null`. This module knows nothing about the
+copilot.
 
 Test histories and sample values are never public channel inputs. A published
 revision does not make a private test conversation resumable by a visitor.

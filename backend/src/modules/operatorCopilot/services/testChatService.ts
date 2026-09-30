@@ -23,6 +23,10 @@ export class TestChatService implements Port {
     return { sessions: page.executions.map((item) => ({ ...presentHeader(item), sides: item.sides.map(presentSide), turnCount: item.turnCount, firstMessage: item.firstMessage })), nextCursor: page.nextCursor };
   }
 
+  async findAgentId({ workspaceId, testExecutionId }: Parameters<Port["findAgentId"]>[0]): ReturnType<Port["findAgentId"]> {
+    return this.dependencies.executions.findAgentId({ workspaceId, executionId: testExecutionId });
+  }
+
   async readSession({ workspaceId, agentId, testExecutionId }: Parameters<Port["readSession"]>[0]): ReturnType<Port["readSession"]> {
     const transcript = await this.dependencies.executions.transcript({ workspaceId, agentId, executionId: testExecutionId });
     return { ...presentHeader(transcript), sides: transcript.sides.map((side) => ({ ...presentSide(side), turns: side.turns.map(presentTurn) })) };

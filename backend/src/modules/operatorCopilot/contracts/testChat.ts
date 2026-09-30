@@ -106,10 +106,17 @@ export interface CopilotTestChatPort {
     readonly sideId?: string;
   }): Promise<CopilotTestChatTurnDetail>;
   sendMessage(input: CopilotTestChatSendInput): Promise<CopilotTestChatSendResult>;
+  /**
+   * The agent a Test Chat session belongs to, scoped by workspace alone -- what a caller that has
+   * a `testExecutionId` but no `agentId` (an operator MCP client continuing a session) needs before
+   * it can call any of the reads above. Null when this workspace owns no such execution, so a
+   * cross-workspace id reads as not-found rather than leaking that it exists elsewhere.
+   */
+  findAgentId(input: { readonly workspaceId: string; readonly testExecutionId: string }): Promise<string | null>;
 }
 
 /** Test-execution's reads and the calls that drive one turn; the copilot makes exactly these. */
-export type CopilotTestChatExecutionPort = Pick<TestExecutionService, "summaries" | "transcript" | "turn" | "start" | "send">;
+export type CopilotTestChatExecutionPort = Pick<TestExecutionService, "summaries" | "transcript" | "turn" | "start" | "send" | "findAgentId">;
 
 export interface TestChatServiceDependencies extends CopilotExpensiveOperationGuardDependencies {
   readonly executions: CopilotTestChatExecutionPort;

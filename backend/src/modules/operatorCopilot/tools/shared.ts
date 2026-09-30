@@ -92,12 +92,19 @@ export const describeNamedAgent = async <TInput extends NamedAgentInput>(
 
 export const normalizeEntityName = (value: string): string => value.trim().normalize("NFKC").toLowerCase();
 export const asRecord = (value: object): Record<string, unknown> => value as Record<string, unknown>;
+/**
+ * A dashboard page context always names its agent; a stateless transport (operator MCP) never has
+ * one. A caller with no dashboard page open must correct its own call, not learn that the runtime
+ * is unavailable -- so this is a domain `badRequest`, which the operator MCP boundary maps to a
+ * clean `invalid_arguments` rejection instead of an opaque dependency failure (see
+ * `toApplicationError` in mcpApplicationService.ts).
+ */
 export const requiredPageAgent = (agentId: string | null): string => {
-  if (!agentId) throw new Error("No agent context is available");
+  if (!agentId) throw badRequest("No agent is selected. Pass agentId or agentName.");
   return agentId;
 };
 export const requiredPageConversation = (conversationId: string | null): string => {
-  if (!conversationId) throw new Error("No conversation context is available");
+  if (!conversationId) throw badRequest("No conversation is selected. Pass conversationId.");
   return conversationId;
 };
 export const requiredCopilotConversation = (context: { copilotConversationId?: string }): string => {

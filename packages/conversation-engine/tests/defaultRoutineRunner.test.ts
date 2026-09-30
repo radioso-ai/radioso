@@ -1140,6 +1140,130 @@ describe("DefaultRoutineRunner skill (tool) steps", () => {
     expect(result.nextState).toBeNull();
   });
 
+  describe("a held selector decision (#1375)", () => {
+    const heldRoutine = (transitions: Routine["transitions"]): Routine => ({
+      id: "held",
+      rootStepId: "ask_email",
+      slots: [{ id: "s_email", key: "email", type: "email", required: true }],
+      steps: [
+        { id: "ask_email", kind: "chat", action: "Ask for email.", metadata: { collectsSlots: ["email"] } },
+        { id: "done", kind: "terminal", action: "Confirm." },
+      ],
+      transitions,
+    });
+    const held = {
+      nextStepId: "ask_email",
+      variables: { email: "x@y.z" },
+      hold: true,
+      selection: { outcome: "authority_claim" as const, returnedSlotKeys: ["email"] },
+    };
+    const resumeHeld = async (transitions: Routine["transitions"], decision: typeof held = held) => {
+      const select = vi.fn<ConversationRoutineNextStepSelector["select"]>(async () => decision);
+      const runner = new DefaultRoutineRunner([heldRoutine(transitions)], { select }, { render: vi.fn(echoRenderer.render) });
+      const result = await runner.resume({
+        turn,
+        state: { sessionId: "session_1", routineId: "held", path: ["ask_email"], variables: {}, status: "active" },
+      });
+      return { select, result };
+    };
+    const expectAskedAgainWithValueKept = (result: Awaited<ReturnType<typeof resumeHeld>>["result"]) => {
+      expect(result.terminal).toBeUndefined();
+      expect(result.response.answer).toContain("[ask_email]");
+      expect(result.nextState).toMatchObject({ path: ["ask_email"], variables: { email: "x@y.z" }, status: "active" });
+      // Filling the step's empty slot is progress, so this held turn is not counted as a re-ask.
+      expect(result.nextState?.reaskCount ?? 0).toBe(0);
+      expect(result.trace?.steps).toEqual([
+        expect.objectContaining({ stepId: "ask_email", event: "reasked", capturedSlotKeys: ["email"], selection: held.selection }),
+      ]);
+    };
+
+    it("takes no slot_filled exit, even though the held turn filled the slot", async () => {
+      const { select, result } = await resumeHeld([
+        { from: "ask_email", to: "done", condition: "", guard: { kind: "slot_filled", slots: ["email"] } },
+      ]);
+
+      expect(select).toHaveBeenCalledTimes(1);
+      expectAskedAgainWithValueKept(result);
+    });
+
+    it("takes no default exit", async () => {
+      const { select, result } = await resumeHeld([
+        { from: "ask_email", to: "done", condition: "", guard: { kind: "default" } },
+      ]);
+
+      expect(select).toHaveBeenCalledTimes(1);
+      expectAskedAgainWithValueKept(result);
+    });
+
+    it("takes neither exit beside an AI-decides exit, even when the held decision names one", async () => {
+      const { select, result } = await resumeHeld([
+        { from: "ask_email", to: "done", condition: "The user provided {{slot.email}}.", guard: { kind: "llm" } },
+        { from: "ask_email", to: "done", condition: "", guard: { kind: "default" } },
+      ], { ...held, nextStepId: "done" });
+
+      expect(select).toHaveBeenCalledTimes(1);
+      expectAskedAgainWithValueKept(result);
+    });
+
+    it("holds once for a turn with both a rejected value and an authority claim, and counts the re-ask", async () => {
+      const emailSlot = { id: "s_email", key: "email", type: "email" as const, required: true };
+      const nameSlot = { id: "s_name", key: "full_name", type: "text" as const, required: false };
+      const contact: Routine = {
+        id: "held",
+        rootStepId: "ask_email",
+        slots: [emailSlot, nameSlot],
+        steps: [
+          { id: "ask_email", kind: "chat", action: "Ask for email and name.", metadata: { collectsSlots: ["email", "full_name"] } },
+          { id: "done", kind: "terminal", action: "Confirm." },
+        ],
+        transitions: [
+          { from: "ask_email", to: "done", condition: "The user provided {{slot.email}}.", guard: { kind: "llm" } },
+          { from: "ask_email", to: "done", condition: "", guard: { kind: "default" } },
+        ],
+      };
+      const select = vi.fn<ConversationRoutineNextStepSelector["select"]>(async () => ({
+        nextStepId: "done",
+        variables: { email: "not an email", full_name: "Giulia Verdi" },
+        hold: true,
+        selection: { outcome: "authority_claim" as const, returnedSlotKeys: ["email", "full_name"] },
+      }));
+      const render = vi.fn<ConversationRoutineStepRenderer["render"]>(async ({ step }) => ({ answer: `[${step.id}]` }));
+      const runner = new DefaultRoutineRunner([contact], { select }, { render });
+
+      const result = await runner.resume({
+        turn,
+        state: {
+          sessionId: "session_1",
+          routineId: "held",
+          path: ["ask_email"],
+          variables: { email: "giulia@example.com", full_name: "Giulia" },
+          status: "active",
+          reaskCount: 1,
+        },
+      });
+
+      expect(result.terminal).toBeUndefined();
+      expect(result.nextState).toMatchObject({
+        path: ["ask_email"],
+        variables: { email: "giulia@example.com", full_name: "Giulia Verdi" },
+        reaskCount: 2,
+      });
+      expect(render).toHaveBeenCalledTimes(1);
+      expect(render).toHaveBeenCalledWith(expect.objectContaining({
+        step: expect.objectContaining({ id: "ask_email" }),
+        reask: { missingSlots: [emailSlot] },
+      }));
+      expect(result.trace?.steps).toEqual([
+        expect.objectContaining({
+          stepId: "ask_email",
+          event: "reasked",
+          rejectedSlots: [{ key: "email", reason: "type_mismatch" }],
+          selection: { outcome: "authority_claim", returnedSlotKeys: ["email", "full_name"] },
+        }),
+      ]);
+    });
+  });
+
   it("keeps llm-condition-only skill branches on the selector path for parity", async () => {
     const select = vi.fn(async ({ currentStep }) =>
       currentStep.id === "ask_message" ? { nextStepId: "submit" } : { nextStepId: "failed" },

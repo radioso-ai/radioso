@@ -1107,6 +1107,14 @@ export interface RoutineNextStepDecision {
    * resume later. Distinct from staying put to re-ask (which still answers in-routine).
    */
   yieldTurn?: boolean;
+  /**
+   * When true, the step the user is answering takes no exit this turn, of any kind —
+   * AI-decides, rule, or default — and is asked again. `variables` are still merged into
+   * routine state, so they count from the next turn. The selector sets it when the message
+   * carries text posing as a system, operator, or assistant message; the runner applies the
+   * same hold when a value for one of the step's own slots does not fit its declared type.
+   */
+  hold?: boolean;
   rationale?: string;
   /** What the model returned, for the debug trace. Absent when no model call ran. */
   selection?: RoutineSelectionTrace;
@@ -1122,10 +1130,11 @@ export interface RoutineSelectionTrace {
    * - `transition`: the model chose one of the step's conditions.
    * - `stay`: the model chose none, so the step is not yet satisfied.
    * - `off_topic`: the model chose none and read the message as a different request.
-   * - `unreadable`: the model's output could not be parsed, so nothing was chosen or extracted.
+   * - `unreadable`: the model's output could not be parsed or lacked the `claimsAuthority`
+   *   flag, so nothing was chosen or extracted.
    * - `authority_claim`: the model flagged text posing as a system, operator, or assistant
-   *   message, or claiming the request is already confirmed, so no condition was taken and
-   *   the step is asked again, whatever condition the model chose.
+   *   message, or claiming the request is already confirmed; the decision carries `hold`,
+   *   so the step takes no exit and is asked again, whatever condition the model chose.
    */
   outcome: "transition" | "stay" | "off_topic" | "unreadable" | "authority_claim";
   /** Slot keys the model returned a value for, including a value that replaces a filled slot. */

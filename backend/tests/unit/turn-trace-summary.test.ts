@@ -160,6 +160,47 @@ describe("buildTurnTraceSummary", () => {
       .toEqual([expect.objectContaining({ operation: "response_language_detection", stageId: "pre_engine" })]);
   });
 
+  it("only lets measured capability spans compete for the longest stage", () => {
+    const spine: ConversationTrace = {
+      traceId: "turn-3",
+      startedAt: at(0),
+      completedAt: at(8_000),
+      stages: [
+        {
+          id: "compose",
+          kind: "compose",
+          status: "applied",
+          startedAt: at(5_400),
+          completedAt: at(8_000),
+        },
+        {
+          id: "dispatch:retrieval.answer",
+          kind: "skill_dispatch",
+          status: "applied",
+          startedAt: at(5_400),
+          completedAt: at(5_400),
+          subTrace: {
+            namespace: "retrieval",
+            version: 1,
+            payload: {
+              traceId: "retrieval-3",
+              startedAt: at(2_500),
+              stages: [
+                { stageId: "selection", kind: "context_selection", startedAt: at(5_000), durationMs: 20 },
+                // The answer-outcome stages mirror the whole turn's latency for the
+                // message record; they carry no start because they are not a span.
+                { stageId: "generation", kind: "generation", durationMs: 8_000 },
+                { stageId: "answer", kind: "answer_outcome", durationMs: 8_000 },
+              ],
+            },
+          },
+        },
+      ],
+    };
+
+    expect(buildTurnTraceSummary(spine).longestStage).toEqual({ name: "compose", durationMs: 2_600 });
+  });
+
   it("returns zeroed model totals while retaining turn and longest-stage timing", () => {
     const spine: ConversationTrace = {
       traceId: "turn-2",

@@ -2,8 +2,8 @@ import dagre from 'dagre'
 
 import type { TurnFlowGraph } from './turn-flow'
 
-export const FLOW_NODE_WIDTH = 220
-export const FLOW_NODE_HEIGHT = 64
+export const FLOW_NODE_WIDTH = 248
+export const FLOW_NODE_HEIGHT = 72
 
 interface NodeBox {
   x: number
@@ -85,5 +85,5 @@ export const layoutTurnFlow = (graph: TurnFlowGraph): Map<string, NodeBox> =>
   layoutFlowGraph(
     graph.nodes.map((node) => ({ id: node.id, width: FLOW_NODE_WIDTH, height: FLOW_NODE_HEIGHT })),
     graph.edges,
-    { rankdir: 'TB', nodesep: 28, ranksep: 36 },
+    { rankdir: 'TB', nodesep: 24, ranksep: 44 },
   )

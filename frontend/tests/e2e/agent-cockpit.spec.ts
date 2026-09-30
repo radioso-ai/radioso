@@ -1261,8 +1261,9 @@ test('opens a trace-backed Test Chat reply in debug before opening its flow', as
   await expect(page.getByText('Turn flow', { exact: true })).toBeVisible()
 
   // The coverage verdict head (#1260) is its own Flow node, sequenced ahead of
-  // the outcome. A positional click can miss under the minimap overlay, so
-  // dispatch directly on the node element (React Flow's onNodeClick listener).
+  // the outcome. A positional click can land on a neighbouring node in the
+  // small test viewport, so dispatch directly on the node element (React Flow's
+  // onNodeClick listener).
   await page.getByTestId('rf__node-spine:answer_coverage_head').dispatchEvent('click')
   const stageDetail = page.getByTestId('turn-flow-stage-detail')
   await expect(stageDetail.getByText('Coverage verdict', { exact: true })).toBeVisible()
@@ -1271,8 +1272,8 @@ test('opens a trace-backed Test Chat reply in debug before opening its flow', as
   // Selecting a node is an interaction inside the flow, not a click outside the
   // debug sheet beneath it: both stay open (the sheet is aria-hidden under the
   // modal flow, so it is looked up with hidden elements included).
-  await page.getByText('Engine', { exact: true }).first().click()
-  await expect(page.getByText('Select skill', { exact: true }).first()).toBeVisible()
+  await page.getByTestId('rf__node-spine:selection').dispatchEvent('click')
+  await expect(stageDetail.getByText('Select skill', { exact: true }).first()).toBeVisible()
   await expect(page.getByText('Turn flow', { exact: true })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Turn debug', exact: true, includeHidden: true })).toBeAttached()
 

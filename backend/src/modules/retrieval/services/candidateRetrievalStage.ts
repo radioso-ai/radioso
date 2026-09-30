@@ -101,7 +101,7 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
               sourceFilter,
               notExpiredAt: retrievalNow.toISOString(),
             }).catch(() => ({ contexts: [], fallbackApplied: true })))
-          : Promise.resolve({ contexts: [], fallbackApplied: true }),
+          : undefined,
       ] as const),
     );
     const retrievalBranches = await Promise.all(
@@ -112,15 +112,22 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
         const semanticSearched =
           embeddingResult !== null
           && searchedSemanticQueries.has(subquery.semanticQuery);
-        const semanticSearchForBranch = semanticSearched
+        const semanticEntry = semanticSearched
           ? semanticSearchByQuery.get(subquery.semanticQuery)
+          : undefined;
+        const semanticSearchForBranch = semanticEntry
+          ? semanticEntry.promise
           : embeddingResult
             ? Promise.resolve({ contexts: [], fallbackApplied: false })
             : Promise.resolve({ contexts: [], fallbackApplied: true });
+        const lexicalEntry = lexicalSearchBySubquery.get(subquery.id);
         const [semanticSearch, lexicalContexts] = await Promise.all([
-          semanticSearchForBranch ?? Promise.resolve({ contexts: [], fallbackApplied: false }),
-          lexicalSearchBySubquery.get(subquery.id) ?? Promise.resolve([]),
+          semanticSearchForBranch,
+          lexicalEntry?.promise ?? Promise.resolve([]),
         ]);
+        // Read after the searches above have settled, so each timing is final.
+        const semanticSearchTiming = semanticEntry?.timing();
+        const lexicalSearchTiming = lexicalEntry?.timing();
 
         return {
           subqueryId: subquery.id,
@@ -134,6 +141,10 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
           semanticContexts: semanticSearch.contexts,
           lexicalContexts,
           fallbackApplied: semanticSearch.fallbackApplied,
+          semanticSearchStartedAtMs: semanticSearchTiming?.startedAtMs,
+          semanticSearchDurationMs: semanticSearchTiming?.durationMs,
+          lexicalSearchStartedAtMs: lexicalSearchTiming?.startedAtMs,
+          lexicalSearchDurationMs: lexicalSearchTiming?.durationMs,
         };
       }),
     );
@@ -230,27 +241,44 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
   }
 }
 
+interface MeasuredSearch<T> {
+  readonly promise: Promise<T>;
+  // Final once `promise` has settled; callers read it after awaiting.
+  timing(): { startedAtMs: number; durationMs: number };
+}
+
 interface BranchTiming {
   readonly startedAtMs: number;
-  track<T>(promise: Promise<T>): Promise<T>;
+  track<T>(promise: Promise<T>): MeasuredSearch<T>;
   durationMs(): number;
 }
 
-// Semantic and lexical retrieval run concurrently, so each branch is measured around
-// its own promises instead of being carved out of the enclosing stage span. Two
-// consequences are intended: the branches can start at different times, and their
-// durations can sum to more than the span that contains both.
+// Semantic and lexical retrieval run concurrently, so each is measured around its
+// own promises instead of being carved out of the enclosing stage span. Two
+// consequences are intended: the two can start at different times, and their
+// durations can sum to more than the span that contains both. Each tracked search
+// also keeps its own start and duration, so a sub-question's search is reported as
+// what it took rather than the slowest search's window.
 const startBranchTiming = (): BranchTiming => {
   const startedAtMs = Date.now();
   let completedAtMs = startedAtMs;
 
   return {
     startedAtMs,
-    track: <T>(promise: Promise<T>): Promise<T> =>
-      promise.finally(() => {
-        completedAtMs = Math.max(completedAtMs, Date.now());
-      }),
-    // A branch that issued no work reports zero rather than a share of the stage.
+    track: <T>(promise: Promise<T>): MeasuredSearch<T> => {
+      const searchStartedAtMs = Date.now();
+      let searchDurationMs = 0;
+      const tracked = promise.finally(() => {
+        const settledAtMs = Date.now();
+        searchDurationMs = Math.max(0, settledAtMs - searchStartedAtMs);
+        completedAtMs = Math.max(completedAtMs, settledAtMs);
+      });
+      return {
+        promise: tracked,
+        timing: () => ({ startedAtMs: searchStartedAtMs, durationMs: searchDurationMs }),
+      };
+    },
+    // A channel that issued no work reports zero rather than a share of the stage.
     durationMs: () => Math.max(0, completedAtMs - startedAtMs),
   };
 };

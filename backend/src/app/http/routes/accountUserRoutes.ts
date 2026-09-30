@@ -29,7 +29,7 @@ export const createAccountSchema = z.object({
   organizationName: z.string().trim().min(1).max(80),
 });
 
-export const renameAccountSchema = z.object({
+const renameAccountSchema = z.object({
   organizationName: z.string().trim().min(1).max(80),
 });
 
@@ -60,6 +60,21 @@ type AccountUserRouteDependencies = SessionDependencies & Pick<
   "accountInvitationService"
 >;
 
+type AccountUserRecord = Awaited<
+  ReturnType<AccountUserRouteDependencies["accountAccessService"]["listAccountUsers"]>
+>[number];
+
+/** One member as the `AccountUser` contract describes them, wherever a route answers with one. */
+const toAccountUserResponse = (user: AccountUserRecord) => ({
+  membershipId: user.id,
+  userId: user.userId,
+  email: user.email,
+  displayName: user.displayName,
+  role: user.role,
+  status: user.status,
+  createdAt: user.createdAt.toISOString(),
+});
+
 export const createAccountUserRoutes = (dependencies: AccountUserRouteDependencies): Router => {
   const router = Router();
   const authenticatedSession = requireSession(dependencies);
@@ -77,14 +92,7 @@ export const createAccountUserRoutes = (dependencies: AccountUserRouteDependenci
       res.status(200).json({
         accountId,
         currentUserId: userId,
-        users: users.map((user) => ({
-          membershipId: user.id,
-          userId: user.userId,
-          email: user.email,
-          role: user.role,
-          status: user.status,
-          createdAt: user.createdAt.toISOString(),
-        })),
+        users: users.map(toAccountUserResponse),
         invitations,
         workspaceGrants,
       });
@@ -116,6 +124,7 @@ export const createAccountUserRoutes = (dependencies: AccountUserRouteDependenci
       res.setHeader("Set-Cookie", result.sessionCookie);
       res.status(201).json({
         userId: result.userId,
+        displayName: result.displayName,
         accountId: result.accountId,
         organizationName: result.organizationName,
         workspaceId: result.workspaceId,
@@ -180,6 +189,7 @@ export const createAccountUserRoutes = (dependencies: AccountUserRouteDependenci
       res.setHeader("Set-Cookie", result.sessionCookie);
       res.status(200).json({
         userId: result.userId,
+        displayName: result.displayName,
         accountId: result.accountId,
         organizationName: result.organizationName,
         workspaceId: result.workspaceId,
@@ -245,13 +255,7 @@ export const createAccountUserRoutes = (dependencies: AccountUserRouteDependenci
           membershipId,
           role: req.body.role,
         });
-        res.status(200).json({
-          membershipId: membership.id,
-          userId: membership.userId,
-          role: membership.role,
-          status: membership.status,
-          createdAt: membership.createdAt.toISOString(),
-        });
+        res.status(200).json(toAccountUserResponse(membership));
       } catch (error) {
         next(error);
       }

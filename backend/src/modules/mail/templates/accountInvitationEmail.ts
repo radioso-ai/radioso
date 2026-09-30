@@ -7,17 +7,27 @@ interface AccountInvitationEmailInput {
   appBaseUrl?: string | null;
   acceptanceUrl: string;
   invitedByEmail: string | null;
+  /** The inviter's chosen name. Shown with their address, since the invitee may not know the name. */
+  invitedByName: string | null;
   expiresAt: Date;
 }
 
 const formatExpiry = (expiresAt: Date): string =>
   expiresAt.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
 
+const inviterLabel = (input: { invitedByEmail: string | null; invitedByName: string | null }): string | null => {
+  if (input.invitedByName && input.invitedByEmail) {
+    return `${input.invitedByName} (${input.invitedByEmail})`;
+  }
+  return input.invitedByEmail ?? input.invitedByName;
+};
+
 export const renderAccountInvitationEmail = (
   input: AccountInvitationEmailInput,
 ): Omit<EmailMessage, "from"> => {
-  const invitedBy = input.invitedByEmail
-    ? `${input.invitedByEmail} invited you to join their Radioso organization.`
+  const inviter = inviterLabel(input);
+  const invitedBy = inviter
+    ? `${inviter} invited you to join their Radioso organization.`
     : "You have been invited to join a Radioso organization.";
 
   const content: EmailContent = {

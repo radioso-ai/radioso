@@ -269,6 +269,7 @@ export const createGoogleLoginRouter = (options: GoogleLoginRouterOptions): Rout
         subject: identity.subject,
         email: identity.email,
         emailVerified: identity.emailVerified,
+        displayName: identity.name,
       });
       res.append("Set-Cookie", result.sessionCookie);
       res.redirect(successTarget);

@@ -72,7 +72,7 @@ export function LoginForm({ returnTo }: LoginFormProps) {
         throw new Error('Login is unavailable outside the auth shell')
       }
       riseSun()
-      await auth.login(email, response.userId, response.accountId, response.organizationName)
+      await auth.login({ ...response, email })
       const target = normalizeSameOriginReturnPath(returnTo)
       if (target) {
         window.location.assign(target)

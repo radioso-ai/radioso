@@ -37,6 +37,7 @@ export class InMemoryOrganizationProvisioner implements OrganizationCoreProvisio
             id: account.id,
             email: input.email,
             passwordHash: input.passwordHash,
+            displayName: input.displayName ?? null,
             emailVerifiedAt: input.emailVerifiedAt,
           })).id
         : input.userId;

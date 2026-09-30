@@ -320,6 +320,8 @@ export type OrganizationCoreProvisioningRequest =
       organizationName: string;
       email: string;
       passwordHash: string;
+      /** Already normalized by the caller; absent or null leaves the user unnamed. */
+      displayName?: string | null;
       emailVerifiedAt: Date | null;
     }
   | {
@@ -442,6 +444,7 @@ export interface ApplicationRouteMount {
         subject: string;
         email: string;
         emailVerified: boolean;
+        displayName?: string | null;
       }): Promise<{
         userId: string;
         accountId: string;

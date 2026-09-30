@@ -28,6 +28,8 @@ constructing ad hoc fetches.
 - `auth-context.tsx`, `workspace-context.tsx`: React providers for major client
   state; `anonymous-chat-context.tsx` is the public embed's chat session.
 - `dashboard-routes.ts`: dashboard route helpers.
+- `teammate-label.ts`: how operator surfaces name a teammate — display name,
+  else email. Visitor-facing surfaces never fall back to an email.
 - `agent-draft-save-port.ts`: the agent-scoped async bridge that lets Test Chat
   await the mounted editor's real private draft save before execution.
 - `agent-revision-test-chat-session.ts`: the in-memory Test Chat session store,

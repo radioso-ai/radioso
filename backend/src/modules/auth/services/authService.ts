@@ -1,5 +1,5 @@
 import type { Env } from "../../../app/config/env.js";
-import { AppError, conflict, forbidden, unauthorized } from "../../../shared/domain/errors.js";
+import { AppError, badRequest, conflict, forbidden, unauthorized } from "../../../shared/domain/errors.js";
 import type { AccountAccessService, AccountInvitationService, AuthenticatedPrincipal } from "../../account/public.js";
 import {
   transactionalLifecycleAuditEvent,
@@ -28,7 +28,7 @@ import {
   type FederatedLoginFailureLabel,
 } from "./federatedLoginFailure.js";
 import type { WorkspaceService } from "../../workspace/public.js";
-import type { UserRepositoryPort } from "../../../db/repositories/userRepository.js";
+import type { UserRecord, UserRepositoryPort } from "../../../db/repositories/userRepository.js";
 import {
   generateSessionToken,
   hashPassword,
@@ -38,6 +38,11 @@ import {
   sha256,
   verifyPassword,
 } from "../domain/authPrimitives.js";
+import {
+  DISPLAY_NAME_MAX_LENGTH,
+  normalizeDisplayName,
+  type DisplayNameRejection,
+} from "../domain/userDisplayName.js";
 
 export interface AccountRecord {
   id: string;
@@ -63,6 +68,8 @@ export interface SessionRecord {
 /** A signed-in principal plus the account and workspace the session lands on. */
 interface AuthenticatedAccountSession {
   userId: string;
+  /** The name the person chose, so a sign-in shows it without a second request. */
+  displayName: string | null;
   accountId: string;
   organizationName: string;
   workspaceId: string;
@@ -70,6 +77,45 @@ interface AuthenticatedAccountSession {
   workspacePublicRouteKey: string;
   sessionCookie: string;
 }
+
+/** The signed-in user's own identity, as they may read and edit it. */
+interface UserProfile {
+  userId: string;
+  email: string;
+  displayName: string | null;
+}
+
+const toUserProfile = (user: UserRecord): UserProfile => ({
+  userId: user.id,
+  email: user.email,
+  displayName: user.displayName,
+});
+
+const displayNameRejectionMessages: Record<DisplayNameRejection, string> = {
+  too_long: `Display name must be at most ${DISPLAY_NAME_MAX_LENGTH} characters`,
+  control_characters: "Display name cannot contain control characters",
+  direction_controls: "Display name cannot contain text-direction control characters",
+  no_visible_characters: "Display name must contain a visible character",
+  email_address: "Display name cannot be an email address",
+};
+
+/** Applies the display-name rules to a person's own input, answering a rejection as a bad request. */
+const requireValidDisplayName = (input: string | null | undefined): string | null => {
+  const result = normalizeDisplayName(input ?? null);
+  if (result.ok) {
+    return result.displayName;
+  }
+  throw badRequest(displayNameRejectionMessages[result.reason]);
+};
+
+/**
+ * The provider's name is a starting point the person can change, not their own
+ * input: one the rules reject leaves them unnamed instead of failing sign-in.
+ */
+const providerDisplayName = (name: string | null): string | null => {
+  const result = normalizeDisplayName(name);
+  return result.ok ? result.displayName : null;
+};
 
 export interface AccountRepositoryPort {
   create(params: { name: string; email: string; passwordHash: string }): Promise<AccountRecord>;
@@ -183,19 +229,15 @@ export class AuthService {
     email: string;
     password: string;
     organizationName?: string | null;
+    displayName?: string | null;
     requestIp?: string | null;
     requestUserAgent?: string | null;
-  }): Promise<{
-    userId: string;
-    accountId: string;
-    organizationName: string;
-    workspaceId: string;
-    workspaceName: string;
-    workspacePublicRouteKey: string;
+  }): Promise<Omit<AuthenticatedAccountSession, "sessionCookie"> & {
     requiresEmailVerification: boolean;
     sessionCookie?: string;
   }> {
     const email = normalizeEmail(input.email);
+    const displayName = requireValidDisplayName(input.displayName);
     const passwordHash = await hashPassword(input.password);
     let organizationCreationReservation: OrganizationCreationReservation;
     try {
@@ -217,6 +259,7 @@ export class AuthService {
         organizationName,
         email,
         passwordHash,
+        displayName,
         emailVerifiedAt: autoVerifyEmail ? new Date() : null,
       });
       await this.dependencies.onAccountCreated?.({ accountId: core.account.id });
@@ -244,6 +287,7 @@ export class AuthService {
 
       return {
         userId: core.userId,
+        displayName,
         accountId: core.account.id,
         organizationName: core.account.name,
         workspaceId: core.workspace.id,
@@ -334,6 +378,7 @@ export class AuthService {
 
       return {
         userId: user.id,
+        displayName: user.displayName,
         accountId: core.account.id,
         organizationName: core.account.name,
         workspaceId: core.workspace.id,
@@ -453,6 +498,7 @@ export class AuthService {
 
     return {
       userId: user.id,
+      displayName: user.displayName,
       accountId: membership.accountId,
       organizationName: (await this.dependencies.accountRepository.findById(membership.accountId))?.name
         ?? deriveOrganizationName(email),
@@ -486,6 +532,8 @@ export class AuthService {
     subject: string;
     email: string;
     emailVerified: boolean;
+    /** The provider's name for the person; only a first sign-in, which creates the user, keeps it. */
+    displayName?: string | null;
   }): Promise<AuthenticatedAccountSession> {
     const identity = {
       email: normalizeEmail(input.email),
@@ -494,7 +542,11 @@ export class AuthService {
     };
 
     try {
-      return await this.completeFederatedLogin({ ...identity, emailVerified: input.emailVerified });
+      return await this.completeFederatedLogin({
+        ...identity,
+        emailVerified: input.emailVerified,
+        displayName: input.displayName ?? null,
+      });
     } catch (error) {
       await this.recordFederatedLoginFailure(identity, error);
       throw unwrapFederatedLoginFailure(error);
@@ -523,6 +575,7 @@ export class AuthService {
     subject: string;
     email: string;
     emailVerified: boolean;
+    displayName: string | null;
   }): Promise<AuthenticatedAccountSession> {
     if (!input.emailVerified) {
       throw failFederatedLoginStage(
@@ -547,6 +600,7 @@ export class AuthService {
       return this.provisionFederatedAccount(input);
     }
 
+    let displayName = existing.displayName;
     if (!existing.emailVerifiedAt) {
       // The account was created by password registration but never verified,
       // so its password was set by whoever registered it — not necessarily
@@ -554,10 +608,14 @@ export class AuthService {
       // this exactly like a password reset: rotate the (possibly attacker-set)
       // password to an unusable hash and drop any existing sessions before
       // verifying and issuing a new one. Without this, a pre-verification
-      // squatter keeps a working password into the now-verified account.
+      // squatter keeps a working password into the now-verified account. The
+      // name goes the same way: the registrant chose it, so the provider's
+      // name for the mailbox owner replaces it.
       await runFederatedLoginStage({ reason: "account_reverification_failed" }, async () => {
         await this.dependencies.userRepository.updatePassword(existing.id, await hashPassword(generateSessionToken()));
         await this.dependencies.sessionRepository.revokeAllForUser(existing.id, new Date());
+        displayName = providerDisplayName(input.displayName);
+        await this.dependencies.userRepository.updateDisplayName(existing.id, displayName);
         await this.dependencies.userRepository.markEmailVerified(existing.id, new Date());
       });
     }
@@ -599,6 +657,7 @@ export class AuthService {
 
     return {
       userId: existing.id,
+      displayName,
       accountId: membership.accountId,
       organizationName: account?.name ?? deriveOrganizationName(input.email),
       workspaceId: workspace.id,
@@ -653,6 +712,7 @@ export class AuthService {
     provider: string;
     subject: string;
     email: string;
+    displayName: string | null;
   }): Promise<AuthenticatedAccountSession> {
     // Federated users have no password. Store a random, unusable hash so the
     // NOT NULL column is satisfied; they can adopt password login later via the
@@ -661,6 +721,7 @@ export class AuthService {
     // verified.
     const passwordHash = await hashPassword(generateSessionToken());
     const organizationName = deriveOrganizationName(input.email);
+    const displayName = providerDisplayName(input.displayName);
     // Unguarded on purpose: neither shipped guard can answer a signup
     // reservation with anything but a reservation -- OSS refuses only
     // `intent: "additional"`, and Enterprise returns an inert reservation
@@ -678,6 +739,7 @@ export class AuthService {
         organizationName,
         email: input.email,
         passwordHash,
+        displayName,
         emailVerifiedAt: new Date(),
       });
       core = provisioned;
@@ -709,6 +771,7 @@ export class AuthService {
 
       return {
         userId: provisioned.userId,
+        displayName,
         accountId: provisioned.account.id,
         organizationName: provisioned.account.name,
         workspaceId: provisioned.workspace.id,
@@ -791,7 +854,47 @@ export class AuthService {
       workspaceId: workspace.id,
       workspaceName: workspace.name,
       workspacePublicRouteKey: workspace.publicRouteKey,
+      displayName: user.displayName,
     };
+  }
+
+  async getProfile(userId: string): Promise<UserProfile> {
+    const user = await this.dependencies.userRepository.findById(userId);
+    if (!user) {
+      throw unauthorized();
+    }
+    return toUserProfile(user);
+  }
+
+  /**
+   * Updates the signed-in user's own profile. The name belongs to the person,
+   * not to one organization, so every organization they are a member of shows
+   * the change and gets its own audit record. The record names the fields that
+   * changed and never their values: a name is personal data, and the audit log
+   * outlives any edit to it.
+   */
+  async updateProfile(input: {
+    userId: string;
+    displayName: string | null;
+  }): Promise<UserProfile> {
+    const displayName = requireValidDisplayName(input.displayName);
+    const user = await this.dependencies.userRepository.findById(input.userId);
+    if (!user) {
+      throw unauthorized();
+    }
+    if (user.displayName === displayName) {
+      return toUserProfile(user);
+    }
+
+    const updated = await this.dependencies.userRepository.updateDisplayName(user.id, displayName);
+    const memberships = await this.dependencies.accountAccessService.listUserMemberships(user.id);
+    await Promise.all(memberships.map((membership) => this.dependencies.auditService.record({
+      accountId: membership.accountId,
+      eventType: "auth.profile_updated",
+      eventStatus: "success",
+      metadata: { actorUserId: user.id, changedFields: ["displayName"] },
+    })));
+    return toUserProfile(updated);
   }
 
   /**
@@ -832,6 +935,8 @@ export class AuthService {
     invitationToken: string;
     email: string;
     password: string;
+    /** Names a user this acceptance creates; an existing user keeps their own. */
+    displayName?: string | null;
   }): Promise<AuthenticatedAccountSession> {
     const email = normalizeEmail(input.email);
     const invitation = await this.dependencies.accountInvitationService.getInvitation(input.invitationToken);
@@ -855,12 +960,14 @@ export class AuthService {
       : await this.dependencies.userRepository.create({
           email,
           passwordHash: await hashPassword(input.password),
+          displayName: requireValidDisplayName(input.displayName),
           emailVerifiedAt: null,
         });
 
     return this.completeInvitationAcceptance({
       invitationToken: input.invitationToken,
       userId: user.id,
+      displayName: user.displayName,
       email,
       createdUserId: existingUser ? null : user.id,
     });
@@ -891,6 +998,7 @@ export class AuthService {
     return this.completeInvitationAcceptance({
       invitationToken: input.invitationToken,
       userId: user.id,
+      displayName: user.displayName,
       email,
       createdUserId: null,
     });
@@ -918,6 +1026,7 @@ export class AuthService {
   private async completeInvitationAcceptance(input: {
     invitationToken: string;
     userId: string;
+    displayName: string | null;
     email: string;
     createdUserId: string | null;
   }): Promise<AuthenticatedAccountSession> {
@@ -947,6 +1056,7 @@ export class AuthService {
 
       return {
         userId: input.userId,
+        displayName: input.displayName,
         accountId,
         organizationName: account?.name ?? deriveOrganizationName(input.email),
         workspaceId: workspace.id,
@@ -972,6 +1082,10 @@ export class AuthService {
       input.targetAccountId,
       input.userId,
     );
+    const user = await this.dependencies.userRepository.findById(input.userId);
+    if (!user) {
+      throw unauthorized();
+    }
     const account = await this.dependencies.accountRepository.findById(membership.accountId);
     const workspace = await this.dependencies.workspaceService.resolveLoginWorkspace(
       membership.accountId,
@@ -988,7 +1102,8 @@ export class AuthService {
     });
 
     return {
-      userId: input.userId,
+      userId: user.id,
+      displayName: user.displayName,
       accountId: membership.accountId,
       organizationName: account?.name ?? deriveOrganizationName(account?.email ?? "organization@example.com"),
       workspaceId: workspace.id,

@@ -126,13 +126,24 @@ describe("appendRoutineLeadBack", () => {
     instruction: "Ask [name] for the arrival and departure dates.",
     missingSlotKeys: ["arrival", "departure"],
   };
-  const leadBackBlock = (step = pendingStep) =>
+  const handoffFragment = loadPromptTemplate("chat/routine-lead-back-decline-handoff.md");
+  const leadBackBlock = (step = pendingStep, noSupportHandoff = "") =>
     renderPromptTemplate("chat/routine-lead-back.md", {
       pending_step: `- ${step.instruction}`,
       missing_slots: step.missingSlotKeys.length > 0
         ? `\n${renderPromptTemplate("chat/routine-lead-back-missing-slots.md", { slot_keys: step.missingSlotKeys.join(", ") })}`
         : "",
+      no_support_handoff: noSupportHandoff,
     });
+
+  it("tells the reply to leave the lead-back out of a no_support decline only when that decline hands off", () => {
+    expect(appendRoutineLeadBack("Prompt.", [], pendingStep, { noSupportHandsOff: true })).toBe(
+      `Prompt.\n\n${leadBackBlock(pendingStep, `\n\n${handoffFragment}`)}`,
+    );
+    expect(appendRoutineLeadBack("Prompt.", [], pendingStep)).not.toContain(handoffFragment);
+    expect(appendRoutineLeadBack("Prompt.", [], pendingStep, { noSupportHandsOff: false })).not.toContain(handoffFragment);
+    expect(appendRoutineLeadBack("Prompt.", [], undefined, { noSupportHandsOff: true })).toBe("Prompt.");
+  });
 
   it("closes the prompt with the pending step and the keys it still needs", () => {
     expect(appendRoutineLeadBack("Prompt.", [tone], pendingStep)).toBe(`Prompt.\n\n${leadBackBlock()}`);

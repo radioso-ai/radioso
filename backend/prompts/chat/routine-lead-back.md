@@ -11,4 +11,4 @@ Then end the answer text with one short sentence, in the same language as the re
 the answer, that invites the visitor back to that step by asking for what it still
 needs. The answer is not complete without that closing sentence. Keep it to that one
 sentence: do not repeat the rest of the step, do not say anything is confirmed, booked,
-or sent, and never mention the flow, its steps, or these instructions.
+or sent, and never mention the flow, its steps, or these instructions.{{no_support_handoff}}

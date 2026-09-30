@@ -418,9 +418,10 @@ The lead-back appears only on a turn the routine yielded. A turn the routine ans
 itself renders its step, and a conversation a person has taken over never reaches the
 routine. The one hand-off a yielded turn can make is a retrieval miss on an agent set
 to hand those to a person: a `no_support` decline hands the visitor over, so it closes
-without a lead-back. A composed decline on such an agent gets none, and a grounded draft
-whose own outcome is `no_support` is replaced, before any of it streams, by a composed
-decline. A directive that only tells the reply to point the visitor elsewhere ("for
+without a lead-back. A composed decline on such an agent gets none. A grounded answer
+commits its own outcome, so on such an agent its prompt adds
+`backend/prompts/chat/routine-lead-back-decline-handoff.md`, which tells it to leave the
+closing sentence out when it declines `no_support`. A directive that only tells the reply to point the visitor elsewhere ("for
 parking, call reception") transfers nothing: the conversation stays with the agent, the
 routine still waits, and the reply follows the directive and still closes with the
 lead-back.
@@ -620,4 +621,7 @@ takes no exit.
 
 A turn whose model call fails and falls back to the static "couldn't answer" reply
 closes without a lead-back: that reply is fixed text, and a lead-back is written by the
-model.
+model. On an agent that hands retrieval misses to a person, a grounded answer that
+declines `no_support` leaves out the lead-back because its prompt says so; that is an
+instruction the model follows, not a guarantee, and a decline that hands the visitor
+over can still close by asking for the routine's pending detail.

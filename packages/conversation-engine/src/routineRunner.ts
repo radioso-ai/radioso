@@ -13,7 +13,6 @@ import type {
   RoutineRunTrace,
   RoutineSelectionTrace,
   RoutineSkillResult,
-  RoutineSlotSchema,
   RoutineState,
   RoutineStep,
   RoutineStepReask,
@@ -23,6 +22,13 @@ import type {
   SteeringRule,
   TurnContext,
 } from "@radioso/conversation-contract";
+
+import {
+  collectedSlotsForStep,
+  isSlotCollectionStepSatisfied,
+  requiredCollectedSlots,
+  slotFilledGuardPasses,
+} from "./slotCollectionStep.js";
 
 type RoutineFieldGuard = Extract<RoutineGuard, { kind: "field" }>;
 
@@ -252,20 +258,8 @@ const stagedContextForSkillResult = (
 const hasTypedSlotSchema = (routine: Routine): boolean =>
   Array.isArray(routine.slots) && routine.slots.length > 0;
 
-const collectedSlotsFor = (step: RoutineStep): string[] => {
-  const value = step.metadata?.collectsSlots;
-  return Array.isArray(value) && value.every((candidate): candidate is string => typeof candidate === "string")
-    ? value
-    : [];
-};
-
 const hasVariable = (variables: Record<string, unknown>, key: string): boolean =>
   Object.prototype.hasOwnProperty.call(variables, key);
-
-const requiredCollectedSlots = (routine: Routine, step: RoutineStep): RoutineSlotSchema[] => {
-  const collected = new Set(collectedSlotsFor(step));
-  return (routine.slots ?? []).filter((slot) => slot.required && collected.has(slot.key));
-};
 
 /**
  * What a re-rendered step still lacks: its required collected slots that are unfilled, as
@@ -347,35 +341,19 @@ const slotValuesTraceFields = (
   return { slotValues, ...(omittedSlotCount > 0 ? { omittedSlotCount } : {}) };
 };
 
-const slotFilledGuardPasses = (transition: RoutineTransition, variables: Record<string, unknown>): boolean =>
-  transition.guard?.kind === "slot_filled" &&
-  transition.guard.slots.length > 0 &&
-  transition.guard.slots.every((slot) => hasVariable(variables, slot));
-
 /**
- * A slot-collection step has nothing left to ask when its required collected slots are
- * filled (every collected slot, if it collects only optional ones), or when one of its
- * `slot_filled` exits already passes. An optional slot never holds a step (#1371).
+ * Runner-local gate on top of the shared `isSlotCollectionStepSatisfied` rule: only a
+ * chat step on a routine with a typed slot schema can be fast-forwarded past.
  */
 const isSatisfiedSlotCollectionStep = (
   routine: Routine,
   step: RoutineStep,
   variables: Record<string, unknown>,
-  exits: readonly RoutineTransition[],
 ): boolean => {
   if (step.kind !== "chat" || !hasTypedSlotSchema(routine)) {
     return false;
   }
-  const collectedSlots = collectedSlotsFor(step);
-  if (collectedSlots.length === 0) {
-    return false;
-  }
-  const requiredSlots = requiredCollectedSlots(routine, step).map((slot) => slot.key);
-  const holdingSlots = requiredSlots.length > 0 ? requiredSlots : collectedSlots;
-  return (
-    holdingSlots.every((key) => hasVariable(variables, key)) ||
-    exits.some((exit) => slotFilledGuardPasses(exit, variables))
-  );
+  return isSlotCollectionStepSatisfied(routine, step, variables);
 };
 
 const isDefaultTransition = (transition: RoutineTransition): boolean =>
@@ -591,7 +569,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       // every collected slot has nothing to extract — running the selector there would add
       // a model round-trip to a deterministic path, let an unrelated message overwrite an
       // already-filled slot, and could spuriously yield the turn.
-      const collected = collectedSlotsFor(input.step);
+      const collected = collectedSlotsForStep(input.step);
       let extracted: Record<string, unknown> = {};
       if (
         collected.length > 0 &&
@@ -661,7 +639,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         // No AI-decides exit held, yet the reply filled what the step asks for: the step is
         // done, so its rule or default exit moves on instead of asking again (#1372).
         const withDecision = { ...variables, ...(decision.variables ?? {}) };
-        const exit = isSatisfiedSlotCollectionStep(routine, input.step, withDecision, input.transitions)
+        const exit = isSatisfiedSlotCollectionStep(routine, input.step, withDecision)
           ? satisfiedStepExit(input.step, input.transitions, withDecision)
           : undefined;
         if (exit !== undefined) {
@@ -744,7 +722,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     // degrade-don't-throw path: a loop that can't fast-forward to progress settles on a
     // chat step the user can act on.
     const fastForwarded = new Set<string>([step.id]);
-    while (isSatisfiedSlotCollectionStep(routine, step, variables, outgoing(step.id))) {
+    while (isSatisfiedSlotCollectionStep(routine, step, variables)) {
       const stepEdges = outgoing(step.id);
       if (stepEdges.length === 0) {
         break;

@@ -605,6 +605,10 @@ export const createConversationEngine = (): ConversationEngine => new DefaultCon
 export { answerCoverageHeadParseOutcome } from "./coverageVerdictSink.js";
 
 export { DefaultRoutineRunner } from "./routineRunner.js";
+export {
+  collectedSlotsForStep,
+  isSlotCollectionStepSatisfied,
+} from "./slotCollectionStep.js";
 export { resumeAwaitingDecision } from "./awaitingDecision.js";
 export {
   coverageCriteriaMatches,

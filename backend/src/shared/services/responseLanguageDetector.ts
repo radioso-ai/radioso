@@ -44,6 +44,22 @@ const stripJsonFence = (value: string): string =>
     .replace(/```$/i, "")
     .trim();
 
+/**
+ * The history the detector judges from. Only the user's own messages show the language
+ * they write in, including any explicit "answer in X" request. The assistant's replies
+ * take whatever language a routine step, a directive, or an earlier mislabel produced,
+ * so once the user has written they stay out: one wrong reply must not bias every later
+ * turn (#1354). Until then the opening message — the greeting, rendered in the agent's
+ * locale — is the only signal a language-ambiguous first message has, and no reply to
+ * the user exists yet to mislead it.
+ */
+const languageEvidence = (history: MessageRecord[]): MessageRecord[] => {
+  const userMessages = history.filter((message) => message.role === "user");
+  return userMessages.length > 0
+    ? userMessages
+    : history.filter((message) => message.role === "assistant");
+};
+
 const formatConversationContext = (messages: MessageRecord[]): string =>
   messages
     .map((message) => `${message.role.toUpperCase()}: ${message.content}`)
@@ -85,14 +101,15 @@ export class LlmResponseLanguageDetector implements ResponseLanguageDetector {
   constructor(private readonly inference: ModelInferencePipeline) {}
 
   async detect(input: ResponseLanguageDetectorInput): Promise<ResponseLanguageDetection> {
-    if (!input.query.trim() && input.history.length === 0) {
+    const evidence = languageEvidence(input.history);
+    if (!input.query.trim() && evidence.length === 0) {
       return { unresolvedReason: "no_input" };
     }
 
     const { text } = await this.inference.complete({
       operation: input.usageContext ?? fallbackUsageContext(input),
       prompt: renderPromptTemplate("chat/detect-response-language.md", {
-        context_section: formatConversationContext(input.history) || "No prior context",
+        context_section: formatConversationContext(evidence) || "No prior context",
         query: input.query,
       }),
       reasoningEffort: CHAT_BEHAVIOR.intentRouting.reasoningEffort,

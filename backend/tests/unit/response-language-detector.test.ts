@@ -49,26 +49,51 @@ describe("response language detector", () => {
 
   // #1354: on an Italian booking conversation the detector answered "English" in about
   // one call in forty, and a routine's English handoff ending then went out verbatim.
-  // The label must come from the words the user wrote, never from the language these
-  // instructions or the assistant's replies happen to be written in.
-  it("tells the model the instruction and reply language is not the user's language", async () => {
-    const model = inference('{"responseLanguage":"Italian"}');
+  // The assistant's replies follow whatever language a routine step, directive, or an
+  // earlier mislabel produced, so they never reach the detector once the user has
+  // written: only the user's own messages are evidence of the language they write in.
+  it("judges from the user's messages and leaves assistant replies out of the prompt", async () => {
+    const model = inference('{"responseLanguage":"English"}');
     const detector = new LlmResponseLanguageDetector(model);
 
     await detector.detect({
       query: "No aspetta, arrivo il 15 novembre, non il 14.",
       history: [
-        message("Perfetto, arrivo il 14 novembre: la reception confermerà per email.", "assistant"),
-        message("Da solo, 1 adulto."),
+        message("Ciao, sono Claudio: posso aiutarti con eventi e corsi.", "assistant"),
+        message("Vorrei prenotare un soggiorno per il ritiro di Kriya Yoga."),
+        message("Great, what dates do you have in mind?", "assistant"),
+        message("Please answer in English from now on."),
+        message("Reception will confirm availability and price by email.", "assistant"),
       ],
     });
 
     const prompt = vi.mocked(model.complete).mock.calls[0][0].prompt;
-    expect(prompt).toContain("Decide from the words the user wrote.");
-    expect(prompt).toContain("These instructions are written in English");
-    expect(prompt).toContain("neither tells you the\n  language the user writes in.");
-    // The sticky explicit-instruction rule stays in force.
+    expect(prompt).toContain("USER: Vorrei prenotare un soggiorno per il ritiro di Kriya Yoga.");
+    // A sticky language request is the user's own words, so it stays in evidence.
+    expect(prompt).toContain("USER: Please answer in English from now on.");
     expect(prompt).toContain("that instruction is sticky across later turns");
+    expect(prompt).not.toContain("ASSISTANT:");
+    expect(prompt).not.toContain("Great, what dates do you have in mind?");
+    expect(prompt).not.toContain("Reception will confirm availability and price by email.");
+    expect(prompt).not.toContain("Ciao, sono Claudio");
+    expect(prompt).toContain("These instructions are written in English; that does not tell you the language the\n  user writes in.");
+  });
+
+  // Before the user has written anything else, the opening message (the greeting,
+  // rendered in the agent's locale) is the only signal a language-ambiguous first
+  // message has. No reply to the user exists yet, so none can bias the label.
+  it("keeps the opening message as context until the user has written", async () => {
+    const model = inference('{"responseLanguage":"Italian"}');
+    const detector = new LlmResponseLanguageDetector(model);
+
+    await detector.detect({
+      query: "ok",
+      history: [message("Ciao, sono Claudio: posso aiutarti con eventi e corsi.", "assistant")],
+    });
+
+    const prompt = vi.mocked(model.complete).mock.calls[0][0].prompt;
+    expect(prompt).toContain("ASSISTANT: Ciao, sono Claudio: posso aiutarti con eventi e corsi.");
+    expect(prompt).toContain("or of the conversation\n  so far when the user has written nothing else yet.");
   });
 
   it("drops unsafe or empty detector output and says why", () => {

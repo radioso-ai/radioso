@@ -245,6 +245,17 @@ export interface WorkbenchReplayInput {
    * it verbatim and never regenerates or persists the summary.
    */
   conversationSummary?: string | null;
+  /**
+   * Includes each filled routine slot's value on this replayed turn's trace. Absent/false
+   * (the default) is what every caller of this runner gets except one: only the Test Chat
+   * entry point (`TrustedTestExecutionRunnerAdapter`) sets it, because Test Chat's trace is
+   * stored in `agent_test_execution_attempts` under Test Chat's own retention. Eval replay
+   * (`evalRunService.ts`, `evalMessageCaseRepository.ts`) must never set it: an eval case can
+   * be captured from a customer conversation, and eval persists its trace into append-only
+   * `eval_runs`/revision-eval evidence with a 90-day retention and no per-conversation erasure
+   * path — a captured slot value there would outlive the conversation it came from.
+   */
+  includeSlotValues?: boolean;
 }
 
 export class WorkbenchReplayRunner {
@@ -333,14 +344,16 @@ export class WorkbenchReplayRunner {
       && this.options.chatAnswerPresenter
       ? this.options.routineProvider
       : undefined;
-    // Every replayed turn is a private surface (Test Chat, eval) whose trace never feeds a
-    // durable audit record, so it is the one caller that requests routine slot values.
+    // Only the caller sets `includeSlotValues` — Test Chat does (its trace lives in
+    // agent_test_execution_attempts under Test Chat's own retention); eval replay never
+    // does, since eval persists into append-only eval_runs/revision-eval evidence that
+    // outlives a source conversation with no per-conversation erasure path.
     const assembly = this.options.turnAssemblyFactory?.create({
       chatSessionPreparer: preparer,
       directiveStateStore: effects.directiveStateStore,
       routineStore,
       coverageHeadRecorder: this.options.coverageHeadRecorder,
-      includeSlotValues: true,
+      includeSlotValues: input.includeSlotValues === true,
     }) ?? new ChatTurnAssembly({
       chatGateway: this.options.chatGateway ?? unavailableRoutineGateway,
       chatAnswerPresenter: presenter,
@@ -354,7 +367,7 @@ export class WorkbenchReplayRunner {
       turnInterpreter: this.options.turnInterpreter,
       routineStore,
       routineProvider,
-      includeSlotValues: true,
+      includeSlotValues: input.includeSlotValues === true,
       clarifier,
       recordClarificationDecision: this.options.recordClarificationDecision,
       retrievalSenseDetector: this.options.retrievalSenseDetector,

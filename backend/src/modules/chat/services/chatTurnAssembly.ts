@@ -359,10 +359,13 @@ export interface ChatTurnAssemblyOptions {
   /** Off-critical-path #1260 shadow; absent (replay/draft, or the flag disabled) never calls the old assessor. */
   coverageShadowAssessor?: AnswerCoverageShadowAssessor;
   /**
-   * Includes each filled routine slot's value on this assembly's routine sub-traces.
-   * Never set for the durable, customer-facing assembly (its trace is what a persisted
-   * audit record's metadata copies verbatim) — only the ephemeral replay assembly
-   * (Test Chat, eval) sets it, once per replayed turn.
+   * Includes each filled routine slot's value on this assembly's routine sub-traces
+   * (bounded — see `DefaultRoutineRunner`'s per-value/per-turn caps). Never set for the
+   * durable, customer-facing assembly (its trace is what a persisted audit record's
+   * metadata copies verbatim). The ephemeral replay assembly forwards it from
+   * `WorkbenchReplayInput.includeSlotValues` per call — only Test Chat's entry point
+   * (`TrustedTestExecutionRunnerAdapter`) sets that true; eval replay never does, since
+   * eval persists its trace into an append-only, longer-retained record.
    */
   includeSlotValues?: boolean;
 }

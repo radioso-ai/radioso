@@ -1796,7 +1796,7 @@ describe("DefaultRoutineRunner includeSlotValues", () => {
 
     const emailValue = result.trace?.slotValues?.find((entry) => entry.key === "email");
     expect(emailValue?.truncated).toBe(true);
-    expect(emailValue?.value).toHaveLength(501); // 500 chars + the ellipsis
+    expect(emailValue?.value).toHaveLength(500); // 499 chars + the ellipsis
     expect(typeof emailValue?.value === "string" && emailValue.value.endsWith("…")).toBe(true);
   });
 

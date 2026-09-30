@@ -270,8 +270,9 @@ const declaredSlotVariables = (
       .map((key) => [key, variables[key]]),
   );
 
-/** Per-value character bound for a traced slot value, matching the host's output-bounding magnitude. */
+/** Per-value character bound for a traced slot value (including the ellipsis), matching the host's output-bounding magnitude. */
 const MAX_TRACE_SLOT_VALUE_CHARS = 500;
+
 /** Filled-slot count bound for one turn's traced slot values. */
 const MAX_TRACE_SLOT_VALUES = 50;
 
@@ -281,7 +282,8 @@ const traceableSlotValue = (value: unknown): { value: string | number | boolean;
     ? value
     : JSON.stringify(value) ?? String(value);
   if (typeof scalar === "string" && scalar.length > MAX_TRACE_SLOT_VALUE_CHARS) {
-    return { value: `${scalar.slice(0, MAX_TRACE_SLOT_VALUE_CHARS)}…`, truncated: true };
+    // The ellipsis counts toward the bound, so the kept slice is one character short of it.
+    return { value: `${scalar.slice(0, MAX_TRACE_SLOT_VALUE_CHARS - 1)}…`, truncated: true };
   }
   return { value: scalar };
 };

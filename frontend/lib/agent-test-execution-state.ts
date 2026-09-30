@@ -223,7 +223,8 @@ export const reduceTestExecutionEvent = (
     return state
   }
 
-  if (event.type === 'execution_partial') return { ...state, state: 'partial' }
+  // A partial turn is settled: its failed side stays retryable, and the next message may start.
+  if (event.type === 'execution_partial') return { ...state, state: 'partial', activeTurnId: null, activeAttemptId: null }
   if (event.type === 'execution_completed') {
     return { ...state, state: 'completed', activeTurnId: null, activeAttemptId: null }
   }
@@ -268,15 +269,17 @@ export const reduceTestExecutionEvent = (
           : side
 
   const sides = { ...state.sides, [side.id]: nextSide }
-  // Some valid stream deliveries end after their final `side_completed`
-  // event without a redundant execution-level terminal event. Once every
-  // side has completed, this turn is resolved and a follow-up is permitted.
-  const completed = event.type === 'side_completed' && Object.values(sides).every((candidate) => candidate.state === 'completed')
+  // Some valid stream deliveries end after their final side event without a
+  // redundant execution-level terminal event. Once no side is still running,
+  // this turn is resolved and a follow-up is permitted, a failed side included.
+  const sideStates = Object.values(sides).map((candidate) => candidate.state)
+  const settled = (event.type === 'side_completed' || event.type === 'side_failed') && !sideStates.includes('running')
+  const completed = settled && sideStates.every((sideState) => sideState === 'completed')
   return {
     ...state,
-    state: completed ? 'completed' : event.type === 'side_failed' ? 'partial' : state.state,
-    activeTurnId: completed ? null : state.activeTurnId,
-    activeAttemptId: completed ? null : state.activeAttemptId,
+    state: completed ? 'completed' : settled || event.type === 'side_failed' ? 'partial' : state.state,
+    activeTurnId: settled ? null : state.activeTurnId,
+    activeAttemptId: settled ? null : state.activeAttemptId,
     sides,
   }
 }

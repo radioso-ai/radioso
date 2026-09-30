@@ -354,7 +354,10 @@ imports from `services/`.
   `workbenchReplayRunner.ts`; their shared
   `chatTurnAssembly.ts` consumes the plan so replay executes the identical
   schedule, including the staged response-language detector on bypass or planner
-  failure. Policy stays with the owning modules: the routine
+  failure. Both run that detector through `turnResponseLanguage.ts`, which
+  records the language source and any unresolved reason on the turn span and
+  warns when a detection fails (`tests/unit/chat/turnResponseLanguage.test.ts`).
+  Policy stays with the owning modules: the routine
   activator applies plan rankings through `RoutineRegistry.prepareCandidates` /
   `applyRankedDecision` (including extracted activation variables), completed-
   routine correction/reentry adapters pin the plan as bypassed when they claim

@@ -27,6 +27,7 @@ import {
   startTurnPlan,
   type TurnPlanCoordinator,
 } from "./turnPlanCoordinator.js";
+import { detectTurnResponseLanguage } from "./turnResponseLanguage.js";
 import type { AuditService } from "../../audit/contracts/index.js";
 import type {
   RetrievalSenseDetectorPort,
@@ -475,15 +476,13 @@ export class WorkbenchReplayRunner {
     );
   }
 
-  private async detectResponseLanguage(
+  private detectResponseLanguage(
     input: WorkbenchReplayInput,
     session: PreparedSession,
   ): Promise<string | undefined> {
-    if (!this.options.responseLanguageDetector) {
-      return undefined;
-    }
-    try {
-      const result = await this.options.responseLanguageDetector.detect({
+    return detectTurnResponseLanguage({
+      detector: this.options.responseLanguageDetector,
+      request: {
         query: input.query,
         history: session.history,
         workspaceContext: { workspaceId: input.workspaceId },
@@ -497,11 +496,10 @@ export class WorkbenchReplayRunner {
           attemptKey: "response_language",
           ...input.usageAttribution,
         },
-      });
-      return result.responseLanguage;
-    } catch {
-      return undefined;
-    }
+      },
+      logContext: { workspaceId: input.workspaceId, conversationId: session.conversation.id },
+      logger: this.options.logger,
+    });
   }
 
   private presentResult(input: {

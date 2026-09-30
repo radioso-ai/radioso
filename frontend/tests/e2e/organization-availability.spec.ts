@@ -274,6 +274,6 @@ test('lands on the sign-in page, not /login, after an owner deletes the organiza
 
   await expect.poll(() => deleteAccountCalled).toBe(true)
   await expect.poll(() => new URL(page.url()).pathname).toBe('/')
-  await expect(page.getByRole('button', { name: 'Sign In', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeVisible()
   await expect.poll(() => page.evaluate(() => window.localStorage.getItem('radioso.authUser'))).toBeNull()
 })

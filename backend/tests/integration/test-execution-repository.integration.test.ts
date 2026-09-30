@@ -223,4 +223,60 @@ describeDb("test execution repository", () => {
     await expect(service.message({ workspaceId, agentId, accountId: null, executionId: execution.id, message: "different input", generation: execution.generation, turnId, attemptId: randomUUID() })).rejects.toMatchObject({ code: "conflict" });
     await expect(service.retry({ workspaceId, agentId, accountId: null, executionId: execution.id, sideId: execution.sides[0].id, generation: execution.generation, turnId: randomUUID(), attemptId: randomUUID() })).rejects.toMatchObject({ code: "conflict" });
   });
+
+  // #1362: a turn that failed used to leave the execution partial, and every later message
+  // was refused as a turn conflict — a session whose failure repeats on retry was dead.
+  it("answers the next message after a failed turn instead of locking the session", async () => {
+    let runnerCalls = 0;
+    const service = new TestExecutionService({
+      revisions: repository,
+      contextCatalog: new ContextVariableRepository(database.kysely),
+      repository,
+      runner: {
+        run: async () => {
+          runnerCalls += 1;
+          if (runnerCalls === 1) throw new Error("runner failed");
+          return { answer: "second answer", messageId: randomUUID(), continuation: null };
+        },
+      },
+      usageLimitPolicy: new NoopUsageLimitPolicy(),
+      createId: randomUUID,
+    });
+    const execution = await service.start({ workspaceId, agentId, accountId: null, mode: "single", revisionIds: [revisionId], testValues: [], skillEffects: "suppressed", idempotencyKey: randomUUID() });
+    const failedTurnId = randomUUID();
+
+    const failed = await service.message({ workspaceId, agentId, accountId: null, executionId: execution.id, message: "How do I contact a human?", generation: execution.generation, turnId: failedTurnId, attemptId: randomUUID() });
+    const next = await service.message({ workspaceId, agentId, accountId: null, executionId: execution.id, message: "guest@example.com", generation: execution.generation, turnId: randomUUID(), attemptId: randomUUID() });
+
+    expect(failed).toEqual(expect.arrayContaining([expect.objectContaining({ type: "side_failed", code: "runner_failed" })]));
+    expect(next).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "message_delta", delta: "second answer" }),
+      expect.objectContaining({ type: "execution_completed" }),
+    ]));
+    // The failed turn is superseded: retrying it after a later turn would answer out of order.
+    await expect(service.retry({ workspaceId, agentId, accountId: null, executionId: execution.id, sideId: execution.sides[0].id, generation: execution.generation, turnId: failedTurnId, attemptId: randomUUID() }))
+      .rejects.toMatchObject({ statusCode: 409 });
+    expect(runnerCalls).toBe(2);
+  });
+
+  it("refuses a new turn only while one is running, and retries only the latest failed turn", async () => {
+    const executionId = randomUUID(), sideId = randomUUID(), firstTurn = randomUUID(), secondTurn = randomUUID();
+    await repository.create({ id: executionId, workspaceId, agentId, mode: "single", generation: 1, testValues: [], skillEffects: "suppressed", idempotencyKey: executionId, sides: [{ id: sideId, executionId, revision: frozenRevision(), conversationId: randomUUID(), state: "ready", retryable: false, history: [], continuation: null }] });
+    const claim = (turnId: string, message: string, retry = false, attemptId = randomUUID()) =>
+      repository.claimTurn({ workspaceId, agentId, executionId, sideIds: [sideId], generation: 1, turnId, attemptId, message, inputFingerprint: message, now: new Date(1_000), leaseMs: 30_000, retry });
+    const failClaim = async (turnId: string, claimed: Awaited<ReturnType<typeof claim>>) => {
+      if (typeof claimed === "string") throw new Error(claimed);
+      await repository.fail({ workspaceId, agentId, executionId, sideId, turnId, attemptId: claimed.claims[0].attempt.attemptId, fence: claimed.claims[0].attempt.fence, code: "runner_failed", now: new Date(1_100) });
+    };
+
+    await failClaim(firstTurn, await claim(firstTurn, "first"));
+    const second = await claim(secondTurn, "second");
+    expect(typeof second).not.toBe("string");
+    await expect(claim(randomUUID(), "third")).resolves.toBe("turn_in_progress");
+    await failClaim(secondTurn, second);
+
+    await expect(claim(firstTurn, "first", true)).resolves.toBe("retry_invalid");
+    const retried = await claim(secondTurn, "second", true);
+    expect(typeof retried === "string" ? retried : retried.claims[0]?.attempt.turnId).toBe(secondTurn);
+  });
 });

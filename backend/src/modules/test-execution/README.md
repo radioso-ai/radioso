@@ -5,6 +5,12 @@ revisions. It validates selected context-variable sample values, creates single
 or comparison executions, fences turns and retries, and keeps failed sides
 independently retryable.
 
+Only a running turn blocks the next message (`test_turn_in_progress`, 409). A
+turn whose side failed is settled: the next message starts a new turn, and the
+failed side is retryable only while it is still the latest turn on that side. A
+runner failure is logged with its error type and code and the execution, side,
+turn, and attempt ids, never its message text.
+
 Start at `testExecution.ts`. The HTTP routes are mounted under the agent routes
 in `app/http/routes/testExecutionRoutes.ts`; the trusted runner adapter is
 `chat/services/trustedTestExecutionRunnerAdapter.ts`. Revision selection belongs

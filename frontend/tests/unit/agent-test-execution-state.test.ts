@@ -69,6 +69,30 @@ describe('agent test execution state', () => {
     expect(beginTestExecutionTurn(completed, 'Follow-up', 'turn-2', 'attempt-2').activeTurnId).toBe('turn-2')
   })
 
+  it('settles a turn once every side has answered or failed, so a failed side does not block the next message', () => {
+    const active = beginTestExecutionTurn(state(), 'First', 'turn-1', 'attempt-1')
+    const leftFailed = reduceTestExecutionEvent(active, {
+      type: 'side_failed', executionId: 'execution-1', generation: 2, sideId: 'left', code: 'runner_failed', retryable: true, turnId: 'turn-1', attemptId: 'attempt-1',
+    })
+    expect(leftFailed.activeTurnId).toBe('turn-1')
+    const settled = reduceTestExecutionEvent(leftFailed, {
+      type: 'side_completed', executionId: 'execution-1', generation: 2, sideId: 'right', messageId: 'message-right', turnId: 'turn-1', attemptId: 'attempt-1',
+    })
+
+    expect(settled).toMatchObject({ state: 'partial', activeTurnId: null, activeAttemptId: null })
+    expect(settled.sides.left).toMatchObject({ state: 'failed', retryable: true })
+    expect(beginTestExecutionTurn(settled, 'Follow-up', 'turn-2', 'attempt-2').activeTurnId).toBe('turn-2')
+  })
+
+  it('settles a turn on execution_partial', () => {
+    const active = beginTestExecutionTurn(state(), 'First', 'turn-1', 'attempt-1')
+    const partial = reduceTestExecutionEvent(active, {
+      type: 'execution_partial', executionId: 'execution-1', generation: 2, turnId: 'turn-1', attemptId: 'attempt-1',
+    })
+
+    expect(partial).toMatchObject({ state: 'partial', activeTurnId: null, activeAttemptId: null })
+  })
+
   it('keeps the completed response identity and trace for eval capture and turn debug', () => {
     const active = beginTestExecutionTurn(state(), 'First', 'turn-1', 'attempt-1')
     const trace = { version: 1, spine: { stages: [] } } as never

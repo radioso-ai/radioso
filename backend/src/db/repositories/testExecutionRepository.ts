@@ -20,6 +20,8 @@ const parseHistory = (value: unknown): TestExecutionSide["history"] => Array.isA
   return { ...item, createdAt: new Date(item.createdAt) };
 }) : [];
 const parseResult = (value: unknown): TestExecutionRunnerResult | undefined => value && typeof value === "object" ? value as TestExecutionRunnerResult : undefined;
+const isLatestTurn = (history: TestExecutionSide["history"], turnId: string): boolean =>
+  history.filter((entry) => entry.role === "user").at(-1)?.turnId === turnId;
 const appendUser = (history: TestExecutionSide["history"], input: ClaimInput) => history.some((entry) => entry.role === "user" && entry.turnId === input.turnId) ? history : [...history, { turnId: input.turnId, attemptId: input.attemptId, role: "user" as const, content: input.message, createdAt: input.now }];
 const appendAssistant = (history: TestExecutionSide["history"], input: CompleteInput) => [...history, {
   turnId: input.turnId,
@@ -215,8 +217,11 @@ export class TestExecutionRepository implements TestExecutionRepositoryPort {
       const turn = await trx.selectFrom("agent_test_execution_turns").selectAll().where("execution_id", "=", input.executionId).where("turn_id", "=", input.turnId).forUpdate().executeTakeFirst();
       if (!turn) {
         if (input.retry) return "retry_invalid";
-        const unresolved = await trx.selectFrom("agent_test_execution_turns").select("turn_id").where("execution_id", "=", input.executionId).where("state", "!=", "completed").executeTakeFirst();
-        if (unresolved || sides.some((side) => side.active_attempt_id !== null)) return "turn_conflict";
+        // Only a running turn blocks the next one. A settled turn whose side failed (`partial`)
+        // is terminal for sending: the next message proceeds, as it would in a live chat,
+        // instead of a failure that repeats on retry locking the session for good.
+        const running = await trx.selectFrom("agent_test_execution_turns").select("turn_id").where("execution_id", "=", input.executionId).where("state", "=", "running").executeTakeFirst();
+        if (running || sides.some((side) => side.active_attempt_id !== null)) return "turn_in_progress";
         await trx.insertInto("agent_test_execution_turns").values({ execution_id: input.executionId, turn_id: input.turnId, message: input.message, input_fingerprint: input.inputFingerprint, state: "running" }).execute();
         return this.startClaims(trx, sides, input, 1);
       }
@@ -284,7 +289,11 @@ export class TestExecutionRepository implements TestExecutionRepositoryPort {
     if (side.active_attempt_id !== null) {
       if (side.active_turn_id !== input.turnId || !this.isStaleRunningAttempt(latest, input.now)) return "turn_conflict";
       await trx.updateTable("agent_test_execution_attempts").set({ state: "failed", failure_code: "lease_expired", updated_at: currentTimestamp() }).where("execution_id", "=", input.executionId).where("side_id", "=", side.id).where("turn_id", "=", input.turnId).where("attempt_id", "=", side.active_attempt_id).execute();
-    } else if (turnState !== "partial" || side.state !== "failed") return "retry_invalid";
+    } else if (turnState !== "partial" || side.state !== "failed" || !isLatestTurn(parseHistory(side.history), input.turnId)) {
+      // A failed turn a later message superseded is not retryable: its answer would land
+      // after the later turn's.
+      return "retry_invalid";
+    }
     return this.startClaims(trx, [side], input, (side.active_fence ?? latest.fence) + 1);
   }
 

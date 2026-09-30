@@ -843,6 +843,21 @@ test('renders a failed side and retries only that side', async ({ page }) => {
   await expect(page.getByText('Recovered retry answer.', { exact: true })).toBeVisible()
 })
 
+test('sends the next message after a failed side instead of locking the chat', async ({ page }) => {
+  const messageBodies: Array<{ message: string; turnId: string }> = []
+  await installCockpitMocks(page, { failMessage: true, messageBodies })
+  await page.goto(testUrl)
+  await testChatComposer(page).fill('How do I contact a human?')
+  await page.getByRole('button', { name: 'Send' }).click()
+  await expect(page.getByText('The provider was unavailable.', { exact: true })).toBeVisible()
+
+  await testChatComposer(page).fill('guest@example.com')
+  await page.getByRole('button', { name: 'Send' }).click()
+
+  await expect.poll(() => messageBodies.map((body) => body.message)).toEqual(['How do I contact a human?', 'guest@example.com'])
+  expect(messageBodies[1]?.turnId).not.toBe(messageBodies[0]?.turnId)
+})
+
 test('saves the mounted dirty editor before lazily starting a private test', async ({ page }) => {
   const requestBodies: unknown[] = []
   const draftWrites: unknown[] = []

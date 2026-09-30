@@ -152,6 +152,21 @@ const coverageCriteriaMatches = (criteria: AnswerCoverageCriteria, turn: TurnCon
 };
 
 /**
+ * The pinned ids the authored catalog must resolve. A built-in routine is served by
+ * the process, never frozen into an agent revision or stored as a definition, so a pin
+ * on one (an active or completed built-in routine) resolves to its registration and is
+ * never looked up in the release. A pinned authored routine the release lacks stays the
+ * source's integrity failure.
+ */
+const authoredPinnedRoutineIds = (
+  pinnedRoutineIds: readonly string[],
+  builtInRegistrations: readonly RoutineRegistration[],
+): string[] => {
+  const builtInRoutineIds = new Set(builtInRegistrations.map((registration) => registration.routine.id));
+  return pinnedRoutineIds.filter((routineId) => !builtInRoutineIds.has(routineId));
+};
+
+/**
  * The routines one turn can see: the release's published definitions (gated by
  * workspace capability), with pinned and preview definitions replacing the same
  * routine id for every runtime path. Precedence is resolved here, once, so a
@@ -190,18 +205,21 @@ const loadEffectiveRegistrations = async (
     }
   }
 
+  // A pinned built-in stays under the capability gate below, the same gate its activation
+  // passed: a workspace that loses the capability loses the built-in feature mid-routine too.
+  const authoredPins = authoredPinnedRoutineIds(pinnedRoutineIds, dependencies.routineRegistrations);
   let pinnedRegistrations: RoutineRegistration[];
   try {
     pinnedRegistrations = await dependencies.publishedRoutineSource.loadPinned({
       agentId,
       workspaceId,
       agentRevisionId,
-      routineIds: pinnedRoutineIds,
+      routineIds: authoredPins,
     });
   } catch (error) {
     if (agentRevisionId) throw error;
     dependencies.logger.warn(
-      { agentId, routineIds: pinnedRoutineIds, err: error instanceof Error ? error.message : String(error) },
+      { agentId, routineIds: authoredPins, err: error instanceof Error ? error.message : String(error) },
       "Pinned routine definitions failed to load; continuing without resume-only DB-backed routines",
     );
     pinnedRegistrations = [];

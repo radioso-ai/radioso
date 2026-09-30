@@ -865,7 +865,8 @@ export function AgentRevisionTestChat({
       );
       if (!active) return;
     }
-    if (active.state === "partial" || active.activeTurnId) return;
+    // A failed side does not block the next message; only a turn still running does.
+    if (active.activeTurnId) return;
     const turnId = crypto.randomUUID();
     const attemptId = crypto.randomUUID();
     const activeRequestGeneration = testRequestGeneration.current;
@@ -1379,7 +1380,7 @@ export function AgentRevisionTestChat({
     !selectedVariables.some(({ variable }) => !variable);
   const canSend =
     canPrepare &&
-    (!execution || (execution.state !== "partial" && !execution.activeTurnId));
+    (!execution || !execution.activeTurnId);
   const needsDraftSave = isAgentDraftDirty(agentId);
   const evalByRevision = new Map(
     evalRun?.sides.map((side) => [side.revisionId, side]) ?? [],
@@ -1533,8 +1534,8 @@ export function AgentRevisionTestChat({
                 role="status"
                 className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm"
               >
-                Partial result: a side failed or is still incomplete. Successful
-                evidence remains pinned to its revision.
+                Partial result: a side failed or is still incomplete. Retry it,
+                or send the next message.
               </p>
             ) : null}
             {repeatedCompareRevision ? (
@@ -1741,11 +1742,7 @@ export function AgentRevisionTestChat({
                   value={message}
                   onChange={(event) => setMessage(event.target.value)}
                   onKeyDown={submitOnEnter}
-                  placeholder={
-                    execution?.state === "partial"
-                      ? "Retry the failed side or start a new chat"
-                      : "Ask a question..."
-                  }
+                  placeholder="Ask a question..."
                   className="min-h-[36px] max-h-32 flex-1 resize-none border-0 bg-transparent px-2 py-1.5 shadow-none focus-visible:ring-0"
                   disabled={!canSend}
                 />

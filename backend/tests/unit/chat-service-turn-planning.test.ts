@@ -39,6 +39,14 @@ import {
   InMemoryMessageRepository,
 } from "../support/fakes.js";
 import { unpublishedAgentPublicIdentity } from "../../src/modules/agents/public.js";
+import {
+  ApplicationModuleCoordinator,
+  createApplicationExtensionRegistry,
+} from "../../src/app/composition/applicationModule.js";
+import { createContactRoutineApplicationModule } from "../../src/app/composition/builtIn/contactRoutineModule.js";
+import { createPublishedRoutineRegistrationSource } from "../../src/app/composition/routineDefinitionSource.js";
+import { contactRoutineDefinition } from "../../src/modules/chat/services/routines/contactRoutine.js";
+import { createRoutineTurnProvider } from "../../src/modules/routines/turnProvider.js";
 
 const fallbackReplyComposer: FallbackReplyComposer = {
   async composeNoContext() {
@@ -1449,5 +1457,84 @@ describe("chat service fused turn planning", () => {
 
     expect(response.answer).toContain("Hi there!");
     expect(receivedPreviewRoutineIds).toEqual([draftRoutineId]);
+  });
+});
+
+// #1362: every live conversation is bound to the release it started on, and a built-in
+// routine (the contact routine) is never frozen into that release. Resuming it on the
+// visitor's next message must read the built-in registration, not fail the snapshot lookup.
+describe("chat service built-in routine resume on a revision-bound conversation", () => {
+  const builtInRegistrations = (): RoutineRegistration[] => {
+    const registry = createApplicationExtensionRegistry();
+    new ApplicationModuleCoordinator({ logger: { error: () => {} }, registry }).apply([
+      createContactRoutineApplicationModule(),
+    ]);
+    return registry.routineRegistrations;
+  };
+
+  it("resumes the active built-in contact routine on the visitor's next message", async () => {
+    const staged = countingStagedPorts();
+    const release: AgentRevision = {
+      id: "11111111-1111-4111-8111-111111111111",
+      snapshot: { customInstruction: "", directives: [], routines: [], contextVariableEnablements: [] },
+      sourceDraftGeneration: 1,
+      sourceBasePublishedRevisionId: null,
+      createdAt: new Date(0),
+      publishedAt: new Date(0),
+      publishedVersion: 1,
+    };
+    const revisionReader = {
+      findCurrentPublished: vi.fn(async () => release),
+      findRevision: vi.fn(async () => release),
+    };
+    const routineProvider = createRoutineTurnProvider({
+      agentSkillRepository: { listByAgent: vi.fn(async () => []) },
+      capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+      clusteringEmbeddings: {} as never,
+      embeddingModelForWorkspace: vi.fn(async () => "unused"),
+      logger: { debug: vi.fn(), warn: vi.fn() },
+      publishedRoutineSource: createPublishedRoutineRegistrationSource({
+        listActiveByAgent: vi.fn(async () => []),
+        listVersionsByAgent: vi.fn(async () => []),
+        findPinnedById: vi.fn(async () => null),
+        findById: vi.fn(async () => null),
+      }, { revisionReader }),
+      routineDefinitionRepository: {} as never,
+      routineInvocableSkillNames: { listByKindForAgent: vi.fn(async () => ({ webhook: [], customer_email: [], slack: [] })) } as never,
+      routineRegistrations: builtInRegistrations(),
+      routineTriggerEmbeddingService: { persistPublished: vi.fn() },
+      skillExecutorRegistry: {} as never,
+      turnPlanAdapters: {
+        activator: ({ fallback }) => fallback,
+        reentryGate: ({ fallback }) => fallback,
+        slotCorrection: ({ fallback }) => fallback,
+      },
+    });
+    const saved: unknown[] = [];
+    const routineStore: NonNullable<ChatServiceOptions["routineStore"]> = {
+      loadActive: async ({ sessionId }) => ({
+        sessionId,
+        routineId: contactRoutineDefinition.id,
+        path: ["ask_email"],
+        variables: {},
+        status: "active",
+      }),
+      save: async (state) => { saved.push(state); },
+      clear: async () => {},
+    };
+    const service = buildService({
+      pipeline: directPipeline("guest@example.com"),
+      chatGateway: pipelineChatGateway("Where can someone reach you?"),
+      staged,
+      agentRevisionRuntimeResolver: new AgentRevisionRuntimeResolver(revisionReader),
+      routine: { routineStore, routineProvider },
+    });
+
+    const response = await service.answer({ workspaceId: "workspace-1", query: "guest@example.com", stream: false });
+
+    expect(response.answer).toContain("Where can someone reach you?");
+    // The conversation is bound to the release, so the routine catalog is read from it.
+    expect(revisionReader.findRevision).toHaveBeenCalledWith(expect.objectContaining({ revisionId: release.id }));
+    expect(saved).toEqual([expect.objectContaining({ routineId: contactRoutineDefinition.id, status: "active" })]);
   });
 });

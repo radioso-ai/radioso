@@ -1468,12 +1468,14 @@ export interface ConversationRoutineResumeResult {
 /**
  * The step a routine waits on after it yields a turn. The turn is answered normally,
  * and the answer can close by pointing the visitor back to this step. It carries what
- * the step asks for, never the routine's captured values beyond what the instruction
- * itself interpolates.
+ * the step asks for and never a captured value, so a host may place it in a system prompt.
  */
 export interface RoutinePendingStep {
   stepId: string;
-  /** The step's instruction with its slot references filled; context references render empty. */
+  /**
+   * The step's authored instruction with each slot reference shown as its bracketed key
+   * (`[email]`) and each context reference empty.
+   */
   instruction: string;
   /** Keys of the step's required collected slots that are still unfilled. Keys only, never values. */
   missingSlotKeys: string[];
@@ -1481,9 +1483,13 @@ export interface RoutinePendingStep {
 
 /**
  * The active routine declined this turn and stays parked to resume on a later one.
- * `pendingStep` is absent when the runner reported none.
+ * `sessionId` and `inputEventId` name the turn it declined: `processTurn` honors a yield
+ * handed back only on that same turn. `pendingStep` is absent when the runner reported none.
  */
 export interface RoutineTurnYield {
+  sessionId: string;
+  /** Absent when the turn's input event carries no id; such a yield is never honored on hand-back. */
+  inputEventId?: string;
   routineId: string;
   executionId?: string;
   pendingStep?: RoutinePendingStep;
@@ -1604,8 +1610,9 @@ export interface ProcessTurnInput {
   coverageReactionRecorder?: ConversationCoverageReactionRecorder;
   /**
    * The active routine already yielded this turn: the host ran `attemptRoutine` before
-   * preparing the turn. The engine records the yield on the turn's trace and does not
-   * ask the routine about the same message again.
+   * preparing the turn. When its session and input event match this input, the engine
+   * records the yield on the turn's trace and does not ask the routine about the same
+   * message again; otherwise it ignores it and attempts the routine as usual.
    */
   routineYield?: RoutineTurnYield;
 }

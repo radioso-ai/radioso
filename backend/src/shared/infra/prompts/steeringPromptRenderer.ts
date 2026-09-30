@@ -77,17 +77,7 @@ export const renderSteeringBlock = (
   return renderRoutineStepBlock(rules, options) ?? renderSteeringRules(rules, surfaceOptions(options));
 };
 
-/** The step a routine that yielded this turn waits on, carried into the reply. */
-export interface RoutineLeadBack {
-  pendingStep: RoutinePendingStep;
-  /**
-   * The answer's `no_support` decline hands the conversation to a person, so a declined
-   * answer leaves the lead-back out. Only an answer that commits an outcome can honor it.
-   */
-  declineHandsOff?: boolean;
-}
-
-const renderRoutineLeadBack = ({ pendingStep, declineHandsOff }: RoutineLeadBack): string =>
+const renderRoutineLeadBack = (pendingStep: RoutinePendingStep): string =>
   renderPromptTemplate("chat/routine-lead-back.md", {
     pending_step: `- ${pendingStep.instruction}`,
     missing_slots: pendingStep.missingSlotKeys.length > 0
@@ -95,7 +85,6 @@ const renderRoutineLeadBack = ({ pendingStep, declineHandsOff }: RoutineLeadBack
         slot_keys: pendingStep.missingSlotKeys.join(", "),
       })}`
       : "",
-    decline_handoff: declineHandsOff ? `\n\n${loadPromptTemplate("chat/routine-lead-back-decline-handoff.md")}` : "",
   });
 
 /**
@@ -105,20 +94,21 @@ const renderRoutineLeadBack = ({ pendingStep, declineHandsOff }: RoutineLeadBack
  * sentence (`chat/routine-lead-back.md`). Callers append it last: placed before a grounded
  * answer's coverage and envelope rules, the model left the closing sentence out. Nothing
  * is appended when a routine step's rule steers the reply, since that routine is handling
- * the turn itself.
+ * the turn itself. The pending step carries slot keys, never captured values, so no
+ * visitor text reaches the system prompt through it.
  */
 export const appendRoutineLeadBack = (
   prompt: string,
   steering: SteeringRule[] = [],
-  leadBack?: RoutineLeadBack,
+  pendingStep?: RoutinePendingStep,
 ): string => {
-  if (!leadBack || (!leadBack.pendingStep.instruction && leadBack.pendingStep.missingSlotKeys.length === 0)) {
+  if (!pendingStep || (!pendingStep.instruction && pendingStep.missingSlotKeys.length === 0)) {
     return prompt;
   }
   if (partitionRoutineStepSteering(surfaceRules(steering, {})).instructions.length > 0) {
     return prompt;
   }
-  return `${prompt}\n\n${renderRoutineLeadBack(leadBack)}`;
+  return `${prompt}\n\n${renderRoutineLeadBack(pendingStep)}`;
 };
 
 export const appendSteeringBlock = (

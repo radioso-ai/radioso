@@ -46,9 +46,7 @@ export class AssistantReplyComposer {
       pageContextCondition: this.support.pageContextCondition(session),
       conversationSummary: session.conversationSummary,
       steering: session.directiveSteering?.rules ?? [],
-      ...(session.routineYield?.pendingStep
-        ? { routineLeadBack: { pendingStep: session.routineYield.pendingStep } }
-        : {}),
+      pendingRoutineStep: session.routineYield?.pendingStep,
     });
   }
 
@@ -105,6 +103,7 @@ export class AssistantReplyComposer {
       userExpectedLocale,
       answerInstructionBlock: this.support.buildAnswerInstructionBlock(session),
       steering: session.directiveSteering?.rules ?? [],
+      pendingRoutineStep: session.routineYield?.pendingStep,
       workspaceContext: this.support.buildChatWorkspaceContext(session),
       usageContext: this.support.buildChatUsageContext(session, accountId, `${this.config.outcomeKind}_miss`),
     });
@@ -159,6 +158,7 @@ export class AssistantReplyComposer {
       userExpectedLocale,
       answerInstructionBlock: this.support.buildAnswerInstructionBlock(session),
       steering: session.directiveSteering?.rules ?? [],
+      pendingRoutineStep: session.routineYield?.pendingStep,
       workspaceContext: this.support.buildChatWorkspaceContext(session),
       usageContext: this.support.buildChatUsageContext(session, accountId, `stream_${this.config.outcomeKind}_miss`),
       signal,

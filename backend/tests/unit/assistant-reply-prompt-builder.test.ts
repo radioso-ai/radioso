@@ -29,7 +29,7 @@ describe("non-retrieval answer prompt builder", () => {
       missingSlotKeys: ["arrival", "departure"],
     };
 
-    const prompt = buildAssistantReplyPrompt({ ...base, routineLeadBack: { pendingStep } });
+    const prompt = buildAssistantReplyPrompt({ ...base, pendingRoutineStep: pendingStep });
 
     expect(prompt).toContain(`- ${pendingStep.instruction}`);
     expect(prompt).toContain("arrival, departure");

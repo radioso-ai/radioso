@@ -135,13 +135,20 @@ type OpenedTurn =
   | { claimed: ProcessTurnResult }
   | { claimed: null; routineYield?: RoutineTurnYield };
 
+/** A handed-back yield counts only for the turn it was taken on. */
+const isYieldForTurn = (routineYield: RoutineTurnYield, input: ProcessTurnInput | ProcessTurnStreamInput): boolean =>
+  routineYield.sessionId === input.sessionId
+  && routineYield.inputEventId !== undefined
+  && routineYield.inputEventId === input.inputEvent.id;
+
 export class DefaultConversationEngine implements ConversationEngine {
   /**
    * The routine pass that opens a turn. A host that ran it before preparing the turn
-   * passes the yield in, so the routine is not asked about the same message twice.
+   * passes the yield in, so the routine is not asked about the same message twice; a
+   * yield taken on any other turn is ignored and the routine is asked as usual.
    */
   private async openTurn(input: ProcessTurnInput | ProcessTurnStreamInput): Promise<OpenedTurn> {
-    if (input.routineYield) {
+    if (input.routineYield && isYieldForTurn(input.routineYield, input)) {
       return { claimed: null, routineYield: input.routineYield };
     }
     const observed: { routineYield?: RoutineTurnYield } = {};

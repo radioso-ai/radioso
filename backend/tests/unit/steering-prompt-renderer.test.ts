@@ -123,41 +123,31 @@ describe("appendRoutineLeadBack", () => {
   const tone = rule("Use the formal register.", 60);
   const pendingStep = {
     stepId: "ask_dates",
-    instruction: "Ask Giulia for the arrival and departure dates.",
+    instruction: "Ask [name] for the arrival and departure dates.",
     missingSlotKeys: ["arrival", "departure"],
   };
-  const leadBackBlock = (declineHandoff = "") =>
+  const leadBackBlock = (step = pendingStep) =>
     renderPromptTemplate("chat/routine-lead-back.md", {
-      pending_step: `- ${pendingStep.instruction}`,
-      missing_slots: `\n${renderPromptTemplate("chat/routine-lead-back-missing-slots.md", { slot_keys: "arrival, departure" })}`,
-      decline_handoff: declineHandoff,
+      pending_step: `- ${step.instruction}`,
+      missing_slots: step.missingSlotKeys.length > 0
+        ? `\n${renderPromptTemplate("chat/routine-lead-back-missing-slots.md", { slot_keys: step.missingSlotKeys.join(", ") })}`
+        : "",
     });
 
   it("closes the prompt with the pending step and the keys it still needs", () => {
-    expect(appendRoutineLeadBack("Prompt.", [tone], { pendingStep })).toBe(`Prompt.\n\n${leadBackBlock()}`);
+    expect(appendRoutineLeadBack("Prompt.", [tone], pendingStep)).toBe(`Prompt.\n\n${leadBackBlock()}`);
+    expect(leadBackBlock()).toContain("arrival, departure");
   });
 
   it("leaves out the missing-slots line when the step names no unfilled slot", () => {
-    expect(appendRoutineLeadBack("Prompt.", [], { pendingStep: { ...pendingStep, missingSlotKeys: [] } })).toBe(
-      `Prompt.\n\n${renderPromptTemplate("chat/routine-lead-back.md", {
-        pending_step: `- ${pendingStep.instruction}`,
-        missing_slots: "",
-        decline_handoff: "",
-      })}`,
-    );
-  });
+    const step = { ...pendingStep, missingSlotKeys: [] };
 
-  it("tells a grounded answer to drop the lead-back when its decline hands the visitor to a person", () => {
-    expect(appendRoutineLeadBack("Prompt.", [], { pendingStep, declineHandsOff: true })).toBe(
-      `Prompt.\n\n${leadBackBlock(`\n\n${loadPromptTemplate("chat/routine-lead-back-decline-handoff.md")}`)}`,
-    );
+    expect(appendRoutineLeadBack("Prompt.", [], step)).toBe(`Prompt.\n\n${leadBackBlock(step)}`);
   });
 
   it("appends nothing without a pending step, or with one that asks for nothing", () => {
     expect(appendRoutineLeadBack("Prompt.", [tone])).toBe("Prompt.");
-    expect(appendRoutineLeadBack("Prompt.", [], {
-      pendingStep: { stepId: "ask_dates", instruction: "", missingSlotKeys: [] },
-    })).toBe("Prompt.");
+    expect(appendRoutineLeadBack("Prompt.", [], { stepId: "ask_dates", instruction: "", missingSlotKeys: [] })).toBe("Prompt.");
   });
 
   it("gives way to a routine step that controls the reply", () => {
@@ -167,6 +157,17 @@ describe("appendRoutineLeadBack", () => {
       lifespan: "response",
     };
 
-    expect(appendRoutineLeadBack("Prompt.", [stepRule, tone], { pendingStep })).toBe("Prompt.");
+    expect(appendRoutineLeadBack("Prompt.", [stepRule, tone], pendingStep)).toBe("Prompt.");
+  });
+
+  // A directive that only tells the reply to point the visitor elsewhere transfers nothing:
+  // the conversation stays with the agent and the routine still waits, so the reply may
+  // follow the directive and still close with the lead-back.
+  it("still closes with the lead-back when a directive's text points the visitor elsewhere", () => {
+    const redirect = rule("For parking questions, tell the visitor to call reception at +39 055 123 4567.", 70);
+    const prompt = appendSteeringBlock("Prompt.", [redirect]);
+
+    expect(appendRoutineLeadBack(prompt, [redirect], pendingStep)).toBe(`${prompt}\n\n${leadBackBlock()}`);
   });
 });
+

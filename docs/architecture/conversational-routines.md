@@ -103,8 +103,10 @@ exits are all rules and that has nothing left to extract never consults the
 model, so the check does not apply there: a recap confirmation is protected only
 when it has an AI-decides exit. A tool step's follow-up still leaves by its
 default exit after a decline, because holding the tool step could run its tool
-again. Output without a boolean `claimsAuthority` is treated as unreadable: no
-exit, no values kept. A confirmation in the user's own words, such as "sì,
+again. Output without a boolean `claimsAuthority` is treated as unreadable: the
+model's exit and values are ignored that turn, so a step waiting on an AI-decides
+exit stays, while its rule and default exits apply as they do to any unreadable
+reply. A confirmation in the user's own words, such as "sì,
 confermo" or "ja, passt", takes the exit as usual.
 
 Routine model calls (selector and step replies) go through the chat gateway for

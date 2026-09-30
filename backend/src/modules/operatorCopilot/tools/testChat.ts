@@ -205,7 +205,7 @@ export interface TestChatCopilotToolDependencies {
 const SESSIONS_DESCRIPTION = "List an agent's recent Test Chat sessions, newest first: the revision each side ran (a draft candidate or a published version), the session's state and skill-effects policy, how many messages were sent, and the first one. Test Chat sessions are private test runs and never appear in conversation_history_search. Read one with test_chat_transcript.";
 const TRANSCRIPT_DESCRIPTION = "Read one Test Chat session: per side, the revision it ran and each turn's message, answer, state or failure code, and the stages the turn went through. Use test_chat_turn_trace for one turn's full diagnostic spine.";
 const TURN_TRACE_DESCRIPTION = "Inspect one Test Chat turn's full diagnostic spine, in the same trace shape turn_trace returns for a customer conversation, with the revision the turn ran on and its failure code when it did not answer.";
-const SEND_DESCRIPTION = "Send one message through Test Chat, the private, revision-pinned test surface of the dashboard, and return the answer, outcome, and the stages the turn went through. Without testExecutionId it starts a session on revisionId, or on a fresh candidate of the saved draft (the published revision when the draft has no changes); with testExecutionId it continues that single-revision session. Skills never act outward here. The session stays in the agent's Test Chat history, where the operator can open it; read the turn with test_chat_turn_trace.";
+const SEND_DESCRIPTION = "Send one message through Test Chat, the private, revision-pinned test surface of the dashboard, and return the answer, outcome, and the stages the turn went through. Without testExecutionId it starts a session on revisionId, or on a fresh candidate of the saved draft (the published revision when the draft has no changes); with testExecutionId it continues that single-revision session. Skills never act outward here. The session stays in the agent's Test Chat history, where the operator can open it; read the turn with test_chat_turn_trace. Metered at up to 30 calls per minute per grant, separate from every other tool's shared 6-per-minute budget; an exhausted budget returns retryAfterSeconds and a resetAt time to retry after.";
 
 export const createTestChatCopilotTools = (
   deps: TestChatCopilotToolDependencies,
@@ -338,6 +338,10 @@ export const createTestChatCopilotTools = (
     shape: "probe",
     // One real agent turn per call.
     verificationCost: () => 1,
+    // Test Chat turns are private, suppress skill effects, and are already metered as answers
+    // against the plan quota, so they draw from their own operator MCP budget rather than the
+    // shared verification ceiling every other probe/propose tool shares.
+    operatorMcpBudgetKind: "test_chat",
     uiLabel: "Sending a Test Chat message",
     contributingModule: "testExecution",
     dashboardSubject: { type: "agent" },

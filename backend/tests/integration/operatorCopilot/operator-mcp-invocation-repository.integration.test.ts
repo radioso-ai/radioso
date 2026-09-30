@@ -136,6 +136,40 @@ describeIntegration("OperatorMcpInvocationRepository", () => {
     expect(attempts.filter((result) => result.status === "budget_exhausted")).toHaveLength(1);
   });
 
+  it("tells a caller when the oldest reservation in the window ages out", async () => {
+    await clearInvocations();
+    const now = new Date("2026-09-04T00:00:00.000Z");
+    for (let index = 0; index < 6; index += 1) {
+      await expect(repository.admit(baseInput({
+        id: randomUUID(), operationId: `retry-info-${index}`, verificationCost: 1, proofNonceDigest: randomUUID().replaceAll("-", ""), now,
+      }))).resolves.toMatchObject({ status: "admitted" });
+    }
+
+    await expect(repository.admit(baseInput({
+      id: randomUUID(), operationId: "retry-info-overflow", verificationCost: 1, proofNonceDigest: randomUUID().replaceAll("-", ""), now,
+    }))).resolves.toEqual({ status: "budget_exhausted", retryAfterSeconds: 60, resetAt: new Date(now.getTime() + 60_000) });
+  });
+
+  it("meters Test Chat turns against their own ceiling, independent of the shared verification budget", async () => {
+    await clearInvocations();
+    const limited = new OperatorMcpInvocationRepository(database.kysely, { verificationBudgetPerMinute: 1, testChatBudgetPerMinute: 2 });
+    await expect(limited.admit(baseInput({
+      id: randomUUID(), operationId: "shared-verification-spend", verificationCost: 1, budgetKind: "verification", proofNonceDigest: randomUUID().replaceAll("-", ""),
+    }))).resolves.toMatchObject({ status: "admitted" });
+
+    // The shared verification ceiling (1) is already spent, but Test Chat draws from its own.
+    const testChatAttempts = await Promise.all(Array.from({ length: 3 }, (_, index) => limited.admit(baseInput({
+      id: randomUUID(), operationId: `test-chat-${index}`, verificationCost: 1, budgetKind: "test_chat", proofNonceDigest: randomUUID().replaceAll("-", ""),
+    }))));
+    expect(testChatAttempts.filter((result) => result.status === "admitted")).toHaveLength(2);
+    expect(testChatAttempts.filter((result) => result.status === "budget_exhausted")).toHaveLength(1);
+
+    // Test Chat's spend never refills the verification ceiling it never drew from.
+    await expect(limited.admit(baseInput({
+      id: randomUUID(), operationId: "verification-still-exhausted", verificationCost: 1, budgetKind: "verification", proofNonceDigest: randomUUID().replaceAll("-", ""),
+    }))).resolves.toMatchObject({ status: "budget_exhausted" });
+  });
+
   it("refunds only an admitted pre-effect reservation and reconciles its outcome", async () => {
     await clearInvocations();
     const first = baseInput({ verificationCost: 2, operationId: "refund-before-effect" });
@@ -159,10 +193,10 @@ describeIntegration("OperatorMcpInvocationRepository", () => {
     await expect(repository.admit(admitted)).resolves.toMatchObject({ status: "admitted" });
     await expect(repository.prepareInvocation({
       invocationId: admitted.id, operationId: "prepared-operation", descriptorName: "retrieval_probe",
-      shape: "probe", inputDigest: "keyed-input-digest", verificationCost: 2, now: admitted.now,
+      shape: "probe", inputDigest: "keyed-input-digest", verificationCost: 2, budgetKind: "verification", now: admitted.now,
     })).resolves.toMatchObject({
       status: "prepared",
-      invocation: { operationId: "prepared-operation", inputDigest: "keyed-input-digest", verificationCost: 2, budgetReservedAt: admitted.now },
+      invocation: { operationId: "prepared-operation", inputDigest: "keyed-input-digest", verificationCost: 2, budgetKind: "verification", budgetReservedAt: admitted.now },
     });
   });
 
@@ -173,7 +207,7 @@ describeIntegration("OperatorMcpInvocationRepository", () => {
     await repository.admit(original);
     await repository.prepareInvocation({
       invocationId: original.id, operationId, descriptorName: "propose_ingestion_settings",
-      shape: "propose", inputDigest: "proposal-input", verificationCost: 0, now: original.now,
+      shape: "propose", inputDigest: "proposal-input", verificationCost: 0, budgetKind: "verification", now: original.now,
     });
     await repository.consumeProof(original.proofNonceDigest, original.now);
     await repository.claimRunning({ invocationId: original.id, now: original.now });
@@ -223,7 +257,7 @@ describeIntegration("OperatorMcpInvocationRepository", () => {
     await repository.admit(original);
     await repository.prepareInvocation({
       invocationId: original.id, operationId, descriptorName: "propose_ingestion_settings",
-      shape: "propose", inputDigest: "proposal-input", verificationCost: 0, now: original.now,
+      shape: "propose", inputDigest: "proposal-input", verificationCost: 0, budgetKind: "verification", now: original.now,
     });
     await repository.consumeProof(original.proofNonceDigest, original.now);
     await repository.claimRunning({ invocationId: original.id, now: original.now });
@@ -281,6 +315,7 @@ describeIntegration("OperatorMcpInvocationRepository", () => {
       shape: "propose",
       inputDigest: "proposal-input",
       verificationCost: 0,
+      budgetKind: "verification",
       now: new Date(original.now.getTime() + 121_000),
     })));
     expect(attempts.map((attempt) => attempt.status).sort()).toEqual(["prepared", "replay"]);

@@ -92,19 +92,24 @@ one on the request; standalone retrieval, MCP, and eval retrieval surfaces do no
 run response-language detection. Query rewrite does not own response-language
 selection.
 
-The detector judges the language from the words the user wrote: its own
-instructions are in English and the assistant's replies may be in any language,
-so its prompt treats neither as evidence. This matters most for a routine
-handoff ending, which renders the authored message in the turn's language and
-so repeats it word for word whenever the label matches the language it was
-authored in. When detection yields no label, every generator takes the language
-from the latest user message instead, and a routine handoff ending renders from
-that message directly. The turn span records where the language came from
+The detector judges the language from the user's own messages, including any
+explicit "answer in X" request. The assistant's replies stay out of its context
+once the user has written, because they carry whatever language a routine step,
+a directive, or an earlier label produced. Before that, the opening greeting is
+the only context, which is what lets a first message such as "ok" keep the
+greeting's language. The prompt also states that its English instructions say
+nothing about the user's language. This matters most for a routine handoff
+ending, which renders the authored message in the turn's language and so repeats
+it word for word whenever the label matches the language it was authored in.
+When a turn has no label, every generator takes the language from the latest
+user message instead, and a routine handoff ending renders from that message
+directly. The turn span records where the language came from
 (`chat.response.language.source` is `planner` or `detector`) and, when there is
-no label, why (`chat.response.language.unresolved_reason`). A detector call that
-throws or returns malformed output also logs a `response_language_unresolved`
-warning whose only fields are the workspace, conversation, reason, and error
-type.
+no label from either, why (`chat.response.language.unresolved_reason`, which is
+`no_label` when a valid plan or detection names no language). A detector call
+that throws or returns malformed output also logs a
+`response_language_unresolved` warning whose only fields are the workspace,
+conversation, reason, and error type.
 
 ## Fused turn planning
 

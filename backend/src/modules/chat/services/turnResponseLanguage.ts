@@ -24,15 +24,28 @@ interface TurnResponseLanguageInput {
   logger?: Pick<AppLogger, "warn">;
 }
 
+/**
+ * Records the turn's response language on the active span: the label and where it came
+ * from, or — when there is none — a stable reason. The fused planner and the staged
+ * detector both record through here so the attribute set stays the same whichever
+ * decided the turn.
+ */
+export const traceTurnResponseLanguage = (
+  source: "planner" | "detector",
+  language: string | undefined,
+  unresolvedReason: TurnResponseLanguageUnresolvedReason = "no_label",
+): void => {
+  setTraceAttributes(language
+    ? { "chat.response.language": language, "chat.response.language.source": source }
+    : { "chat.response.language.source": source, "chat.response.language.unresolved_reason": unresolvedReason });
+};
+
 const recordUnresolved = (
   input: TurnResponseLanguageInput,
   reason: TurnResponseLanguageUnresolvedReason,
   errorType?: string,
 ): void => {
-  setTraceAttributes({
-    "chat.response.language.source": "detector",
-    "chat.response.language.unresolved_reason": reason,
-  });
+  traceTurnResponseLanguage("detector", undefined, reason);
   if (EXPECTED_UNRESOLVED_REASONS.has(reason)) {
     return;
   }
@@ -72,10 +85,7 @@ export const detectTurnResponseLanguage = async (
     return undefined;
   }
   if (result.responseLanguage) {
-    setTraceAttributes({
-      "chat.response.language": result.responseLanguage,
-      "chat.response.language.source": "detector",
-    });
+    traceTurnResponseLanguage("detector", result.responseLanguage);
     return result.responseLanguage;
   }
   recordUnresolved(input, result.unresolvedReason ?? "no_label");

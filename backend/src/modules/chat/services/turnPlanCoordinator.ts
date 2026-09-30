@@ -19,8 +19,8 @@ import type { LlmCapabilityResolveInput } from "../../../shared/infra/llm/worksp
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
-import { setTraceAttributes } from "../../../shared/observability/tracing/operations.js";
 import type { PageReadCapability } from "./pageRead/pageReadDecision.js";
+import { traceTurnResponseLanguage } from "./turnResponseLanguage.js";
 import {
   estimateTurnPlanningPromptTokens,
   TurnPlanService,
@@ -498,9 +498,9 @@ export const planAwareTurnInterpreter = (deps: {
 });
 
 /**
- * Resolve the turn's response language from the plan when planned, keeping the
- * `chat.response.language` trace attribute the detector would have set; otherwise
- * await the staged detector promise.
+ * Resolve the turn's response language from the plan when planned, recording the same
+ * trace attributes the detector would have set (a valid plan with no language records
+ * `no_label`); otherwise await the staged detector promise.
  */
 export const planAwareResponseLanguage = async (deps: {
   handle: PlanHandle;
@@ -510,10 +510,7 @@ export const planAwareResponseLanguage = async (deps: {
   if (!outcome || outcome.status !== "planned") {
     return deps.fallback();
   }
-  setTraceAttributes({
-    "chat.response.language": outcome.plan.responseLanguage,
-    "chat.response.language.source": "planner",
-  });
+  traceTurnResponseLanguage("planner", outcome.plan.responseLanguage);
   return outcome.plan.responseLanguage;
 };
 

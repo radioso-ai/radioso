@@ -35,10 +35,21 @@ const DIRECTION_CONTROL = /[‪-‮⁦-⁩]/u;
  */
 const INVISIBLE_CHARACTER = /[\p{Cf}\p{Z}ᅟᅠㅤﾠ]/gu;
 
-const EMAIL_ADDRESS_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const WHITESPACE = /\s/u;
 
-/** Structural only: something@domain.tld with no spaces, whatever the script. */
-export const looksLikeEmailAddress = (value: string): boolean => EMAIL_ADDRESS_SHAPE.test(value);
+/**
+ * Structural only: something@domain.tld with no spaces, whatever the script.
+ * String scanning rather than a pattern, so the cost stays linear on stored
+ * text of any length.
+ */
+export const looksLikeEmailAddress = (value: string): boolean => {
+  const at = value.indexOf("@");
+  if (at <= 0 || at !== value.lastIndexOf("@") || WHITESPACE.test(value)) {
+    return false;
+  }
+  // A dot with at least one character on each side somewhere in the domain.
+  return value.slice(at + 2, -1).includes(".");
+};
 
 /** Trims the input; blank clears the name. Length counts characters, not UTF-16 units. */
 export const normalizeDisplayName = (input: string | null): DisplayNameNormalization => {

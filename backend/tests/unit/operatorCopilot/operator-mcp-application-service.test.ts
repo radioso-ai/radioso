@@ -1248,7 +1248,6 @@ describe("Test Chat tools resolve an agent without dashboard page context", () =
       testExecutionId: uuid("61"), started: false, sideId: uuid("62"), revision: mcpRevision, turnId: uuid("63"),
       outcome: "completed" as const, failureCode: null, answer: "hello", messageId: uuid("64"), turnTrace: undefined,
     })),
-    findAgentId: vi.fn(async () => uuid("6")),
     ...overrides,
   });
 
@@ -1274,6 +1273,11 @@ describe("Test Chat tools resolve an agent without dashboard page context", () =
   };
 
   it("(a) resolves send_test_chat_message's agent from testExecutionId alone, and never records a dependency_error", async () => {
+    // The descriptor no longer resolves anything itself (see #1361 review): it forwards
+    // agentId: undefined straight through, and test-execution -- not stubbed here, see
+    // test-execution-service.test.ts for its own resolution coverage -- is the one that would
+    // resolve or reject it. This proves the descriptor and the MCP stack around it never again
+    // turn a resolvable call into a dependency_error/503, whatever the real owner then decides.
     const testExecutionId = uuid("70");
     const testChat = stubTestChat();
     const send = testChatMcpDescriptor("send_test_chat_message", testChat);
@@ -1282,12 +1286,11 @@ describe("Test Chat tools resolve an agent without dashboard page context", () =
     const response = await unkeyedCall(service, send.name, { testExecutionId, message: "Can I book a demo?" });
 
     expect(response).toMatchObject({ safeOutcomeCode: "completed" });
-    expect(testChat.findAgentId).toHaveBeenCalledWith({ workspaceId: principal.workspaceId, testExecutionId });
-    expect(testChat.sendMessage).toHaveBeenCalledWith(expect.objectContaining({ agentId: uuid("6"), testExecutionId }));
+    expect(testChat.sendMessage).toHaveBeenCalledWith(expect.objectContaining({ agentId: undefined, testExecutionId }));
     notDependencyError(invocations, audit);
   });
 
-  it("(b) resolves test_chat_transcript's and test_chat_turn_trace's agent from testExecutionId alone", async () => {
+  it("(b) forwards test_chat_transcript's and test_chat_turn_trace's agent as unresolved when the caller has none, and never records a dependency_error", async () => {
     const testExecutionId = uuid("71");
     const turnId = uuid("72");
     const testChat = stubTestChat();
@@ -1296,17 +1299,15 @@ describe("Test Chat tools resolve an agent without dashboard page context", () =
     const transcriptCall = build(transcript, readScope);
     const transcriptResponse = await unkeyedCall(transcriptCall.service, transcript.name, { testExecutionId }, "edge-transcript");
     expect(transcriptResponse).toMatchObject({ safeOutcomeCode: "completed" });
-    expect(testChat.readSession).toHaveBeenCalledWith(expect.objectContaining({ agentId: uuid("6"), testExecutionId }));
+    expect(testChat.readSession).toHaveBeenCalledWith(expect.objectContaining({ agentId: undefined, testExecutionId }));
     notDependencyError(transcriptCall.invocations, transcriptCall.audit);
 
     const turnTrace = testChatMcpDescriptor("test_chat_turn_trace", testChat);
     const turnTraceCall = build(turnTrace, readScope);
     const turnTraceResponse = await unkeyedCall(turnTraceCall.service, turnTrace.name, { testExecutionId, turnId }, "edge-turn-trace");
     expect(turnTraceResponse).toMatchObject({ safeOutcomeCode: "completed" });
-    expect(testChat.readTurn).toHaveBeenCalledWith(expect.objectContaining({ agentId: uuid("6"), testExecutionId, turnId }));
+    expect(testChat.readTurn).toHaveBeenCalledWith(expect.objectContaining({ agentId: undefined, testExecutionId, turnId }));
     notDependencyError(turnTraceCall.invocations, turnTraceCall.audit);
-
-    expect(testChat.findAgentId).toHaveBeenCalledTimes(2);
   });
 
   it("(c) rejects test_chat_sessions with no agent as invalid_arguments, not a runtime outage -- it has no testExecutionId to fall back on", async () => {
@@ -1358,8 +1359,12 @@ describe("Test Chat tools resolve an agent without dashboard page context", () =
   });
 
   it("(e) reads a cross-workspace testExecutionId as not found, not as a missing-agent rejection", async () => {
+    // test-execution -- the real owner, exercised directly in test-execution-service.test.ts --
+    // answers a testExecutionId this workspace does not own with the same notFound it gives any
+    // other wrong id. This proves that rejection still reaches the caller as a clean
+    // invalid_arguments through the full descriptor + MCP stack, not a dependency_error.
     const testExecutionId = uuid("90");
-    const testChat = stubTestChat({ findAgentId: vi.fn(async () => null) });
+    const testChat = stubTestChat({ sendMessage: vi.fn(async () => { throw notFound("Test execution is unavailable."); }) });
     const send = testChatMcpDescriptor("send_test_chat_message", testChat);
     const { service, invocations, audit } = build(send, probeScope);
 
@@ -1372,6 +1377,5 @@ describe("Test Chat tools resolve an agent without dashboard page context", () =
     expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
       eventStatus: "failure", metadata: expect.objectContaining({ outcome: "refused", reason: "invalid_arguments" }),
     }));
-    expect(testChat.sendMessage).not.toHaveBeenCalled();
   });
 });

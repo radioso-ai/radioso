@@ -482,7 +482,6 @@ callerKind: "human" as const,
       readSession: unusedPort("testChat.readSession"),
       readTurn: unusedPort("testChat.readTurn"),
       sendMessage: unusedPort("testChat.sendMessage"),
-      findAgentId: unusedPort("testChat.findAgentId"),
     },
     retrievalProbe: {
       probe: async ({ agentId }: { agentId: string }) => ({

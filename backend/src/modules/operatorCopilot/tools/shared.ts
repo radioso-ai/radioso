@@ -98,9 +98,21 @@ export const asRecord = (value: object): Record<string, unknown> => value as Rec
  * is unavailable -- so this is a domain `badRequest`, which the operator MCP boundary maps to a
  * clean `invalid_arguments` rejection instead of an opaque dependency failure (see
  * `toApplicationError` in mcpApplicationService.ts).
+ *
+ * Most callers' schemas accept `agentName` alongside `agentId` (resolved by `describeNamedAgent`),
+ * so the message names both by default. A descriptor whose schema has no `agentName` field (e.g.
+ * `agent_publication_state`) must pass `{ acceptsAgentName: false }`, or the message tells the
+ * caller to pass a field its own schema would then reject.
  */
-export const requiredPageAgent = (agentId: string | null): string => {
-  if (!agentId) throw badRequest("No agent is selected. Pass agentId or agentName.");
+export const requiredPageAgent = (
+  agentId: string | null,
+  options: { readonly acceptsAgentName?: boolean } = {},
+): string => {
+  if (!agentId) {
+    throw badRequest(options.acceptsAgentName === false
+      ? "No agent is selected. Pass agentId."
+      : "No agent is selected. Pass agentId or agentName.");
+  }
   return agentId;
 };
 export const requiredPageConversation = (conversationId: string | null): string => {

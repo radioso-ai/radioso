@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { readFile, readdir } from "node:fs/promises";
 
-import { afterAll, beforeAll, expect, it } from "vitest";
+import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { digestOperatorMcpCall, type OperatorMcpScope } from "@radioso/operator-mcp-contract";
 
 import { AccountRepository } from "../../../src/db/repositories/accountRepository.js";
@@ -473,6 +473,57 @@ describeIntegration("the reviewed approval gate, proven against Postgres's row l
 
     // The pre-claim refusal never reached `claimMcpReviewedProposalApply`, so the proposal was never
     // bound to that refused receipt -- it is still exactly what it was before the call.
+    await expect(proposals.findProposal({ id: proposal.id, workspaceId: fixture.workspace.id, operatorUserId: fixture.operatorUserId }))
+      .resolves.toMatchObject({ status: "pending", executionInvocationId: null });
+
+    authorized = true;
+    const retry = await callTool(service, { name: "execute_reviewed_proposal", arguments: args });
+    expect(retry).toMatchObject({
+      structuredContent: { proposalId: proposal.id, status: "applied", appliedRef: { directiveId: existing.id } },
+      safeOutcomeCode: "completed",
+    });
+
+    const directives = await authoredDirectiveService.list(fixture.workspace.id, fixture.agent.id);
+    expect(directives.find((directive) => directive.id === existing.id)).toMatchObject({ action: payload.action });
+  });
+
+  /**
+   * Issue #1339: the permission is revoked between the pre-claim check and the post-claim
+   * recheck, so the denial lands after `claimMcpReviewedProposalApply` bound the proposal to the
+   * first receipt. Nothing was applied, so the release must leave the proposal unbound; otherwise
+   * every retry after the permission is restored answers `not_prepared` until the proposal expires.
+   */
+  it("lets an identical execute retry apply once its post-claim permission denial is fixed", async () => {
+    const fixture = await createFixture();
+    const existing = await agentRepository.createDirective(fixture.agent.id, fixture.workspace.id, createDirectiveInput("post-claim-denied-then-restored"));
+    const payload = { name: "post-claim-denied-then-restored", condition: { kind: "always" }, action: "Applied once the post-claim permission is restored." };
+    const proposal = await proposals.createProposal({
+      workspaceId: fixture.workspace.id, operatorUserId: fixture.operatorUserId,
+      origin: { type: "operator_mcp_invocation", invocationId: fixture.invocationId },
+      targetType: "directive", targetRef: { agentId: fixture.agent.id, directiveId: existing.id }, payload,
+      versionToken: existing.updatedAt.toISOString(), evidence: null, reviewDigest: REVIEW_DIGEST, reviewSnapshot: {},
+      expiresAt: new Date(Date.now() + 60_000), confirmationRequirement: "conversation",
+      changeEffect: { exposure: "draft", reversibility: "reversible", metered: false },
+    });
+    let authorized = true;
+    const { service } = buildRealMcpService(fixture, { isAuthorized: () => authorized });
+    const args = { proposalId: proposal.id, reviewDigest: REVIEW_DIGEST };
+    const claim = proposals.claimMcpReviewedProposalApply.bind(proposals);
+    const claimStatuses: string[] = [];
+    const revokeAfterClaim = vi.spyOn(proposals, "claimMcpReviewedProposalApply").mockImplementationOnce(async (input) => {
+      const claimed = await claim(input);
+      claimStatuses.push(claimed.status);
+      authorized = false;
+      return claimed;
+    });
+
+    try {
+      await expect(callTool(service, { name: "execute_reviewed_proposal", arguments: args }))
+        .rejects.toMatchObject({ code: "invalid_arguments" });
+    } finally {
+      revokeAfterClaim.mockRestore();
+    }
+    expect(claimStatuses).toEqual(["claimed"]);
     await expect(proposals.findProposal({ id: proposal.id, workspaceId: fixture.workspace.id, operatorUserId: fixture.operatorUserId }))
       .resolves.toMatchObject({ status: "pending", executionInvocationId: null });
 

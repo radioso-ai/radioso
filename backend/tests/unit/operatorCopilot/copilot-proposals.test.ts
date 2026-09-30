@@ -653,6 +653,27 @@ describe("US3 copilot proposals", () => {
     expect(applyIfVersionMatches).toHaveBeenCalledOnce();
   });
 
+  it("keeps an interrupted dashboard apply's start when authority is revoked after the reclaim", async () => {
+    const repository = new MemoryProposalRepository();
+    const proposal = await repository.createProposal({ workspaceId, operatorUserId, conversationId: "conversation-1", targetType: "directive", targetRef: { agentId, directiveId }, payload: { name: "Updated" }, versionToken: "current", evidence: null });
+    await repository.claimProposalApply({ id: proposal.id, workspaceId, operatorUserId, claimTtlSeconds: 300 });
+    repository.expireApplyClaim(proposal.id);
+    const applyIfVersionMatches = vi.fn();
+    const service = new OperatorCopilotService({
+      repository, capabilityRunner: { runStreaming: vi.fn() }, usageLimitPolicy: noLimitPolicy(), auditService: auditService(), prompt: "system", workspaceRouteKeyResolver, tools: [],
+      currentAuthorization: { hasAllPermissions: vi.fn().mockResolvedValueOnce(true).mockResolvedValueOnce(false) },
+      proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches }],
+    });
+
+    await expect(service.applyProposal({ surface: "dashboard", workspaceId, accountId, operatorUserId, proposalId: proposal.id }))
+      .rejects.toBeInstanceOf(CopilotAuthorizationError);
+
+    expect(applyIfVersionMatches).not.toHaveBeenCalled();
+    // The next claim still sees the interrupted attempt's lapsed start, not the denied reclaim's own.
+    const next = await repository.claimProposalApply({ id: proposal.id, workspaceId, operatorUserId, claimTtlSeconds: 300 });
+    expect(next?.previousAttemptStartedAt?.getTime()).toBeLessThan(Date.now() - 300_000);
+  });
+
   it("settles an interrupted MCP apply from the owner receipt without repeating the mutation", async () => {
     const repository = new MemoryProposalRepository();
     const proposal = await repository.createProposal({ workspaceId, operatorUserId, conversationId: "conversation-1", targetType: "directive", targetRef: { agentId, directiveId }, payload: { name: "Updated" }, versionToken: "current", evidence: null });
@@ -767,10 +788,42 @@ describe("US3 copilot proposals", () => {
 
     expect(applyIfVersionMatches).not.toHaveBeenCalled();
     expect(repository.hasApplyClaim(proposal.id)).toBe(false);
-    expect((await repository.findProposal({ id: proposal.id, workspaceId, operatorUserId }))?.status).toBe("pending");
+    // Nothing was applied, so no receipt needs to reconcile it: a retry under any receipt may claim.
+    await expect(repository.findProposal({ id: proposal.id, workspaceId, operatorUserId })).resolves.toMatchObject({ status: "pending", executionInvocationId: null });
     // An authorization refusal is not an unconfirmed owner effect - the claim releases cleanly, so
     // there is nothing here for support to correlate.
     expect(logger.warn).not.toHaveBeenCalled();
+  });
+
+  it("keeps an interrupted MCP apply bound to its receipt when authorization is revoked after the reclaim", async () => {
+    const repository = new MemoryProposalRepository();
+    const proposal = await repository.createProposal({ workspaceId, operatorUserId, conversationId: "conversation-1", targetType: "directive", targetRef: { agentId, directiveId }, payload: { name: "Updated" }, versionToken: "current", evidence: null });
+    const claimInput = { proposalId: proposal.id, reviewDigest: "a".repeat(43), executionInvocationId: "execution-1", workspaceId, operatorUserId, grantId: "grant-1", clientId: "client-1", now: new Date(), claimTtlSeconds: 300 };
+    await repository.claimMcpReviewedProposalApply(claimInput);
+    repository.expireApplyClaim(proposal.id);
+    const reclaimed = await repository.claimMcpReviewedProposalApply(claimInput);
+    if (reclaimed.status !== "claimed") throw new Error(`expected claim, got ${reclaimed.status}`);
+    const interruptedAt = reclaimed.claim.previousAttemptStartedAt;
+    expect(interruptedAt).not.toBeNull();
+    const reconcileMcpInterruptedApply = vi.fn();
+    const applyIfVersionMatches = vi.fn();
+    const service = new OperatorCopilotService({
+      repository, capabilityRunner: { runStreaming: vi.fn() }, usageLimitPolicy: noLimitPolicy(), auditService: auditService(), prompt: "system", workspaceRouteKeyResolver, tools: [],
+      currentAuthorization: { hasAllPermissions: vi.fn(async () => false) },
+      proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches, reconcileMcpInterruptedApply }],
+    });
+
+    await expect(service.executeClaimedProposal({
+      input: { surface: "mcp", workspaceId, accountId, operatorUserId, proposalId: proposal.id }, claim: reclaimed.claim, executionInvocationId: "execution-1",
+    })).rejects.toBeInstanceOf(CopilotAuthorizationError);
+
+    expect(reconcileMcpInterruptedApply).not.toHaveBeenCalled();
+    expect(applyIfVersionMatches).not.toHaveBeenCalled();
+    // The interrupted attempt may have landed: only its receipt may reconcile it, and the next
+    // reclaim must still see that attempt rather than apply as if it were the first.
+    await expect(repository.findProposal({ id: proposal.id, workspaceId, operatorUserId })).resolves.toMatchObject({ status: "pending", executionInvocationId: "execution-1" });
+    const next = await repository.claimMcpReviewedProposalApply(claimInput);
+    expect(next).toMatchObject({ status: "claimed", claim: { previousAttemptStartedAt: interruptedAt } });
   });
 
   it("allows cancellation for a proposal that has not reserved an MCP receipt", async () => {
@@ -1211,12 +1264,17 @@ class MemoryProposalRepository implements CopilotRepositoryPort {
     }
     return claim ? { status: "claimed" as const, claim } : { status: "not_prepared" as const };
   }
-  async releaseProposalApplyClaim(input: { id: string; workspaceId: string; operatorUserId: string; claimedAt: Date }): Promise<boolean> {
+  async releaseProposalApplyClaim(input: { id: string; workspaceId: string; operatorUserId: string; claimedAt: Date; previousAttemptStartedAt: Date | null }): Promise<boolean> {
     const proposal = await this.findProposal(input);
     if (!proposal || proposal.status !== "pending") return false;
     const claimedAt = this.applyClaims.get(proposal.id);
     if (!claimedAt || claimedAt.getTime() !== input.claimedAt.getTime()) return false;
-    this.applyClaims.delete(proposal.id);
+    if (input.previousAttemptStartedAt) {
+      this.applyClaims.set(proposal.id, input.previousAttemptStartedAt);
+    } else {
+      this.applyClaims.delete(proposal.id);
+      this.proposals[this.proposals.indexOf(proposal)] = { ...proposal, executionInvocationId: null };
+    }
     return true;
   }
   async cancelPendingProposal(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotProposal | null> {

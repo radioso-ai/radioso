@@ -81,7 +81,7 @@ const build = (activeDescriptor: CopilotToolDescriptor = descriptor, activePrinc
     id: uuid("12"), credentialId: principal.credentialId, grantId: principal.grantId, grantVersion: principal.grantVersion,
     accountId: principal.accountId, workspaceId: principal.workspaceId, userId: principal.userId, clientId: principal.clientRecordId,
     method: "tools/list" as const, descriptorName: null, shape: null, operationId: null, inputDigest: "digest", verificationCost: 0,
-    budgetReservedAt: null, proofNonceDigest: "nonce", proofConsumedAt: null, status: "admitted" as const,
+    budgetKind: "verification" as const, budgetReservedAt: null, proofNonceDigest: "nonce", proofConsumedAt: null, status: "admitted" as const,
     safeOutcomeCode: null, safeRejectionDetails: [], resultReference: null, createdAt: now, completedAt: null, retainedUntil: new Date(now.getTime() + 86_400_000),
   };
   let proofConsumed = false;
@@ -511,6 +511,55 @@ describe("OperatorMcpApplicationService", () => {
       .rejects.toMatchObject({ code: "missing_configuration" });
     expect(invocations.recordOutcome).toHaveBeenCalledWith(expect.objectContaining({ status: "refused", safeOutcomeCode: "missing_configuration" }));
     expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ eventStatus: "failure", metadata: expect.objectContaining({ outcome: "refused", reason: "missing_configuration" }) }));
+  });
+
+  it("carries the repository's retry timing on a budget-exhausted refusal and names the ceiling in the audit record", async () => {
+    const resetAt = new Date("2026-09-30T00:01:00.000Z");
+    const { service, invocations, audit } = build();
+    invocations.prepareInvocation.mockResolvedValueOnce({ status: "budget_exhausted", retryAfterSeconds: 42, resetAt });
+    const argumentsValue = { section: "retrieval" };
+    const admitted = await service.admit({
+      accessToken: "operator-access", invocationId: uuid("13"), method: "tools/call", descriptorName: descriptor.name,
+      resource: principal.resource, timestamp: "1788480000", nonce: "budget-exhausted", bodyDigest: callDigest(argumentsValue),
+    });
+
+    await expect(service.invoke({ proof: admitted.proof, name: descriptor.name, arguments: argumentsValue, bodyDigest: callDigest(argumentsValue) }))
+      .rejects.toMatchObject({ code: "budget_exhausted", retry: { retryAfterSeconds: 42, resetAt } });
+
+    expect(invocations.prepareInvocation).toHaveBeenCalledWith(expect.objectContaining({ budgetKind: "verification" }));
+    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
+      eventStatus: "failure",
+      metadata: expect.objectContaining({ outcome: "refused", reason: "budget_exhausted", budgetKind: "verification" }),
+    }));
+  });
+
+  it("omits retry timing entirely when the repository reports a cost that can never fit", async () => {
+    const { service, invocations } = build();
+    invocations.prepareInvocation.mockResolvedValueOnce({ status: "budget_exhausted" });
+    const argumentsValue = { section: "retrieval" };
+    const admitted = await service.admit({
+      accessToken: "operator-access", invocationId: uuid("13"), method: "tools/call", descriptorName: descriptor.name,
+      resource: principal.resource, timestamp: "1788480000", nonce: "budget-exhausted-no-retry", bodyDigest: callDigest(argumentsValue),
+    });
+
+    const invoked = service.invoke({ proof: admitted.proof, name: descriptor.name, arguments: argumentsValue, bodyDigest: callDigest(argumentsValue) });
+
+    await expect(invoked).rejects.toMatchObject({ code: "budget_exhausted", retry: undefined });
+  });
+
+  it("charges a descriptor's own budget kind rather than the shared verification ceiling", async () => {
+    const testChatDescriptor: CopilotToolDescriptor = { ...descriptor, name: "send_test_chat_message", operatorMcpBudgetKind: "test_chat" };
+    const { service, invocations } = build(testChatDescriptor);
+    const argumentsValue = { section: "retrieval" };
+    const bodyDigest = digestOperatorMcpCall({ name: testChatDescriptor.name, arguments: argumentsValue });
+    const admitted = await service.admit({
+      accessToken: "operator-access", invocationId: uuid("13"), method: "tools/call", descriptorName: testChatDescriptor.name,
+      resource: principal.resource, timestamp: "1788480000", nonce: "test-chat-budget", bodyDigest,
+    });
+
+    await service.invoke({ proof: admitted.proof, name: testChatDescriptor.name, arguments: argumentsValue, bodyDigest });
+
+    expect(invocations.prepareInvocation).toHaveBeenCalledWith(expect.objectContaining({ budgetKind: "test_chat" }));
   });
 
   it("re-runs a read fresh even when the client repeats an earlier operation id", async () => {

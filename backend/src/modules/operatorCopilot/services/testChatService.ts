@@ -14,6 +14,12 @@ const presentHeader = (execution: Pick<TestExecution, "id" | "mode" | "state" | 
 });
 const presentTurn = (turn: TestExecutionTurn) => ({ ...turn, createdAt: turn.createdAt.toISOString() });
 
+/** Starting a session with no execution to continue has nothing for test-execution to resolve an agent from. */
+const requiredStartAgentId = (agentId: string | undefined): string => {
+  if (!agentId) throw badRequest("Starting a new Test Chat session needs an agent: pass agentId or agentName.");
+  return agentId;
+};
+
 /** Test Chat over test-execution's own reads and calls. Sessions started here suppress outward skill effects, so a turn stays a probe. */
 export class TestChatService implements Port {
   constructor(private readonly dependencies: TestChatServiceDependencies) {}
@@ -21,10 +27,6 @@ export class TestChatService implements Port {
   async listSessions({ workspaceId, agentId, limit, cursor }: Parameters<Port["listSessions"]>[0]): ReturnType<Port["listSessions"]> {
     const page = await this.dependencies.executions.summaries({ workspaceId, agentId, limit, ...(cursor ? { cursor } : {}) });
     return { sessions: page.executions.map((item) => ({ ...presentHeader(item), sides: item.sides.map(presentSide), turnCount: item.turnCount, firstMessage: item.firstMessage })), nextCursor: page.nextCursor };
-  }
-
-  async findAgentId({ workspaceId, testExecutionId }: Parameters<Port["findAgentId"]>[0]): ReturnType<Port["findAgentId"]> {
-    return this.dependencies.executions.findAgentId({ workspaceId, executionId: testExecutionId });
   }
 
   async readSession({ workspaceId, agentId, testExecutionId }: Parameters<Port["readSession"]>[0]): ReturnType<Port["readSession"]> {
@@ -42,13 +44,18 @@ export class TestChatService implements Port {
     const message = input.message.trim();
     if (!message) throw badRequest("message is required");
     if (input.testExecutionId && input.revisionId) throw badRequest("revisionId chooses the revision a new session starts on; a session continues on the revision it started with, so send testExecutionId or revisionId, not both.");
+    // Starting has no session for test-execution to resolve an agent from, so this is the one path
+    // that still validates locally; a pure input-shape check, so it costs nothing before the spend.
+    if (!input.testExecutionId) requiredStartAgentId(agentId);
     // Refusals that need only a read come before the spend, so a wrong session id costs nothing.
     const continued = input.testExecutionId ? await this.continuableSession({ workspaceId, agentId, executionId: input.testExecutionId }) : null;
     await enforceCopilotExpensiveOperation(this.dependencies, input, "send_test_chat_message");
     return withCopilotSpendRefusals(async () => {
       // Without a revision, test-execution starts on the agent's default one, as the dashboard does.
       const revision = input.revisionId ? { revisionIds: [input.revisionId] } : {};
-      const execution = continued ?? await this.dependencies.executions.start({ workspaceId, agentId, accountId, mode: "single", ...revision, testValues: [], idempotencyKey: this.dependencies.createId(), skillEffects: "suppressed" });
+      // Continuing needs no agentId here: test-execution resolves and verifies it from the session
+      // itself (see `TestExecutionService.send`).
+      const execution = continued ?? await this.dependencies.executions.start({ workspaceId, agentId: requiredStartAgentId(agentId), accountId, mode: "single", ...revision, testValues: [], idempotencyKey: this.dependencies.createId(), skillEffects: "suppressed" });
       const turnId = this.dependencies.createId();
       const { side, turn } = await this.dependencies.executions.send({ workspaceId, agentId, accountId, executionId: execution.id, message, generation: execution.generation, turnId, attemptId: this.dependencies.createId() });
       // The session records the refused turn; the caller gets the same refusal every probe gives.
@@ -61,7 +68,7 @@ export class TestChatService implements Port {
     });
   }
 
-  private async continuableSession(input: { workspaceId: string; agentId: string; executionId: string }): Promise<Pick<TestExecution, "id" | "generation">> {
+  private async continuableSession(input: { workspaceId: string; agentId?: string; executionId: string }): Promise<Pick<TestExecution, "id" | "generation">> {
     const session = await this.dependencies.executions.transcript(input);
     if (session.mode !== "single") throw badRequest("This Test Chat session compares two revisions, and a comparison continues in the dashboard. Start a new session here, or continue this one there.");
     // Skill effects are frozen per session. A session that lets skills act outward would turn this

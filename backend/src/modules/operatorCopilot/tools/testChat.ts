@@ -5,7 +5,6 @@ import type { CopilotTestChatPort, CopilotTestChatTurn } from "../contracts/test
 import { serializedLength, truncationRecordSchema } from "../payloadCompaction.js";
 import { boundTurnTracePayload, CONVERSATION_PAYLOAD_CHAR_BUDGET, turnTraceEnvelopeSchema } from "./chatPayloadBounds.js";
 import { describeNamedAgent, requiredPageAgent, type CopilotAgentLookupPort } from "./shared.js";
-import { badRequest, notFound } from "../../../shared/domain/errors.js";
 
 export type { CopilotTestChatPort } from "../contracts/testChat.js";
 
@@ -209,31 +208,17 @@ const TURN_TRACE_DESCRIPTION = "Inspect one Test Chat turn's full diagnostic spi
 const SEND_DESCRIPTION = "Send one message through Test Chat, the private, revision-pinned test surface of the dashboard, and return the answer, outcome, and the stages the turn went through. Without testExecutionId it starts a session on revisionId, or on a fresh candidate of the saved draft (the published revision when the draft has no changes); with testExecutionId it continues that single-revision session. Skills never act outward here. The session stays in the agent's Test Chat history, where the operator can open it; read the turn with test_chat_turn_trace. Metered at up to 30 calls per minute per grant, separate from every other tool's shared 6-per-minute budget; an exhausted budget returns retryAfterSeconds and a resetAt time to retry after.";
 
 /**
- * The agent one Test Chat call runs against. `describeEntity` (see `describeNamedAgent`) has
- * already turned a matching `agentName` into `input.agentId` before this runs, so what is left is:
- * the caller's own id, the dashboard's open agent page, or -- continuing a session -- the agent
- * that session belongs to, read from test-execution's own record rather than trusted from the
- * caller. This is the only path with a `testExecutionId` to fall back on; `test_chat_sessions` has
- * none and always needs an explicit agent.
- *
- * A `testExecutionId` this workspace does not own resolves to nothing, so it reads as not-found --
- * the same as any other id this credential cannot reach -- rather than leaking that it exists in
- * another workspace.
+ * The agent a session-scoped Test Chat call names explicitly, from either the caller's own input
+ * (`describeEntity` -- see `describeNamedAgent` -- has already turned a matching `agentName` into
+ * `input.agentId` before this runs) or the dashboard's open agent page. Neither is test-execution's
+ * concern, so this is as far as the copilot layer decides: without one, `undefined` goes through to
+ * `readSession`/`readTurn`/`sendMessage`, which resolve and verify the agent from the session itself
+ * (see `TestExecutionService.resolveAgentId`). This descriptor never queries or decides ownership.
  */
-const resolveSessionAgentId = async (
-  input: { readonly agentId?: string; readonly testExecutionId?: string },
-  context: { readonly workspaceId: string; readonly pageContext: { readonly agentId: string | null } },
-  testChat: CopilotTestChatPort,
-): Promise<string> => {
-  if (input.agentId) return input.agentId;
-  if (context.pageContext.agentId) return context.pageContext.agentId;
-  if (input.testExecutionId) {
-    const agentId = await testChat.findAgentId({ workspaceId: context.workspaceId, testExecutionId: input.testExecutionId });
-    if (agentId) return agentId;
-    throw notFound("Test execution is unavailable.");
-  }
-  throw badRequest("Pass agentId or agentName to select an agent, or testExecutionId to continue an existing Test Chat session.");
-};
+const explicitAgentId = (
+  input: { readonly agentId?: string },
+  context: { readonly pageContext: { readonly agentId: string | null } },
+): string | undefined => input.agentId ?? context.pageContext.agentId ?? undefined;
 
 export const createTestChatCopilotTools = (
   deps: TestChatCopilotToolDependencies,
@@ -295,7 +280,7 @@ export const createTestChatCopilotTools = (
       invoke: async (input) => {
         const session = await deps.testChat.readSession({
           workspaceId: context.workspaceId,
-          agentId: await resolveSessionAgentId(input, context, deps.testChat),
+          agentId: explicitAgentId(input, context),
           testExecutionId: input.testExecutionId,
         });
         const omissions: TranscriptOmission[] = [];
@@ -336,7 +321,7 @@ export const createTestChatCopilotTools = (
       invoke: async (input) => {
         const detail = await deps.testChat.readTurn({
           workspaceId: context.workspaceId,
-          agentId: await resolveSessionAgentId(input, context, deps.testChat),
+          agentId: explicitAgentId(input, context),
           testExecutionId: input.testExecutionId,
           turnId: input.turnId,
           ...(input.sideId ? { sideId: input.sideId } : {}),
@@ -387,7 +372,7 @@ export const createTestChatCopilotTools = (
           workspaceId: context.workspaceId,
           accountId: context.accountId,
           operatorUserId: context.operatorUserId,
-          agentId: await resolveSessionAgentId(input, context, deps.testChat),
+          agentId: explicitAgentId(input, context),
           message: input.message,
           ...(input.testExecutionId ? { testExecutionId: input.testExecutionId } : {}),
           ...(input.revisionId ? { revisionId: input.revisionId } : {}),

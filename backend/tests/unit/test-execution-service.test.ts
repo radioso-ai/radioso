@@ -611,6 +611,21 @@ describe("TestExecutionService turn reads", () => {
     await expect(service.turn({ ...scope, executionId: execution.id, turnId: "turn-1", sideId: "side-unknown" })).rejects.toMatchObject({ statusCode: 404 });
   });
 
+  it("resolves the effective agent from the execution itself when the caller has no agentId yet (#1361: an operator MCP client continuing a session by id alone)", async () => {
+    const { service } = setup();
+    const execution = await service.start({ ...scope, idempotencyKey: "idem-resolve", accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [] });
+
+    await expect(service.transcript({ workspaceId, executionId: execution.id })).resolves.toMatchObject({ id: execution.id });
+  });
+
+  it("reads a testExecutionId this workspace does not own, or one that does not exist, as not found rather than resolving an agent", async () => {
+    const { service } = setup();
+    const execution = await service.start({ ...scope, idempotencyKey: "idem-resolve-missing", accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [] });
+
+    await expect(service.transcript({ workspaceId: "99999999-9999-4999-8999-999999999999", executionId: execution.id })).rejects.toMatchObject({ statusCode: 404 });
+    await expect(service.transcript({ workspaceId, executionId: "88888888-8888-4888-8888-888888888888" })).rejects.toMatchObject({ statusCode: 404 });
+  });
+
   it("lists a page with each execution's turn count and opening message from one projection read", async () => {
     const { service, repository } = setup();
     const item = (id: string): TestExecutionHistoryItem => ({ id, mode: "single", generation: 1, state: "completed", createdAt: new Date(0), skillEffects: "suppressed", sides: [] });
@@ -663,6 +678,15 @@ describe("TestExecutionService send", () => {
 
     expect(turn).toMatchObject({ turnId: "turn-1", userMessage: "hello", state: "failed", failureCode: "stale_attempt", answer: null, turnTrace: undefined });
     await expect(context.service.turn({ ...scope, executionId: execution.id, turnId: "turn-1" })).resolves.toMatchObject({ turn: { state: "running", failureCode: null } });
+  });
+
+  it("resolves the effective agent from the execution and claims the turn under it when the caller has no agentId yet", async () => {
+    // #1361: an operator MCP client continuing a Test Chat session by testExecutionId alone.
+    const context = setup();
+    const { send } = await started(context);
+    const { agentId: _omitted, ...withoutAgentId } = send;
+
+    await expect(context.service.send(withoutAgentId)).resolves.toMatchObject({ turn: { state: "completed" } });
   });
 
   it("reports an attempt whose outcome could not be saved as failed with its code", async () => {

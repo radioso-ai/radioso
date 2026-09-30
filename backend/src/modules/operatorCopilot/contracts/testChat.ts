@@ -79,11 +79,22 @@ interface CopilotTestChatScope {
   readonly agentId: string;
 }
 
-export interface CopilotTestChatSendInput extends CopilotTestChatScope {
+/**
+ * Scope for a call keyed by an existing session id. The agent is optional here: test-execution
+ * resolves it from the execution's own record when the caller does not have one yet, and verifies
+ * a supplied one through the same per-field scope every other read and write already uses -- this
+ * port never decides agent ownership itself.
+ */
+interface CopilotTestChatExecutionScope {
+  readonly workspaceId: string;
+  readonly agentId?: string;
+}
+
+export interface CopilotTestChatSendInput extends CopilotTestChatExecutionScope {
   readonly accountId: string;
   readonly operatorUserId: string;
   readonly message: string;
-  /** Continues this session; without it a new single-revision session starts. */
+  /** Continues this session; without it a new single-revision session starts, which needs an explicit agent. */
   readonly testExecutionId?: string;
   /** The revision a new session starts on; without it the dashboard's default is used. */
   readonly revisionId?: string;
@@ -98,25 +109,18 @@ export interface CopilotTestChatPort {
     readonly sessions: ReadonlyArray<CopilotTestChatSessionSummary>;
     readonly nextCursor: string | null;
   }>;
-  readSession(input: CopilotTestChatScope & { readonly testExecutionId: string }): Promise<CopilotTestChatSession>;
-  readTurn(input: CopilotTestChatScope & {
+  readSession(input: CopilotTestChatExecutionScope & { readonly testExecutionId: string }): Promise<CopilotTestChatSession>;
+  readTurn(input: CopilotTestChatExecutionScope & {
     readonly testExecutionId: string;
     readonly turnId: string;
     /** Defaults to the session's first side. */
     readonly sideId?: string;
   }): Promise<CopilotTestChatTurnDetail>;
   sendMessage(input: CopilotTestChatSendInput): Promise<CopilotTestChatSendResult>;
-  /**
-   * The agent a Test Chat session belongs to, scoped by workspace alone -- what a caller that has
-   * a `testExecutionId` but no `agentId` (an operator MCP client continuing a session) needs before
-   * it can call any of the reads above. Null when this workspace owns no such execution, so a
-   * cross-workspace id reads as not-found rather than leaking that it exists elsewhere.
-   */
-  findAgentId(input: { readonly workspaceId: string; readonly testExecutionId: string }): Promise<string | null>;
 }
 
 /** Test-execution's reads and the calls that drive one turn; the copilot makes exactly these. */
-export type CopilotTestChatExecutionPort = Pick<TestExecutionService, "summaries" | "transcript" | "turn" | "start" | "send" | "findAgentId">;
+export type CopilotTestChatExecutionPort = Pick<TestExecutionService, "summaries" | "transcript" | "turn" | "start" | "send">;
 
 export interface TestChatServiceDependencies extends CopilotExpensiveOperationGuardDependencies {
   readonly executions: CopilotTestChatExecutionPort;

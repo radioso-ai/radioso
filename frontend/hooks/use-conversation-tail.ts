@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 
 import { hitlApi } from '@/lib/api-hitl'
 import type { ChatConversationMessage, ConversationActivityEntry, ConversationOwnership } from '@/lib/api-types'
+import { mergeActivity } from '@/lib/conversation-activity'
 import { mergeTailMessages } from '@/lib/conversation-tail'
 
 interface UseConversationTailInput {
@@ -25,8 +26,9 @@ interface ConversationTailState {
    */
   ownership: ConversationOwnership | undefined
   /**
-   * The conversation's whole activity timeline as of the latest poll, oldest first; undefined until
-   * a poll has read it. Weighed against the detail fetch's by `freshestActivity`.
+   * The conversation's activity timeline as of the latest poll, oldest first; undefined until a poll
+   * has read it. The first poll reads the whole timeline, each later one only what was recorded
+   * since, merged in. Merged with the detail fetch's by `mergeActivity`.
    */
   activity: ConversationActivityEntry[] | undefined
   cursor: string | null
@@ -52,6 +54,7 @@ export const useConversationTail = ({
     let cancelled = false
     let timeoutId: ReturnType<typeof setTimeout> | undefined
     let currentCursor: string | undefined = initialCursor
+    let currentActivityCursor: string | undefined
 
     queueMicrotask(() => {
       if (cancelled) {
@@ -80,18 +83,25 @@ export const useConversationTail = ({
 
     const poll = async () => {
       try {
-        const tail = await hitlApi.tailConversation(conversationId, { cursor: currentCursor })
+        const tail = await hitlApi.tailConversation(conversationId, {
+          cursor: currentCursor,
+          activityCursor: currentActivityCursor,
+        })
         if (cancelled) {
           return
         }
 
         setMessages((existing) => mergeTailMessages(existing, tail.messages))
         setOwnership(tail.ownership)
-        setActivity(tail.activity)
+        const newActivity = tail.activity
+        if (newActivity) {
+          setActivity((existing) => mergeActivity(existing, newActivity))
+        }
         setCursor(tail.cursor)
         setError(null)
         setHasPolled(true)
         currentCursor = tail.cursor ?? undefined
+        currentActivityCursor = tail.activityCursor ?? undefined
       } catch (caught) {
         if (cancelled) {
           return

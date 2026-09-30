@@ -39,7 +39,7 @@ In **Needs you**, the left pane lists open items with search and filters for typ
 
 Both lenses share the same reading pane. Select an actionable conversation — one waiting on a human or already human-owned — and it opens: a one-line header naming the visitor, the page they were on, and how long they've been waiting; a situation card with the handoff reason and the visitor's opening request; the live transcript; and a reply composer. Send a reply to a conversation nobody holds yet and you've claimed it — there's no separate take-over step first. **Assign** next to Send places a conversation waiting for a teammate: **Me** first, then every teammate who can take it. Once someone holds the conversation, the menu reads **Reassign** and lists **Me** and every teammate except whoever holds it; on one you hold, it lists your teammates. Choose a teammate and the conversation is theirs, with an email linking to it when email delivery is configured. When a teammate already holds the conversation, the composer gives way to "Dana Scully is handling this · **Reassign**", so two people never reply blind; Reassign → **Me** transfers it to you and brings the composer back, with anything you'd drafted still in it. A human reply's badge names the teammate who wrote it, by display name or email, even when the visitor saw it from "A teammate". Between the messages, short muted lines tell you what happened and who did it: "Handed off · No answer found", "Dana Scully took this", "Dana Scully assigned this to Fox", "Fox handed this back to the agent", "Dana Scully decided · Approve refund", "Fox resolved the feedback". While the item is open, new visitor messages, your own replies, and a take-over, reassignment, or hand-back made elsewhere appear, line included, without a manual refresh. Until the dashboard knows who you are, the pane shows none of the controls that depend on it — no "is handling this" line, no Assign or Reassign, and no Done on a handoff. Choose **Done** to close a handoff and hand the conversation back to the agent; it shows when you hold the conversation or nobody has claimed it. A conversation shows as one row: while it also has an open handoff or approval, the Inbox folds its negative feedback into that row instead of listing it separately, so Done there closes the handoff or approval, not the feedback. Once the conversation is back with the agent, the feedback appears as its own item, and **Done** on it opens the same resolution-reason flow Quality → Review uses to classify it — closing it leaves ownership alone. An approval closes when you choose one of its decision options — it needs no separate Done step. Select any other conversation and the reading pane is read-only, with an outcome footer in place of the composer.
 
-Under the queue, **Recently closed** keeps the last ten items you and your teammates closed — handoffs handed back, approvals decided, negative feedback resolved or dismissed — each with what it was and who closed it: "Handoff · Closed by Dana Scully · 30 Sept, 2:12 PM". Select one to open its conversation in the reading pane, activity lines and all.
+Under the queue, **Recently closed** keeps the last ten items you and your teammates closed — handoffs handed back, approvals decided, negative feedback resolved or dismissed — each with what it was and who closed it: "Handoff · Closed by Dana Scully · 30 Sept, 2:12 PM". Select one to open its conversation in the reading pane, activity lines and all. Resolved and dismissed feedback, there and in the activity lines, shows only to teammates with Quality access — owners and admins.
 
 The browser tab title shows how many items are open, and a soft sound plays when a new handoff or approval arrives while you have the dashboard open.
 
@@ -172,13 +172,17 @@ GET /api/v1/conversations/recently-closed?limit=10
 }
 ```
 
-The Inbox items the workspace closed most recently, newest first — the **Recently closed** strip reads this. `itemKind` is `handoff`, `approval`, or `negative_feedback`; `outcome` is the [activity kind](#conversation-activity) that closed it. `closedBy` is the teammate who closed it, labelled by display name or email, and `null` when a caller that is no teammate closed it — an API token resolving feedback, say — or the teammate's user has since been deleted. `limit` takes 1 to 50 and defaults to 10, and dashboard test chats are left out.
+The Inbox items the workspace closed most recently, newest first — the **Recently closed** strip reads this. `itemKind` is `handoff`, `approval`, or `negative_feedback`; `outcome` is the [activity kind](#conversation-activity) that closed it. `closedBy` is the teammate who closed it, labelled by display name or email, and `null` when a caller that is no teammate closed it — an API token resolving feedback, say — or the teammate's user has since been deleted. `limit` takes 1 to 50 and defaults to 10, and dashboard test chats are left out. Negative feedback is listed only to a caller with Quality access (`workspace.quality.read`); for a member, the limit fills with handoffs and approvals.
 
 ## Conversation activity
 
 Every conversation keeps a record of what happened to it and who did it: the agent handing it off, a teammate taking it, assigning or reassigning it, handing it back, deciding one of its approvals, and resolving or dismissing its negative feedback. Each event is written in the same database transaction as the change it records, so you never see an action without its event, or an event for an action that didn't happen. Replies aren't events — they're messages already.
 
-The operator history detail and tail (`GET /api/v1/history/chat/{conversationId}` and its `/tail`) carry the record as `activity`, oldest first. The tail carries the whole list on every call, so a reader polling it sees an event recorded elsewhere without tracking a second cursor.
+Feedback resolved or dismissed in the 30 days before the record began is in it too, rebuilt from the triage history, so **Recently closed** starts with that month's closed feedback.
+
+The operator history detail and tail (`GET /api/v1/history/chat/{conversationId}` and its `/tail`) carry the record as `activity`, oldest first. The detail carries the whole list; so does a tail, along with an `activityCursor`. Pass that back as the next tail's `activityCursor` and the tail carries only the events recorded since — an empty list, and the same cursor, when nothing happened. A reader polling the tail sees an event recorded elsewhere without re-reading the ones it has.
+
+`feedback_resolved` and `feedback_dismissed` are Quality triage outcomes, so they reach only a caller with Quality access (`workspace.quality.read`). A member follows and takes over conversations without it and reads every other kind.
 
 ```json
 {
@@ -204,7 +208,7 @@ The operator history detail and tail (`GET /api/v1/history/chat/{conversationId}
 | `approval_decided` | A teammate chose an approval option | `actor`, `decision` (the option's id and its label as the routine author wrote it) |
 | `feedback_resolved`, `feedback_dismissed` | A teammate closed negative feedback | `actor`, `resolution` (the triage resolution code), `assistantMessageId` |
 
-`actor` is `null` when the agent acted, which only happens on `handoff_requested`. On any other kind, `null` means a caller that is no teammate made the change, or the teammate's user has since been deleted. Teammates are labelled as they are now, so a rename shows at once — and because a label can be an email, `activity` is operator-only: the public chat API never returns it. Events carry ids and codes, never message content. Ray's conversation transcript carries the same activity, so you can ask it who took a handoff or which option a teammate chose.
+`actor` is `null` when the agent acted, which only happens on `handoff_requested`. On any other kind, `null` means a caller that is no teammate made the change, or the teammate's user has since been deleted. Teammates are labelled as they are now, so a rename shows at once — and because a label can be an email, `activity` is operator-only: the public chat API never returns it. Events carry ids and codes, never message content. Ray's conversation transcript carries the latest 40 events, so you can ask it who took a handoff or which option a teammate chose — and, with Quality access, who closed the feedback.
 
 ## Approvals
 
@@ -235,7 +239,7 @@ POST /api/v1/agents/{agentId}/decisions/{handle}/resolve
 Both surfaces can read forward for new messages instead of refetching the whole transcript:
 
 ```text
-GET /api/v1/history/chat/{conversationId}/tail?cursor=...             (operator)
+GET /api/v1/history/chat/{conversationId}/tail?cursor=...&activityCursor=...   (operator)
 GET /api/v1/public/chat/{token}/tail/{conversationId}?cursor=...      (visitor)
 GET /api/v1/public/chat/{token}/events/{conversationId}              (visitor push, SSE)
 ```
@@ -251,6 +255,7 @@ Each tail call returns messages created after the cursor plus an advanced cursor
 - A takeover returns `409` although nobody replied yet: a teammate holds the conversation. Transfer it to yourself to take it from them.
 - A conversation someone handled shows as waiting for a teammate, with no owner named: it was claimed under organisation-level ownership, or its owner's user was deleted. The next teammate to act on it claims it.
 - **Recently closed** shows "Closed" with no name: a caller that is no teammate closed the item — usually an API token resolving feedback — or the teammate's user was deleted.
+- A teammate sees no resolved or dismissed feedback in **Recently closed** or the activity lines: they are a member, without Quality access. Owners and admins see it.
 - The visitor never sees a "joining" line: the line is model-generated, and a conversation where an operator has already replied gets no waiting line at all — later messages just wait.
 
 ## Read next

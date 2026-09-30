@@ -7,8 +7,9 @@ import {
   type ConversationOwnershipRecord,
   type OwnershipActor,
 } from "../../../modules/handoff/public.js";
+import { FEEDBACK_ACTIVITY_PERMISSION } from "../../../modules/conversationActivity/contracts/index.js";
 import { AppError, badRequest, unauthorized } from "../../../shared/domain/errors.js";
-import { requireWorkspacePermission } from "../middleware/requirePermission.js";
+import { holdsWorkspacePermission, requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../middleware/requireWorkspaceSession.js";
 import { validateBody } from "../middleware/validate.js";
 import { conversationParamsSchema } from "./conversationRouteSchemas.js";
@@ -90,7 +91,8 @@ export const createConversationOwnershipRoutes = (
   });
 
   // The Inbox's recently closed items: handoffs handed back, approvals decided, negative feedback
-  // resolved or dismissed — newest first, each with the teammate who closed it.
+  // resolved or dismissed — newest first, each with the teammate who closed it. Feedback is a
+  // Quality triage outcome, so it is listed only to a caller who may read Quality.
   router.get("/recently-closed", workspaceSession, takeoverPermission, async (req, res, next) => {
     try {
       const query = recentlyClosedQuerySchema.safeParse(req.query);
@@ -98,7 +100,9 @@ export const createConversationOwnershipRoutes = (
         throw badRequest("Invalid query", query.error.flatten());
       }
       const { workspaceId } = readActor(res.locals);
-      const items = await dependencies.conversationActivityReads.listRecentlyClosed(workspaceId, query.data.limit);
+      const items = await dependencies.conversationActivityReads.listRecentlyClosed(workspaceId, query.data.limit, {
+        includeFeedback: await holdsWorkspacePermission(dependencies, res, FEEDBACK_ACTIVITY_PERMISSION),
+      });
 
       res.status(200).json({ items });
     } catch (error) {

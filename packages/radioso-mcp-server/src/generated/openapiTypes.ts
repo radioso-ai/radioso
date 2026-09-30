@@ -2945,7 +2945,7 @@ export interface paths {
         };
         /**
          * List the Inbox items closed most recently
-         * @description Returns the workspace's most recently closed Inbox items, newest first: handoffs handed back to the agent, approvals decided, and negative feedback resolved or dismissed. Each item names the teammate who closed it, labelled by display name, else email. Dashboard test chats are left out.
+         * @description Returns the workspace's most recently closed Inbox items, newest first: handoffs handed back to the agent, approvals decided, and negative feedback resolved or dismissed. Negative feedback is listed only to a caller with Quality access (`workspace.quality.read`). Each item names the teammate who closed it, labelled by display name, else email. Dashboard test chats are left out.
          */
         get: operations["listRecentlyClosedInboxItems"];
         put?: never;
@@ -7793,7 +7793,7 @@ export interface components {
         ConversationOperatorsResponse: {
             operators: components["schemas"]["ConversationOperator"][];
         };
-        /** @description Something a teammate or the agent did to the conversation. Operator reads only. */
+        /** @description Something a teammate or the agent did to the conversation. Operator reads only. `feedback_resolved` and `feedback_dismissed` reach only a caller with Quality access (`workspace.quality.read`). */
         ConversationActivityEntry: {
             /** Format: uuid */
             id: string;
@@ -7943,15 +7943,20 @@ export interface components {
             tailCursor: string | null;
             messages: components["schemas"]["ChatConversationMessage"][];
             ownership?: components["schemas"]["ConversationOwnership"] & unknown;
-            /** @description What teammates and the agent did to the conversation, oldest first: handoffs, claims, reassignments, hand-backs, approvals decided, feedback resolved or dismissed. */
+            /** @description What teammates and the agent did to the conversation, oldest first: handoffs, claims, reassignments, hand-backs, approvals decided, and — for a caller with Quality access — feedback resolved or dismissed. */
             activity?: components["schemas"]["ConversationActivityEntry"][];
         };
         ChatConversationTail: {
             messages: components["schemas"]["ChatConversationMessage"][];
             cursor: string | null;
             ownership?: components["schemas"]["ConversationOwnership"] & unknown;
-            /** @description The conversation's whole activity timeline, oldest first, on every tail, so a reader polling the tail sees an event recorded elsewhere. */
+            /** @description The conversation's activity, oldest first, so a reader polling the tail sees an event recorded elsewhere: the whole timeline, or with `activityCursor` only the events recorded since. Feedback outcomes reach only a caller with Quality access. */
             activity?: components["schemas"]["ConversationActivityEntry"][];
+            /**
+             * Format: uuid
+             * @description Pass as the next tail's `activityCursor` to read only newer activity. Null while the conversation has no activity.
+             */
+            activityCursor?: string | null;
         };
         PublicChatConversationTail: {
             messages: components["schemas"]["PublicChatConversationMessage"][];
@@ -22478,6 +22483,7 @@ export interface operations {
             query?: {
                 limit?: number;
                 cursor?: string;
+                activityCursor?: string;
             };
             header?: never;
             path: {

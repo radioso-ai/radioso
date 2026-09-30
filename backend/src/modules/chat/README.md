@@ -272,8 +272,11 @@ imports from `services/`.
   signature rule above when the reply names no user or the user is gone. It can be
   an email, so the public presenters also strip it; the calling-agent update reader
   reads the tail with ownership only and never gets it. Operator reads also add the
-  conversation's `activity` (`includeActivity`) through the conversation activity
-  module's `ConversationActivityTimelineReader`; the public presenters strip it too.
+  conversation's `activity` (`activity: ConversationActivityReadScope`, resolved from
+  the caller's permissions at the route edge) through the conversation activity
+  module's `ConversationActivityTimelineReader`, labelling the activity's teammates in
+  the same lookup as the repliers; the operator tail reads only the activity after its
+  `activityCursor`. The public presenters strip both.
   `PostgresAssistantTurnPersistence` records a turn's `handoff_requested` event in
   the turn's transaction when the handoff changed ownership.
   `includeTurnFailureDebug` attaches a `turnFailure` fact (failed or superseded,

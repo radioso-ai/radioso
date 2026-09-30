@@ -209,6 +209,7 @@ describe("chat interruption", () => {
       workspaceId,
       conversation.id,
       { limit: 50 },
+      { includeFeedback: true },
     );
     const dashboardFirstMessage = dashboardDetail.messages.find((message) => message.content === "first question");
     expect(dashboardFirstMessage?.turnFailure).toMatchObject({

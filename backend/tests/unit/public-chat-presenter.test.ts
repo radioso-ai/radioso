@@ -187,7 +187,10 @@ describe("public chat presenter", () => {
       resolution: null,
       assistantMessageId: null,
     }];
-    const tail = stripPublicConversationTailCitationArtifacts({ messages: [], cursor: null, activity }, true);
+    const tail = stripPublicConversationTailCitationArtifacts(
+      { messages: [], cursor: null, activity, activityCursor: "a1" },
+      true,
+    );
     const detail = stripPublicConversationCitationArtifacts(
       { messages: [], activity } as unknown as ChatConversationDetail,
       "anonymous-session-1",
@@ -195,6 +198,7 @@ describe("public chat presenter", () => {
     );
 
     expect(tail).not.toHaveProperty("activity");
+    expect(tail).not.toHaveProperty("activityCursor");
     expect(detail).not.toHaveProperty("activity");
   });
 });

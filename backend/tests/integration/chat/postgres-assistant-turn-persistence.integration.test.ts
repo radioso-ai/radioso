@@ -7,6 +7,7 @@ import { ConversationRepository, type ConversationRecord } from "../../../src/db
 import { ConversationOwnershipRepository } from "../../../src/db/repositories/conversationOwnershipRepository.js";
 import { RoutineStateRepository } from "../../../src/db/repositories/routineStateRepository.js";
 import { WorkspaceRepository, type WorkspaceRecord } from "../../../src/db/repositories/workspaceRepository.js";
+import { ConversationActivityRepository } from "../../../src/db/repositories/conversationActivityRepository.js";
 import { PostgresAssistantTurnPersistence } from "../../../src/modules/chat/infra/postgresAssistantTurnPersistence.js";
 import { projectVisitorRequestFacts, resolveContextForTurn } from "../../../src/modules/context-variables/public.js";
 import { Database } from "../../../src/shared/infra/database.js";
@@ -80,7 +81,7 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
     accounts = new AccountRepository(database.kysely);
     workspaces = new WorkspaceRepository(database.kysely);
     conversations = new ConversationRepository(database.kysely);
-    persistence = new PostgresAssistantTurnPersistence(database.kysely, 60_000);
+    persistence = new PostgresAssistantTurnPersistence(database.kysely, new ConversationActivityRepository(database.kysely), 60_000);
   });
 
   afterAll(async () => {
@@ -393,9 +394,9 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
   it("rolls the whole turn back, handoff included, when the handoff's activity cannot be recorded", async () => {
     const { workspace, conversation } = await seedConversation();
     const assistantMessageId = randomUUID();
-    const failing = new PostgresAssistantTurnPersistence(database.kysely, 60_000, undefined, undefined, undefined, {
+    const failing = new PostgresAssistantTurnPersistence(database.kysely, {
       record: async () => { throw new Error("activity unavailable"); },
-    });
+    }, 60_000);
 
     await expect(failing.completeAssistantTurn({
       workspaceId: workspace.id,
@@ -668,7 +669,7 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
         calls.push(`requestDrain:${row.status}`);
       },
     };
-    const persistenceWithPush = new PostgresAssistantTurnPersistence(database.kysely, 60_000, undefined, actionDrainDispatcher);
+    const persistenceWithPush = new PostgresAssistantTurnPersistence(database.kysely, new ConversationActivityRepository(database.kysely), 60_000, undefined, actionDrainDispatcher);
 
     await persistenceWithPush.completeAssistantTurn({
       workspaceId: workspace.id,
@@ -703,7 +704,7 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
     const assistantMessageId = randomUUID();
     const requestDrain = { called: 0 };
     const actionDrainDispatcher = { requestDrain: async () => { requestDrain.called += 1; } };
-    const persistenceWithPush = new PostgresAssistantTurnPersistence(database.kysely, 60_000, undefined, actionDrainDispatcher);
+    const persistenceWithPush = new PostgresAssistantTurnPersistence(database.kysely, new ConversationActivityRepository(database.kysely), 60_000, undefined, actionDrainDispatcher);
 
     await persistenceWithPush.completeAssistantTurn({
       workspaceId: workspace.id,
@@ -734,7 +735,7 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
         throw new Error("cloud tasks unreachable");
       },
     };
-    const persistenceWithPush = new PostgresAssistantTurnPersistence(database.kysely, 60_000, undefined, actionDrainDispatcher);
+    const persistenceWithPush = new PostgresAssistantTurnPersistence(database.kysely, new ConversationActivityRepository(database.kysely), 60_000, undefined, actionDrainDispatcher);
 
     const { message } = await persistenceWithPush.completeAssistantTurn({
       workspaceId: workspace.id,

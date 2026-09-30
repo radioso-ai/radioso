@@ -14,7 +14,7 @@ describe("AssistantHistoryService", () => {
     const chatHistoryService = { getConversation } as unknown as ChatHistoryService;
     const service = new AssistantHistoryService(chatHistoryService);
 
-    await service.getConversation("workspace-1", "conversation-1", { limit: 50 });
+    await service.getConversation("workspace-1", "conversation-1", { limit: 50 }, { includeFeedback: false });
 
     expect(getConversation).toHaveBeenCalledWith(
       "workspace-1",
@@ -26,7 +26,7 @@ describe("AssistantHistoryService", () => {
         includeAgentInternalName: true,
         includeTurnFailureDebug: true,
         includeOperatorLabel: true,
-        includeActivity: true,
+        activity: { includeFeedback: false },
       },
     );
   });
@@ -39,7 +39,7 @@ describe("AssistantHistoryService", () => {
     } as unknown as ChatHistoryService;
     const service = new AssistantHistoryService(chatHistoryService);
 
-    await service.getContactRequest("workspace-1", "contact-1", { limit: 50 });
+    await service.getContactRequest("workspace-1", "contact-1", { limit: 50 }, { includeFeedback: true });
 
     expect(chatHistoryService.getContactRequest).toHaveBeenCalledWith(
       "workspace-1",
@@ -51,23 +51,28 @@ describe("AssistantHistoryService", () => {
         includeAgentInternalName: true,
         includeTurnFailureDebug: true,
         includeOperatorLabel: true,
-        includeActivity: true,
+        activity: { includeFeedback: true },
       },
     );
   });
 
-  it("tails a conversation with ownership, the replying teammate's label, and the activity", async () => {
+  it("tails a conversation with ownership, the replying teammate's label, and the activity since the caller's cursor", async () => {
     const tailConversation = vi.fn(async () => ({}) as never);
     const chatHistoryService = { tailConversation } as unknown as ChatHistoryService;
     const service = new AssistantHistoryService(chatHistoryService);
 
-    await service.tailConversation("workspace-1", "conversation-1", { limit: 20 });
+    await service.tailConversation(
+      "workspace-1",
+      "conversation-1",
+      { limit: 20, activityCursor: "77777777-7777-4777-8777-777777777777" },
+      { includeFeedback: false },
+    );
 
     expect(tailConversation).toHaveBeenCalledWith(
       "workspace-1",
       "conversation-1",
-      { limit: 20 },
-      { includeOwnership: true, includeOperatorLabel: true, includeActivity: true },
+      { limit: 20, activityCursor: "77777777-7777-4777-8777-777777777777" },
+      { includeOwnership: true, includeOperatorLabel: true, activity: { includeFeedback: false } },
     );
   });
 });

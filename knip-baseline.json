@@ -233,7 +233,6 @@
   "types|backend/src/app/composition/workspaceEmbeddingBindingResolver.ts|WorkspaceEmbeddingBindingResolverOptions",
   "types|backend/src/app/http/middleware/expensiveAuthenticatedRateLimiter.ts|ExpensiveAuthenticatedRateLimiterDependencies",
   "types|backend/src/app/http/middleware/requireApiToken.ts|ApiTokenDependencies",
-  "types|backend/src/app/http/middleware/requirePermission.ts|PermissionDependencies",
   "types|backend/src/app/http/presenters/documentSourcePresenter.ts|WebsiteSourceCrawlSettings",
   "types|backend/src/app/http/routes/settingsCredentialsRoutes.ts|ProviderNameInput",
   "types|backend/src/db/repositories/actionRequestRepository.ts|ActionOutboxDepthSnapshot",

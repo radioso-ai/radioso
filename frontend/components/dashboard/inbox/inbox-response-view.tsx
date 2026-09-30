@@ -23,7 +23,7 @@ import { useConversationTail } from '@/hooks/use-conversation-tail'
 import { hitlApi } from '@/lib/api-hitl'
 import { useOptionalAuth } from '@/lib/auth-context'
 import type { ChatConversationSummary, PendingApprovalDecision } from '@/lib/api-types'
-import { freshestActivity } from '@/lib/conversation-activity'
+import { mergeActivity } from '@/lib/conversation-activity'
 import { deriveConversationOutcome } from '@/lib/conversation-outcome'
 import {
   doneControlTooltip,
@@ -172,10 +172,10 @@ export function InboxResponseView({
     () => freshestOwnership(conversationDetail?.ownership, conversationTail.ownership),
     [conversationDetail?.ownership, conversationTail.ownership],
   )
-  // The same for the conversation's activity: the tail poll sees an event recorded elsewhere —
+  // The conversation's activity from both reads: the tail poll sees an event recorded elsewhere —
   // a teammate's claim, reassignment, or hand-back — while this pane stays open.
   const activity = useMemo(
-    () => freshestActivity(conversationDetail?.activity, conversationTail.activity),
+    () => mergeActivity(conversationDetail?.activity, conversationTail.activity),
     [conversationDetail?.activity, conversationTail.activity],
   )
 

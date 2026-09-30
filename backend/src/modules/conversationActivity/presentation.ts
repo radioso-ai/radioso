@@ -1,10 +1,14 @@
-import type {
-  ClosedInboxItemKind,
-  ClosingActivityKind,
-  ConversationActivityEntry,
-  ConversationActivityKind,
-  ConversationActivityPerson,
-  ConversationActivityRecord,
+import {
+  CLOSING_ACTIVITY_KINDS,
+  CONVERSATION_ACTIVITY_KINDS,
+  FEEDBACK_ACTIVITY_KINDS,
+  type ClosedInboxItemKind,
+  type ClosingActivityKind,
+  type ConversationActivityEntry,
+  type ConversationActivityKind,
+  type ConversationActivityPerson,
+  type ConversationActivityReadScope,
+  type ConversationActivityRecord,
 } from "./contracts/index.js";
 
 const CLOSED_ITEM_KIND: Record<ClosingActivityKind, ClosedInboxItemKind> = {
@@ -16,8 +20,18 @@ const CLOSED_ITEM_KIND: Record<ClosingActivityKind, ClosedInboxItemKind> = {
 
 export const closedItemKind = (kind: ClosingActivityKind): ClosedInboxItemKind => CLOSED_ITEM_KIND[kind];
 
-export const isClosingKind = (kind: ConversationActivityKind): kind is ClosingActivityKind =>
-  Object.hasOwn(CLOSED_ITEM_KIND, kind);
+const FEEDBACK_KINDS: ReadonlySet<ConversationActivityKind> = new Set(FEEDBACK_ACTIVITY_KINDS);
+
+const visibleIn = (scope: ConversationActivityReadScope) => (kind: ConversationActivityKind): boolean =>
+  scope.includeFeedback || !FEEDBACK_KINDS.has(kind);
+
+/** The kinds a read within `scope` carries. */
+export const visibleActivityKinds = (scope: ConversationActivityReadScope): ConversationActivityKind[] =>
+  CONVERSATION_ACTIVITY_KINDS.filter(visibleIn(scope));
+
+/** The closing kinds a read within `scope` carries. */
+export const visibleClosingKinds = (scope: ConversationActivityReadScope): ClosingActivityKind[] =>
+  CLOSING_ACTIVITY_KINDS.filter(visibleIn(scope));
 
 const stringField = (detail: Record<string, unknown>, key: string): string | null => {
   const value = detail[key];

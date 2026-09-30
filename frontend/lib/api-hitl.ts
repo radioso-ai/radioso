@@ -133,7 +133,7 @@ export const hitlApi = {
 
   async tailConversation(
     conversationId: string,
-    params: { cursor?: string; limit?: number } = {},
+    params: { cursor?: string; limit?: number; activityCursor?: string } = {},
     signal?: AbortSignal,
   ): Promise<ChatConversationTail> {
     return request<ChatConversationTail>(

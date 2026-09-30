@@ -1,6 +1,6 @@
 import type { Routine, RoutineState, RoutineStep } from "@radioso/conversation-contract";
-import { collectedSlotsForStep, isSlotCollectionStepSatisfied } from "@radioso/conversation-engine";
 
+import { collectedSlotsForStep, isSlotCollectionStepSatisfied } from "./domain.js";
 import { compiledRoutineToolName, type DirectInvocationOutcome } from "./exposure/directInvocationActivator.js";
 import type {
   RoutineInvocationReport,

@@ -44,7 +44,9 @@ A routine definition has four parts.
 - **Transitions** — the edges between steps, each with a guard that decides when
   the edge is taken.
 - **Terminals** — where the flow ends: `complete` (done) or `handoff` (escalate
-  to a person).
+  to a person). A terminal can also carry an `operatorNotice` — an optional
+  subject and intro for the notice operators get when the flow ends there
+  ([How an ending notifies operators](#how-an-ending-notifies-operators)).
 
 ## Guards
 
@@ -374,6 +376,32 @@ A routine keeps its position and captured values in session state until it
 completes or expires. If an action cannot run — for example, the agent no longer
 holds its capability — the turn fails rather than confirming a success that did
 not happen.
+
+### How an ending notifies operators
+
+A terminal decides two independent things. Its `kind` decides who owns the
+conversation afterwards: `handoff` moves it to a person, `complete` leaves it
+with the agent. Its notice decides whether operators are told. One rule,
+`endingNotifiesOperators` in `@radioso/routine-definition`, states which
+endings notify: every `handoff`, and a `complete` that carries an
+`operatorNotice`. An `operatorNotice` holds an optional `subject` and `intro`;
+either may reference `{{slot.<key>}}`, and validation reports a reference to an
+undeclared slot as `referenced_undeclared_slot` at the notice field
+(`step:<terminal>.operatorNotice.subject`). A notice reads collected values; it
+never collects one, so it plays no part in which step collects a slot.
+
+The compiler applies the rule when it builds the routine graph from the stored
+definition: every terminal step that notifies carries the notice template in its
+metadata, possibly empty. The runner reads it back when a turn lands on that
+terminal, and the engine reports it on the turn result as `operatorNotice` —
+routine, terminal step, terminal kind, the declared slot values, and the
+templates — next to `handoff`, which reports only the ownership change. The
+routine trace stage records `notifiesOperators` beside `handoff` and
+`terminalKind`. The engine reports both effects and decides neither: the host
+moves ownership for a `handoff` and queues the notice as a `handoff.notify` or
+`completion.notify` action in the same transaction as the turn, and the action
+worker delivers it by email, webhook, and Slack. The notice text is rendered at
+delivery and never logged; it holds visitor data.
 
 Each routine turn records a step-by-step trace that hangs off the turn's
 `Routine` spine stage as a `routine` sub-trace, the way retrieval hangs its own

@@ -55,8 +55,13 @@ Both triggers request human ownership and notify an operator through the existin
 contact-delivery transport with a `handoff.notify` action. They also record
 `hitl.ownership` audit events. A routine handoff's notice names the routine and
 lists the values it collected; a retrieval-miss notice carries the ids and the
-reason. See [Authoring routines](./authoring-routines.md#handoff-notifications)
+reason. See [Authoring routines](./authoring-routines.md#operator-notices)
 for the `handoff.notify` payload and queue semantics.
+
+A routine can also notify operators without a handoff: a `complete` terminal
+with an operator notice queues a `completion.notify` action through the same
+transport. The conversation stays with the agent, so that notice changes no
+ownership, records no `hitl.ownership` event, and creates no Inbox item.
 
 ## Operator API
 

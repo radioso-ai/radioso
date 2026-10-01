@@ -191,6 +191,18 @@ also sends the operators the routine's name and every value it collected, by
 email, the contact webhook, and Slack, so the person picking the conversation
 up starts with what the visitor already said.
 
+A **Finish** ending can send that same notice while the agent keeps the
+conversation. Open the ending and turn on **Notify the team**: a booking
+routine then tells reception about the booking, and the agent goes on to ask
+whether there is anything else it can help with. The switch stays on for a
+**Hand off**, which always notifies. **Subject** and **Intro** are optional —
+type `@` to insert a collected value, as in `New booking: {{slot.guest_name}}`.
+Blank fields use the default subject, such as `Book accommodation: completed`,
+and every notice lists all the collected values below the intro, so a short
+subject never hides what the guest said. A value the routine did not collect
+shows as `—`. The webhook body is documented under
+[Operator notifications](/api/agents-and-skills#operator-notifications).
+
 A step is asked the same way at most three times in a row when the visitor's
 replies give it nothing new. From then on it asks in different words, saying
 plainly what it needs and giving an example of an answer that works. The routine
@@ -242,7 +254,9 @@ branch, so you can watch that path too. Choose **Run skills for real** in the
 Test Chat actions menu to start a fresh private test where every skill runs
 exactly as it would for a customer. Retrieval skills run in both modes, and
 test values still stand in for context variables either way. Action steps,
-handoffs, and completion export stay off in every private test.
+handoffs, team notices, and completion export stay off in every private test;
+a test turn that reaches an ending that notifies shows the notice it would
+send in the turn's trace instead.
 
 A notify skill delivers through the saved conversation, so it stays off in
 every private test even with **Run skills for real** on. **Retry** re-runs
@@ -268,6 +282,12 @@ from a test that kept skills off.
   number of passes.
 - A routine never starts at all: check that its pill reads **Live**, not
   **Draft**.
+- A team notice shows `—` where a value belongs: the ending's subject or intro
+  references a value the routine did not collect on that path. Collect it in an
+  earlier step, or drop it from the notice text.
+- A finish sends no team notice: check that **Notify the team** is on for that
+  ending, and that the agent has a contact recipient — the notice goes where
+  contact requests go.
 - Review & Publish refuses the agent with `exposure_tool_name_changed`: a
   published tool name is fixed. Keep the name, or switch exposure off and create
   a new routine under the new name.

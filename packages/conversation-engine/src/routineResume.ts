@@ -1,9 +1,11 @@
 import type {
   AttemptRoutineInput,
   ConversationMessage,
+  ConversationRoutineResumeResult,
   ConversationRoutineSteeringInput,
   ConversationTraceStage,
   ProcessTurnResult,
+  RoutineOperatorNotice,
   RoutineState,
   SteeringRule,
   TurnContext,
@@ -23,6 +25,27 @@ import {
   reportProgress,
   stage,
 } from "./traceStages.js";
+
+/**
+ * What a routine ending tells operators, reported as-is from the landed terminal: the host's
+ * compiler decided which endings notify, and the host decides how to deliver. Ownership is
+ * the separate `handoff` effect.
+ */
+const operatorNoticeFor = (
+  routineId: string,
+  terminal: ConversationRoutineResumeResult["terminal"],
+): RoutineOperatorNotice | undefined => {
+  if (!terminal?.operatorNotice || (terminal.kind !== "complete" && terminal.kind !== "handoff")) {
+    return undefined;
+  }
+  return {
+    routineId,
+    stepId: terminal.stepId,
+    terminalKind: terminal.kind,
+    ...(terminal.collected ? { collected: terminal.collected } : {}),
+    ...terminal.operatorNotice,
+  };
+};
 
 export const resumeRoutine = async (input: {
   request: AttemptRoutineInput;
@@ -130,6 +153,7 @@ export const resumeRoutine = async (input: {
       locale: request.inputEvent.locale ?? undefined,
     },
   });
+  const operatorNotice = operatorNoticeFor(state.routineId, result.terminal);
   const routineStage = stage({
     id: `routine:${state.routineId}`,
     kind: resuming ? "routine_resume" : "routine_activate",
@@ -139,6 +163,7 @@ export const resumeRoutine = async (input: {
       completed: result.nextState === null,
       terminalKind: result.terminal?.kind,
       handoff: result.terminal?.kind === "handoff",
+      notifiesOperators: operatorNotice !== undefined,
       answerLength: result.response.answer.length,
     },
     ...(result.trace ? { subTrace: { namespace: "routine", version: 1, payload: result.trace } } : {}),
@@ -170,6 +195,7 @@ export const resumeRoutine = async (input: {
           ...(result.terminal.collected ? { collected: result.terminal.collected } : {}),
         }
       : undefined,
+    operatorNotice,
     routineExecution: {
       routineId: state.routineId,
       ...(state.executionId ? { executionId: state.executionId } : {}),

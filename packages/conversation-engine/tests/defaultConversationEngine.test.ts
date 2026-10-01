@@ -1621,6 +1621,61 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
     expect(input.routineStore!.clear).not.toHaveBeenCalled();
   });
 
+  const endingRunner = (terminal: NonNullable<Awaited<ReturnType<NonNullable<ProcessTurnInput["routineRunner"]>["resume"]>>["terminal"]>) => ({
+    resume: vi.fn(async () => ({
+      response: { answer: "Thanks, your booking request is in." },
+      nextState: null,
+      terminal,
+    })),
+  });
+  const routineStageOutputs = (result: Awaited<ReturnType<DefaultConversationEngine["processTurn"]>>) =>
+    result.trace.stages.find((stage) => stage.kind === "routine_resume")?.outputs;
+
+  it("reports an operator notice for a completion that carries one, without handing the conversation off", async () => {
+    const result = await new DefaultConversationEngine().processTurn(withRoutine(endingRunner({
+      kind: "complete",
+      stepId: "done",
+      collected: { name: "Ada", arrival: "2026-10-12" },
+      operatorNotice: { subject: "Booking for {{slot.name}}", intro: "Please confirm the room." },
+    })));
+
+    expect(result.operatorNotice).toEqual({
+      routineId: "contact",
+      stepId: "done",
+      terminalKind: "complete",
+      collected: { name: "Ada", arrival: "2026-10-12" },
+      subject: "Booking for {{slot.name}}",
+      intro: "Please confirm the room.",
+    });
+    expect(result.handoff).toBeUndefined();
+    expect(routineStageOutputs(result)).toMatchObject({ terminalKind: "complete", handoff: false, notifiesOperators: true });
+  });
+
+  it("reports an operator notice alongside the hand-off for a hand-off ending", async () => {
+    const result = await new DefaultConversationEngine().processTurn(withRoutine(endingRunner({
+      kind: "handoff",
+      stepId: "human",
+      collected: { name: "Ada" },
+      operatorNotice: {},
+    })));
+
+    expect(result.handoff).toEqual({ routineId: "contact", stepId: "human", collected: { name: "Ada" } });
+    expect(result.operatorNotice).toEqual({ routineId: "contact", stepId: "human", terminalKind: "handoff", collected: { name: "Ada" } });
+    expect(routineStageOutputs(result)).toMatchObject({ handoff: true, notifiesOperators: true });
+  });
+
+  it("reports no operator notice for a completion without one", async () => {
+    const result = await new DefaultConversationEngine().processTurn(withRoutine(endingRunner({
+      kind: "complete",
+      stepId: "done",
+      collected: { name: "Ada" },
+    })));
+
+    expect(result.operatorNotice).toBeUndefined();
+    expect(result.handoff).toBeUndefined();
+    expect(routineStageOutputs(result)).toMatchObject({ handoff: false, notifiesOperators: false });
+  });
+
   it("falls through to the normal turn when no routine is active", async () => {
     const input = withRoutine(
       { resume: vi.fn() },

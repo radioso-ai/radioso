@@ -10,6 +10,7 @@ import type {
   RoutineContextRenderer,
   RoutineGuard,
   RoutineNextStepDecision,
+  RoutineOperatorNoticeTemplate,
   RoutinePendingStep,
   RoutineRunTrace,
   RoutineSelectionTrace,
@@ -450,6 +451,32 @@ const terminalKindFor = (step: RoutineStep): "complete" | "handoff" | "action" |
   }
   const kind = step.metadata?.terminalKind;
   return kind === "handoff" || kind === "action" || kind === "complete" ? kind : "complete";
+};
+
+const terminalResult = (
+  kind: "complete" | "handoff" | "action",
+  step: RoutineStep,
+  collected: Record<string, unknown>,
+): NonNullable<ConversationRoutineResumeResult["terminal"]> => {
+  const operatorNotice = operatorNoticeTemplateFor(step);
+  return { kind, stepId: step.id, collected, ...(operatorNotice ? { operatorNotice } : {}) };
+};
+
+/**
+ * The operator notice template a terminal step carries. The host's compiler puts it there
+ * exactly when the ending notifies operators; the runner only reads it back, keeping the
+ * text fields that are strings so a malformed metadata value can never reach a notice.
+ */
+const operatorNoticeTemplateFor = (step: RoutineStep): RoutineOperatorNoticeTemplate | null => {
+  const notice = step.kind === "terminal" ? step.metadata?.operatorNotice : undefined;
+  if (typeof notice !== "object" || notice === null || Array.isArray(notice)) {
+    return null;
+  }
+  const { subject, intro } = notice as Record<string, unknown>;
+  return {
+    ...(typeof subject === "string" ? { subject } : {}),
+    ...(typeof intro === "string" ? { intro } : {}),
+  };
 };
 
 const completionExportActionFor = (
@@ -1244,7 +1271,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       // A terminal step ends the routine — clear its state.
       nextState: step.kind === "terminal" ? null : nextState,
       ...(terminalKind
-        ? { terminal: { kind: terminalKind, stepId: step.id, collected: declaredSlotVariables(routine, variables) } }
+        ? { terminal: terminalResult(terminalKind, step, declaredSlotVariables(routine, variables)) }
         : {}),
       ...(actions.length > 0 ? { actions } : {}),
       trace,

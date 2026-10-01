@@ -974,6 +974,17 @@ export interface RoutineStep {
   metadata?: Record<string, unknown>;
 }
 
+/**
+ * The authored text an operator notice renders from, carried on a compiled terminal step's
+ * `metadata.operatorNotice` exactly when that ending notifies operators. Either text may hold
+ * `{{slot.<key>}}` references the host substitutes; an absent text means the host's default
+ * for the ending's kind. The engine reports the template, it never renders or delivers it.
+ */
+export interface RoutineOperatorNoticeTemplate {
+  subject?: string;
+  intro?: string;
+}
+
 /** A fire-and-forget side effect a routine requested: an authored `type` + payload. */
 export interface RoutineActionRequest {
   type: string;
@@ -1444,8 +1455,15 @@ export interface ConversationRoutineResumeResult {
    * Distinguishes terminal exits such as handoff from normal completion. `collected`
    * is the routine's declared slot values keyed by slot key — the same projection a
    * completion export sends — so a handoff can carry what the routine gathered.
+   * `operatorNotice` is the template the landed terminal step carries, present exactly
+   * when the ending notifies operators.
    */
-  terminal?: { kind: "complete" | "handoff" | "action"; stepId: string; collected?: Record<string, unknown> };
+  terminal?: {
+    kind: "complete" | "handoff" | "action";
+    stepId: string;
+    collected?: Record<string, unknown>;
+    operatorNotice?: RoutineOperatorNoticeTemplate;
+  };
   outcomes?: TurnOutcome[];
   /** Fire-and-forget side effects the routine emitted this turn, for the host to persist. */
   actions?: RoutineActionRequest[];
@@ -1728,10 +1746,25 @@ export interface ProcessTurnResult {
   /** Required fields that prevented selected skills from dispatching this turn. */
   awaitingSkillInput?: AwaitingSkillInput[];
   /**
-   * Present when a routine ended in a human handoff terminal. `collected` carries the
-   * routine's declared slot values keyed by slot key, for the host's operator notice.
+   * Present when a routine ended in a human handoff terminal: the conversation now belongs to
+   * a person. Ownership only — whether operators are told is `operatorNotice`.
    */
   handoff?: { routineId: string; stepId: string; collected?: Record<string, unknown> };
+  /**
+   * Present when a routine ended on a terminal that notifies operators: every hand-off, and a
+   * completion that carries an operator notice. `collected` is the routine's declared slot
+   * values keyed by slot key; `subject`/`intro` are the authored templates, absent when the
+   * host's default applies. A side effect only — it never changes who owns the conversation.
+   */
+  operatorNotice?: RoutineOperatorNotice;
+}
+
+/** What a routine ending tells operators; see {@link ProcessTurnResult.operatorNotice}. */
+export interface RoutineOperatorNotice extends RoutineOperatorNoticeTemplate {
+  routineId: string;
+  stepId: string;
+  terminalKind: "complete" | "handoff";
+  collected?: Record<string, unknown>;
 }
 
 export type ProcessTurnStreamEvent =

@@ -501,6 +501,24 @@ describe("routine definition compiler and validator", () => {
     });
   });
 
+  it("puts the operator notice on every ending that notifies operators, and on no other", () => {
+    const routine = compileRoutineDefinition({
+      ...baseDefinition(),
+      terminals: [
+        { stableStepId: "done", kind: "complete", instruction: "Confirm completion.", operatorNotice: { subject: "Booking: {{slot.name}}", intro: null }, ordinal: 0 },
+        { stableStepId: "quiet", kind: "complete", instruction: null, ordinal: 1 },
+        { stableStepId: "human", kind: "handoff", instruction: null, ordinal: 2 },
+        { stableStepId: "human_noted", kind: "handoff", instruction: null, operatorNotice: { subject: null, intro: "Call {{slot.name}} back." }, ordinal: 3 },
+      ],
+    });
+
+    const metadataFor = (id: string) => routine.steps.find((step) => step.id === id)?.metadata;
+    expect(metadataFor("done")).toEqual({ terminalKind: "complete", operatorNotice: { subject: "Booking: {{slot.name}}" } });
+    expect(metadataFor("quiet")).toEqual({ terminalKind: "complete" });
+    expect(metadataFor("human")).toEqual({ terminalKind: "handoff", operatorNotice: {} });
+    expect(metadataFor("human_noted")).toEqual({ terminalKind: "handoff", operatorNotice: { intro: "Call {{slot.name}} back." } });
+  });
+
   it("is deterministic for the same authored document", () => {
     expect(compileRoutineDefinition(baseDefinition())).toEqual(compileRoutineDefinition(baseDefinition()));
   });

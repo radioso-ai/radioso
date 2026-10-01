@@ -9,6 +9,24 @@ Cut a release with the **Cut Release** workflow. It reads the commits since the 
 tag, writes the entry above this line, tags the commit, and publishes a GitHub Release. A
 deploy then ships a release that already exists; it never mints one.
 
+## [1.11.1] - 2026-10-01
+
+### Fixed
+
+- **routines:** lead back to the pending question after a digression ([#1387](https://github.com/radioso-ai/radioso/pull/1387))
+- **routines:** hold a step on text that poses as a system notice ([#1386](https://github.com/radioso-ai/radioso/pull/1386))
+- **routines:** check slot values against their declared type and bound re-asks ([#1385](https://github.com/radioso-ai/radioso/pull/1385))
+- **routines:** skip steps the visitor already answered ([#1380](https://github.com/radioso-ai/radioso/pull/1380))
+- **routines:** keep stated slot values and never confirm on a re-asked step ([#1379](https://github.com/radioso-ai/radioso/pull/1379))
+
+### Database migrations
+
+This release adds 1 migration. They run at service startup, so deploy one stack at a time; overlapping deploys contend on the same DDL lock and stall until one gives up.
+
+- `204_routine_state_reask_count.sql`
+
+[1.11.1]: https://github.com/radioso-ai/radioso/compare/v1.11.0...v1.11.1
+
 ## [1.11.0] - 2026-09-30
 
 ### Added

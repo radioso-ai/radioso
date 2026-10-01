@@ -21,7 +21,6 @@ import {
   matchesInboxSearch,
   ownershipLabel,
   QUALITY_INBOX_ITEM_LIMIT,
-  recentlyClosedKindLabel,
   selectHumanOwnedConversations,
   summarizeAiHandledConversations,
   TAKEN_BY_ME,
@@ -1229,20 +1228,14 @@ describe('buildRecentlyClosedItems', () => {
     ])
   })
 
-  it('labels what was closed: a handoff, an approval with its choice, feedback by how it closed', () => {
-    const [handoff, approval, resolved, dismissed] = buildRecentlyClosedItems([
+  it('carries what was closed and how: the item kind, the outcome, and an approval\'s chosen label', () => {
+    const [handoff, approval] = buildRecentlyClosedItems([
       apiItem(),
       apiItem({ itemKind: 'approval', outcome: 'approval_decided', decision: { optionId: 'approve', label: 'Approve refund' } }),
-      apiItem({ itemKind: 'negative_feedback', outcome: 'feedback_resolved' }),
-      apiItem({ itemKind: 'negative_feedback', outcome: 'feedback_dismissed' }),
     ])
 
-    expect([handoff, approval, resolved, dismissed].map(recentlyClosedKindLabel)).toEqual([
-      'Handoff',
-      'Approval · Approve refund',
-      'Feedback resolved',
-      'Feedback dismissed',
-    ])
+    expect(handoff).toMatchObject({ itemKind: 'handoff', outcome: 'handed_back', decisionLabel: null })
+    expect(approval).toMatchObject({ itemKind: 'approval', outcome: 'approval_decided', decisionLabel: 'Approve refund' })
   })
 })
 

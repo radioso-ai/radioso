@@ -1322,9 +1322,11 @@ hand-back, and a reply's claim, through its units of work), chat turn persistenc
 (`handoff_requested`), approvals (`resolve`), and quality (`QualityTriageStore`).
 Reads label every teammate live (display name, else email) through the auth
 module's `TeammateLabelReaderPort`, so activity is operator-only; the public chat
-presenters strip it. Every read takes a `ConversationActivityReadScope` resolved
-once at the edge: feedback outcomes are Quality data, so they reach only a caller
-holding `FEEDBACK_ACTIVITY_PERMISSION` (`workspace.quality.read`). The timeline
+presenters strip it. Every read takes a `ConversationActivityReadScope` that each
+edge (history routes, the recently-closed route, Ray's transcript tool) resolves
+through `resolveActivityReadScope`, the one place that names its permission:
+feedback outcomes are Quality data, so they reach only a caller holding
+`workspace.quality.read`. The timeline
 read returns unlabelled events plus the teammates they name, so chat history labels
 them together with the transcript's repliers in one lookup; the operator tail
 passes an `activityCursor` to read only newer events.
@@ -1338,8 +1340,8 @@ Public surfaces and contracts:
 - `backend/src/modules/conversationActivity/readService.ts` (timeline, recently closed)
 - `backend/src/db/repositories/conversationActivityRepository.ts` (Postgres recorder and reads)
 - `backend/src/app/composition/conversationActivity.ts` (default wiring)
-- `GET /api/v1/conversations/recently-closed`; `activity` on the operator history detail and tail
-- `frontend/lib/conversation-activity.ts` (thread lines, placement, "Closed by")
+- `GET /api/v1/conversations/recently-closed` (`backend/src/app/http/routes/conversationActivityRoutes.ts`); `activity` on the operator history detail and tail
+- `frontend/lib/conversation-activity.ts` (thread lines, placement, day breaks, the recently-closed strip's labels)
 
 Focused checks:
 

@@ -1,4 +1,3 @@
-import type { ConversationActivityRecorder } from "../../src/modules/conversationActivity/contracts/index.js";
 import type {
   QualityOutcomeCatalogEntry,
   QualityOutcomeCatalogPort,
@@ -28,8 +27,3 @@ export const stubOutcomeCatalog = (
     return entries;
   },
 });
-
-/** For quality tests that do not look at conversation activity: records nothing. */
-export const unrecordedConversationActivity: ConversationActivityRecorder = {
-  async record() {},
-};

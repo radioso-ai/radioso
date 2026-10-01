@@ -1,5 +1,4 @@
-import { teammateLabel } from "../../modules/auth/contracts/index.js";
-import type { TeammateLabelReaderPort } from "../../modules/chat/contracts/index.js";
+import { teammateLabel, type TeammateLabelReaderPort } from "../../modules/auth/contracts/index.js";
 
 interface TeammateProfileReader {
   findByIds(ids: readonly string[]): Promise<ReadonlyArray<{ id: string; email: string; displayName: string | null }>>;

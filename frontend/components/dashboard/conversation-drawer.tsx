@@ -291,6 +291,11 @@ export function ConversationDrawer({
   const [flowOpen, setFlowOpen] = useState(false)
 
   const renderedConversationMessages = effectiveConversationMessages
+  // Held across renders so the thread re-places its events only when a read brings new ones.
+  const conversationActivity = useMemo(
+    () => mergeActivity(conversationDetail?.activity, conversationTail.activity),
+    [conversationDetail?.activity, conversationTail.activity],
+  )
 
   // Mark which turns a routine drove so the conversation thread can band the
   // routine's span (start chip, paused/ended marker). The signal lives on each
@@ -521,7 +526,7 @@ export function ConversationDrawer({
                     evalCaptureEnabled={selectedItem?.kind === 'chat'}
                     analyticsSurface="history"
                     audience="operator"
-                    activity={mergeActivity(conversationDetail.activity, conversationTail.activity)}
+                    activity={conversationActivity}
                     hasOlderMessages={conversationDetail.hasOlderMessages}
                     skillCatalog={skillCatalog}
                     routineMarkers={namedRoutineMarkers}

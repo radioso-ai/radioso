@@ -3,12 +3,11 @@
 import { CheckCircle2, Hand, ShieldCheck, ThumbsDown, type LucideIcon } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
-import { closedByLine } from '@/lib/conversation-activity'
+import { closedByLine, recentlyClosedKindLabel } from '@/lib/conversation-activity'
 import { formatInboxRowTimestamp } from '@/lib/needs-attention-format'
 import {
   formatInboxDuration,
   inboxWaitingPresentation,
-  recentlyClosedKindLabel,
   type EscalationType,
   type InboxItem,
   type RecentlyClosedInboxItem,

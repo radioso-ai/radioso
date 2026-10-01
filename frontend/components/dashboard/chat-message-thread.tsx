@@ -26,7 +26,7 @@ import {
 } from '@/lib/product-analytics'
 import type { WebsiteEmbedAnalyticsInput } from '@/lib/embed-analytics'
 import { humanReplyAuthor, type ReplyAttributionAudience } from '@/lib/reply-attribution'
-import { activityLine, placeActivity } from '@/lib/conversation-activity'
+import { activityLine, placeActivity, threadDayBreaks } from '@/lib/conversation-activity'
 import type { ConversationActivityEntry } from '@/lib/api-types'
 import type {
   AnswerFeedbackEntry,
@@ -56,6 +56,29 @@ const timeFormatter = new Intl.DateTimeFormat(undefined, {
 })
 
 const NO_ACTIVITY: readonly ConversationActivityEntry[] = []
+
+const dayOf = (createdAt: string): string => dayFormatter.format(new Date(createdAt))
+
+/** The day label above the first message or event of a new day. */
+function DayDivider({ createdAt, theme }: { createdAt: string; theme?: WebsiteEmbedTheme | null }) {
+  return (
+    <div className="flex justify-center">
+      <div
+        className="rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground"
+        style={
+          theme
+            ? {
+                background: theme.mutedBackground,
+                color: theme.mutedForeground,
+              }
+            : undefined
+        }
+      >
+        {dayOf(createdAt)}
+      </div>
+    </div>
+  )
+}
 
 /** One activity event as a short muted line between messages. Operator threads only. */
 function ActivityEventLine({ entry }: { entry: ConversationActivityEntry }) {
@@ -490,6 +513,8 @@ export function ChatMessageThread({
     () => placeActivity(messages, audience === 'operator' ? activity : NO_ACTIVITY, { hasOlderMessages }),
     [messages, activity, audience, hasOlderMessages],
   )
+  // Days change over the thread as rendered, events included, so an event sits under its own day.
+  const dayBreaks = useMemo(() => threadDayBreaks(messages, activityPlacement, dayOf), [messages, activityPlacement])
   // The identity line sits on the earliest AI-authored turn currently rendered, so it
   // stays at the top of the assistant's presence after older messages load in. Turns a
   // person wrote or a takeover produced are skipped: they are not what the chip claims.
@@ -692,10 +717,7 @@ export function ChatMessageThread({
             : message.source === 'system'
               ? 'System'
               : null
-        const currentDay = message.createdAt ? dayFormatter.format(new Date(message.createdAt)) : null
-        const previousCreatedAt = index > 0 ? messages[index - 1].createdAt : undefined
-        const previousDay = previousCreatedAt ? dayFormatter.format(new Date(previousCreatedAt)) : null
-        const showDayDivider = currentDay !== null && previousDay !== null && currentDay !== previousDay
+        const dayDividerAt = dayBreaks.messages.has(index) ? message.createdAt : undefined
         const assistantMessageId = message.role === 'assistant'
           ? message.persistedAssistantMessageId ?? null
           : null
@@ -719,23 +741,7 @@ export function ChatMessageThread({
             data-skill-group={groupInfo?.groupKey ?? undefined}
             className="group/message space-y-2"
           >
-            {showDayDivider ? (
-              <div className="flex justify-center">
-                <div
-                  className="rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground"
-                  style={
-                    theme
-                      ? {
-                          background: theme.mutedBackground,
-                          color: theme.mutedForeground,
-                        }
-                      : undefined
-                  }
-                >
-                  {currentDay}
-                </div>
-              </div>
-            ) : null}
+            {dayDividerAt ? <DayDivider createdAt={dayDividerAt} theme={theme} /> : null}
 
             <div className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
               <div
@@ -1051,8 +1057,14 @@ export function ChatMessageThread({
   // Walk the thread, banding contiguous routine turns. `routineMarkers` is only
   // supplied by the diagnostics surface, so public chat/embed fall straight
   // through to a flat list of rendered messages.
-  const activityBefore = (index: number): ReactNode[] =>
-    (activityPlacement.before.get(index) ?? []).map((entry) => <ActivityEventLine key={`activity-${entry.id}`} entry={entry} />)
+  const activityLines = (entries: readonly ConversationActivityEntry[]): ReactNode[] =>
+    entries.flatMap((entry) => [
+      ...(dayBreaks.activity.has(entry.id)
+        ? [<DayDivider key={`activity-day-${entry.id}`} createdAt={entry.createdAt} theme={theme} />]
+        : []),
+      <ActivityEventLine key={`activity-${entry.id}`} entry={entry} />,
+    ])
+  const activityBefore = (index: number): ReactNode[] => activityLines(activityPlacement.before.get(index) ?? [])
   const threadContent: ReactNode[] = []
   for (let index = 0; index < messages.length; index += 1) {
     const marker = routineMarkers?.[index]
@@ -1086,9 +1098,7 @@ export function ChatMessageThread({
     }
     threadContent.push(...activityBefore(index), renderMessage(messages[index], index))
   }
-  threadContent.push(...activityPlacement.trailing.map((entry) => (
-    <ActivityEventLine key={`activity-${entry.id}`} entry={entry} />
-  )))
+  threadContent.push(...activityLines(activityPlacement.trailing))
 
   return (
     <div ref={threadRef} className="mx-auto max-w-3xl space-y-6">

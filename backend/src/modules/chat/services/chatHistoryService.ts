@@ -3,14 +3,13 @@ import { decodeCursorWithKeys } from "../../../shared/domain/cursorPagination.js
 import type { CallerKind, ConversationSourceScope } from "../../../shared/domain/conversationSource.js";
 import type { ConversationOutcomeFilter } from "../../../shared/domain/conversationOutcome.js";
 import type { ConversationTurnStage } from "../contracts/interruption.js";
-import type { TeammateLabelReaderPort } from "../contracts/teammateLabels.js";
 import type {
   ConversationActivityEntry,
   ConversationActivityReadScope,
   ConversationActivityTimeline,
   ConversationActivityTimelineReader,
 } from "../../conversationActivity/contracts/index.js";
-import { outwardFacingName } from "../../auth/contracts/index.js";
+import { outwardFacingName, type TeammateLabelReaderPort } from "../../auth/contracts/index.js";
 import { presentOwnership, type ConversationOwnershipScope } from "../../handoff/public.js";
 import type { AuditEventRecord, AuditEventRepositoryPort } from "../../../db/repositories/auditEventRepository.js";
 import type {

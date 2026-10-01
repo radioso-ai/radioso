@@ -7,21 +7,16 @@ import {
   type ConversationOwnershipRecord,
   type OwnershipActor,
 } from "../../../modules/handoff/public.js";
-import { FEEDBACK_ACTIVITY_PERMISSION } from "../../../modules/conversationActivity/contracts/index.js";
 import { AppError, badRequest, unauthorized } from "../../../shared/domain/errors.js";
-import { holdsWorkspacePermission, requireWorkspacePermission } from "../middleware/requirePermission.js";
+import { requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../middleware/requireWorkspaceSession.js";
 import { validateBody } from "../middleware/validate.js";
 import { conversationParamsSchema } from "./conversationRouteSchemas.js";
 
 type ConversationOwnershipRouteDependencies = WorkspaceSessionDependencies & Pick<
   AppDependencies,
-  "conversationActivityReads" | "conversationOperatorDirectory" | "conversationOwnershipService"
+  "conversationOperatorDirectory" | "conversationOwnershipService"
 >;
-
-const recentlyClosedQuerySchema = z.object({
-  limit: z.coerce.number().int().min(1).max(50).default(10),
-}).strict();
 
 const takeoverBodySchema = z.object({
   reason: z.string().trim().min(1).max(500).optional(),
@@ -85,26 +80,6 @@ export const createConversationOwnershipRoutes = (
       const operators = await dependencies.conversationOperatorDirectory.list({ accountId, workspaceId });
 
       res.status(200).json({ operators });
-    } catch (error) {
-      next(error);
-    }
-  });
-
-  // The Inbox's recently closed items: handoffs handed back, approvals decided, negative feedback
-  // resolved or dismissed — newest first, each with the teammate who closed it. Feedback is a
-  // Quality triage outcome, so it is listed only to a caller who may read Quality.
-  router.get("/recently-closed", workspaceSession, takeoverPermission, async (req, res, next) => {
-    try {
-      const query = recentlyClosedQuerySchema.safeParse(req.query);
-      if (!query.success) {
-        throw badRequest("Invalid query", query.error.flatten());
-      }
-      const { workspaceId } = readActor(res.locals);
-      const items = await dependencies.conversationActivityReads.listRecentlyClosed(workspaceId, query.data.limit, {
-        includeFeedback: await holdsWorkspacePermission(dependencies, res, FEEDBACK_ACTIVITY_PERMISSION),
-      });
-
-      res.status(200).json({ items });
     } catch (error) {
       next(error);
     }

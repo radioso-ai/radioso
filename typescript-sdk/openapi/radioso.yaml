@@ -30197,42 +30197,15 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-  /api/v1/conversations/operators:
-    get:
-      tags:
-        - Conversation Ownership
-      summary: List the teammates who can own a conversation
-      description: Returns the active teammates who hold conversation takeover permission on the workspace, labelled by display name, else email. These are the valid transfer targets.
-      operationId: listConversationOperators
-      security: &a107
-        - bearerAuth: []
-      responses:
-        "200":
-          description: Teammates returned
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ConversationOperatorsResponse"
-        "401":
-          description: Authentication required
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "403":
-          description: Workspace conversation takeover permission required
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/conversations/recently-closed:
     get:
       tags:
-        - Conversation Ownership
+        - Conversation Activity
       summary: List the Inbox items closed most recently
       description: "Returns the workspace's most recently closed Inbox items, newest first: handoffs handed back to the agent, approvals decided, and negative feedback resolved or dismissed. Negative feedback is listed only to a caller with Quality access (`workspace.quality.read`). Each item names the teammate who closed it, labelled by display name, else email. Dashboard test chats are left out."
       operationId: listRecentlyClosedInboxItems
-      security: *a107
+      security:
+        - bearerAuth: []
       parameters:
         - schema:
             type: integer
@@ -30257,6 +30230,34 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Workspace conversation takeover permission required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/conversations/operators:
+    get:
+      tags:
+        - Conversation Ownership
+      summary: List the teammates who can own a conversation
+      description: Returns the active teammates who hold conversation takeover permission on the workspace, labelled by display name, else email. These are the valid transfer targets.
+      operationId: listConversationOperators
+      security: &a107
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Teammates returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConversationOperatorsResponse"
         "401":
           description: Authentication required
           content:

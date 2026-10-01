@@ -37,13 +37,23 @@ export const FEEDBACK_ACTIVITY_KINDS = [
  * The permission a reader needs to see feedback triage outcomes. They are Quality data, and a
  * teammate who can follow conversations does not always hold Quality access.
  */
-export const FEEDBACK_ACTIVITY_PERMISSION = "workspace.quality.read" as const satisfies AccountPermission;
+const FEEDBACK_ACTIVITY_PERMISSION = "workspace.quality.read" as const satisfies AccountPermission;
 
 /** Which events a read may carry, resolved once from the caller's permissions at the edge. */
 export interface ConversationActivityReadScope {
   /** Feedback resolved or dismissed: only for a caller holding {@link FEEDBACK_ACTIVITY_PERMISSION}. */
   includeFeedback: boolean;
 }
+
+/**
+ * Resolves a read's scope at the edge, through however that edge checks the caller's permissions
+ * (an HTTP session, a Ray turn), so which permission gates which events is decided only here.
+ */
+export const resolveActivityReadScope = async (
+  holdsPermission: (permission: AccountPermission) => Promise<boolean>,
+): Promise<ConversationActivityReadScope> => ({
+  includeFeedback: await holdsPermission(FEEDBACK_ACTIVITY_PERMISSION),
+});
 
 interface ConversationActivityScope {
   conversationId: string;
@@ -149,7 +159,9 @@ export interface ConversationActivityEntry {
 }
 
 /** The Inbox item a closing event closed. */
-export type ClosedInboxItemKind = "handoff" | "approval" | "negative_feedback";
+export const CLOSED_INBOX_ITEM_KINDS = ["handoff", "approval", "negative_feedback"] as const;
+
+export type ClosedInboxItemKind = typeof CLOSED_INBOX_ITEM_KINDS[number];
 
 /** One Inbox item closed recently: what it was, how it closed, who closed it and when. */
 export interface RecentlyClosedInboxItem {

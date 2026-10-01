@@ -309,6 +309,19 @@ describe('buildRoutineRunTrace', () => {
     expect(view?.steps[0].skillReason).toBeUndefined()
   })
 
+  it('carries readOpeningMessage only on a step the landing read touched (#1370)', () => {
+    const view = buildRoutineRunTrace(
+      routineStage({
+        steps: [
+          { stepId: 'party', kind: 'chat', event: 'fast_forwarded', readOpeningMessage: true, capturedSlotKeys: ['adults'] },
+          { stepId: 'recap', kind: 'chat', event: 'rendered' },
+        ],
+      }),
+    )
+    expect(view?.steps[0]).toMatchObject({ readOpeningMessage: true })
+    expect(view?.steps[1].readOpeningMessage).toBeUndefined()
+  })
+
   it('returns undefined when the stage carries no routine sub-trace', () => {
     expect(buildRoutineRunTrace({ id: 'routine:contact', kind: 'routine_resume', status: 'applied' })).toBeUndefined()
     expect(

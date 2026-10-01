@@ -2453,6 +2453,7 @@ describe("DefaultRoutineRunner landing-step extraction on the activation turn (#
       event: "fast_forwarded",
       viaSelector: true,
       capturedSlotKeys: ["arrival", "departure"],
+      readOpeningMessage: true,
     });
   });
 
@@ -2469,8 +2470,11 @@ describe("DefaultRoutineRunner landing-step extraction on the activation turn (#
     expect(renderer.render).toHaveBeenCalledWith(expect.objectContaining({ step: expect.objectContaining({ id: "dates" }) }));
     expect(result.nextState).toMatchObject({ path: ["program", "dates"], variables: { program: "Yoga retreat" } });
     const datesEntry = result.trace?.steps.find((entry) => entry.stepId === "dates");
-    expect(datesEntry).toMatchObject({ event: "rendered", viaSelector: true });
+    expect(datesEntry).toMatchObject({ event: "rendered", viaSelector: true, readOpeningMessage: true });
     expect(datesEntry).not.toHaveProperty("capturedSlotKeys");
+    // Nothing was captured or rejected for this step, so the reply asks the whole
+    // question again rather than a partial re-ask (#1370).
+    expect(vi.mocked(renderer.render).mock.calls[0][0]).not.toHaveProperty("reask");
   });
 
   it("still renders the landing step when its only way on is a bare default and nothing was extracted", async () => {
@@ -2495,6 +2499,8 @@ describe("DefaultRoutineRunner landing-step extraction on the activation turn (#
     expect(select).toHaveBeenCalledTimes(2);
     expect(renderer.render).toHaveBeenCalledWith(expect.objectContaining({ step: expect.objectContaining({ id: "dates" }) }));
     expect(result.nextState).toMatchObject({ path: ["program", "dates"] });
+    const datesEntry = result.trace?.steps.find((entry) => entry.stepId === "dates");
+    expect(datesEntry).toMatchObject({ event: "rendered", readOpeningMessage: true });
   });
 
   it("does not run a landing extraction on a resume (non-activation) turn", async () => {
@@ -2588,6 +2594,12 @@ describe("DefaultRoutineRunner landing-step extraction on the activation turn (#
       "review_notes:fast_forwarded",
       "contact:rendered",
     ]);
+    const datesEntry = result.trace?.steps.find((entry) => entry.stepId === "dates");
+    const reviewNotesEntry = result.trace?.steps.find((entry) => entry.stepId === "review_notes");
+    // Only the landing read on `dates` touched the opening message; `review_notes` was
+    // already satisfied and fast-forwarded deterministically, with no model call at all.
+    expect(datesEntry).toMatchObject({ readOpeningMessage: true });
+    expect(reviewNotesEntry).not.toHaveProperty("readOpeningMessage");
   });
 
   it("renders the landing step when its landing call returns a hold, even though the values would satisfy it (#1375)", async () => {
@@ -2612,7 +2624,15 @@ describe("DefaultRoutineRunner landing-step extraction on the activation turn (#
       variables: { program: "Yoga retreat", arrival: "2026-11-11", departure: "2026-11-14" },
     });
     const datesEntry = result.trace?.steps.find((entry) => entry.stepId === "dates");
-    expect(datesEntry).toMatchObject({ event: "rendered", viaSelector: true, capturedSlotKeys: ["arrival", "departure"] });
+    expect(datesEntry).toMatchObject({
+      event: "rendered",
+      viaSelector: true,
+      capturedSlotKeys: ["arrival", "departure"],
+      readOpeningMessage: true,
+    });
+    // Held, even though the merge would satisfy the step: nothing new is missing, so no
+    // partial re-ask is added on top of the hold.
+    expect(vi.mocked(renderer.render).mock.calls[0][0]).not.toHaveProperty("reask");
   });
 
   it("renders a satisfied landing step once more when its only way on is an AI-decides exit it declines", async () => {
@@ -2642,7 +2662,153 @@ describe("DefaultRoutineRunner landing-step extraction on the activation turn (#
       variables: { program: "Yoga retreat", arrival: "2026-11-11", departure: "2026-11-14" },
     });
     const datesEntry = result.trace?.steps.find((entry) => entry.stepId === "dates");
-    expect(datesEntry).toMatchObject({ event: "rendered", viaSelector: true, capturedSlotKeys: ["arrival", "departure"] });
+    expect(datesEntry).toMatchObject({
+      event: "rendered",
+      viaSelector: true,
+      capturedSlotKeys: ["arrival", "departure"],
+      readOpeningMessage: true,
+    });
+  });
+
+  describe("any kind of later question, not only dates", () => {
+    // program (text) -> party (adults: number, required; children: number, optional) ->
+    // contact (email: text, required) -> recap (no collected slots) -> done. Exercises the
+    // fix against a number slot, an optional slot, and a plain text slot, and a step with
+    // nothing to collect at all.
+    const partyRoutine: Routine = {
+      id: "party_booking",
+      rootStepId: "program",
+      slots: [
+        { id: "slot_program", key: "program", type: "text", required: true },
+        { id: "slot_adults", key: "adults", type: "number", required: true },
+        { id: "slot_children", key: "children", type: "number", required: false },
+        { id: "slot_email", key: "email", type: "text", required: true },
+      ],
+      steps: [
+        { id: "program", kind: "chat", action: "Ask which program.", metadata: { collectsSlots: ["program"] } },
+        { id: "party", kind: "chat", action: "Ask the party size.", metadata: { collectsSlots: ["adults", "children"] } },
+        { id: "contact", kind: "chat", action: "Ask for an email.", metadata: { collectsSlots: ["email"] } },
+        { id: "recap", kind: "chat", action: "Recap and confirm." },
+        { id: "done", kind: "terminal", action: "Confirm the booking." },
+      ],
+      transitions: [
+        { from: "program", to: "party", condition: "The user named a program." },
+        { from: "party", to: "contact", condition: "The user gave the party size." },
+        { from: "contact", to: "recap", condition: "The user gave an email." },
+        { from: "recap", to: "done", condition: "The user confirmed." },
+      ],
+    };
+
+    it("chains landing reads across several later steps of different slot kinds in one turn", async () => {
+      const renderer = freshRenderer();
+      const select = vi.fn<ConversationRoutineNextStepSelector["select"]>()
+        .mockResolvedValueOnce({ nextStepId: "party", variables: { program: "Retreat" } })
+        .mockResolvedValueOnce({ nextStepId: "contact", variables: { adults: 2 } })
+        .mockResolvedValueOnce({ nextStepId: "recap", variables: { email: "a@b.com" } });
+      const runner = new DefaultRoutineRunner([partyRoutine], { select }, renderer);
+
+      const result = await runner.resume({ turn, state: atProgram("party_booking"), activationTurn: true });
+
+      expect(select).toHaveBeenCalledTimes(3);
+      expect(renderer.render).toHaveBeenCalledWith(expect.objectContaining({ step: expect.objectContaining({ id: "recap" }) }));
+      expect(result.nextState).toMatchObject({
+        variables: { program: "Retreat", adults: 2, email: "a@b.com" },
+      });
+      const partyEntry = result.trace?.steps.find((entry) => entry.stepId === "party");
+      const contactEntry = result.trace?.steps.find((entry) => entry.stepId === "contact");
+      const recapEntry = result.trace?.steps.find((entry) => entry.stepId === "recap");
+      expect(partyEntry).toMatchObject({ event: "fast_forwarded", readOpeningMessage: true, capturedSlotKeys: ["adults"] });
+      expect(contactEntry).toMatchObject({ event: "fast_forwarded", readOpeningMessage: true, capturedSlotKeys: ["email"] });
+      // recap collects nothing, so it is rendered with no landing read of its own.
+      expect(recapEntry).toMatchObject({ event: "rendered" });
+      expect(recapEntry).not.toHaveProperty("readOpeningMessage");
+    });
+
+    it("stops the chain where a landing read fills nothing, without reading a step further on", async () => {
+      const renderer = freshRenderer();
+      const select = vi.fn<ConversationRoutineNextStepSelector["select"]>()
+        .mockResolvedValueOnce({ nextStepId: "party", variables: { program: "Retreat" } })
+        .mockResolvedValueOnce({ nextStepId: "party" });
+      const runner = new DefaultRoutineRunner([partyRoutine], { select }, renderer);
+
+      const result = await runner.resume({ turn, state: atProgram("party_booking"), activationTurn: true });
+
+      expect(select).toHaveBeenCalledTimes(2);
+      expect(renderer.render).toHaveBeenCalledWith(expect.objectContaining({ step: expect.objectContaining({ id: "party" }) }));
+      expect(result.nextState).toMatchObject({ variables: { program: "Retreat" } });
+    });
+
+    it("moves on past a step once its one required slot is filled, leaving an unfilled optional slot behind", async () => {
+      const renderer = freshRenderer();
+      const select = vi.fn<ConversationRoutineNextStepSelector["select"]>()
+        .mockResolvedValueOnce({ nextStepId: "party", variables: { program: "Retreat" } })
+        .mockResolvedValueOnce({ nextStepId: "contact", variables: { adults: 4 } })
+        // contact (email) still has nothing to go on, so it renders.
+        .mockResolvedValueOnce({ nextStepId: "contact" });
+      const runner = new DefaultRoutineRunner([partyRoutine], { select }, renderer);
+
+      const result = await runner.resume({ turn, state: atProgram("party_booking"), activationTurn: true });
+
+      // `adults` is filled and required; `children` is optional, so filling only `adults`
+      // satisfies the step — it moves on rather than asking for the optional slot.
+      expect(select).toHaveBeenCalledTimes(3);
+      expect(renderer.render).toHaveBeenCalledWith(expect.objectContaining({ step: expect.objectContaining({ id: "contact" }) }));
+      expect(result.nextState).toMatchObject({ variables: { program: "Retreat", adults: 4 } });
+    });
+
+    it("renders a step the opening message only partly answered, asking only for what is still missing", async () => {
+      const twoRequired: Routine = {
+        ...partyRoutine,
+        slots: [
+          ...partyRoutine.slots!,
+          { id: "slot_city", key: "city", type: "text", required: true },
+          { id: "slot_zip", key: "zip", type: "text", required: true },
+        ],
+        steps: partyRoutine.steps.map((candidate) =>
+          candidate.id === "party"
+            ? { ...candidate, action: "Ask for city and zip.", metadata: { collectsSlots: ["city", "zip"] } }
+            : candidate,
+        ),
+      };
+      const renderer = freshRenderer();
+      const select = vi.fn<ConversationRoutineNextStepSelector["select"]>()
+        .mockResolvedValueOnce({ nextStepId: "party", variables: { program: "Retreat" } })
+        .mockResolvedValueOnce({ nextStepId: "party", variables: { city: "Turin" } });
+      const runner = new DefaultRoutineRunner([twoRequired], { select }, renderer);
+
+      const result = await runner.resume({ turn, state: atProgram("party_booking"), activationTurn: true });
+
+      expect(select).toHaveBeenCalledTimes(2);
+      const zipSlot = twoRequired.slots!.find((slot) => slot.key === "zip");
+      expect(renderer.render).toHaveBeenCalledWith(expect.objectContaining({
+        step: expect.objectContaining({ id: "party" }),
+        reask: { missingSlots: [zipSlot] },
+      }));
+      expect(result.nextState).toMatchObject({ variables: { program: "Retreat", city: "Turin" } });
+    });
+
+    it("asks again for a required slot whose landing-read value did not fit its declared type", async () => {
+      const renderer = freshRenderer();
+      const select = vi.fn<ConversationRoutineNextStepSelector["select"]>()
+        .mockResolvedValueOnce({ nextStepId: "party", variables: { program: "Retreat" } })
+        .mockResolvedValueOnce({ nextStepId: "contact", variables: { adults: "lots" } });
+      const runner = new DefaultRoutineRunner([partyRoutine], { select }, renderer);
+
+      const result = await runner.resume({ turn, state: atProgram("party_booking"), activationTurn: true });
+
+      expect(select).toHaveBeenCalledTimes(2);
+      const adultsSlot = partyRoutine.slots!.find((slot) => slot.key === "adults");
+      expect(renderer.render).toHaveBeenCalledWith(expect.objectContaining({
+        step: expect.objectContaining({ id: "party" }),
+        reask: { missingSlots: [adultsSlot] },
+      }));
+      const partyEntry = result.trace?.steps.find((entry) => entry.stepId === "party");
+      expect(partyEntry).toMatchObject({
+        event: "rendered",
+        readOpeningMessage: true,
+        rejectedSlots: [{ key: "adults", reason: "type_mismatch" }],
+      });
+    });
   });
 });
 

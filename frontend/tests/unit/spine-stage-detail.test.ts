@@ -286,7 +286,6 @@ describe('buildRoutineRunTrace', () => {
     expect(JSON.stringify(view)).not.toContain('<script>')
   })
 
-
   it('omits skillReason when the sub-trace does not carry one', () => {
     const view = buildRoutineRunTrace(
       routineStage({

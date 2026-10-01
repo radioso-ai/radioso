@@ -10,6 +10,7 @@ import type { Env } from "../../src/app/config/env.js";
 import { createMailAccountInvitationNotifier } from "../../src/app/composition/accountInvitationNotifier.js";
 import { createConversationOperatorDirectory } from "../../src/app/composition/conversationOperatorDirectory.js";
 import { createTeammateLabelReader } from "../../src/app/composition/teammateLabelReader.js";
+import { createConversationActivityComposition } from "../../src/app/composition/conversationActivity.js";
 import { createMailService } from "../../src/modules/mail/public.js";
 import { randomUUID } from "node:crypto";
 import type { ConversationRoutineStore, RoutineState } from "@radioso/conversation-contract";
@@ -305,6 +306,7 @@ import {
   InMemoryHistoryItemsRepository,
   InMemoryMessageRepository,
   InMemoryActionOutbox,
+  InMemoryConversationActivityStore,
   InMemoryConversationOwnershipRepository,
   InMemoryRetrievalSettingsRepository,
   InMemoryFederatedIdentityRepository,
@@ -448,6 +450,7 @@ interface TestRepositories {
   conversationRepository: InMemoryConversationRepository;
   visitorRepository: InMemoryVisitorProfileRepository;
   conversationOwnershipRepository: InMemoryConversationOwnershipRepository;
+  conversationActivity: InMemoryConversationActivityStore;
   actionOutbox: InMemoryActionOutbox;
   messageRepository: InMemoryMessageRepository;
   agentRepository: InMemoryAgentRepository;
@@ -901,6 +904,9 @@ export const createTestDependencies = (overrides: {
   const documentStorage = new InMemoryDocumentStorage();
   const conversationRepository = new InMemoryConversationRepository();
   const conversationOwnershipRepository = new InMemoryConversationOwnershipRepository();
+  const conversationActivity = new InMemoryConversationActivityStore(
+    async (conversationId) => conversationRepository.items.get(conversationId)?.title ?? null,
+  );
   conversationRepository.setOwnershipReader(conversationOwnershipRepository);
   const actionOutbox = new InMemoryActionOutbox();
   const operatorIdentityResolver = new OperatorIdentityResolver({
@@ -1771,6 +1777,12 @@ export const createTestDependencies = (overrides: {
     parse: (value: unknown) => value,
   });
 
+  const teammateLabels = createTeammateLabelReader({ users: userRepository });
+  const conversationActivityReads = createConversationActivityComposition({
+    store: conversationActivity,
+    teammateLabels,
+    messages: messageRepository,
+  }).reads;
   const chatHistoryService = new ChatHistoryService(
     conversationRepository,
     messageRepository,
@@ -1781,7 +1793,8 @@ export const createTestDependencies = (overrides: {
     conversationOwnershipRepository,
     undefined,
     visitorRepository,
-    createTeammateLabelReader({ users: userRepository }),
+    teammateLabels,
+    conversationActivityReads,
   );
   const routineStateStore = new InMemoryRoutineStateStore();
   const directiveStateStore = new InMemoryDirectiveStateStore();
@@ -2027,7 +2040,9 @@ export const createTestDependencies = (overrides: {
     conversations: conversationRepository,
     ownership: conversationOwnershipRepository,
     // The in-memory stores have no transactions; atomicity is covered against Postgres.
-    transfers: { run: (work) => work({ ownership: conversationOwnershipRepository, outbox: actionOutbox }) },
+    changes: {
+      run: (work) => work({ ownership: conversationOwnershipRepository, outbox: actionOutbox, activity: conversationActivity.writer() }),
+    },
     replyWrites: {
       run: (work) => work({
         conversations: {
@@ -2036,6 +2051,7 @@ export const createTestDependencies = (overrides: {
         },
         ownership: conversationOwnershipRepository,
         reply: { messages: messageRepository, conversations: conversationRepository, outbox: actionOutbox },
+        activity: conversationActivity.writer(),
       }),
     },
     operators: conversationOperatorDirectory,
@@ -2092,6 +2108,7 @@ export const createTestDependencies = (overrides: {
         throw new Error("approval_resume_not_configured");
       },
     },
+    conversationActivity,
     {
       resolveWorkspaceRole: (caller) => accountAccessService.resolveWorkspaceRole(caller),
     },
@@ -2608,6 +2625,7 @@ export const createTestDependencies = (overrides: {
     approvalDecisionService,
     conversationOwnershipService,
     conversationOperatorDirectory,
+    conversationActivityReads,
     workbenchReplayRunner: workbenchReplayRunner as any,
     testExecutionService,
     revisionEvalRunService,
@@ -2726,6 +2744,7 @@ export const createTestDependencies = (overrides: {
       conversationRepository,
       visitorRepository,
       conversationOwnershipRepository,
+      conversationActivity,
       actionOutbox,
       messageRepository,
       agentRepository,

@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { parseActivityCursor } from "../../../modules/conversationActivity/contracts/index.js";
+
 export const conversationParamsSchema = z.object({
   conversationId: z.string().uuid(),
 });
@@ -67,4 +69,11 @@ export const conversationWindowQuerySchema = z.object({
 export const conversationTailQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50),
   cursor: z.string().min(1).optional(),
+});
+
+/** The operator tail also takes the previous tail's activity cursor, to read only recent activity. */
+export const operatorConversationTailQuerySchema = conversationTailQuerySchema.extend({
+  activityCursor: z.string()
+    .refine((cursor) => parseActivityCursor(cursor) !== null, "Pass back an activityCursor a tail returned")
+    .optional(),
 });

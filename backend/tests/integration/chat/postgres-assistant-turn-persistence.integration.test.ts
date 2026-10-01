@@ -7,6 +7,7 @@ import { ConversationRepository, type ConversationRecord } from "../../../src/db
 import { ConversationOwnershipRepository } from "../../../src/db/repositories/conversationOwnershipRepository.js";
 import { RoutineStateRepository } from "../../../src/db/repositories/routineStateRepository.js";
 import { WorkspaceRepository, type WorkspaceRecord } from "../../../src/db/repositories/workspaceRepository.js";
+import { ConversationActivityRepository } from "../../../src/db/repositories/conversationActivityRepository.js";
 import { PostgresAssistantTurnPersistence } from "../../../src/modules/chat/infra/postgresAssistantTurnPersistence.js";
 import { projectVisitorRequestFacts, resolveContextForTurn } from "../../../src/modules/context-variables/public.js";
 import { Database } from "../../../src/shared/infra/database.js";
@@ -80,7 +81,7 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
     accounts = new AccountRepository(database.kysely);
     workspaces = new WorkspaceRepository(database.kysely);
     conversations = new ConversationRepository(database.kysely);
-    persistence = new PostgresAssistantTurnPersistence(database.kysely, 60_000);
+    persistence = new PostgresAssistantTurnPersistence(database.kysely, new ConversationActivityRepository(database.kysely), 60_000);
   });
 
   afterAll(async () => {
@@ -364,6 +365,61 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
     expect(ownershipAudit.event_type).toBe("hitl.ownership");
   });
 
+  it("records the handoff a turn requests, dated after the reply that announced it, and none for a repeat", async () => {
+    const { workspace, conversation } = await seedConversation();
+    const handoffTurn = (content: string) => persistence.completeAssistantTurn({
+      workspaceId: workspace.id,
+      conversationId: conversation.id,
+      assistantMessage: { conversationId: conversation.id, workspaceId: workspace.id, role: "assistant", content },
+      auditEvent: { eventType: "chat.answer", eventStatus: "success", workspaceId: workspace.id, metadata: {} },
+      ownershipHandoff: { reason: "retrieval_miss" },
+    });
+
+    const { message } = await handoffTurn("A person will help you from here.");
+    await handoffTurn("Someone is on the way.");
+
+    const activity = await database.query<{ kind: string; actor_user_id: string | null; detail: unknown; created_at: Date }>(
+      "SELECT kind, actor_user_id, detail, created_at FROM conversation_activity WHERE conversation_id = $1",
+      [conversation.id],
+    );
+    expect(activity).toEqual([{
+      kind: "handoff_requested",
+      actor_user_id: null,
+      detail: { reason: "retrieval_miss" },
+      created_at: expect.any(Date),
+    }]);
+    expect(activity[0].created_at.getTime()).toBeGreaterThanOrEqual(message.createdAt.getTime());
+  });
+
+  it("rolls the whole turn back, handoff included, when the handoff's activity cannot be recorded", async () => {
+    const { workspace, conversation } = await seedConversation();
+    const assistantMessageId = randomUUID();
+    const failing = new PostgresAssistantTurnPersistence(database.kysely, {
+      record: async () => { throw new Error("activity unavailable"); },
+    }, 60_000);
+
+    await expect(failing.completeAssistantTurn({
+      workspaceId: workspace.id,
+      conversationId: conversation.id,
+      assistantMessage: {
+        id: assistantMessageId,
+        conversationId: conversation.id,
+        workspaceId: workspace.id,
+        role: "assistant",
+        content: "A person will help you from here.",
+      },
+      auditEvent: { eventType: "chat.answer", eventStatus: "success", workspaceId: workspace.id, metadata: {} },
+      ownershipHandoff: { reason: "routine_handoff" },
+    })).rejects.toThrow("activity unavailable");
+
+    await expect(new ConversationOwnershipRepository(database.kysely).load(conversation.id)).resolves.toBeNull();
+    const messageCount = await database.queryOne<{ count: string }>(
+      "SELECT COUNT(*)::text AS count FROM messages WHERE id = $1",
+      [assistantMessageId],
+    );
+    expect(messageCount.count).toBe("0");
+  });
+
   it("returns facts to a caller-owned transaction while leaving a later rollback silent and durable-state free", async () => {
     const { accountId, workspace, conversation } = await seedConversation();
     const assistantMessageId = randomUUID();
@@ -613,7 +669,7 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
         calls.push(`requestDrain:${row.status}`);
       },
     };
-    const persistenceWithPush = new PostgresAssistantTurnPersistence(database.kysely, 60_000, undefined, actionDrainDispatcher);
+    const persistenceWithPush = new PostgresAssistantTurnPersistence(database.kysely, new ConversationActivityRepository(database.kysely), 60_000, undefined, actionDrainDispatcher);
 
     await persistenceWithPush.completeAssistantTurn({
       workspaceId: workspace.id,
@@ -648,7 +704,7 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
     const assistantMessageId = randomUUID();
     const requestDrain = { called: 0 };
     const actionDrainDispatcher = { requestDrain: async () => { requestDrain.called += 1; } };
-    const persistenceWithPush = new PostgresAssistantTurnPersistence(database.kysely, 60_000, undefined, actionDrainDispatcher);
+    const persistenceWithPush = new PostgresAssistantTurnPersistence(database.kysely, new ConversationActivityRepository(database.kysely), 60_000, undefined, actionDrainDispatcher);
 
     await persistenceWithPush.completeAssistantTurn({
       workspaceId: workspace.id,
@@ -679,7 +735,7 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
         throw new Error("cloud tasks unreachable");
       },
     };
-    const persistenceWithPush = new PostgresAssistantTurnPersistence(database.kysely, 60_000, undefined, actionDrainDispatcher);
+    const persistenceWithPush = new PostgresAssistantTurnPersistence(database.kysely, new ConversationActivityRepository(database.kysely), 60_000, undefined, actionDrainDispatcher);
 
     const { message } = await persistenceWithPush.completeAssistantTurn({
       workspaceId: workspace.id,

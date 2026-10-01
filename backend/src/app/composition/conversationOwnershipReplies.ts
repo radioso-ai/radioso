@@ -5,6 +5,7 @@ import { ConversationOwnershipRepository } from "../../db/repositories/conversat
 import { ConversationRepository } from "../../db/repositories/conversationRepository.js";
 import { MessageRepository } from "../../db/repositories/messageRepository.js";
 import type { ActionDrainDispatcherPort } from "../../modules/chat/composition.js";
+import type { ConversationActivityRecorder } from "../../modules/conversationActivity/contracts/index.js";
 import type { OwnershipReplyUnitOfWork } from "../../modules/handoff/public.js";
 import type { ErrorReporter } from "../../shared/errors/errorReporter.js";
 import type { DB } from "../../shared/infra/kysely/types.js";
@@ -15,11 +16,13 @@ import { pushActionDrainAfterCommit, type QueuedOutboxRow } from "./actionDrainA
  * Runs a teammate's reply in one Postgres transaction: the conversation and ownership rows are
  * locked before the ownership is checked, so a transfer or hand-back cannot commit between the
  * check and the message insert; and the reply's channel delivery is queued on the action outbox in
- * the same transaction, so a reply commits with its delivery or not at all. The drain push goes out
+ * the same transaction, so a reply commits with its delivery or not at all. A claim the reply makes
+ * records its activity in the same transaction too. The drain push goes out
  * only after commit, when a delivery was queued, and is best-effort.
  */
 export const createPostgresOwnershipReplyUnitOfWork = (deps: {
   db: Kysely<DB>;
+  activity: ConversationActivityRecorder;
   actionDrain: ActionDrainDispatcherPort;
   logger: Pick<AppLogger, "warn">;
   errorReporter?: Pick<ErrorReporter, "report">;
@@ -43,6 +46,7 @@ export const createPostgresOwnershipReplyUnitOfWork = (deps: {
             },
           },
         },
+        activity: { record: (event) => deps.activity.record(trx, event) },
       });
     });
     if (queued) {

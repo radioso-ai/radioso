@@ -1,4 +1,11 @@
 import { z } from "zod";
+import {
+  CLOSED_INBOX_ITEM_KINDS,
+  CLOSING_ACTIVITY_KINDS,
+  CONVERSATION_ACTIVITY_KINDS,
+  type ConversationActivityEntry,
+  type RecentlyClosedInboxItem,
+} from "../../../../modules/conversationActivity/contracts/index.js";
 import { assistantChatSchema } from "../../schemas/assistantChatSchemas.js";
 import {
   conversationParamsSchema,
@@ -22,6 +29,7 @@ import {
 } from "../../routes/publicChatRouteSchemas.js";
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 import type { OpenApiSchemaCatalog } from "../openApiRegistry.js";
+import type { SameType } from "../../../../shared/types/sameType.js";
 import { registerAgentReplyEnvelopeSchemas } from "./agentReplyEnvelopeSchemas.js";
 
 export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schemas: OpenApiSchemaCatalog) => {
@@ -677,6 +685,75 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     }),
   );
 
+  // Inline rather than registered: `.nullable()` on a registered $ref emits a contradictory
+  // `allOf: [$ref, null]` under OpenAPI 3.1.
+  const activityPerson = (description: string) => z.object({
+    userId: z.string().uuid(),
+    label: z.string().nullable().openapi({
+      description: "The teammate label as it is now: display name, else email. Null once the user is deleted.",
+    }),
+  }).nullable().openapi({ description });
+
+  const activityDecision = z.object({
+    optionId: z.string(),
+    label: z.string().openapi({ description: "The option's label as the routine author wrote it." }),
+  }).nullable();
+
+  const ConversationActivityEntrySchema = registry.register(
+    "ConversationActivityEntry",
+    z.object({
+      id: z.string().uuid(),
+      kind: z.enum(CONVERSATION_ACTIVITY_KINDS),
+      createdAt: z.string().datetime(),
+      actor: activityPerson("The teammate who acted. Null when the agent acted, or the change came from a caller that is no teammate."),
+      subject: activityPerson("The teammate who holds a `reassigned` conversation now."),
+      from: activityPerson("Who held a `reassigned` conversation before. Null when nobody had claimed the handoff."),
+      handoffReason: z.string().nullable().openapi({
+        description: "The handoff reason code on `handoff_requested`, for example `routine_handoff` or `retrieval_miss`.",
+      }),
+      decision: activityDecision.openapi({ description: "The option chosen on `approval_decided`." }),
+      resolution: z.string().nullable().openapi({
+        description: "The triage resolution code given on `feedback_resolved` or `feedback_dismissed`.",
+      }),
+      assistantMessageId: z.string().uuid().nullable().openapi({
+        description: "The answer the feedback was on, for `feedback_resolved` and `feedback_dismissed`.",
+      }),
+    }).openapi({
+      description: "Something a teammate or the agent did to the conversation. Operator reads only. `feedback_resolved` and `feedback_dismissed` reach only a caller with Quality access (`workspace.quality.read`).",
+    }),
+  );
+
+  const RecentlyClosedInboxItemSchema = registry.register(
+    "RecentlyClosedInboxItem",
+    z.object({
+      id: z.string().uuid().openapi({ description: "The closing event's id." }),
+      conversationId: z.string().uuid(),
+      itemKind: z.enum(CLOSED_INBOX_ITEM_KINDS),
+      outcome: z.enum(CLOSING_ACTIVITY_KINDS),
+      closedAt: z.string().datetime(),
+      closedBy: activityPerson("The teammate who closed it. Null for a caller that is no teammate, or a user since deleted."),
+      decision: activityDecision.openapi({ description: "The option chosen, for an approval." }),
+      resolution: z.string().nullable().openapi({ description: "The triage resolution code, for negative feedback." }),
+      assistantMessageId: z.string().uuid().nullable().openapi({ description: "The answer, for negative feedback." }),
+      title: z.string().nullable().openapi({ description: "See ChatConversationSummary.title." }),
+      preview: z.string().nullable().openapi({ description: "The conversation's first-message preview." }),
+    }),
+  );
+
+  // A documented shape that drifts from its contract fails tsc here.
+  const activitySchemasMatchContracts: [
+    SameType<z.infer<typeof ConversationActivityEntrySchema>, ConversationActivityEntry>,
+    SameType<z.infer<typeof RecentlyClosedInboxItemSchema>, RecentlyClosedInboxItem>,
+  ] = [true, true];
+  void activitySchemasMatchContracts;
+
+  const RecentlyClosedInboxItemsResponseSchema = registry.register(
+    "RecentlyClosedInboxItemsResponse",
+    z.object({
+      items: z.array(RecentlyClosedInboxItemSchema),
+    }),
+  );
+
   const HumanReplyMessageSchema = registry.register(
     "HumanReplyMessage",
     z.object({
@@ -752,6 +829,9 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       ownership: ConversationOwnershipSchema.optional().openapi({
         description: "The conversation's ownership record whenever one exists, `ai_owned` included, the same as the tail's, so a reader holding an older record sees a hand-back by its higher version. Absent until a teammate is first involved.",
       }),
+      activity: z.array(ConversationActivityEntrySchema).optional().openapi({
+        description: "What teammates and the agent did to the conversation, oldest first: handoffs, claims, reassignments, hand-backs, approvals decided, and — for a caller with Quality access — feedback resolved or dismissed.",
+      }),
     }),
   );
 
@@ -762,6 +842,12 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       cursor: z.string().nullable(),
       ownership: ConversationOwnershipSchema.optional().openapi({
         description: "The conversation's ownership record whenever one exists, `ai_owned` included, so a hand-back made elsewhere reaches a reader polling the tail. Absent until a teammate is first involved.",
+      }),
+      activity: z.array(ConversationActivityEntrySchema).optional().openapi({
+        description: "The conversation's activity, oldest first, so a reader polling the tail sees an event recorded elsewhere: the whole timeline, or with `activityCursor` the events in a recent window. The window reaches back far enough to take in an event whose transaction committed after a newer event's, so it can repeat events the caller already holds: keep each one once by its `id`. Feedback outcomes reach only a caller with Quality access.",
+      }),
+      activityCursor: z.string().optional().openapi({
+        description: "Opaque. Pass as the next tail's `activityCursor` to read only recent activity. Present whenever `activity` is.",
       }),
     }),
   );
@@ -783,6 +869,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     "PublicChatConversationDetail",
     ChatConversationDetailSchema.omit({
       ownership: true,
+      activity: true,
       agentInternalName: true,
       entryPageUrl: true,
       entryReferrer: true,
@@ -866,6 +953,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     ConversationOwnershipSchema,
     ConversationOwnershipResponseSchema,
     ConversationOperatorsResponseSchema,
+    RecentlyClosedInboxItemsResponseSchema,
     AssistantRouteSchema,
     AssistantRouteDiagnosticsSchema,
     CapabilitySubTraceSchema,

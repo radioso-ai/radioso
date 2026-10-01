@@ -11,6 +11,7 @@ import {
   type PostCommitInvalidationReceipt,
   type WorkspaceInvalidationPublisher,
 } from "@radioso/workspace-invalidation-contract";
+import type { ConversationActivityRecorder } from "../conversationActivity/contracts/index.js";
 import {
   ApprovalDecisionDomainError,
   satisfiesDeciderScope,
@@ -19,7 +20,7 @@ import {
   type ResolvedApprovalDecision,
 } from "./domain.js";
 
-export type ApprovalDecisionServiceFailureReason =
+type ApprovalDecisionServiceFailureReason =
   | "not_found"
   | "already_resolved"
   | "forbidden_decider"
@@ -53,7 +54,7 @@ export interface ApprovalResumeResult {
   postCommitReceipt: PostCommitInvalidationReceipt;
 }
 
-export interface ApprovalDecisionConversationEventPublisher {
+interface ApprovalDecisionConversationEventPublisher {
   publishMessageCreated(input: {
     workspaceId: string;
     conversationId: string;
@@ -62,7 +63,7 @@ export interface ApprovalDecisionConversationEventPublisher {
   }): void;
 }
 
-export interface ResolveApprovalDecisionInput {
+interface ResolveApprovalDecisionInput {
   agentId: string;
   handle: string;
   optionId: string;
@@ -71,11 +72,11 @@ export interface ResolveApprovalDecisionInput {
   caller: DecisionCaller;
 }
 
-export interface ApprovalDecisionRoleResolver {
+interface ApprovalDecisionRoleResolver {
   resolveWorkspaceRole(input: DecisionCaller): Promise<DecisionCaller["workspaceRole"]>;
 }
 
-export interface ResolveApprovalDecisionResult {
+interface ResolveApprovalDecisionResult {
   status: "resolved";
   // The option id the operator chose (what the routine branched on), echoed back for the
   // caller's record. Not a binary approve/reject — a gate can have any author-named choices.
@@ -93,6 +94,8 @@ export class ApprovalDecisionService {
   constructor(
     private readonly pendingDecisions: PendingDecisionReader,
     private readonly resumeRunner: ResumeRunner,
+    // Records who decided, in the transaction that resolves the decision.
+    private readonly activity: ConversationActivityRecorder,
     private readonly roleResolver?: ApprovalDecisionRoleResolver,
     private readonly conversationEvents?: ApprovalDecisionConversationEventPublisher,
     private readonly workspaceInvalidationPublisher: WorkspaceInvalidationPublisher =
@@ -135,21 +138,34 @@ export class ApprovalDecisionService {
       throw error;
     }
 
+    const decidedByUserId = input.caller.userId ?? null;
     const resume = await this.pendingDecisions.resolveInTransaction({
       handle: input.handle,
       status: "resolved",
       decision: resolved.decision,
       decidedBy: input.caller.accountId,
+      decidedByUserId,
       contentHash: input.contentHash,
-    }, async (resolvedRecord, transaction) =>
-      this.resumeRunner.resume({
+    }, async (resolvedRecord, transaction) => {
+      // Recorded before the resume's reply, so the decision dates before the turn it resumes.
+      await this.activity.record(transaction, {
+        kind: "approval_decided",
+        conversationId: resolvedRecord.conversationId,
+        workspaceId: resolvedRecord.workspaceId,
+        actorUserId: decidedByUserId,
+        detail: {
+          handle: resolvedRecord.handle,
+          decision: { optionId: resolved.decision.optionId, label: resolved.decision.label },
+        },
+      });
+      return this.resumeRunner.resume({
         record: resolvedRecord,
         optionId: resolved.decision.optionId,
         payload: resolved.decision.payload,
         decidedBy: input.caller.accountId,
         transaction,
-      })
-    );
+      });
+    });
 
     if (!resume) {
       throw new ApprovalDecisionServiceError("concurrent_resolution");

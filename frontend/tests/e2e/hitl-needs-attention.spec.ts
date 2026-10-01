@@ -477,43 +477,21 @@ test("operator opens a recently closed feedback conversation from Needs-you", as
   const conversationId = "conversation-recently-closed-feedback";
   const assistantMessageId = "assistant-recently-closed-feedback";
   const closedAt = "2026-06-20T23:12:00.000Z";
-  const closedTurn = {
-    assistantMessageId,
-    conversationId,
-    agentId: defaultAgentId,
-    agentName: "Marta",
-    channel: "website_embed",
-    question: "Who is Nikola Tesla?",
-    answerPreview: "Nikola Tesla was an inventor and electrical engineer.",
-    skillName: "retrieval.answer",
-    skillOutcome: "grounded",
-    skillStatus: "completed",
-    totalLatencyMs: 900,
-    createdAt: "2026-06-20T23:00:00.000Z",
-    feedback: {
-      upCount: 0,
-      downCount: 1,
-      latestDownUpdatedAt: "2026-06-20T23:05:00.000Z",
-      comments: [{
-        value: "down",
-        comment: "Needed a source.",
-        createdAt: "2026-06-20T23:05:00.000Z",
-        updatedAt: "2026-06-20T23:05:00.000Z",
-      }],
-    },
-    triage: {
-      state: "resolved",
-      version: 2,
-      resolution: { reason: "expected_behavior", note: null },
-      legacyReason: null,
-      closedAt,
-      updatedAt: closedAt,
-    },
-    verification: null,
-  };
-
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, {
+    recentlyClosed: [{
+      id: "00000000-0000-4000-8000-00000000c105",
+      conversationId,
+      itemKind: "negative_feedback",
+      outcome: "feedback_resolved",
+      closedAt,
+      closedBy: { userId: "user-dana", label: "Dana Scully" },
+      decision: null,
+      resolution: "knowledge_gap",
+      assistantMessageId,
+      title: null,
+      preview: "Who is Nikola Tesla?",
+    }],
     conversationDetail: {
       conversationId,
       workspaceId,
@@ -549,28 +527,15 @@ test("operator opens a recently closed feedback conversation from Needs-you", as
       ],
     },
   });
-  await page.route("**/backend/api/v1/quality/turns**", async (route) => {
-    const url = new URL(route.request().url());
-    const isRecentlyClosed = url.searchParams.get("triage") === "dismissed,resolved";
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        items: isRecentlyClosed ? [closedTurn] : [],
-        total: isRecentlyClosed ? 1 : 0,
-        page: 1,
-        pageSize: isRecentlyClosed ? 10 : 25,
-        totalPages: isRecentlyClosed ? 1 : 0,
-      }),
-    });
-  });
+  await stubEmptyQualityQueue(page);
 
   await page.goto(`/w/${workspaceKey}/activity?tab=needs-attention`);
 
   const queue = page.getByLabel("Inbox queue");
   const closedRow = queue.getByRole("button", { name: /Who is Nikola Tesla\?/ });
   await expect(closedRow).toBeVisible();
-  await expect(closedRow).toContainText("Resolved");
+  await expect(closedRow).toContainText("Feedback resolved");
+  await expect(closedRow).toContainText("Closed by Dana Scully");
 
   await closedRow.click();
 
@@ -618,82 +583,54 @@ test("an empty Needs-you queue hides the filters, keeps the toggle in the left p
   await expect(page.getByRole("complementary", { name: "Conversations" })).toBeVisible();
 });
 
-test("the recently-closed strip shows the resolution and when it was closed", async ({ page }) => {
-  const conversationId = "conversation-recently-closed";
-  const assistantMessageId = "assistant-recently-closed";
-  const closedAtIso = "2026-08-26T16:40:00.000Z";
-  const dismissedTurn = {
-    assistantMessageId,
-    conversationId,
-    agentId: defaultAgentId,
-    agentName: "Marta",
-    channel: "website_embed",
-    question: "Do you ship internationally?",
-    answerPreview: "We currently only ship within the EU.",
-    skillName: "retrieval.answer",
-    skillOutcome: "grounded",
-    skillStatus: "completed",
-    totalLatencyMs: 800,
-    createdAt: "2026-08-26T16:00:00.000Z",
-    feedback: {
-      upCount: 0,
-      downCount: 1,
-      latestDownUpdatedAt: "2026-08-26T16:05:00.000Z",
-      comments: [{
-        value: "down",
-        comment: "Doesn't mention international shipping timelines.",
-        createdAt: "2026-08-26T16:05:00.000Z",
-        updatedAt: "2026-08-26T16:05:00.000Z",
-      }],
-    },
-    triage: {
-      state: "dismissed",
-      version: 1,
-      resolution: { reason: "expected_behavior", note: null },
-      legacyReason: null,
-      closedAt: closedAtIso,
-      updatedAt: closedAtIso,
-    },
-    verification: null,
-  };
+test("the recently-closed strip names what closed, who closed it, and when", async ({ page }) => {
+  const closedAt = "2026-08-26T16:40:00.000Z";
+  const closedItem = (id: string, overrides: Record<string, unknown>) => ({
+    id,
+    conversationId: `conversation-${id}`,
+    closedAt,
+    closedBy: { userId: "user-dana", label: "Dana Scully" },
+    decision: null,
+    resolution: null,
+    assistantMessageId: null,
+    title: null,
+    preview: null,
+    ...overrides,
+  });
 
   await seedDashboardStorage(page);
-  await installDashboardApiMocks(page);
-  // The recently-closed strip issues its own query (triageStates:
-  // ['resolved', 'dismissed'], see use-inbox-recently-closed.ts), separate
-  // from the open-feedback query the live queue uses — distinguish them by
-  // the `triage` filter param so only the recently-closed one returns data.
-  await page.route("**/backend/api/v1/quality/turns**", async (route) => {
-    const url = new URL(route.request().url());
-    // normalizeQualityTurnsRequest sorts the triage-state set alphabetically
-    // (lib/quality-query-state.ts), so ['resolved', 'dismissed'] is sent as
-    // "dismissed,resolved" on the wire.
-    const isRecentlyClosedQuery = url.searchParams.get("triage") === "dismissed,resolved";
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        items: isRecentlyClosedQuery ? [dismissedTurn] : [],
-        total: isRecentlyClosedQuery ? 1 : 0,
-        page: 1,
-        pageSize: isRecentlyClosedQuery ? 10 : 25,
-        totalPages: 1,
+  await installDashboardApiMocks(page, {
+    recentlyClosed: [
+      closedItem("00000000-0000-4000-8000-000000000621", {
+        itemKind: "handoff", outcome: "handed_back", preview: "Can I change my delivery address?",
       }),
-    });
+      closedItem("00000000-0000-4000-8000-000000000622", {
+        itemKind: "approval",
+        outcome: "approval_decided",
+        title: "Refund for order 1042",
+        decision: { optionId: "approve", label: "Approve refund" },
+      }),
+      closedItem("00000000-0000-4000-8000-000000000623", {
+        itemKind: "negative_feedback",
+        outcome: "feedback_dismissed",
+        preview: "Do you ship internationally?",
+        closedBy: null,
+      }),
+    ] as never,
   });
+  await stubEmptyQualityQueue(page);
 
   await page.goto(`/w/${workspaceKey}/activity?tab=needs-attention`);
 
   const queue = page.getByLabel("Inbox queue");
   await expect(queue.getByText("Recently closed")).toBeVisible();
-  await expect(queue.getByText("Do you ship internationally?")).toBeVisible();
-  // The resolution label alone used to be all this row showed — the fix
-  // appends when it closed, using the same absolute-timestamp formatter the
-  // All lens's rows use (formatInboxRowTimestamp). The exact rendered string
-  // is locale-dependent, so this checks the fix's shape (a separator
-  // followed by non-empty content) rather than an exact date string.
-  await expect(queue.getByText(/^Dismissed · .+/)).toBeVisible();
-  await expect(queue.getByText("Dismissed", { exact: true })).toHaveCount(0);
+  // The time is locale-formatted (formatInboxRowTimestamp), so each line checks the shape after it.
+  await expect(queue.getByRole("button", { name: /Can I change my delivery address\?/ }))
+    .toContainText(/Handoff · Closed by Dana Scully · .+/);
+  await expect(queue.getByRole("button", { name: /Refund for order 1042/ }))
+    .toContainText(/Approval · Approve refund · Closed by Dana Scully · .+/);
+  await expect(queue.getByRole("button", { name: /Do you ship internationally\?/ }))
+    .toContainText(/Feedback dismissed · Closed · .+/);
 });
 
 // ── Per-teammate ownership ──────────────────────────────────────────────────
@@ -914,6 +851,44 @@ test("operator reassigns a handoff a teammate holds to a third teammate", async 
   await expect.poll(() => transferRequests).toEqual([{ toUserId: "user-fox", expectedVersion: 4 }]);
   await expect(response.getByText("fox@example.com is handling this")).toBeVisible();
   await expect(response.getByRole("textbox", { name: "Reply to the visitor" })).toHaveCount(0);
+});
+
+test("the thread shows who assigned, reassigned, and handed back a handoff, and recently closed names who closed it", async ({ page }) => {
+  const conversationId = "conversation-activity";
+  const waiting = handoffOwnership(conversationId, null, 1);
+  const transferRequests: Array<{ toUserId: string; expectedVersion: number }> = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    historyList: { conversations: [handoffSummary(conversationId, "Lost luggage claim", waiting)], total: 1, nextCursor: null, hasMore: false },
+    conversationDetails: { [conversationId]: handoffDetail(conversationId, waiting) },
+    conversationOperators: teammates,
+    transferRequests,
+  });
+  await stubEmptyQualityQueue(page);
+
+  await page.goto(`/w/${workspaceKey}/activity`);
+  const queue = page.getByLabel("Inbox queue");
+  await queue.getByRole("button", { name: /Lost luggage claim/ }).click();
+
+  const response = page.getByLabel("Response", { exact: true });
+  await response.getByRole("button", { name: "Assign", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Dana Scully" }).click();
+  await expect(response.getByText("Test Operator assigned this to Dana Scully")).toBeVisible();
+
+  await response.getByRole("button", { name: "Reassign" }).click();
+  await page.getByRole("menuitem", { name: "Me" }).click();
+  await expect(response.getByText("Test Operator took this from Dana Scully")).toBeVisible();
+  await expect.poll(() => transferRequests.map((transfer) => transfer.toUserId)).toEqual(["user-dana", currentUserId]);
+
+  await response.getByRole("button", { name: "Done" }).click();
+
+  // Titled by the conversation's first message, as the backend titles an untitled conversation.
+  const closedRow = queue.getByRole("button", { name: /Can I speak to someone\?/ });
+  await expect(closedRow).toContainText(/Handoff · Closed by Test Operator · .+/);
+  await closedRow.click();
+  await expect(response.getByText("Test Operator handed this back to the agent")).toBeVisible();
+  await expect(response.getByText("Test Operator assigned this to Dana Scully")).toBeVisible();
 });
 
 test("ownership taken over elsewhere reaches an open pane through the tail poll, and the composer switches away", async ({ page }) => {

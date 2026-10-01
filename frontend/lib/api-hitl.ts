@@ -9,6 +9,7 @@ import type {
   HumanReplyMessageResponse,
   HumanReplyRequest,
   PendingApprovalDecisionListResponse,
+  RecentlyClosedInboxItemsResponse,
   ResolveDecisionRequest,
   ResolveDecisionResponse,
   TakeOverConversationRequest,
@@ -97,6 +98,17 @@ export const hitlApi = {
     )
   },
 
+  async listRecentlyClosed(
+    params: { limit?: number } = {},
+    signal?: AbortSignal,
+  ): Promise<RecentlyClosedInboxItemsResponse> {
+    return request<RecentlyClosedInboxItemsResponse>(
+      withQuery('/conversations/recently-closed', params),
+      { method: 'GET', ...(signal ? { signal } : {}) },
+      { withSession: true },
+    )
+  },
+
   async transferConversation(
     conversationId: string,
     body: TransferConversationOwnershipRequest,
@@ -121,7 +133,7 @@ export const hitlApi = {
 
   async tailConversation(
     conversationId: string,
-    params: { cursor?: string; limit?: number } = {},
+    params: { cursor?: string; limit?: number; activityCursor?: string } = {},
     signal?: AbortSignal,
   ): Promise<ChatConversationTail> {
     return request<ChatConversationTail>(

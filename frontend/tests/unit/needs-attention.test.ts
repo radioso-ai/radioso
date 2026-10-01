@@ -4,7 +4,7 @@ import type { ChatConversationSummary, ConversationOwnership, LowQualityTurn, Pe
 import {
   buildInboxModel,
   buildInboxItems,
-  buildRecentlyClosedFeedbackItems,
+  buildRecentlyClosedItems,
   countAiHandledConversationsByAgent,
   countInboxItemsByType,
   countNewInboxItems,
@@ -21,7 +21,6 @@ import {
   matchesInboxSearch,
   ownershipLabel,
   QUALITY_INBOX_ITEM_LIMIT,
-  RECENTLY_CLOSED_FEEDBACK_LIMIT,
   selectHumanOwnedConversations,
   summarizeAiHandledConversations,
   TAKEN_BY_ME,
@@ -1201,75 +1200,42 @@ describe('listTakenByOperators', () => {
   })
 })
 
-describe('buildRecentlyClosedFeedbackItems', () => {
-  const closedTurn = (overrides: Partial<LowQualityTurn> = {}): LowQualityTurn => ({
-    assistantMessageId: 'message-1',
+describe('buildRecentlyClosedItems', () => {
+  const apiItem = (overrides: Record<string, unknown> = {}) => ({
+    id: 'activity-1',
     conversationId: 'conversation-1',
-    agentId: 'agent-1',
-    agentName: 'Marta',
-    agentInternalName: null,
-    channel: 'authenticated_chat',
-    question: 'What is your refund policy?',
-    answerPreview: 'I could not find that in the documents.',
-    skillName: 'retrieval.answer',
-    skillOutcome: 'no_context',
-    skillStatus: 'completed',
-    totalLatencyMs: 1200,
-    grounding: null,
-    createdAt: '2026-06-19T10:00:00.000Z',
-    feedback: { upCount: 0, downCount: 1, latestDownUpdatedAt: null, comments: [] },
-    triage: {
-      state: 'resolved',
-      version: 1,
-      resolution: null,
-      legacyReason: null,
-      closedAt: '2026-06-19T11:00:00.000Z',
-      updatedAt: '2026-06-19T11:00:00.000Z',
-    },
-    verification: null,
+    itemKind: 'handoff' as const,
+    outcome: 'handed_back' as const,
+    closedAt: '2026-09-30T11:00:00.000Z',
+    closedBy: { userId: 'user-bea', label: 'Bea' },
+    decision: null,
+    resolution: null,
+    assistantMessageId: null,
+    title: null,
+    preview: 'Where is my parcel?',
     ...overrides,
   })
 
-  it('keeps only resolved and dismissed turns', () => {
-    const items = buildRecentlyClosedFeedbackItems([
-      closedTurn({ assistantMessageId: 'open', triage: { state: 'open', version: 0, resolution: null, legacyReason: null, closedAt: null, updatedAt: null } }),
-      closedTurn({ assistantMessageId: 'resolved' }),
-      closedTurn({ assistantMessageId: 'dismissed', triage: { state: 'dismissed', version: 1, resolution: null, legacyReason: null, closedAt: '2026-06-19T12:00:00.000Z', updatedAt: '2026-06-19T12:00:00.000Z' } }),
+  it('titles each item like its queue row, keyed by the closing event, in the order given', () => {
+    const items = buildRecentlyClosedItems([
+      apiItem({ id: 'newer', title: 'Refund for order 1042' }),
+      apiItem({ id: 'older' }),
     ])
 
-    expect(items.map((i) => i.key)).toEqual(['quality:dismissed', 'quality:resolved'])
+    expect(items).toEqual([
+      expect.objectContaining({ key: 'closed:newer', title: 'Refund for order 1042', closedBy: { userId: 'user-bea', label: 'Bea' } }),
+      expect.objectContaining({ key: 'closed:older', title: 'Where is my parcel?' }),
+    ])
   })
 
-  it('sorts newest closure first', () => {
-    const items = buildRecentlyClosedFeedbackItems([
-      closedTurn({
-        assistantMessageId: 'older',
-        triage: { state: 'resolved', version: 1, resolution: null, legacyReason: null, closedAt: '2026-06-19T09:00:00.000Z', updatedAt: '2026-06-19T09:00:00.000Z' },
-      }),
-      closedTurn({
-        assistantMessageId: 'newer',
-        triage: { state: 'resolved', version: 1, resolution: null, legacyReason: null, closedAt: '2026-06-19T15:00:00.000Z', updatedAt: '2026-06-19T15:00:00.000Z' },
-      }),
+  it('carries what was closed and how: the item kind, the outcome, and an approval\'s chosen label', () => {
+    const [handoff, approval] = buildRecentlyClosedItems([
+      apiItem(),
+      apiItem({ itemKind: 'approval', outcome: 'approval_decided', decision: { optionId: 'approve', label: 'Approve refund' } }),
     ])
 
-    expect(items.map((i) => i.key)).toEqual(['quality:newer', 'quality:older'])
-  })
-
-  it('caps the strip length', () => {
-    const turns = Array.from({ length: RECENTLY_CLOSED_FEEDBACK_LIMIT + 3 }, (_, index) =>
-      closedTurn({
-        assistantMessageId: `message-${index}`,
-        triage: {
-          state: 'resolved',
-          version: 1,
-          resolution: null,
-          legacyReason: null,
-          closedAt: new Date(Date.UTC(2026, 5, 19, 10, index)).toISOString(),
-          updatedAt: new Date(Date.UTC(2026, 5, 19, 10, index)).toISOString(),
-        },
-      }))
-
-    expect(buildRecentlyClosedFeedbackItems(turns)).toHaveLength(RECENTLY_CLOSED_FEEDBACK_LIMIT)
+    expect(handoff).toMatchObject({ itemKind: 'handoff', outcome: 'handed_back', decisionLabel: null })
+    expect(approval).toMatchObject({ itemKind: 'approval', outcome: 'approval_decided', decisionLabel: 'Approve refund' })
   })
 })
 

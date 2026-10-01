@@ -15599,6 +15599,293 @@
           "operators"
         ]
       },
+      "ConversationActivityEntry": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "handoff_requested",
+              "claimed",
+              "reassigned",
+              "handed_back",
+              "approval_decided",
+              "feedback_resolved",
+              "feedback_dismissed"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "actor": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "userId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "label": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The teammate label as it is now: display name, else email. Null once the user is deleted."
+              }
+            },
+            "required": [
+              "userId",
+              "label"
+            ],
+            "description": "The teammate who acted. Null when the agent acted, or the change came from a caller that is no teammate."
+          },
+          "subject": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "userId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "label": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The teammate label as it is now: display name, else email. Null once the user is deleted."
+              }
+            },
+            "required": [
+              "userId",
+              "label"
+            ],
+            "description": "The teammate who holds a `reassigned` conversation now."
+          },
+          "from": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "userId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "label": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The teammate label as it is now: display name, else email. Null once the user is deleted."
+              }
+            },
+            "required": [
+              "userId",
+              "label"
+            ],
+            "description": "Who held a `reassigned` conversation before. Null when nobody had claimed the handoff."
+          },
+          "handoffReason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The handoff reason code on `handoff_requested`, for example `routine_handoff` or `retrieval_miss`."
+          },
+          "decision": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "optionId": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string",
+                "description": "The option's label as the routine author wrote it."
+              }
+            },
+            "required": [
+              "optionId",
+              "label"
+            ],
+            "description": "The option chosen on `approval_decided`."
+          },
+          "resolution": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The triage resolution code given on `feedback_resolved` or `feedback_dismissed`."
+          },
+          "assistantMessageId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "The answer the feedback was on, for `feedback_resolved` and `feedback_dismissed`."
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "createdAt",
+          "actor",
+          "subject",
+          "from",
+          "handoffReason",
+          "decision",
+          "resolution",
+          "assistantMessageId"
+        ],
+        "description": "Something a teammate or the agent did to the conversation. Operator reads only. `feedback_resolved` and `feedback_dismissed` reach only a caller with Quality access (`workspace.quality.read`)."
+      },
+      "RecentlyClosedInboxItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The closing event's id."
+          },
+          "conversationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "itemKind": {
+            "type": "string",
+            "enum": [
+              "handoff",
+              "approval",
+              "negative_feedback"
+            ]
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "handed_back",
+              "approval_decided",
+              "feedback_resolved",
+              "feedback_dismissed"
+            ]
+          },
+          "closedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "closedBy": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "userId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "label": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The teammate label as it is now: display name, else email. Null once the user is deleted."
+              }
+            },
+            "required": [
+              "userId",
+              "label"
+            ],
+            "description": "The teammate who closed it. Null for a caller that is no teammate, or a user since deleted."
+          },
+          "decision": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "optionId": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string",
+                "description": "The option's label as the routine author wrote it."
+              }
+            },
+            "required": [
+              "optionId",
+              "label"
+            ],
+            "description": "The option chosen, for an approval."
+          },
+          "resolution": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The triage resolution code, for negative feedback."
+          },
+          "assistantMessageId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "The answer, for negative feedback."
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "See ChatConversationSummary.title."
+          },
+          "preview": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The conversation's first-message preview."
+          }
+        },
+        "required": [
+          "id",
+          "conversationId",
+          "itemKind",
+          "outcome",
+          "closedAt",
+          "closedBy",
+          "decision",
+          "resolution",
+          "assistantMessageId",
+          "title",
+          "preview"
+        ]
+      },
+      "RecentlyClosedInboxItemsResponse": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecentlyClosedInboxItem"
+            }
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
       "HumanReplyMessage": {
         "type": "object",
         "properties": {
@@ -15855,6 +16142,13 @@
                 "description": "The conversation's ownership record whenever one exists, `ai_owned` included, the same as the tail's, so a reader holding an older record sees a hand-back by its higher version. Absent until a teammate is first involved."
               }
             ]
+          },
+          "activity": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConversationActivityEntry"
+            },
+            "description": "What teammates and the agent did to the conversation, oldest first: handoffs, claims, reassignments, hand-backs, approvals decided, and — for a caller with Quality access — feedback resolved or dismissed."
           }
         },
         "required": [
@@ -15904,6 +16198,17 @@
                 "description": "The conversation's ownership record whenever one exists, `ai_owned` included, so a hand-back made elsewhere reaches a reader polling the tail. Absent until a teammate is first involved."
               }
             ]
+          },
+          "activity": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConversationActivityEntry"
+            },
+            "description": "The conversation's activity, oldest first, so a reader polling the tail sees an event recorded elsewhere: the whole timeline, or with `activityCursor` the events in a recent window. The window reaches back far enough to take in an event whose transaction committed after a newer event's, so it can repeat events the caller already holds: keep each one once by its `id`. Feedback outcomes reach only a caller with Quality access."
+          },
+          "activityCursor": {
+            "type": "string",
+            "description": "Opaque. Pass as the next tail's `activityCursor` to read only recent activity. Present whenever `activity` is."
           }
         },
         "required": [
@@ -45853,6 +46158,16 @@
             "required": false,
             "name": "cursor",
             "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The previous tail's `activityCursor`, passed back as returned: opaque, and a string no tail returned is refused with 400. The response's `activity` then carries only the events in a recent window, so it can repeat events the caller already holds; without it, the whole timeline."
+            },
+            "required": false,
+            "name": "activityCursor",
+            "in": "query"
           }
         ],
         "responses": {
@@ -46166,6 +46481,78 @@
           },
           "404": {
             "description": "Search history entry not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/conversations/recently-closed": {
+      "get": {
+        "tags": [
+          "Conversation Activity"
+        ],
+        "summary": "List the Inbox items closed most recently",
+        "description": "Returns the workspace's most recently closed Inbox items, newest first: handoffs handed back to the agent, approvals decided, and negative feedback resolved or dismissed. Negative feedback is listed only to a caller with Quality access (`workspace.quality.read`). Each item names the teammate who closed it, labelled by display name, else email. Dashboard test chats are left out.",
+        "operationId": "listRecentlyClosedInboxItems",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 10,
+              "description": "How many items to return, 1 to 50."
+            },
+            "required": false,
+            "description": "How many items to return, 1 to 50.",
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recently closed items returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecentlyClosedInboxItemsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace conversation takeover permission required",
             "content": {
               "application/json": {
                 "schema": {

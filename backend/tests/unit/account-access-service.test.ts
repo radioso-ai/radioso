@@ -4,6 +4,7 @@ import {
   AccountAccessService,
   AGENT_CONVERSE_PERMISSIONS,
   PUBLIC_CHAT_PERMISSIONS,
+  workspaceRoleAllows,
   type AccountPermission,
   type PublicChatPermission,
 } from "../../src/modules/account/services/accountAccessService.js";
@@ -126,6 +127,53 @@ describe("AccountAccessService", () => {
     );
   });
 
+  it("returns the effective workspace role it authorized a teammate by, and none for a credential", async () => {
+    const userRepository = new InMemoryUserRepository();
+    const membershipRepository = new InMemoryAccountMembershipRepository();
+    membershipRepository.setUserRepository(userRepository);
+    const grantRepository = new InMemoryWorkspaceGrantRepository();
+    const service = new AccountAccessService(membershipRepository, createAuditService(), grantRepository);
+    const addMember = async (email: string) => {
+      const user = await userRepository.create({ email, passwordHash: "hash" });
+      await membershipRepository.create({ accountId: "account-1", userId: user.id, role: "member" });
+      return user.id;
+    };
+    const member = await addMember("member@example.com");
+    const grantedAdmin = await addMember("granted@example.com");
+    await grantRepository.upsert({ workspaceId: "workspace-1", accountId: "account-1", userId: grantedAdmin, role: "admin" });
+    const check = { accountId: "account-1", workspaceId: "workspace-1", permission: "workspace.history.read" as const };
+
+    await expect(service.requirePermission({ ...check, userId: member })).resolves.toBe("member");
+    await expect(service.requirePermission({ ...check, userId: grantedAdmin })).resolves.toBe("admin");
+    await expect(service.requirePermission({
+      ...check,
+      principal: {
+        type: "personal_api_credential",
+        userId: grantedAdmin,
+        credentialId: "credential-1",
+        role: "admin",
+        workspaceId: "workspace-1",
+      },
+    })).resolves.toBeNull();
+  });
+
+  it("evaluates a role's permissions by the same rule it authorizes with", () => {
+    const service = new AccountAccessService(new InMemoryAccountMembershipRepository(), createAuditService());
+    const permissions: AccountPermission[] = [
+      "workspace.history.read",
+      "workspace.quality.read",
+      "workspace.conversation.takeover",
+      "account.membership.remove",
+      "account.organization.delete",
+    ];
+
+    for (const role of ["member", "admin", "owner"] as const) {
+      const allowed = service.permissionsForWorkspaceRole(role, permissions);
+      expect(permissions.filter((permission) => workspaceRoleAllows(role, permission))).toEqual([...allowed]);
+    }
+    expect(workspaceRoleAllows("owner", "public_chat.turn.create")).toBe(false);
+  });
+
   it("maps API-access capabilities through the central workspace permission authority", () => {
     const service = new AccountAccessService(new InMemoryAccountMembershipRepository(), createAuditService());
     const apiAccessPermissions: AccountPermission[] = [
@@ -224,7 +272,7 @@ describe("AccountAccessService", () => {
       principal,
       permission: "workspace.documents.manage",
       workspaceId: "workspace-a",
-    })).resolves.toBeUndefined();
+    })).resolves.toBeNull();
   });
 
   it("continues to authorize session users for another workspace in their account", async () => {
@@ -240,7 +288,7 @@ describe("AccountAccessService", () => {
       principal: { type: "session_user", userId: user.id },
       permission: "workspace.documents.manage",
       workspaceId: "workspace-b",
-    })).resolves.toBeUndefined();
+    })).resolves.toBe("owner");
   });
 
   it("resolves the preferred account membership for login", async () => {

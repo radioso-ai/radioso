@@ -19,6 +19,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { LogoSpinner } from '@/components/ui/spinner'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { useConversationActivity } from '@/hooks/use-conversation-activity'
 import { useConversationTail } from '@/hooks/use-conversation-tail'
 import { hitlApi } from '@/lib/api-hitl'
 import { useOptionalAuth } from '@/lib/auth-context'
@@ -171,6 +172,13 @@ export function InboxResponseView({
     () => freshestOwnership(conversationDetail?.ownership, conversationTail.ownership),
     [conversationDetail?.ownership, conversationTail.ownership],
   )
+  // The conversation's activity from both reads: the tail poll sees an event recorded elsewhere —
+  // a teammate's claim, reassignment, or hand-back — while this pane stays open.
+  const activity = useConversationActivity({
+    conversationId,
+    detail: conversationDetail?.activity,
+    poll: conversationTail.activity,
+  })
 
   // The actionable/read-only split and the header's identity/waiting fields
   // prefer the independently-fetched conversation detail once it loads — see
@@ -373,6 +381,8 @@ export function InboxResponseView({
               analyticsSurface="dashboard"
               skillCatalog={skillCatalog}
               audience="operator"
+              activity={activity}
+              hasOlderMessages={conversationDetail?.hasOlderMessages ?? false}
             />
           </div>
         )}

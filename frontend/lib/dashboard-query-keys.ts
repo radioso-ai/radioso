@@ -98,6 +98,8 @@ export const dashboardQueryKeys = {
     decisions: (workspaceId: string) => workspaceKey(workspaceId, 'attention', 'decisions'),
     humanOwned: (workspaceId: string, input: { pageSize: number }) =>
       workspaceKey(workspaceId, 'attention', 'human-owned', input.pageSize),
+    recentlyClosed: (workspaceId: string, input: { limit: number }) =>
+      workspaceKey(workspaceId, 'attention', 'recently-closed', input.limit),
   },
   conversations: {
     // Not a live-invalidation family: no workspace event reports a teammate change, so
@@ -116,6 +118,7 @@ type DashboardQueryFamily =
   | 'quality/turns'
   | 'attention/decisions'
   | 'attention/human-owned'
+  | 'attention/recently-closed'
 
 const knownFamilies = new Set<DashboardQueryFamily>([
   'documents/list',
@@ -127,6 +130,7 @@ const knownFamilies = new Set<DashboardQueryFamily>([
   'quality/turns',
   'attention/decisions',
   'attention/human-owned',
+  'attention/recently-closed',
 ])
 
 export const isDashboardQueryFamily = (

@@ -9,6 +9,14 @@ Cut a release with the **Cut Release** workflow. It reads the commits since the 
 tag, writes the entry above this line, tags the commit, and publishes a GitHub Release. A
 deploy then ships a release that already exists; it never mints one.
 
+## [1.12.1] - 2026-10-01
+
+### Fixed
+
+- **routines:** read the opening message for the step the routine lands on ([#1389](https://github.com/radioso-ai/radioso/pull/1389))
+
+[1.12.1]: https://github.com/radioso-ai/radioso/compare/v1.12.0...v1.12.1
+
 ## [1.12.0] - 2026-10-01
 
 ### Added

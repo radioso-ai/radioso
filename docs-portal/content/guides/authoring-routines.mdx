@@ -196,7 +196,9 @@ conversation. Open the ending and turn on **Notify the team**: a booking
 routine then tells reception about the booking, and the agent goes on to ask
 whether there is anything else it can help with. The switch stays on for a
 **Hand off**, which always notifies. **Subject** and **Intro** are optional —
-type `@` to insert a collected value, as in `New booking: {{slot.guest_name}}`.
+type `@` to insert a value the routine collects, as in
+`New booking: {{slot.guest_name}}`; a subject holds up to 200 characters and an
+intro up to 2,000.
 Blank fields use the default subject, such as `Book accommodation: completed`,
 and every notice lists all the collected values below the intro, so a short
 subject never hides what the guest said. A value the routine did not collect

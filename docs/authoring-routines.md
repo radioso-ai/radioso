@@ -270,7 +270,10 @@ The row of a finish that notifies reads *notifies the team*.
 
 **Subject** and **Intro** are optional. Type `@` in either to insert a collected
 value, such as `New booking: {{slot.guest_name}}`; the notice fills it in when it
-sends. Leave them blank for the default subject, `Book accommodation: completed`
+sends. `@` offers only the values the routine collects; to put a new one in a
+notice, have a step ask for it first.
+A subject holds up to 200 characters and an intro up to 2,000; the field stops
+taking text at the limit. Leave them blank for the default subject, `Book accommodation: completed`
 for a finish or `Book accommodation: needs a human` for a hand-off. Whatever you
 write, the notice lists every collected value below the intro, so a short
 subject never hides what the guest said. See [Operator notices](#operator-notices)
@@ -384,7 +387,7 @@ and nothing appears in the Inbox. Both notices go to the agent's contact
 recipients by email, to the contact webhook when one is configured, and to the
 Slack escalation channel when the workspace has one.
 
-Each notice carries:
+The email carries:
 
 - the subject: the ending's **Subject** with collected values filled in, or the
   default for its kind;
@@ -395,6 +398,15 @@ Each notice carries:
   conversation has them;
 - every value the routine collected — its declared slots, keyed by slot key, in
   the order the routine declares them.
+
+The Slack post carries the same lines without the headline, led by the authored
+subject when the ending has one. Slack shows every line as plain text, so neither
+a visitor's answer nor your intro can mention the channel or add a link. The webhook body carries the ids, the reason, the
+routine, the collected values in that same order, and the authored subject and
+intro as JSON fields; the agent's name, the channel, and the entry page appear
+only in the email and Slack text. If the routine is deleted before the notice goes
+out, the collected values still arrive, in storage order rather than declaration
+order.
 
 A booking desk that receives a "Book accommodation" notice reads the program,
 dates, and guest name in the notice itself instead of opening the transcript

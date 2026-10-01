@@ -284,7 +284,9 @@ imports from `services/`.
   report into effects. `ProcessTurnResult.handoff` becomes the ownership change;
   `ProcessTurnResult.operatorNotice` queues `handoff.notify` for a hand-off and
   `completion.notify` for a completion with an operator notice, with the authored
-  `notice` text on the payload. A completion notice never changes ownership and
+  `notice` text on the payload. A hand-off reported without an `operatorNotice`
+  still queues `handoff.notify` with the default text (`operatorNoticeForTurn`),
+  and without authored text its payload is the same bytes it always was. A completion notice never changes ownership and
   creates no Inbox item. `services/operatorNoticeAction.ts` owns the notice payload
   and `ROUTINE_ENDING_NOTICE_ACTIONS`, the one table from an ending's kind to its
   action type, reason code, and notification kind. Both action types dispatch

@@ -1,10 +1,7 @@
 import type { RoutineActionRequest, RoutineOperatorNotice } from "@radioso/conversation-contract";
 
-import {
-  operatorNoticeActionPayload,
-  routineHandoffOwnership,
-  type RoutineHandoffEffect,
-} from "./handoffOwnership.js";
+import { routineHandoffOwnership, type RoutineHandoffEffect } from "./handoffOwnership.js";
+import { operatorNoticeActionPayload } from "./operatorNoticeAction.js";
 import type { PreparedSession } from "./chatSessionPreparer.js";
 import { COMPLETION_NOTIFY_ACTION_TYPE, HANDOFF_NOTIFY_ACTION_TYPE } from "./routines/contactRoutine.js";
 

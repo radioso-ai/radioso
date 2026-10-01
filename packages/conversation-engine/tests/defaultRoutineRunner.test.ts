@@ -1569,6 +1569,57 @@ describe("DefaultRoutineRunner skill (tool) steps", () => {
     expect(result.nextState).toBeNull();
   });
 
+  it("advances along the first edge when the selector off-topic-yields on a multi-edge skill step with no default exit (#1383)", async () => {
+    // Same no-default shape as the decline case above, but the selector reads the
+    // message as off-topic (yieldTurn) instead of declining outright. With nothing
+    // declared as a default, today's first-edge fallback is still correct.
+    const select = vi.fn(async ({ currentStep }: { currentStep: { id: string } }) =>
+      currentStep.id === "ask_message" ? { nextStepId: "submit" } : { nextStepId: "submit", yieldTurn: true },
+    );
+    const dispatch = vi.fn(async () => ({ status: "completed" as const }));
+    const runner = new DefaultRoutineRunner([multiEdge], { select }, { render: vi.fn(echoRenderer.render) }, { dispatch });
+
+    const result = await runner.resume({ turn, state: atMessage() });
+
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(result.response.answer).toContain("[done]");
+    expect(result.nextState).toBeNull();
+  });
+
+  it("takes the tool step's default follow-up edge, not its first edge, when the selector off-topic-yields (#1383)", async () => {
+    // submit's first declared edge is an AI-decides hand-off to "cancelled"; its second
+    // is the default, forward edge to "done". An off-topic yield on the follow-up must
+    // not read as a request to cancel — it must take the default, same as a decline
+    // would if a default edge were declared.
+    const yieldDefaultRoutine: Routine = {
+      id: "contact_yield_default",
+      rootStepId: "ask_message",
+      steps: [
+        { id: "ask_message", kind: "chat", action: "Ask for the message." },
+        { id: "submit", kind: "skill", skillName: "human_contact.request" },
+        { id: "cancelled", kind: "terminal", action: "Say the request was cancelled.", metadata: { terminalKind: "handoff" } },
+        { id: "done", kind: "terminal", action: "Confirm the request was sent." },
+      ],
+      transitions: [
+        { from: "ask_message", to: "submit", condition: "a message was provided" },
+        { from: "submit", to: "cancelled", condition: "the visitor wants to cancel" },
+        { from: "submit", to: "done", condition: "default", guard: { kind: "default" } },
+      ],
+    };
+    const select = vi.fn(async ({ currentStep }: { currentStep: { id: string } }) =>
+      currentStep.id === "ask_message" ? { nextStepId: "submit" } : { nextStepId: "submit", yieldTurn: true },
+    );
+    const dispatch = vi.fn(async () => ({ status: "completed" as const }));
+    const runner = new DefaultRoutineRunner([yieldDefaultRoutine], { select }, { render: vi.fn(echoRenderer.render) }, { dispatch });
+
+    const result = await runner.resume({ turn, state: atMessage("contact_yield_default") });
+
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(result.response.answer).toContain("[done]");
+    expect(result.response.answer).not.toContain("[cancelled]");
+    expect(result.nextState).toBeNull();
+  });
+
   it("writes assigned skill outputs into variables before later interpolation and field guards", async () => {
     const outputRoutine: Routine = {
       id: "refund",

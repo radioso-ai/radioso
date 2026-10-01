@@ -17,8 +17,8 @@ export {
 export {
   ConversationOwnershipService,
   type OwnershipActor,
+  type OwnershipChangeUnitOfWork,
   type OwnershipReplyUnitOfWork,
-  type OwnershipTransferUnitOfWork,
 } from "./conversationOwnershipService.js";
 export type {
   ConversationOwnershipRecord,

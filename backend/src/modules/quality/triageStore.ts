@@ -1,6 +1,7 @@
 import { CompiledQuery } from "kysely";
 
 import type { Db } from "../../shared/infra/kysely/types.js";
+import type { ConversationActivityRecorder } from "../conversationActivity/contracts/index.js";
 import type {
   QualityResolutionReason,
   QualityTriageRecord,
@@ -14,6 +15,11 @@ import {
 } from "./turnPopulationSql.js";
 
 type TriageRow = {
+  conversation_id?: string;
+  /** The effective state the accepted write moved from; only the write returns it. */
+  prior_state?: string;
+  /** The transition row this write inserted; only the write returns it. */
+  transition_id?: string;
   state: string;
   version: number | string;
   resolution_reason: string | null;
@@ -40,31 +46,78 @@ const mapTriageRow = (row: TriageRow): QualityTriageRecord => ({
   updatedAt: row.updated_at === null ? null : serializeDate(row.updated_at),
 });
 
-export interface PersistQualityTriageTransitionInput extends ValidatedQualityTriageUpdate {
+interface PersistQualityTriageTransitionInput extends ValidatedQualityTriageUpdate {
   assistantMessageId: string;
   updatedBy: string | null;
 }
+
+const CLOSING_ACTIVITY: Partial<Record<QualityTriageState, "feedback_resolved" | "feedback_dismissed">> = {
+  resolved: "feedback_resolved",
+  dismissed: "feedback_dismissed",
+};
 
 /**
  * Quality-owned persistence seam for the mutable triage read model and its
  * immutable transition history.
  */
 export class QualityTriageStore {
-  constructor(private readonly db: Db) {}
+  constructor(
+    private readonly db: Db,
+    private readonly conversationActivity: ConversationActivityRecorder,
+  ) {}
 
   async transition(
     workspaceId: string,
     input: PersistQualityTriageTransitionInput,
   ): Promise<SetTriageStateResult> {
     // The accepted write and immutable transition are one data-modifying CTE:
-    // either both persist or neither does. A separate current-row read after a
-    // lost CAS sees the winning concurrent commit under READ COMMITTED.
-    const result = await this.db.executeQuery<TriageRow>(
+    // either both persist or neither does. A transition that closes the feedback
+    // records who closed it in the same transaction; re-saving a closed state (a
+    // new note, a changed reason) closes nothing, so it records nothing. A separate
+    // current-row read after a lost CAS sees the winning concurrent commit under
+    // READ COMMITTED.
+    const row = await this.db.transaction().execute(async (trx) => {
+      const accepted = await this.writeTransition(trx, workspaceId, input);
+      const closing = accepted && accepted.prior_state !== accepted.state
+        ? CLOSING_ACTIVITY[accepted.state as QualityTriageState]
+        : undefined;
+      if (accepted && closing && accepted.conversation_id && accepted.transition_id) {
+        await this.conversationActivity.record(trx, {
+          kind: closing,
+          conversationId: accepted.conversation_id,
+          workspaceId,
+          actorUserId: input.updatedBy,
+          detail: {
+            assistantMessageId: input.assistantMessageId,
+            triageTransitionId: accepted.transition_id,
+            resolution: accepted.resolution_reason,
+          },
+        });
+      }
+      return accepted;
+    });
+    if (row) {
+      return { kind: "updated", record: mapTriageRow(row) };
+    }
+
+    const current = await this.readCurrent(workspaceId, input.assistantMessageId);
+    return current === null
+      ? { kind: "not_found" }
+      : { kind: "conflict", current };
+  }
+
+  private async writeTransition(
+    db: Db,
+    workspaceId: string,
+    input: PersistQualityTriageTransitionInput,
+  ): Promise<TriageRow | null> {
+    const result = await db.executeQuery<TriageRow>(
       CompiledQuery.raw(
         `WITH target AS (
            SELECT
              m.workspace_id,
              m.id AS assistant_message_id,
+             m.conversation_id,
              COALESCE(tr.version, 0) AS current_version,
              ${buildEffectiveTriageStateExpression({
                latestDownUpdatedAtExpression: "feedback.latest_down_updated_at",
@@ -164,6 +217,9 @@ export class QualityTriageStore {
            RETURNING id
          )
          SELECT
+           (SELECT conversation_id FROM target) AS conversation_id,
+           (SELECT prior_state FROM target) AS prior_state,
+           (SELECT id FROM transition) AS transition_id,
            state,
            version,
            resolution_reason,
@@ -184,16 +240,7 @@ export class QualityTriageStore {
         ],
       ),
     );
-
-    const row = result.rows[0];
-    if (row) {
-      return { kind: "updated", record: mapTriageRow(row) };
-    }
-
-    const current = await this.readCurrent(workspaceId, input.assistantMessageId);
-    return current === null
-      ? { kind: "not_found" }
-      : { kind: "conflict", current };
+    return result.rows[0] ?? null;
   }
 
   private async readCurrent(

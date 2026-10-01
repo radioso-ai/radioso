@@ -200,6 +200,9 @@ export const registerHistoryPaths = (
       query: z.object({
         limit: z.number().int().min(1).max(100).optional(),
         cursor: z.string().min(1).optional(),
+        activityCursor: z.string().min(1).optional().openapi({
+          description: "The previous tail's `activityCursor`, passed back as returned: opaque, and a string no tail returned is refused with 400. The response's `activity` then carries only the events in a recent window, so it can repeat events the caller already holds; without it, the whole timeline.",
+        }),
       }),
     },
     responses: {

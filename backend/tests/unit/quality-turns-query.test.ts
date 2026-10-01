@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { QualityTurnsService } from "../../src/modules/quality/service.js";
+import { unrecordedConversationActivity } from "../support/fakes.js";
 import { stubOutcomeCatalog } from "../support/qualityOutcomeCatalog.js";
 
 class CapturingDb {
@@ -52,7 +53,7 @@ describe("QualityTurnsService list query", () => {
         }],
         [],
       ]);
-      const service = new QualityTurnsService(db as never, stubOutcomeCatalog());
+      const service = new QualityTurnsService(db as never, stubOutcomeCatalog(), unrecordedConversationActivity);
 
       const page = await service.listLowQualityTurns(
         "11111111-1111-1111-1111-111111111111",
@@ -65,7 +66,7 @@ describe("QualityTurnsService list query", () => {
 
   it("does not bind a comment feedback value when hasComment is omitted", async () => {
     const db = new CapturingDb([[{ total: "0" }], []]);
-    const service = new QualityTurnsService(db as never, stubOutcomeCatalog());
+    const service = new QualityTurnsService(db as never, stubOutcomeCatalog(), unrecordedConversationActivity);
 
     await service.listLowQualityTurns("11111111-1111-1111-1111-111111111111", {
       feedbackValues: ["down"],
@@ -84,7 +85,7 @@ describe("QualityTurnsService list query", () => {
     "correlates hasComment=%s with the selected feedback value",
     async (hasComment) => {
       const db = new CapturingDb([[{ total: "0" }], []]);
-      const service = new QualityTurnsService(db as never, stubOutcomeCatalog());
+      const service = new QualityTurnsService(db as never, stubOutcomeCatalog(), unrecordedConversationActivity);
 
       await service.listLowQualityTurns("11111111-1111-1111-1111-111111111111", {
         feedbackValues: ["down"],

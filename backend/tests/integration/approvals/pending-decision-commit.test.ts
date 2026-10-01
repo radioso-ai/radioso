@@ -10,6 +10,7 @@ import {
   type PendingDecisionCreateInput,
 } from "../../../src/db/repositories/pendingDecisionRepository.js";
 import { WorkspaceRepository, type WorkspaceRecord } from "../../../src/db/repositories/workspaceRepository.js";
+import { ConversationActivityRepository } from "../../../src/db/repositories/conversationActivityRepository.js";
 import { PostgresAssistantTurnPersistence } from "../../../src/modules/chat/infra/postgresAssistantTurnPersistence.js";
 import { Database } from "../../../src/shared/infra/database.js";
 import { runAllTestMigrations } from "../../support/databaseMigrations.js";
@@ -99,7 +100,7 @@ describeIfDatabase("pending decision assistant-turn commit fence", () => {
     workspaces = new WorkspaceRepository(database.kysely);
     conversations = new ConversationRepository(database.kysely);
     pendingDecisions = new PendingDecisionRepository(database.kysely);
-    persistence = new PostgresAssistantTurnPersistence(database.kysely, 60_000);
+    persistence = new PostgresAssistantTurnPersistence(database.kysely, new ConversationActivityRepository(database.kysely), 60_000);
   });
 
   afterAll(async () => {

@@ -24,6 +24,15 @@ import type {
   WorkspaceGrantRole,
 } from "../../src/db/repositories/workspaceGrantRepository.js";
 import type { AccessGrantRepositoryPort } from "../../src/modules/accessGrants/ports.js";
+import type {
+  ClosingActivityKind,
+  ClosingConversationActivityRecord,
+  ConversationActivityEvent,
+  ConversationActivityKind,
+  ConversationActivityRecord,
+  ConversationActivityRecorder,
+} from "../../src/modules/conversationActivity/contracts/index.js";
+import type { ConversationActivityStore } from "../../src/modules/conversationActivity/public.js";
 import type { VisitorRecord } from "../../src/db/repositories/visitorRepository.js";
 import type { AgentConverseSessionMappingPort } from "../../src/modules/settings/contracts/agentConverseSession.js";
 import type {
@@ -4342,6 +4351,68 @@ export class InMemoryActionOutbox {
     return { id: `action-${this.items.length - 1}`, duplicate: false };
   }
 }
+
+/**
+ * Conversation activity kept in memory. There are no transactions to record into, so `record`
+ * ignores the one it is handed; atomicity with the change is covered against Postgres.
+ */
+export class InMemoryConversationActivityStore implements ConversationActivityRecorder, ConversationActivityStore {
+  readonly items: ConversationActivityRecord[] = [];
+
+  constructor(private readonly titles: (conversationId: string) => Promise<string | null> = async () => null) {}
+
+  async record(_db: unknown, event: ConversationActivityEvent): Promise<void> {
+    this.items.push({
+      id: randomUUID(),
+      conversationId: event.conversationId,
+      workspaceId: event.workspaceId,
+      kind: event.kind,
+      actorUserId: event.actorUserId,
+      subjectUserId: event.kind === "reassigned" ? event.subjectUserId : null,
+      detail: "detail" in event ? { ...event.detail } : {},
+      createdAt: new Date(Date.now() + this.items.length),
+    });
+  }
+
+  /** The recorder bound to a unit of work's transaction, as composition binds it. */
+  writer(): { record(event: ConversationActivityEvent): Promise<void> } {
+    return { record: (event) => this.record(undefined, event) };
+  }
+
+  async listForConversation(
+    workspaceId: string,
+    conversationId: string,
+    options: { kinds: readonly ConversationActivityKind[]; recordedAfter?: Date },
+  ): Promise<{ records: ConversationActivityRecord[]; readAt: Date }> {
+    const readAt = new Date();
+    const records = this.items
+      .filter((item) => item.workspaceId === workspaceId && item.conversationId === conversationId)
+      .filter((item) => options.kinds.includes(item.kind))
+      .filter((item) => !options.recordedAfter || item.createdAt > options.recordedAfter)
+      .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime());
+    return { records, readAt };
+  }
+
+  async listRecentClosing(
+    workspaceId: string,
+    limit: number,
+    kinds: readonly ClosingActivityKind[],
+  ): Promise<ClosingConversationActivityRecord[]> {
+    const closing = this.items
+      .flatMap((item) => {
+        const kind = kinds.find((candidate) => candidate === item.kind);
+        return item.workspaceId === workspaceId && kind ? [{ ...item, kind }] : [];
+      })
+      .reverse()
+      .slice(0, limit);
+    return Promise.all(closing.map(async (item) => ({ ...item, conversationTitle: await this.titles(item.conversationId) })));
+  }
+}
+
+/** For tests that do not look at conversation activity: records nothing. */
+export const unrecordedConversationActivity: ConversationActivityRecorder = {
+  async record() {},
+};
 
 export class InMemoryConversationOwnershipRepository implements Pick<
   ConversationOwnershipRepository,

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ConversationChannelContext } from "@radioso/conversation-contract";
 
+import { createConversationActivityComposition } from "../../src/app/composition/conversationActivity.js";
 import { ChatHistoryService } from "../../src/modules/chat/services/chatHistoryService.js";
 import type {
   AnswerCoverageReactionTrace,
@@ -15,6 +16,7 @@ import type {
 import type { VisitorRecord } from "../../src/db/repositories/visitorRepository.js";
 import {
   InMemoryAuditEventRepository,
+  InMemoryConversationActivityStore,
   InMemoryConversationOwnershipRepository,
   InMemoryConversationRepository,
   InMemoryHistoryItemsRepository,
@@ -849,6 +851,185 @@ describe("chat history service reply attribution for operators", () => {
     await service.getConversation("workspace-1", conversation.id, { limit: 50, offset: 0 }, { includeOperatorLabel: true });
 
     expect(teammateLabels.reads).toEqual([]);
+  });
+});
+
+describe("chat history service conversation activity", () => {
+  const createActivityService = () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditRepository = new InMemoryAuditEventRepository();
+    const teammateLabels = new RecordingTeammateLabelReader();
+    teammateLabels.labels.set("user-bea", "Bea");
+    teammateLabels.labels.set("user-carl", "Carl");
+    teammateLabels.labels.set("user-dana", "Dana");
+    const activity = new InMemoryConversationActivityStore();
+    const reads = createConversationActivityComposition({
+      store: activity,
+      teammateLabels,
+      messages: messageRepository,
+    }).reads;
+    const service = new ChatHistoryService(
+      conversationRepository,
+      messageRepository,
+      auditRepository,
+      new InMemoryHistoryItemsRepository(conversationRepository, auditRepository),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      teammateLabels,
+      reads,
+    );
+    return { service, conversationRepository, messageRepository, teammateLabels, activity };
+  };
+
+  const seedActivity = async () => {
+    const setup = createActivityService();
+    const conversation = await setup.conversationRepository.create({ workspaceId: "workspace-1" });
+    const scope = { conversationId: conversation.id, workspaceId: "workspace-1" };
+    await setup.activity.record(undefined, { ...scope, kind: "handed_back", actorUserId: "user-bea" });
+    await setup.activity.record(undefined, {
+      ...scope,
+      kind: "feedback_resolved",
+      actorUserId: "user-carl",
+      detail: {
+        assistantMessageId: "88888888-8888-4888-8888-888888888888",
+        triageTransitionId: "99999999-9999-4999-8999-999999999999",
+        resolution: "knowledge_gap",
+      },
+    });
+    return { ...setup, conversation, scope };
+  };
+
+  it("carries the activity on operator reads only, feedback outcomes only to a caller who may see them", async () => {
+    const { service, conversation } = await seedActivity();
+    const page = { limit: 50 };
+
+    const withoutFeedback = await service.getConversation("workspace-1", conversation.id, page, {
+      activity: { includeFeedback: false },
+    });
+    const withFeedback = await service.getConversation("workspace-1", conversation.id, page, {
+      activity: { includeFeedback: true },
+    });
+    const tailWithoutFeedback = await service.tailConversation("workspace-1", conversation.id, { limit: 10 }, {
+      activity: { includeFeedback: false },
+    });
+    const publicDetail = await service.getConversation("workspace-1", conversation.id, page);
+    const publicTail = await service.tailConversation("workspace-1", conversation.id, { limit: 10 });
+
+    expect(withoutFeedback.activity?.map((entry) => entry.kind)).toEqual(["handed_back"]);
+    expect(tailWithoutFeedback.activity?.map((entry) => entry.kind)).toEqual(["handed_back"]);
+    expect(withFeedback.activity).toEqual([
+      expect.objectContaining({ kind: "handed_back", actor: { userId: "user-bea", label: "Bea" } }),
+      expect.objectContaining({
+        kind: "feedback_resolved",
+        actor: { userId: "user-carl", label: "Carl" },
+        resolution: "knowledge_gap",
+      }),
+    ]);
+    for (const read of [publicDetail, publicTail]) {
+      expect(read).not.toHaveProperty("activity");
+      expect(read).not.toHaveProperty("activityCursor");
+    }
+  });
+
+  it("labels the repliers and the activity's teammates in one lookup per read", async () => {
+    const { service, messageRepository, teammateLabels, conversation } = await seedActivity();
+    await messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "assistant",
+      source: "human_agent",
+      content: "Dana here.",
+      operatorAccountId: "account-1",
+      operatorUserId: "user-dana",
+    });
+    const options = { includeOperatorLabel: true, activity: { includeFeedback: true } };
+
+    const detail = await service.getConversation("workspace-1", conversation.id, { limit: 50 }, options);
+    const tail = await service.tailConversation("workspace-1", conversation.id, { limit: 10 }, options);
+
+    for (const read of [detail, tail]) {
+      expect(read.messages.find((message) => message.content === "Dana here.")?.operatorLabel).toBe("Dana");
+      expect(read.activity?.map((entry) => entry.actor?.label)).toEqual(["Bea", "Carl"]);
+    }
+    expect(teammateLabels.reads).toHaveLength(2);
+    for (const read of teammateLabels.reads) {
+      expect([...read].sort()).toEqual(["user-bea", "user-carl", "user-dana"]);
+    }
+  });
+
+  it("re-reads a window behind the cursor, so an event that commits after a newer one still arrives", async () => {
+    const { service, activity, conversation, scope } = await seedActivity();
+    const options = { activity: { includeFeedback: false } };
+
+    const first = await service.tailConversation("workspace-1", conversation.id, { limit: 10 }, options);
+    // An approval decided in a slow transaction: written a minute before the first read, committed
+    // after it, alongside a claim recorded since.
+    await activity.record(undefined, {
+      ...scope,
+      kind: "approval_decided",
+      actorUserId: "user-dana",
+      detail: { handle: "handle-1", decision: { optionId: "approve", label: "Approve" } },
+    });
+    activity.items.at(-1)!.createdAt = new Date(Date.parse(first.activityCursor!) - 60_000);
+    await activity.record(undefined, { ...scope, kind: "claimed", actorUserId: "user-dana" });
+    const second = await service.tailConversation("workspace-1", conversation.id, {
+      limit: 10,
+      activityCursor: first.activityCursor,
+    }, options);
+
+    expect(first.activity?.map((entry) => entry.kind)).toEqual(["handed_back"]);
+    expect(second.activity?.map((entry) => entry.kind)).toEqual(["approval_decided", "handed_back", "claimed"]);
+    expect(second.activity?.[0]?.actor).toEqual({ userId: "user-dana", label: "Dana" });
+  });
+
+  it("reads no activity, and no labels, once the window behind the cursor holds none", async () => {
+    const { service, teammateLabels, activity, conversation } = await seedActivity();
+    const options = { activity: { includeFeedback: true } };
+    for (const item of activity.items) {
+      item.createdAt = new Date(Date.now() - 60 * 60_000);
+    }
+    const readsBefore = teammateLabels.reads.length;
+
+    const idle = await service.tailConversation("workspace-1", conversation.id, {
+      limit: 10,
+      activityCursor: new Date(Date.now() - 1_000).toISOString(),
+    }, options);
+
+    expect(idle.activity).toEqual([]);
+    expect(Date.parse(idle.activityCursor!)).toBeGreaterThan(Date.now() - 60_000);
+    expect(teammateLabels.reads).toHaveLength(readsBefore);
+  });
+
+  it("reads a conversation's own window whatever conversation a cursor came from", async () => {
+    const { service, conversationRepository, activity, conversation, scope } = await seedActivity();
+    const options = { activity: { includeFeedback: false } };
+    const other = await conversationRepository.create({ workspaceId: "workspace-1" });
+    const foreign = await service.tailConversation("workspace-1", other.id, { limit: 10 }, options);
+    await activity.record(undefined, { ...scope, kind: "claimed", actorUserId: "user-dana" });
+
+    const tail = await service.tailConversation("workspace-1", conversation.id, {
+      limit: 10,
+      activityCursor: foreign.activityCursor,
+    }, options);
+
+    expect(foreign.activity).toEqual([]);
+    expect(tail.activity?.map((entry) => entry.kind)).toEqual(["handed_back", "claimed"]);
+  });
+
+  it("names a cursor for a conversation with no events, to read only what comes next", async () => {
+    const { service, conversationRepository } = createActivityService();
+    const conversation = await conversationRepository.create({ workspaceId: "workspace-1" });
+
+    const tail = await service.tailConversation("workspace-1", conversation.id, { limit: 10 }, {
+      activity: { includeFeedback: true },
+    });
+
+    expect(tail.activity).toEqual([]);
+    expect(Number.isNaN(Date.parse(tail.activityCursor!))).toBe(false);
   });
 });
 

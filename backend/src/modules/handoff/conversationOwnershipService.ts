@@ -12,6 +12,7 @@ import type {
 import type { MessageRecord } from "../../db/repositories/messageRepository.js";
 import { AppError, notFound } from "../../shared/domain/errors.js";
 import type { AuditService } from "../audit/contracts/index.js";
+import type { ConversationActivityEvent, ConversationActivityWriter } from "../conversationActivity/contracts/index.js";
 import { notifyAfterCommit, recordCommittedOwnershipAudit, type CommittedAuditReporting } from "./committedOwnershipAudit.js";
 import type { ConversationOperatorDirectory } from "./conversationOperatorDirectory.js";
 import type { OperatorIdentity, OperatorIdentityResolver } from "./operatorIdentity.js";
@@ -42,26 +43,31 @@ type OwnershipReplyResult =
   | { ok: true; message: MessageRecord; record: ConversationOwnershipRecord }
   | OwnershipRefused;
 
-/** Writes a transfer and the notice it owes as one unit: both commit, or neither does. */
-export interface OwnershipTransferUnitOfWork {
+/**
+ * Writes an ownership change — a claim, a transfer, a hand-back — with the activity it records and
+ * the notice a transfer owes, as one unit: all commit, or none does.
+ */
+export interface OwnershipChangeUnitOfWork {
   run<T>(work: (scope: {
-    ownership: Pick<ConversationOwnershipRepository, "transfer">;
+    ownership: Pick<ConversationOwnershipRepository, "loadForUpdate" | "takeOver" | "transfer" | "handBack">;
     outbox: TransferNoticeOutboxPort;
+    activity: ConversationActivityWriter;
   }) => Promise<T>): Promise<T>;
 }
 
 /**
- * Writes a reply, its channel delivery, and the ownership it stands on as one unit: the
- * conversation and ownership rows stay locked from the moment they are read until the message is
- * written, so a transfer or hand-back either commits before the reply looks (and refuses it) or
- * waits until the reply has committed. A delivery queued in it is pushed to the action worker once
- * it commits.
+ * Writes a reply, its channel delivery, and the ownership it stands on — with the activity of a
+ * claim the reply makes — as one unit: the conversation and ownership rows stay locked from the
+ * moment they are read until the message is written, so a transfer or hand-back either commits
+ * before the reply looks (and refuses it) or waits until the reply has committed. A delivery queued
+ * in it is pushed to the action worker once it commits.
  */
 export interface OwnershipReplyUnitOfWork {
   run<T>(work: (scope: {
     conversations: Pick<ConversationRepository, "lockForUpdate">;
     ownership: Pick<ConversationOwnershipRepository, "loadForUpdate" | "takeOver">;
     reply: OperatorReplyWriteScope;
+    activity: ConversationActivityWriter;
   }) => Promise<T>): Promise<T>;
 }
 
@@ -85,6 +91,13 @@ const refusalFor = (record: ConversationOwnershipRecord | null, actor: Ownership
   record,
 });
 
+const claimedActivity = (actor: OwnershipActor, conversationId: string): ConversationActivityEvent => ({
+  kind: "claimed",
+  conversationId,
+  workspaceId: actor.workspaceId,
+  actorUserId: actor.userId,
+});
+
 /**
  * The rules for who handles a human-owned conversation, keyed on the teammate acting. Every
  * surface — the dashboard's REST routes, Slack's buttons — goes through here, so none restates
@@ -95,15 +108,16 @@ const refusalFor = (record: ConversationOwnershipRecord | null, actor: Ownership
  *   claims it for the replier first, and a reply commits with the ownership it was checked against
  *   and with its delivery to the customer's channel;
  * - taking a conversation a teammate holds is an explicit transfer to yourself;
- * - a transfer and the notice it owes the recipient commit together;
+ * - every change commits with the activity that records it, and a transfer with the notice it owes
+ *   the recipient;
  * - a committed change stands even when what follows it — telling the visitor and the dashboard,
  *   and its audit record — fails.
  */
 export class ConversationOwnershipService {
   constructor(private readonly dependencies: {
     conversations: Pick<ConversationRepositoryPort, "findByIdAndWorkspaceId">;
-    ownership: Pick<ConversationOwnershipRepository, "load" | "takeOver" | "handBack">;
-    transfers: OwnershipTransferUnitOfWork;
+    ownership: Pick<ConversationOwnershipRepository, "load">;
+    changes: OwnershipChangeUnitOfWork;
     replyWrites: OwnershipReplyUnitOfWork;
     operators: Pick<ConversationOperatorDirectory, "find">;
     operatorIdentities: Pick<OperatorIdentityResolver, "resolve">;
@@ -128,7 +142,13 @@ export class ConversationOwnershipService {
     auditContext?: OwnershipAuditContext;
   }): Promise<OwnershipCommandResult> {
     const [, operator] = await this.readConversationAndOperator(actor, input.conversationId);
-    const result = await this.dependencies.ownership.takeOver(this.claimInput(actor, operator, input));
+    const result = await this.dependencies.changes.run(async ({ ownership, activity }) => {
+      const claimed = await ownership.takeOver(this.claimInput(actor, operator, input));
+      if (claimed.ok && claimed.changed) {
+        await activity.record(claimedActivity(actor, input.conversationId));
+      }
+      return claimed;
+    });
     if (result.ok) {
       await this.settle(actor, result, this.claimAudit(actor, input));
       return result;
@@ -155,7 +175,10 @@ export class ConversationOwnershipService {
     if (!target) {
       throw transferTargetUnavailable();
     }
-    const result = await this.dependencies.transfers.run(async ({ ownership, outbox }) => {
+    const result = await this.dependencies.changes.run(async ({ ownership, outbox, activity }) => {
+      // Locked until the transfer commits, so the teammate it names as the previous owner is the
+      // one the transfer took it from.
+      const previous = await ownership.loadForUpdate(input.conversationId);
       const transferred = await ownership.transfer({
         conversationId: input.conversationId,
         accountId: actor.accountId,
@@ -173,6 +196,16 @@ export class ConversationOwnershipService {
             recipientUserId: target.userId,
           })
         : null;
+      if (transferred.ok && transferred.changed) {
+        await activity.record({
+          kind: "reassigned",
+          conversationId: input.conversationId,
+          workspaceId: actor.workspaceId,
+          actorUserId: actor.userId,
+          subjectUserId: target.userId,
+          detail: { fromUserId: previous?.ownerUserId ?? null },
+        });
+      }
       if (notice) {
         await outbox.enqueue(notice);
       }
@@ -197,10 +230,21 @@ export class ConversationOwnershipService {
     auditContext?: OwnershipAuditContext;
   }): Promise<OwnershipCommandResult> {
     await this.requireConversation(actor, input.conversationId);
-    const result = await this.dependencies.ownership.handBack({
-      conversationId: input.conversationId,
-      expectedVersion: input.expectedVersion,
-      actingUserId: actor.userId,
+    const result = await this.dependencies.changes.run(async ({ ownership, activity }) => {
+      const handedBack = await ownership.handBack({
+        conversationId: input.conversationId,
+        expectedVersion: input.expectedVersion,
+        actingUserId: actor.userId,
+      });
+      if (handedBack.ok && handedBack.changed) {
+        await activity.record({
+          kind: "handed_back",
+          conversationId: input.conversationId,
+          workspaceId: actor.workspaceId,
+          actorUserId: actor.userId,
+        });
+      }
+      return handedBack;
     });
     if (!result.ok) {
       return refusalFor(result.record, actor);
@@ -269,6 +313,9 @@ export class ConversationOwnershipService {
         const claimed = await scope.ownership.takeOver(this.claimInput(actor, operator, input));
         if (!claimed.ok) {
           return refusalFor(claimed.record, actor);
+        }
+        if (claimed.changed) {
+          await scope.activity.record(claimedActivity(actor, input.conversationId));
         }
         record = claimed.record;
         claim = claimed;

@@ -573,6 +573,17 @@ export interface ContextVariableValues {
   workspace_id: string;
 }
 
+export interface ConversationActivity {
+  actor_user_id: string | null;
+  conversation_id: string;
+  created_at: Generated<Timestamp>;
+  detail: Generated<Json>;
+  id: Generated<string>;
+  kind: string;
+  subject_user_id: string | null;
+  workspace_id: string;
+}
+
 export interface ConversationOwnership {
   conversation_id: string;
   created_at: Generated<Timestamp>;
@@ -1176,6 +1187,7 @@ export interface PendingDecisions {
   deadline: Timestamp | null;
   decided_at: Timestamp | null;
   decided_by: string | null;
+  decided_by_user_id: string | null;
   decider_scope: Json;
   decision: Json | null;
   handle: string;
@@ -1754,6 +1766,7 @@ export interface DB {
   context_identity_nonces: ContextIdentityNonces;
   context_variable_values: ContextVariableValues;
   context_variables: ContextVariables;
+  conversation_activity: ConversationActivity;
   conversation_ownership: ConversationOwnership;
   conversation_summaries: ConversationSummaries;
   conversations: Conversations;

@@ -158,6 +158,7 @@ export interface OpenApiSchemaCatalog {
   ConversationOwnershipResponseSchema: z.ZodTypeAny;
   ConversationOwnershipSchema: z.ZodTypeAny;
   ConversationOperatorsResponseSchema: z.ZodTypeAny;
+  RecentlyClosedInboxItemsResponseSchema: z.ZodTypeAny;
   ContextVariableCreateRequestSchema: z.ZodTypeAny;
   ContextVariableListResponseSchema: z.ZodTypeAny;
   ContextVariableParamsSchema: RouteParameterSchema;

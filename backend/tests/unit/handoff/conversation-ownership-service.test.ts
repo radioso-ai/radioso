@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { ConversationRecord } from "../../../src/db/repositories/conversationRepository.js";
 import type { MessageRecord } from "../../../src/db/repositories/messageRepository.js";
+import type { ConversationActivityEvent } from "../../../src/modules/conversationActivity/contracts/index.js";
 import {
   CONVERSATION_TRANSFER_NOTICE_ACTION_TYPE,
   ConversationOwnershipService,
@@ -30,6 +31,7 @@ type OperatorReply = Parameters<OperatorReplyService["prepare"]>[0];
 const createService = (options: {
   outbox?: { enqueue: InMemoryActionOutbox["enqueue"] };
   audit?: { record: (event: unknown) => Promise<void> };
+  activity?: { record: (event: ConversationActivityEvent) => Promise<void> };
 } = {}) => {
   const ownership = new InMemoryConversationOwnershipRepository();
   const outbox = new InMemoryActionOutbox();
@@ -50,6 +52,15 @@ const createService = (options: {
   };
   // Every step a reply takes, in order, so a test can assert what happens before what.
   const steps: string[] = [];
+  // The activity each unit of work records, in the order it was recorded.
+  const activityEvents: ConversationActivityEvent[] = [];
+  const activity = {
+    record: vi.fn(async (event: ConversationActivityEvent) => {
+      steps.push(`activity:${event.kind}`);
+      await options.activity?.record(event);
+      activityEvents.push(event);
+    }),
+  };
   const replyScope = { messages: { create: vi.fn() }, conversations: { touch: vi.fn() }, outbox: { enqueue: vi.fn() } };
   const lockedConversations = {
     lockForUpdate: vi.fn(async (id: string, inWorkspace: string) => {
@@ -93,11 +104,11 @@ const createService = (options: {
   const service = new ConversationOwnershipService({
     conversations,
     ownership,
-    transfers: {
-      run: (work) => work({ ownership, outbox: options.outbox ?? outbox }),
+    changes: {
+      run: (work) => work({ ownership, outbox: options.outbox ?? outbox, activity }),
     },
     replyWrites: {
-      run: (work) => work({ conversations: lockedConversations, ownership, reply: replyScope }),
+      run: (work) => work({ conversations: lockedConversations, ownership, reply: replyScope, activity }),
     },
     operators: {
       find: vi.fn(async (input: { userId: string }) => operators[input.userId] ?? null),
@@ -111,7 +122,7 @@ const createService = (options: {
   });
   return {
     service, ownership, outbox, audit, publisher, replies, replyScope, conversations, lockedConversations, operatorIdentities,
-    loadForUpdate, logger, errorReporter, steps,
+    loadForUpdate, logger, errorReporter, steps, activity, activityEvents,
   };
 };
 
@@ -143,7 +154,9 @@ describe("ConversationOwnershipService", () => {
 
       await service.reply(fox, { conversationId, message: "Hi", expectedVersion: 0 });
 
-      expect(steps).toEqual(["prepare", "lock_conversation", "lock_ownership", "write", "announce", "audit:taken_over", "audit:replied"]);
+      expect(steps).toEqual([
+        "prepare", "lock_conversation", "lock_ownership", "activity:claimed", "write", "announce", "audit:taken_over", "audit:replied",
+      ]);
     });
 
     it("answers not found, writing nothing, when the conversation is gone by the time the reply locks it", async () => {
@@ -310,6 +323,99 @@ describe("ConversationOwnershipService", () => {
         error: failure,
         correlation: { accountId, workspaceId, conversationId },
       }));
+    });
+  });
+
+  describe("activity", () => {
+    it("records a claim in the unit of work that claims the conversation, and nothing for a no-op", async () => {
+      const { service, activityEvents } = createService();
+
+      await service.takeOver(dana, { conversationId });
+      await service.takeOver(dana, { conversationId });
+
+      expect(activityEvents).toEqual([{ kind: "claimed", conversationId, workspaceId, actorUserId: "user-dana" }]);
+    });
+
+    it("records a transfer as a reassignment from the teammate who held it to the one who holds it now", async () => {
+      const { service, activityEvents } = createService();
+      const claim = await service.takeOver(dana, { conversationId });
+
+      await service.transfer(dana, { conversationId, toUserId: "user-fox", expectedVersion: claim.record!.version });
+
+      expect(activityEvents.at(-1)).toEqual({
+        kind: "reassigned",
+        conversationId,
+        workspaceId,
+        actorUserId: "user-dana",
+        subjectUserId: "user-fox",
+        detail: { fromUserId: "user-dana" },
+      });
+    });
+
+    it("records assigning a handoff nobody has claimed as a reassignment from nobody", async () => {
+      const { service, ownership, activityEvents } = createService();
+      const requested = await ownership.requestHandoff({ conversationId, workspaceId, reason: "routine_handoff" });
+
+      await service.transfer(dana, { conversationId, toUserId: "user-fox", expectedVersion: requested.record.version });
+
+      expect(activityEvents).toEqual([{
+        kind: "reassigned",
+        conversationId,
+        workspaceId,
+        actorUserId: "user-dana",
+        subjectUserId: "user-fox",
+        detail: { fromUserId: null },
+      }]);
+    });
+
+    it("records nothing for a transfer that changed nothing or was refused", async () => {
+      const { service, activityEvents } = createService();
+      const claim = await service.takeOver(dana, { conversationId });
+
+      await service.transfer(dana, { conversationId, toUserId: "user-dana", expectedVersion: claim.record!.version });
+      await service.transfer(dana, { conversationId, toUserId: "user-fox", expectedVersion: 99 });
+
+      expect(activityEvents.map((event) => event.kind)).toEqual(["claimed"]);
+    });
+
+    it("records a hand-back by the teammate who handed it back", async () => {
+      const { service, activityEvents } = createService();
+      const claim = await service.takeOver(dana, { conversationId });
+
+      await service.handBack(dana, { conversationId, expectedVersion: claim.record!.version });
+
+      expect(activityEvents.at(-1)).toEqual({ kind: "handed_back", conversationId, workspaceId, actorUserId: "user-dana" });
+    });
+
+    it("records the claim a reply makes, and nothing when the owner replies", async () => {
+      const { service, activityEvents } = createService();
+
+      const first = await service.reply(fox, { conversationId, message: "Hi", expectedVersion: 0 });
+      await service.reply(fox, { conversationId, message: "Again", expectedVersion: first.ok ? first.record.version : 0 });
+
+      expect(activityEvents).toEqual([{ kind: "claimed", conversationId, workspaceId, actorUserId: "user-fox" }]);
+    });
+
+    it("fails a claim, telling no one, when its activity cannot be recorded", async () => {
+      const failure = new Error("activity unavailable");
+      const { service, audit, publisher } = createService({ activity: { record: async () => { throw failure; } } });
+
+      await expect(service.takeOver(dana, { conversationId })).rejects.toThrow(failure);
+
+      expect(audit.record).not.toHaveBeenCalled();
+      expect(publisher.enqueue).not.toHaveBeenCalled();
+    });
+
+    it("fails a reply that would claim the conversation, writing nothing, when the claim cannot be recorded", async () => {
+      const failure = new Error("activity unavailable");
+      const { service, audit, publisher, replies } = createService({ activity: { record: async () => { throw failure; } } });
+
+      await expect(service.reply(fox, { conversationId, message: "Hi", expectedVersion: 0 })).rejects.toThrow(failure);
+
+      expect(replies.write).not.toHaveBeenCalled();
+      expect(replies.announce).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
+      expect(publisher.enqueue).not.toHaveBeenCalled();
     });
   });
 

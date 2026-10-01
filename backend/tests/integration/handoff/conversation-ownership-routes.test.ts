@@ -496,4 +496,173 @@ describe("conversation ownership routes", () => {
 
     expect(response.status).toBe(404);
   });
+
+  it("shows the operator each change in the conversation's timeline, and lists a handed-back handoff as recently closed", async () => {
+    const { app, repositories } = createTestApp();
+    const owner = await issueTestSession(app, "activity-owner@example.com");
+    const member = await acceptInvite(app, owner.cookie, "activity-member@example.com");
+    await repositories.userRepository.updateDisplayName(member.userId, "Bea");
+    const conversation = await repositories.conversationRepository.create({ workspaceId: member.workspaceId, sourceChannel: "dashboard" });
+    await repositories.conversationRepository.setTitle(conversation.id, member.workspaceId, "Refund for order 1042");
+    const requested = await repositories.conversationOwnershipRepository.requestHandoff({
+      conversationId: conversation.id,
+      workspaceId: member.workspaceId,
+      reason: "routine_handoff",
+    });
+
+    const assigned = await request(app)
+      .post(`/api/v1/conversations/${conversation.id}/transfer`)
+      .set(adminSessionHeaders(member))
+      .send({ toUserId: owner.userId, expectedVersion: requested.record.version });
+    const retaken = await request(app)
+      .post(`/api/v1/conversations/${conversation.id}/transfer`)
+      .set(adminSessionHeaders(member))
+      .send({ toUserId: member.userId, expectedVersion: assigned.body.ownership.version });
+    const handedBack = await request(app)
+      .post(`/api/v1/conversations/${conversation.id}/handback`)
+      .set(adminSessionHeaders(member))
+      .send({ expectedVersion: retaken.body.ownership.version });
+    expect([assigned.status, retaken.status, handedBack.status]).toEqual([200, 200, 200]);
+
+    const detail = await request(app)
+      .get(`/api/v1/history/chat/${conversation.id}`)
+      .set(adminSessionHeaders(member));
+    const tail = await request(app)
+      .get(`/api/v1/history/chat/${conversation.id}/tail`)
+      .set(adminSessionHeaders(member));
+
+    const expected = [
+      expect.objectContaining({
+        kind: "reassigned",
+        actor: { userId: member.userId, label: "Bea" },
+        subject: { userId: owner.userId, label: "activity-owner@example.com" },
+        from: null,
+      }),
+      expect.objectContaining({
+        kind: "reassigned",
+        actor: { userId: member.userId, label: "Bea" },
+        subject: { userId: member.userId, label: "Bea" },
+        from: { userId: owner.userId, label: "activity-owner@example.com" },
+      }),
+      expect.objectContaining({ kind: "handed_back", actor: { userId: member.userId, label: "Bea" } }),
+    ];
+    expect(detail.status).toBe(200);
+    expect(detail.body.activity).toEqual(expected);
+    expect(tail.status).toBe(200);
+    expect(tail.body.activity).toEqual(expected);
+
+    const closed = await request(app)
+      .get("/api/v1/conversations/recently-closed")
+      .set(adminSessionHeaders(member));
+
+    expect(closed.status).toBe(200);
+    expect(closed.body).toEqual({
+      items: [expect.objectContaining({
+        conversationId: conversation.id,
+        itemKind: "handoff",
+        outcome: "handed_back",
+        closedBy: { userId: member.userId, label: "Bea" },
+        closedAt: expect.any(String),
+        title: "Refund for order 1042",
+      })],
+    });
+  });
+
+  it("shows feedback triage outcomes in the activity and recently closed only to teammates with Quality access", async () => {
+    const { app, repositories } = createTestApp();
+    const owner = await issueTestSession(app, "activity-quality-owner@example.com");
+    const member = await acceptInvite(app, owner.cookie, "activity-quality-member@example.com");
+    const conversation = await repositories.conversationRepository.create({ workspaceId: member.workspaceId, sourceChannel: "dashboard" });
+    const scope = { conversationId: conversation.id, workspaceId: member.workspaceId };
+    await repositories.conversationActivity.record(undefined, { ...scope, kind: "handed_back", actorUserId: member.userId });
+    await repositories.conversationActivity.record(undefined, {
+      ...scope,
+      kind: "feedback_resolved",
+      actorUserId: owner.userId,
+      detail: { assistantMessageId: randomUUID(), triageTransitionId: randomUUID(), resolution: "knowledge_gap" },
+    });
+
+    const read = async (session: { cookie: string; workspaceId: string }) => {
+      const [detail, tail, closed] = await Promise.all([
+        request(app).get(`/api/v1/history/chat/${conversation.id}`).set(adminSessionHeaders(session)),
+        request(app).get(`/api/v1/history/chat/${conversation.id}/tail`).set(adminSessionHeaders(session)),
+        request(app).get("/api/v1/conversations/recently-closed").set(adminSessionHeaders(session)),
+      ]);
+      expect([detail.status, tail.status, closed.status]).toEqual([200, 200, 200]);
+      return {
+        detail: (detail.body.activity as Array<{ kind: string }>).map((entry) => entry.kind),
+        tail: (tail.body.activity as Array<{ kind: string }>).map((entry) => entry.kind),
+        closed: (closed.body.items as Array<{ outcome: string }>).map((item) => item.outcome),
+      };
+    };
+
+    // A member follows conversations but holds no Quality access, so triage outcomes stay out.
+    await expect(read(member)).resolves.toEqual({
+      detail: ["handed_back"],
+      tail: ["handed_back"],
+      closed: ["handed_back"],
+    });
+    await expect(read(owner)).resolves.toEqual({
+      detail: ["handed_back", "feedback_resolved"],
+      tail: ["handed_back", "feedback_resolved"],
+      closed: ["feedback_resolved", "handed_back"],
+    });
+  });
+
+  it("scopes a tail's activity by the role its permission check resolved, with no membership lookup of its own", async () => {
+    const { app, dependencies, repositories } = createTestApp();
+    const session = await issueTestSession(app, "activity-scope-lookups@example.com");
+    const conversation = await repositories.conversationRepository.create({ workspaceId: session.workspaceId, sourceChannel: "dashboard" });
+    const lookups = vi.spyOn(dependencies.accountAccessService, "findActiveMembership");
+
+    // The history list runs the same session and permission checks, and reads no activity.
+    const list = await request(app).get("/api/v1/history").set(adminSessionHeaders(session));
+    const listLookups = lookups.mock.calls.length;
+    lookups.mockClear();
+    const tail = await request(app).get(`/api/v1/history/chat/${conversation.id}/tail`).set(adminSessionHeaders(session));
+
+    expect([list.status, tail.status]).toEqual([200, 200]);
+    expect(tail.body.activity).toEqual([]);
+    expect(lookups).toHaveBeenCalledTimes(listLookups);
+  });
+
+  it("tails the activity in the window behind the caller's activity cursor, and refuses a cursor it did not issue", async () => {
+    const { app, repositories } = createTestApp();
+    const session = await issueTestSession(app, "activity-cursor@example.com");
+    const conversation = await repositories.conversationRepository.create({ workspaceId: session.workspaceId, sourceChannel: "dashboard" });
+    const scope = { conversationId: conversation.id, workspaceId: session.workspaceId };
+    await repositories.conversationActivity.record(undefined, { ...scope, kind: "claimed", actorUserId: session.userId });
+    const tail = (query = "") => request(app)
+      .get(`/api/v1/history/chat/${conversation.id}/tail${query}`)
+      .set(adminSessionHeaders(session));
+
+    const first = await tail();
+    // The claim falls out of the window behind a cursor once it is older than the window.
+    repositories.conversationActivity.items[0].createdAt = new Date(Date.now() - 60 * 60_000);
+    await repositories.conversationActivity.record(undefined, { ...scope, kind: "handed_back", actorUserId: session.userId });
+    const next = await tail(`?activityCursor=${encodeURIComponent(first.body.activityCursor as string)}`);
+    const invalid = await Promise.all(["not-a-cursor", "2026-13-45T00:00:00.000Z", randomUUID()].map(
+      (cursor) => tail(`?activityCursor=${encodeURIComponent(cursor)}`),
+    ));
+
+    expect(first.body.activity).toEqual([expect.objectContaining({ kind: "claimed" })]);
+    expect(typeof first.body.activityCursor).toBe("string");
+    expect(next.body.activity).toEqual([expect.objectContaining({ kind: "handed_back" })]);
+    expect(typeof next.body.activityCursor).toBe("string");
+    expect(invalid.map((response) => response.status)).toEqual([400, 400, 400]);
+  });
+
+  it("keeps recently closed to teammates with takeover permission, and checks its limit", async () => {
+    const { app, dependencies } = createTestApp();
+    const session = await issueTestSession(app, "activity-denied@example.com");
+    const permissionSpy = vi.spyOn(dependencies.accountAccessService, "requirePermission")
+      .mockRejectedValueOnce(forbidden("No takeover"));
+
+    const denied = await request(app).get("/api/v1/conversations/recently-closed").set(adminSessionHeaders(session));
+    const invalid = await request(app).get("/api/v1/conversations/recently-closed?limit=500").set(adminSessionHeaders(session));
+
+    expect(denied.status).toBe(403);
+    expect(invalid.status).toBe(400);
+    permissionSpy.mockRestore();
+  });
 });

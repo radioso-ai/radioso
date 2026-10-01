@@ -994,6 +994,8 @@ export const installDashboardApiMocks = async (
     transferRequests?: TransferRequestFixture[];
     /** Transfer targets the backend no longer accepts: a transfer to one returns 404. */
     ineligibleTransferTargets?: string[];
+    /** GET /conversations/recently-closed, newest first; a hand-back adds its conversation to the front. */
+    recentlyClosed?: ApiSchemas["RecentlyClosedInboxItem"][];
     humanReplyResponse?: ApiSchemas["HumanReplyMessageResponse"];
     resolveDecisionResponse?: unknown;
     agentUpdates?: unknown[];
@@ -1241,6 +1243,34 @@ export const installDashboardApiMocks = async (
   }
   let pendingDecisions = options.pendingDecisions ?? [];
   const conversationTailResponses = [...(options.conversationTailResponses ?? [])];
+  // Conversation activity the ownership mocks record, as the backend would: each transfer and
+  // hand-back adds an event to its conversation's detail, and a hand-back closes the handoff.
+  const recentlyClosed: ApiSchemas["RecentlyClosedInboxItem"][] = [...(options.recentlyClosed ?? [])];
+  let activitySequence = 0;
+  const teammate = (userId: string) => ({
+    userId,
+    label: (options.conversationOperators ?? []).find((operator) => operator.userId === userId)?.label ?? "Test Operator",
+  });
+  const activityOf = (detail: unknown): ApiSchemas["ConversationActivityEntry"][] =>
+    detail && typeof detail === "object" && Array.isArray((detail as { activity?: unknown }).activity)
+      ? (detail as { activity: ApiSchemas["ConversationActivityEntry"][] }).activity
+      : [];
+  const activityEntry = (
+    entry: Pick<ApiSchemas["ConversationActivityEntry"], "kind" | "actor"> & Partial<ApiSchemas["ConversationActivityEntry"]>,
+  ): ApiSchemas["ConversationActivityEntry"] => {
+    activitySequence += 1;
+    return {
+      id: `00000000-0000-4000-8000-${String(activitySequence).padStart(12, "0")}`,
+      createdAt: new Date(Date.parse(nowIso) + activitySequence * 1000).toISOString(),
+      subject: null,
+      from: null,
+      handoffReason: null,
+      decision: null,
+      resolution: null,
+      assistantMessageId: null,
+      ...entry,
+    };
+  };
   let humanReplyCreated = false;
   const documentSources = options.documentSources ?? emptyDocumentSources;
   const historyItems = options.historyItems ?? {
@@ -1553,6 +1583,7 @@ export const installDashboardApiMocks = async (
         messages: [],
         cursor: null,
         ownership: (activeConversationDetail as { ownership?: unknown } | undefined)?.ownership,
+        activity: (activeConversationDetail as { activity?: unknown } | undefined)?.activity,
       });
       return;
     }
@@ -1640,6 +1671,11 @@ export const installDashboardApiMocks = async (
       return;
     }
 
+    if (request.method() === "GET" && path === "/conversations/recently-closed") {
+      await json(route, { items: recentlyClosed });
+      return;
+    }
+
     if (request.method() === "POST" && path.startsWith("/conversations/") && path.endsWith("/transfer")) {
       const conversationId = path.replace("/conversations/", "").replace("/transfer", "");
       const body = request.postDataJSON() as TransferRequestFixture;
@@ -1666,11 +1702,17 @@ export const installDashboardApiMocks = async (
         createdAt: currentOwnership?.createdAt ?? nowIso,
         updatedAt: nowIso,
       };
+      const activity = [...activityOf(activeConversationDetail), activityEntry({
+        kind: "reassigned",
+        actor: teammate(currentUserId),
+        subject: teammate(body.toUserId),
+        from: currentOwnership?.ownerUserId ? teammate(currentOwnership.ownerUserId) : null,
+      })];
       if (conversationDetail && typeof conversationDetail === "object") {
-        conversationDetail = { ...conversationDetail, ownership };
+        conversationDetail = { ...conversationDetail, ownership, activity };
       }
       if (conversationDetails.has(conversationId)) {
-        conversationDetails.set(conversationId, { ...(conversationDetails.get(conversationId) as object), ownership });
+        conversationDetails.set(conversationId, { ...(conversationDetails.get(conversationId) as object), ownership, activity });
       }
       await json(route, { ownership });
       return;
@@ -1693,19 +1735,37 @@ export const installDashboardApiMocks = async (
           updatedAt: nowIso,
         },
       };
+      const handedBack = activityEntry({ kind: "handed_back", actor: teammate(currentUserId) });
+      const activeConversationDetail = conversationDetails.get(conversationId);
+      const activity = [...activityOf(activeConversationDetail ?? conversationDetail), handedBack];
       if (conversationDetail && typeof conversationDetail === "object") {
         conversationDetail = {
           ...conversationDetail,
           ownership: response.ownership,
+          activity,
         };
       }
-      const activeConversationDetail = conversationDetails.get(conversationId);
       if (activeConversationDetail && typeof activeConversationDetail === "object") {
         conversationDetails.set(conversationId, {
           ...activeConversationDetail,
           ownership: response.ownership,
+          activity,
         });
       }
+      const closed = (activeConversationDetail ?? conversationDetail) as { title?: string | null; messages?: Array<{ content?: string }> } | undefined;
+      recentlyClosed.unshift({
+        id: handedBack.id,
+        conversationId,
+        itemKind: "handoff",
+        outcome: "handed_back",
+        closedAt: handedBack.createdAt,
+        closedBy: handedBack.actor,
+        decision: null,
+        resolution: null,
+        assistantMessageId: null,
+        title: closed?.title ?? null,
+        preview: closed?.messages?.[0]?.content ?? null,
+      });
       await json(route, response);
       return;
     }

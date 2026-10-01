@@ -50,10 +50,15 @@ export const matchesWorkspaceInvalidation = (
     case 'crawl.progress':
       return isDashboardQueryFamily(queryKey, workspaceId, 'documents/crawl-activity')
     case 'hitl.decision_created':
+      return isDashboardQueryFamily(queryKey, workspaceId, 'attention/decisions')
+    // Each change that closes an Inbox item — a decision resolved, a hand-back, feedback closed —
+    // also refreshes the recently-closed strip.
     case 'hitl.decision_resolved':
       return isDashboardQueryFamily(queryKey, workspaceId, 'attention/decisions')
+        || isDashboardQueryFamily(queryKey, workspaceId, 'attention/recently-closed')
     case 'conversation.ownership_changed':
       return isDashboardQueryFamily(queryKey, workspaceId, 'attention/human-owned')
+        || isDashboardQueryFamily(queryKey, workspaceId, 'attention/recently-closed')
         || matchesHistory(queryKey, workspaceId, ['all', 'chat'])
     case 'conversation.created':
     case 'conversation.turn_committed':
@@ -63,9 +68,12 @@ export const matchesWorkspaceInvalidation = (
     case 'search.created':
       return matchesHistory(queryKey, workspaceId, ['all', 'search'])
     case 'quality.feedback_changed':
+      return isDashboardQueryFamily(queryKey, workspaceId, 'quality/stats')
+        || isDashboardQueryFamily(queryKey, workspaceId, 'quality/turns')
     case 'quality.triage_changed':
       return isDashboardQueryFamily(queryKey, workspaceId, 'quality/stats')
         || isDashboardQueryFamily(queryKey, workspaceId, 'quality/turns')
+        || isDashboardQueryFamily(queryKey, workspaceId, 'attention/recently-closed')
   }
 }
 

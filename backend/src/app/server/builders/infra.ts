@@ -12,6 +12,7 @@ import type { AgentSkillSettingsRegistry, AgentSurfaceExtensionRegistry } from "
 import { AuditEventRepository } from "../../../db/repositories/auditEventRepository.js";
 import { BootstrapGreetingCacheRepository } from "../../../db/repositories/bootstrapGreetingCacheRepository.js";
 import { ConversationRepository } from "../../../db/repositories/conversationRepository.js";
+import { ConversationActivityRepository } from "../../../db/repositories/conversationActivityRepository.js";
 import { ConversationOwnershipRepository } from "../../../db/repositories/conversationOwnershipRepository.js";
 import { DocumentProcessingJobRepository } from "../../../db/repositories/documentProcessingJobRepository.js";
 import { EmbeddingProfileJobRepository } from "../../../db/repositories/embeddingProfileJobRepository.js";
@@ -186,6 +187,7 @@ export const buildRepositories = (
   bootstrapGreetingCacheRepository: new BootstrapGreetingCacheRepository(database.kysely),
   chunkRepository: new ChunkRepository(database),
   conversationRepository: new ConversationRepository(database.kysely),
+  conversationActivityRepository: new ConversationActivityRepository(database.kysely),
   conversationOwnershipRepository: new ConversationOwnershipRepository(database.kysely),
   documentProcessingJobRepository: new DocumentProcessingJobRepository(database.kysely),
   documentRepository: new DocumentRepository(database.kysely),

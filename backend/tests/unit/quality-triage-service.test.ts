@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { QualityTurnsService } from "../../src/modules/quality/service.js";
+import { unrecordedConversationActivity } from "../support/fakes.js";
 import { stubOutcomeCatalog } from "../support/qualityOutcomeCatalog.js";
 
 class SequencedDb {
@@ -11,6 +12,11 @@ class SequencedDb {
   async executeQuery(query: { sql: string; parameters: readonly unknown[] }) {
     this.queries.push(query);
     return { rows: this.rowSets.shift() ?? [] };
+  }
+
+  // One connection, so a transaction runs its statements on this same fake.
+  transaction() {
+    return { execute: <T>(work: (trx: SequencedDb) => Promise<T>): Promise<T> => work(this) };
   }
 }
 
@@ -29,7 +35,7 @@ describe("QualityTurnsService triage transition", () => {
     ]]);
     const service = new QualityTurnsService(
       db as never,
-      stubOutcomeCatalog(),
+      stubOutcomeCatalog(), unrecordedConversationActivity,
     );
 
     const result = await service.setTriageState("11111111-1111-1111-1111-111111111111", {
@@ -60,6 +66,44 @@ describe("QualityTurnsService triage transition", () => {
     expect(auditColumns).not.toContain("resolution_note");
   });
 
+  it("records who dismissed the feedback in the transition's transaction", async () => {
+    const db = new SequencedDb([[
+      {
+        conversation_id: "44444444-4444-4444-8444-444444444444",
+        transition_id: "55555555-5555-5555-5555-555555555555",
+        state: "dismissed",
+        version: 2,
+        resolution_reason: "out_of_scope",
+        resolution_note: null,
+        legacy_reason: null,
+        closed_at: "2026-07-30T10:00:00.000Z",
+        updated_at: "2026-07-30T10:00:00.000Z",
+      },
+    ]]);
+    const activity = { record: vi.fn(async () => undefined) };
+    const service = new QualityTurnsService(db as never, stubOutcomeCatalog(), activity);
+
+    await service.setTriageState("11111111-1111-1111-1111-111111111111", {
+      assistantMessageId: "22222222-2222-2222-2222-222222222222",
+      state: "dismissed",
+      expectedVersion: 1,
+      resolution: { reason: "out_of_scope", note: "Asked about another product" },
+      updatedBy: "33333333-3333-3333-3333-333333333333",
+    });
+
+    expect(activity.record).toHaveBeenCalledWith(db, {
+      kind: "feedback_dismissed",
+      conversationId: "44444444-4444-4444-8444-444444444444",
+      workspaceId: "11111111-1111-1111-1111-111111111111",
+      actorUserId: "33333333-3333-3333-3333-333333333333",
+      detail: {
+        assistantMessageId: "22222222-2222-2222-2222-222222222222",
+        triageTransitionId: "55555555-5555-5555-5555-555555555555",
+        resolution: "out_of_scope",
+      },
+    });
+  });
+
   it("resolves the linked Eval case inside the accepted transition statement", async () => {
     const db = new SequencedDb([[
       {
@@ -74,7 +118,7 @@ describe("QualityTurnsService triage transition", () => {
     ]]);
     const service = new QualityTurnsService(
       db as never,
-      stubOutcomeCatalog(),
+      stubOutcomeCatalog(), unrecordedConversationActivity,
       undefined,
       {
         async getByAssistantMessageIds() {
@@ -107,7 +151,7 @@ describe("QualityTurnsService triage transition", () => {
         updated_at: "2026-07-30T10:00:00.000Z",
       }],
     ]);
-    const service = new QualityTurnsService(db as never, stubOutcomeCatalog());
+    const service = new QualityTurnsService(db as never, stubOutcomeCatalog(), unrecordedConversationActivity);
 
     const result = await service.setTriageState("11111111-1111-1111-1111-111111111111", {
       assistantMessageId: "22222222-2222-2222-2222-222222222222",
@@ -130,7 +174,7 @@ describe("QualityTurnsService triage transition", () => {
 
   it("does not classify a missing target as a changed triage transition", async () => {
     const db = new SequencedDb([[]]);
-    const service = new QualityTurnsService(db as never, stubOutcomeCatalog());
+    const service = new QualityTurnsService(db as never, stubOutcomeCatalog(), unrecordedConversationActivity);
 
     await expect(service.setTriageState("11111111-1111-1111-1111-111111111111", {
       assistantMessageId: "22222222-2222-2222-2222-222222222222",
@@ -154,7 +198,7 @@ describe("QualityTurnsService triage transition", () => {
       }],
       [],
     ]);
-    const service = new QualityTurnsService(db as never, stubOutcomeCatalog(), undefined, undefined, publisher);
+    const service = new QualityTurnsService(db as never, stubOutcomeCatalog(), unrecordedConversationActivity, undefined, undefined, publisher);
 
     await service.setTriageState("11111111-1111-1111-1111-111111111111", {
       assistantMessageId: "22222222-2222-2222-2222-222222222222",

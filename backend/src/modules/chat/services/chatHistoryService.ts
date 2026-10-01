@@ -3,8 +3,14 @@ import { decodeCursorWithKeys } from "../../../shared/domain/cursorPagination.js
 import type { CallerKind, ConversationSourceScope } from "../../../shared/domain/conversationSource.js";
 import type { ConversationOutcomeFilter } from "../../../shared/domain/conversationOutcome.js";
 import type { ConversationTurnStage } from "../contracts/interruption.js";
-import type { TeammateLabelReaderPort } from "../contracts/teammateLabels.js";
-import { outwardFacingName } from "../../auth/contracts/index.js";
+import {
+  formatActivityCursor,
+  type ConversationActivityEntry,
+  type ConversationActivityReadScope,
+  type ConversationActivityTimeline,
+  type ConversationActivityTimelineReader,
+} from "../../conversationActivity/contracts/index.js";
+import { outwardFacingName, type TeammateLabelReaderPort } from "../../auth/contracts/index.js";
 import { presentOwnership, type ConversationOwnershipScope } from "../../handoff/public.js";
 import type { AuditEventRecord, AuditEventRepositoryPort } from "../../../db/repositories/auditEventRepository.js";
 import type {
@@ -120,6 +126,12 @@ const NO_TEAMMATE_LABELS: ReadonlyMap<string, string> = new Map();
 class NoopTeammateLabelReader implements TeammateLabelReaderPort {
   async labelsByUserIds(): Promise<ReadonlyMap<string, string>> {
     return NO_TEAMMATE_LABELS;
+  }
+}
+
+class NoopConversationActivityReader implements ConversationActivityTimelineReader {
+  async readTimeline(): Promise<ConversationActivityTimeline> {
+    return { userIds: [], cursor: formatActivityCursor(new Date()), present: () => [] };
   }
 }
 
@@ -342,6 +354,8 @@ export interface ChatConversationDetail {
   messages: ChatConversationTurn[];
   /** See {@link ChatConversationTail.ownership}: the same record, on operator reads only. */
   ownership?: ChatConversationOwnership;
+  /** See {@link ChatConversationTail.activity}: on operator reads only. */
+  activity?: ConversationActivityEntry[];
 }
 
 /**
@@ -363,6 +377,17 @@ export interface ChatConversationTail {
    * sees a hand-back made elsewhere. Absent until a teammate is first involved: the row is lazy.
    */
   ownership?: ChatConversationOwnership;
+  /**
+   * What people and the agent did to the conversation — handoffs, claims, reassignments,
+   * hand-backs, approvals decided, feedback closed — oldest first, each teammate labelled as they
+   * are now. Operator reads only: a label can be an email. The whole timeline, or with the tail's
+   * `activityCursor` only the events in a recent window, so a reader that polls sees an event
+   * recorded elsewhere — even one whose transaction committed after a newer event's — and keeps
+   * each event once by its id.
+   */
+  activity?: ConversationActivityEntry[];
+  /** The cursor to pass as the next tail's `activityCursor`. */
+  activityCursor?: string;
 }
 
 interface ChatConversationPage {
@@ -918,6 +943,7 @@ export class ChatHistoryService {
       new NoopAnswerCoverageHistoryReader(),
     private readonly visitorRepository: VisitorProfileReaderPort = new NoopVisitorProfileReader(),
     private readonly teammateLabels: TeammateLabelReaderPort = new NoopTeammateLabelReader(),
+    private readonly conversationActivity: ConversationActivityTimelineReader = new NoopConversationActivityReader(),
   ) {}
 
   async listConversations(
@@ -1085,6 +1111,7 @@ export class ChatHistoryService {
       includeOwnership?: boolean;
       includeAgentInternalName?: boolean;
       includeOperatorLabel?: boolean;
+      activity?: ConversationActivityReadScope;
     } = { includeAnswerFeedback: true },
   ): Promise<ContactHistoryDetailResponse> {
     const contact = await this.contactHistoryProvider.getById(workspaceId, requestId);
@@ -1157,6 +1184,9 @@ export class ChatHistoryService {
       // OFF by default: names the teammate behind each human reply, which can be an email. The
       // calling-agent update reader reads with ownership but must not get this either.
       includeOperatorLabel?: boolean;
+      // OFF (absent) by default: the conversation's activity names teammates by label, which can
+      // be an email, so only operator reads set it — with the kinds the caller may see.
+      activity?: ConversationActivityReadScope;
     } = {},
   ): Promise<ChatConversationDetail> {
     const conversation = await this.conversationRepository.findByIdAndWorkspaceId(conversationId, workspaceId);
@@ -1165,7 +1195,7 @@ export class ChatHistoryService {
       throw notFound("Conversation not found");
     }
 
-    const [{ messages, total, nextCursor, hasMore }, messageSummaries, ownershipRecord, tailBaseline, visitorProfile] =
+    const [{ messages, total, nextCursor, hasMore }, messageSummaries, ownershipRecord, tailBaseline, visitorProfile, activity] =
       await Promise.all([
         this.messageRepository.listWindowByConversationId(workspaceId, conversation.id, input),
         this.messageRepository.summarizeByConversationIds(workspaceId, [conversation.id]),
@@ -1179,6 +1209,7 @@ export class ChatHistoryService {
         options.includeAgentInternalName && conversation.visitorId
           ? this.visitorRepository.findById(workspaceId, conversation.visitorId)
           : Promise.resolve(null),
+        this.loadActivity(workspaceId, conversation.id, options.activity),
       ]);
     const assistantMessageIds = messages
       .filter((message) => message.role === "assistant")
@@ -1192,7 +1223,7 @@ export class ChatHistoryService {
         conversation.id,
         assistantMessageIds,
       ),
-      this.loadOperatorLabels(messages, options.includeOperatorLabel),
+      this.loadTeammateLabels(messages, options.includeOperatorLabel, activity),
     ]);
     const answerCoverageByRequestMessageId = await loadAnswerCoverageHistoryProjection(
       this.answerCoverageHistoryReader,
@@ -1274,6 +1305,7 @@ export class ChatHistoryService {
         ...(options.includeOperatorLabel ? operatorLabelField(message, operatorLabels) : {}),
       })),
       ...operatorOwnershipField(ownershipRecord),
+      ...(activity ? { activity: activity.present(operatorLabels) } : {}),
     };
   }
 
@@ -1315,7 +1347,7 @@ export class ChatHistoryService {
       options.includeOwnership
         ? this.conversationOwnership.load(message.conversationId)
         : Promise.resolve(null),
-      this.loadOperatorLabels([message], options.includeOperatorLabel),
+      this.loadTeammateLabels([message], options.includeOperatorLabel, null),
     ]);
     const answerCoverageByRequestMessageId = await loadAnswerCoverageHistoryProjection(
       this.answerCoverageHistoryReader,
@@ -1356,8 +1388,18 @@ export class ChatHistoryService {
   async tailConversation(
     workspaceId: string,
     conversationId: string,
-    input: { cursor?: string; limit: number },
-    options: { includeOwnership?: boolean; includeLatency?: boolean; includeOperatorLabel?: boolean } = {},
+    input: {
+      cursor?: string;
+      limit: number;
+      /** The previous tail's `activityCursor`: only the activity in the window behind it is read. */
+      activityCursor?: string;
+    },
+    options: {
+      includeOwnership?: boolean;
+      includeLatency?: boolean;
+      includeOperatorLabel?: boolean;
+      activity?: ConversationActivityReadScope;
+    } = {},
   ): Promise<ChatConversationTail> {
     const conversation = await this.conversationRepository.findByIdAndWorkspaceId(conversationId, workspaceId);
 
@@ -1366,31 +1408,50 @@ export class ChatHistoryService {
     }
 
     const cursor = input.cursor ? decodeCursorWithKeys(input.cursor, ["createdAt", "id"]) : null;
-    const [{ messages, latestCursor }, ownershipRecord] = await Promise.all([
+    const [{ messages, latestCursor }, ownershipRecord, activity] = await Promise.all([
       this.messageRepository.listSinceByConversationId(workspaceId, conversation.id, {
         sinceCreatedAt: cursor ? new Date(cursor.keys.createdAt) : undefined,
         sinceId: cursor?.keys.id,
         limit: input.limit,
       }),
       options.includeOwnership ? this.conversationOwnership.load(conversation.id) : Promise.resolve(null),
+      this.loadActivity(
+        workspaceId,
+        conversation.id,
+        options.activity && { ...options.activity, after: input.activityCursor },
+      ),
     ]);
 
-    const operatorLabels = await this.loadOperatorLabels(messages, options.includeOperatorLabel);
+    const labels = await this.loadTeammateLabels(messages, options.includeOperatorLabel, activity);
 
     return {
-      messages: messages.map((message) => this.toLightweightConversationTurn(message, options, operatorLabels)),
+      messages: messages.map((message) => this.toLightweightConversationTurn(message, options, labels)),
       cursor: latestCursor,
       ...operatorOwnershipField(ownershipRecord),
+      ...(activity ? { activity: activity.present(labels), activityCursor: activity.cursor } : {}),
     };
   }
 
-  /** One batched profile read for the repliers in `messages`, and none unless the caller opted in. */
-  private async loadOperatorLabels(
+  /** The conversation's activity timeline within `scope`, and no read unless the caller opted in. */
+  private async loadActivity(
+    workspaceId: string,
+    conversationId: string,
+    scope: (ConversationActivityReadScope & { after?: string }) | undefined,
+  ): Promise<ConversationActivityTimeline | null> {
+    return scope ? this.conversationActivity.readTimeline(workspaceId, conversationId, scope) : null;
+  }
+
+  /**
+   * One batched profile read for every teammate a read names — the repliers in `messages` when the
+   * caller opted in to their labels, and the teammates in `activity` — and none when it names none.
+   */
+  private async loadTeammateLabels(
     messages: readonly MessageRecord[],
-    include: boolean | undefined,
+    includeOperatorLabel: boolean | undefined,
+    activity: ConversationActivityTimeline | null,
   ): Promise<ReadonlyMap<string, string>> {
-    const userIds = include ? replierUserIds(messages) : [];
-    return userIds.length > 0 ? this.teammateLabels.labelsByUserIds(userIds) : NO_TEAMMATE_LABELS;
+    const userIds = new Set([...(includeOperatorLabel ? replierUserIds(messages) : []), ...(activity?.userIds ?? [])]);
+    return userIds.size > 0 ? this.teammateLabels.labelsByUserIds([...userIds]) : NO_TEAMMATE_LABELS;
   }
 
   private toLightweightConversationTurn(

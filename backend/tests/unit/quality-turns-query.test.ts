@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { QualityTurnsService } from "../../src/modules/quality/service.js";
-import { stubOutcomeCatalog, unrecordedConversationActivity } from "../support/qualityOutcomeCatalog.js";
+import { unrecordedConversationActivity } from "../support/fakes.js";
+import { stubOutcomeCatalog } from "../support/qualityOutcomeCatalog.js";
 
 class CapturingDb {
   readonly queries: Array<{ sql: string; parameters: readonly unknown[] }> = [];

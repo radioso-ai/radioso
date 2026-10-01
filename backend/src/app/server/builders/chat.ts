@@ -9,7 +9,7 @@ import { PendingDecisionRepository } from "../../../db/repositories/pendingDecis
 import { ClarificationStateRepository } from "../../../db/repositories/clarificationStateRepository.js";
 import { createConversationEngine } from "@radioso/conversation-engine";
 import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
-import type { TeammateLabelReaderPort } from "../../../modules/chat/contracts/index.js";
+import type { TeammateLabelReaderPort } from "../../../modules/auth/contracts/index.js";
 import type {
   ConversationActivityRecorder,
   ConversationActivityTimelineReader,

@@ -5,6 +5,7 @@ import type { AppDependencies } from "../../server/types.js";
 import { createAccountRoutes } from "./accountRoutes.js";
 import { createAccountUserRoutes } from "./accountUserRoutes.js";
 import { createAuthRoutes } from "./authRoutes.js";
+import { createConversationActivityRoutes } from "./conversationActivityRoutes.js";
 import { createConversationOwnershipRoutes } from "./conversationOwnershipRoutes.js";
 import { createContextVariableRoutes } from "./contextVariableRoutes.js";
 import { createDecisionRoutes } from "./decisionRoutes.js";
@@ -90,6 +91,7 @@ export const createApiRouteMounts = (_dependencies: AppDependencies): readonly A
   { path: "/api/v1/agents", createRouter: createAgentSkillRoutes },
   { path: "/api/v1/assistant", createRouter: createAssistantRoutes },
   { path: "/api/v1/copilot", createRouter: createCopilotRoutes },
+  { path: "/api/v1/conversations", createRouter: createConversationActivityRoutes },
   { path: "/api/v1/conversations", createRouter: createConversationOwnershipRoutes },
   { path: "/api/v1/history", createRouter: createHistoryRoutes },
   { path: "/api/v1/observability", createRouter: createObservabilityRoutes },

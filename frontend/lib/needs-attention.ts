@@ -609,18 +609,6 @@ export const buildRecentlyClosedItems = (
   decisionLabel: item.decision?.label ?? null,
 }))
 
-/** What was closed, as the strip labels it: the kind of item, and how it closed where that varies. */
-export const recentlyClosedKindLabel = (item: RecentlyClosedInboxItem): string => {
-  switch (item.itemKind) {
-    case 'handoff':
-      return 'Handoff'
-    case 'approval':
-      return item.decisionLabel ? `Approval · ${item.decisionLabel}` : 'Approval'
-    case 'negative_feedback':
-      return item.outcome === 'feedback_dismissed' ? 'Feedback dismissed' : 'Feedback resolved'
-  }
-}
-
 // ── Empty-queue confidence summary (FR-014) ─────────────────────────────────
 
 export const withinLastDays = (createdAt: string, days: number, now: Date): boolean => {

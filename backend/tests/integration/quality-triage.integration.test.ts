@@ -6,7 +6,8 @@ import { ConversationActivityRepository } from "../../src/db/repositories/conver
 import { QualityTurnsService } from "../../src/modules/quality/service.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { runAllTestMigrations } from "../support/databaseMigrations.js";
-import { stubOutcomeCatalog, unrecordedConversationActivity } from "../support/qualityOutcomeCatalog.js";
+import { unrecordedConversationActivity } from "../support/fakes.js";
+import { stubOutcomeCatalog } from "../support/qualityOutcomeCatalog.js";
 
 const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
 

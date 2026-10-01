@@ -1,4 +1,5 @@
 import type { ConversationActivityEntry, ConversationActivityKind } from '@/lib/api-types'
+import type { RecentlyClosedInboxItem } from '@/lib/needs-attention'
 
 /**
  * Operator-only copy for a conversation's activity: the short lines the operator thread
@@ -84,6 +85,20 @@ export const activityLine = (entry: ConversationActivityEntry): string => {
   }
 }
 
+/** What was closed, as the recently-closed strip labels it: the kind of item, and how it closed where that varies. */
+export const recentlyClosedKindLabel = (
+  item: Pick<RecentlyClosedInboxItem, 'itemKind' | 'outcome' | 'decisionLabel'>,
+): string => {
+  switch (item.itemKind) {
+    case 'handoff':
+      return 'Handoff'
+    case 'approval':
+      return item.decisionLabel ? `Approval · ${item.decisionLabel}` : 'Approval'
+    case 'negative_feedback':
+      return item.outcome === 'feedback_dismissed' ? 'Feedback dismissed' : 'Feedback resolved'
+  }
+}
+
 /** The recently-closed strip's attribution line. */
 export const closedByLine = (item: { closedBy: ActivityPerson }, when: string): string =>
   item.closedBy ? `Closed by ${personName(item.closedBy)} · ${when}` : `Closed · ${when}`
@@ -128,6 +143,49 @@ export const placeActivity = (
     before.set(index, [...(before.get(index) ?? []), event])
   }
   return { before, trailing }
+}
+
+/** Where the thread's day changes: the messages, by index, and the events, by id, a day label goes above. */
+interface ThreadDayBreaks {
+  messages: ReadonlySet<number>
+  activity: ReadonlySet<string>
+}
+
+/**
+ * Walks the thread in the order it renders — each message after the events placed before it, then
+ * the trailing events — and marks every item whose day differs from the item just above it, so an
+ * event sits under its own day rather than under the message before it. An item with no time yet
+ * (a message still streaming) starts no day, and the item after it starts none either.
+ */
+export const threadDayBreaks = (
+  messages: ReadonlyArray<{ createdAt?: string }>,
+  placement: ActivityPlacement,
+  dayOf: (createdAt: string) => string,
+): ThreadDayBreaks => {
+  const messageBreaks = new Set<number>()
+  const activityBreaks = new Set<string>()
+  let previousDay: string | null = null
+  const startsDay = (createdAt: string | undefined): boolean => {
+    const day = createdAt ? dayOf(createdAt) : null
+    const changed = day !== null && previousDay !== null && day !== previousDay
+    previousDay = day
+    return changed
+  }
+  const walkEvents = (events: readonly ConversationActivityEntry[]) => {
+    for (const event of events) {
+      if (startsDay(event.createdAt)) {
+        activityBreaks.add(event.id)
+      }
+    }
+  }
+  messages.forEach((message, index) => {
+    walkEvents(placement.before.get(index) ?? [])
+    if (startsDay(message.createdAt)) {
+      messageBreaks.add(index)
+    }
+  })
+  walkEvents(placement.trailing)
+  return { messages: messageBreaks, activity: activityBreaks }
 }
 
 /**

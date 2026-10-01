@@ -7,6 +7,8 @@ import {
   handoffReasonLabel,
   mergeActivity,
   placeActivity,
+  recentlyClosedKindLabel,
+  threadDayBreaks,
 } from '@/lib/conversation-activity'
 
 const bea = { userId: 'user-bea', label: 'Bea' }
@@ -111,6 +113,56 @@ describe('placeActivity', () => {
   })
 })
 
+describe('threadDayBreaks', () => {
+  // A fixed day key keeps the test independent of the runner's time zone.
+  const utcDay = (createdAt: string) => createdAt.slice(0, 10)
+
+  it('puts events after midnight under the new day, even when the next message comes later still', () => {
+    const messages = [
+      { createdAt: '2026-09-30T23:59:00.000Z' },
+      { createdAt: '2026-10-01T00:12:00.000Z' },
+    ]
+    const assigned = entry({ id: 'assigned', kind: 'reassigned', createdAt: '2026-10-01T00:09:00.000Z' })
+    const reassigned = entry({ id: 'reassigned', kind: 'reassigned', createdAt: '2026-10-01T00:09:30.000Z' })
+    const placement = placeActivity(messages, [assigned, reassigned], { hasOlderMessages: false })
+
+    const breaks = threadDayBreaks(messages, placement, utcDay)
+
+    // The first event after midnight carries the new day; the reply after it is on the same day.
+    expect([...breaks.activity]).toEqual(['assigned'])
+    expect([...breaks.messages]).toEqual([])
+  })
+
+  it('marks a message that starts a day, and a trailing event that starts the next', () => {
+    const messages = [
+      { createdAt: '2026-09-29T10:00:00.000Z' },
+      { createdAt: '2026-09-30T09:00:00.000Z' },
+    ]
+    const late = entry({ id: 'late', createdAt: '2026-10-01T08:00:00.000Z' })
+
+    const breaks = threadDayBreaks(messages, placeActivity(messages, [late], { hasOlderMessages: false }), utcDay)
+
+    expect([...breaks.messages]).toEqual([1])
+    expect([...breaks.activity]).toEqual(['late'])
+  })
+
+  it('starts no day at a message still streaming, while an event just before it carries its own', () => {
+    const messages = [
+      { createdAt: '2026-09-30T23:00:00.000Z' },
+      { createdAt: undefined },
+    ]
+    const afterMidnight = entry({ id: 'after-midnight', createdAt: '2026-10-01T00:05:00.000Z' })
+
+    expect(threadDayBreaks(messages, placeActivity(messages, [], { hasOlderMessages: false }), utcDay).messages.size).toBe(0)
+
+    // The streaming message is the newest thing in the thread, so the event sits before it.
+    const breaks = threadDayBreaks(messages, placeActivity(messages, [afterMidnight], { hasOlderMessages: false }), utcDay)
+
+    expect([...breaks.activity]).toEqual(['after-midnight'])
+    expect([...breaks.messages]).toEqual([])
+  })
+})
+
 describe('mergeActivity', () => {
   it('unions the detail read with every tail poll, each event once, oldest first', () => {
     const handoff = entry({ id: 'a', kind: 'handoff_requested', createdAt: '2026-09-30T10:00:00.000Z' })
@@ -137,6 +189,26 @@ describe('mergeActivity', () => {
     const second = entry({ id: 'a', createdAt: '2026-09-30T10:00:00.000Z' })
 
     expect(mergeActivity([first, second]).map((event) => event.id)).toEqual(['z', 'a'])
+  })
+})
+
+describe('recentlyClosedKindLabel', () => {
+  it('labels what was closed: a handoff, an approval with its choice, feedback by how it closed', () => {
+    const items: Array<Parameters<typeof recentlyClosedKindLabel>[0]> = [
+      { itemKind: 'handoff', outcome: 'handed_back', decisionLabel: null },
+      { itemKind: 'approval', outcome: 'approval_decided', decisionLabel: 'Approve refund' },
+      { itemKind: 'approval', outcome: 'approval_decided', decisionLabel: null },
+      { itemKind: 'negative_feedback', outcome: 'feedback_resolved', decisionLabel: null },
+      { itemKind: 'negative_feedback', outcome: 'feedback_dismissed', decisionLabel: null },
+    ]
+
+    expect(items.map(recentlyClosedKindLabel)).toEqual([
+      'Handoff',
+      'Approval · Approve refund',
+      'Approval',
+      'Feedback resolved',
+      'Feedback dismissed',
+    ])
   })
 })
 

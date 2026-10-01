@@ -2,7 +2,7 @@ import { Router, type Response } from "express";
 
 import type { AppDependencies } from "../../server/types.js";
 import {
-  FEEDBACK_ACTIVITY_PERMISSION,
+  resolveActivityReadScope,
   type ConversationActivityReadScope,
 } from "../../../modules/conversationActivity/contracts/index.js";
 import { badRequest } from "../../../shared/domain/errors.js";
@@ -33,9 +33,8 @@ export const createHistoryRoutes = (dependencies: HistoryRouteDependencies): Rou
   const workspaceSession = requireWorkspaceSession(dependencies);
   const historyRead = requireWorkspacePermission(dependencies, "workspace.history.read");
   // A conversation's activity carries feedback triage outcomes only to a caller who may read them.
-  const activityScope = async (res: Response): Promise<ConversationActivityReadScope> => ({
-    includeFeedback: await holdsWorkspacePermission(dependencies, res, FEEDBACK_ACTIVITY_PERMISSION),
-  });
+  const activityScope = (res: Response): Promise<ConversationActivityReadScope> =>
+    resolveActivityReadScope((permission) => holdsWorkspacePermission(dependencies, res, permission));
 
   router.get("/", workspaceSession, historyRead, async (req, res, next) => {
     try {

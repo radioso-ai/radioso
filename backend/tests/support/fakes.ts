@@ -4408,6 +4408,11 @@ export class InMemoryConversationActivityStore implements ConversationActivityRe
   }
 }
 
+/** For tests that do not look at conversation activity: records nothing. */
+export const unrecordedConversationActivity: ConversationActivityRecorder = {
+  async record() {},
+};
+
 export class InMemoryConversationOwnershipRepository implements Pick<
   ConversationOwnershipRepository,
   "load" | "loadForUpdate" | "loadByConversationIds" | "requestHandoff" | "takeOver" | "transfer" | "handBack"

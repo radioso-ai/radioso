@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { CallerKind } from "../../../shared/domain/conversationSource.js";
 import {
   CONVERSATION_ACTIVITY_KINDS,
-  FEEDBACK_ACTIVITY_PERMISSION,
+  resolveActivityReadScope,
   type ConversationActivityEntry,
   type ConversationActivityReadScope,
 } from "../../conversationActivity/contracts/index.js";
@@ -64,6 +64,13 @@ const transcriptActivitySchema = z.object({
   resolution: z.string().nullable(),
   assistantMessageId: z.string().uuid().nullable(),
 });
+// Compile-time guard: Ray's transcript activity is the operator entry without its id, so a field
+// added to or dropped from the entry fails tsc here until the projection below follows it.
+type _TranscriptActivityMatchesEntry = [z.infer<typeof transcriptActivitySchema>] extends [Omit<ConversationActivityEntry, "id">]
+  ? [Omit<ConversationActivityEntry, "id">] extends [z.infer<typeof transcriptActivitySchema>] ? true : never
+  : never;
+const _transcriptActivityMatchesEntry: _TranscriptActivityMatchesEntry = true;
+void _transcriptActivityMatchesEntry;
 const conversationTranscriptOutputSchema = z.object({
   transcript: z.object({
     conversationId: z.string().uuid(),
@@ -398,9 +405,7 @@ export const createChatCopilotTools = (deps: ChatCopilotToolDependencies): Reado
             includeLatency: true,
             includeOperatorLabel: true,
             // Feedback triage outcomes are Quality data: Ray reads them only for an operator who may.
-            activity: {
-              includeFeedback: await hasCurrentCopilotPermissions(context, [FEEDBACK_ACTIVITY_PERMISSION]),
-            },
+            activity: await resolveActivityReadScope((permission) => hasCurrentCopilotPermissions(context, [permission])),
           },
         ))),
       }),

@@ -2921,26 +2921,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/conversations/operators": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List the teammates who can own a conversation
-         * @description Returns the active teammates who hold conversation takeover permission on the workspace, labelled by display name, else email. These are the valid transfer targets.
-         */
-        get: operations["listConversationOperators"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/conversations/recently-closed": {
         parameters: {
             query?: never;
@@ -2953,6 +2933,26 @@ export interface paths {
          * @description Returns the workspace's most recently closed Inbox items, newest first: handoffs handed back to the agent, approvals decided, and negative feedback resolved or dismissed. Negative feedback is listed only to a caller with Quality access (`workspace.quality.read`). Each item names the teammate who closed it, labelled by display name, else email. Dashboard test chats are left out.
          */
         get: operations["listRecentlyClosedInboxItems"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/conversations/operators": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the teammates who can own a conversation
+         * @description Returns the active teammates who hold conversation takeover permission on the workspace, labelled by display name, else email. These are the valid transfer targets.
+         */
+        get: operations["listConversationOperators"];
         put?: never;
         post?: never;
         delete?: never;
@@ -22694,44 +22694,6 @@ export interface operations {
             };
         };
     };
-    listConversationOperators: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Teammates returned */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ConversationOperatorsResponse"];
-                };
-            };
-            /** @description Authentication required */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Workspace conversation takeover permission required */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
     listRecentlyClosedInboxItems: {
         parameters: {
             query?: {
@@ -22760,6 +22722,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace conversation takeover permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listConversationOperators: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Teammates returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationOperatorsResponse"];
                 };
             };
             /** @description Authentication required */

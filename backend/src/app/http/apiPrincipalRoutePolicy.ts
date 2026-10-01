@@ -301,9 +301,10 @@ const declarations: readonly PolicyDeclaration[] = [
     ["PATCH", "/api/v1/agents/:agentId/skills/:skillId", "workspace.agents.manage"],
     ["DELETE", "/api/v1/agents/:agentId/skills/:skillId", "workspace.agents.manage"],
   ].map(([method, path, permission]) => sessionOnly(method, path, permission)),
+  // The Inbox's recently closed strip: read from the takeover surface, so it takes the same permission.
+  sessionOnly("GET", "/api/v1/conversations/recently-closed", "workspace.conversation.takeover"),
   ...[
     ["GET", "/api/v1/conversations/operators"],
-    ["GET", "/api/v1/conversations/recently-closed"],
     ["POST", "/api/v1/conversations/:conversationId/takeover"],
     ["POST", "/api/v1/conversations/:conversationId/reply"],
     ["POST", "/api/v1/conversations/:conversationId/transfer"],

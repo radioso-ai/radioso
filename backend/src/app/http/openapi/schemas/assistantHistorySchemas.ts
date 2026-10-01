@@ -1,7 +1,10 @@
 import { z } from "zod";
 import {
+  CLOSED_INBOX_ITEM_KINDS,
   CLOSING_ACTIVITY_KINDS,
   CONVERSATION_ACTIVITY_KINDS,
+  type ConversationActivityEntry,
+  type RecentlyClosedInboxItem,
 } from "../../../../modules/conversationActivity/contracts/index.js";
 import { assistantChatSchema } from "../../schemas/assistantChatSchemas.js";
 import {
@@ -27,6 +30,9 @@ import {
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 import type { OpenApiSchemaCatalog } from "../openApiRegistry.js";
 import { registerAgentReplyEnvelopeSchemas } from "./agentReplyEnvelopeSchemas.js";
+
+/** True only when each type is assignable to the other: a documented shape that drifts from its contract fails tsc. */
+type SameShape<A, B> = [A] extends [B] ? ([B] extends [A] ? true : never) : never;
 
 export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schemas: OpenApiSchemaCatalog) => {
   const answerFeedbackParamsSchema = z.object({
@@ -724,7 +730,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     z.object({
       id: z.string().uuid().openapi({ description: "The closing event's id." }),
       conversationId: z.string().uuid(),
-      itemKind: z.enum(["handoff", "approval", "negative_feedback"]),
+      itemKind: z.enum(CLOSED_INBOX_ITEM_KINDS),
       outcome: z.enum(CLOSING_ACTIVITY_KINDS),
       closedAt: z.string().datetime(),
       closedBy: activityPerson("The teammate who closed it. Null for a caller that is no teammate, or a user since deleted."),
@@ -735,6 +741,12 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       preview: z.string().nullable().openapi({ description: "The conversation's first-message preview." }),
     }),
   );
+
+  const activitySchemasMatchContracts: [
+    SameShape<z.infer<typeof ConversationActivityEntrySchema>, ConversationActivityEntry>,
+    SameShape<z.infer<typeof RecentlyClosedInboxItemSchema>, RecentlyClosedInboxItem>,
+  ] = [true, true];
+  void activitySchemasMatchContracts;
 
   const RecentlyClosedInboxItemsResponseSchema = registry.register(
     "RecentlyClosedInboxItemsResponse",

@@ -910,6 +910,13 @@ export interface RoutineState {
   variables: Record<string, unknown>;
   /** Per-step entry counts, used by deterministic counter guards. */
   attempts?: Record<string, number>;
+  /**
+   * Consecutive times the current step was asked again without the visitor filling any of the
+   * step's empty slots (#1376); replacing a value the step already held does not count. Back to
+   * 0 (or absent) when the routine enters a step or a turn fills one of the step's empty slots;
+   * a turn yielded to normal answering leaves it unchanged.
+   */
+  reaskCount?: number;
   status: "active" | "suspended" | "completed" | "expired";
   metadata?: Record<string, unknown>;
 }
@@ -1195,8 +1202,16 @@ export interface ConversationRoutineStepRenderer {
  * routine's activation turn.
  */
 export interface RoutineStepReask {
-  /** The step's collected slots that are still unfilled. Schema only, never values. */
+  /**
+   * The step's collected slots that are still unfilled, plus any whose value this turn was
+   * rejected for not fitting its declared type. Schema only, never values.
+   */
   missingSlots: RoutineSlotSchema[];
+  /**
+   * True once the step has been asked again more times in a row than the runner's re-ask
+   * limit allows (#1376): the reply should ask differently rather than repeat the question.
+   */
+  exhausted?: boolean;
 }
 
 /**
@@ -1317,6 +1332,8 @@ export interface RoutineTraceStepEntry {
    * - `skill_dispatched`: a skill (tool) step ran.
    * - `action_emitted`: an action step emitted a fire-and-forget request.
    * - `rendered`: the step whose reply the turn rendered.
+   * - `reask_limit_reached`: the step was asked again more times in a row than the re-ask
+   *   limit allows, so its reply was told to ask differently. The routine stays on the step.
    */
   event:
     | "resumed"
@@ -1328,9 +1345,14 @@ export interface RoutineTraceStepEntry {
     | "rendered"
     | "suspended"
     | "decision_notified"
-    | "decision_applied";
+    | "decision_applied"
+    | "reask_limit_reached";
   /** Declared slot keys captured at this step this turn (names only — never values). */
   capturedSlotKeys?: string[];
+  /** Declared slots whose returned value was not stored because it does not fit the slot's type (keys only). */
+  rejectedSlots?: RoutineTraceRejectedSlot[];
+  /** On `reask_limit_reached`: how many times in a row the step has now been asked again. */
+  reaskCount?: number;
   /** Whether the LLM next-step selector ran for this step's edges. */
   viaSelector?: boolean;
   /** What the selector's model returned for this step's edges, when it ran and reported. */
@@ -1339,6 +1361,18 @@ export interface RoutineTraceStepEntry {
   skillStatus?: string;
   /** Host-private failure reason for a failed skill dispatch (e.g. mcp_timeout, suppressed_for_safe_test). */
   skillReason?: string;
+}
+
+/**
+ * A value the runner did not store for a declared slot (#1374). Key and reason only — never
+ * the value, which may be personal data or an injection attempt.
+ * - `not_scalar`: an object or array, which fits no slot type.
+ * - `type_mismatch`: a scalar that does not fit the slot's declared type (an email that is
+ *   not shaped like one, a date that is not a `YYYY-MM-DD` calendar date).
+ */
+export interface RoutineTraceRejectedSlot {
+  key: string;
+  reason: "not_scalar" | "type_mismatch";
 }
 
 /**

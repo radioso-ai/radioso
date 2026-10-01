@@ -13,6 +13,7 @@ import type {
 } from "@radioso/conversation-contract";
 
 import {
+  DEFAULT_ROUTINE_STEP_REASK_EXHAUSTED_PROMPT,
   DEFAULT_ROUTINE_STEP_REPLY_PROMPT,
   DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_DEFAULT_PROMPT,
   DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_WITH_MESSAGE_PROMPT,
@@ -22,6 +23,7 @@ import { renderPromptTemplate } from "./promptTemplate.js";
 import { renderRoutineStepInstructions, renderSteeringRules, routineStepSteeringOptions } from "./steeringPrompt.js";
 
 export {
+  DEFAULT_ROUTINE_STEP_REASK_EXHAUSTED_PROMPT,
   DEFAULT_ROUTINE_STEP_REPLY_PROMPT,
   DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_DEFAULT_PROMPT,
   DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_WITH_MESSAGE_PROMPT,
@@ -101,9 +103,11 @@ const stepProgressInstruction = (step: RoutineStep): string =>
  * that, and what is still missing, keeps the reply a question rather than an
  * acknowledgement of an answer that was never given (#1369). Slot keys only: a slot's
  * description is guidance written for the extractor, and handed to the reply the model
- * repeated it to the visitor ("a general stay isn't enough").
+ * repeated it to the visitor ("a general stay isn't enough"). Past the runner's re-ask
+ * limit the exhausted prompt follows, so the reply asks differently instead of repeating
+ * the same question (#1376).
  */
-const reaskBlock = (reask?: RoutineStepReask): string => {
+const reaskBlock = (reask: RoutineStepReask | undefined, exhaustedPrompt: string): string => {
   if (!reask) {
     return "";
   }
@@ -111,6 +115,7 @@ const reaskBlock = (reask?: RoutineStepReask): string => {
   return [
     "The user's latest reply did not give everything this step needs, so this message asks again. Do not act as if the step is done: ask the step's question again, focused on what is still missing, and briefly say why when that helps the user answer. Anything else the user asked for that is outside your scope is still declined, as above.",
     ...(missing.length > 0 ? [`Still missing: ${missing.join(", ")}.`] : []),
+    ...(reask.exhausted ? [exhaustedPrompt] : []),
   ].join("\n");
 };
 
@@ -262,6 +267,7 @@ export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
   private readonly promptTemplate: string;
   private readonly terminalHandoffWithMessagePromptTemplate: string;
   private readonly terminalHandoffDefaultPromptTemplate: string;
+  private readonly reaskExhaustedPromptTemplate: string;
 
   constructor(
     private readonly modelGateway: ConversationModelGateway,
@@ -269,6 +275,8 @@ export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
       promptTemplate?: string;
       terminalHandoffWithMessagePromptTemplate?: string;
       terminalHandoffDefaultPromptTemplate?: string;
+      /** What a step asked again past the re-ask limit is told (#1376). */
+      reaskExhaustedPromptTemplate?: string;
       responseLanguage?: string | Promise<string | undefined>;
       groundedAnswerRenderer?: RoutineGroundedAnswerRenderer;
       /** Frames directive guidance as subordinate to the step instruction. */
@@ -281,6 +289,8 @@ export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
       options.terminalHandoffWithMessagePromptTemplate ?? DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_WITH_MESSAGE_PROMPT;
     this.terminalHandoffDefaultPromptTemplate =
       options.terminalHandoffDefaultPromptTemplate ?? DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_DEFAULT_PROMPT;
+    this.reaskExhaustedPromptTemplate =
+      options.reaskExhaustedPromptTemplate ?? DEFAULT_ROUTINE_STEP_REASK_EXHAUSTED_PROMPT;
   }
 
   async render(input: {
@@ -320,7 +330,10 @@ export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
       unresolved_request_context: unresolvedRequestBlock(input.turn),
       subordinate_guidance: renderSteeringRules(guidance, routineStepSteeringOptions(this.steeringPromptTemplate)),
       instructions: renderRoutineStepInstructions(instructions.map((rule) => rule.action)),
-      reask_context: reaskBlock(input.reask),
+      reask_context: reaskBlock(
+        input.reask,
+        renderPromptTemplate("chat/routine-step-reask-exhausted.md", this.reaskExhaustedPromptTemplate, {}),
+      ),
     });
     const { text } = await this.modelGateway.complete({
       messages: turnMessages(input.turn),

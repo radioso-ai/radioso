@@ -13,6 +13,7 @@ import type {
   RoutineTransition,
   TurnContext,
 } from "@radioso/conversation-contract";
+import { checkSlotValue } from "@radioso/conversation-engine";
 
 import { DEFAULT_ROUTINE_NEXT_STEP_PROMPT } from "./generated/defaultPrompts.js";
 import { renderPromptTemplate } from "./promptTemplate.js";
@@ -144,19 +145,12 @@ const parseDecision = (raw: string): ParsedDecision => {
 };
 
 // The model often writes a number or boolean as a JSON string; a field guard compares with
-// `===`, so "2" would never equal 2. Structural coercion by declared type only.
+// `===`, so "2" would never equal 2. Coerced by the engine's slot value rules; a value that
+// does not fit its declared type passes through unchanged for the runner to reject and
+// record (#1374).
 const coerceToSlotType = (value: unknown, type: RoutineSlotType | undefined): unknown => {
-  if (typeof value !== "string") {
-    return value;
-  }
-  const trimmed = value.trim();
-  if (type === "number" && /^-?\d+(?:\.\d+)?$/.test(trimmed)) {
-    return Number(trimmed);
-  }
-  if (type === "boolean" && (trimmed === "true" || trimmed === "false")) {
-    return trimmed === "true";
-  }
-  return value;
+  const checked = type ? checkSlotValue(type, value) : null;
+  return checked?.ok ? checked.value : value;
 };
 
 // Structural check: a literal template placeholder (e.g. "<name>") echoed verbatim by

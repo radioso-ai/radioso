@@ -133,6 +133,7 @@ export function RoutineInstructionEditor({
   autoFocusEnd,
   onAutoFocused,
   ariaLabel,
+  placeholder = 'Write the routine in plain language. Type @ to insert a variable.',
 }: {
   initialContent: ProseParagraph[]
   variables: ChipDocVariable[]
@@ -151,6 +152,7 @@ export function RoutineInstructionEditor({
   autoFocusEnd?: boolean
   onAutoFocused?: () => void
   ariaLabel?: string
+  placeholder?: string
 }): JSX.Element {
   const reservedRefKinds = useMemo(
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion -- keeps the literal from widening to string, so fromEntries yields Record<string, RoutineChipKind>.
@@ -223,7 +225,7 @@ export function RoutineInstructionEditor({
               }
               placeholder={() => (
                 <div className="pointer-events-none absolute left-0 top-0 text-sm leading-7 text-muted-foreground">
-                  Write the routine in plain language. Type @ to insert a variable.
+                  {placeholder}
                 </div>
               )}
               ErrorBoundary={LexicalErrorBoundary}

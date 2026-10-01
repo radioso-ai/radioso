@@ -2472,9 +2472,6 @@ describe("DefaultRoutineRunner landing-step extraction on the activation turn (#
     const datesEntry = result.trace?.steps.find((entry) => entry.stepId === "dates");
     expect(datesEntry).toMatchObject({ event: "rendered", viaSelector: true, readOpeningMessage: true });
     expect(datesEntry).not.toHaveProperty("capturedSlotKeys");
-    // Nothing was captured or rejected for this step, so the reply asks the whole
-    // question again rather than a partial re-ask (#1370).
-    expect(vi.mocked(renderer.render).mock.calls[0][0]).not.toHaveProperty("reask");
   });
 
   it("still renders the landing step when its only way on is a bare default and nothing was extracted", async () => {
@@ -2630,9 +2627,6 @@ describe("DefaultRoutineRunner landing-step extraction on the activation turn (#
       capturedSlotKeys: ["arrival", "departure"],
       readOpeningMessage: true,
     });
-    // Held, even though the merge would satisfy the step: nothing new is missing, so no
-    // partial re-ask is added on top of the hold.
-    expect(vi.mocked(renderer.render).mock.calls[0][0]).not.toHaveProperty("reask");
   });
 
   it("renders a satisfied landing step once more when its only way on is an AI-decides exit it declines", async () => {
@@ -2756,38 +2750,79 @@ describe("DefaultRoutineRunner landing-step extraction on the activation turn (#
       expect(result.nextState).toMatchObject({ variables: { program: "Retreat", adults: 4 } });
     });
 
-    it("renders a step the opening message only partly answered, asking only for what is still missing", async () => {
-      const twoRequired: Routine = {
-        ...partyRoutine,
-        slots: [
-          ...partyRoutine.slots!,
-          { id: "slot_city", key: "city", type: "text", required: true },
-          { id: "slot_zip", key: "zip", type: "text", required: true },
-        ],
-        steps: partyRoutine.steps.map((candidate) =>
-          candidate.id === "party"
-            ? { ...candidate, action: "Ask for city and zip.", metadata: { collectsSlots: ["city", "zip"] } }
-            : candidate,
-        ),
-      };
+    // program -> address (city, zip: both text, both required) -> done. The step's
+    // instruction references both slots, so a captured value shows up filled into it
+    // (`resolveStepAction`) instead of needing a reask on a step never shown before.
+    const addressRoutine: Routine = {
+      id: "address_booking",
+      rootStepId: "program",
+      slots: [
+        { id: "slot_program", key: "program", type: "text", required: true },
+        { id: "slot_city", key: "city", type: "text", required: true },
+        { id: "slot_zip", key: "zip", type: "text", required: true },
+      ],
+      steps: [
+        { id: "program", kind: "chat", action: "Ask which program.", metadata: { collectsSlots: ["program"] } },
+        {
+          id: "address",
+          kind: "chat",
+          action: "Ask for the city ({{slot.city}}) and the zip ({{slot.zip}}).",
+          metadata: { collectsSlots: ["city", "zip"] },
+        },
+        { id: "done", kind: "terminal", action: "Confirm the booking." },
+      ],
+      transitions: [
+        { from: "program", to: "address", condition: "The user named a program." },
+        { from: "address", to: "done", condition: "The user gave city and zip." },
+      ],
+    };
+
+    it("renders a step the opening message only partly answered as a first ask, with the value it read filled into the instruction", async () => {
       const renderer = freshRenderer();
       const select = vi.fn<ConversationRoutineNextStepSelector["select"]>()
-        .mockResolvedValueOnce({ nextStepId: "party", variables: { program: "Retreat" } })
-        .mockResolvedValueOnce({ nextStepId: "party", variables: { city: "Turin" } });
-      const runner = new DefaultRoutineRunner([twoRequired], { select }, renderer);
+        .mockResolvedValueOnce({ nextStepId: "address", variables: { program: "Retreat" } })
+        .mockResolvedValueOnce({ nextStepId: "address", variables: { city: "Turin" } });
+      const runner = new DefaultRoutineRunner([addressRoutine], { select }, renderer);
 
-      const result = await runner.resume({ turn, state: atProgram("party_booking"), activationTurn: true });
+      const result = await runner.resume({ turn, state: atProgram("address_booking"), activationTurn: true });
 
       expect(select).toHaveBeenCalledTimes(2);
-      const zipSlot = twoRequired.slots!.find((slot) => slot.key === "zip");
+      // A first ask, not a re-ask: the step has never been shown to the visitor, so the
+      // renderer gets no `reask` — the value it already holds is filled into the
+      // instruction instead (#1370).
+      expect(vi.mocked(renderer.render).mock.calls[0][0]).not.toHaveProperty("reask");
       expect(renderer.render).toHaveBeenCalledWith(expect.objectContaining({
-        step: expect.objectContaining({ id: "party" }),
-        reask: { missingSlots: [zipSlot] },
+        step: expect.objectContaining({ id: "address", action: expect.stringContaining("Turin") }),
       }));
       expect(result.nextState).toMatchObject({ variables: { program: "Retreat", city: "Turin" } });
+      const addressEntry = result.trace?.steps.find((entry) => entry.stepId === "address");
+      expect(addressEntry).toMatchObject({ event: "rendered", readOpeningMessage: true, capturedSlotKeys: ["city"] });
     });
 
-    it("asks again for a required slot whose landing-read value did not fit its declared type", async () => {
+    it("keeps a value the root pass already filled for a later step when that step's own landing read adds nothing", async () => {
+      // The opening-message extraction on the answered step (`program`) can itself return
+      // a value for a declared slot further down the graph — not only the landing read on
+      // the step that collects it. Either source must count the same way.
+      const renderer = freshRenderer();
+      const select = vi.fn<ConversationRoutineNextStepSelector["select"]>()
+        .mockResolvedValueOnce({ nextStepId: "address", variables: { program: "Retreat", city: "Turin" } })
+        .mockResolvedValueOnce({ nextStepId: "address" });
+      const runner = new DefaultRoutineRunner([addressRoutine], { select }, renderer);
+
+      const result = await runner.resume({ turn, state: atProgram("address_booking"), activationTurn: true });
+
+      expect(select).toHaveBeenCalledTimes(2);
+      expect(vi.mocked(renderer.render).mock.calls[0][0]).not.toHaveProperty("reask");
+      expect(renderer.render).toHaveBeenCalledWith(expect.objectContaining({
+        step: expect.objectContaining({ id: "address", action: expect.stringContaining("Turin") }),
+      }));
+      expect(result.nextState).toMatchObject({ variables: { program: "Retreat", city: "Turin" } });
+      const addressEntry = result.trace?.steps.find((entry) => entry.stepId === "address");
+      expect(addressEntry).toMatchObject({ event: "rendered", readOpeningMessage: true });
+      expect(addressEntry).not.toHaveProperty("capturedSlotKeys");
+    });
+
+    it("asks again for a required slot whose landing-read value did not fit its declared type, without storing it", async () => {
       const renderer = freshRenderer();
       const select = vi.fn<ConversationRoutineNextStepSelector["select"]>()
         .mockResolvedValueOnce({ nextStepId: "party", variables: { program: "Retreat" } })
@@ -2797,11 +2832,11 @@ describe("DefaultRoutineRunner landing-step extraction on the activation turn (#
       const result = await runner.resume({ turn, state: atProgram("party_booking"), activationTurn: true });
 
       expect(select).toHaveBeenCalledTimes(2);
-      const adultsSlot = partyRoutine.slots!.find((slot) => slot.key === "adults");
-      expect(renderer.render).toHaveBeenCalledWith(expect.objectContaining({
-        step: expect.objectContaining({ id: "party" }),
-        reask: { missingSlots: [adultsSlot] },
-      }));
+      expect(renderer.render).toHaveBeenCalledWith(expect.objectContaining({ step: expect.objectContaining({ id: "party" }) }));
+      expect(vi.mocked(renderer.render).mock.calls[0][0]).not.toHaveProperty("reask");
+      // Dropped, not stored under any key — a first ask for this step has nothing of
+      // its own to fill into the instruction either.
+      expect(result.nextState?.variables).not.toHaveProperty("adults");
       const partyEntry = result.trace?.steps.find((entry) => entry.stepId === "party");
       expect(partyEntry).toMatchObject({
         event: "rendered",

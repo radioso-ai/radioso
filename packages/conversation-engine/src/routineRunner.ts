@@ -811,10 +811,6 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     let resumeStepRejected: RoutineTraceRejectedSlot[] = [];
     // Whether `selectNext` held the step the visitor answered (see the hold there).
     let held = false;
-    // The most recent landing read (#1370): the step it read, and whether that read
-    // touched one of the step's own collected slots. Read at render time so a step the
-    // opening message only partly answered asks for what is still missing, not everything.
-    let landingRead: { stepId: string; capturedOwnSlot: boolean; rejectedOwnKeys: ReadonlySet<string> } | null = null;
     if (currentStep.kind === "skill" || currentStep.kind === "action") {
       // Transit steps execute when the routine lands on them. This matters for a
       // routine whose root step is a tool (for example retrieval.context): selecting
@@ -937,13 +933,6 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         const landingEntry = selectorEntry(step, beforeLanding, landingDecision);
         landingEntry.readOpeningMessage = true;
         variables = { ...variables, ...(landingDecision.variables ?? {}) };
-        // The opening message already answered part of this step: tracked here so a
-        // render below can ask only for what is still missing, not the whole question.
-        landingRead = {
-          stepId: step.id,
-          capturedOwnSlot: (landingEntry.capturedSlotKeys ?? []).some((key) => collectedSlotsForStep(step).includes(key)),
-          rejectedOwnKeys: rejectedCollectedKeys(step, lastRejectedSlots),
-        };
 
         // Moving on requires the step to be satisfied after this merge, checked before
         // `nextStepId`: a lone default edge resolves on its own regardless of what was
@@ -1211,16 +1200,11 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
 
     // Rendering the chat step the user was answering means their reply did not satisfy
     // it. The renderer must know, or it reads a bare "yes" to a confirmation question as
-    // the flow being done (#1369). On the activation turn the step is asked for the first
-    // time — unless the opening message already read part of it (#1370): a landing read
-    // that touched one of this step's own slots and still left it unsatisfied asks only
-    // for what is still missing, the same way a re-ask does.
+    // the flow being done (#1369). On the activation turn the step is asked for the first time.
     const missing =
       !input.activationTurn && step.kind === "chat" && step.id === currentStepId
         ? reaskFor(routine, step, variables, rejectedCollectedKeys(step, resumeStepRejected))
-        : landingRead && landingRead.stepId === step.id && (landingRead.capturedOwnSlot || landingRead.rejectedOwnKeys.size > 0)
-          ? reaskFor(routine, step, variables, landingRead.rejectedOwnKeys)
-          : null;
+        : null;
     // Past the re-ask limit the renderer is always told, even when the step holds its slots.
     const reask: RoutineStepReask | null = reaskExhausted
       ? { ...(missing ?? { missingSlots: [] }), exhausted: true }

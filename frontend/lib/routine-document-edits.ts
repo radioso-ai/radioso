@@ -293,8 +293,10 @@ const mapEnding = (doc: RoutineBlockDoc, terminalId: string, edit: (ending: Rout
 // tells no one, and a hand-off falls back to its default notice.
 export const setEndingNotice = (doc: RoutineBlockDoc, terminalId: string, notice: EndingNotice | null): RoutineBlockDoc =>
   mapEnding(doc, terminalId, (ending) => {
-    const { operatorNotice: _previous, ...rest } = ending
-    return notice ? { ...rest, operatorNotice: copy(notice) } : rest
+    if (notice) return { ...ending, operatorNotice: copy(notice) }
+    const withoutNotice = { ...ending }
+    delete withoutNotice.operatorNotice
+    return withoutNotice
   })
 
 export const updateEnding = (doc: RoutineBlockDoc, terminalId: string, patch: Partial<RoutineBlockEnding>): RoutineBlockDoc => {

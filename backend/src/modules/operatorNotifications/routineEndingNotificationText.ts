@@ -2,7 +2,7 @@ import { SLOT_REFERENCE_PATTERN } from "@radioso/routine-definition";
 
 import type { HandoffCollectedValue, RoutineEndingOperatorNotification } from "./operatorNotification.js";
 
-export interface FormattedRoutineEndingNotification {
+interface FormattedRoutineEndingNotification {
   subject: string;
   /** Body lines, ready to join with a newline. The first line is the one-sentence headline. */
   lines: string[];

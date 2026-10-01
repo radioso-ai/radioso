@@ -55,8 +55,8 @@ CREATE INDEX IF NOT EXISTS conversation_activity_workspace_closed_idx
 -- each conversation's timeline carry it from the first read. Only the transitions that closed the
 -- feedback — into resolved or dismissed from another state — as the live writer records them; a
 -- re-save of a closed state closes nothing. Handoffs and approvals leave no history to rebuild them
--- from. Operator test traffic (the channels of `OPERATOR_TEST_SOURCE_CHANNELS`) is left out, as the
--- Inbox leaves it out.
+-- from. Test chats are backfilled too, as the live writer records their closures; the reads that
+-- leave operator test traffic out (the Inbox's "Recently closed") filter it themselves.
 --
 -- A closure is identified by the triage transition that produced it (`detail->>'triageTransitionId'`),
 -- never by `created_at`: the live writer stamps its row with its own `clock_timestamp()`, milliseconds
@@ -95,8 +95,6 @@ SELECT c.id,
     ON c.id = m.conversation_id
  WHERE t.next_state IN ('resolved', 'dismissed')
    AND t.prior_state <> t.next_state
-   AND (c.source_channel IS NULL
-        OR c.source_channel NOT IN ('authenticated_chat', 'workbench_replay', 'operator_copilot_probe'))
    AND NOT EXISTS (
      SELECT 1
        FROM conversation_activity a

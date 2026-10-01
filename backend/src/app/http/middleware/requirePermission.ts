@@ -1,21 +1,36 @@
 import type { Request, RequestHandler, Response } from "express";
 
-import type {
-  AccountPermission,
-  AuthenticatedPrincipal,
-  PublicChatPermission,
+import type { AccountMembershipRole } from "../../../db/repositories/accountMembershipRepository.js";
+import {
+  workspaceRoleAllows,
+  type AccountPermission,
+  type AuthenticatedPrincipal,
+  type PublicChatPermission,
 } from "../../../modules/account/services/accountAccessService.js";
 
 interface PermissionDependencies {
   accountAccessService: {
+    /**
+     * Resolves to the teammate's effective role the check allowed, when it looked one up; a narrower
+     * access port that resolves nothing leaves later permissions to `hasPermission`.
+     */
     requirePermission(input: {
       accountId?: string | null;
       userId?: string | null;
       principal?: AuthenticatedPrincipal | null;
       permission: AccountPermission | PublicChatPermission;
       workspaceId?: string | null;
-    }): Promise<void>;
+    }): Promise<AccountMembershipRole | null | void>;
   };
+}
+
+/**
+ * The effective role a workspace permission check resolved for the caller, kept on the request so
+ * a later permission on the same workspace is weighed from it rather than looked up again.
+ */
+interface CheckedWorkspaceRole {
+  workspaceId: string;
+  role: AccountMembershipRole;
 }
 
 type WorkspacePermissionDependencies = PermissionDependencies;
@@ -35,19 +50,24 @@ interface PermissionCheckDependencies {
 /**
  * Whether the caller holds `permission` on the request's workspace, for a route that shapes what it
  * returns by a permission rather than refusing without it. Runs after the route's own permission
- * middleware, which has already placed the workspace in the caller's account.
+ * middleware, which has already placed the workspace in the caller's account and, for a teammate,
+ * resolved the role this weighs `permission` by; the access service decides it otherwise.
  */
 export const holdsWorkspacePermission = (
   dependencies: PermissionCheckDependencies,
   res: Response,
   permission: AccountPermission,
 ): Promise<boolean> => {
-  const { accountId, userId, workspaceId, authPrincipal } = res.locals as {
+  const { accountId, userId, workspaceId, authPrincipal, checkedWorkspaceRole } = res.locals as {
     accountId: string;
     userId?: string;
     workspaceId?: string;
     authPrincipal?: AuthenticatedPrincipal;
+    checkedWorkspaceRole?: CheckedWorkspaceRole;
   };
+  if (checkedWorkspaceRole && checkedWorkspaceRole.workspaceId === workspaceId) {
+    return Promise.resolve(workspaceRoleAllows(checkedWorkspaceRole.role, permission));
+  }
   return dependencies.accountAccessService.hasPermission({
     accountId,
     userId,
@@ -91,13 +111,18 @@ export const requireWorkspacePermission = (
       workspaceId?: string;
       authPrincipal?: AuthenticatedPrincipal;
     };
-    await dependencies.accountAccessService.requirePermission({
+    const checkedWorkspaceId = resolveWorkspaceId?.(req, res) ?? workspaceId;
+    const role = await dependencies.accountAccessService.requirePermission({
       accountId,
       userId,
       principal: authPrincipal,
       permission,
-      workspaceId: resolveWorkspaceId?.(req, res) ?? workspaceId,
+      workspaceId: checkedWorkspaceId,
     });
+    if (role && checkedWorkspaceId) {
+      const checked: CheckedWorkspaceRole = { workspaceId: checkedWorkspaceId, role };
+      res.locals.checkedWorkspaceRole = checked;
+    }
     next();
   } catch (error) {
     next(error);

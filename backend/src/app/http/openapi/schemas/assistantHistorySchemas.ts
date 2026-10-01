@@ -29,10 +29,8 @@ import {
 } from "../../routes/publicChatRouteSchemas.js";
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 import type { OpenApiSchemaCatalog } from "../openApiRegistry.js";
+import type { SameType } from "../../../../shared/types/sameType.js";
 import { registerAgentReplyEnvelopeSchemas } from "./agentReplyEnvelopeSchemas.js";
-
-/** True only when each type is assignable to the other: a documented shape that drifts from its contract fails tsc. */
-type SameShape<A, B> = [A] extends [B] ? ([B] extends [A] ? true : never) : never;
 
 export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schemas: OpenApiSchemaCatalog) => {
   const answerFeedbackParamsSchema = z.object({
@@ -742,9 +740,10 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     }),
   );
 
+  // A documented shape that drifts from its contract fails tsc here.
   const activitySchemasMatchContracts: [
-    SameShape<z.infer<typeof ConversationActivityEntrySchema>, ConversationActivityEntry>,
-    SameShape<z.infer<typeof RecentlyClosedInboxItemSchema>, RecentlyClosedInboxItem>,
+    SameType<z.infer<typeof ConversationActivityEntrySchema>, ConversationActivityEntry>,
+    SameType<z.infer<typeof RecentlyClosedInboxItemSchema>, RecentlyClosedInboxItem>,
   ] = [true, true];
   void activitySchemasMatchContracts;
 
@@ -845,10 +844,10 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
         description: "The conversation's ownership record whenever one exists, `ai_owned` included, so a hand-back made elsewhere reaches a reader polling the tail. Absent until a teammate is first involved.",
       }),
       activity: z.array(ConversationActivityEntrySchema).optional().openapi({
-        description: "The conversation's activity, oldest first, so a reader polling the tail sees an event recorded elsewhere: the whole timeline, or with `activityCursor` only the events recorded since. Feedback outcomes reach only a caller with Quality access.",
+        description: "The conversation's activity, oldest first, so a reader polling the tail sees an event recorded elsewhere: the whole timeline, or with `activityCursor` the events in a recent window. The window reaches back far enough to take in an event whose transaction committed after a newer event's, so it can repeat events the caller already holds: keep each one once by its `id`. Feedback outcomes reach only a caller with Quality access.",
       }),
-      activityCursor: z.string().uuid().nullable().optional().openapi({
-        description: "Pass as the next tail's `activityCursor` to read only newer activity. Null while the conversation has no activity.",
+      activityCursor: z.string().optional().openapi({
+        description: "Opaque. Pass as the next tail's `activityCursor` to read only recent activity. Present whenever `activity` is.",
       }),
     }),
   );

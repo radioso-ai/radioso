@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import type { CallerKind } from "../../../shared/domain/conversationSource.js";
+import type { SameType } from "../../../shared/types/sameType.js";
 import {
   CONVERSATION_ACTIVITY_KINDS,
   resolveActivityReadScope,
@@ -66,11 +67,8 @@ const transcriptActivitySchema = z.object({
 });
 // Compile-time guard: Ray's transcript activity is the operator entry without its id, so a field
 // added to or dropped from the entry fails tsc here until the projection below follows it.
-type _TranscriptActivityMatchesEntry = [z.infer<typeof transcriptActivitySchema>] extends [Omit<ConversationActivityEntry, "id">]
-  ? [Omit<ConversationActivityEntry, "id">] extends [z.infer<typeof transcriptActivitySchema>] ? true : never
-  : never;
-const _transcriptActivityMatchesEntry: _TranscriptActivityMatchesEntry = true;
-void _transcriptActivityMatchesEntry;
+const transcriptActivityMatchesEntry: SameType<z.infer<typeof transcriptActivitySchema>, Omit<ConversationActivityEntry, "id">> = true;
+void transcriptActivityMatchesEntry;
 const conversationTranscriptOutputSchema = z.object({
   transcript: z.object({
     conversationId: z.string().uuid(),

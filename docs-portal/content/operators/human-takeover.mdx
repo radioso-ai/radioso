@@ -1,7 +1,7 @@
 ---
 title: "Human takeover"
 description: "Let an operator own a conversation while the AI stays silent, reply as a human, hand back, and see who did what — from the dashboard or the API."
-last_updated: 2026-09-30
+last_updated: 2026-10-01
 ---
 
 # Human takeover
@@ -180,7 +180,7 @@ Every conversation keeps a record of what happened to it and who did it: the age
 
 Feedback resolved or dismissed in the 30 days before the record began is in it too, rebuilt from the triage history, so **Recently closed** starts with that month's closed feedback.
 
-The operator history detail and tail (`GET /api/v1/history/chat/{conversationId}` and its `/tail`) carry the record as `activity`, oldest first. The detail carries the whole list; so does a tail, along with an `activityCursor`. Pass that back as the next tail's `activityCursor` and the tail carries only the events recorded since — an empty list, and the same cursor, when nothing happened. A reader polling the tail sees an event recorded elsewhere without re-reading the ones it has.
+The operator history detail and tail (`GET /api/v1/history/chat/{conversationId}` and its `/tail`) carry the record as `activity`, oldest first. The detail carries the whole list; so does a tail, along with an `activityCursor`. Pass that back as the next tail's `activityCursor` and the tail carries the events recorded in the five minutes before the tail that issued it, and since. That window repeats events you already hold, and it is what lets a late commit through: an event is dated when it is written but visible only once its change commits, and an approval commits together with the routine turn it resumes, which can finish after a newer event. Keep each event once by its `id`. The cursor is opaque — pass back the one the last tail returned; a tail answers `400` to one it did not issue.
 
 `feedback_resolved` and `feedback_dismissed` are Quality triage outcomes, so they reach only a caller with Quality access (`workspace.quality.read`). A member follows and takes over conversations without it and reads every other kind.
 

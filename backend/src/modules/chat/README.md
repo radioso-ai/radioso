@@ -275,8 +275,8 @@ imports from `services/`.
   conversation's `activity` (`activity: ConversationActivityReadScope`, resolved from
   the caller's permissions at the route edge) through the conversation activity
   module's `ConversationActivityTimelineReader`, labelling the activity's teammates in
-  the same lookup as the repliers; the operator tail reads only the activity after its
-  `activityCursor`. The public presenters strip both.
+  the same lookup as the repliers; the operator tail reads only the activity in the
+  window behind its `activityCursor`. The public presenters strip both.
   `PostgresAssistantTurnPersistence` records a turn's `handoff_requested` event in
   the turn's transaction when the handoff changed ownership.
   `includeTurnFailureDebug` attaches a `turnFailure` fact (failed or superseded,

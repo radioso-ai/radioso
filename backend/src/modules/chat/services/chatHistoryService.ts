@@ -3,11 +3,12 @@ import { decodeCursorWithKeys } from "../../../shared/domain/cursorPagination.js
 import type { CallerKind, ConversationSourceScope } from "../../../shared/domain/conversationSource.js";
 import type { ConversationOutcomeFilter } from "../../../shared/domain/conversationOutcome.js";
 import type { ConversationTurnStage } from "../contracts/interruption.js";
-import type {
-  ConversationActivityEntry,
-  ConversationActivityReadScope,
-  ConversationActivityTimeline,
-  ConversationActivityTimelineReader,
+import {
+  formatActivityCursor,
+  type ConversationActivityEntry,
+  type ConversationActivityReadScope,
+  type ConversationActivityTimeline,
+  type ConversationActivityTimelineReader,
 } from "../../conversationActivity/contracts/index.js";
 import { outwardFacingName, type TeammateLabelReaderPort } from "../../auth/contracts/index.js";
 import { presentOwnership, type ConversationOwnershipScope } from "../../handoff/public.js";
@@ -130,7 +131,7 @@ class NoopTeammateLabelReader implements TeammateLabelReaderPort {
 
 class NoopConversationActivityReader implements ConversationActivityTimelineReader {
   async readTimeline(): Promise<ConversationActivityTimeline> {
-    return { userIds: [], cursor: null, present: () => [] };
+    return { userIds: [], cursor: formatActivityCursor(new Date()), present: () => [] };
   }
 }
 
@@ -380,12 +381,13 @@ export interface ChatConversationTail {
    * What people and the agent did to the conversation — handoffs, claims, reassignments,
    * hand-backs, approvals decided, feedback closed — oldest first, each teammate labelled as they
    * are now. Operator reads only: a label can be an email. The whole timeline, or with the tail's
-   * `activityCursor` only the events recorded since, so a reader that polls sees an event recorded
-   * elsewhere without re-reading what it holds.
+   * `activityCursor` only the events in a recent window, so a reader that polls sees an event
+   * recorded elsewhere — even one whose transaction committed after a newer event's — and keeps
+   * each event once by its id.
    */
   activity?: ConversationActivityEntry[];
-  /** The cursor to pass as the next tail's `activityCursor`; null while the conversation has no events. */
-  activityCursor?: string | null;
+  /** The cursor to pass as the next tail's `activityCursor`. */
+  activityCursor?: string;
 }
 
 interface ChatConversationPage {
@@ -1389,7 +1391,7 @@ export class ChatHistoryService {
     input: {
       cursor?: string;
       limit: number;
-      /** The previous tail's `activityCursor`: only the activity recorded since is read. */
+      /** The previous tail's `activityCursor`: only the activity in the window behind it is read. */
       activityCursor?: string;
     },
     options: {

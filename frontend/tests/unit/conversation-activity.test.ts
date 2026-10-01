@@ -5,10 +5,13 @@ import {
   activityLine,
   closedByLine,
   handoffReasonLabel,
+  initialActivityTimeline,
   mergeActivity,
   placeActivity,
+  reconcileActivityTimeline,
   recentlyClosedKindLabel,
   threadDayBreaks,
+  type ActivityTimelineState,
 } from '@/lib/conversation-activity'
 
 const bea = { userId: 'user-bea', label: 'Bea' }
@@ -164,31 +167,110 @@ describe('threadDayBreaks', () => {
 })
 
 describe('mergeActivity', () => {
-  it('unions the detail read with every tail poll, each event once, oldest first', () => {
+  it('unions the detail read with the tail-held events, each event once, oldest first', () => {
     const handoff = entry({ id: 'a', kind: 'handoff_requested', createdAt: '2026-09-30T10:00:00.000Z' })
     const claim = entry({ id: 'b', kind: 'claimed', createdAt: '2026-09-30T10:01:00.000Z' })
     const handBack = entry({ id: 'c', kind: 'handed_back', createdAt: '2026-09-30T10:02:00.000Z' })
 
-    // The detail holds the first two; the first poll re-reads the whole timeline, later polls only
-    // what is new.
-    expect(mergeActivity([handoff, claim], [handoff, claim], [handBack]).map((event) => event.id))
-      .toEqual(['a', 'b', 'c'])
+    expect(mergeActivity([handoff, claim], [claim, handBack]).map((event) => event.id)).toEqual(['a', 'b', 'c'])
     expect(mergeActivity(undefined, [handBack, handoff]).map((event) => event.id)).toEqual(['a', 'c'])
-    expect(mergeActivity(undefined, undefined)).toEqual([])
+    expect(mergeActivity(undefined, [])).toEqual([])
   })
 
-  it('keeps the later read of an event, whose labels are the fresher', () => {
-    const before = entry({ id: 'a', actor: { userId: 'user-bea', label: 'bea@example.com' } })
-    const after = entry({ id: 'a', actor: bea })
+  it('keeps the detail read of an event both reads hold', () => {
+    const fromDetail = entry({ id: 'a', actor: bea })
+    const fromTail = entry({ id: 'a', actor: { userId: 'user-bea', label: 'bea@example.com' } })
 
-    expect(mergeActivity([before], [after])).toEqual([after])
+    expect(mergeActivity([fromDetail], [fromTail])).toEqual([fromDetail])
   })
 
   it('keeps events recorded in the same millisecond in the order they were read', () => {
     const first = entry({ id: 'z', createdAt: '2026-09-30T10:00:00.000Z' })
     const second = entry({ id: 'a', createdAt: '2026-09-30T10:00:00.000Z' })
 
-    expect(mergeActivity([first, second]).map((event) => event.id)).toEqual(['z', 'a'])
+    expect(mergeActivity([first, second], []).map((event) => event.id)).toEqual(['z', 'a'])
+  })
+})
+
+describe('reconcileActivityTimeline', () => {
+  const at = (minute: number) => `2026-09-30T10:0${minute}:00.000Z`
+  const handoff = entry({ id: 'handoff', kind: 'handoff_requested', createdAt: at(0) })
+  const claim = entry({ id: 'claim', kind: 'claimed', createdAt: at(1), actor: bea })
+  const feedback = entry({ id: 'feedback', kind: 'feedback_resolved', createdAt: at(2), actor: carl })
+  const handBack = entry({ id: 'hand-back', kind: 'handed_back', createdAt: at(3), actor: bea })
+
+  // A reader's reads in the order they arrive, each folded into the state the last one left.
+  const readInOrder = (...reads: Array<{ detail?: ConversationActivityEntry[]; poll?: ConversationActivityEntry[] }>) => {
+    let state = initialActivityTimeline('conversation-1')
+    let detail: ConversationActivityEntry[] | undefined
+    let poll: ConversationActivityEntry[] | undefined
+    for (const read of reads) {
+      detail = 'detail' in read ? read.detail : detail
+      poll = 'poll' in read ? read.poll : poll
+      state = reconcileActivityTimeline(state, { conversationId: 'conversation-1', detail, poll })
+    }
+    return state
+  }
+  const timeline = (state: ActivityTimelineState) => mergeActivity(state.detail, state.tail)
+
+  it('relabels an event the tail held once a detail refetch reads it again', () => {
+    const relabelled = { ...claim, actor: { userId: 'user-bea', label: 'Bea Rossi' } }
+
+    const state = readInOrder({ detail: [handoff, claim] }, { poll: [handoff, claim] }, { detail: [handoff, relabelled] })
+
+    expect(timeline(state)).toEqual([handoff, relabelled])
+  })
+
+  it('drops a tail-held event a detail refetch no longer carries, and keeps the newer ones', () => {
+    // The feedback outcome reached the tail while the reader held Quality access; the refetch,
+    // read after that access was gone, covers the conversation up to the hand-back without it.
+    const later = entry({ id: 'later', kind: 'claimed', createdAt: at(4), actor: carl })
+
+    const state = readInOrder(
+      { detail: [handoff, claim] },
+      { poll: [handoff, claim, feedback, handBack, later] },
+      { detail: [handoff, claim, handBack] },
+      { poll: [handBack, later] },
+    )
+
+    expect(timeline(state).map((event) => event.id)).toEqual(['handoff', 'claim', 'hand-back', 'later'])
+  })
+
+  it('keeps an event the tail brings after a detail read, though older than its newest (a late commit)', () => {
+    const state = readInOrder({ detail: [handoff, handBack] }, { poll: [claim, handBack] })
+
+    expect(timeline(state).map((event) => event.id)).toEqual(['handoff', 'claim', 'hand-back'])
+  })
+
+  it('returns the same state for a poll that brings nothing new, so nothing downstream recomputes', () => {
+    const settled = readInOrder({ detail: [handoff] }, { poll: [handoff, claim] })
+    const reads = { conversationId: 'conversation-1', detail: settled.detail }
+
+    const repeated = reconcileActivityTimeline(settled, { ...reads, poll: [{ ...handoff }, { ...claim }] })
+    const empty = reconcileActivityTimeline(settled, { ...reads, poll: [] })
+    const unchanged = reconcileActivityTimeline(settled, { ...reads, poll: settled.poll })
+
+    expect(repeated.tail).toBe(settled.tail)
+    expect(empty.tail).toBe(settled.tail)
+    expect(unchanged).toBe(settled)
+  })
+
+  it('takes a changed copy of a held event from a later poll', () => {
+    const relabelled = { ...claim, actor: { userId: 'user-bea', label: 'Bea Rossi' } }
+
+    const state = readInOrder({ poll: [claim] }, { poll: [relabelled] })
+
+    expect(state.tail).toEqual([relabelled])
+  })
+
+  it('starts over for another conversation, and empties the tail when polling stops', () => {
+    const polled = readInOrder({ poll: [handoff, claim] })
+
+    const switched = reconcileActivityTimeline(polled, { conversationId: 'conversation-2', detail: undefined, poll: polled.poll })
+    const stopped = reconcileActivityTimeline(polled, { conversationId: 'conversation-1', detail: undefined, poll: undefined })
+
+    expect(switched.conversationId).toBe('conversation-2')
+    expect(stopped.tail).toEqual([])
   })
 })
 

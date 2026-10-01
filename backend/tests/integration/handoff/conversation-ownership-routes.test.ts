@@ -609,27 +609,47 @@ describe("conversation ownership routes", () => {
     });
   });
 
-  it("tails only the activity recorded since the caller's activity cursor", async () => {
+  it("scopes a tail's activity by the role its permission check resolved, with no membership lookup of its own", async () => {
+    const { app, dependencies, repositories } = createTestApp();
+    const session = await issueTestSession(app, "activity-scope-lookups@example.com");
+    const conversation = await repositories.conversationRepository.create({ workspaceId: session.workspaceId, sourceChannel: "dashboard" });
+    const lookups = vi.spyOn(dependencies.accountAccessService, "findActiveMembership");
+
+    // The history list runs the same session and permission checks, and reads no activity.
+    const list = await request(app).get("/api/v1/history").set(adminSessionHeaders(session));
+    const listLookups = lookups.mock.calls.length;
+    lookups.mockClear();
+    const tail = await request(app).get(`/api/v1/history/chat/${conversation.id}/tail`).set(adminSessionHeaders(session));
+
+    expect([list.status, tail.status]).toEqual([200, 200]);
+    expect(tail.body.activity).toEqual([]);
+    expect(lookups).toHaveBeenCalledTimes(listLookups);
+  });
+
+  it("tails the activity in the window behind the caller's activity cursor, and refuses a cursor it did not issue", async () => {
     const { app, repositories } = createTestApp();
     const session = await issueTestSession(app, "activity-cursor@example.com");
     const conversation = await repositories.conversationRepository.create({ workspaceId: session.workspaceId, sourceChannel: "dashboard" });
     const scope = { conversationId: conversation.id, workspaceId: session.workspaceId };
     await repositories.conversationActivity.record(undefined, { ...scope, kind: "claimed", actorUserId: session.userId });
+    const tail = (query = "") => request(app)
+      .get(`/api/v1/history/chat/${conversation.id}/tail${query}`)
+      .set(adminSessionHeaders(session));
 
-    const first = await request(app).get(`/api/v1/history/chat/${conversation.id}/tail`).set(adminSessionHeaders(session));
+    const first = await tail();
+    // The claim falls out of the window behind a cursor once it is older than the window.
+    repositories.conversationActivity.items[0].createdAt = new Date(Date.now() - 60 * 60_000);
     await repositories.conversationActivity.record(undefined, { ...scope, kind: "handed_back", actorUserId: session.userId });
-    const next = await request(app)
-      .get(`/api/v1/history/chat/${conversation.id}/tail?activityCursor=${first.body.activityCursor as string}`)
-      .set(adminSessionHeaders(session));
-    const invalid = await request(app)
-      .get(`/api/v1/history/chat/${conversation.id}/tail?activityCursor=not-an-id`)
-      .set(adminSessionHeaders(session));
+    const next = await tail(`?activityCursor=${encodeURIComponent(first.body.activityCursor as string)}`);
+    const invalid = await Promise.all(["not-a-cursor", "2026-13-45T00:00:00.000Z", randomUUID()].map(
+      (cursor) => tail(`?activityCursor=${encodeURIComponent(cursor)}`),
+    ));
 
     expect(first.body.activity).toEqual([expect.objectContaining({ kind: "claimed" })]);
-    expect(first.body.activityCursor).toBe(first.body.activity[0].id);
+    expect(typeof first.body.activityCursor).toBe("string");
     expect(next.body.activity).toEqual([expect.objectContaining({ kind: "handed_back" })]);
-    expect(next.body.activityCursor).toBe(next.body.activity[0].id);
-    expect(invalid.status).toBe(400);
+    expect(typeof next.body.activityCursor).toBe("string");
+    expect(invalid.map((response) => response.status)).toEqual([400, 400, 400]);
   });
 
   it("keeps recently closed to teammates with takeover permission, and checks its limit", async () => {

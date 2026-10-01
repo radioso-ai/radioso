@@ -16204,15 +16204,11 @@
             "items": {
               "$ref": "#/components/schemas/ConversationActivityEntry"
             },
-            "description": "The conversation's activity, oldest first, so a reader polling the tail sees an event recorded elsewhere: the whole timeline, or with `activityCursor` only the events recorded since. Feedback outcomes reach only a caller with Quality access."
+            "description": "The conversation's activity, oldest first, so a reader polling the tail sees an event recorded elsewhere: the whole timeline, or with `activityCursor` the events in a recent window. The window reaches back far enough to take in an event whose transaction committed after a newer event's, so it can repeat events the caller already holds: keep each one once by its `id`. Feedback outcomes reach only a caller with Quality access."
           },
           "activityCursor": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "format": "uuid",
-            "description": "Pass as the next tail's `activityCursor` to read only newer activity. Null while the conversation has no activity."
+            "type": "string",
+            "description": "Opaque. Pass as the next tail's `activityCursor` to read only recent activity. Present whenever `activity` is."
           }
         },
         "required": [
@@ -46166,8 +46162,8 @@
           {
             "schema": {
               "type": "string",
-              "format": "uuid",
-              "description": "The previous tail's `activityCursor`. The response's `activity` then carries only the events recorded since; without it, the whole timeline."
+              "minLength": 1,
+              "description": "The previous tail's `activityCursor`, passed back as returned: opaque, and a string no tail returned is refused with 400. The response's `activity` then carries only the events in a recent window, so it can repeat events the caller already holds; without it, the whole timeline."
             },
             "required": false,
             "name": "activityCursor",

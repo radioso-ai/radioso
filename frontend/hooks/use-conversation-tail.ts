@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react'
 
 import { hitlApi } from '@/lib/api-hitl'
 import type { ChatConversationMessage, ConversationActivityEntry, ConversationOwnership } from '@/lib/api-types'
-import { mergeActivity } from '@/lib/conversation-activity'
 import { mergeTailMessages } from '@/lib/conversation-tail'
 
 interface UseConversationTailInput {
@@ -26,9 +25,9 @@ interface ConversationTailState {
    */
   ownership: ConversationOwnership | undefined
   /**
-   * The conversation's activity timeline as of the latest poll, oldest first; undefined until a poll
-   * has read it. The first poll reads the whole timeline, each later one only what was recorded
-   * since, merged in. Merged with the detail fetch's by `mergeActivity`.
+   * The activity the latest poll read, oldest first; undefined until a poll has read it. The first
+   * poll reads the whole timeline, each later one a recent window, which repeats events already
+   * read. `useConversationActivity` folds each read into the timeline with the detail fetch's.
    */
   activity: ConversationActivityEntry[] | undefined
   cursor: string | null
@@ -93,9 +92,8 @@ export const useConversationTail = ({
 
         setMessages((existing) => mergeTailMessages(existing, tail.messages))
         setOwnership(tail.ownership)
-        const newActivity = tail.activity
-        if (newActivity) {
-          setActivity((existing) => mergeActivity(existing, newActivity))
+        if (tail.activity) {
+          setActivity(tail.activity)
         }
         setCursor(tail.cursor)
         setError(null)

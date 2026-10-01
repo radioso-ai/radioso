@@ -1329,7 +1329,8 @@ feedback outcomes are Quality data, so they reach only a caller holding
 `workspace.quality.read`. The timeline
 read returns unlabelled events plus the teammates they name, so chat history labels
 them together with the transcript's repliers in one lookup; the operator tail
-passes an `activityCursor` to read only newer events.
+passes an `activityCursor` to re-read a five-minute window behind the previous
+tail, which takes in an event whose transaction committed after a newer one's.
 
 Should not own the changes it records, audit events, or message content — events
 carry ids and codes only.

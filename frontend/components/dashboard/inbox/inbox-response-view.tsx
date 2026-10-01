@@ -19,11 +19,11 @@ import {
 import { Button } from '@/components/ui/button'
 import { LogoSpinner } from '@/components/ui/spinner'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { useConversationActivity } from '@/hooks/use-conversation-activity'
 import { useConversationTail } from '@/hooks/use-conversation-tail'
 import { hitlApi } from '@/lib/api-hitl'
 import { useOptionalAuth } from '@/lib/auth-context'
 import type { ChatConversationSummary, PendingApprovalDecision } from '@/lib/api-types'
-import { mergeActivity } from '@/lib/conversation-activity'
 import { deriveConversationOutcome } from '@/lib/conversation-outcome'
 import {
   doneControlTooltip,
@@ -174,10 +174,11 @@ export function InboxResponseView({
   )
   // The conversation's activity from both reads: the tail poll sees an event recorded elsewhere —
   // a teammate's claim, reassignment, or hand-back — while this pane stays open.
-  const activity = useMemo(
-    () => mergeActivity(conversationDetail?.activity, conversationTail.activity),
-    [conversationDetail?.activity, conversationTail.activity],
-  )
+  const activity = useConversationActivity({
+    conversationId,
+    detail: conversationDetail?.activity,
+    poll: conversationTail.activity,
+  })
 
   // The actionable/read-only split and the header's identity/waiting fields
   // prefer the independently-fetched conversation detail once it loads — see

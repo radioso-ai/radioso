@@ -2,7 +2,9 @@
 
 import { useState } from 'react'
 
-import { RoutineInstructionEditor, type RoutineEditorVariable } from '@/components/dashboard/settings/routine-chip-editor'
+import { ROUTINE_DEFINITION_LIMITS } from '@radioso/routine-definition'
+
+import { RoutineInstructionEditor } from '@/components/dashboard/settings/routine-chip-editor'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { instructionToProseParagraphs, proseParagraphsToInstruction } from '@/lib/routine-document'
@@ -10,14 +12,16 @@ import type { EndingNotice } from '@/lib/routine-document-edits'
 import { blockSegmentsToInstruction, instructionToBlockSegments, type ChipDocVariable, type ProseParagraph, type RoutineBlockEnding } from '@/lib/routine-prose'
 
 // One notice text, edited with the same chip editor as a step instruction, so `@` inserts a
-// collected value as `{{slot.<key>}}`. The editor is uncontrolled; it reads the text once, and
-// reports only real edits so opening an ending never writes a notice the author did not type.
-function NoticeTextField({ label, placeholder, value, variables, onCreateVariable, onChange }: {
+// collected value as `{{slot.<key>}}`. A notice reads values the routine collects and never
+// collects one, so `@` offers only the slots the routine declares: no new slot, no context
+// variable. The editor is uncontrolled; it reads the text once, and reports only real edits so
+// opening an ending never writes a notice the author did not type.
+function NoticeTextField({ label, placeholder, value, variables, maxLength, onChange }: {
   label: string
   placeholder: string
   value: string | null
   variables: ChipDocVariable[]
-  onCreateVariable: (variable: RoutineEditorVariable) => void
+  maxLength: number
   onChange: (text: string) => void
 }) {
   const [initialContent] = useState(() => instructionToProseParagraphs(instructionToBlockSegments(value ?? '')))
@@ -32,7 +36,8 @@ function NoticeTextField({ label, placeholder, value, variables, onCreateVariabl
         <RoutineInstructionEditor
           initialContent={initialContent}
           variables={variables}
-          onCreateVariable={onCreateVariable}
+          offerContextVariables={false}
+          maxLength={maxLength}
           onChange={report}
           ariaLabel={label}
           placeholder={placeholder}
@@ -44,10 +49,9 @@ function NoticeTextField({ label, placeholder, value, variables, onCreateVariabl
 
 // What the team is told when the routine ends here. A hand-off always notifies, so its switch
 // stays on; a finish notifies only when the author turns it on. Blank text means the default.
-export function RoutineEndingNoticeEditor({ ending, variables, onCreateVariable, onChange }: {
+export function RoutineEndingNoticeEditor({ ending, variables, onChange }: {
   ending: RoutineBlockEnding
   variables: ChipDocVariable[]
-  onCreateVariable: (variable: RoutineEditorVariable) => void
   onChange: (notice: EndingNotice | null) => void
 }) {
   const handoff = ending.kind === 'handoff'
@@ -75,7 +79,7 @@ export function RoutineEndingNoticeEditor({ ending, variables, onCreateVariable,
             placeholder="Default subject. Type @ to insert a value."
             value={notice?.subject ?? null}
             variables={variables}
-            onCreateVariable={onCreateVariable}
+            maxLength={ROUTINE_DEFINITION_LIMITS.operatorNoticeSubject}
             onChange={(subject) => update({ subject })}
           />
           <NoticeTextField
@@ -83,7 +87,7 @@ export function RoutineEndingNoticeEditor({ ending, variables, onCreateVariable,
             placeholder="Optional. Type @ to insert a value."
             value={notice?.intro ?? null}
             variables={variables}
-            onCreateVariable={onCreateVariable}
+            maxLength={ROUTINE_DEFINITION_LIMITS.operatorNoticeIntro}
             onChange={(intro) => update({ intro })}
           />
           <p className="text-xs text-muted-foreground">Every collected value is listed below the intro.</p>

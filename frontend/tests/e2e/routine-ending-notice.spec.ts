@@ -104,3 +104,44 @@ test("a finish ending notifies the team with the notice its author wrote, and ke
   await expect(documentEditor.getByLabel("Subject", { exact: true })).toContainText("guest_name");
   await expect(documentEditor.getByLabel("Intro", { exact: true })).toContainText("Please confirm the room.");
 });
+
+test("a notice's fields reference only the slots the routine declares and stop at their length limits", async ({ page }) => {
+  const routineUpdates: RoutineMutationFixture[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { routineUpdates, routines: [bookingRoutine] });
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}/routines/${bookingRoutine.id}`);
+
+  const documentEditor = page.getByRole("article", { name: "Routine document editor" });
+  await documentEditor.getByRole("button", { name: "Toggle details", exact: true }).click();
+  await documentEditor.getByRole("button", { name: "Finish ending", exact: true }).click();
+  await documentEditor.getByRole("switch", { name: "Notify the team" }).click();
+
+  // The subject stops at its limit, so the draft never carries a subject its save rejects.
+  const subject = documentEditor.getByLabel("Subject", { exact: true });
+  await subject.click();
+  await page.keyboard.insertText("a".repeat(195));
+  await subject.pressSequentially("bcdefghij");
+
+  // A paste that would run past the intro's limit is refused whole.
+  const intro = documentEditor.getByLabel("Intro", { exact: true });
+  await intro.click();
+  await intro.pressSequentially("Confirm the room.");
+  await page.keyboard.insertText("x".repeat(2000));
+
+  // `@` offers the slots the routine declares, and nothing a notice cannot substitute.
+  await intro.pressSequentially(" @");
+  await expect(page.getByRole("option", { name: /guest_name/ })).toBeVisible();
+  await expect(page.getByRole("option", { name: "Current page" })).toHaveCount(0);
+  // A name the routine does not declare stays text: a notice never creates a slot.
+  await intro.pressSequentially("room_type");
+  await expect(page.getByRole("option", { name: /Create variable/ })).toHaveCount(0);
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  const lastPatch = () => routineUpdates.filter((update) => update.method === "PATCH").at(-1)?.body;
+  await expect.poll(
+    () => lastPatch()?.terminals?.find((terminal) => terminal.stableStepId === "booked")?.operatorNotice,
+    { timeout: 15_000 },
+  ).toEqual({ subject: `${"a".repeat(195)}bcdef`, intro: "Confirm the room. @room_type" });
+  expect(lastPatch()?.slots?.map((slot) => slot.key)).toEqual(["guest_name"]);
+});

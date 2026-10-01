@@ -1314,6 +1314,18 @@ describe("DefaultRoutineRunner skill (tool) steps", () => {
         path: ["ask_name", "ask_email"],
         variables: { name: "Giulia", email: "giulia@example.com", vip: "yes" },
       });
+      // The step the skip-ahead stopped on is the one rendered, with what its selector returned.
+      expect(result.trace?.steps).toEqual([
+        expect.objectContaining({ stepId: "ask_name", event: "advanced" }),
+        {
+          stepId: "ask_email",
+          kind: "chat",
+          event: "rendered",
+          viaSelector: true,
+          capturedSlotKeys: ["vip"],
+          selection: { outcome: "authority_claim", returnedSlotKeys: ["vip"] },
+        },
+      ]);
     });
 
     it("still leaves a tool step's follow-up by its default exit when the selector asks to hold", async () => {

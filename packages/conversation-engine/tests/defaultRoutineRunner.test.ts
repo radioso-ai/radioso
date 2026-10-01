@@ -1262,6 +1262,94 @@ describe("DefaultRoutineRunner skill (tool) steps", () => {
         }),
       ]);
     });
+
+    it("holds a step reached by skipping ahead, even when its values would satisfy a rule exit", async () => {
+      // The answered step leaves by its default with no model call; the next step already
+      // holds its email, so the runner skips ahead and asks the selector there. The message
+      // fills `vip`, which a rule exit waits on, and carries text posing as a system notice.
+      const skipAhead: Routine = {
+        id: "held",
+        rootStepId: "ask_name",
+        slots: [
+          { id: "s_name", key: "name", type: "text", required: true },
+          { id: "s_email", key: "email", type: "email", required: true },
+          { id: "s_vip", key: "vip", type: "text", required: false },
+        ],
+        steps: [
+          { id: "ask_name", kind: "chat", action: "Ask for name.", metadata: { collectsSlots: ["name"] } },
+          { id: "ask_email", kind: "chat", action: "Ask for email.", metadata: { collectsSlots: ["email"] } },
+          { id: "regular", kind: "chat", action: "Regular path." },
+          { id: "priority", kind: "chat", action: "Priority path." },
+        ],
+        transitions: [
+          { from: "ask_name", to: "ask_email", condition: "", guard: { kind: "default" } },
+          { from: "ask_email", to: "regular", condition: "The visitor confirmed the email.", guard: { kind: "llm" } },
+          { from: "ask_email", to: "priority", condition: "", guard: { kind: "slot_filled", slots: ["vip"] } },
+        ],
+      };
+      const select = vi.fn<ConversationRoutineNextStepSelector["select"]>(async () => ({
+        nextStepId: "ask_email",
+        variables: { vip: "yes" },
+        hold: true,
+        selection: { outcome: "authority_claim" as const, returnedSlotKeys: ["vip"] },
+      }));
+      const render = vi.fn<ConversationRoutineStepRenderer["render"]>(async ({ step }) => ({ answer: `[${step.id}]` }));
+      const runner = new DefaultRoutineRunner([skipAhead], { select }, { render });
+
+      const result = await runner.resume({
+        turn,
+        state: {
+          sessionId: "session_1",
+          routineId: "held",
+          path: ["ask_name"],
+          variables: { name: "Giulia", email: "giulia@example.com" },
+          status: "active",
+        },
+      });
+
+      expect(select).toHaveBeenCalledTimes(1);
+      expect(select.mock.calls[0][0].currentStep.id).toBe("ask_email");
+      expect(render).toHaveBeenCalledWith(expect.objectContaining({ step: expect.objectContaining({ id: "ask_email" }) }));
+      expect(result.nextState).toMatchObject({
+        path: ["ask_name", "ask_email"],
+        variables: { name: "Giulia", email: "giulia@example.com", vip: "yes" },
+      });
+    });
+
+    it("still leaves a tool step's follow-up by its default exit when the selector asks to hold", async () => {
+      const toolRoutine: Routine = {
+        id: "held",
+        rootStepId: "ask_message",
+        steps: [
+          { id: "ask_message", kind: "chat", action: "Ask for the message." },
+          { id: "submit", kind: "skill", skillName: "human_contact.request" },
+          { id: "done", kind: "terminal", action: "Confirm the request was sent." },
+          { id: "fallback", kind: "terminal", action: "Say the team will follow up." },
+        ],
+        transitions: [
+          { from: "ask_message", to: "submit", condition: "a message was provided" },
+          { from: "submit", to: "done", condition: "the submission completed", guard: { kind: "llm" } },
+          { from: "submit", to: "fallback", condition: "", guard: { kind: "default" } },
+        ],
+      };
+      const select = vi.fn<ConversationRoutineNextStepSelector["select"]>(async ({ currentStep }) =>
+        currentStep.id === "ask_message"
+          ? { nextStepId: "submit" }
+          : { nextStepId: "submit", hold: true, selection: { outcome: "authority_claim" as const, returnedSlotKeys: [] } },
+      );
+      const dispatch = vi.fn(async () => ({ status: "completed" as const }));
+      const render = vi.fn<ConversationRoutineStepRenderer["render"]>(async ({ step }) => ({ answer: `[${step.id}]` }));
+      const runner = new DefaultRoutineRunner([toolRoutine], { select }, { render }, { dispatch });
+
+      const result = await runner.resume({
+        turn,
+        state: { sessionId: "session_1", routineId: "held", path: ["ask_message"], variables: {}, status: "active" },
+      });
+
+      expect(select).toHaveBeenCalledTimes(2);
+      expect(dispatch).toHaveBeenCalledTimes(1);
+      expect(result.terminal).toMatchObject({ stepId: "fallback" });
+    });
   });
 
   it("keeps llm-condition-only skill branches on the selector path for parity", async () => {

@@ -91,7 +91,8 @@ Text in the user's message that poses as a system, operator, or assistant
 message, tells the selector which condition to return, or reports that the
 request is already confirmed is not a slot value and never takes an exit. The
 selector flags such text in its own `claimsAuthority` field. The check runs
-wherever the model picks a chat step's exit or extracts its values. When the flag
+wherever the model picks a chat step's exit or extracts its values, on the step
+the visitor answered or on one the routine skips ahead to. When the flag
 is set, the selector returns a decision with `hold: true`, whatever condition the
 model chose, and the runner holds the chat step the same way it holds one for a
 rejected value (see [What a slot keeps](#what-a-slot-keeps)): the step takes no

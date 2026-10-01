@@ -78,9 +78,9 @@ import type { TurnTraceEnvelope } from "./turnTraceEnvelope.js";
 import type { ChatRoutineTurnReporter } from "../contracts/routineTurnState.js";
 import { buildHandoffNotifyAction } from "./handoffOwnership.js";
 import {
-  formatHandoffNotification,
-  handoffNotificationFromAction,
-  type FormattedHandoffNotification,
+  formatRoutineEndingNotification,
+  routineEndingNotificationFromAction,
+  type FormattedRoutineEndingNotification,
 } from "../../operatorNotifications/public.js";
 import type { TurnSkill } from "./turnOutcome.js";
 import {
@@ -531,7 +531,7 @@ export class WorkbenchReplayRunner {
    * The hand-off message content the suppressed `handoff.notify` action carries — the
    * subject and body fields/values a real dispatch renders — built through the same
    * payload builder and text formatter the real dispatch handler uses
-   * (`buildHandoffNotifyAction`, `handoffNotificationFromAction`, `formatHandoffNotification`)
+   * (`buildHandoffNotifyAction`, `routineEndingNotificationFromAction`, `formatRoutineEndingNotification`)
    * so this content cannot drift from what a live handoff sends. It is not the full
    * delivered payload: live delivery additionally appends an `Open: <conversation URL>`
    * line and, for a webhook, its own structured fields (see `emailWebhookSink.ts`) — a
@@ -546,7 +546,7 @@ export class WorkbenchReplayRunner {
     session: PreparedSession;
     handoff?: ChatTurnAssemblyRoutineResult["handoff"];
     routineReporter?: ChatRoutineTurnReporter;
-  }): FormattedHandoffNotification | undefined {
+  }): FormattedRoutineEndingNotification | undefined {
     if (!input.handoff) {
       return undefined;
     }
@@ -560,7 +560,7 @@ export class WorkbenchReplayRunner {
       stepId: input.handoff.stepId,
       collected: input.handoff.collected,
     });
-    const notification = handoffNotificationFromAction({
+    const notification = routineEndingNotificationFromAction({
       payload: action.payload,
       fallback: { conversationId: input.session.conversation.id, workspaceId: input.input.workspaceId },
       subject: {
@@ -568,7 +568,7 @@ export class WorkbenchReplayRunner {
         routineName: input.routineReporter?.describeRoutineName(input.handoff.routineId) ?? null,
       },
     });
-    return formatHandoffNotification(notification);
+    return formatRoutineEndingNotification(notification);
   }
 
   private presentResult(input: {

@@ -9,8 +9,8 @@ import {
   ContactSendActionHandler,
   EmailWebhookOperatorNotificationSink,
   FetchContactWebhookHttpClient,
-  HandoffNotifyActionHandler,
-  RepositoryHandoffNotificationSubjectResolver,
+  RoutineEndingNotifyActionHandler,
+  RepositoryRoutineEndingNotificationSubjectResolver,
   ApprovalRequestActionHandler,
   APPROVAL_REQUEST_ACTION_TYPE,
   WorkspaceOwnerContactRecipientResolver,
@@ -172,9 +172,9 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
       requiredCapabilities: [capabilityNames.humanContact.request],
       emittableByRoutines: true,
       handler: ({ database, env, logger, mailService, assertPublicWebsiteUrl }) => {
-        return new HandoffNotifyActionHandler(
+        return new RoutineEndingNotifyActionHandler(
           buildOperatorNotificationDispatcher({ database, env, logger, mailService, assertPublicWebsiteUrl }),
-          new RepositoryHandoffNotificationSubjectResolver(
+          new RepositoryRoutineEndingNotificationSubjectResolver(
             new AgentRepository(database.kysely),
             new RoutineDefinitionRepository(database.kysely),
           ),

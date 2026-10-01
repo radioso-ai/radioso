@@ -3,7 +3,7 @@ import type {
   PendingDecisionRepository,
 } from "../../../db/repositories/pendingDecisionRepository.js";
 import {
-  formatHandoffNotification,
+  formatRoutineEndingNotification,
   type OperatorNotification,
   type OperatorNotificationContext,
   type OperatorNotificationSink,
@@ -58,7 +58,7 @@ export class SlackOperatorNotificationSink implements OperatorNotificationSink {
     if (notification.kind === "handoff") {
       // The formatter's headline is the email's opening sentence; the Slack post already
       // says what the message is, so the section carries the detail lines only.
-      const [, ...detailLines] = formatHandoffNotification(notification).lines;
+      const [, ...detailLines] = formatRoutineEndingNotification(notification).lines;
       const message = buildOwnershipMessage({
         conversationId: notification.conversationId,
         workspaceId: notification.workspaceId,

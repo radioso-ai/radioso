@@ -1,6 +1,6 @@
 import type { AgentContactWebhook } from "../../../agents/public.js";
 import {
-  formatHandoffNotification,
+  formatRoutineEndingNotification,
   type OperatorNotification,
   type OperatorNotificationContext,
   type OperatorNotificationSink,
@@ -127,7 +127,7 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
     openLine: string[],
     links: { dashboardUrl: string | null; dashboardPath: string | null },
   ): { subject: string; text: string; webhookPayload: Record<string, unknown> } {
-    const formatted = formatHandoffNotification(notification);
+    const formatted = formatRoutineEndingNotification(notification);
     return {
       subject: formatted.subject,
       text: [...formatted.lines, ...openLine].join("\n"),

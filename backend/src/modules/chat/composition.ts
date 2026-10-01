@@ -47,8 +47,8 @@ export {
   FetchContactWebhookHttpClient,
   WorkspaceOwnerContactRecipientResolver,
 } from "./services/actions/contactSendActionHandler.js";
-export { HandoffNotifyActionHandler } from "./services/actions/handoffNotifyActionHandler.js";
-export { RepositoryHandoffNotificationSubjectResolver } from "./services/actions/handoffNotificationSubjectResolver.js";
+export { RoutineEndingNotifyActionHandler } from "./services/actions/routineEndingNotifyActionHandler.js";
+export { RepositoryRoutineEndingNotificationSubjectResolver } from "./services/actions/routineEndingNotificationSubjectResolver.js";
 export { EmailWebhookOperatorNotificationSink } from "./services/actions/emailWebhookSink.js";
 export {
   ApprovalRequestActionHandler,

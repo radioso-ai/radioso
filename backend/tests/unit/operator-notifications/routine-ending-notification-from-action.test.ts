@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { handoffNotificationFromAction } from "../../../src/modules/operatorNotifications/public.js";
+import { routineEndingNotificationFromAction } from "../../../src/modules/operatorNotifications/public.js";
 
 const fallback = { conversationId: "conv_1", workspaceId: "ws_1" };
 
-describe("handoffNotificationFromAction", () => {
+describe("routineEndingNotificationFromAction", () => {
   it("builds a handoff notification from a handoff.notify action payload", () => {
-    const notification = handoffNotificationFromAction({
+    const notification = routineEndingNotificationFromAction({
       payload: {
         conversationId: "conv_1",
         workspaceId: "ws_1",
@@ -32,7 +32,7 @@ describe("handoffNotificationFromAction", () => {
   });
 
   it("omits routine and collected when the payload carries neither (a retrieval-miss handoff)", () => {
-    const notification = handoffNotificationFromAction({
+    const notification = routineEndingNotificationFromAction({
       payload: { conversationId: "conv_1", workspaceId: "ws_1", agentId: "agent_1", reason: "retrieval_miss" },
       fallback,
     });
@@ -47,7 +47,7 @@ describe("handoffNotificationFromAction", () => {
   });
 
   it("falls back to the given conversation/workspace and defaults for missing payload fields", () => {
-    const notification = handoffNotificationFromAction({ payload: {}, fallback });
+    const notification = routineEndingNotificationFromAction({ payload: {}, fallback });
 
     expect(notification).toEqual({
       kind: "handoff",
@@ -59,7 +59,7 @@ describe("handoffNotificationFromAction", () => {
   });
 
   it("reports null names when no subject is given, matching an unresolved DB lookup", () => {
-    const notification = handoffNotificationFromAction({
+    const notification = routineEndingNotificationFromAction({
       payload: { conversationId: "conv_1", workspaceId: "ws_1", agentId: "agent_1", routineId: "routine_1" },
       fallback,
       subject: { agentName: null, routineName: null },

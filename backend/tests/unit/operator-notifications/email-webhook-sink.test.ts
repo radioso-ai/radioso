@@ -6,7 +6,7 @@ import type {
   ContactNotificationMailer,
   ContactWebhookHttpClient,
 } from "../../../src/modules/chat/services/actions/contactSendActionHandler.js";
-import { formatHandoffNotification, handoffNotificationFromAction } from "../../../src/modules/operatorNotifications/public.js";
+import { formatRoutineEndingNotification, routineEndingNotificationFromAction } from "../../../src/modules/operatorNotifications/public.js";
 
 type SentMessage = Parameters<ContactNotificationMailer["send"]>[0];
 type WebhookRequest = Parameters<ContactWebhookHttpClient["post"]>[0];
@@ -328,12 +328,12 @@ describe("EmailWebhookOperatorNotificationSink", () => {
       stepId: "handoff",
       collected: { program: "Yoga retreat", arrival_date: "2026-10-12", guests: 2 },
     });
-    const notification = handoffNotificationFromAction({
+    const notification = routineEndingNotificationFromAction({
       payload: action.payload,
       fallback: { conversationId: "conv_1", workspaceId: "ws_1" },
       subject: { agentName: "Retreat desk", routineName: "Book accommodation" },
     });
-    const preview = formatHandoffNotification(notification);
+    const preview = formatRoutineEndingNotification(notification);
 
     await sink.deliver(notification, { ...context, idempotencyKey: "routine-action:conv_1:handoff.notify" });
 

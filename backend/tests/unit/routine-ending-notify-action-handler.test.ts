@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { HandoffNotifyActionHandler } from "../../src/modules/chat/services/actions/handoffNotifyActionHandler.js";
+import { RoutineEndingNotifyActionHandler } from "../../src/modules/chat/services/actions/routineEndingNotifyActionHandler.js";
 import type { OperatorNotificationDispatcher } from "../../src/modules/operatorNotifications/public.js";
 
 const context = {
@@ -13,11 +13,11 @@ const context = {
   skillName: null,
 };
 
-describe("HandoffNotifyActionHandler", () => {
+describe("RoutineEndingNotifyActionHandler", () => {
   it("dispatches a handoff operator notification", async () => {
     const dispatch = vi.fn<OperatorNotificationDispatcher["dispatch"]>();
     dispatch.mockResolvedValue();
-    const handler = new HandoffNotifyActionHandler({ dispatch });
+    const handler = new RoutineEndingNotifyActionHandler({ dispatch });
 
     await handler.handle({
       payload: {
@@ -49,7 +49,7 @@ describe("HandoffNotifyActionHandler", () => {
     const dispatch = vi.fn<OperatorNotificationDispatcher["dispatch"]>();
     dispatch.mockResolvedValue();
     const resolve = vi.fn(async () => ({ agentName: "Retreat desk", routineName: "Book accommodation" }));
-    const handler = new HandoffNotifyActionHandler({ dispatch }, { resolve });
+    const handler = new RoutineEndingNotifyActionHandler({ dispatch }, { resolve });
 
     await handler.handle({
       payload: {
@@ -83,7 +83,7 @@ describe("HandoffNotifyActionHandler", () => {
   it("dispatches with null names when the resolver finds nothing", async () => {
     const dispatch = vi.fn<OperatorNotificationDispatcher["dispatch"]>();
     dispatch.mockResolvedValue();
-    const handler = new HandoffNotifyActionHandler(
+    const handler = new RoutineEndingNotifyActionHandler(
       { dispatch },
       { resolve: async () => ({ agentName: null, routineName: null }) },
     );
@@ -103,7 +103,7 @@ describe("HandoffNotifyActionHandler", () => {
     const dispatch = vi.fn<OperatorNotificationDispatcher["dispatch"]>();
     dispatch.mockResolvedValue();
     const resolve = vi.fn(async () => ({ agentName: "Retreat desk", routineName: null }));
-    const handler = new HandoffNotifyActionHandler({ dispatch }, { resolve });
+    const handler = new RoutineEndingNotifyActionHandler({ dispatch }, { resolve });
 
     await handler.handle({
       payload: { conversationId: "conv_1", workspaceId: "ws_1", agentId: "agent_1", reason: "retrieval_miss" },
@@ -120,7 +120,7 @@ describe("HandoffNotifyActionHandler", () => {
   it("falls back to context and defaults for missing payload fields", async () => {
     const dispatch = vi.fn<OperatorNotificationDispatcher["dispatch"]>();
     dispatch.mockResolvedValue();
-    const handler = new HandoffNotifyActionHandler({ dispatch });
+    const handler = new RoutineEndingNotifyActionHandler({ dispatch });
 
     await handler.handle({ payload: {}, context });
 

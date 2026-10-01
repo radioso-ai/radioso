@@ -2663,4 +2663,42 @@ describe("DefaultRoutineRunner bounded re-asks (#1376)", () => {
     expect(render.render).toHaveBeenCalledWith(expect.objectContaining({ reask: expect.objectContaining({ exhausted: true }) }));
     expect(result.nextState?.reaskCount).toBe(2);
   });
+
+  it("drops the count when the routine suspends for a decision", async () => {
+    const withApproval: Routine = {
+      ...withoutHandoff,
+      steps: [...steps, {
+        id: "approve",
+        kind: "await",
+        action: "Ask a teammate to approve the request.",
+        decision: { captureKey: "approval", options: [{ id: "approve", label: "Approve" }] },
+      }],
+      transitions: [{ ...forward, to: "approve" }, messageDone],
+    };
+    const runner = new DefaultRoutineRunner(
+      [withApproval],
+      { select: vi.fn(async () => ({ nextStepId: "approve", variables: { full_name: "Giulia", email: "g@example.com" } })) },
+      renderer(),
+    );
+
+    const result = await runner.resume({ turn, state: onContactStep(3) });
+
+    expect(result.nextState).toMatchObject({ status: "suspended", path: ["ask_contact", "approve"] });
+    expect(result.nextState).not.toHaveProperty("reaskCount");
+  });
+
+  it("leaves the count where it was on a turn yielded to normal answering", async () => {
+    const yielding = { select: vi.fn(async () => ({ nextStepId: "ask_contact", yieldTurn: true })) };
+    const stored = onContactStep(2);
+    const render = renderer();
+
+    const yielded = await new DefaultRoutineRunner([withoutHandoff], yielding, render).resume({ turn, state: stored });
+
+    expect(yielded).toMatchObject({ yielded: true, nextState: null });
+    expect(render.render).not.toHaveBeenCalled();
+    expect(stored.reaskCount).toBe(2);
+    // The engine keeps the stored state on a yield, so the next unanswered turn counts on from it.
+    const next = await new DefaultRoutineRunner([withoutHandoff], staying(), renderer()).resume({ turn, state: stored });
+    expect(next.nextState?.reaskCount).toBe(3);
+  });
 });

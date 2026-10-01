@@ -58,12 +58,6 @@ const inDeclaredSlotOrder = (
   return Object.fromEntries(keys.map((key) => [key, collected[key]]));
 };
 
-/** The `reason` a payload that names none reports, per kind of ending. */
-const DEFAULT_REASON: Record<RoutineEndingOperatorNotification["kind"], string> = {
-  handoff: "routine_handoff",
-  completion: "routine_completed",
-};
-
 /** Keeps only the authored text fields; an empty notice means "use the defaults". */
 const noticeFromPayload = (value: unknown): OperatorNoticeTemplate | null => {
   if (!isRecord(value)) {
@@ -88,13 +82,13 @@ export const routineEndingNotificationFromAction = (input: {
   kind: RoutineEndingOperatorNotification["kind"];
   payload: Record<string, unknown>;
   /** Used only when the payload itself omits the field. */
-  fallback: { conversationId: string; workspaceId: string };
+  fallback: { conversationId: string; workspaceId: string; reason: string };
   subject?: RoutineEndingNotificationSubject;
 }): RoutineEndingOperatorNotification => {
   const conversationId = asString(input.payload.conversationId) ?? input.fallback.conversationId;
   const workspaceId = asString(input.payload.workspaceId) ?? input.fallback.workspaceId;
   const agentId = asString(input.payload.agentId) ?? "unknown";
-  const reason = asString(input.payload.reason) ?? DEFAULT_REASON[input.kind];
+  const reason = asString(input.payload.reason) ?? input.fallback.reason;
   const routineId = asString(input.payload.routineId);
   const stored = collectedFromPayload(input.payload.collected);
   const collected = stored ? inDeclaredSlotOrder(stored, input.subject?.routineSlotKeys) : null;

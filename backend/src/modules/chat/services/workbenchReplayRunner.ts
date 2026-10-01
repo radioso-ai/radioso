@@ -76,6 +76,7 @@ import type { RetrievalTurnPort } from "./retrievalTurnDispatch.js";
 import type { GroundingSummary } from "./groundingAssertions.js";
 import type { OperatorNoticePreview, TurnTraceEnvelope } from "./turnTraceEnvelope.js";
 import type { ChatRoutineTurnReporter } from "../contracts/routineTurnState.js";
+import { ROUTINE_ENDING_NOTICE_ACTIONS } from "./operatorNoticeAction.js";
 import { buildRoutineEndingNotifyAction } from "./routineEndingEffects.js";
 import {
   formatRoutineEndingNotification,
@@ -551,7 +552,7 @@ export class WorkbenchReplayRunner {
     if (!input.operatorNotice) {
       return undefined;
     }
-    const kind = input.operatorNotice.terminalKind === "handoff" ? "handoff" : "completion";
+    const ending = ROUTINE_ENDING_NOTICE_ACTIONS[input.operatorNotice.terminalKind];
     const action = buildRoutineEndingNotifyAction({
       conversationId: input.session.conversation.id,
       workspaceId: input.input.workspaceId,
@@ -560,9 +561,9 @@ export class WorkbenchReplayRunner {
       notice: input.operatorNotice,
     });
     const notification = routineEndingNotificationFromAction({
-      kind,
+      kind: ending.notificationKind,
       payload: action.payload,
-      fallback: { conversationId: input.session.conversation.id, workspaceId: input.input.workspaceId },
+      fallback: { conversationId: input.session.conversation.id, workspaceId: input.input.workspaceId, reason: ending.reason },
       subject: {
         agentName: input.agent.name,
         routineName: input.routineReporter?.describeRoutineName(input.operatorNotice.routineId) ?? null,
@@ -573,7 +574,7 @@ export class WorkbenchReplayRunner {
       },
     });
     const formatted = formatRoutineEndingNotification(notification);
-    return { kind, subject: formatted.subject, lines: formatted.lines };
+    return { kind: ending.notificationKind, subject: formatted.subject, lines: formatted.lines };
   }
 
   private presentResult(input: {

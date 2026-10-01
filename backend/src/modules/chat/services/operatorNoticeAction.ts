@@ -1,4 +1,28 @@
-import type { RoutineOperatorNoticeTemplate } from "@radioso/conversation-contract";
+import type { RoutineOperatorNotice, RoutineOperatorNoticeTemplate } from "@radioso/conversation-contract";
+
+import type { RoutineEndingOperatorNotification } from "../../operatorNotifications/public.js";
+import { COMPLETION_NOTIFY_ACTION_TYPE, HANDOFF_NOTIFY_ACTION_TYPE } from "./routines/contactRoutine.js";
+
+/** How the notice of one kind of routine ending travels from the turn to the operators. */
+export interface RoutineEndingNoticeAction {
+  /** The action type the notice is queued as. */
+  type: string;
+  /** The reason code its payload carries. */
+  reason: string;
+  /** The notification kind the dispatch handler delivers it as. */
+  notificationKind: RoutineEndingOperatorNotification["kind"];
+}
+
+/**
+ * One row per kind of routine ending that notifies operators: the producer queues the row's
+ * action, composition registers one dispatch handler per row, and a Test Chat preview renders
+ * the row's notification kind. A hand-off keeps `handoff.notify`, so outbox rows queued before
+ * completions could notify keep dispatching.
+ */
+export const ROUTINE_ENDING_NOTICE_ACTIONS: Readonly<Record<RoutineOperatorNotice["terminalKind"], RoutineEndingNoticeAction>> = {
+  handoff: { type: HANDOFF_NOTIFY_ACTION_TYPE, reason: "routine_handoff", notificationKind: "handoff" },
+  complete: { type: COMPLETION_NOTIFY_ACTION_TYPE, reason: "routine_completed", notificationKind: "completion" },
+};
 
 /**
  * The payload every operator-notice action carries (`handoff.notify`, `completion.notify`): ids,

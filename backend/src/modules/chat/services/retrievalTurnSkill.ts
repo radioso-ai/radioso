@@ -38,7 +38,11 @@ import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { BoundedGroundingStreamGate } from "./boundedGroundingStreamGate.js";
 import { recordDirectiveSurfaceRendered } from "./directives/directiveSurfaceRendering.js";
 import { GroundedAnswerHeadReader } from "./groundedAnswerHeadReader.js";
-import { answerCoverageHeadParseOutcome, steeringForKnownVerdict } from "../../../shared/domain/steeringRule.js";
+import {
+  answerCoverageHeadParseOutcome,
+  steeringForKnownVerdict,
+  type RoutinePendingStep,
+} from "../../../shared/domain/steeringRule.js";
 import {
   buildAnswerCoverageAssessmentFromHead,
   buildDeterministicZeroEvidenceAssessment,
@@ -90,6 +94,16 @@ const shouldSuppressUnsupportedDraft = (
   && envelope.parseStatus === "valid_v2"
   && envelope.outcome === "answer"
   && summary.sourcedClaimCount === 0;
+
+/**
+ * A routine that yielded this turn stays parked on a step, and the answer closes by
+ * pointing back to it (#1377) — unless the answer hands the visitor to a person. On an
+ * agent set to hand retrieval misses over, a `no_support` decline is that hand-off. A
+ * composed decline there gets no lead-back; a grounded answer commits its own outcome, so
+ * its prompt tells it to leave the lead-back out of a `no_support` decline.
+ */
+const declinePendingRoutineStep = (session: PreparedSession): RoutinePendingStep | undefined =>
+  session.agent.handoffOnRetrievalMiss === true ? undefined : session.routineYield?.pendingStep;
 
 /**
  * Composes a grounded answer for a retrieval turn: the grounded system prompt, the
@@ -298,6 +312,8 @@ export class RetrievalAnswerComposer {
       conversationIntentSnapshot,
       conversationSummary: session.conversationSummary,
       steering: knownAssessment ? steeringForKnownVerdict(steering, knownAssessment) : steering,
+      pendingRoutineStep: session.routineYield?.pendingStep,
+      noSupportHandsOff: session.agent.handoffOnRetrievalMiss === true,
       retrievalSenseOfferAlternatives: session.retrievalSenseOfferAlternatives,
     });
     if (session.directiveSteering) {
@@ -457,6 +473,7 @@ export class RetrievalAnswerComposer {
           userExpectedLocale,
           answerInstructionBlock: this.support.buildAnswerInstructionBlock(session),
           steering: steeringForKnownVerdict(session.directiveSteering?.rules ?? [], zeroEvidenceAssessment),
+          pendingRoutineStep: declinePendingRoutineStep(session),
           workspaceContext: this.support.buildChatWorkspaceContext(session),
           usageContext: this.support.buildChatUsageContext(session, accountId, "grounded_miss"),
         });
@@ -545,6 +562,7 @@ export class RetrievalAnswerComposer {
       userExpectedLocale,
       answerInstructionBlock: this.support.buildAnswerInstructionBlock(session),
       steering: steeringForKnownVerdict(session.directiveSteering?.rules ?? [], knownAssessment),
+      pendingRoutineStep: declinePendingRoutineStep(session),
       // This is a model-authored scope-policy response, not an ordinary answer.
       // It is the refusal path, so it stays on the workspace chat tier rather
       // than the agent override that governs the turn's own calls — see the rule
@@ -608,6 +626,7 @@ export class RetrievalAnswerComposer {
           userExpectedLocale,
           answerInstructionBlock: this.support.buildAnswerInstructionBlock(session),
           steering: steeringForKnownVerdict(session.directiveSteering?.rules ?? [], zeroEvidenceAssessment),
+          pendingRoutineStep: declinePendingRoutineStep(session),
           workspaceContext: this.support.buildChatWorkspaceContext(session),
           usageContext: this.support.buildChatUsageContext(session, accountId, "stream_grounded_miss"),
           ...(signal ? { signal } : {}),

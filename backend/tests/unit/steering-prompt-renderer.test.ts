@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { appendSteeringBlock, renderSteeringBlock } from "../../src/shared/infra/prompts/steeringPromptRenderer.js";
+import {
+  appendRoutineLeadBack,
+  appendSteeringBlock,
+  renderSteeringBlock,
+} from "../../src/shared/infra/prompts/steeringPromptRenderer.js";
 import { loadPromptTemplate, renderPromptTemplate } from "../../src/shared/infra/prompts/promptLoader.js";
 import { renderSteeringRules, type SteeringRule } from "../../src/shared/domain/steeringRule.js";
 
@@ -111,3 +115,70 @@ describe("renderSteeringBlock on a routine step's reply", () => {
     );
   });
 });
+
+// A routine that yields a turn stays parked on a step; the reply to the visitor's
+// digression closes by pointing back to it (#1377). The pending step is subordinate to
+// the reply, so it closes the prompt rather than rendering as a controlling block.
+describe("appendRoutineLeadBack", () => {
+  const tone = rule("Use the formal register.", 60);
+  const pendingStep = {
+    stepId: "ask_dates",
+    instruction: "Ask [name] for the arrival and departure dates.",
+    missingSlotKeys: ["arrival", "departure"],
+  };
+  const handoffFragment = loadPromptTemplate("chat/routine-lead-back-decline-handoff.md");
+  const leadBackBlock = (step = pendingStep, noSupportHandoff = "") =>
+    renderPromptTemplate("chat/routine-lead-back.md", {
+      pending_step: `- ${step.instruction}`,
+      missing_slots: step.missingSlotKeys.length > 0
+        ? `\n${renderPromptTemplate("chat/routine-lead-back-missing-slots.md", { slot_keys: step.missingSlotKeys.join(", ") })}`
+        : "",
+      no_support_handoff: noSupportHandoff,
+    });
+
+  it("tells the reply to leave the lead-back out of a no_support decline only when that decline hands off", () => {
+    expect(appendRoutineLeadBack("Prompt.", [], pendingStep, { noSupportHandsOff: true })).toBe(
+      `Prompt.\n\n${leadBackBlock(pendingStep, `\n\n${handoffFragment}`)}`,
+    );
+    expect(appendRoutineLeadBack("Prompt.", [], pendingStep)).not.toContain(handoffFragment);
+    expect(appendRoutineLeadBack("Prompt.", [], pendingStep, { noSupportHandsOff: false })).not.toContain(handoffFragment);
+    expect(appendRoutineLeadBack("Prompt.", [], undefined, { noSupportHandsOff: true })).toBe("Prompt.");
+  });
+
+  it("closes the prompt with the pending step and the keys it still needs", () => {
+    expect(appendRoutineLeadBack("Prompt.", [tone], pendingStep)).toBe(`Prompt.\n\n${leadBackBlock()}`);
+    expect(leadBackBlock()).toContain("arrival, departure");
+  });
+
+  it("leaves out the missing-slots line when the step names no unfilled slot", () => {
+    const step = { ...pendingStep, missingSlotKeys: [] };
+
+    expect(appendRoutineLeadBack("Prompt.", [], step)).toBe(`Prompt.\n\n${leadBackBlock(step)}`);
+  });
+
+  it("appends nothing without a pending step, or with one that asks for nothing", () => {
+    expect(appendRoutineLeadBack("Prompt.", [tone])).toBe("Prompt.");
+    expect(appendRoutineLeadBack("Prompt.", [], { stepId: "ask_dates", instruction: "", missingSlotKeys: [] })).toBe("Prompt.");
+  });
+
+  it("gives way to a routine step that controls the reply", () => {
+    const stepRule: SteeringRule = {
+      action: "Ask what email address we can reach them at.",
+      source: "routine",
+      lifespan: "response",
+    };
+
+    expect(appendRoutineLeadBack("Prompt.", [stepRule, tone], pendingStep)).toBe("Prompt.");
+  });
+
+  // A directive that only tells the reply to point the visitor elsewhere transfers nothing:
+  // the conversation stays with the agent and the routine still waits, so the reply may
+  // follow the directive and still close with the lead-back.
+  it("still closes with the lead-back when a directive's text points the visitor elsewhere", () => {
+    const redirect = rule("For parking questions, tell the visitor to call reception at +39 055 123 4567.", 70);
+    const prompt = appendSteeringBlock("Prompt.", [redirect]);
+
+    expect(appendRoutineLeadBack(prompt, [redirect], pendingStep)).toBe(`${prompt}\n\n${leadBackBlock()}`);
+  });
+});
+

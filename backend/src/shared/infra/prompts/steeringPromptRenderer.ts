@@ -7,6 +7,7 @@ import {
   routineStepSteeringOptions,
   steeringForSurface,
   type RenderSteeringRulesOptions,
+  type RoutinePendingStep,
   type SteeringRule,
 } from "../../domain/steeringRule.js";
 import { loadPromptTemplate, renderPromptTemplate } from "./promptLoader.js";
@@ -74,6 +75,53 @@ export const renderSteeringBlock = (
 ): string => {
   const rules = surfaceRules(steering, options);
   return renderRoutineStepBlock(rules, options) ?? renderSteeringRules(rules, surfaceOptions(options));
+};
+
+interface RoutineLeadBackOptions {
+  /**
+   * The agent hands a `no_support` decline to a person, so a reply that commits that
+   * outcome itself (a grounded answer) is told to leave the lead-back out of it. The model
+   * follows the instruction; nothing in code removes the sentence.
+   */
+  noSupportHandsOff?: boolean;
+}
+
+const renderRoutineLeadBack = (pendingStep: RoutinePendingStep, options: RoutineLeadBackOptions): string =>
+  renderPromptTemplate("chat/routine-lead-back.md", {
+    pending_step: `- ${pendingStep.instruction}`,
+    missing_slots: pendingStep.missingSlotKeys.length > 0
+      ? `\n${renderPromptTemplate("chat/routine-lead-back-missing-slots.md", {
+        slot_keys: pendingStep.missingSlotKeys.join(", "),
+      })}`
+      : "",
+    no_support_handoff: options.noSupportHandsOff
+      ? `\n\n${loadPromptTemplate("chat/routine-lead-back-decline-handoff.md")}`
+      : "",
+  });
+
+/**
+ * A routine that yielded the turn stays parked on a step, and the reply to the visitor's
+ * digression closes by pointing back to it (#1377). The roles are the reverse of a
+ * routine step's reply: the reply comes first and the pending step only shapes its closing
+ * sentence (`chat/routine-lead-back.md`). Callers append it last: placed before a grounded
+ * answer's coverage and envelope rules, the model left the closing sentence out. Nothing
+ * is appended when a routine step's rule steers the reply, since that routine is handling
+ * the turn itself. The pending step carries slot keys, never captured values, so no
+ * visitor text reaches the system prompt through it.
+ */
+export const appendRoutineLeadBack = (
+  prompt: string,
+  steering: SteeringRule[] = [],
+  pendingStep?: RoutinePendingStep,
+  options: RoutineLeadBackOptions = {},
+): string => {
+  if (!pendingStep || (!pendingStep.instruction && pendingStep.missingSlotKeys.length === 0)) {
+    return prompt;
+  }
+  if (partitionRoutineStepSteering(surfaceRules(steering, {})).instructions.length > 0) {
+    return prompt;
+  }
+  return `${prompt}\n\n${renderRoutineLeadBack(pendingStep, options)}`;
 };
 
 export const appendSteeringBlock = (

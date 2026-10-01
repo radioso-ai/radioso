@@ -4,6 +4,7 @@ import type {
   ConversationRequestContext,
   ConversationTrace,
   MessageSource,
+  RoutineTurnYield,
   StagedContext,
 } from "@radioso/conversation-contract";
 
@@ -208,6 +209,12 @@ export interface PreparedSession {
    * is waiting and on what. Absent on every other turn.
    */
   suspendedRoutine?: ChatRoutineTurnState;
+  /**
+   * Set by the routine turn when the active routine yielded this turn to a normal answer
+   * and stays parked: the answer closes by pointing back to its pending step, and the
+   * engine records the yield on the turn's trace. Absent on every other turn.
+   */
+  routineYield?: RoutineTurnYield;
   /**
    * What became of the tool call this turn carried, set by the routine turn (or the bypass
    * report) and forwarded in the reply envelope. Absent on every message turn.

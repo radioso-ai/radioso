@@ -1461,6 +1461,43 @@ export interface ConversationRoutineResumeResult {
    * runner returns inert placeholders.
    */
   yielded?: boolean;
+  /** On a yielded result, the step the routine stays parked on. */
+  pendingStep?: RoutinePendingStep;
+}
+
+/**
+ * The step a routine waits on after it yields a turn. The turn is answered normally,
+ * and the answer can close by pointing the visitor back to this step. It carries what
+ * the step asks for and never a captured value, so a host may place it in a system prompt.
+ */
+export interface RoutinePendingStep {
+  stepId: string;
+  /**
+   * The step's authored instruction with each slot reference shown as its bracketed key
+   * (`[email]`) and each context reference empty.
+   */
+  instruction: string;
+  /** Keys of the step's required collected slots that are still unfilled. Keys only, never values. */
+  missingSlotKeys: string[];
+}
+
+/**
+ * The active routine declined this turn and stays parked to resume on a later one.
+ * `sessionId` and `inputEventId` name the turn it declined: `processTurn` honors a yield
+ * handed back only on that same turn. `pendingStep` is absent when the runner reported none.
+ */
+export interface RoutineTurnYield {
+  sessionId: string;
+  /** Absent when the turn's input event carries no id; such a yield is never honored on hand-back. */
+  inputEventId?: string;
+  routineId: string;
+  executionId?: string;
+  pendingStep?: RoutinePendingStep;
+}
+
+/** Told when `attemptRoutine` returns null because the active routine yielded the turn. */
+export interface ConversationRoutineYieldSink {
+  yielded(routineYield: RoutineTurnYield): void;
 }
 
 export interface ConversationRoutineDecisionResult extends ConversationRoutineResumeResult {
@@ -1571,6 +1608,13 @@ export interface ProcessTurnInput {
   coverageRoutineActivator?: ConversationCoverageRoutineActivator;
   /** Records bounded post-evidence decisions without exposing request/evidence text. */
   coverageReactionRecorder?: ConversationCoverageReactionRecorder;
+  /**
+   * The active routine already yielded this turn: the host ran `attemptRoutine` before
+   * preparing the turn. When its session and input event match this input, the engine
+   * records the yield on the turn's trace and does not ask the routine about the same
+   * message again; otherwise it ignores it and attempts the routine as usual.
+   */
+  routineYield?: RoutineTurnYield;
 }
 
 export interface ConversationCoverageReactionRecorder {
@@ -1639,6 +1683,8 @@ export interface AttemptRoutineInput {
   loopGuardCandidateIds?: string[];
   suppressNewClarification?: boolean;
   progress?: ConversationProgressPort;
+  /** Told when the active routine yields the turn, so the host can carry its pending step into the answer. */
+  routineYieldSink?: ConversationRoutineYieldSink;
 }
 
 export interface ResumeAwaitingDecisionInput {
@@ -1708,6 +1754,8 @@ export interface ConversationEngine {
    * the turn, or null when no routine machinery is wired, none is active/activates, or
    * the active routine yields the turn (off-topic) — so the host can treat the routine
    * as a multi-turn skill selected before grounding, and only ground when it returns null.
+   * A yield is also reported to `input.routineYieldSink`; the host passes it on to
+   * `processTurn` as `routineYield`.
    */
   attemptRoutine(input: AttemptRoutineInput): Promise<ProcessTurnResult | null>;
   resumeAwaitingDecision(input: ResumeAwaitingDecisionInput): Promise<ConversationRoutineDecisionResult>;

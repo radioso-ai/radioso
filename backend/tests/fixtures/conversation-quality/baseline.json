@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-30T10:44:03.370Z",
+  "generatedAt": "2026-09-30T22:39:11.560Z",
   "passThreshold": 1,
   "cases": {
     "clarification-ambiguous-plan": {
@@ -131,6 +131,11 @@
       "status": "pass",
       "passRate": 1,
       "samples": 5
+    },
+    "routine-digression-leads-back": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 3
     }
   }
 }

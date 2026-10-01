@@ -172,6 +172,29 @@ describe("trace assertions", () => {
     ).status).toBe("error");
   });
 
+  it("passes routine_yielded only when the routine yielded the turn and stays parked on the step", () => {
+    const output = observed({
+      turnTrace: trace([
+        {
+          id: `routine_yield:${BOOK_DEMO_ROUTINE_ID}`,
+          kind: "routine_yield",
+          status: "skipped",
+          outputs: { routineId: BOOK_DEMO_ROUTINE_ID, stepId: "ask_email", missingSlotKeys: ["email"] },
+        },
+      ]),
+    });
+    const yielded = (routineId: string, stepId: string) =>
+      evaluateTraceAssertion({ type: "routine_yielded", routineId, stepId }, output);
+
+    expect(yielded(BOOK_DEMO_ROUTINE_ID, "ask_email").status).toBe("pass");
+    expect(yielded(BOOK_DEMO_ROUTINE_ID, "ask_date")).toMatchObject({ status: "fail", reason: expect.stringContaining("ask_email") });
+    expect(yielded(CONTACT_SUPPORT_ROUTINE_ID, "ask_email").status).toBe("fail");
+    expect(evaluateTraceAssertion(
+      { type: "routine_yielded", routineId: BOOK_DEMO_ROUTINE_ID, stepId: "ask_email" },
+      observed({}),
+    ).status).toBe("error");
+  });
+
   it("detects a clarifying question from either signal", () => {
     const engineSignal = observed({ turnTrace: trace([{ id: "clarification", kind: "clarification", status: "applied", outputs: { decision: "ask" } }]) });
     const skillSignal = observed({ turnTrace: trace([{ id: "dispatch:clarification.answer", kind: "skill_dispatch", status: "applied" }]) });

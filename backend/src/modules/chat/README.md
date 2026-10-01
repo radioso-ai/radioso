@@ -69,7 +69,18 @@ rows. Start at `test-execution/README.md` and
   activator declines the call (the routine completed under `once_per_conversation`),
   `chatTurnAssembly.ts` sets `PreparedSession.declinedRoutine`; when a suspended routine
   bypasses the attempt, `describeSuspendedRoutineTurn` sets `suspendedRoutine` and an
-  `invocation` of `not_started`.
+  `invocation` of `not_started`. When the active routine yields the turn as off-topic,
+  the routine yield sink `createAttemptRoutineInput` wires records the engine's report
+  on `PreparedSession.routineYield`. `createChatProcessTurnInput` hands it back to
+  `processTurn`, which records the `routine_yield` stage without asking the routine
+  again when the yield's session and input event match the turn;
+  `conversationEngineChatTurn.ts` drops it from the session once `processTurn` answers.
+  The grounded, grounded-miss, and direct composers end their prompt with
+  `appendRoutineLeadBack` (`shared/infra/prompts/steeringPromptRenderer.ts`) so the reply
+  closes by asking for what the pending step still needs. On an agent that hands
+  retrieval misses to a person, `retrievalTurnSkill.ts` gives a composed decline no
+  lead-back, and the grounded prompt adds `chat/routine-lead-back-decline-handoff.md`
+  so a `no_support` answer leaves it out.
 - `composition.ts`: chat module wiring used by application composition.
 - `llmAdapters.ts`: LLM-provider registration for chat.
 - `retrievalSupport.ts`: narrow helpers used by retrieval answer assembly.

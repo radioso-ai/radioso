@@ -86,6 +86,7 @@ const suiteAssertionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("turn_activates_routine"), routineId: z.string().min(1) }),
   z.object({ type: z.literal("routine_step_reached"), routineId: z.string().min(1), stepId: z.string().min(1) }),
   z.object({ type: z.literal("routine_slots_filled"), routineId: z.string().min(1), slotKeys: z.array(z.string().min(1)).min(1) }),
+  z.object({ type: z.literal("routine_yielded"), routineId: z.string().min(1), stepId: z.string().min(1) }),
   z.object({ type: z.literal("turn_asks_clarification") }),
   z.object({ type: z.literal("turn_grounding_verdict"), verdict: z.enum(["grounded", "degraded", "no_support"]) }),
   z.object({ type: z.literal("turn_answer_coverage"), coverage: z.enum(["answered", "partial", "unanswered", "unclear"]) }),

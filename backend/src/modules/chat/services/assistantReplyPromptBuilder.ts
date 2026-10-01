@@ -1,9 +1,9 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
-import type { SteeringRule } from "../../../shared/domain/steeringRule.js";
+import type { RoutinePendingStep, SteeringRule } from "../../../shared/domain/steeringRule.js";
 import type { ResponseIdentity } from "../../../shared/domain/responseIdentity.js";
 import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import type { ChatTurnRoute } from "../../../shared/domain/chatTurnRoute.js";
-import { appendSteeringBlock } from "../../../shared/infra/prompts/steeringPromptRenderer.js";
+import { appendRoutineLeadBack, appendSteeringBlock } from "../../../shared/infra/prompts/steeringPromptRenderer.js";
 import { renderConversationSummarySection } from "./summary/conversationSummarySection.js";
 import type { TurnRouting } from "./turnRouter.js";
 import {
@@ -22,6 +22,8 @@ export const buildAssistantReplyPrompt = (input: {
   pageContextCondition?: PageContextCondition | null;
   conversationSummary?: string;
   steering?: SteeringRule[];
+  /** The step a routine that yielded this turn still waits on; the reply closes by pointing back to it. */
+  pendingRoutineStep?: RoutinePendingStep;
 }): string => {
   const historySection = input.history
     .map((message) => `${message.role.toUpperCase()}: ${message.content}`)
@@ -45,5 +47,5 @@ export const buildAssistantReplyPrompt = (input: {
     history_section: historySection || "No prior history",
     query: input.query,
   });
-  return appendSteeringBlock(prompt, input.steering);
+  return appendRoutineLeadBack(appendSteeringBlock(prompt, input.steering), input.steering, input.pendingRoutineStep);
 };

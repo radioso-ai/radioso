@@ -72,6 +72,13 @@ export const resumeRoutine = async (input: {
     activationTurn: !resuming,
   });
   if (result.yielded) {
+    request.routineYieldSink?.yielded({
+      sessionId: request.sessionId,
+      ...(request.inputEvent.id ? { inputEventId: request.inputEvent.id } : {}),
+      routineId: state.routineId,
+      ...(state.executionId ? { executionId: state.executionId } : {}),
+      ...(result.pendingStep ? { pendingStep: result.pendingStep } : {}),
+    });
     return null;
   }
   if (!directiveSteeringStage) {

@@ -24,7 +24,7 @@ repo-committed regression suite you run from the CLI.
 Two layers (see `src/modules/eval/suite/`):
 
 - **Deterministic (no LLM, gate every run):** `turn_route`, `turn_uses_skill`,
-  `turn_activates_routine`, `routine_step_reached`, `turn_asks_clarification`,
+  `turn_activates_routine`, `routine_step_reached`, `routine_yielded`, `turn_asks_clarification`,
   `turn_grounding_verdict`, `turn_answer_coverage`, plus the product `retrieval_*`,
   `answer_cites_document`, `answer_contains` / `answer_does_not_contain`.
 - **Semantic (LLM judge, paid/non-deterministic):** `llm_judge` — reserved for empathy,

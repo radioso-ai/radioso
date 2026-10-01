@@ -22,7 +22,7 @@ import {
   enqueueSlackPostAction,
   slackPostIdempotencyKey,
 } from "../outbox/slackPostAction.js";
-import { buildDecisionMessage, buildOwnershipMessage } from "./slackBlockKitBuilder.js";
+import { buildDecisionMessage, buildOwnershipMessage, escapeMrkdwn } from "./slackBlockKitBuilder.js";
 
 const isPendingApproval = (decision: PendingDecisionRecord, notification: OperatorNotification): boolean =>
   notification.kind === "approval" &&
@@ -61,11 +61,16 @@ export class SlackOperatorNotificationSink implements OperatorNotificationSink {
       // subject is the line the routine's author chose to lead with, so it leads here too.
       const formatted = formatRoutineEndingNotification(notification);
       const [, ...detailLines] = formatted.lines;
+      const noticeText = [...(formatted.notice.subject ? [formatted.notice.subject] : []), ...detailLines].join("\n").trim();
       const message = buildOwnershipMessage({
         conversationId: notification.conversationId,
         workspaceId: notification.workspaceId,
         state: "ai_owned",
-        contextText: [...(formatted.notice.subject ? [formatted.notice.subject] : []), ...detailLines].join("\n").trim(),
+        // The notice is plain text on every transport, and visitors supply much of it (collected
+        // values, the entry page). Escaped whole, authored text included, it posts literally:
+        // no value can mention the channel or forge a link, and the author's text reads the
+        // same here as in the email.
+        contextText: escapeMrkdwn(noticeText),
         dashboardUrl: await this.resolveDashboardUrl(notification),
       });
 

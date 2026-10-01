@@ -321,6 +321,32 @@ describe("SlackOperatorNotificationSink", () => {
     });
   });
 
+  it("posts a notice's visitor-given values and authored text as literal text, never as a mention or a link", async () => {
+    const { sink, enqueued } = createSink({ conversationLinks: { resolve: async () => permalink } });
+
+    await sink.deliver({
+      ...handoffNotification,
+      kind: "completion",
+      reason: "routine_completed",
+      routine: { id: "routine_1", name: "Book accommodation" },
+      collected: { guest_name: "<!channel>", note: "<https://x|Open> & more" },
+      notice: { subject: "New booking: {{slot.guest_name}}", intro: "Read {{slot.note}} <!here>" },
+      conversation: { channel: "web", entryPageUrl: "https://example.com/book?room=1&ref=<x|y>" },
+    }, { requestId: "request_1" });
+
+    const payload = enqueued[0].payload as { text: string; blocks: Array<{ type: string; text?: { text?: string } }> };
+    const section = payload.blocks[0].text?.text ?? "";
+    for (const text of [payload.text, section]) {
+      expect(text).not.toMatch(/<[!h]/u);
+      expect(text).toContain("New booking: &lt;!channel&gt;");
+      expect(text).toContain("Read &lt;https://x|Open&gt; &amp; more &lt;!here&gt;");
+      expect(text).toContain("Entry page: https://example.com/book?room=1&amp;ref=&lt;x|y&gt;");
+      expect(text).toContain("  Guest name: &lt;!channel&gt;");
+    }
+    // The dashboard link is the post's own markup, so it still renders as a link.
+    expect(linkTexts(enqueued)).toEqual([`<${permalink.replaceAll("&", "&amp;")}|Open in dashboard>`]);
+  });
+
   it("skips handoff Slack delivery when the workspace has no installation or operator channel", async () => {
     const missing = createSink({ installation: null });
     await missing.sink.deliver(handoffNotification, { requestId: "request_1" });

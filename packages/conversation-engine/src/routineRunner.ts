@@ -897,6 +897,9 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         variables = { ...variables, ...(fastForwardDecision.variables ?? {}) };
         nextStepId = landingStepId(step.id, fastForwardDecision);
         if (nextStepId === step.id) {
+          // The step stays — held, or nothing chosen — so it is the one this turn renders;
+          // record it with what its selector returned.
+          traceSteps.push({ ...fastForwardEntry, event: "rendered" });
           break;
         }
       }

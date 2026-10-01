@@ -2,35 +2,55 @@ import {
   asString,
   routineEndingNotificationFromAction,
   type OperatorNotificationDispatcher,
+  type RoutineEndingNotificationSubject,
+  type RoutineEndingOperatorNotification,
 } from "../../../operatorNotifications/public.js";
 import type { ActionHandler, ActionHandlerContext } from "./actionDispatcher.js";
 
 /**
- * Resolves the display names a handoff notice shows next to the ids it carries. A name the
- * lookup cannot find (an agent or routine deleted after the handoff was queued) resolves to
- * `null`; the notice must still deliver, so implementations never throw for a missing row.
+ * Resolves what a routine-ending notice shows next to the ids it carries: the agent and routine
+ * names, and the facts already stored about the conversation. Anything the lookup cannot find
+ * (an agent or routine deleted after the notice was queued) resolves to `null`; the notice must
+ * still deliver, so implementations never throw for a missing row.
  */
 export interface RoutineEndingNotificationSubjectResolver {
   resolve(input: {
     workspaceId: string;
     agentId: string;
     routineId: string | null;
-  }): Promise<{ agentName: string | null; routineName: string | null }>;
+    conversationId: string;
+  }): Promise<RoutineEndingNotificationSubject>;
 }
 
+/**
+ * Dispatches the operator notice a routine ending queued. One handler serves both action types:
+ * `handoff.notify` (registered with kind `handoff`) and `completion.notify` (kind `completion`).
+ * The kind is fixed at registration, so no sink branches on the action type, and a delivery
+ * never changes who owns the conversation — that was settled when the turn committed.
+ */
 export class RoutineEndingNotifyActionHandler implements ActionHandler {
-  constructor(
-    private readonly dispatcher: Pick<OperatorNotificationDispatcher, "dispatch">,
-    private readonly subjects?: RoutineEndingNotificationSubjectResolver,
-  ) {}
+  private readonly kind: RoutineEndingOperatorNotification["kind"];
+  private readonly dispatcher: Pick<OperatorNotificationDispatcher, "dispatch">;
+  private readonly subjects?: RoutineEndingNotificationSubjectResolver;
+
+  constructor(options: {
+    kind: RoutineEndingOperatorNotification["kind"];
+    dispatcher: Pick<OperatorNotificationDispatcher, "dispatch">;
+    subjects?: RoutineEndingNotificationSubjectResolver;
+  }) {
+    this.kind = options.kind;
+    this.dispatcher = options.dispatcher;
+    this.subjects = options.subjects;
+  }
 
   async handle(input: { payload: Record<string, unknown>; context: ActionHandlerContext }): Promise<void> {
     const conversationId = asString(input.payload.conversationId) ?? input.context.conversationId ?? "unknown";
     const workspaceId = asString(input.payload.workspaceId) ?? input.context.workspaceId ?? "unknown";
     const agentId = asString(input.payload.agentId) ?? "unknown";
     const routineId = asString(input.payload.routineId);
-    const subject = await this.subjects?.resolve({ workspaceId, agentId, routineId });
+    const subject = await this.subjects?.resolve({ workspaceId, agentId, routineId, conversationId });
     const notification = routineEndingNotificationFromAction({
+      kind: this.kind,
       payload: input.payload,
       fallback: { conversationId, workspaceId },
       ...(subject ? { subject } : {}),

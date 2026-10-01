@@ -64,6 +64,7 @@ export {
   contactRoutineDefinition,
   CONTACT_SEND_ACTION_TYPE,
   HANDOFF_NOTIFY_ACTION_TYPE,
+  COMPLETION_NOTIFY_ACTION_TYPE,
   CONTACT_INTENT_SKILL_NAME,
   CONTACT_INTENT_NAME,
 } from "./services/routines/contactRoutine.js";

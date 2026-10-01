@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { routineEndingNotificationFromAction } from "../../../src/modules/operatorNotifications/public.js";
 
-const fallback = { conversationId: "conv_1", workspaceId: "ws_1" };
+const fallback = { conversationId: "conv_1", workspaceId: "ws_1", reason: "routine_handoff" };
 
 describe("routineEndingNotificationFromAction", () => {
   it("builds a handoff notification from a handoff.notify action payload", () => {
@@ -126,7 +126,7 @@ describe("routineEndingNotificationFromAction", () => {
         collected: { name: "Ada" },
         notice: { subject: "Booking: {{slot.name}}", intro: 7 },
       },
-      fallback,
+      fallback: { ...fallback, reason: "routine_completed" },
       subject: {
         agentName: "Retreat desk",
         routineName: "Book accommodation",

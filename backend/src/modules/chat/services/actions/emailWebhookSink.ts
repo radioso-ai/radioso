@@ -33,17 +33,14 @@ const deprecatedDashboardPath = (dashboardUrl: string | null): string | null => 
   }
 };
 
-/** The action type each notification kind is queued as, for the no-recipient log line. */
-const ACTION_TYPE_BY_KIND: Record<OperatorNotification["kind"], string> = {
-  approval: "approval.request",
-  handoff: "handoff.notify",
-  completion: "completion.notify",
-};
-
-const MISSING_WEBHOOK_CLIENT_MESSAGE_BY_KIND: Record<OperatorNotification["kind"], string> = {
-  approval: "Approval request webhook delivery is not configured",
-  handoff: "Handoff webhook delivery is not configured",
-  completion: "Completion notice webhook delivery is not configured",
+/**
+ * This transport's wording per notification kind: the action type the no-recipient log line
+ * names, and the error a webhook delivery without a client raises.
+ */
+const TRANSPORT_TEXT_BY_KIND: Record<OperatorNotification["kind"], { actionType: string; missingWebhookClientMessage: string }> = {
+  approval: { actionType: "approval.request", missingWebhookClientMessage: "Approval request webhook delivery is not configured" },
+  handoff: { actionType: "handoff.notify", missingWebhookClientMessage: "Handoff webhook delivery is not configured" },
+  completion: { actionType: "completion.notify", missingWebhookClientMessage: "Completion notice webhook delivery is not configured" },
 };
 
 /**
@@ -76,7 +73,7 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
     };
     const target = await this.recipients.resolve(recipientContext);
     if (target.emails.length === 0 && !target.webhook) {
-      const actionType = ACTION_TYPE_BY_KIND[notification.kind];
+      const { actionType } = TRANSPORT_TEXT_BY_KIND[notification.kind];
       this.logger?.warn(
         { workspaceId: context.workspaceId ?? notification.workspaceId, conversationId: context.conversationId ?? notification.conversationId },
         `${actionType}: no recipient configured for workspace; skipping`,
@@ -128,7 +125,7 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
         webhook: target.webhook,
         payload: delivery.webhookPayload,
         idempotencyKey: `${baseIdempotencyKey}:webhook`,
-        missingClientMessage: MISSING_WEBHOOK_CLIENT_MESSAGE_BY_KIND[notification.kind],
+        missingClientMessage: TRANSPORT_TEXT_BY_KIND[notification.kind].missingWebhookClientMessage,
       }) : Promise.resolve(),
     ]);
   }

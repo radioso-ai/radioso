@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { RoutineEndingNotifyActionHandler } from "../../src/modules/chat/services/actions/routineEndingNotifyActionHandler.js";
+import { ROUTINE_ENDING_NOTICE_ACTIONS } from "../../src/modules/chat/services/operatorNoticeAction.js";
 import {
   formatRoutineEndingNotification,
   type OperatorNotificationDispatcher,
@@ -21,7 +22,7 @@ describe("RoutineEndingNotifyActionHandler", () => {
   it("dispatches a handoff operator notification", async () => {
     const dispatch = vi.fn<OperatorNotificationDispatcher["dispatch"]>();
     dispatch.mockResolvedValue();
-    const handler = new RoutineEndingNotifyActionHandler({ kind: "handoff", dispatcher: { dispatch } });
+    const handler = new RoutineEndingNotifyActionHandler({ ending: ROUTINE_ENDING_NOTICE_ACTIONS.handoff, dispatcher: { dispatch } });
 
     await handler.handle({
       payload: {
@@ -53,7 +54,7 @@ describe("RoutineEndingNotifyActionHandler", () => {
     const dispatch = vi.fn<OperatorNotificationDispatcher["dispatch"]>();
     dispatch.mockResolvedValue();
     const resolve = vi.fn(async () => ({ agentName: "Retreat desk", routineName: "Book accommodation" }));
-    const handler = new RoutineEndingNotifyActionHandler({ kind: "handoff", dispatcher: { dispatch }, subjects: { resolve } });
+    const handler = new RoutineEndingNotifyActionHandler({ ending: ROUTINE_ENDING_NOTICE_ACTIONS.handoff, dispatcher: { dispatch }, subjects: { resolve } });
 
     await handler.handle({
       payload: {
@@ -88,7 +89,7 @@ describe("RoutineEndingNotifyActionHandler", () => {
     const dispatch = vi.fn<OperatorNotificationDispatcher["dispatch"]>();
     dispatch.mockResolvedValue();
     const handler = new RoutineEndingNotifyActionHandler({
-      kind: "handoff",
+      ending: ROUTINE_ENDING_NOTICE_ACTIONS.handoff,
       dispatcher: { dispatch },
       subjects: { resolve: async () => ({ agentName: null, routineName: null }) },
     });
@@ -108,7 +109,7 @@ describe("RoutineEndingNotifyActionHandler", () => {
     const dispatch = vi.fn<OperatorNotificationDispatcher["dispatch"]>();
     dispatch.mockResolvedValue();
     const resolve = vi.fn(async () => ({ agentName: "Retreat desk", routineName: null }));
-    const handler = new RoutineEndingNotifyActionHandler({ kind: "handoff", dispatcher: { dispatch }, subjects: { resolve } });
+    const handler = new RoutineEndingNotifyActionHandler({ ending: ROUTINE_ENDING_NOTICE_ACTIONS.handoff, dispatcher: { dispatch }, subjects: { resolve } });
 
     await handler.handle({
       payload: { conversationId: "conv_1", workspaceId: "ws_1", agentId: "agent_1", reason: "retrieval_miss" },
@@ -122,19 +123,22 @@ describe("RoutineEndingNotifyActionHandler", () => {
     expect(notification).not.toHaveProperty("collected");
   });
 
-  it("falls back to context and defaults for missing payload fields", async () => {
+  it.each([
+    ["handoff", ROUTINE_ENDING_NOTICE_ACTIONS.handoff, "routine_handoff"],
+    ["completion", ROUTINE_ENDING_NOTICE_ACTIONS.complete, "routine_completed"],
+  ] as const)("falls back to context and its ending's defaults for missing payload fields (%s)", async (kind, ending, reason) => {
     const dispatch = vi.fn<OperatorNotificationDispatcher["dispatch"]>();
     dispatch.mockResolvedValue();
-    const handler = new RoutineEndingNotifyActionHandler({ kind: "handoff", dispatcher: { dispatch } });
+    const handler = new RoutineEndingNotifyActionHandler({ ending, dispatcher: { dispatch } });
 
     await handler.handle({ payload: {}, context });
 
     expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({
-      kind: "handoff",
+      kind,
       workspaceId: "ws_1",
       conversationId: "conv_1",
       agentId: "unknown",
-      reason: "routine_handoff",
+      reason,
     }), expect.any(Object));
   });
 
@@ -146,7 +150,7 @@ describe("RoutineEndingNotifyActionHandler", () => {
       routineName: "Book accommodation",
       conversation: { channel: "embed", entryPageUrl: "https://ananda.example/stays" },
     }));
-    const handler = new RoutineEndingNotifyActionHandler({ kind: "completion", dispatcher: { dispatch }, subjects: { resolve } });
+    const handler = new RoutineEndingNotifyActionHandler({ ending: ROUTINE_ENDING_NOTICE_ACTIONS.complete, dispatcher: { dispatch }, subjects: { resolve } });
 
     await handler.handle({
       payload: {
@@ -184,7 +188,7 @@ describe("RoutineEndingNotifyActionHandler", () => {
       routineName: "Book accommodation",
       routineSlotKeys: ["guest_name", "arrival_date", "nights"],
     }));
-    const handler = new RoutineEndingNotifyActionHandler({ kind: "completion", dispatcher: { dispatch }, subjects: { resolve } });
+    const handler = new RoutineEndingNotifyActionHandler({ ending: ROUTINE_ENDING_NOTICE_ACTIONS.complete, dispatcher: { dispatch }, subjects: { resolve } });
 
     await handler.handle({
       payload: {

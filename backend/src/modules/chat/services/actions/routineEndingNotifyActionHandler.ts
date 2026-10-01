@@ -3,8 +3,8 @@ import {
   routineEndingNotificationFromAction,
   type OperatorNotificationDispatcher,
   type RoutineEndingNotificationSubject,
-  type RoutineEndingOperatorNotification,
 } from "../../../operatorNotifications/public.js";
+import type { RoutineEndingNoticeAction } from "../operatorNoticeAction.js";
 import type { ActionHandler, ActionHandlerContext } from "./actionDispatcher.js";
 
 /**
@@ -23,22 +23,23 @@ export interface RoutineEndingNotificationSubjectResolver {
 }
 
 /**
- * Dispatches the operator notice a routine ending queued. One handler serves both action types:
- * `handoff.notify` (registered with kind `handoff`) and `completion.notify` (kind `completion`).
- * The kind is fixed at registration, so no sink branches on the action type, and a delivery
- * never changes who owns the conversation — that was settled when the turn committed.
+ * Dispatches the operator notice a routine ending queued. One handler serves every row of
+ * `ROUTINE_ENDING_NOTICE_ACTIONS` (`handoff.notify`, `completion.notify`), registered once per
+ * row. The row fixes the notification kind and the reason a payload without one reports, so no
+ * sink branches on the action type, and a delivery never changes who owns the conversation —
+ * that was settled when the turn committed.
  */
 export class RoutineEndingNotifyActionHandler implements ActionHandler {
-  private readonly kind: RoutineEndingOperatorNotification["kind"];
+  private readonly ending: Pick<RoutineEndingNoticeAction, "notificationKind" | "reason">;
   private readonly dispatcher: Pick<OperatorNotificationDispatcher, "dispatch">;
   private readonly subjects?: RoutineEndingNotificationSubjectResolver;
 
   constructor(options: {
-    kind: RoutineEndingOperatorNotification["kind"];
+    ending: Pick<RoutineEndingNoticeAction, "notificationKind" | "reason">;
     dispatcher: Pick<OperatorNotificationDispatcher, "dispatch">;
     subjects?: RoutineEndingNotificationSubjectResolver;
   }) {
-    this.kind = options.kind;
+    this.ending = options.ending;
     this.dispatcher = options.dispatcher;
     this.subjects = options.subjects;
   }
@@ -50,9 +51,9 @@ export class RoutineEndingNotifyActionHandler implements ActionHandler {
     const routineId = asString(input.payload.routineId);
     const subject = await this.subjects?.resolve({ workspaceId, agentId, routineId, conversationId });
     const notification = routineEndingNotificationFromAction({
-      kind: this.kind,
+      kind: this.ending.notificationKind,
       payload: input.payload,
-      fallback: { conversationId, workspaceId },
+      fallback: { conversationId, workspaceId, reason: this.ending.reason },
       ...(subject ? { subject } : {}),
     });
     await this.dispatcher.dispatch(notification, {

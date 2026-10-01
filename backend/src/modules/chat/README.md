@@ -285,11 +285,13 @@ imports from `services/`.
   `ProcessTurnResult.operatorNotice` queues `handoff.notify` for a hand-off and
   `completion.notify` for a completion with an operator notice, with the authored
   `notice` text on the payload. A completion notice never changes ownership and
-  creates no Inbox item. Both action types dispatch through one
-  `RoutineEndingNotifyActionHandler` (registered per kind in
-  `app/composition/builtIn/contactRoutineModule.ts`), which resolves the agent and
-  routine names and the conversation's stored channel and entry page at delivery,
-  and hands the notice to the `operatorNotifications` sinks.
+  creates no Inbox item. `services/operatorNoticeAction.ts` owns the notice payload
+  and `ROUTINE_ENDING_NOTICE_ACTIONS`, the one table from an ending's kind to its
+  action type, reason code, and notification kind. Both action types dispatch
+  through one `RoutineEndingNotifyActionHandler`, registered once per row in
+  `app/composition/builtIn/contactRoutineModule.ts`, which resolves the agent and
+  routine names, the routine's slot order, and the conversation's stored channel and
+  entry page at delivery, and hands the notice to the `operatorNotifications` sinks.
   `includeTurnFailureDebug` attaches a `turnFailure` fact (failed or superseded,
   never both classified as the same) to the user message of a turn that never
   produced an assistant reply — the read-side counterpart to

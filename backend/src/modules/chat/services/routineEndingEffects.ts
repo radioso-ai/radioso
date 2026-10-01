@@ -1,9 +1,8 @@
 import type { RoutineActionRequest, RoutineOperatorNotice } from "@radioso/conversation-contract";
 
 import { routineHandoffOwnership, type RoutineHandoffEffect } from "./handoffOwnership.js";
-import { operatorNoticeActionPayload } from "./operatorNoticeAction.js";
+import { operatorNoticeActionPayload, ROUTINE_ENDING_NOTICE_ACTIONS } from "./operatorNoticeAction.js";
 import type { PreparedSession } from "./chatSessionPreparer.js";
-import { COMPLETION_NOTIFY_ACTION_TYPE, HANDOFF_NOTIFY_ACTION_TYPE } from "./routines/contactRoutine.js";
 
 /** The routine-ending effects a turn reports, whichever path (routine, coverage, rendered) ran it. */
 interface RoutineEndingTurnEffects {
@@ -11,15 +10,6 @@ interface RoutineEndingTurnEffects {
   operatorNotice?: RoutineOperatorNotice;
   actions?: RoutineActionRequest[];
 }
-
-/**
- * The action an ending's notice is queued as, by the kind of the ending. A hand-off keeps
- * `handoff.notify`, so outbox rows queued before completions could notify keep dispatching.
- */
-const NOTIFY_ACTION_BY_TERMINAL_KIND: Record<RoutineOperatorNotice["terminalKind"], { type: string; reason: string }> = {
-  handoff: { type: HANDOFF_NOTIFY_ACTION_TYPE, reason: "routine_handoff" },
-  complete: { type: COMPLETION_NOTIFY_ACTION_TYPE, reason: "routine_completed" },
-};
 
 /**
  * Builds the action an ending's operator notice is queued as. Exported so a Test Chat turn —
@@ -32,7 +22,7 @@ export const buildRoutineEndingNotifyAction = (input: {
   userMessageId: string;
   notice: RoutineOperatorNotice;
 }): RoutineActionRequest => {
-  const action = NOTIFY_ACTION_BY_TERMINAL_KIND[input.notice.terminalKind];
+  const action = ROUTINE_ENDING_NOTICE_ACTIONS[input.notice.terminalKind];
   return {
     type: action.type,
     payload: operatorNoticeActionPayload({

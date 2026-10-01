@@ -214,7 +214,7 @@ const routineStack = () => {
       const asksForCondition = input.systemPrompt?.includes("1. The user provided");
       if (asksForCondition) {
         const slot = input.systemPrompt?.match(/1\. The user provided \{\{slot\.(\w+)\}\}/u)?.[1];
-        return JSON.stringify({ condition: 1, variables: slot ? { [slot]: input.query } : {} });
+        return JSON.stringify({ claimsAuthority: false, condition: 1, variables: slot ? { [slot]: input.query } : {} });
       }
       return "Noted.";
     },

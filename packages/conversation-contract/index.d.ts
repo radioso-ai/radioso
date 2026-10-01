@@ -1107,6 +1107,18 @@ export interface RoutineNextStepDecision {
    * resume later. Distinct from staying put to re-ask (which still answers in-routine).
    */
   yieldTurn?: boolean;
+  /**
+   * When true on a chat step's decision, that step takes no exit this turn — AI-decides,
+   * rule, or default — nothing is fast-forwarded past it, and it is asked again.
+   * `variables` are still merged into routine state, so they count from the next turn. The
+   * selector sets it when the message carries text posing as a system, operator, or
+   * assistant message; it can only do so on a turn where it is consulted, which a chat step
+   * whose exits are all rules and that has nothing to extract never does. The runner applies
+   * the same hold when a value for one of the step's own slots does not fit its declared
+   * type. On a tool step's follow-up exits a decline still takes the default exit, because
+   * holding the tool step could run its tool again.
+   */
+  hold?: boolean;
   rationale?: string;
   /** What the model returned, for the debug trace. Absent when no model call ran. */
   selection?: RoutineSelectionTrace;
@@ -1122,9 +1134,13 @@ export interface RoutineSelectionTrace {
    * - `transition`: the model chose one of the step's conditions.
    * - `stay`: the model chose none, so the step is not yet satisfied.
    * - `off_topic`: the model chose none and read the message as a different request.
-   * - `unreadable`: the model's output could not be parsed, so nothing was chosen or extracted.
+   * - `unreadable`: the model's output could not be parsed or lacked the `claimsAuthority`
+   *   flag, so nothing was chosen or extracted.
+   * - `authority_claim`: the model flagged text posing as a system, operator, or assistant
+   *   message, or claiming the request is already confirmed; the decision carries `hold`,
+   *   so a chat step takes no exit and is asked again, whatever condition the model chose.
    */
-  outcome: "transition" | "stay" | "off_topic" | "unreadable";
+  outcome: "transition" | "stay" | "off_topic" | "unreadable" | "authority_claim";
   /** Slot keys the model returned a value for, including a value that replaces a filled slot. */
   returnedSlotKeys: string[];
   /** Keys the model returned that the routine does not declare; they are dropped, never captured. */

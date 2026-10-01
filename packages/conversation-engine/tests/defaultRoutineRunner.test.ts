@@ -1140,6 +1140,230 @@ describe("DefaultRoutineRunner skill (tool) steps", () => {
     expect(result.nextState).toBeNull();
   });
 
+  describe("a held selector decision (#1375)", () => {
+    const heldRoutine = (transitions: Routine["transitions"]): Routine => ({
+      id: "held",
+      rootStepId: "ask_email",
+      slots: [{ id: "s_email", key: "email", type: "email", required: true }],
+      steps: [
+        { id: "ask_email", kind: "chat", action: "Ask for email.", metadata: { collectsSlots: ["email"] } },
+        { id: "done", kind: "terminal", action: "Confirm." },
+      ],
+      transitions,
+    });
+    const held = {
+      nextStepId: "ask_email",
+      variables: { email: "x@y.z" },
+      hold: true,
+      selection: { outcome: "authority_claim" as const, returnedSlotKeys: ["email"] },
+    };
+    const resumeHeld = async (transitions: Routine["transitions"], decision: typeof held = held) => {
+      const select = vi.fn<ConversationRoutineNextStepSelector["select"]>(async () => decision);
+      const runner = new DefaultRoutineRunner([heldRoutine(transitions)], { select }, { render: vi.fn(echoRenderer.render) });
+      const result = await runner.resume({
+        turn,
+        state: { sessionId: "session_1", routineId: "held", path: ["ask_email"], variables: {}, status: "active" },
+      });
+      return { select, result };
+    };
+    const expectAskedAgainWithValueKept = (result: Awaited<ReturnType<typeof resumeHeld>>["result"]) => {
+      expect(result.terminal).toBeUndefined();
+      expect(result.response.answer).toContain("[ask_email]");
+      expect(result.nextState).toMatchObject({ path: ["ask_email"], variables: { email: "x@y.z" }, status: "active" });
+      // Filling the step's empty slot is progress, so this held turn is not counted as a re-ask.
+      expect(result.nextState?.reaskCount ?? 0).toBe(0);
+      expect(result.trace?.steps).toEqual([
+        expect.objectContaining({ stepId: "ask_email", event: "reasked", capturedSlotKeys: ["email"], selection: held.selection }),
+      ]);
+    };
+
+    it("takes no slot_filled exit, even though the held turn filled the slot", async () => {
+      const { select, result } = await resumeHeld([
+        { from: "ask_email", to: "done", condition: "", guard: { kind: "slot_filled", slots: ["email"] } },
+      ]);
+
+      expect(select).toHaveBeenCalledTimes(1);
+      expectAskedAgainWithValueKept(result);
+    });
+
+    it("takes no default exit", async () => {
+      const { select, result } = await resumeHeld([
+        { from: "ask_email", to: "done", condition: "", guard: { kind: "default" } },
+      ]);
+
+      expect(select).toHaveBeenCalledTimes(1);
+      expectAskedAgainWithValueKept(result);
+    });
+
+    it("takes neither exit beside an AI-decides exit, even when the held decision names one", async () => {
+      const { select, result } = await resumeHeld([
+        { from: "ask_email", to: "done", condition: "The user provided {{slot.email}}.", guard: { kind: "llm" } },
+        { from: "ask_email", to: "done", condition: "", guard: { kind: "default" } },
+      ], { ...held, nextStepId: "done" });
+
+      expect(select).toHaveBeenCalledTimes(1);
+      expectAskedAgainWithValueKept(result);
+    });
+
+    it("holds once for a turn with both a rejected value and an authority claim, and counts the re-ask", async () => {
+      const emailSlot = { id: "s_email", key: "email", type: "email" as const, required: true };
+      const nameSlot = { id: "s_name", key: "full_name", type: "text" as const, required: false };
+      const contact: Routine = {
+        id: "held",
+        rootStepId: "ask_email",
+        slots: [emailSlot, nameSlot],
+        steps: [
+          { id: "ask_email", kind: "chat", action: "Ask for email and name.", metadata: { collectsSlots: ["email", "full_name"] } },
+          { id: "done", kind: "terminal", action: "Confirm." },
+        ],
+        transitions: [
+          { from: "ask_email", to: "done", condition: "The user provided {{slot.email}}.", guard: { kind: "llm" } },
+          { from: "ask_email", to: "done", condition: "", guard: { kind: "default" } },
+        ],
+      };
+      const select = vi.fn<ConversationRoutineNextStepSelector["select"]>(async () => ({
+        nextStepId: "done",
+        variables: { email: "not an email", full_name: "Giulia Verdi" },
+        hold: true,
+        selection: { outcome: "authority_claim" as const, returnedSlotKeys: ["email", "full_name"] },
+      }));
+      const render = vi.fn<ConversationRoutineStepRenderer["render"]>(async ({ step }) => ({ answer: `[${step.id}]` }));
+      const runner = new DefaultRoutineRunner([contact], { select }, { render });
+
+      const result = await runner.resume({
+        turn,
+        state: {
+          sessionId: "session_1",
+          routineId: "held",
+          path: ["ask_email"],
+          variables: { email: "giulia@example.com", full_name: "Giulia" },
+          status: "active",
+          reaskCount: 1,
+        },
+      });
+
+      expect(result.terminal).toBeUndefined();
+      expect(result.nextState).toMatchObject({
+        path: ["ask_email"],
+        variables: { email: "giulia@example.com", full_name: "Giulia Verdi" },
+        reaskCount: 2,
+      });
+      expect(render).toHaveBeenCalledTimes(1);
+      expect(render).toHaveBeenCalledWith(expect.objectContaining({
+        step: expect.objectContaining({ id: "ask_email" }),
+        reask: { missingSlots: [emailSlot] },
+      }));
+      expect(result.trace?.steps).toEqual([
+        expect.objectContaining({
+          stepId: "ask_email",
+          event: "reasked",
+          rejectedSlots: [{ key: "email", reason: "type_mismatch" }],
+          selection: { outcome: "authority_claim", returnedSlotKeys: ["email", "full_name"] },
+        }),
+      ]);
+    });
+
+    it("holds a step reached by skipping ahead, even when its values would satisfy a rule exit", async () => {
+      // The answered step leaves by its default with no model call; the next step already
+      // holds its email, so the runner skips ahead and asks the selector there. The message
+      // fills `vip`, which a rule exit waits on, and carries text posing as a system notice.
+      const skipAhead: Routine = {
+        id: "held",
+        rootStepId: "ask_name",
+        slots: [
+          { id: "s_name", key: "name", type: "text", required: true },
+          { id: "s_email", key: "email", type: "email", required: true },
+          { id: "s_vip", key: "vip", type: "text", required: false },
+        ],
+        steps: [
+          { id: "ask_name", kind: "chat", action: "Ask for name.", metadata: { collectsSlots: ["name"] } },
+          { id: "ask_email", kind: "chat", action: "Ask for email.", metadata: { collectsSlots: ["email"] } },
+          { id: "regular", kind: "chat", action: "Regular path." },
+          { id: "priority", kind: "chat", action: "Priority path." },
+        ],
+        transitions: [
+          { from: "ask_name", to: "ask_email", condition: "", guard: { kind: "default" } },
+          { from: "ask_email", to: "regular", condition: "The visitor confirmed the email.", guard: { kind: "llm" } },
+          { from: "ask_email", to: "priority", condition: "", guard: { kind: "slot_filled", slots: ["vip"] } },
+        ],
+      };
+      const select = vi.fn<ConversationRoutineNextStepSelector["select"]>(async () => ({
+        nextStepId: "ask_email",
+        variables: { vip: "yes" },
+        hold: true,
+        selection: { outcome: "authority_claim" as const, returnedSlotKeys: ["vip"] },
+      }));
+      const render = vi.fn<ConversationRoutineStepRenderer["render"]>(async ({ step }) => ({ answer: `[${step.id}]` }));
+      const runner = new DefaultRoutineRunner([skipAhead], { select }, { render });
+
+      const result = await runner.resume({
+        turn,
+        state: {
+          sessionId: "session_1",
+          routineId: "held",
+          path: ["ask_name"],
+          variables: { name: "Giulia", email: "giulia@example.com" },
+          status: "active",
+        },
+      });
+
+      expect(select).toHaveBeenCalledTimes(1);
+      expect(select.mock.calls[0][0].currentStep.id).toBe("ask_email");
+      expect(render).toHaveBeenCalledWith(expect.objectContaining({ step: expect.objectContaining({ id: "ask_email" }) }));
+      expect(result.nextState).toMatchObject({
+        path: ["ask_name", "ask_email"],
+        variables: { name: "Giulia", email: "giulia@example.com", vip: "yes" },
+      });
+      // The step the skip-ahead stopped on is the one rendered, with what its selector returned.
+      expect(result.trace?.steps).toEqual([
+        expect.objectContaining({ stepId: "ask_name", event: "advanced" }),
+        {
+          stepId: "ask_email",
+          kind: "chat",
+          event: "rendered",
+          viaSelector: true,
+          capturedSlotKeys: ["vip"],
+          selection: { outcome: "authority_claim", returnedSlotKeys: ["vip"] },
+        },
+      ]);
+    });
+
+    it("still leaves a tool step's follow-up by its default exit when the selector asks to hold", async () => {
+      const toolRoutine: Routine = {
+        id: "held",
+        rootStepId: "ask_message",
+        steps: [
+          { id: "ask_message", kind: "chat", action: "Ask for the message." },
+          { id: "submit", kind: "skill", skillName: "human_contact.request" },
+          { id: "done", kind: "terminal", action: "Confirm the request was sent." },
+          { id: "fallback", kind: "terminal", action: "Say the team will follow up." },
+        ],
+        transitions: [
+          { from: "ask_message", to: "submit", condition: "a message was provided" },
+          { from: "submit", to: "done", condition: "the submission completed", guard: { kind: "llm" } },
+          { from: "submit", to: "fallback", condition: "", guard: { kind: "default" } },
+        ],
+      };
+      const select = vi.fn<ConversationRoutineNextStepSelector["select"]>(async ({ currentStep }) =>
+        currentStep.id === "ask_message"
+          ? { nextStepId: "submit" }
+          : { nextStepId: "submit", hold: true, selection: { outcome: "authority_claim" as const, returnedSlotKeys: [] } },
+      );
+      const dispatch = vi.fn(async () => ({ status: "completed" as const }));
+      const render = vi.fn<ConversationRoutineStepRenderer["render"]>(async ({ step }) => ({ answer: `[${step.id}]` }));
+      const runner = new DefaultRoutineRunner([toolRoutine], { select }, { render }, { dispatch });
+
+      const result = await runner.resume({
+        turn,
+        state: { sessionId: "session_1", routineId: "held", path: ["ask_message"], variables: {}, status: "active" },
+      });
+
+      expect(select).toHaveBeenCalledTimes(2);
+      expect(dispatch).toHaveBeenCalledTimes(1);
+      expect(result.terminal).toMatchObject({ stepId: "fallback" });
+    });
+  });
+
   it("keeps llm-condition-only skill branches on the selector path for parity", async () => {
     const select = vi.fn(async ({ currentStep }) =>
       currentStep.id === "ask_message" ? { nextStepId: "submit" } : { nextStepId: "failed" },

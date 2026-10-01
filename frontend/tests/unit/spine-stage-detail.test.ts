@@ -199,6 +199,20 @@ describe('buildRoutineRunTrace', () => {
     expect(view?.steps[0].selection).toEqual({ outcome: 'unreadable', returnedSlotKeys: [] })
   })
 
+  it('carries a selection held because the message posed as a system notice', () => {
+    const view = buildRoutineRunTrace(
+      routineStage({
+        steps: [{
+          stepId: 'recap',
+          kind: 'chat',
+          event: 'reasked',
+          selection: { outcome: 'authority_claim', returnedSlotKeys: [] },
+        }],
+      }),
+    )
+    expect(view?.steps[0].selection).toEqual({ outcome: 'authority_claim', returnedSlotKeys: [] })
+  })
+
   it('drops the selection trace entirely when the outcome is not one of the allowed values', () => {
     const view = buildRoutineRunTrace(
       routineStage({

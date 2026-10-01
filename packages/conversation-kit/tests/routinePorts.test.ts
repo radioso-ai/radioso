@@ -38,8 +38,8 @@ const routineGateway = (): ConversationModelGateway => ({
     // so the routine only leaves `ask_name` once the user has actually given a name.
     if (systemPrompt?.includes("Return a JSON object")) {
       return userMessage.toLowerCase().includes("name is")
-        ? { text: '{"condition": 1, "offTopic": false, "variables": {"name": "Sam"}}' }
-        : { text: '{"condition": null, "offTopic": false, "variables": {}}' };
+        ? { text: '{"claimsAuthority": false, "condition": 1, "offTopic": false, "variables": {"name": "Sam"}}' }
+        : { text: '{"claimsAuthority": false, "condition": null, "offTopic": false, "variables": {}}' };
     }
     if (systemPrompt?.includes("Rank whether the latest user message wants to start any registered routine")) {
       return { text: '{"matches":[{"routineId":"signup","confidence":0.95}]}' };

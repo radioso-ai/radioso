@@ -15,7 +15,7 @@ import type {
   PendingClarification,
   RoutineActionRequest,
   RoutineAwaitingDecision,
-  RoutineOperatorNotice,
+  RoutineOperatorNoticeEffect,
   RoutineState,
   ProcessTurnResult,
   TurnContext,
@@ -293,7 +293,7 @@ export interface ChatTurnAssemblyRoutineResult {
   engineTrace?: ConversationTrace;
   actions?: RoutineActionRequest[];
   handoff?: RoutineHandoffEffect;
-  operatorNotice?: RoutineOperatorNotice;
+  operatorNotice?: RoutineOperatorNoticeEffect;
   routineStateTransition?: CapturedRoutineTransition | null;
   routineReporter?: ChatRoutineTurnReporter;
   pendingDecisionTransition?: ReturnType<typeof buildPendingDecisionTransition> | null;
@@ -307,7 +307,7 @@ export interface ChatTurnAssemblyRoutineResult {
 interface CoverageRoutineEffects {
   actions?: RoutineActionRequest[];
   handoff?: RoutineHandoffEffect;
-  operatorNotice?: RoutineOperatorNotice;
+  operatorNotice?: RoutineOperatorNoticeEffect;
   routineStateTransition?: CapturedRoutineTransition | null;
   routineReporter?: ChatRoutineTurnReporter;
   pendingDecisionTransition?: ReturnType<typeof buildPendingDecisionTransition> | null;

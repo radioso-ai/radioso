@@ -9,7 +9,7 @@ import type { PreparedSession } from "./chatSessionPreparer.js";
 import { COMPLETION_NOTIFY_ACTION_TYPE, HANDOFF_NOTIFY_ACTION_TYPE } from "./routines/contactRoutine.js";
 
 /** The routine-ending effects a turn reports, whichever path (routine, coverage, rendered) ran it. */
-export interface RoutineEndingTurnEffects {
+interface RoutineEndingTurnEffects {
   handoff?: RoutineHandoffEffect;
   operatorNotice?: RoutineOperatorNotice;
   actions?: RoutineActionRequest[];

@@ -1049,7 +1049,7 @@ export class ChatService {
         const routineEnding = routineEndingEffectsForTurn({
           session,
           workspaceId: input.workspaceId,
-          turn: { handoff: renderedTurn.handoff, actions },
+          turn: { handoff: renderedTurn.handoff, operatorNotice: renderedTurn.operatorNotice, actions },
         });
         const retrievalMissHandoff = retrievalMissHandoffForTurn({
           session,
@@ -1118,7 +1118,7 @@ export class ChatService {
       const routineEnding = routineEndingEffectsForTurn({
         session,
         workspaceId: input.workspaceId,
-        turn: { handoff: renderedTurn.handoff, actions },
+        turn: { handoff: renderedTurn.handoff, operatorNotice: renderedTurn.operatorNotice, actions },
       });
       const retrievalMissHandoff = retrievalMissHandoffForTurn({
         session,
@@ -1671,7 +1671,7 @@ export class ChatService {
       const routineEnding = routineEndingEffectsForTurn({
         session: preparedSession,
         workspaceId: input.workspaceId,
-        turn: { handoff: coverageRoutineEffects.handoff, actions },
+        turn: { handoff: coverageRoutineEffects.handoff, operatorNotice: coverageRoutineEffects.operatorNotice, actions },
       });
       const retrievalMissHandoff = retrievalMissHandoffForTurn({
         session: preparedSession,

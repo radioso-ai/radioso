@@ -262,6 +262,8 @@ describe("EmailWebhookOperatorNotificationSink", () => {
       reason: "routine_handoff",
       routine: null,
       collected: {},
+      subject: null,
+      intro: null,
       dashboardUrl: null,
       dashboardPath: null,
       requestId: "request_1",
@@ -329,6 +331,7 @@ describe("EmailWebhookOperatorNotificationSink", () => {
       collected: { program: "Yoga retreat", arrival_date: "2026-10-12", guests: 2 },
     });
     const notification = routineEndingNotificationFromAction({
+      kind: "handoff",
       payload: action.payload,
       fallback: { conversationId: "conv_1", workspaceId: "ws_1" },
       subject: { agentName: "Retreat desk", routineName: "Book accommodation" },
@@ -371,6 +374,81 @@ describe("EmailWebhookOperatorNotificationSink", () => {
       reason: "routine_handoff",
       routine: { id: "routine_1", name: "Book accommodation" },
       collected: { program: "Yoga retreat", arrival_date: "2026-10-12" },
+      subject: null,
+      intro: null,
+      dashboardUrl: null,
+      dashboardPath: null,
+      requestId: "request_1",
+    });
+  });
+
+  const completionNotification = {
+    ...handoffNotification,
+    kind: "completion" as const,
+    reason: "routine_completed",
+    agentName: "Retreat desk",
+    routine: { id: "routine_1", name: "Book accommodation" },
+    collected: { name: "Ada Lovelace", arrival_date: "2026-10-12" },
+    notice: { subject: "New booking: {{slot.name}}", intro: "Confirm {{slot.arrival_date}} with the guest." },
+    conversation: { channel: "embed", entryPageUrl: "https://ananda.example/stays" },
+  };
+
+  it("emails a completion notice in plain text with the authored subject and intro and every collected value", async () => {
+    const { mailer, sent } = recordingMailer();
+    const sink = new EmailWebhookOperatorNotificationSink(
+      mailer,
+      { resolve: async () => ({ emails: ["reception@ananda.example"], webhook: null }) },
+      undefined,
+      undefined,
+      { resolve: async () => "https://app.radioso.ai/w/support-abc/activity?itemId=conv_1" },
+    );
+
+    await sink.deliver(completionNotification, { ...context, idempotencyKey: "routine-action:conv_1:completion.notify" });
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0].subject).toBe("New booking: Ada Lovelace");
+    expect(sent[0].idempotencyKey).toBe("routine-action:conv_1:completion.notify:email:reception%40ananda.example");
+    expect(sent[0].text).toBe([
+      "A conversation completed a routine.",
+      "Confirm 2026-10-12 with the guest.",
+      "",
+      "Agent: Retreat desk (agent_1)",
+      "Routine: Book accommodation",
+      "Reason: routine_completed",
+      "Conversation: conv_1",
+      "Workspace: ws_1",
+      "Channel: embed",
+      "Entry page: https://ananda.example/stays",
+      "",
+      "Collected:",
+      "  Name: Ada Lovelace",
+      "  Arrival date: 2026-10-12",
+      "Open: https://app.radioso.ai/w/support-abc/activity?itemId=conv_1",
+    ].join("\n"));
+  });
+
+  it("posts a completion notice to the webhook with reason routine_completed and the rendered subject and intro", async () => {
+    const { mailer } = recordingMailer();
+    const { httpClient, requests } = recordingWebhookClient();
+    const sink = new EmailWebhookOperatorNotificationSink(
+      mailer,
+      { resolve: async () => ({ emails: [], webhook: { url: "https://hooks.example.com/notices" } }) },
+      undefined,
+      httpClient,
+    );
+
+    await sink.deliver(completionNotification, { ...context, idempotencyKey: "routine-action:conv_1:completion.notify" });
+
+    expect(requests[0].headers["Idempotency-Key"]).toBe("routine-action:conv_1:completion.notify:webhook");
+    expect(JSON.parse(requests[0].rawBody)).toEqual({
+      conversationId: "conv_1",
+      workspaceId: "ws_1",
+      agentId: "agent_1",
+      reason: "routine_completed",
+      routine: { id: "routine_1", name: "Book accommodation" },
+      collected: { name: "Ada Lovelace", arrival_date: "2026-10-12" },
+      subject: "New booking: Ada Lovelace",
+      intro: "Confirm 2026-10-12 with the guest.",
       dashboardUrl: null,
       dashboardPath: null,
       requestId: "request_1",

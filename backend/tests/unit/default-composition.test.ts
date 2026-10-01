@@ -14,6 +14,7 @@ import {
   CONTACT_SEND_ACTION_TYPE,
   DefaultTurnSelectionStrategy,
   HANDOFF_NOTIFY_ACTION_TYPE,
+  COMPLETION_NOTIFY_ACTION_TYPE,
   NoopActionDrainDispatcher,
   WEBHOOK_SEND_ACTION_TYPE,
 } from "../../src/modules/chat/composition.js";
@@ -97,6 +98,11 @@ describe("default application composition", () => {
     ]);
     expect(composition.actionCapabilityMap.has(HANDOFF_NOTIFY_ACTION_TYPE)).toBe(true);
     expect(composition.actionCapabilityMap.requiredCapabilitiesFor(HANDOFF_NOTIFY_ACTION_TYPE)).toEqual([
+      capabilityNames.humanContact.request,
+    ]);
+    // A completion's operator notice is queued with the turn the same way, under the same capability.
+    expect(composition.actionCapabilityMap.has(COMPLETION_NOTIFY_ACTION_TYPE)).toBe(true);
+    expect(composition.actionCapabilityMap.requiredCapabilitiesFor(COMPLETION_NOTIFY_ACTION_TYPE)).toEqual([
       capabilityNames.humanContact.request,
     ]);
     expect(composition.actionCapabilityMap.has(WEBHOOK_SEND_ACTION_TYPE)).toBe(true);

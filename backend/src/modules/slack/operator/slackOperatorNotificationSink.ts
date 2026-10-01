@@ -55,15 +55,17 @@ export class SlackOperatorNotificationSink implements OperatorNotificationSink {
     if (!binding?.escalationChannelId) {
       return;
     }
-    if (notification.kind === "handoff") {
+    if (notification.kind !== "approval") {
       // The formatter's headline is the email's opening sentence; the Slack post already
-      // says what the message is, so the section carries the detail lines only.
-      const [, ...detailLines] = formatRoutineEndingNotification(notification).lines;
+      // says what the message is, so the section carries the detail lines only. An authored
+      // subject is the line the routine's author chose to lead with, so it leads here too.
+      const formatted = formatRoutineEndingNotification(notification);
+      const [, ...detailLines] = formatted.lines;
       const message = buildOwnershipMessage({
         conversationId: notification.conversationId,
         workspaceId: notification.workspaceId,
         state: "ai_owned",
-        contextText: detailLines.join("\n").trim(),
+        contextText: [...(formatted.notice.subject ? [formatted.notice.subject] : []), ...detailLines].join("\n").trim(),
         dashboardUrl: await this.resolveDashboardUrl(notification),
       });
 
@@ -73,10 +75,10 @@ export class SlackOperatorNotificationSink implements OperatorNotificationSink {
         conversationId: notification.conversationId,
         idempotencyKey: slackPostIdempotencyKey({
           kind: "operator_notification",
-          // Scope to this handoff event, not the conversation: a conversation can re-enter human
+          // Scope to this notice, not the conversation: a conversation can re-enter human
           // ownership after a hand-back, and each re-escalation must post again. The per-action
-          // idempotency key still dedupes a retry of the same handoff.
-          sourceId: `handoff:${notification.conversationId}:${context.idempotencyKey ?? context.requestId}`,
+          // idempotency key still dedupes a retry of the same notice.
+          sourceId: `${notification.kind}:${notification.conversationId}:${context.idempotencyKey ?? context.requestId}`,
         }),
         payload: {
           installationId: installation.id,

@@ -17,7 +17,7 @@ describe("RoutineEndingNotifyActionHandler", () => {
   it("dispatches a handoff operator notification", async () => {
     const dispatch = vi.fn<OperatorNotificationDispatcher["dispatch"]>();
     dispatch.mockResolvedValue();
-    const handler = new RoutineEndingNotifyActionHandler({ dispatch });
+    const handler = new RoutineEndingNotifyActionHandler({ kind: "handoff", dispatcher: { dispatch } });
 
     await handler.handle({
       payload: {
@@ -49,7 +49,7 @@ describe("RoutineEndingNotifyActionHandler", () => {
     const dispatch = vi.fn<OperatorNotificationDispatcher["dispatch"]>();
     dispatch.mockResolvedValue();
     const resolve = vi.fn(async () => ({ agentName: "Retreat desk", routineName: "Book accommodation" }));
-    const handler = new RoutineEndingNotifyActionHandler({ dispatch }, { resolve });
+    const handler = new RoutineEndingNotifyActionHandler({ kind: "handoff", dispatcher: { dispatch }, subjects: { resolve } });
 
     await handler.handle({
       payload: {
@@ -71,7 +71,7 @@ describe("RoutineEndingNotifyActionHandler", () => {
       context,
     });
 
-    expect(resolve).toHaveBeenCalledWith({ workspaceId: "ws_1", agentId: "agent_1", routineId: "routine_1" });
+    expect(resolve).toHaveBeenCalledWith({ workspaceId: "ws_1", agentId: "agent_1", routineId: "routine_1", conversationId: "conv_1" });
     expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({
       kind: "handoff",
       agentName: "Retreat desk",
@@ -83,10 +83,11 @@ describe("RoutineEndingNotifyActionHandler", () => {
   it("dispatches with null names when the resolver finds nothing", async () => {
     const dispatch = vi.fn<OperatorNotificationDispatcher["dispatch"]>();
     dispatch.mockResolvedValue();
-    const handler = new RoutineEndingNotifyActionHandler(
-      { dispatch },
-      { resolve: async () => ({ agentName: null, routineName: null }) },
-    );
+    const handler = new RoutineEndingNotifyActionHandler({
+      kind: "handoff",
+      dispatcher: { dispatch },
+      subjects: { resolve: async () => ({ agentName: null, routineName: null }) },
+    });
 
     await handler.handle({
       payload: { conversationId: "conv_1", workspaceId: "ws_1", agentId: "agent_1", routineId: "routine_1" },
@@ -103,14 +104,14 @@ describe("RoutineEndingNotifyActionHandler", () => {
     const dispatch = vi.fn<OperatorNotificationDispatcher["dispatch"]>();
     dispatch.mockResolvedValue();
     const resolve = vi.fn(async () => ({ agentName: "Retreat desk", routineName: null }));
-    const handler = new RoutineEndingNotifyActionHandler({ dispatch }, { resolve });
+    const handler = new RoutineEndingNotifyActionHandler({ kind: "handoff", dispatcher: { dispatch }, subjects: { resolve } });
 
     await handler.handle({
       payload: { conversationId: "conv_1", workspaceId: "ws_1", agentId: "agent_1", reason: "retrieval_miss" },
       context,
     });
 
-    expect(resolve).toHaveBeenCalledWith({ workspaceId: "ws_1", agentId: "agent_1", routineId: null });
+    expect(resolve).toHaveBeenCalledWith({ workspaceId: "ws_1", agentId: "agent_1", routineId: null, conversationId: "conv_1" });
     const notification = dispatch.mock.calls[0][0];
     expect(notification).toEqual(expect.objectContaining({ reason: "retrieval_miss", agentName: "Retreat desk" }));
     expect(notification).not.toHaveProperty("routine");
@@ -120,7 +121,7 @@ describe("RoutineEndingNotifyActionHandler", () => {
   it("falls back to context and defaults for missing payload fields", async () => {
     const dispatch = vi.fn<OperatorNotificationDispatcher["dispatch"]>();
     dispatch.mockResolvedValue();
-    const handler = new RoutineEndingNotifyActionHandler({ dispatch });
+    const handler = new RoutineEndingNotifyActionHandler({ kind: "handoff", dispatcher: { dispatch } });
 
     await handler.handle({ payload: {}, context });
 
@@ -131,5 +132,43 @@ describe("RoutineEndingNotifyActionHandler", () => {
       agentId: "unknown",
       reason: "routine_handoff",
     }), expect.any(Object));
+  });
+
+  it("dispatches a completion notice with its authored text and the conversation facts, never touching ownership", async () => {
+    const dispatch = vi.fn<OperatorNotificationDispatcher["dispatch"]>();
+    dispatch.mockResolvedValue();
+    const resolve = vi.fn(async () => ({
+      agentName: "Retreat desk",
+      routineName: "Book accommodation",
+      conversation: { channel: "embed", entryPageUrl: "https://ananda.example/stays" },
+    }));
+    const handler = new RoutineEndingNotifyActionHandler({ kind: "completion", dispatcher: { dispatch }, subjects: { resolve } });
+
+    await handler.handle({
+      payload: {
+        conversationId: "conv_1",
+        workspaceId: "ws_1",
+        agentId: "agent_1",
+        reason: "routine_completed",
+        routineId: "routine_1",
+        stepId: "done",
+        collected: { name: "Ada" },
+        notice: { subject: "Booking: {{slot.name}}" },
+      },
+      context: { ...context, idempotencyKey: "routine-action:conv_1:completion.notify" },
+    });
+
+    expect(dispatch).toHaveBeenCalledWith({
+      kind: "completion",
+      workspaceId: "ws_1",
+      conversationId: "conv_1",
+      agentId: "agent_1",
+      reason: "routine_completed",
+      agentName: "Retreat desk",
+      routine: { id: "routine_1", name: "Book accommodation" },
+      collected: { name: "Ada" },
+      notice: { subject: "Booking: {{slot.name}}" },
+      conversation: { channel: "embed", entryPageUrl: "https://ananda.example/stays" },
+    }, expect.objectContaining({ idempotencyKey: "routine-action:conv_1:completion.notify" }));
   });
 });

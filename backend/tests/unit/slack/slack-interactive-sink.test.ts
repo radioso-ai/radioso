@@ -288,6 +288,39 @@ describe("SlackOperatorNotificationSink", () => {
     expect(payload.blocks[0]).toMatchObject({ type: "section", text: { text: expectedText } });
   });
 
+  it("posts a completion notice to the operator channel, led by the authored subject and intro", async () => {
+    const { sink, enqueued } = createSink();
+
+    await sink.deliver({
+      ...handoffNotification,
+      kind: "completion",
+      reason: "routine_completed",
+      routine: { id: "routine_1", name: "Book accommodation" },
+      collected: { name: "Ada Lovelace" },
+      notice: { subject: "New booking: {{slot.name}}", intro: "Confirm the room today." },
+    }, { requestId: "request_1", idempotencyKey: "routine-action:conv_1:completion.notify" });
+
+    expect(enqueued).toHaveLength(1);
+    expect(enqueued[0]).toMatchObject({
+      idempotencyKey: "slack:operator_notification:completion:conv_1:routine-action:conv_1:completion.notify",
+      payload: {
+        text: [
+          "New booking: Ada Lovelace",
+          "Confirm the room today.",
+          "",
+          "Agent: agent_1",
+          "Routine: Book accommodation",
+          "Reason: routine_completed",
+          "Conversation: conv_1",
+          "Workspace: ws_1",
+          "",
+          "Collected:",
+          "  Name: Ada Lovelace",
+        ].join("\n"),
+      },
+    });
+  });
+
   it("skips handoff Slack delivery when the workspace has no installation or operator channel", async () => {
     const missing = createSink({ installation: null });
     await missing.sink.deliver(handoffNotification, { requestId: "request_1" });

@@ -3,6 +3,7 @@ import {
   contactRoutineDefinition,
   CONTACT_SEND_ACTION_TYPE,
   HANDOFF_NOTIFY_ACTION_TYPE,
+  COMPLETION_NOTIFY_ACTION_TYPE,
   CONTACT_INTENT_SKILL_NAME,
   CONTACT_INTENT_NAME,
   ConfiguredContactDeliveryResolver,
@@ -167,20 +168,28 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
         );
       },
     });
-    context.registerActionHandler({
-      type: HANDOFF_NOTIFY_ACTION_TYPE,
-      requiredCapabilities: [capabilityNames.humanContact.request],
-      emittableByRoutines: true,
-      handler: ({ database, env, logger, mailService, assertPublicWebsiteUrl }) => {
-        return new RoutineEndingNotifyActionHandler(
-          buildOperatorNotificationDispatcher({ database, env, logger, mailService, assertPublicWebsiteUrl }),
-          new RepositoryRoutineEndingNotificationSubjectResolver(
+    // A routine ending's notice to operators: `handoff.notify` for a hand-off (which also moved
+    // the conversation to a person when the turn committed), `completion.notify` for a
+    // completion that carries a notice. One handler, told which kind it delivers.
+    for (const [type, kind] of [
+      [HANDOFF_NOTIFY_ACTION_TYPE, "handoff"],
+      [COMPLETION_NOTIFY_ACTION_TYPE, "completion"],
+    ] as const) {
+      context.registerActionHandler({
+        type,
+        requiredCapabilities: [capabilityNames.humanContact.request],
+        emittableByRoutines: true,
+        handler: ({ database, env, logger, mailService, assertPublicWebsiteUrl }) => new RoutineEndingNotifyActionHandler({
+          kind,
+          dispatcher: buildOperatorNotificationDispatcher({ database, env, logger, mailService, assertPublicWebsiteUrl }),
+          subjects: new RepositoryRoutineEndingNotificationSubjectResolver(
             new AgentRepository(database.kysely),
             new RoutineDefinitionRepository(database.kysely),
+            new ConversationRepository(database.kysely),
           ),
-        );
-      },
-    });
+        }),
+      });
+    }
     context.registerActionHandler({
       type: APPROVAL_REQUEST_ACTION_TYPE,
       requiredCapabilities: [capabilityNames.humanContact.request],

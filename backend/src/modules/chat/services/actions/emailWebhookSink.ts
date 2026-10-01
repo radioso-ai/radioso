@@ -4,6 +4,7 @@ import {
   type OperatorNotification,
   type OperatorNotificationContext,
   type OperatorNotificationSink,
+  type RoutineEndingOperatorNotification,
 } from "../../../operatorNotifications/public.js";
 import {
   resolveConversationLink,
@@ -30,6 +31,19 @@ const deprecatedDashboardPath = (dashboardUrl: string | null): string | null => 
   } catch {
     return null;
   }
+};
+
+/** The action type each notification kind is queued as, for the no-recipient log line. */
+const ACTION_TYPE_BY_KIND: Record<OperatorNotification["kind"], string> = {
+  approval: "approval.request",
+  handoff: "handoff.notify",
+  completion: "completion.notify",
+};
+
+const MISSING_WEBHOOK_CLIENT_MESSAGE_BY_KIND: Record<OperatorNotification["kind"], string> = {
+  approval: "Approval request webhook delivery is not configured",
+  handoff: "Handoff webhook delivery is not configured",
+  completion: "Completion notice webhook delivery is not configured",
 };
 
 /**
@@ -62,7 +76,7 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
     };
     const target = await this.recipients.resolve(recipientContext);
     if (target.emails.length === 0 && !target.webhook) {
-      const actionType = notification.kind === "approval" ? "approval.request" : "handoff.notify";
+      const actionType = ACTION_TYPE_BY_KIND[notification.kind];
       this.logger?.warn(
         { workspaceId: context.workspaceId ?? notification.workspaceId, conversationId: context.conversationId ?? notification.conversationId },
         `${actionType}: no recipient configured for workspace; skipping`,
@@ -100,7 +114,7 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
             requestId: context.requestId,
           },
         }
-      : this.handoffDelivery(notification, context, openLine, links);
+      : this.routineEndingDelivery(notification, context, openLine, links);
 
     await Promise.all([
       ...target.emails.map((to) =>
@@ -114,15 +128,18 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
         webhook: target.webhook,
         payload: delivery.webhookPayload,
         idempotencyKey: `${baseIdempotencyKey}:webhook`,
-        missingClientMessage: notification.kind === "approval"
-          ? "Approval request webhook delivery is not configured"
-          : "Handoff webhook delivery is not configured",
+        missingClientMessage: MISSING_WEBHOOK_CLIENT_MESSAGE_BY_KIND[notification.kind],
       }) : Promise.resolve(),
     ]);
   }
 
-  private handoffDelivery(
-    notification: Extract<OperatorNotification, { kind: "handoff" }>,
+  /**
+   * A hand-off and a completion notice share one delivery: the kind only picks the default text
+   * (inside the formatter) and the `reason` the payload already carries. The email stays plain
+   * text, so collected values reach it unescaped and never as markup.
+   */
+  private routineEndingDelivery(
+    notification: RoutineEndingOperatorNotification,
     context: OperatorNotificationContext,
     openLine: string[],
     links: { dashboardUrl: string | null; dashboardPath: string | null },
@@ -138,6 +155,8 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
         reason: notification.reason,
         routine: notification.routine ?? null,
         collected: notification.collected ?? {},
+        subject: formatted.notice.subject,
+        intro: formatted.notice.intro,
         ...links,
         requestId: context.requestId,
       },

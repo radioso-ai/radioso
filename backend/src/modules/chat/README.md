@@ -279,6 +279,17 @@ imports from `services/`.
   window behind its `activityCursor`. The public presenters strip both.
   `PostgresAssistantTurnPersistence` records a turn's `handoff_requested` event in
   the turn's transaction when the handoff changed ownership.
+- Routine endings: `services/routineEndingEffects.ts` is the one place every chat
+  path (routine, coverage, rendered; streaming or not) turns the engine's ending
+  report into effects. `ProcessTurnResult.handoff` becomes the ownership change;
+  `ProcessTurnResult.operatorNotice` queues `handoff.notify` for a hand-off and
+  `completion.notify` for a completion with an operator notice, with the authored
+  `notice` text on the payload. A completion notice never changes ownership and
+  creates no Inbox item. Both action types dispatch through one
+  `RoutineEndingNotifyActionHandler` (registered per kind in
+  `app/composition/builtIn/contactRoutineModule.ts`), which resolves the agent and
+  routine names and the conversation's stored channel and entry page at delivery,
+  and hands the notice to the `operatorNotifications` sinks.
   `includeTurnFailureDebug` attaches a `turnFailure` fact (failed or superseded,
   never both classified as the same) to the user message of a turn that never
   produced an assistant reply — the read-side counterpart to
@@ -390,12 +401,14 @@ imports from `services/`.
   `audit_events` the same way a live turn does — never sets it either, so its
   trace reports only which slots were filled (`filledSlotKeys`,
   `capturedSlotKeys`), exactly as before slot values existed at all. A Test Chat
-  turn that ends on a routine hand-off terminal — whose `handoff.notify` action
-  a replayed turn never dispatches — carries the hand-off message content
-  (subject and body) that terminal's operator notification would send, built
-  through the same `operatorNotifications` text formatter the real dispatch uses
-  (`WorkbenchReplayRunner.handoffPreviewFor`); live delivery additionally appends
-  the conversation link, which a replayed turn has none of.
+  turn that ends on a routine ending that notifies operators — a hand-off, or a
+  completion with an operator notice, whose `handoff.notify` / `completion.notify`
+  action a replayed turn never dispatches — carries the notice content (`kind`,
+  subject, and body, authored text included) that the operator notification would
+  send, as the trace's `handoffPreview`, built through the same `operatorNotifications`
+  text formatter the real dispatch uses (`WorkbenchReplayRunner.operatorNoticePreviewFor`);
+  live delivery additionally appends the conversation link, which a replayed turn
+  has none of.
 - Fused turn planning: `turnPlanService.ts` (one `turn_planning` call on the
   agent's chat model + prompt `backend/prompts/chat/turn-planning.md`, strict
   parse and semantic validation) and `turnPlanCoordinator.ts` (gate, eligibility bounds from

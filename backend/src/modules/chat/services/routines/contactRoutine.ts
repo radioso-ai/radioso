@@ -6,6 +6,12 @@ export const CONTACT_SEND_ACTION_TYPE = "contact.send";
 /** The action type routine handoff terminals emit for operator notification. */
 export const HANDOFF_NOTIFY_ACTION_TYPE = "handoff.notify";
 
+/**
+ * The action type a routine completion with an operator notice emits. Same payload as
+ * `handoff.notify`; the conversation stays with the agent.
+ */
+export const COMPLETION_NOTIFY_ACTION_TYPE = "completion.notify";
+
 /** The routine id. */
 const CONTACT_ROUTINE_ID = "contact.request";
 

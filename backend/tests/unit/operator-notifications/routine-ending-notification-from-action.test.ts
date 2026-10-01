@@ -7,6 +7,7 @@ const fallback = { conversationId: "conv_1", workspaceId: "ws_1" };
 describe("routineEndingNotificationFromAction", () => {
   it("builds a handoff notification from a handoff.notify action payload", () => {
     const notification = routineEndingNotificationFromAction({
+      kind: "handoff",
       payload: {
         conversationId: "conv_1",
         workspaceId: "ws_1",
@@ -33,6 +34,7 @@ describe("routineEndingNotificationFromAction", () => {
 
   it("omits routine and collected when the payload carries neither (a retrieval-miss handoff)", () => {
     const notification = routineEndingNotificationFromAction({
+      kind: "handoff",
       payload: { conversationId: "conv_1", workspaceId: "ws_1", agentId: "agent_1", reason: "retrieval_miss" },
       fallback,
     });
@@ -47,7 +49,7 @@ describe("routineEndingNotificationFromAction", () => {
   });
 
   it("falls back to the given conversation/workspace and defaults for missing payload fields", () => {
-    const notification = routineEndingNotificationFromAction({ payload: {}, fallback });
+    const notification = routineEndingNotificationFromAction({ kind: "handoff", payload: {}, fallback });
 
     expect(notification).toEqual({
       kind: "handoff",
@@ -60,6 +62,7 @@ describe("routineEndingNotificationFromAction", () => {
 
   it("reports null names when no subject is given, matching an unresolved DB lookup", () => {
     const notification = routineEndingNotificationFromAction({
+      kind: "handoff",
       payload: { conversationId: "conv_1", workspaceId: "ws_1", agentId: "agent_1", routineId: "routine_1" },
       fallback,
       subject: { agentName: null, routineName: null },
@@ -69,5 +72,38 @@ describe("routineEndingNotificationFromAction", () => {
       agentName: null,
       routine: { id: "routine_1", name: null },
     }));
+  });
+
+  it("builds a completion notification from a completion.notify payload, with its notice and conversation facts", () => {
+    const notification = routineEndingNotificationFromAction({
+      kind: "completion",
+      payload: {
+        conversationId: "conv_1",
+        workspaceId: "ws_1",
+        agentId: "agent_1",
+        routineId: "routine_1",
+        collected: { name: "Ada" },
+        notice: { subject: "Booking: {{slot.name}}", intro: 7 },
+      },
+      fallback,
+      subject: {
+        agentName: "Retreat desk",
+        routineName: "Book accommodation",
+        conversation: { channel: "embed", entryPageUrl: null },
+      },
+    });
+
+    expect(notification).toEqual({
+      kind: "completion",
+      workspaceId: "ws_1",
+      conversationId: "conv_1",
+      agentId: "agent_1",
+      reason: "routine_completed",
+      agentName: "Retreat desk",
+      routine: { id: "routine_1", name: "Book accommodation" },
+      collected: { name: "Ada" },
+      notice: { subject: "Booking: {{slot.name}}" },
+      conversation: { channel: "embed", entryPageUrl: null },
+    });
   });
 });

@@ -22,6 +22,7 @@ describe("formatRoutineEndingNotification", () => {
         "Conversation: conv_1",
         "Workspace: ws_1",
       ],
+      notice: { subject: null, intro: null },
     });
   });
 
@@ -68,5 +69,88 @@ describe("formatRoutineEndingNotification", () => {
     expect(formatted.subject).toBe("Conversation needs a human");
     expect(formatted.lines).not.toContain("Collected:");
     expect(formatted.lines.some((line) => line.startsWith("Routine:"))).toBe(false);
+  });
+
+  const booking = {
+    ...base,
+    agentName: "Retreat desk",
+    routine: { id: "routine_1", name: "Book accommodation" },
+    collected: { name: "Ada Lovelace", arrival: "2026-10-12", guests: 2 },
+  };
+
+  it("uses the completion defaults for a completion notice", () => {
+    const formatted = formatRoutineEndingNotification({ ...booking, kind: "completion", reason: "routine_completed" });
+
+    expect(formatted.subject).toBe("Book accommodation: completed");
+    expect(formatted.lines[0]).toBe("A conversation completed a routine.");
+    expect(formatted.lines).toContain("Reason: routine_completed");
+    expect(formatRoutineEndingNotification({ ...base, kind: "completion", reason: "routine_completed" }).subject).toBe("Routine completed");
+  });
+
+  it("replaces the default subject with the authored one and puts the authored intro right after the headline", () => {
+    const formatted = formatRoutineEndingNotification({
+      ...booking,
+      kind: "completion",
+      reason: "routine_completed",
+      notice: { subject: "New booking: {{slot.name}}, {{ slot.guests }} guests", intro: "Please confirm {{slot.arrival}} with {{slot.name}}." },
+    });
+
+    expect(formatted.subject).toBe("New booking: Ada Lovelace, 2 guests");
+    expect(formatted.lines.slice(0, 3)).toEqual([
+      "A conversation completed a routine.",
+      "Please confirm 2026-10-12 with Ada Lovelace.",
+      "",
+    ]);
+    expect(formatted.notice).toEqual({
+      subject: "New booking: Ada Lovelace, 2 guests",
+      intro: "Please confirm 2026-10-12 with Ada Lovelace.",
+    });
+  });
+
+  it("renders a dash for a value the routine did not collect, so the notice still goes out", () => {
+    const formatted = formatRoutineEndingNotification({
+      ...booking,
+      collected: { name: "Ada Lovelace", arrival: "   " },
+      notice: { subject: "{{slot.name}} arriving {{slot.arrival}}", intro: "Room: {{slot.room}}" },
+    });
+
+    expect(formatted.subject).toBe("Ada Lovelace arriving —");
+    expect(formatted.notice.intro).toBe("Room: —");
+  });
+
+  it("keeps the subject on one line whatever a collected value contains", () => {
+    const formatted = formatRoutineEndingNotification({
+      ...booking,
+      collected: { name: "Ada\r\nBcc: attacker@example.com" },
+      notice: { subject: "Booking: {{slot.name}}" },
+    });
+
+    expect(formatted.subject).toBe("Booking: Ada Bcc: attacker@example.com");
+    expect(formatted.subject).not.toMatch(/[\r\n]/u);
+  });
+
+  it("always appends every collected value in declaration order, whatever the template shows", () => {
+    const formatted = formatRoutineEndingNotification({
+      ...booking,
+      notice: { subject: "Booking", intro: "See below." },
+    });
+
+    expect(formatted.lines.slice(-4)).toEqual([
+      "Collected:",
+      "  Name: Ada Lovelace",
+      "  Arrival: 2026-10-12",
+      "  Guests: 2",
+    ]);
+  });
+
+  it("adds the stored channel and entry page as context lines when known", () => {
+    const formatted = formatRoutineEndingNotification({
+      ...booking,
+      conversation: { channel: "embed", entryPageUrl: "https://ananda.example/stays" },
+    });
+
+    expect(formatted.lines).toEqual(expect.arrayContaining(["Channel: embed", "Entry page: https://ananda.example/stays"]));
+    expect(formatRoutineEndingNotification({ ...booking, conversation: { channel: null, entryPageUrl: null } }).lines
+      .some((line) => line.startsWith("Channel:") || line.startsWith("Entry page:"))).toBe(false);
   });
 });

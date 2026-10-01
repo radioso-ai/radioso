@@ -54,7 +54,7 @@ export const turnTraceEnvelopeSchema = z.object({
    * `Open: <conversation URL>` line this preview omits. Absent on a customer
    * conversation's `turn_trace`, which sends for real.
    */
-  handoffPreview: z.object({ subject: z.string(), lines: z.array(z.string()) }).optional(),
+  handoffPreview: z.object({ kind: z.enum(["handoff", "completion"]), subject: z.string(), lines: z.array(z.string()) }).optional(),
 });
 
 const MAX_MESSAGES = 20;

@@ -421,6 +421,22 @@ describe("Test Chat tools through the operator MCP catalog", () => {
 
     expect(output.trace.turnTrace.spine.stages).toHaveLength(3);
   });
+
+  it("reads a hand-off preview stored before previews named their kind", async () => {
+    // The shape a Test Chat hand-off turn stored before completion notices existed.
+    const handoffPreview = { subject: "Book accommodation: needs a human", lines: ["A conversation needs a human operator."] };
+    const readTurn = vi.fn(async () => ({
+      testExecutionId: EXECUTION_ID,
+      sideId: SIDE_ID,
+      revision: candidateRevision,
+      turn: turn({ turnTrace: { ...envelope(), handoffPreview } }),
+    }));
+
+    const output = await overMcp(port({ readTurn }), "test_chat_turn_trace", { testExecutionId: EXECUTION_ID, turnId: TURN_ID });
+
+    expect(output.trace.turnTrace).not.toBeNull();
+    expect(output.trace.turnTrace.handoffPreview).toEqual(handoffPreview);
+  });
 });
 
 const revision = (overrides: Record<string, unknown> = {}) => ({

@@ -9,6 +9,20 @@ Cut a release with the **Cut Release** workflow. It reads the commits since the 
 tag, writes the entry above this line, tags the commit, and publishes a GitHub Release. A
 deploy then ships a release that already exists; it never mints one.
 
+## [1.12.0] - 2026-10-01
+
+### Added
+
+- record who handled and closed each conversation ([#1381](https://github.com/radioso-ai/radioso/pull/1381))
+
+### Database migrations
+
+This release adds 1 migration. They run at service startup, so deploy one stack at a time; overlapping deploys contend on the same DDL lock and stall until one gives up.
+
+- `205_conversation_activity.sql`
+
+[1.12.0]: https://github.com/radioso-ai/radioso/compare/v1.11.1...v1.12.0
+
 ## [1.11.1] - 2026-10-01
 
 ### Fixed

@@ -142,7 +142,7 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
     await client.query(`SET search_path TO ${schema}, public`);
     database = createClientBackedDatabase(client);
     await applyTestMigration(database, "104_pending_decisions.sql");
-    await applyTestMigration(database, "204_conversation_activity.sql");
+    await applyTestMigration(database, "205_conversation_activity.sql");
     await database.execute(
       `INSERT INTO users (id, email, password_hash) VALUES ($1, $2, 'hash')`,
       [deciderUserId, `decider-${deciderUserId}@example.com`],

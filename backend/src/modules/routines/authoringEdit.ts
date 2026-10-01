@@ -247,6 +247,7 @@ export const projectRoutineForReview = (routine: RoutineDefinitionDraftAuthoring
   terminals: Object.fromEntries(uniquelyKeyed(routine.terminals.map((terminal) => [terminal.stableStepId, {
     kind: terminal.kind,
     instruction: terminal.instruction ?? null,
+    operatorNotice: terminal.operatorNotice ?? null,
     ordinal: terminal.ordinal,
   }]))),
   completionExport: routine.completionExport ?? null,

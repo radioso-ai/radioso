@@ -549,6 +549,41 @@ describe("validateRoutineDefinition declared-but-unused slots", () => {
   });
 });
 
+describe("validateRoutineDefinition operator notice references", () => {
+  const bookingRoutine = (operatorNotice: RoutineDefinition["terminals"][number]["operatorNotice"]): RoutineDefinition => ({
+    ...definitionWithTool(null),
+    slots: [{ stableSlotId: "slot_name", key: "name", type: "text", required: true, description: null, ordinal: 0 }],
+    steps: [
+      { stableStepId: "lookup", kind: "chat", instruction: "Ask for {{slot.name}}.", toolRef: null, ordinal: 0, metadata: {} },
+    ],
+    terminals: [
+      { stableStepId: "done", kind: "complete", instruction: "Done.", ...(operatorNotice ? { operatorNotice } : {}), ordinal: 0 },
+    ],
+  });
+
+  it("accepts notice text that references declared slots", () => {
+    const result = validateRoutineDefinition(bookingRoutine({ subject: "Booking: {{slot.name}}", intro: "Guest {{ slot.name }} booked." }));
+
+    expect(result.diagnostics).toEqual([]);
+  });
+
+  it("flags an undeclared slot in the subject or intro at the notice field it appears in", () => {
+    const result = validateRoutineDefinition(bookingRoutine({ subject: "Booking: {{slot.room}}", intro: "Arrives {{slot.arrival}}." }));
+
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "referenced_undeclared_slot", location: "step:done.operatorNotice.subject" }),
+      expect.objectContaining({ code: "referenced_undeclared_slot", location: "step:done.operatorNotice.intro" }),
+    ]));
+  });
+
+  it("treats a malformed token as plain text, the way instruction validation does", () => {
+    const result = validateRoutineDefinition(bookingRoutine({ subject: "Booking {{slot.}} {{slot name}}", intro: "{{slot.name" }));
+
+    expect(result.diagnostics).toEqual([]);
+  });
+});
+
 describe("toSafeRoutineValidationDiagnostic", () => {
   it("names the rule and the slot for a declared-but-unused slot, not a generic fallback", () => {
     // Issue #1371: the operator got a bare `invalid_arguments` with no way to tell which rule

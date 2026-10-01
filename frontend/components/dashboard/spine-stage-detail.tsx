@@ -986,6 +986,13 @@ const ROUTINE_EVENT_DESCRIPTIONS: Record<string, string> = {
   reask_limit_reached: 'Asked too many times in a row, so the reply asked differently.',
 }
 
+// A skipped step that captured values read them from this turn's message rather than
+// already holding them — the first turn reads the opening message for it (#1370).
+const routineEventDescription = (step: RoutineTraceStepView): string | undefined =>
+  step.event === 'fast_forwarded' && step.capturedSlotKeys.length > 0
+    ? 'Skipped without asking — this turn’s message gave what this step asks for.'
+    : ROUTINE_EVENT_DESCRIPTIONS[step.event]
+
 const ROUTINE_SELECTION_OUTCOME_LABELS: Record<RoutineStepSelectionOutcome, string> = {
   transition: 'Chose an exit',
   stay: 'Stayed on step',
@@ -1067,8 +1074,8 @@ function RoutineStepsTimeline({ trace }: { trace: RoutineRunTraceView }) {
                   ) : null}
                 </div>
               ) : null}
-              {ROUTINE_EVENT_DESCRIPTIONS[step.event] ? (
-                <p className="text-[11px] text-muted-foreground">{ROUTINE_EVENT_DESCRIPTIONS[step.event]}</p>
+              {routineEventDescription(step) ? (
+                <p className="text-[11px] text-muted-foreground">{routineEventDescription(step)}</p>
               ) : null}
               {step.skillName ? (
                 <p className="text-[11px] text-muted-foreground">

@@ -118,7 +118,12 @@ running both a selector pass and a step reply records both.
 
 On the routine's first turn the selector always reads the message, even when the
 activator already filled the first step's slot, so the rest of an opening message
-("the Kriya retreat, 11 to 14 November") is kept.
+("the Kriya retreat, 11 to 14 November") is kept. When fast-forwarding stops at a
+step that still lacks a value, that step also reads the opening message once
+before it is asked, so dates given along with the program are kept. It moves on
+only if that reading fills the step; otherwise
+the step is asked as usual. This happens at most once per step, and only on the
+first turn, since a later reply answers the step shown on screen.
 
 Two mechanisms make sure a step that *asks* for a slot still captures it even
 when its branches are deterministic.

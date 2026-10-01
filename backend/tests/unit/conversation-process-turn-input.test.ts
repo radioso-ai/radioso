@@ -772,6 +772,14 @@ describe("createChatProcessTurnInput", () => {
     expect(createChatProcessTurnInput({ session, dispatcher, selector, composer }).routineYield).toEqual(routineYield);
   });
 
+  it("gives the turn's routine passes no way to overwrite the yield the answer leads back to (#1377)", () => {
+    // The coverage-gated pass that runs after the evidence reuses this input. Only the
+    // pre-evidence attempt (`createAttemptRoutineInput`) records a yield on the session.
+    const input = createChatProcessTurnInput({ session: preparedSession(), dispatcher, selector, composer });
+
+    expect(input).not.toHaveProperty("routineYieldSink");
+  });
+
   it("fails closed when a caller tries to use the placeholder model gateway", async () => {
     const input = createChatProcessTurnInput({
       session: preparedSession(),

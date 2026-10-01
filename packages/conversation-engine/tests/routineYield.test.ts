@@ -230,4 +230,58 @@ describe("routine yield", () => {
 
     expect(stageKinds(result.trace.stages)).not.toContain("routine_yield");
   });
+
+  it("never reports a yield from the routine pass that runs after the evidence is in", async () => {
+    // A host that passes its yield sink with the turn input (ProcessTurnInput is a superset
+    // of AttemptRoutineInput) must hear only from the pre-evidence pass: a routine started
+    // after the evidence never left the visitor partway through a step.
+    const yielded = vi.fn();
+    const coverageRunner: ConversationRoutineRunner = {
+      resume: vi.fn(async (): Promise<ConversationRoutineResumeResult> => ({
+        yielded: true,
+        response: { answer: "" },
+        nextState: null,
+        pendingStep: { stepId: "ask_phone", instruction: "Ask for a phone number.", missingSlotKeys: ["phone"] },
+      })),
+    };
+    const input = {
+      ...createInput({
+        routineRunner: coverageRunner,
+        routineStore: {
+          loadActive: vi.fn(async () => null),
+          save: vi.fn(async () => {}),
+          clear: vi.fn(async () => {}),
+        },
+        coverageRoutineActivator: {
+          evaluateCandidates: vi.fn(() => [
+            { routineId: "callback", decision: "candidate" as const, reasonCode: "coverage_criteria_candidate" },
+          ]),
+          activate: vi.fn(async () => ({ kind: "activate" as const, routineId: "callback" })),
+        },
+        composer: {
+          async compose({ coverageVerdict }) {
+            await coverageVerdict?.report({
+              assessment: {
+                availability: "assessed",
+                coverage: "unanswered",
+                reason: "insufficient_evidence",
+                schemaVersion: 1,
+                producer: "answer_head",
+              },
+            });
+            return { answer: "I can't confirm parking." };
+          },
+        },
+      }),
+      routineYieldSink: { yielded },
+    };
+
+    const result = await new DefaultConversationEngine().processTurn(input);
+
+    expect(input.coverageRoutineActivator?.activate).toHaveBeenCalledOnce();
+    expect(coverageRunner.resume).toHaveBeenCalledOnce();
+    expect(yielded).not.toHaveBeenCalled();
+    expect(stageKinds(result.trace.stages)).not.toContain("routine_yield");
+    expect(result.response.answer).toBe("I can't confirm parking.");
+  });
 });

@@ -642,7 +642,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       defaultOnDecline?: boolean;
       /** Extract even when the step's slots are filled: nothing has read this message yet. */
       alwaysExtract?: boolean;
-      /** The step the visitor answered, which a hold keeps from leaving this turn. */
+      /** The step the visitor answered: a rejected value for one of its own slots holds it this turn. */
       answeredStep?: boolean;
     };
     const selectNextRaw = async (input: SelectNextInput): Promise<RoutineNextStepDecision> => {
@@ -751,23 +751,25 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         return decision;
       }
       const landed: RoutineNextStepDecision = decision.yieldTurn ? { nextStepId: selectInput.step.id } : decision;
-      // The hold: the step the visitor answered stays and is asked again, whichever exit —
-      // AI-decides, rule, or default — would otherwise have fired. The values that did fit
-      // are kept. It has two reasons:
-      // - a rejected value (#1374): the visitor gave a value for one of this step's own slots
-      //   that does not fit its type — to the selector this turn, or to the activator in the
-      //   opening message with no valid replacement since — so the step is not answered;
+      // The hold: the chat step stays and is asked again, whichever exit — AI-decides, rule,
+      // or default — would otherwise have fired. The values that did fit are kept. It has two
+      // reasons:
       // - an authority claim (#1375): the selector asked to hold the step because the message
-      //   carries text posing as a system, operator, or assistant message.
-      // Only the step the visitor answered is held; a tool step's follow-up still leaves by
-      // its default after a decline, since holding the tool step could run its tool again.
-      if (!selectInput.answeredStep) {
+      //   carries text posing as a system, operator, or assistant message. It holds any chat
+      //   step the selector read the message for: the one the visitor answered, or one reached
+      //   by skipping ahead;
+      // - a rejected value (#1374): the visitor gave a value for one of the answered step's own
+      //   slots that does not fit its type — to the selector this turn, or to the activator in
+      //   the opening message with no valid replacement since — so the step is not answered.
+      //   A rejected value for another step's slot is dropped and holds nothing.
+      // A tool step's follow-up still leaves by its default after a decline, since holding
+      // the tool step could run its tool again.
+      if (selectInput.defaultOnDecline) {
         return landed;
       }
-      const rejected = [
-        ...lastRejectedSlots,
-        ...unreplacedStartRejections({ ...selectInput.variables, ...(landed.variables ?? {}) }),
-      ];
+      const rejected = selectInput.answeredStep
+        ? [...lastRejectedSlots, ...unreplacedStartRejections({ ...selectInput.variables, ...(landed.variables ?? {}) })]
+        : [];
       const hold = lastSelectorHold || rejectedCollectedKeys(selectInput.step, rejected).size > 0;
       return hold ? { ...landed, nextStepId: selectInput.step.id, hold: true } : landed;
     };

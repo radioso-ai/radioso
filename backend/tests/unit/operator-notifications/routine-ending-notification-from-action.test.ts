@@ -32,6 +32,47 @@ describe("routineEndingNotificationFromAction", () => {
     });
   });
 
+  // jsonb reorders an object's keys (shorter keys first), so a queued payload's `collected`
+  // reads back out of the order the routine declares its slots in.
+  const storedCollected = { nights: 3, guest_name: "Ada", arrival_date: "2026-10-12" };
+
+  it("lists the collected values in the routine's declared slot order, not the order they were stored in", () => {
+    const notification = routineEndingNotificationFromAction({
+      kind: "completion",
+      payload: { agentId: "agent_1", routineId: "routine_1", collected: storedCollected },
+      fallback,
+      subject: {
+        agentName: null,
+        routineName: "Book accommodation",
+        routineSlotKeys: ["guest_name", "arrival_date", "room_type", "nights"],
+      },
+    });
+
+    expect(Object.keys(notification.collected ?? {})).toEqual(["guest_name", "arrival_date", "nights"]);
+  });
+
+  it("keeps a value the routine no longer declares, after the declared ones", () => {
+    const notification = routineEndingNotificationFromAction({
+      kind: "completion",
+      payload: { agentId: "agent_1", routineId: "routine_1", collected: storedCollected },
+      fallback,
+      subject: { agentName: null, routineName: "Book accommodation", routineSlotKeys: ["arrival_date", "guest_name"] },
+    });
+
+    expect(Object.keys(notification.collected ?? {})).toEqual(["arrival_date", "guest_name", "nights"]);
+  });
+
+  it("keeps the stored order when the routine no longer exists", () => {
+    const notification = routineEndingNotificationFromAction({
+      kind: "handoff",
+      payload: { agentId: "agent_1", routineId: "routine_1", collected: storedCollected },
+      fallback,
+      subject: { agentName: null, routineName: null },
+    });
+
+    expect(Object.keys(notification.collected ?? {})).toEqual(["nights", "guest_name", "arrival_date"]);
+  });
+
   it("omits routine and collected when the payload carries neither (a retrieval-miss handoff)", () => {
     const notification = routineEndingNotificationFromAction({
       kind: "handoff",

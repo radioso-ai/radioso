@@ -400,7 +400,11 @@ routine trace stage records `notifiesOperators` beside `handoff` and
 `terminalKind`. The engine reports both effects and decides neither: the host
 moves ownership for a `handoff` and queues the notice as a `handoff.notify` or
 `completion.notify` action in the same transaction as the turn, and the action
-worker delivers it by email, webhook, and Slack. The notice text is rendered at
+worker delivers it by email, webhook, and Slack. A `handoff` reported without an
+`operatorNotice` still queues the default `handoff.notify`, so every hand-off
+notifies whichever runner reported it. At delivery the handler loads the routine
+again for its name and declared slot order, because the queued payload is jsonb
+and keeps no key order. The notice text is rendered at
 delivery and never logged; it holds visitor data.
 
 Each routine turn records a step-by-step trace that hangs off the turn's

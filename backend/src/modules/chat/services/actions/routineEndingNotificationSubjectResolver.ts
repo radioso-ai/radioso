@@ -1,12 +1,12 @@
-import type { HandoffNotificationSubjectResolver } from "./handoffNotifyActionHandler.js";
+import type { RoutineEndingNotificationSubjectResolver } from "./routineEndingNotifyActionHandler.js";
 
 /** Narrow agent lookup for the notice's display name (an `AgentRepository` satisfies it). */
-interface HandoffNotificationAgentLookup {
+interface RoutineEndingNotificationAgentLookup {
   findByIdAndWorkspaceId(agentId: string, workspaceId: string): Promise<{ name: string } | null>;
 }
 
 /** Narrow routine lookup for the notice's display name (a `RoutineDefinitionRepository` satisfies it). */
-interface HandoffNotificationRoutineLookup {
+interface RoutineEndingNotificationRoutineLookup {
   findById(agentId: string, id: string): Promise<{ name: string } | null>;
 }
 
@@ -14,10 +14,10 @@ interface HandoffNotificationRoutineLookup {
  * Looks the agent and routine up by the ids the handoff payload carries. The compiled routine
  * id the runtime reports is the routine definition id, so no translation is needed.
  */
-export class RepositoryHandoffNotificationSubjectResolver implements HandoffNotificationSubjectResolver {
+export class RepositoryRoutineEndingNotificationSubjectResolver implements RoutineEndingNotificationSubjectResolver {
   constructor(
-    private readonly agents: HandoffNotificationAgentLookup,
-    private readonly routines: HandoffNotificationRoutineLookup,
+    private readonly agents: RoutineEndingNotificationAgentLookup,
+    private readonly routines: RoutineEndingNotificationRoutineLookup,
   ) {}
 
   async resolve(input: {

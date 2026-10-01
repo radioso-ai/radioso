@@ -20,7 +20,7 @@ const collectedFromPayload = (value: unknown): Record<string, HandoffCollectedVa
 };
 
 /** Display names a handoff notice shows next to the ids it carries; absent when not resolved. */
-interface HandoffNotifyActionSubject {
+interface RoutineEndingNotifyActionSubject {
   agentName: string | null;
   routineName: string | null;
 }
@@ -30,13 +30,13 @@ interface HandoffNotifyActionSubject {
  * `handoff.notify` action payload and its (already-resolved) subject names. Shared by the
  * durable dispatch handler — whose names come from a database lookup — and a Test Chat turn's
  * hand-off preview — whose names are already in memory from the turn that just ran — so
- * neither can drift from what {@link formatHandoffNotification} renders for the other.
+ * neither can drift from what {@link formatRoutineEndingNotification} renders for the other.
  */
-export const handoffNotificationFromAction = (input: {
+export const routineEndingNotificationFromAction = (input: {
   payload: Record<string, unknown>;
   /** Used only when the payload itself omits the field. */
   fallback: { conversationId: string; workspaceId: string };
-  subject?: HandoffNotifyActionSubject;
+  subject?: RoutineEndingNotifyActionSubject;
 }): HandoffOperatorNotification => {
   const conversationId = asString(input.payload.conversationId) ?? input.fallback.conversationId;
   const workspaceId = asString(input.payload.workspaceId) ?? input.fallback.workspaceId;

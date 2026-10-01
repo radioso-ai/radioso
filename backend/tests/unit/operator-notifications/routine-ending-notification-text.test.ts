@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatHandoffNotification } from "../../../src/modules/operatorNotifications/public.js";
+import { formatRoutineEndingNotification } from "../../../src/modules/operatorNotifications/public.js";
 
 const base = {
   kind: "handoff" as const,
@@ -10,9 +10,9 @@ const base = {
   reason: "routine_handoff",
 };
 
-describe("formatHandoffNotification", () => {
+describe("formatRoutineEndingNotification", () => {
   it("keeps the generic subject and id-only lines when no names or values are known", () => {
-    expect(formatHandoffNotification(base)).toEqual({
+    expect(formatRoutineEndingNotification(base)).toEqual({
       subject: "Conversation needs a human",
       lines: [
         "A conversation needs a human operator.",
@@ -26,7 +26,7 @@ describe("formatHandoffNotification", () => {
   });
 
   it("names the routine in the subject and lists the collected values in key order", () => {
-    const formatted = formatHandoffNotification({
+    const formatted = formatRoutineEndingNotification({
       ...base,
       agentName: "Retreat desk",
       routine: { id: "routine_1", name: "Book accommodation" },
@@ -59,7 +59,7 @@ describe("formatHandoffNotification", () => {
   });
 
   it("falls back to the generic subject and skips the routine line when the routine has no name", () => {
-    const formatted = formatHandoffNotification({
+    const formatted = formatRoutineEndingNotification({
       ...base,
       routine: { id: "routine_1", name: null },
       collected: {},

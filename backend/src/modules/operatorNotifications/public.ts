@@ -6,5 +6,5 @@ export type {
   OperatorNotificationContext,
   OperatorNotificationSink,
 } from "./operatorNotification.js";
-export { formatHandoffNotification, type FormattedHandoffNotification } from "./handoffNotificationText.js";
-export { asString, handoffNotificationFromAction } from "./handoffNotificationFromAction.js";
+export { formatRoutineEndingNotification, type FormattedRoutineEndingNotification } from "./routineEndingNotificationText.js";
+export { asString, routineEndingNotificationFromAction } from "./routineEndingNotificationFromAction.js";

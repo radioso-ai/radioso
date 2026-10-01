@@ -1,6 +1,6 @@
 import type { HandoffCollectedValue, HandoffOperatorNotification } from "./operatorNotification.js";
 
-export interface FormattedHandoffNotification {
+export interface FormattedRoutineEndingNotification {
   subject: string;
   /** Body lines, ready to join with a newline. The first line is the one-sentence headline. */
   lines: string[];
@@ -38,9 +38,9 @@ const collectedLines = (collected: Record<string, HandoffCollectedValue> | undef
  * and Slack show the same routine name and collected values. Sinks append transport-specific
  * lines (such as the dashboard link) themselves.
  */
-export const formatHandoffNotification = (
+export const formatRoutineEndingNotification = (
   notification: HandoffOperatorNotification,
-): FormattedHandoffNotification => {
+): FormattedRoutineEndingNotification => {
   const routineName = notification.routine?.name ?? null;
   const agentLine = notification.agentName
     ? `Agent: ${notification.agentName} (${notification.agentId})`

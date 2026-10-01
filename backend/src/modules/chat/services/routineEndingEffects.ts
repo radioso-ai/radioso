@@ -40,10 +40,30 @@ export const buildRoutineEndingNotifyAction = (input: {
 };
 
 /**
+ * The notice a turn's routine ending sends operators. Every hand-off notifies, so a hand-off
+ * whose runner reported no `operatorNotice` (one that predates notices) still sends the default
+ * one, carrying what the hand-off collected; otherwise the reported notice stands. Exported so
+ * a Test Chat preview applies the same rule.
+ */
+export const operatorNoticeForTurn = (
+  turn: Pick<RoutineEndingTurnEffects, "handoff" | "operatorNotice">,
+): RoutineOperatorNoticeEffect | undefined => {
+  if (turn.operatorNotice || !turn.handoff) {
+    return turn.operatorNotice;
+  }
+  return {
+    routineId: turn.handoff.routineId,
+    stepId: turn.handoff.stepId,
+    terminalKind: "handoff",
+    ...(turn.handoff.collected ? { collected: turn.handoff.collected } : {}),
+  };
+};
+
+/**
  * What a routine ending does beyond the reply, in one place for every chat path. The two
- * effects are independent: `handoff` moves the conversation to a person, `operatorNotice`
- * queues the notice to operators next to the turn's own actions. A completion with a notice
- * notifies and leaves ownership alone; a hand-off does both.
+ * effects are independent: `handoff` moves the conversation to a person, the operator notice
+ * ({@link operatorNoticeForTurn}) is queued next to the turn's own actions. A completion with
+ * a notice notifies and leaves ownership alone; a hand-off does both.
  */
 export const routineEndingEffectsForTurn = (input: {
   session: PreparedSession;
@@ -53,7 +73,8 @@ export const routineEndingEffectsForTurn = (input: {
   ownershipHandoff: ReturnType<typeof routineHandoffOwnership> | null;
   actions?: RoutineActionRequest[];
 } => {
-  const { handoff, operatorNotice, actions } = input.turn;
+  const { handoff, actions } = input.turn;
+  const operatorNotice = operatorNoticeForTurn(input.turn);
   return {
     ownershipHandoff: handoff ? routineHandoffOwnership(handoff) : null,
     actions: operatorNotice

@@ -77,7 +77,7 @@ import type { GroundingSummary } from "./groundingAssertions.js";
 import type { OperatorNoticePreview, TurnTraceEnvelope } from "./turnTraceEnvelope.js";
 import type { ChatRoutineTurnReporter } from "../contracts/routineTurnState.js";
 import { ROUTINE_ENDING_NOTICE_ACTIONS } from "./operatorNoticeAction.js";
-import { buildRoutineEndingNotifyAction } from "./routineEndingEffects.js";
+import { buildRoutineEndingNotifyAction, operatorNoticeForTurn } from "./routineEndingEffects.js";
 import {
   formatRoutineEndingNotification,
   routineEndingNotificationFromAction,
@@ -546,19 +546,21 @@ export class WorkbenchReplayRunner {
     input: WorkbenchReplayInput;
     agent: ReturnType<typeof materializeAgentFromConfig>;
     session: PreparedSession;
+    handoff?: ChatTurnAssemblyRoutineResult["handoff"];
     operatorNotice?: ChatTurnAssemblyRoutineResult["operatorNotice"];
     routineReporter?: ChatRoutineTurnReporter;
   }): OperatorNoticePreview | undefined {
-    if (!input.operatorNotice) {
+    const notice = operatorNoticeForTurn(input);
+    if (!notice) {
       return undefined;
     }
-    const ending = ROUTINE_ENDING_NOTICE_ACTIONS[input.operatorNotice.terminalKind];
+    const ending = ROUTINE_ENDING_NOTICE_ACTIONS[notice.terminalKind];
     const action = buildRoutineEndingNotifyAction({
       conversationId: input.session.conversation.id,
       workspaceId: input.input.workspaceId,
       agentId: input.agent.id,
       userMessageId: input.session.userMessage.id,
-      notice: input.operatorNotice,
+      notice,
     });
     const notification = routineEndingNotificationFromAction({
       kind: ending.notificationKind,
@@ -566,7 +568,7 @@ export class WorkbenchReplayRunner {
       fallback: { conversationId: input.session.conversation.id, workspaceId: input.input.workspaceId, reason: ending.reason },
       subject: {
         agentName: input.agent.name,
-        routineName: input.routineReporter?.describeRoutineName(input.operatorNotice.routineId) ?? null,
+        routineName: input.routineReporter?.describeRoutineName(notice.routineId) ?? null,
         conversation: {
           channel: input.session.conversation.sourceChannel ?? null,
           entryPageUrl: input.session.conversation.entryPageUrl ?? null,

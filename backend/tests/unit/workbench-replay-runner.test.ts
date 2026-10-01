@@ -1371,7 +1371,10 @@ describe("WorkbenchReplayRunner", () => {
     expect(forTurn).toHaveBeenCalledWith(expect.objectContaining({ includeSlotValues: false }));
   });
 
-  it("carries a hand-off preview matching the real notification builder, without dispatching it", async () => {
+  it.each([
+    ["with the operator notice it reports", true],
+    ["for a hand-off reported without an operator notice", false],
+  ])("carries a hand-off preview matching the real notification builder, without dispatching it (%s)", async (_label, reportsNotice) => {
     const fakeEngine = {
       async attemptRoutine(input: AttemptRoutineInput): Promise<ProcessTurnResult | null> {
         await input.routineStore!.save({
@@ -1390,12 +1393,16 @@ describe("WorkbenchReplayRunner", () => {
             stepId: "handoff",
             collected: { program: "A stay at Ananda", guests: 2 },
           },
-          operatorNotice: {
-            routineId: "contact",
-            stepId: "handoff",
-            terminalKind: "handoff",
-            collected: { program: "A stay at Ananda", guests: 2 },
-          },
+          ...(reportsNotice
+            ? {
+                operatorNotice: {
+                  routineId: "contact",
+                  stepId: "handoff",
+                  terminalKind: "handoff",
+                  collected: { program: "A stay at Ananda", guests: 2 },
+                },
+              }
+            : {}),
         } as unknown as ProcessTurnResult;
       },
       async processTurn(): Promise<ProcessTurnResult> {

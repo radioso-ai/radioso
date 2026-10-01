@@ -7,6 +7,7 @@ import { requirePublicChatPermission } from "../../../app/http/middleware/requir
 import type { AccessGrantService } from "../../accessGrants/public.js";
 import type { AuthenticatedPrincipal, Permission } from "../../account/public.js";
 import type { AgentService } from "../../agents/public.js";
+import type { AccountMembershipRole } from "../../../db/repositories/accountMembershipRepository.js";
 import type { AgentRepositoryPort } from "../../../db/repositories/agentRepository.js";
 import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
 import { validateBody } from "../../../app/http/middleware/validate.js";
@@ -46,7 +47,7 @@ export interface AnswerFeedbackRouteDependencies {
       principal?: AuthenticatedPrincipal | null;
       permission: Permission;
       workspaceId?: string | null;
-    }): Promise<void>;
+    }): Promise<AccountMembershipRole | null | void>;
   };
   workspaceSessionService: {
     resolve(input: { accountId: string; workspaceId?: string | null }): Promise<{ accountId: string; workspaceId: string }>;

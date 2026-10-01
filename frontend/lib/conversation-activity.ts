@@ -189,20 +189,116 @@ export const threadDayBreaks = (
 }
 
 /**
- * A conversation's timeline from every read of it: the detail fetch, and the tail polls — the first
- * reads the whole timeline, each later one only what was recorded since. Events are only ever
- * added, so the union by id, oldest first, is the timeline. A later read of an event replaces an
- * earlier one, its teammate labels being the fresher; events of one millisecond keep the order they
+ * A conversation's timeline from its two reads: the detail fetch, which reads the whole timeline,
+ * and the events tail polls brought that it does not cover. The detail read is authoritative over
+ * every event it holds, its teammate labels included; events of one millisecond keep the order they
  * were read in, which is the order they were recorded.
  */
 export const mergeActivity = (
-  ...reads: ReadonlyArray<readonly ConversationActivityEntry[] | undefined>
+  detail: readonly ConversationActivityEntry[] | undefined,
+  tail: readonly ConversationActivityEntry[],
 ): ConversationActivityEntry[] => {
-  const byId = new Map<string, ConversationActivityEntry>()
-  for (const read of reads) {
-    for (const event of read ?? []) {
+  const detailIds = new Set((detail ?? []).map((event) => event.id))
+  return [...(detail ?? []), ...tail.filter((event) => !detailIds.has(event.id))]
+    .sort((left, right) => timeOf(left.createdAt) - timeOf(right.createdAt))
+}
+
+/** Whether two reads of a JSON value read the same. */
+const sameJson = (left: unknown, right: unknown): boolean => {
+  if (left === right) {
+    return true
+  }
+  if (typeof left !== 'object' || typeof right !== 'object' || left === null || right === null) {
+    return false
+  }
+  if (Array.isArray(left) !== Array.isArray(right)) {
+    return false
+  }
+  const leftRecord = left as Record<string, unknown>
+  const rightRecord = right as Record<string, unknown>
+  const keys = Object.keys(leftRecord)
+  return keys.length === Object.keys(rightRecord).length
+    && keys.every((key) => sameJson(leftRecord[key], rightRecord[key]))
+}
+
+/**
+ * The tail-held events with a poll's read folded in, oldest first: an event new to the reader is
+ * added, and a held event read differently (a teammate relabelled) takes the new copy. A poll
+ * re-reads a recent window, so it mostly repeats what is held — then `held` itself comes back.
+ */
+const withTailRead = (
+  held: readonly ConversationActivityEntry[],
+  read: readonly ConversationActivityEntry[],
+): readonly ConversationActivityEntry[] => {
+  const byId = new Map(held.map((event) => [event.id, event]))
+  let changed = false
+  for (const event of read) {
+    const current = byId.get(event.id)
+    if (!current || !sameJson(current, event)) {
       byId.set(event.id, event)
+      changed = true
     }
   }
-  return [...byId.values()].sort((left, right) => timeOf(left.createdAt) - timeOf(right.createdAt))
+  return changed
+    ? [...byId.values()].sort((left, right) => timeOf(left.createdAt) - timeOf(right.createdAt))
+    : held
+}
+
+/**
+ * The tail-held events a detail read does not cover: it read the whole timeline up to its newest
+ * event, so the held events at or before that one are its to show or leave out — feedback the
+ * reader may no longer see is left out of it. `held` itself comes back when none are covered.
+ */
+const withoutCoveredBy = (
+  held: readonly ConversationActivityEntry[],
+  detail: readonly ConversationActivityEntry[],
+): readonly ConversationActivityEntry[] => {
+  if (detail.length === 0) {
+    return held
+  }
+  const coveredThrough = Math.max(...detail.map((event) => timeOf(event.createdAt)))
+  const uncovered = held.filter((event) => timeOf(event.createdAt) > coveredThrough)
+  return uncovered.length === held.length ? held : uncovered
+}
+
+/** What a reader holds of one conversation's timeline between renders. */
+export interface ActivityTimelineState {
+  conversationId: string | null
+  /** The latest detail read, as last seen. */
+  detail: readonly ConversationActivityEntry[] | undefined
+  /** The latest poll's read, as last seen. */
+  poll: readonly ConversationActivityEntry[] | undefined
+  /** The events polls brought that no detail read covered when it arrived, oldest first. */
+  tail: readonly ConversationActivityEntry[]
+}
+
+export const initialActivityTimeline = (conversationId: string | null): ActivityTimelineState => ({
+  conversationId,
+  detail: undefined,
+  poll: undefined,
+  tail: [],
+})
+
+/**
+ * Folds the reads a render sees into what the reader holds. A detail read that arrives covers the
+ * held events up to its newest one; a poll's read adds what it brings, even an event older than the
+ * detail's newest, which a transaction can commit late. No poll empties the tail, and another
+ * conversation starts over. Comes back as `state` itself when no read changed.
+ */
+export const reconcileActivityTimeline = (
+  state: ActivityTimelineState,
+  reads: Pick<ActivityTimelineState, 'conversationId' | 'detail' | 'poll'>,
+): ActivityTimelineState => {
+  let next = state.conversationId === reads.conversationId ? state : initialActivityTimeline(reads.conversationId)
+  if (reads.detail !== next.detail) {
+    next = {
+      ...next,
+      detail: reads.detail,
+      tail: reads.detail ? withoutCoveredBy(next.tail, reads.detail) : next.tail,
+    }
+  }
+  if (reads.poll !== next.poll) {
+    next = { ...next, poll: reads.poll, tail: reads.poll ? withTailRead(next.tail, reads.poll) : [] }
+  }
+  return next
 }

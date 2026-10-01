@@ -4382,14 +4382,15 @@ export class InMemoryConversationActivityStore implements ConversationActivityRe
   async listForConversation(
     workspaceId: string,
     conversationId: string,
-    options: { kinds: readonly ConversationActivityKind[]; after?: string },
-  ): Promise<ConversationActivityRecord[]> {
-    const timeline = this.items.filter((item) => item.workspaceId === workspaceId && item.conversationId === conversationId);
-    const anchor = options.after === undefined ? -1 : timeline.findIndex((item) => item.id === options.after);
-    if (options.after !== undefined && anchor === -1) {
-      return [];
-    }
-    return timeline.slice(anchor + 1).filter((item) => options.kinds.includes(item.kind));
+    options: { kinds: readonly ConversationActivityKind[]; recordedAfter?: Date },
+  ): Promise<{ records: ConversationActivityRecord[]; readAt: Date }> {
+    const readAt = new Date();
+    const records = this.items
+      .filter((item) => item.workspaceId === workspaceId && item.conversationId === conversationId)
+      .filter((item) => options.kinds.includes(item.kind))
+      .filter((item) => !options.recordedAfter || item.createdAt > options.recordedAfter)
+      .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime());
+    return { records, readAt };
   }
 
   async listRecentClosing(

@@ -770,7 +770,7 @@ export class ChatTurnLifecycle {
       // Records no `handoff_requested` activity: that event commits in the handoff's own transaction
       // (PostgresAssistantTurnPersistence), and this path holds none. Production composition always
       // wires that persistence — the runtime-startup test pins it — so a live handoff never lands here.
-      const ownershipResult =!safeTestTurn && input.ownershipHandoff && this.conversationOwnershipRepository
+      const ownershipResult = !safeTestTurn && input.ownershipHandoff && this.conversationOwnershipRepository
         ? await this.conversationOwnershipRepository.requestHandoff({
           conversationId: input.session.conversation.id,
           workspaceId: input.workspaceId,

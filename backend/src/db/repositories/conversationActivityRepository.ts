@@ -26,6 +26,11 @@ interface ConversationActivityRow {
   created_at: Date;
 }
 
+type NullableRow<Row> = { [Key in keyof Row]: Row[Key] | null };
+
+// A row of the clock's join that found no event carries nulls in every event column.
+const isActivityRow = (row: NullableRow<ConversationActivityRow>): row is ConversationActivityRow => row.id !== null;
+
 const mapRecord = (row: ConversationActivityRow): ConversationActivityRecord => ({
   id: row.id,
   conversationId: row.conversation_id,
@@ -75,62 +80,38 @@ export class ConversationActivityRepository implements ConversationActivityRecor
   }
 
   /**
-   * A conversation's events of `kinds`, oldest first: the latest {@link TIMELINE_LIMIT}, or with
-   * `after` the first that many recorded after that event, so a reader polling from the newest event
-   * it holds reads only what is new, in one statement. `after` is positional — the (created_at, id) of
-   * the event it names, whatever that event's kind — and an id this conversation has no event for
-   * matches nothing.
-   *
-   * The cursor relies on one conversation's events committing in the order they are written, as the
-   * messages' tail cursor does: each writer records inside the change it records, and the changes to
-   * one conversation's ownership serialize on its ownership row.
+   * A conversation's latest {@link TIMELINE_LIMIT} events of `kinds`, oldest first — with
+   * `recordedAfter`, only those recorded after that time — in one statement on the timeline index,
+   * with the statement's start time as `readAt`: the database's clock dates the events too, and the
+   * statement sees every event committed before it began.
    */
   async listForConversation(
     workspaceId: string,
     conversationId: string,
-    options: { kinds: readonly ConversationActivityKind[]; after?: string },
-  ): Promise<ConversationActivityRecord[]> {
-    if (options.kinds.length === 0) {
-      return [];
-    }
-    const kinds = kindList(options.kinds);
-    if (options.after) {
-      const result = await sql<ConversationActivityRow>`
-        WITH anchor AS (
-          SELECT created_at, id
-            FROM conversation_activity
-           WHERE id = ${options.after}
-             AND conversation_id = ${conversationId}
-             AND workspace_id = ${workspaceId}
-        )
-        SELECT a.id, a.conversation_id, a.workspace_id, a.kind, a.actor_user_id, a.subject_user_id, a.detail,
-               a.created_at
-          FROM conversation_activity a
-          JOIN anchor
-            ON a.created_at >= anchor.created_at
-           AND (a.created_at, a.id) > (anchor.created_at, anchor.id)
-         WHERE a.conversation_id = ${conversationId}
-           AND a.workspace_id = ${workspaceId}
-           AND a.kind IN (${kinds})
-         ORDER BY a.created_at ASC, a.id ASC
-         LIMIT ${TIMELINE_LIMIT}
-      `.execute(this.db);
-      return result.rows.map(mapRecord);
-    }
-    const result = await sql<ConversationActivityRow>`
-      SELECT id, conversation_id, workspace_id, kind, actor_user_id, subject_user_id, detail, created_at
-        FROM (
-          SELECT *
+    options: { kinds: readonly ConversationActivityKind[]; recordedAfter?: Date },
+  ): Promise<{ records: ConversationActivityRecord[]; readAt: Date }> {
+    const kindFilter = options.kinds.length > 0 ? sql`kind IN (${kindList(options.kinds)})` : sql`FALSE`;
+    const recordedAfter = options.recordedAfter ? sql`AND created_at > ${options.recordedAfter}` : sql``;
+    // The clock row joins the latest events, so a read that finds none still reports when it began.
+    const result = await sql<NullableRow<ConversationActivityRow> & { read_at: Date }>`
+      SELECT clock.read_at, latest.id, latest.conversation_id, latest.workspace_id, latest.kind,
+             latest.actor_user_id, latest.subject_user_id, latest.detail, latest.created_at
+        FROM (SELECT statement_timestamp() AS read_at) clock
+        LEFT JOIN LATERAL (
+          SELECT id, conversation_id, workspace_id, kind, actor_user_id, subject_user_id, detail, created_at
             FROM conversation_activity
            WHERE conversation_id = ${conversationId}
              AND workspace_id = ${workspaceId}
-             AND kind IN (${kinds})
+             AND ${kindFilter}
+             ${recordedAfter}
            ORDER BY created_at DESC, id DESC
            LIMIT ${TIMELINE_LIMIT}
-        ) latest
-       ORDER BY created_at ASC, id ASC
+        ) latest ON TRUE
+       ORDER BY latest.created_at ASC, latest.id ASC
     `.execute(this.db);
-    return result.rows.map(mapRecord);
+    const readAt = result.rows[0]?.read_at ?? new Date();
+    const records = result.rows.flatMap((row) => (isActivityRow(row) ? [mapRecord(row)] : []));
+    return { records, readAt };
   }
 
   /**

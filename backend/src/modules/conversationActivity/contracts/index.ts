@@ -55,6 +55,24 @@ export const resolveActivityReadScope = async (
   includeFeedback: await holdsPermission(FEEDBACK_ACTIVITY_PERMISSION),
 });
 
+// An ISO 8601 UTC timestamp, as `Date.prototype.toISOString` writes one, to microseconds at most.
+const ACTIVITY_CURSOR_FORMAT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$/;
+
+/**
+ * A timeline read's cursor: when the read began, which the next read looks back from. Opaque to
+ * callers, who pass back the one a read returned.
+ */
+export const formatActivityCursor = (readAt: Date): string => readAt.toISOString();
+
+/** The time an activity cursor names; null for a string no read could have issued. */
+export const parseActivityCursor = (cursor: string): Date | null => {
+  if (!ACTIVITY_CURSOR_FORMAT.test(cursor)) {
+    return null;
+  }
+  const readAt = new Date(cursor);
+  return Number.isNaN(readAt.getTime()) ? null : readAt;
+};
+
 interface ConversationActivityScope {
   conversationId: string;
   workspaceId: string;
@@ -188,11 +206,8 @@ export interface RecentlyClosedInboxItem {
 export interface ConversationActivityTimeline {
   /** Every teammate the events name, once each. */
   readonly userIds: readonly string[];
-  /**
-   * The newest event read, as the cursor for a read of only what comes after it; the cursor the read
-   * was given when nothing newer came; null when the conversation has no events.
-   */
-  readonly cursor: string | null;
+  /** The cursor for the next read: {@link formatActivityCursor} of when this read began. */
+  readonly cursor: string;
   /** The events, oldest first, each teammate labelled from `labels`. */
   present(labels: ReadonlyMap<string, string>): ConversationActivityEntry[];
 }
@@ -200,8 +215,10 @@ export interface ConversationActivityTimeline {
 /** Operator reads of a conversation's activity. */
 export interface ConversationActivityTimelineReader {
   /**
-   * The conversation's events, oldest first, within `scope`. With `after` — a cursor a previous read
-   * returned — only the events recorded after that one.
+   * The conversation's events, oldest first, within `scope`. With `after` — the cursor a previous
+   * read returned — only the events recorded in a window reaching back from that read, wide enough
+   * to take in an event whose transaction was still open then: the reader may get an event again,
+   * and keeps each one once by its id.
    */
   readTimeline(
     workspaceId: string,

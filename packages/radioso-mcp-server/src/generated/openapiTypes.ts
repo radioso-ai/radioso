@@ -7950,13 +7950,10 @@ export interface components {
             messages: components["schemas"]["ChatConversationMessage"][];
             cursor: string | null;
             ownership?: components["schemas"]["ConversationOwnership"] & unknown;
-            /** @description The conversation's activity, oldest first, so a reader polling the tail sees an event recorded elsewhere: the whole timeline, or with `activityCursor` only the events recorded since. Feedback outcomes reach only a caller with Quality access. */
+            /** @description The conversation's activity, oldest first, so a reader polling the tail sees an event recorded elsewhere: the whole timeline, or with `activityCursor` the events in a recent window. The window reaches back far enough to take in an event whose transaction committed after a newer event's, so it can repeat events the caller already holds: keep each one once by its `id`. Feedback outcomes reach only a caller with Quality access. */
             activity?: components["schemas"]["ConversationActivityEntry"][];
-            /**
-             * Format: uuid
-             * @description Pass as the next tail's `activityCursor` to read only newer activity. Null while the conversation has no activity.
-             */
-            activityCursor?: string | null;
+            /** @description Opaque. Pass as the next tail's `activityCursor` to read only recent activity. Present whenever `activity` is. */
+            activityCursor?: string;
         };
         PublicChatConversationTail: {
             messages: components["schemas"]["PublicChatConversationMessage"][];

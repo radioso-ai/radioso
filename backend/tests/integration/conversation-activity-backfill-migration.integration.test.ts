@@ -49,7 +49,7 @@ describeIfDatabase("conversation activity migration's feedback backfill (204)", 
     await admin?.close().catch(() => undefined);
   });
 
-  it("records the feedback closed in the last 30 days, as the live writer would, once", async () => {
+  it("records the feedback closed in the last 30 days, test chats included, as the live writer would, once", async () => {
     const accountId = randomUUID();
     const workspaceId = randomUUID();
     const beaId = randomUUID();
@@ -117,7 +117,11 @@ describeIfDatabase("conversation activity migration's feedback backfill (204)", 
     );
     const dismissedOnceTransitionId = await transition(dismissedOnce, "open", "dismissed", dismissedAt);
     await transition(longAgo, "open", "resolved", daysAgo(40), { actorId: beaId, reason: "knowledge_gap" });
-    await transition(inTestChat, "open", "resolved", daysAgo(1), { actorId: beaId, reason: "knowledge_gap" });
+    // The live writer records a test chat's closures too; the reads that leave test traffic out filter it.
+    const testChatResolvedAt = daysAgo(0.5);
+    const testChatTransitionId = await transition(
+      inTestChat, "open", "resolved", testChatResolvedAt, { actorId: beaId, reason: "knowledge_gap" },
+    );
 
     await applyTestMigration(database, migrationFile);
     await applyTestMigration(database, migrationFile);
@@ -162,6 +166,15 @@ describeIfDatabase("conversation activity migration's feedback backfill (204)", 
         subject_user_id: null,
         detail: { assistantMessageId: reopened, triageTransitionId: redismissedTransitionId, resolution: "out_of_scope" },
         created_at: redismissedAt,
+      },
+      {
+        conversation_id: testChatId,
+        workspace_id: workspaceId,
+        kind: "feedback_resolved",
+        actor_user_id: beaId,
+        subject_user_id: null,
+        detail: { assistantMessageId: inTestChat, triageTransitionId: testChatTransitionId, resolution: "knowledge_gap" },
+        created_at: testChatResolvedAt,
       },
     ]);
   });

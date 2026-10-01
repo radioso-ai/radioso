@@ -1,7 +1,7 @@
 ---
 title: "Human Takeover"
 description: "Operator API and contract for taking over conversations, suppressing AI while handling manual responses, and reading who did what to a conversation."
-last_updated: 2026-09-30
+last_updated: 2026-10-01
 ---
 
 # Human Takeover
@@ -309,9 +309,13 @@ conversation's record start with that month's closed feedback.
 The operator history detail and tail (`GET /api/v1/history/chat/{conversationId}`
 and its `/tail`) carry the record as `activity`, oldest first. The detail carries
 the whole list. The tail carries it too, along with an `activityCursor`; pass that
-back as the next tail's `activityCursor` and the tail carries only the events
-recorded since — an empty list when nothing happened, with the same cursor back.
-`activityCursor` is `null` while the conversation has no events.
+back as the next tail's `activityCursor` and the tail carries the events recorded
+in the five minutes before the tail that issued it, and since. That window repeats
+events you already hold, and it is what lets a late commit through: an event is
+dated when it is written but visible only once its change commits, and an approval
+commits together with the routine turn it resumes, which can finish after a newer
+event. Keep each event once by its `id`. The cursor is opaque: pass back the one
+the last tail returned, and a tail answers `400` to one it did not issue.
 
 `feedback_resolved` and `feedback_dismissed` are Quality triage outcomes, so they
 reach only a teammate with Quality access (`workspace.quality.read`). A member,

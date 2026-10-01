@@ -143,6 +143,48 @@ const effectiveWorkspaceRole = (
   return "member";
 };
 
+/**
+ * Whether a teammate whose effective role on a workspace is `role` holds `permission` there: the
+ * one rule every authorization by role goes through, exported for a caller that already holds the
+ * role a check resolved.
+ */
+export const workspaceRoleAllows = (role: AccountMembershipRole, permission: Permission): boolean => {
+  if (permission.startsWith("public_chat.")) {
+    return false;
+  }
+
+  if (role === "owner") {
+    return true;
+  }
+
+  if (role === "admin") {
+    return permission !== "account.membership.remove"
+      && permission !== "account.organization.delete";
+  }
+
+  return [
+    "workspace.summary.read",
+    "workspace.chat.use",
+    "workspace.conversation.takeover",
+    "workspace.retrieval.query",
+    "workspace.history.read",
+    "workspace.skills.read",
+    "workspace.agents.read",
+    "workspace.agents.manage",
+    "workspace.settings.manage",
+    "workspace.settings.read",
+    "workspace.api_access.personal.manage",
+    "workspace.documents.manage",
+    "workspace.documents.read",
+  ].includes(permission);
+};
+
+/** A permission decision, and the effective role it was made by when the caller is a teammate. */
+interface PermissionDecision {
+  allowed: boolean;
+  role: AccountMembershipRole | null;
+}
+
 export class AccountAccessService {
   constructor(
     private readonly membershipRepository: AccountMembershipRepositoryPort,
@@ -207,7 +249,7 @@ export class AccountAccessService {
     ]);
     const grantByUser = new Map(grants.map((grant) => [grant.userId, grant]));
     return members.filter((member) => member.disabledAt === null
-      && this.roleAllows(effectiveWorkspaceRole(member.role, grantByUser.get(member.userId) ?? null), input.permission));
+      && workspaceRoleAllows(effectiveWorkspaceRole(member.role, grantByUser.get(member.userId) ?? null), input.permission));
   }
 
   async listWorkspaceGrants(accountId: string): Promise<WorkspaceGrantSummary[]> {
@@ -477,13 +519,19 @@ export class AccountAccessService {
     });
   }
 
+  /**
+   * Refuses a caller without `permission`. Returns the teammate's effective role on `workspaceId`
+   * (their account role without one) that allowed it, so a request can weigh further permissions
+   * by {@link workspaceRoleAllows} without resolving the role again; null for a credential or
+   * public session, whose permissions come with the principal.
+   */
   async requirePermission(input: {
     accountId?: string;
     userId?: string | null;
     principal?: AuthenticatedPrincipal | null;
     permission: Permission;
     workspaceId?: string | null;
-  }): Promise<void> {
+  }): Promise<AccountMembershipRole | null> {
     if (
       input.principal?.type !== "public_chat_session" &&
       input.workspaceId &&
@@ -493,8 +541,9 @@ export class AccountAccessService {
       throw notFound("Workspace not found");
     }
 
-    if (await this.hasPermission(input)) {
-      return;
+    const decision = await this.decidePermission(input);
+    if (decision.allowed) {
+      return decision.role;
     }
 
     await this.auditService.record({
@@ -519,33 +568,42 @@ export class AccountAccessService {
     permission: Permission;
     workspaceId?: string | null;
   }): Promise<boolean> {
+    return (await this.decidePermission(input)).allowed;
+  }
+
+  private async decidePermission(input: {
+    accountId?: string;
+    userId?: string | null;
+    principal?: AuthenticatedPrincipal | null;
+    permission: Permission;
+    workspaceId?: string | null;
+  }): Promise<PermissionDecision> {
     if (input.principal?.type === "public_chat_session") {
-      return this.principalRoleAllows(input.principal.role, input.permission);
+      return { allowed: this.principalRoleAllows(input.principal.role, input.permission), role: null };
     }
 
     if (this.isMachinePrincipal(input.principal)) {
-      return input.workspaceId === input.principal.workspaceId
-        && this.principalRoleAllows(input.principal.role, input.permission);
+      return {
+        allowed: input.workspaceId === input.principal.workspaceId
+          && this.principalRoleAllows(input.principal.role, input.permission),
+        role: null,
+      };
     }
 
     const userId = input.principal?.type === "session_user" ? input.principal.userId : input.userId;
-    if (!userId) {
-      return false;
-    }
-
-    if (!input.accountId) {
-      return false;
+    if (!userId || !input.accountId) {
+      return { allowed: false, role: null };
     }
 
     const membership = await this.findActiveMembership(input.accountId, userId);
     if (!membership) {
-      return false;
+      return { allowed: false, role: null };
     }
 
     const effectiveRole = input.workspaceId
       ? await this.resolveEffectiveWorkspaceRole(membership, input.workspaceId)
       : membership.role;
-    return this.roleAllows(effectiveRole, input.permission);
+    return { allowed: workspaceRoleAllows(effectiveRole, input.permission), role: effectiveRole };
   }
 
   /** Resolve one effective role, then evaluate the whole all-of vector against that snapshot. */
@@ -569,7 +627,7 @@ export class AccountAccessService {
     const effectiveRole = input.workspaceId
       ? await this.resolveEffectiveWorkspaceRole(membership, input.workspaceId)
       : membership.role;
-    return input.permissions.every((permission) => this.roleAllows(effectiveRole, permission));
+    return input.permissions.every((permission) => workspaceRoleAllows(effectiveRole, permission));
   }
 
   /** The single production role authority for consumers that need an exhaustive permission vector. */
@@ -577,7 +635,7 @@ export class AccountAccessService {
     role: AccountMembershipRole,
     candidates: readonly AccountPermission[],
   ): ReadonlySet<AccountPermission> {
-    return new Set(candidates.filter((permission) => this.roleAllows(role, permission)));
+    return new Set(candidates.filter((permission) => workspaceRoleAllows(role, permission)));
   }
 
   async resolveWorkspaceRole(input: {
@@ -642,37 +700,6 @@ export class AccountAccessService {
     return Boolean(await this.workspaceRepository.findByIdAndAccountId(workspaceId, accountId));
   }
 
-  private roleAllows(role: AccountMembershipRole, permission: Permission): boolean {
-    if (permission.startsWith("public_chat.")) {
-      return false;
-    }
-
-    if (role === "owner") {
-      return true;
-    }
-
-    if (role === "admin") {
-      return permission !== "account.membership.remove"
-        && permission !== "account.organization.delete";
-    }
-
-    return [
-      "workspace.summary.read",
-      "workspace.chat.use",
-      "workspace.conversation.takeover",
-      "workspace.retrieval.query",
-      "workspace.history.read",
-      "workspace.skills.read",
-      "workspace.agents.read",
-      "workspace.agents.manage",
-      "workspace.settings.manage",
-      "workspace.settings.read",
-      "workspace.api_access.personal.manage",
-      "workspace.documents.manage",
-      "workspace.documents.read",
-    ].includes(permission);
-  }
-
   private principalRoleAllows(role: PrincipalAccessRole, permission: Permission): boolean {
     if (role === "public") {
       return PUBLIC_CHAT_PERMISSIONS.has(permission as PublicChatPermission);
@@ -689,7 +716,7 @@ export class AccountAccessService {
       return false;
     }
 
-    return this.roleAllows(role, permission);
+    return workspaceRoleAllows(role, permission);
   }
 
   private isMachinePrincipal(principal: { type: string; role?: WorkspaceMachineRole | PublicAccessRole; workspaceId?: string } | null | undefined): principal is { type: string; role: WorkspaceMachineRole; workspaceId: string } {

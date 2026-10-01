@@ -32,6 +32,7 @@ import {
   type ContactHistoryDetail,
   type DocumentSearchResponse,
 } from '@/lib/api'
+import { useConversationActivity } from '@/hooks/use-conversation-activity'
 import { useConversationTail } from '@/hooks/use-conversation-tail'
 import {
   formatConversationChannelContextDetails,
@@ -39,7 +40,6 @@ import {
   getConversationSourceBadge,
 } from '@/lib/history-source'
 import { getAgentOperatorLabel } from '@/lib/agent-label'
-import { mergeActivity } from '@/lib/conversation-activity'
 import { useCopilotEntity } from '@/lib/copilot-context'
 import {
   presentActivityOutcome,
@@ -292,10 +292,11 @@ export function ConversationDrawer({
 
   const renderedConversationMessages = effectiveConversationMessages
   // Held across renders so the thread re-places its events only when a read brings new ones.
-  const conversationActivity = useMemo(
-    () => mergeActivity(conversationDetail?.activity, conversationTail.activity),
-    [conversationDetail?.activity, conversationTail.activity],
-  )
+  const conversationActivity = useConversationActivity({
+    conversationId: selectedChatConversationId,
+    detail: conversationDetail?.activity,
+    poll: conversationTail.activity,
+  })
 
   // Mark which turns a routine drove so the conversation thread can band the
   // routine's span (start chip, paused/ended marker). The signal lives on each

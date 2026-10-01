@@ -961,32 +961,66 @@ describe("chat history service conversation activity", () => {
     }
   });
 
-  it("tails only the activity recorded since the caller's cursor, and reads no labels when nothing is new", async () => {
-    const { service, teammateLabels, activity, conversation, scope } = await seedActivity();
+  it("re-reads a window behind the cursor, so an event that commits after a newer one still arrives", async () => {
+    const { service, activity, conversation, scope } = await seedActivity();
     const options = { activity: { includeFeedback: false } };
 
     const first = await service.tailConversation("workspace-1", conversation.id, { limit: 10 }, options);
+    // An approval decided in a slow transaction: written a minute before the first read, committed
+    // after it, alongside a claim recorded since.
+    await activity.record(undefined, {
+      ...scope,
+      kind: "approval_decided",
+      actorUserId: "user-dana",
+      detail: { handle: "handle-1", decision: { optionId: "approve", label: "Approve" } },
+    });
+    activity.items.at(-1)!.createdAt = new Date(Date.parse(first.activityCursor!) - 60_000);
     await activity.record(undefined, { ...scope, kind: "claimed", actorUserId: "user-dana" });
     const second = await service.tailConversation("workspace-1", conversation.id, {
       limit: 10,
-      activityCursor: first.activityCursor ?? undefined,
-    }, options);
-    const readsBeforeIdlePoll = teammateLabels.reads.length;
-    const idle = await service.tailConversation("workspace-1", conversation.id, {
-      limit: 10,
-      activityCursor: second.activityCursor ?? undefined,
+      activityCursor: first.activityCursor,
     }, options);
 
     expect(first.activity?.map((entry) => entry.kind)).toEqual(["handed_back"]);
-    expect(first.activityCursor).toBe(first.activity?.[0]?.id);
-    expect(second.activity).toEqual([expect.objectContaining({ kind: "claimed", actor: { userId: "user-dana", label: "Dana" } })]);
-    expect(second.activityCursor).toBe(second.activity?.[0]?.id);
-    expect(idle.activity).toEqual([]);
-    expect(idle.activityCursor).toBe(second.activityCursor);
-    expect(teammateLabels.reads).toHaveLength(readsBeforeIdlePoll);
+    expect(second.activity?.map((entry) => entry.kind)).toEqual(["approval_decided", "handed_back", "claimed"]);
+    expect(second.activity?.[0]?.actor).toEqual({ userId: "user-dana", label: "Dana" });
   });
 
-  it("names no activity cursor for a conversation with no events", async () => {
+  it("reads no activity, and no labels, once the window behind the cursor holds none", async () => {
+    const { service, teammateLabels, activity, conversation } = await seedActivity();
+    const options = { activity: { includeFeedback: true } };
+    for (const item of activity.items) {
+      item.createdAt = new Date(Date.now() - 60 * 60_000);
+    }
+    const readsBefore = teammateLabels.reads.length;
+
+    const idle = await service.tailConversation("workspace-1", conversation.id, {
+      limit: 10,
+      activityCursor: new Date(Date.now() - 1_000).toISOString(),
+    }, options);
+
+    expect(idle.activity).toEqual([]);
+    expect(Date.parse(idle.activityCursor!)).toBeGreaterThan(Date.now() - 60_000);
+    expect(teammateLabels.reads).toHaveLength(readsBefore);
+  });
+
+  it("reads a conversation's own window whatever conversation a cursor came from", async () => {
+    const { service, conversationRepository, activity, conversation, scope } = await seedActivity();
+    const options = { activity: { includeFeedback: false } };
+    const other = await conversationRepository.create({ workspaceId: "workspace-1" });
+    const foreign = await service.tailConversation("workspace-1", other.id, { limit: 10 }, options);
+    await activity.record(undefined, { ...scope, kind: "claimed", actorUserId: "user-dana" });
+
+    const tail = await service.tailConversation("workspace-1", conversation.id, {
+      limit: 10,
+      activityCursor: foreign.activityCursor,
+    }, options);
+
+    expect(foreign.activity).toEqual([]);
+    expect(tail.activity?.map((entry) => entry.kind)).toEqual(["handed_back", "claimed"]);
+  });
+
+  it("names a cursor for a conversation with no events, to read only what comes next", async () => {
     const { service, conversationRepository } = createActivityService();
     const conversation = await conversationRepository.create({ workspaceId: "workspace-1" });
 
@@ -994,7 +1028,8 @@ describe("chat history service conversation activity", () => {
       activity: { includeFeedback: true },
     });
 
-    expect(tail).toMatchObject({ activity: [], activityCursor: null });
+    expect(tail.activity).toEqual([]);
+    expect(Number.isNaN(Date.parse(tail.activityCursor!))).toBe(false);
   });
 });
 

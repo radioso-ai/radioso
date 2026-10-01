@@ -73,7 +73,7 @@ describeIntegration("conversation activity (Postgres)", () => {
     const timeline = read.present(await labels.labelsByUserIds(read.userIds));
 
     expect([...read.userIds].sort()).toEqual([beaId, carlId].sort());
-    expect(read.cursor).toBe(timeline[1]?.id);
+    expect(Date.parse(read.cursor)).toBeGreaterThanOrEqual(Date.parse(timeline[1].createdAt));
     expect(timeline).toEqual([
       expect.objectContaining({ kind: "handoff_requested", actor: null, handoffReason: "retrieval_miss", subject: null }),
       expect.objectContaining({
@@ -84,13 +84,13 @@ describeIntegration("conversation activity (Postgres)", () => {
         handoffReason: null,
       }),
     ]);
-    await expect(reads.readTimeline(randomUUID(), conversationId, { includeFeedback: true }))
-      .resolves.toMatchObject({ userIds: [], cursor: null });
+    const foreignWorkspace = await reads.readTimeline(randomUUID(), conversationId, { includeFeedback: true });
+    expect(foreignWorkspace.userIds).toEqual([]);
+    expect(foreignWorkspace.present(new Map())).toEqual([]);
   });
 
-  it("reads only the events after a cursor, whatever the cursor's kind, and only the kinds asked for", async () => {
+  it("reads the events recorded after a time, only the kinds asked for, and when the read began", async () => {
     const conversationId = await seedConversation();
-    const other = await seedConversation();
     await activity.record(database.kysely, { kind: "claimed", conversationId, workspaceId, actorUserId: beaId });
     await activity.record(database.kysely, {
       kind: "feedback_dismissed",
@@ -99,36 +99,71 @@ describeIntegration("conversation activity (Postgres)", () => {
       actorUserId: carlId,
       detail: { assistantMessageId: randomUUID(), triageTransitionId: randomUUID(), resolution: null },
     });
-    const [claimed, dismissed] = await activity.listForConversation(workspaceId, conversationId, {
+    const { records: [claimed, dismissed] } = await activity.listForConversation(workspaceId, conversationId, {
       kinds: ["claimed", "feedback_dismissed"],
     });
     await activity.record(database.kysely, { kind: "handed_back", conversationId, workspaceId, actorUserId: beaId });
-    await activity.record(database.kysely, { kind: "claimed", conversationId: other, workspaceId, actorUserId: beaId });
     const withoutFeedback = ["claimed", "handed_back"] as const;
 
+    // A Date holds milliseconds and the column microseconds: a millisecond on is past the event.
+    const justAfter = (record: { createdAt: Date }) => new Date(record.createdAt.getTime() + 1);
     const afterClaimed = await activity.listForConversation(workspaceId, conversationId, {
       kinds: withoutFeedback,
-      after: claimed.id,
+      recordedAfter: justAfter(claimed),
     });
-    // A cursor on an event the reader may not see still marks its place.
     const afterDismissed = await activity.listForConversation(workspaceId, conversationId, {
       kinds: withoutFeedback,
-      after: dismissed.id,
+      recordedAfter: justAfter(dismissed),
     });
-    const afterNewest = await activity.listForConversation(workspaceId, conversationId, {
-      kinds: withoutFeedback,
-      after: afterClaimed[0].id,
-    });
-    const foreignCursor = await activity.listForConversation(workspaceId, other, {
-      kinds: withoutFeedback,
-      after: claimed.id,
-    });
+    const none = await activity.listForConversation(workspaceId, conversationId, { kinds: [] });
 
-    expect(afterClaimed.map((record) => record.kind)).toEqual(["handed_back"]);
-    expect(afterDismissed.map((record) => record.kind)).toEqual(["handed_back"]);
-    expect(afterNewest).toEqual([]);
-    expect(foreignCursor).toEqual([]);
-    await expect(activity.listForConversation(workspaceId, conversationId, { kinds: [] })).resolves.toEqual([]);
+    expect(afterClaimed.records.map((record) => record.kind)).toEqual(["handed_back"]);
+    expect(afterDismissed.records.map((record) => record.kind)).toEqual(["handed_back"]);
+    expect(afterClaimed.readAt.getTime()).toBeGreaterThanOrEqual(afterClaimed.records[0].createdAt.getTime());
+    expect(none.records).toEqual([]);
+  });
+
+  it("hands the next tail an event that commits after a newer one, though written before it", async () => {
+    const conversationId = await seedConversation();
+    const scope = { includeFeedback: false };
+    const kinds = (timeline: { present(labels: ReadonlyMap<string, string>): Array<{ kind: string }> }) =>
+      timeline.present(new Map()).map((entry) => entry.kind);
+
+    // The approval's transaction writes its event first and commits last, as a resume turn does.
+    const first = await database.kysely.transaction().execute(async (transaction) => {
+      await activity.record(transaction, {
+        kind: "approval_decided",
+        conversationId,
+        workspaceId,
+        actorUserId: beaId,
+        detail: { handle: "handle-1", decision: { optionId: "approve", label: "Approve" } },
+      });
+      await activity.record(database.kysely, { kind: "claimed", conversationId, workspaceId, actorUserId: carlId });
+      return reads.readTimeline(workspaceId, conversationId, scope);
+    });
+    const next = await reads.readTimeline(workspaceId, conversationId, { ...scope, after: first.cursor });
+
+    expect(kinds(first)).toEqual(["claimed"]);
+    expect(kinds(next)).toEqual(["approval_decided", "claimed"]);
+  });
+
+  it("reads past a cursor from another conversation, and nothing older than the window behind a cursor", async () => {
+    const conversationId = await seedConversation();
+    const other = await seedConversation();
+    await activity.record(database.kysely, { kind: "claimed", conversationId, workspaceId, actorUserId: beaId });
+    await database.query(
+      `UPDATE conversation_activity SET created_at = now() - interval '1 hour' WHERE conversation_id = $1`,
+      [conversationId],
+    );
+    const foreign = await reads.readTimeline(workspaceId, other, { includeFeedback: false });
+    const idle = await reads.readTimeline(workspaceId, conversationId, { includeFeedback: false, after: foreign.cursor });
+    await activity.record(database.kysely, { kind: "handed_back", conversationId, workspaceId, actorUserId: beaId });
+
+    const next = await reads.readTimeline(workspaceId, conversationId, { includeFeedback: false, after: foreign.cursor });
+
+    expect(idle.present(new Map())).toEqual([]);
+    expect(idle.userIds).toEqual([]);
+    expect(next.present(new Map()).map((entry) => entry.kind)).toEqual(["handed_back"]);
   });
 
   it("lists the workspace's latest closing events with the conversation's title or preview, leaving out test chats", async () => {
@@ -217,11 +252,12 @@ describeIntegration("conversation activity (Postgres)", () => {
     await activity.record(database.kysely, { kind: "handed_back", conversationId, workspaceId, actorUserId: leaverId });
 
     await database.query(`DELETE FROM users WHERE id = $1`, [leaverId]);
-    await expect(activity.listForConversation(workspaceId, conversationId, { kinds: ["handed_back"] })).resolves.toEqual([
-      expect.objectContaining({ kind: "handed_back", actorUserId: null }),
-    ]);
+    await expect(activity.listForConversation(workspaceId, conversationId, { kinds: ["handed_back"] })).resolves.toMatchObject({
+      records: [expect.objectContaining({ kind: "handed_back", actorUserId: null })],
+    });
 
     await database.query(`DELETE FROM conversations WHERE id = $1`, [conversationId]);
-    await expect(activity.listForConversation(workspaceId, conversationId, { kinds: ["handed_back"] })).resolves.toEqual([]);
+    await expect(activity.listForConversation(workspaceId, conversationId, { kinds: ["handed_back"] }))
+      .resolves.toMatchObject({ records: [] });
   });
 });

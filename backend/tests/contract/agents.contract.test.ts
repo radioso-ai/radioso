@@ -118,7 +118,7 @@ describe("agents contract", () => {
       .expect(201);
     const requirePermission = vi.spyOn(dependencies.accountAccessService, "requirePermission")
       .mockImplementation(async ({ permission }) => {
-        if (permission === "workspace.agents.read") return;
+        if (permission === "workspace.agents.read") return null;
         throw forbidden("You do not have permission to perform this action");
       });
 

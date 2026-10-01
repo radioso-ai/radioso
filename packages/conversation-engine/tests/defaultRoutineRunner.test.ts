@@ -674,8 +674,10 @@ describe("DefaultRoutineRunner", () => {
     };
     const select = vi.fn()
       .mockResolvedValueOnce({ nextStepId: "ask_email", variables: { name: "Alex", email: "alex@example.com" } })
-      .mockResolvedValueOnce({ nextStepId: "ask_email", yieldTurn: true });
-    const runner = new DefaultRoutineRunner([intake], { select }, { render: vi.fn() });
+      // The skipped-to step's selector reads the message as off-topic and also flags it.
+      .mockResolvedValueOnce({ nextStepId: "ask_email", yieldTurn: true, hold: true });
+    const render = vi.fn();
+    const runner = new DefaultRoutineRunner([intake], { select }, { render });
 
     const result = await runner.resume({
       turn,
@@ -689,6 +691,10 @@ describe("DefaultRoutineRunner", () => {
       instruction: "Ask for name.",
       missingSlotKeys: ["name"],
     });
+    // Nothing is held or rendered, and a yield carries no step trace, so no held-step entry.
+    expect(result.nextState).toBeNull();
+    expect(result.trace).toBeUndefined();
+    expect(render).not.toHaveBeenCalled();
   });
 
   it("does not yield on the activation turn — lands on (renders) the current step instead", async () => {

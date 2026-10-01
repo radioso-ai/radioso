@@ -120,11 +120,12 @@ On the routine's first turn the selector always reads the message, even when the
 activator already filled the first step's slot, so the rest of an opening message
 ("the Kriya retreat, 11 to 14 November") is kept. When fast-forwarding stops at a
 step that still lacks values, that step also reads the opening message once
-before it is asked, whatever it asks for. It moves on only if that read fills
-the step, so one opening message can carry the routine past several steps; a
-step it fills only in part asks for what is still missing. This happens at most
-once per step, and only on the first turn, since a later reply answers the step
-shown on screen.
+before it is asked, whatever it asks for. It moves on only if that read fully
+satisfies the step, so one opening message can carry the routine past several
+steps; a step it fills only in part keeps what it read and is asked as usual,
+with the values it holds filled into its instruction. This happens at most once
+per step, and only on the first turn, since a later reply answers the step shown
+on screen.
 
 Two mechanisms make sure a step that *asks* for a slot still captures it even
 when its branches are deterministic.

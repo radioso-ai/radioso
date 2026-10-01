@@ -1,4 +1,4 @@
-import type { RoutineActionRequest, RoutineOperatorNotice } from "@radioso/conversation-contract";
+import type { RoutineActionRequest, RoutineOperatorNoticeEffect } from "@radioso/conversation-contract";
 
 import { routineHandoffOwnership, type RoutineHandoffEffect } from "./handoffOwnership.js";
 import { operatorNoticeActionPayload, ROUTINE_ENDING_NOTICE_ACTIONS } from "./operatorNoticeAction.js";
@@ -7,7 +7,7 @@ import type { PreparedSession } from "./chatSessionPreparer.js";
 /** The routine-ending effects a turn reports, whichever path (routine, coverage, rendered) ran it. */
 interface RoutineEndingTurnEffects {
   handoff?: RoutineHandoffEffect;
-  operatorNotice?: RoutineOperatorNotice;
+  operatorNotice?: RoutineOperatorNoticeEffect;
   actions?: RoutineActionRequest[];
 }
 
@@ -20,7 +20,7 @@ export const buildRoutineEndingNotifyAction = (input: {
   workspaceId: string;
   agentId: string;
   userMessageId: string;
-  notice: RoutineOperatorNotice;
+  notice: RoutineOperatorNoticeEffect;
 }): RoutineActionRequest => {
   const action = ROUTINE_ENDING_NOTICE_ACTIONS[input.notice.terminalKind];
   return {

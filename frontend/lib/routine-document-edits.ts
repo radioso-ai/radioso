@@ -273,7 +273,8 @@ export const addEnding = (doc: RoutineBlockDoc, kind: RoutineTerminalKind): Rout
   return next
 }
 
-type EndingNotice = NonNullable<RoutineBlockEnding['operatorNotice']>
+/** The operator notice an ending carries, as the document editor holds it. */
+export type EndingNotice = NonNullable<RoutineBlockEnding['operatorNotice']>
 
 // An ending is defined once but copied onto every branch that targets it, so an edit to one
 // ending rewrites each copy.

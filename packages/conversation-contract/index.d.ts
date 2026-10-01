@@ -1756,11 +1756,15 @@ export interface ProcessTurnResult {
    * values keyed by slot key; `subject`/`intro` are the authored templates, absent when the
    * host's default applies. A side effect only — it never changes who owns the conversation.
    */
-  operatorNotice?: RoutineOperatorNotice;
+  operatorNotice?: RoutineOperatorNoticeEffect;
 }
 
-/** What a routine ending tells operators; see {@link ProcessTurnResult.operatorNotice}. */
-export interface RoutineOperatorNotice extends RoutineOperatorNoticeTemplate {
+/**
+ * What a routine ending tells operators, as the engine reports it; see
+ * {@link ProcessTurnResult.operatorNotice}. The notice an author stores on a terminal is
+ * `RoutineOperatorNotice` in `@radioso/routine-definition`.
+ */
+export interface RoutineOperatorNoticeEffect extends RoutineOperatorNoticeTemplate {
   routineId: string;
   stepId: string;
   terminalKind: "complete" | "handoff";

@@ -1,4 +1,4 @@
-import type { RoutineOperatorNotice, RoutineOperatorNoticeTemplate } from "@radioso/conversation-contract";
+import type { RoutineOperatorNoticeEffect, RoutineOperatorNoticeTemplate } from "@radioso/conversation-contract";
 
 import type { RoutineEndingOperatorNotification } from "../../operatorNotifications/public.js";
 import { COMPLETION_NOTIFY_ACTION_TYPE, HANDOFF_NOTIFY_ACTION_TYPE } from "./routines/contactRoutine.js";
@@ -19,7 +19,7 @@ export interface RoutineEndingNoticeAction {
  * the row's notification kind. A hand-off keeps `handoff.notify`, so outbox rows queued before
  * completions could notify keep dispatching.
  */
-export const ROUTINE_ENDING_NOTICE_ACTIONS: Readonly<Record<RoutineOperatorNotice["terminalKind"], RoutineEndingNoticeAction>> = {
+export const ROUTINE_ENDING_NOTICE_ACTIONS: Readonly<Record<RoutineOperatorNoticeEffect["terminalKind"], RoutineEndingNoticeAction>> = {
   handoff: { type: HANDOFF_NOTIFY_ACTION_TYPE, reason: "routine_handoff", notificationKind: "handoff" },
   complete: { type: COMPLETION_NOTIFY_ACTION_TYPE, reason: "routine_completed", notificationKind: "completion" },
 };

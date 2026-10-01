@@ -5,7 +5,7 @@ import type {
   ConversationRoutineSteeringInput,
   ConversationTraceStage,
   ProcessTurnResult,
-  RoutineOperatorNotice,
+  RoutineOperatorNoticeEffect,
   RoutineState,
   SteeringRule,
   TurnContext,
@@ -34,7 +34,7 @@ import {
 const operatorNoticeFor = (
   routineId: string,
   terminal: ConversationRoutineResumeResult["terminal"],
-): RoutineOperatorNotice | undefined => {
+): RoutineOperatorNoticeEffect | undefined => {
   if (!terminal?.operatorNotice || (terminal.kind !== "complete" && terminal.kind !== "handoff")) {
     return undefined;
   }

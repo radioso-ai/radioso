@@ -6,9 +6,8 @@ import { RoutineInstructionEditor, type RoutineEditorVariable } from '@/componen
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { instructionToProseParagraphs, proseParagraphsToInstruction } from '@/lib/routine-document'
+import type { EndingNotice } from '@/lib/routine-document-edits'
 import { blockSegmentsToInstruction, instructionToBlockSegments, type ChipDocVariable, type ProseParagraph, type RoutineBlockEnding } from '@/lib/routine-prose'
-
-type EndingNotice = NonNullable<RoutineBlockEnding['operatorNotice']>
 
 // One notice text, edited with the same chip editor as a step instruction, so `@` inserts a
 // collected value as `{{slot.<key>}}`. The editor is uncontrolled; it reads the text once, and

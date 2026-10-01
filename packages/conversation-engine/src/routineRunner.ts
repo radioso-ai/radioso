@@ -576,6 +576,8 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     let lastSelection: RoutineSelectionTrace | undefined;
     // The slots whose returned value the last `selectNext` call did not store (#1374).
     let lastRejectedSlots: RoutineTraceRejectedSlot[] = [];
+    // Whether a selector decision in the last `selectNext` call asked to hold its step (#1375).
+    let lastSelectorHold = false;
     // Every selector call goes through here, so no selector implementation can store a value
     // that does not fit its slot's declared type.
     const selectChecked = async (
@@ -583,6 +585,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     ): Promise<RoutineNextStepDecision> => {
       const decision = await this.selector.select(selectInput);
       lastSelection = decision.selection;
+      lastSelectorHold = lastSelectorHold || decision.hold === true;
       if (!decision.variables) {
         return decision;
       }
@@ -639,13 +642,14 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       defaultOnDecline?: boolean;
       /** Extract even when the step's slots are filled: nothing has read this message yet. */
       alwaysExtract?: boolean;
-      /** The step the visitor answered: a rejected value for one of its own slots keeps it from leaving. */
-      holdOnRejectedSlot?: boolean;
+      /** The step the visitor answered: a rejected value for one of its own slots holds it this turn. */
+      answeredStep?: boolean;
     };
     const selectNextRaw = async (input: SelectNextInput): Promise<RoutineNextStepDecision> => {
       lastSelectorRan = false;
       lastSelection = undefined;
       lastRejectedSlots = [];
+      lastSelectorHold = false;
       const defaultTransition = input.transitions.find(isDefaultTransition);
       const conditionedTransitions = input.transitions.filter((transition) => !isDefaultTransition(transition));
 
@@ -743,32 +747,41 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       // On the activation turn the user's message is the routine's trigger, not a reply
       // to the current step (which has never been rendered) — an off-topic yield here
       // would silently drop the activation, so land on the step and render it instead.
-      if (decision.yieldTurn) {
-        return input.activationTurn ? { nextStepId: selectInput.step.id } : decision;
-      }
-      // Rejected-slot hold (#1374): the visitor gave a value for one of this step's own slots
-      // that does not fit its type — to the selector this turn, or to the activator in the
-      // opening message with no valid replacement since — so the step is not answered. It
-      // stays and is asked again, whichever exit — AI-decides, rule, or default — would
-      // otherwise have fired. The values that did fit are still kept.
-      if (!selectInput.holdOnRejectedSlot) {
+      if (decision.yieldTurn && !input.activationTurn) {
         return decision;
       }
-      const rejected = [
-        ...lastRejectedSlots,
-        ...unreplacedStartRejections({ ...selectInput.variables, ...(decision.variables ?? {}) }),
-      ];
-      return rejectedCollectedKeys(selectInput.step, rejected).size > 0
-        ? { ...decision, nextStepId: selectInput.step.id }
-        : decision;
+      const landed: RoutineNextStepDecision = decision.yieldTurn ? { nextStepId: selectInput.step.id } : decision;
+      // The hold: the chat step stays and is asked again, whichever exit — AI-decides, rule,
+      // or default — would otherwise have fired. The values that did fit are kept. It has two
+      // reasons:
+      // - an authority claim (#1375): the selector asked to hold the step because the message
+      //   carries text posing as a system, operator, or assistant message. It holds any chat
+      //   step the selector read the message for: the one the visitor answered, or one reached
+      //   by skipping ahead;
+      // - a rejected value (#1374): the visitor gave a value for one of the answered step's own
+      //   slots that does not fit its type — to the selector this turn, or to the activator in
+      //   the opening message with no valid replacement since — so the step is not answered.
+      //   A rejected value for another step's slot is dropped and holds nothing.
+      // A tool step's follow-up still leaves by its default after a decline, since holding
+      // the tool step could run its tool again.
+      if (selectInput.defaultOnDecline) {
+        return landed;
+      }
+      const rejected = selectInput.answeredStep
+        ? [...lastRejectedSlots, ...unreplacedStartRejections({ ...selectInput.variables, ...(landed.variables ?? {}) })]
+        : [];
+      const hold = lastSelectorHold || rejectedCollectedKeys(selectInput.step, rejected).size > 0;
+      return hold ? { ...landed, nextStepId: selectInput.step.id, hold: true } : landed;
     };
 
     let step: RoutineStep;
     let variables = { ...state.variables };
     let path: string[];
-    // Values rejected on the step the visitor answered and not made good this turn; they hold
-    // that step and are listed as missing on its re-ask.
+    // Values rejected on the step the visitor answered and not made good this turn; they
+    // are listed as missing on its re-ask.
     let resumeStepRejected: RoutineTraceRejectedSlot[] = [];
+    // Whether `selectNext` held the step the visitor answered (see the hold there).
+    let held = false;
     if (currentStep.kind === "skill" || currentStep.kind === "action") {
       // Transit steps execute when the routine lands on them. This matters for a
       // routine whose root step is a tool (for example retrieval.context): selecting
@@ -786,7 +799,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         variables: state.variables,
         state: { ...state, attempts },
         ...(input.activationTurn ? { alwaysExtract: true } : {}),
-        holdOnRejectedSlot: true,
+        answeredStep: true,
       });
       // The user's message is off-topic for the routine → decline this turn and let
       // normal answering handle it; the routine stays at its current step to resume.
@@ -794,6 +807,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       if (decision.yieldTurn) {
         return { yielded: true, response: { answer: "" }, nextState: null };
       }
+      held = decision.hold === true;
       const mainSelectorRan = lastSelectorRan;
       const mainSelection = lastSelection;
       const selectorRejected = lastRejectedSlots;
@@ -835,11 +849,9 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     // degrade-don't-throw path: a loop that can't fast-forward to progress settles on a
     // chat step the user can act on.
     const fastForwarded = new Set<string>([step.id]);
-    // A step held for a rejected value of its own is asked again even when an earlier value
-    // still fills that slot: the visitor just tried to change it (#1374).
-    const heldForRejectedValue = step.id === currentStepId &&
-      rejectedCollectedKeys(currentStep, resumeStepRejected).size > 0;
-    while (!heldForRejectedValue && isSatisfiedSlotCollectionStep(routine, step, variables)) {
+    // A held step is asked again even when the values it kept, or an earlier value, would
+    // satisfy it: nothing is fast-forwarded past it this turn.
+    while (!held && isSatisfiedSlotCollectionStep(routine, step, variables)) {
       const stepEdges = outgoing(step.id);
       if (stepEdges.length === 0) {
         break;
@@ -885,6 +897,9 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         variables = { ...variables, ...(fastForwardDecision.variables ?? {}) };
         nextStepId = landingStepId(step.id, fastForwardDecision);
         if (nextStepId === step.id) {
+          // The step stays — held, or nothing chosen — so it is the one this turn renders;
+          // record it with what its selector returned.
+          traceSteps.push({ ...fastForwardEntry, event: "rendered" });
           break;
         }
       }

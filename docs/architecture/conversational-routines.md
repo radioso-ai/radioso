@@ -118,7 +118,14 @@ running both a selector pass and a step reply records both.
 
 On the routine's first turn the selector always reads the message, even when the
 activator already filled the first step's slot, so the rest of an opening message
-("the Kriya retreat, 11 to 14 November") is kept.
+("the Kriya retreat, 11 to 14 November") is kept. When fast-forwarding stops at a
+step that still lacks values, that step also reads the opening message once
+before it is asked, whatever it asks for. It moves on only if that read fully
+satisfies the step, so one opening message can carry the routine past several
+steps; a step it fills only in part keeps what it read and is asked as usual,
+with the values it holds filled into its instruction. This happens at most once
+per step, and only on the first turn, since a later reply answers the step shown
+on screen.
 
 Two mechanisms make sure a step that *asks* for a slot still captures it even
 when its branches are deterministic.
@@ -373,9 +380,11 @@ Each routine turn records a step-by-step trace that hangs off the turn's
 trace off the dispatch stage. The conversation debug panel renders it as a
 timeline: which step the turn resumed on, whether it advanced, re-asked,
 fast-forwarded, dispatched a tool, or rendered, plus which slot *keys* were
-captured this turn and which are now filled. A step whose returned value did not
-fit its slot lists it under `rejectedSlots` (key and reason, `type_mismatch` or
-`not_scalar`), and a step asked past the re-ask limit adds a `reask_limit_reached`
+captured this turn and which are now filled. A step read for the opening message,
+described above, carries `readOpeningMessage: true`, whether it moved on or was
+rendered. A step whose returned value did not fit its slot lists it under
+`rejectedSlots` (key and reason, `type_mismatch` or `not_scalar`), and a step
+asked past the re-ask limit adds a `reask_limit_reached`
 entry with its `reaskCount`. A step the selector judged also
 records the selector's `selection`: its `outcome` (`transition`, `stay`,
 `off_topic`, `unreadable` when the model's output could not be parsed or lacked

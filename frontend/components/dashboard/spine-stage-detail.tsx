@@ -903,6 +903,8 @@ interface RoutineTraceStepView {
   selection?: RoutineStepSelectionView
   /** Slot keys whose returned value did not fit the slot's type and was not stored (#1374). */
   rejectedSlotKeys?: string[]
+  /** On the routine's first turn, this step read the opening message before it was asked (#1370). */
+  readOpeningMessage?: boolean
 }
 
 // Keys only: the runner never puts a rejected value on the trace, and this ignores one if present.
@@ -951,6 +953,7 @@ export const buildRoutineRunTrace = (
         ...(asString(entry.skillReason) ? { skillReason: asString(entry.skillReason) } : {}),
         ...(selection ? { selection } : {}),
         ...(rejectedSlotKeys.length > 0 ? { rejectedSlotKeys } : {}),
+        ...(entry.readOpeningMessage === true ? { readOpeningMessage: true } : {}),
       }
     })
   return {
@@ -984,6 +987,19 @@ const ROUTINE_EVENT_DESCRIPTIONS: Record<string, string> = {
   action_emitted: 'Emitted a fire-and-forget action.',
   rendered: 'The reply you saw was generated from this step.',
   reask_limit_reached: 'Asked too many times in a row, so the reply asked differently.',
+}
+
+// A step the first turn read the opening message for (#1370), flagged explicitly rather
+// than inferred from captured keys (a step can read the message and still come up empty).
+// It either moved on with what the message gave, or is rendered as a first ask — the
+// value it did read is filled into its own instruction, not repeated in this line.
+const routineEventDescription = (step: RoutineTraceStepView): string | undefined => {
+  if (step.readOpeningMessage) {
+    return step.event === 'rendered'
+      ? 'Read the opening message first; it did not give everything this step asks for.'
+      : 'Skipped without asking — this turn’s message gave what this step asks for.'
+  }
+  return ROUTINE_EVENT_DESCRIPTIONS[step.event]
 }
 
 const ROUTINE_SELECTION_OUTCOME_LABELS: Record<RoutineStepSelectionOutcome, string> = {
@@ -1067,8 +1083,8 @@ function RoutineStepsTimeline({ trace }: { trace: RoutineRunTraceView }) {
                   ) : null}
                 </div>
               ) : null}
-              {ROUTINE_EVENT_DESCRIPTIONS[step.event] ? (
-                <p className="text-[11px] text-muted-foreground">{ROUTINE_EVENT_DESCRIPTIONS[step.event]}</p>
+              {routineEventDescription(step) ? (
+                <p className="text-[11px] text-muted-foreground">{routineEventDescription(step)}</p>
               ) : null}
               {step.skillName ? (
                 <p className="text-[11px] text-muted-foreground">

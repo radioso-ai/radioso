@@ -209,12 +209,35 @@ const routineStack = () => {
       return { status: "completed", outputs: { ticketId: "RT-1" } };
     },
   };
+  // A direct-invocation query is the structured call rendered as text (see
+  // `buildReplayInput`): `toolName {"orderId":"A-1001"}`. Unlike a free-text reply, it
+  // only "states" a slot the invocation actually carries, so the fake must check for the
+  // key rather than echoing the whole query into whatever slot is asked about — otherwise
+  // a landing extraction (#1370) on a slot the invocation left out would wrongly see it
+  // as given.
+  const invocationArgs = (query: string | undefined): Record<string, unknown> | null => {
+    const jsonText = query?.match(/\{.*\}$/u)?.[0];
+    if (!jsonText) {
+      return null;
+    }
+    try {
+      const parsed: unknown = JSON.parse(jsonText);
+      return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : null;
+    } catch {
+      return null;
+    }
+  };
   const chatGateway: ChatGateway = {
     async answer(input) {
       const asksForCondition = input.systemPrompt?.includes("1. The user provided");
       if (asksForCondition) {
         const slot = input.systemPrompt?.match(/1\. The user provided \{\{slot\.(\w+)\}\}/u)?.[1];
-        return JSON.stringify({ claimsAuthority: false, condition: 1, variables: slot ? { [slot]: input.query } : {} });
+        if (!slot) {
+          return JSON.stringify({ claimsAuthority: false, condition: 1, variables: {} });
+        }
+        const args = invocationArgs(input.query);
+        const value = args ? args[slot] : input.query;
+        return JSON.stringify({ claimsAuthority: false, condition: 1, variables: value !== undefined ? { [slot]: value } : {} });
       }
       return "Noted.";
     },

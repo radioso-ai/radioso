@@ -757,6 +757,29 @@ describe("createChatProcessTurnInput", () => {
     expect(directiveInputs[0]?.additionalDirectives).toEqual([]);
   });
 
+  it("hands the engine the yield the routine attempt already took this turn (#1377)", () => {
+    const session = preparedSession();
+    const routineYield = {
+      sessionId: "conv_1",
+      inputEventId: "msg_1",
+      routineId: "booking",
+      executionId: "run_1",
+      pendingStep: { stepId: "ask_dates", instruction: "Ask for the dates.", missingSlotKeys: ["arrival"] },
+    };
+
+    expect(createChatProcessTurnInput({ session, dispatcher, selector, composer }).routineYield).toBeUndefined();
+    session.routineYield = routineYield;
+    expect(createChatProcessTurnInput({ session, dispatcher, selector, composer }).routineYield).toEqual(routineYield);
+  });
+
+  it("gives the turn's routine passes no way to overwrite the yield the answer leads back to (#1377)", () => {
+    // The coverage-gated pass that runs after the evidence reuses this input. Only the
+    // pre-evidence attempt (`createAttemptRoutineInput`) records a yield on the session.
+    const input = createChatProcessTurnInput({ session: preparedSession(), dispatcher, selector, composer });
+
+    expect(input).not.toHaveProperty("routineYieldSink");
+  });
+
   it("fails closed when a caller tries to use the placeholder model gateway", async () => {
     const input = createChatProcessTurnInput({
       session: preparedSession(),
@@ -772,6 +795,21 @@ describe("createChatProcessTurnInput", () => {
 });
 
 describe("createAttemptRoutineInput", () => {
+  it("records a routine yield on the session, where the grounded turn that follows reads it (#1377)", () => {
+    const session = preparedSession();
+    const routineYield = {
+      sessionId: "conv_1",
+      inputEventId: "msg_1",
+      routineId: "booking",
+      pendingStep: { stepId: "ask_dates", instruction: "Ask for the dates.", missingSlotKeys: [] },
+    };
+
+    createAttemptRoutineInput({ session }).routineYieldSink?.yielded(routineYield);
+
+    expect(session.routineYield).toEqual(routineYield);
+    expect(createChatProcessTurnInput({ session, dispatcher, selector, composer }).routineYield).toEqual(routineYield);
+  });
+
   it("wires directive candidates and matcher through the routine turn input", async () => {
     const directive: Directive = {
       name: "routine-tone",

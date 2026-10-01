@@ -10,6 +10,7 @@ import type {
   RoutineContextRenderer,
   RoutineGuard,
   RoutineNextStepDecision,
+  RoutinePendingStep,
   RoutineRunTrace,
   RoutineSelectionTrace,
   RoutineSkillResult,
@@ -338,6 +339,26 @@ const filledCollectedSlot = (
 ): boolean =>
   collectedSlotsForStep(step).some((key) => !hasVariable(before, key) && hasVariable(after, key));
 
+/**
+ * The step a yielding routine stays parked on. The host puts it into the answer's system
+ * prompt, so it carries no captured value: a captured value is visitor text, and a slot
+ * reference shows as its bracketed key instead ("Ask [name] for the dates"). The routine
+ * claims nothing this turn, so the context staged for the turn (the visitor's page) is not
+ * the routine's to read either, and a context reference renders empty.
+ */
+const pendingStepFor = (
+  routine: Routine,
+  step: RoutineStep,
+  variables: Record<string, unknown>,
+): RoutinePendingStep => ({
+  stepId: step.id,
+  instruction: (step.action ?? "").replace(STEP_REFERENCE, (_match, kind: string, name: string) =>
+    kind === "slot" ? `[${name}]` : ""),
+  missingSlotKeys: requiredCollectedSlots(routine, step)
+    .filter((slot) => !hasVariable(variables, slot.key))
+    .map((slot) => slot.key),
+});
+
 const declaredSlotVariables = (
   routine: Routine,
   variables: Record<string, unknown>,
@@ -553,6 +574,14 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
 
     const currentStepId = state.path.at(-1) ?? routine.rootStepId;
     const currentStep = stepById(currentStepId);
+    // A yield leaves the saved state untouched, so the routine waits on the step it resumed
+    // on, whatever this message would have filled or walked past.
+    const yieldTurn = (): ConversationRoutineResumeResult => ({
+      yielded: true,
+      response: { answer: "" },
+      nextState: null,
+      pendingStep: pendingStepFor(routine, currentStep, state.variables),
+    });
 
     // Debug trace: a step-by-step log of this turn's traversal, surfaced to the panel.
     // Slot KEYS only — never the captured values (which may be PII).
@@ -805,7 +834,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       // normal answering handle it; the routine stays at its current step to resume.
       // response/nextState are inert placeholders the engine ignores on a yield.
       if (decision.yieldTurn) {
-        return { yielded: true, response: { answer: "" }, nextState: null };
+        return yieldTurn();
       }
       held = decision.hold === true;
       const mainSelectorRan = lastSelectorRan;
@@ -879,7 +908,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
           state: fastForwardState,
         });
         if (fastForwardDecision.yieldTurn) {
-          return { yielded: true, response: { answer: "" }, nextState: null };
+          return yieldTurn();
         }
         if (lastSelectorRan) {
           fastForwardEntry.viaSelector = true;

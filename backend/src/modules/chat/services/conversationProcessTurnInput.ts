@@ -324,6 +324,7 @@ export const createChatProcessTurnInput = (options: ChatProcessTurnInputOptions)
     ...(options.clarificationStore ? { clarificationStore: options.clarificationStore } : {}),
     ...(options.loopGuardCandidateIds ? { loopGuardCandidateIds: options.loopGuardCandidateIds } : {}),
     ...(options.suppressNewClarification ? { suppressNewClarification: options.suppressNewClarification } : {}),
+    ...(readSession().routineYield ? { routineYield: readSession().routineYield } : {}),
   };
 };
 
@@ -359,6 +360,8 @@ interface AttemptRoutineInputOptions {
  * stores, directive steering, and routine machinery only. Routine resume/activation
  * never runs selection, dispatch, or composition, so unlike
  * {@link createChatProcessTurnInput} this wires no stub selector/dispatcher/composer.
+ * A routine that yields the turn is recorded on the session, where the answer that
+ * follows leads back to it and {@link createChatProcessTurnInput} hands it to the engine.
  */
 export const createAttemptRoutineInput = (options: AttemptRoutineInputOptions): AttemptRoutineInput => {
   const directiveWiring = buildDirectiveTurnWiring(options);
@@ -386,5 +389,10 @@ export const createAttemptRoutineInput = (options: AttemptRoutineInputOptions): 
     ...(options.loopGuardCandidateIds ? { loopGuardCandidateIds: options.loopGuardCandidateIds } : {}),
     ...(options.suppressNewClarification ? { suppressNewClarification: options.suppressNewClarification } : {}),
     ...(options.progress ? { progress: options.progress } : {}),
+    routineYieldSink: {
+      yielded(routineYield) {
+        options.session.routineYield = routineYield;
+      },
+    },
   };
 };

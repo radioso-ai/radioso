@@ -435,6 +435,7 @@ export const createRoutineTurnProvider = (
         promptTemplate: loadPromptTemplate("chat/routine-step-reply.md"),
         terminalHandoffWithMessagePromptTemplate: loadPromptTemplate("chat/routine-step-terminal-handoff-with-message.md"),
         terminalHandoffDefaultPromptTemplate: loadPromptTemplate("chat/routine-step-terminal-handoff-default.md"),
+        reaskExhaustedPromptTemplate: loadPromptTemplate("chat/routine-step-reask-exhausted.md"),
         responseLanguage,
         groundedAnswerRenderer,
         steeringPromptTemplate: loadPromptTemplate("chat/routine-step-steering.md"),

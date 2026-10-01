@@ -622,6 +622,7 @@ export {
   type SlotCorrectionResult,
   type SlotCorrectionRejection,
 } from "./slotCorrection.js";
+export { checkSlotValue } from "./slotValue.js";
 export {
   clarificationStage,
   decideClarification,

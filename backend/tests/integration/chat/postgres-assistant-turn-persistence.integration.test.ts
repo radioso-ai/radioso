@@ -5,6 +5,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { AccountRepository } from "../../../src/db/repositories/accountRepository.js";
 import { ConversationRepository, type ConversationRecord } from "../../../src/db/repositories/conversationRepository.js";
 import { ConversationOwnershipRepository } from "../../../src/db/repositories/conversationOwnershipRepository.js";
+import { RoutineStateRepository } from "../../../src/db/repositories/routineStateRepository.js";
 import { WorkspaceRepository, type WorkspaceRecord } from "../../../src/db/repositories/workspaceRepository.js";
 import { PostgresAssistantTurnPersistence } from "../../../src/modules/chat/infra/postgresAssistantTurnPersistence.js";
 import { projectVisitorRequestFacts, resolveContextForTurn } from "../../../src/modules/context-variables/public.js";
@@ -131,6 +132,7 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
           path: ["ask_email", "ask_message"],
           variables: { email: "alex@example.com" },
           attempts: { ask_email: 1, ask_message: 2 },
+          reaskCount: 2,
           status: "active",
         },
       },
@@ -148,21 +150,42 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
     const savedState = await database.queryOne<{
       status: string;
       attempts: unknown;
+      reask_count: number;
       path: string[];
       variables: unknown;
       expires_at: Date | null;
     }>(
-      "SELECT status, attempts, path, variables, expires_at FROM routine_states WHERE session_id = $1",
+      "SELECT status, attempts, reask_count, path, variables, expires_at FROM routine_states WHERE session_id = $1",
       [sessionId],
     );
     expect(savedState).toMatchObject({
       status: "active",
       attempts: { ask_email: 1, ask_message: 2 },
+      reask_count: 2,
       path: ["ask_email", "ask_message"],
       variables: { email: "alex@example.com" },
     });
     // active (not suspended) state gets a TTL-derived expiry, never null
     expect(savedState.expires_at).toBeInstanceOf(Date);
+  });
+
+  it("round-trips the re-ask count through the routine state repository", async () => {
+    const { conversation } = await seedConversation();
+    const store = new RoutineStateRepository(database.kysely, 60_000);
+    const base = {
+      sessionId: conversation.id,
+      routineId: "routine_1",
+      path: ["ask_contact"],
+      variables: {},
+      status: "active" as const,
+    };
+
+    await store.save({ ...base, reaskCount: 3 });
+    await expect(store.loadActive({ sessionId: conversation.id })).resolves.toMatchObject({ reaskCount: 3 });
+
+    await store.save(base);
+    const reset = await store.loadActive({ sessionId: conversation.id });
+    expect(reset).not.toHaveProperty("reaskCount");
   });
 
   it("applies clarification transitions inside the assistant turn transaction", async () => {

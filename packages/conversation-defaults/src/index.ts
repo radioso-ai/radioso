@@ -59,7 +59,11 @@ export {
   UNBOUND_CANDIDATE_REASON,
   type DirectiveBoundSkillSelectorOptions,
 } from "./directiveBoundSkillSelector.js";
-export { resolveSkillArguments } from "./skillArgumentResolver.js";
+export {
+  resolveSkillArguments,
+  resolveUntypedSkillArguments,
+  type ResolvedSkillArguments,
+} from "./skillArgumentResolver.js";
 export {
   createConversationSkillInputResolver,
   type CreateConversationSkillInputResolverOptions,

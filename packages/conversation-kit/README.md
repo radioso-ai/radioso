@@ -244,6 +244,13 @@ const runLookup = {
 };
 ```
 
+A handler a routine step calls also receives `inputOrigins`, keyed like `input`:
+`literal` for a value the author wrote, `slot` for a routine variable, and
+`context` for a turn context variable. A routine variable counts as `slot` even
+when a tool output filled it, so treat `slot` and `context` values as visitor
+input, for example by escaping them before they go into HTML. A skill executor
+port gets the same map as `collectedOrigins`.
+
 Pass `routineSkillDispatcher` to run routine skill steps through your own executor
 instead of the local handlers.
 

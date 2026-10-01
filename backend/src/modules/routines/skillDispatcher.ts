@@ -11,7 +11,7 @@ import {
 } from "../skills/public.js";
 import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
 import { traceOperation } from "../../shared/observability/tracing/operations.js";
-import { resolveSkillArguments } from "./skillArgumentResolver.js";
+import { resolveSkillArguments, resolveUntypedSkillArguments } from "./skillArgumentResolver.js";
 import type { ConversationDurability, SkillEffectPolicy } from "../../shared/domain/turnExecutionMode.js";
 
 type RoutineCapabilityGate = (capability: string) => Promise<{ allowed: boolean; reason?: string }>;
@@ -186,17 +186,18 @@ export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillD
     }
 
     let result: SkillDispatchResult;
-    const collected = inputBindings && Object.keys(inputBindings).length > 0
+    // Typed steps resolve authored input bindings first. During the FR-019
+    // compatibility window, untyped/legacy steps still pass captured variables
+    // through so external-skill slotBinding routing keeps working.
+    const { values: collected, origins: collectedOrigins } = inputBindings && Object.keys(inputBindings).length > 0
       ? resolveSkillArguments(inputBindings, state.variables ?? {}, contextValuesFromStagedContext(turn.stagedContext))
-      : state.variables ?? {};
+      : resolveUntypedSkillArguments(state.variables ?? {});
     this.throwIfCancelled?.();
     try {
       result = await executor.dispatch({
         skill,
-        // Typed steps resolve authored input bindings first. During the FR-019
-        // compatibility window, untyped/legacy steps still pass captured variables
-        // through so external-skill slotBinding routing keeps working.
         collected,
+        collectedOrigins,
         context: {
           turn,
           agentId: turn.agent.id,

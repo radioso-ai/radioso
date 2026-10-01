@@ -6,7 +6,7 @@ import { Database } from "../../src/shared/infra/database.js";
 import { applyTestMigration, runTestMigrationsBefore } from "../support/databaseMigrations.js";
 
 const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
-const migrationFile = "204_conversation_activity.sql";
+const migrationFile = "205_conversation_activity.sql";
 
 const canReach = async (url?: string) => {
   if (!url) return false;

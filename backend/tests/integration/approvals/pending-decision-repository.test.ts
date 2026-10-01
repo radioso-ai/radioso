@@ -121,7 +121,7 @@ describeIfDatabase("PendingDecisionRepository Postgres integration", () => {
     await client.query(`SET search_path TO ${schema}, public`);
     database = createClientBackedDatabase(client);
     await applyTestMigration(database, "104_pending_decisions.sql");
-    await applyTestMigration(database, "204_conversation_activity.sql");
+    await applyTestMigration(database, "205_conversation_activity.sql");
     // listPending LEFT JOINs conversations to exclude operator-test sources; this per-test
     // schema doesn't run the full init migration, so create the minimal shape it reads.
     await database.execute(

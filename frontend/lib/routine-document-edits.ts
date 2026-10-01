@@ -1,4 +1,4 @@
-import { slugifyVariableKey, type ApprovalDocOption, type RoutineBlockBranch, type RoutineBlockDoc, type RoutineBlockEnding, type RoutineBlockGuard, type RoutineBlockInstructionSegment, type RoutineBlockSlot, type RoutineBlockStep, type RoutineInputBinding } from '@/lib/routine-prose'
+import { blockSegmentsToInstruction, instructionToBlockSegments, slugifyVariableKey, type ApprovalDocOption, type RoutineBlockBranch, type RoutineBlockDoc, type RoutineBlockEnding, type RoutineBlockGuard, type RoutineBlockInstructionSegment, type RoutineBlockSlot, type RoutineBlockStep, type RoutineInputBinding } from '@/lib/routine-prose'
 import type { RoutineGuardKind, RoutineStepKind, RoutineTerminalKind } from '@/lib/api-types'
 import { approvalCaptureFieldRef } from '@/lib/routine-approval'
 
@@ -273,6 +273,30 @@ export const addEnding = (doc: RoutineBlockDoc, kind: RoutineTerminalKind): Rout
   return next
 }
 
+type EndingNotice = NonNullable<RoutineBlockEnding['operatorNotice']>
+
+// An ending is defined once but copied onto every branch that targets it, so an edit to one
+// ending rewrites each copy.
+const mapEnding = (doc: RoutineBlockDoc, terminalId: string, edit: (ending: RoutineBlockEnding) => RoutineBlockEnding): RoutineBlockDoc => {
+  const next = copy(doc)
+  next.unreferencedEndings = next.unreferencedEndings.map((ending) => ending.stableStepId === terminalId ? edit(ending) : ending)
+  next.steps = next.steps.map((step) => ({
+    ...step,
+    branches: step.branches.map((branch) => branch.target.kind === 'ending' && branch.target.ending?.stableStepId === terminalId
+      ? { ...branch, target: { ...branch.target, ending: edit(branch.target.ending) } }
+      : branch),
+  }))
+  return next
+}
+
+// What operators are told when the routine ends here. `null` removes the notice: a finish then
+// tells no one, and a hand-off falls back to its default notice.
+export const setEndingNotice = (doc: RoutineBlockDoc, terminalId: string, notice: EndingNotice | null): RoutineBlockDoc =>
+  mapEnding(doc, terminalId, (ending) => {
+    const { operatorNotice: _previous, ...rest } = ending
+    return notice ? { ...rest, operatorNotice: copy(notice) } : rest
+  })
+
 export const updateEnding = (doc: RoutineBlockDoc, terminalId: string, patch: Partial<RoutineBlockEnding>): RoutineBlockDoc => {
   const next = copy(doc)
   next.unreferencedEndings = next.unreferencedEndings.map((ending) => ending.stableStepId === terminalId ? { ...ending, ...copy(patch) } : ending)
@@ -304,8 +328,26 @@ export const renameSlot = (doc: RoutineBlockDoc, stableSlotId: string, key: stri
     outputAssignments: Object.fromEntries(Object.entries(step.outputAssignments ?? {}).map(([output, assignment]) => [output, assignment === previous.key ? nextKey : assignment])),
     branches: step.branches.map((branch) => ({ ...branch, guard: renameGuardRef(branch.guard, previous.key, nextKey) })),
   }))
-  return next
+  return endingsOf(next).filter((ending) => ending.operatorNotice).reduce(
+    (renamed, ending) => mapEnding(renamed, ending.stableStepId, (current) => current.operatorNotice
+      ? { ...current, operatorNotice: renameNoticeSlot(current.operatorNotice, previous.key, nextKey) }
+      : current),
+    next,
+  )
 }
+
+const renameSlotInText = (text: string | null, from: string, to: string): string | null =>
+  text === null ? null : blockSegmentsToInstruction(replaceSlotReferences(instructionToBlockSegments(text), from, to))
+
+const renameNoticeSlot = (notice: EndingNotice, from: string, to: string): EndingNotice => ({
+  subject: renameSlotInText(notice.subject, from, to),
+  intro: renameSlotInText(notice.intro, from, to),
+})
+
+const noticeReferencesSlot = (notice: EndingNotice | undefined, key: string): boolean =>
+  [notice?.subject, notice?.intro].some((text) => text
+    ? instructionToBlockSegments(text).some((segment) => segment.kind === 'slotReference' && segment.key === key)
+    : false)
 
 const renameGuardRef = (guard: RoutineBlockGuard, from: string, to: string): RoutineBlockGuard => {
   if (guard.kind === 'slot_filled') return { ...guard, slotKeys: guard.slotKeys.map((key) => key === from ? to : key) }
@@ -406,6 +448,8 @@ export const slotReferences = (doc: RoutineBlockDoc, key: string): string[] => {
     if (Object.values(step.outputAssignments ?? {}).includes(key)) references.push(`output in ${step.stableStepId}`)
     if (step.branches.some((branch) => branch.guard.kind === 'slot_filled' ? branch.guard.slotKeys.includes(key) : branch.guard.kind === 'field' && branch.guard.fieldRef === key)) references.push(`guard in ${step.stableStepId}`)
   }
+  const noticeEndings = new Set(endingsOf(doc).filter((ending) => noticeReferencesSlot(ending.operatorNotice, key)).map((ending) => ending.stableStepId))
+  for (const endingId of noticeEndings) references.push(`notice in ${endingId}`)
   return references
 }
 

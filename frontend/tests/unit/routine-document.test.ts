@@ -147,6 +147,15 @@ describe('sanitizeDraftContentForSave', () => {
     expect(saved.terminals[0].instruction).toBe('Done.')
     expect(saved.transitions[0]).toMatchObject({ guardText: 'judge this', fieldValue: 50, fieldValues: ['a'] })
   })
+
+  it('saves an ending notice with blank text as a notice with the default text', () => {
+    const saved = sanitizeDraftContentForSave({
+      ...draft,
+      terminals: [{ ...draft.terminals[0], operatorNotice: { subject: 'Booking: {{slot.a}}', intro: '' } }],
+    })
+    expect(saved.terminals[0].operatorNotice).toEqual({ subject: 'Booking: {{slot.a}}', intro: null })
+    expect(sanitizeDraftContentForSave(draft).terminals[0]).not.toHaveProperty('operatorNotice')
+  })
 })
 
 describe('documentDiagnosticText', () => {

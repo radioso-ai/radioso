@@ -1,5 +1,5 @@
-import type { Routine, RoutineGuard, RoutineSlotSchema, RoutineStep } from "@radioso/conversation-contract";
-import { collectContextVariableRefs } from "@radioso/routine-definition";
+import type { Routine, RoutineGuard, RoutineOperatorNoticeTemplate, RoutineSlotSchema, RoutineStep } from "@radioso/conversation-contract";
+import { collectContextVariableRefs, endingNotifiesOperators } from "@radioso/routine-definition";
 
 import type { RoutineDefinition, RoutineStepMetadata } from "./domain.js";
 import { collectSlotKeys, collectedSlotsByStep } from "./slotCollection.js";
@@ -84,6 +84,15 @@ const authoredMetadata = (metadata: RoutineStepMetadata): Record<string, unknown
   const { inputBindings: _inputBindings, outputAssignments: _outputAssignments, mode: _mode, ...authorMetadata } = metadata;
   return authorMetadata;
 };
+
+// The template the engine reports for an ending that notifies operators. Compiled at load from
+// the stored definition, so a hand-off authored before notices existed gets the default notice.
+const operatorNoticeTemplate = (
+  notice: RoutineDefinition["terminals"][number]["operatorNotice"],
+): RoutineOperatorNoticeTemplate => ({
+  ...(notice?.subject ? { subject: notice.subject } : {}),
+  ...(notice?.intro ? { intro: notice.intro } : {}),
+});
 
 export const compileRoutineDefinition = (definition: RoutineDefinition): Routine => {
   const validation = validateRoutineDefinition(definition);
@@ -207,7 +216,10 @@ export const compileRoutineDefinition = (definition: RoutineDefinition): Routine
         id: terminal.stableStepId,
         kind: "terminal",
         action: terminal.instruction ?? undefined,
-        metadata: { terminalKind: terminal.kind },
+        metadata: {
+          terminalKind: terminal.kind,
+          ...(endingNotifiesOperators(terminal) ? { operatorNotice: operatorNoticeTemplate(terminal.operatorNotice) } : {}),
+        },
       };
     }),
   ];

@@ -591,6 +591,22 @@ export const validateRoutineDefinition = (
     for (const key of collectSlotReferences(terminal.instruction)) {
       referencedSlotKeys.add(key);
     }
+    // An operator notice reads collected values; it never collects one. A reference to a slot
+    // the routine does not declare would always render as a blank, so it is reported at the
+    // notice field it appears in rather than at the slot.
+    for (const field of ["subject", "intro"] as const) {
+      for (const key of collectSlotReferences(terminal.operatorNotice?.[field])) {
+        if (slotKeys.has(key)) {
+          referencedSlotKeys.add(key);
+          continue;
+        }
+        diagnostics.push({
+          code: "referenced_undeclared_slot",
+          location: `step:${terminal.stableStepId}.operatorNotice.${field}`,
+          message: `referenced-but-undeclared slot: the operator notice ${field} of ending "${terminal.stableStepId}" references "${key}", which is not declared.`,
+        });
+      }
+    }
   }
 
   for (const key of referencedSlotKeys) {

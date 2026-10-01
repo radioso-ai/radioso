@@ -440,6 +440,14 @@ describe('routine form transforms', () => {
     expect(formToRoutineDraft(createEmptyRoutineForm())).not.toHaveProperty('exposure')
   })
 
+  it('carries each ending\'s operator notice through the form model, so a dashboard save never drops it', () => {
+    const operatorNotice = { subject: 'Intake: {{slot.email}}', intro: null }
+    const form = routineToForm({ ...routine, terminals: [{ ...routine.terminals[0], operatorNotice }] })
+
+    expect(formToRoutineDraft(form).terminals).toEqual([{ ...routine.terminals[0], operatorNotice }])
+    expect(formToRoutineDraft(routineToForm(routine)).terminals[0]).not.toHaveProperty('operatorNotice')
+  })
+
   it('round-trips enabled completion export settings and builds a payload preview', () => {
     const destinationRef = '33333333-3333-4333-8333-333333333333'
     const form = routineToForm({

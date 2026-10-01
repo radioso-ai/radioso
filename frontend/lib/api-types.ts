@@ -114,6 +114,7 @@ export type RoutineTransition = Omit<ApiSchemas['RoutineDefinition']['transition
 export type RoutineTerminal = Omit<ApiSchemas['RoutineDefinition']['terminals'][number], 'kind'> & {
   kind: RoutineTerminalKind
 }
+export type RoutineOperatorNotice = NonNullable<RoutineTerminal['operatorNotice']>
 export type RoutineCompletionExport = NonNullable<ApiSchemas['RoutineDefinition']['completionExport']>
 export type RoutineExposure = NonNullable<ApiSchemas['RoutineDefinition']['exposure']>
 export type RoutineDefinitionDraft = {

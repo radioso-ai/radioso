@@ -248,6 +248,9 @@ const definitionSelect = sql`
       'stableStepId', te.stable_step_id,
       'kind', te.kind,
       'instruction', te.instruction,
+      'operatorNoticeEnabled', te.operator_notice_enabled,
+      'operatorNoticeSubject', te.operator_notice_subject,
+      'operatorNoticeIntro', te.operator_notice_intro,
       'ordinal', te.ordinal
     ) ORDER BY te.ordinal ASC, te.stable_step_id ASC) AS items
     FROM routine_terminal te
@@ -326,6 +329,16 @@ const mapRow = (row: RoutineDefinitionRow): RoutineDefinition => ({
     stableStepId: readString(terminal, "stableStepId"),
     kind: readString(terminal, "kind") as RoutineTerminalKind,
     instruction: readNullableString(terminal, "instruction"),
+    // Absent, not undefined, when the notice is off: the authoring shape compares terminals as
+    // JSON (operator MCP replace_terminal), and an undefined-valued key is not JSON.
+    ...(readBoolean(terminal, "operatorNoticeEnabled")
+      ? {
+          operatorNotice: {
+            subject: readNullableString(terminal, "operatorNoticeSubject"),
+            intro: readNullableString(terminal, "operatorNoticeIntro"),
+          },
+        }
+      : {}),
     ordinal: readNumber(terminal, "ordinal"),
   })),
   completionExport: (() => {
@@ -972,6 +985,9 @@ export class RoutineDefinitionRepository {
           stable_step_id: terminal.stableStepId,
           kind: terminal.kind,
           instruction: terminal.instruction,
+          operator_notice_enabled: terminal.operatorNotice !== undefined,
+          operator_notice_subject: terminal.operatorNotice?.subject ?? null,
+          operator_notice_intro: terminal.operatorNotice?.intro ?? null,
           ordinal: terminal.ordinal,
         })
         .execute();

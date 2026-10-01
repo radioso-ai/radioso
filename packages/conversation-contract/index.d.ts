@@ -1377,6 +1377,8 @@ export interface RoutineTraceStepEntry {
   skillStatus?: string;
   /** Host-private failure reason for a failed skill dispatch (e.g. mcp_timeout, suppressed_for_safe_test). */
   skillReason?: string;
+  /** On the routine's first turn, this step read the opening message before it was asked (#1370). */
+  readOpeningMessage?: boolean;
 }
 
 /**

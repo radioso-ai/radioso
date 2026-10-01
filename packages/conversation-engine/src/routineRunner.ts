@@ -811,6 +811,10 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     let resumeStepRejected: RoutineTraceRejectedSlot[] = [];
     // Whether `selectNext` held the step the visitor answered (see the hold there).
     let held = false;
+    // The most recent landing read (#1370): the step it read, and whether that read
+    // touched one of the step's own collected slots. Read at render time so a step the
+    // opening message only partly answered asks for what is still missing, not everything.
+    let landingRead: { stepId: string; capturedOwnSlot: boolean; rejectedOwnKeys: ReadonlySet<string> } | null = null;
     if (currentStep.kind === "skill" || currentStep.kind === "action") {
       // Transit steps execute when the routine lands on them. This matters for a
       // routine whose root step is a tool (for example retrieval.context): selecting
@@ -878,8 +882,31 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     // degrade-don't-throw path: a loop that can't fast-forward to progress settles on a
     // chat step the user can act on.
     const fastForwarded = new Set<string>([step.id]);
-    // Which steps already had their one-time landing extraction below (#1370).
-    const landingExtracted = new Set<string>();
+    // Trace entry for a step whose edges the selector just judged this call: what it ran
+    // with and what changed. Shared by the fast-forward and landing-read branches below so
+    // both record identically; never called for a step moved on deterministically (no
+    // selector call), which builds its own bare entry instead.
+    const selectorEntry = (
+      forStep: RoutineStep,
+      before: Record<string, unknown>,
+      decision: RoutineNextStepDecision,
+    ): RoutineTraceStepEntry => {
+      const entry: RoutineTraceStepEntry = { stepId: forStep.id, kind: forStep.kind, event: "fast_forwarded" };
+      if (lastSelectorRan) {
+        entry.viaSelector = true;
+      }
+      if (lastSelection) {
+        entry.selection = lastSelection;
+      }
+      const captured = capturedKeysFrom(before, decision);
+      if (captured.length > 0) {
+        entry.capturedSlotKeys = captured;
+      }
+      if (lastRejectedSlots.length > 0) {
+        entry.rejectedSlots = lastRejectedSlots;
+      }
+      return entry;
+    };
     // A held step is asked again even when the values it kept, or an earlier value, would
     // satisfy it: nothing is fast-forwarded past it this turn.
     while (!held) {
@@ -887,17 +914,17 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         // Activation turn only (#1370): the message that starts the routine can state
         // values for a step further down the graph than the one it answers directly.
         // Read it once for the step the walk stops on here; a later reply answers the
-        // step shown on screen, so this never runs past the first turn.
+        // step shown on screen, so this never runs past the first turn. The walk never
+        // revisits a step (every advance below lands outside `fastForwarded`), so nothing
+        // needs to track which steps already had this read.
         if (
           !input.activationTurn ||
           step.kind !== "chat" ||
           step.id === currentStepId ||
-          landingExtracted.has(step.id) ||
           collectedSlotsForStep(step).length === 0
         ) {
           break;
         }
-        landingExtracted.add(step.id);
 
         const landingEdges = outgoing(step.id);
         const beforeLanding = variables;
@@ -907,21 +934,16 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
           variables,
           state: { ...state, path, variables, attempts, status: "active" },
         });
-        const landingEntry: RoutineTraceStepEntry = { stepId: step.id, kind: step.kind, event: "fast_forwarded" };
-        if (lastSelectorRan) {
-          landingEntry.viaSelector = true;
-        }
-        if (lastSelection) {
-          landingEntry.selection = lastSelection;
-        }
-        const landingCaptured = capturedKeysFrom(beforeLanding, landingDecision);
-        if (landingCaptured.length > 0) {
-          landingEntry.capturedSlotKeys = landingCaptured;
-        }
-        if (lastRejectedSlots.length > 0) {
-          landingEntry.rejectedSlots = lastRejectedSlots;
-        }
+        const landingEntry = selectorEntry(step, beforeLanding, landingDecision);
+        landingEntry.readOpeningMessage = true;
         variables = { ...variables, ...(landingDecision.variables ?? {}) };
+        // The opening message already answered part of this step: tracked here so a
+        // render below can ask only for what is still missing, not the whole question.
+        landingRead = {
+          stepId: step.id,
+          capturedOwnSlot: (landingEntry.capturedSlotKeys ?? []).some((key) => collectedSlotsForStep(step).includes(key)),
+          rejectedOwnKeys: rejectedCollectedKeys(step, lastRejectedSlots),
+        };
 
         // Moving on requires the step to be satisfied after this merge, checked before
         // `nextStepId`: a lone default edge resolves on its own regardless of what was
@@ -953,11 +975,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         break;
       }
 
-      const fastForwardEntry: RoutineTraceStepEntry = {
-        stepId: step.id,
-        kind: step.kind,
-        event: "fast_forwarded",
-      };
+      let fastForwardEntry: RoutineTraceStepEntry = { stepId: step.id, kind: step.kind, event: "fast_forwarded" };
       const decidedExit = satisfiedStepExit(step, stepEdges, variables);
       let nextStepId: string;
       if (decidedExit !== undefined) {
@@ -977,19 +995,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         if (fastForwardDecision.yieldTurn) {
           return yieldTurn();
         }
-        if (lastSelectorRan) {
-          fastForwardEntry.viaSelector = true;
-        }
-        if (lastSelection) {
-          fastForwardEntry.selection = lastSelection;
-        }
-        const captured = capturedKeysFrom(beforeFastForward, fastForwardDecision);
-        if (captured.length > 0) {
-          fastForwardEntry.capturedSlotKeys = captured;
-        }
-        if (lastRejectedSlots.length > 0) {
-          fastForwardEntry.rejectedSlots = lastRejectedSlots;
-        }
+        fastForwardEntry = selectorEntry(step, beforeFastForward, fastForwardDecision);
         variables = { ...variables, ...(fastForwardDecision.variables ?? {}) };
         nextStepId = landingStepId(step.id, fastForwardDecision);
         if (nextStepId === step.id) {
@@ -1205,11 +1211,16 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
 
     // Rendering the chat step the user was answering means their reply did not satisfy
     // it. The renderer must know, or it reads a bare "yes" to a confirmation question as
-    // the flow being done (#1369). On the activation turn the step is asked for the first time.
+    // the flow being done (#1369). On the activation turn the step is asked for the first
+    // time — unless the opening message already read part of it (#1370): a landing read
+    // that touched one of this step's own slots and still left it unsatisfied asks only
+    // for what is still missing, the same way a re-ask does.
     const missing =
       !input.activationTurn && step.kind === "chat" && step.id === currentStepId
         ? reaskFor(routine, step, variables, rejectedCollectedKeys(step, resumeStepRejected))
-        : null;
+        : landingRead && landingRead.stepId === step.id && (landingRead.capturedOwnSlot || landingRead.rejectedOwnKeys.size > 0)
+          ? reaskFor(routine, step, variables, landingRead.rejectedOwnKeys)
+          : null;
     // Past the re-ask limit the renderer is always told, even when the step holds its slots.
     const reask: RoutineStepReask | null = reaskExhausted
       ? { ...(missing ?? { missingSlots: [] }), exhausted: true }

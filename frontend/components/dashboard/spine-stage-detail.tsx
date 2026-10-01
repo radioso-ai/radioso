@@ -903,6 +903,8 @@ interface RoutineTraceStepView {
   selection?: RoutineStepSelectionView
   /** Slot keys whose returned value did not fit the slot's type and was not stored (#1374). */
   rejectedSlotKeys?: string[]
+  /** On the routine's first turn, this step read the opening message before it was asked (#1370). */
+  readOpeningMessage?: boolean
 }
 
 // Keys only: the runner never puts a rejected value on the trace, and this ignores one if present.
@@ -951,6 +953,7 @@ export const buildRoutineRunTrace = (
         ...(asString(entry.skillReason) ? { skillReason: asString(entry.skillReason) } : {}),
         ...(selection ? { selection } : {}),
         ...(rejectedSlotKeys.length > 0 ? { rejectedSlotKeys } : {}),
+        ...(entry.readOpeningMessage === true ? { readOpeningMessage: true } : {}),
       }
     })
   return {
@@ -986,12 +989,17 @@ const ROUTINE_EVENT_DESCRIPTIONS: Record<string, string> = {
   reask_limit_reached: 'Asked too many times in a row, so the reply asked differently.',
 }
 
-// A skipped step that captured values read them from this turn's message rather than
-// already holding them — the first turn reads the opening message for it (#1370).
-const routineEventDescription = (step: RoutineTraceStepView): string | undefined =>
-  step.event === 'fast_forwarded' && step.capturedSlotKeys.length > 0
-    ? 'Skipped without asking — this turn’s message gave what this step asks for.'
-    : ROUTINE_EVENT_DESCRIPTIONS[step.event]
+// A step the first turn read the opening message for (#1370), flagged explicitly rather
+// than inferred from captured keys (a step can read the message and still come up empty).
+// It either moved on with what the message gave, or is rendered asking for what it didn't.
+const routineEventDescription = (step: RoutineTraceStepView): string | undefined => {
+  if (step.readOpeningMessage) {
+    return step.event === 'rendered'
+      ? 'Read the opening message first; the reply asks for what it did not give.'
+      : 'Skipped without asking — this turn’s message gave what this step asks for.'
+  }
+  return ROUTINE_EVENT_DESCRIPTIONS[step.event]
+}
 
 const ROUTINE_SELECTION_OUTCOME_LABELS: Record<RoutineStepSelectionOutcome, string> = {
   transition: 'Chose an exit',

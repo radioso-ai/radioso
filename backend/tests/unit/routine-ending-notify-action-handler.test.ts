@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { RoutineEndingNotifyActionHandler } from "../../src/modules/chat/services/actions/routineEndingNotifyActionHandler.js";
-import type { OperatorNotificationDispatcher } from "../../src/modules/operatorNotifications/public.js";
+import {
+  formatRoutineEndingNotification,
+  type OperatorNotificationDispatcher,
+  type RoutineEndingOperatorNotification,
+} from "../../src/modules/operatorNotifications/public.js";
 
 const context = {
   requestId: "request_1",
@@ -170,5 +174,35 @@ describe("RoutineEndingNotifyActionHandler", () => {
       notice: { subject: "Booking: {{slot.name}}" },
       conversation: { channel: "embed", entryPageUrl: "https://ananda.example/stays" },
     }, expect.objectContaining({ idempotencyKey: "routine-action:conv_1:completion.notify" }));
+  });
+
+  it("delivers the collected values in the order the routine declares its slots, whatever order the queue stored them in", async () => {
+    const dispatch = vi.fn<OperatorNotificationDispatcher["dispatch"]>();
+    dispatch.mockResolvedValue();
+    const resolve = vi.fn(async () => ({
+      agentName: null,
+      routineName: "Book accommodation",
+      routineSlotKeys: ["guest_name", "arrival_date", "nights"],
+    }));
+    const handler = new RoutineEndingNotifyActionHandler({ kind: "completion", dispatcher: { dispatch }, subjects: { resolve } });
+
+    await handler.handle({
+      payload: {
+        agentId: "agent_1",
+        routineId: "routine_1",
+        // The order jsonb hands the payload back in: shorter keys first.
+        collected: { nights: 3, guest_name: "Ada", arrival_date: "2026-10-12" },
+      },
+      context,
+    });
+
+    const notification = dispatch.mock.calls[0][0] as RoutineEndingOperatorNotification;
+    const lines = formatRoutineEndingNotification(notification).lines;
+    expect(lines.slice(lines.indexOf("Collected:") + 1)).toEqual([
+      "  Guest name: Ada",
+      "  Arrival date: 2026-10-12",
+      "  Nights: 3",
+    ]);
+    expect(JSON.stringify(notification.collected)).toBe('{"guest_name":"Ada","arrival_date":"2026-10-12","nights":3}');
   });
 });

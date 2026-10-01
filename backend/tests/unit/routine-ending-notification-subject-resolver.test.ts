@@ -5,17 +5,18 @@ import { RepositoryRoutineEndingNotificationSubjectResolver } from "../../src/mo
 describe("RepositoryRoutineEndingNotificationSubjectResolver", () => {
   const input = { workspaceId: "ws_1", agentId: "agent_1", routineId: "routine_1", conversationId: "conv_1" };
 
-  it("resolves the names and the stored channel and entry page of the conversation", async () => {
+  it("resolves the names, the routine's declared slot order, and the stored channel and entry page of the conversation", async () => {
     const conversations = { findByIdAndWorkspaceId: vi.fn(async () => ({ sourceChannel: "embed", entryPageUrl: "https://ananda.example/stays" })) };
     const resolver = new RepositoryRoutineEndingNotificationSubjectResolver(
       { findByIdAndWorkspaceId: async () => ({ name: "Retreat desk" }) },
-      { findById: async () => ({ name: "Book accommodation" }) },
+      { findById: async () => ({ name: "Book accommodation", slots: [{ key: "guest_name" }, { key: "arrival_date" }, { key: "nights" }] }) },
       conversations,
     );
 
     expect(await resolver.resolve(input)).toEqual({
       agentName: "Retreat desk",
       routineName: "Book accommodation",
+      routineSlotKeys: ["guest_name", "arrival_date", "nights"],
       conversation: { channel: "embed", entryPageUrl: "https://ananda.example/stays" },
     });
     expect(conversations.findByIdAndWorkspaceId).toHaveBeenCalledWith("conv_1", "ws_1");

@@ -32,8 +32,31 @@ const collectedFromPayload = (value: unknown): Record<string, HandoffCollectedVa
 export interface RoutineEndingNotificationSubject {
   agentName: string | null;
   routineName: string | null;
+  /** The routine's declared slot keys, in declaration order; absent when the routine no longer exists. */
+  routineSlotKeys?: readonly string[];
   conversation?: OperatorNoticeConversationFacts;
 }
+
+/**
+ * A queued payload's `collected` is jsonb, which stores an object's keys in its own order, so
+ * the values come back out of the order the routine declares its slots in. The declared slots
+ * lead, in that order; a key the routine no longer declares follows in its stored position.
+ * Without the routine's slot order, the stored order stands.
+ */
+const inDeclaredSlotOrder = (
+  collected: Record<string, HandoffCollectedValue>,
+  slotKeys: readonly string[] | undefined,
+): Record<string, HandoffCollectedValue> => {
+  if (!slotKeys) {
+    return collected;
+  }
+  const declared = new Set(slotKeys);
+  const keys = [
+    ...slotKeys.filter((key) => Object.hasOwn(collected, key)),
+    ...Object.keys(collected).filter((key) => !declared.has(key)),
+  ];
+  return Object.fromEntries(keys.map((key) => [key, collected[key]]));
+};
 
 /** The `reason` a payload that names none reports, per kind of ending. */
 const DEFAULT_REASON: Record<RoutineEndingOperatorNotification["kind"], string> = {
@@ -73,7 +96,8 @@ export const routineEndingNotificationFromAction = (input: {
   const agentId = asString(input.payload.agentId) ?? "unknown";
   const reason = asString(input.payload.reason) ?? DEFAULT_REASON[input.kind];
   const routineId = asString(input.payload.routineId);
-  const collected = collectedFromPayload(input.payload.collected);
+  const stored = collectedFromPayload(input.payload.collected);
+  const collected = stored ? inDeclaredSlotOrder(stored, input.subject?.routineSlotKeys) : null;
   const notice = noticeFromPayload(input.payload.notice);
   return {
     kind: input.kind,

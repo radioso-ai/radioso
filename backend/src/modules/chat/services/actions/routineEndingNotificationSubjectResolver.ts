@@ -6,9 +6,12 @@ interface RoutineEndingNotificationAgentLookup {
   findByIdAndWorkspaceId(agentId: string, workspaceId: string): Promise<{ name: string } | null>;
 }
 
-/** Narrow routine lookup for the notice's display name (a `RoutineDefinitionRepository` satisfies it). */
+/**
+ * Narrow routine lookup for the notice's display name and declared slot order (a
+ * `RoutineDefinitionRepository` satisfies it; it returns slots in declaration order).
+ */
 interface RoutineEndingNotificationRoutineLookup {
-  findById(agentId: string, id: string): Promise<{ name: string } | null>;
+  findById(agentId: string, id: string): Promise<{ name: string; slots: ReadonlyArray<{ key: string }> } | null>;
 }
 
 /**
@@ -25,7 +28,8 @@ interface RoutineEndingNotificationConversationLookup {
 /**
  * Looks the agent, routine, and conversation up by the ids the notice payload carries. The
  * compiled routine id the runtime reports is the routine definition id, so no translation is
- * needed.
+ * needed. The routine's slot order travels with its name: the queued payload's `collected`
+ * is jsonb, which does not keep the order the routine declares its slots in.
  */
 export class RepositoryRoutineEndingNotificationSubjectResolver implements RoutineEndingNotificationSubjectResolver {
   constructor(
@@ -48,6 +52,7 @@ export class RepositoryRoutineEndingNotificationSubjectResolver implements Routi
     return {
       agentName: agent?.name ?? null,
       routineName: routine?.name ?? null,
+      ...(routine ? { routineSlotKeys: routine.slots.map((slot) => slot.key) } : {}),
       ...(conversation
         ? { conversation: { channel: conversation.sourceChannel, entryPageUrl: conversation.entryPageUrl } }
         : {}),

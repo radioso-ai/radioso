@@ -54,7 +54,8 @@ FROM (
       WHERE turn.execution_id = side.execution_id
         AND turn.turn_id::text = item.entry ->> 'turnId'
     )
-  GROUP BY side.execution_id, side.history
+  -- Grouped by the side's key, never its history: hashing whole histories would detoast every trace.
+  GROUP BY side.id
 ) AS copied
 WHERE execution.id = copied.execution_id
   AND execution.mode = 'single'

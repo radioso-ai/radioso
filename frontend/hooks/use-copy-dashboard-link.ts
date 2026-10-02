@@ -14,6 +14,7 @@ export function useCopyDashboardLink() {
   const [copiedKey, setCopiedKey] = useState<string | null>(null)
   const [uncopied, setUncopied] = useState<{ key: string; url: string } | null>(null)
   const mounted = useRef(false)
+  const latestCopy = useRef(0)
   const feedbackTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
@@ -26,8 +27,11 @@ export function useCopyDashboardLink() {
   }, [])
 
   const copy = useCallback(async (key: string, href: string) => {
+    const copyId = latestCopy.current + 1
+    latestCopy.current = copyId
     const result = await copyDashboardLink(href)
-    if (!mounted.current) return
+    // A slower earlier copy must not report over a later one.
+    if (!mounted.current || copyId !== latestCopy.current) return
     if (feedbackTimeout.current !== null) clearTimeout(feedbackTimeout.current)
     feedbackTimeout.current = null
     if (!result.copied) {

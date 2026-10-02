@@ -770,6 +770,12 @@ test('drops a shared test still opening once the operator moves to Conversation 
   await expect(testChatComposer(page)).toBeVisible()
   await expect(page.getByText('A slow shared answer', { exact: true })).toHaveCount(0)
   await expect(page).not.toHaveURL(/testExecution=/)
+  // No entry behind it still holds the dropped open command.
+  await page.goForward()
+  await expect(page.getByRole('heading', { name: 'Conversation history', exact: true })).toBeVisible()
+  await page.goBack()
+  await expect(page).not.toHaveURL(/testExecution=/)
+  await expect(testChatComposer(page)).toBeVisible()
 })
 
 test('keeps a shared link that cannot open on screen after the greeting starts', async ({ page }) => {
@@ -854,13 +860,17 @@ test('gives Conversation history its own link, and starts no greeting behind it'
   await expect(testChatComposer(page)).toBeVisible()
   await expect.poll(() => testStarts().length).toBe(1)
 
-  await page.goBack()
-  await expect(page.getByRole('heading', { name: 'Conversation history', exact: true })).toBeVisible()
-  await page.goForward()
-  await expect(testChatComposer(page)).toBeVisible()
   await clickTestChatAction(page, 'Conversation history')
   await expect(page).toHaveURL(/[?&]view=history/)
   await expect(testChatMenuItem(page, 'Copy link to this chat')).toHaveCount(0)
+  // Back to chat steps back to the chat's own entry instead of stacking a new one.
+  await page.getByRole('button', { name: 'Back to chat', exact: true }).click()
+  await expect(testChatComposer(page)).toBeVisible()
+  await expect(page).not.toHaveURL(/[?&]view=history/)
+  await page.goForward()
+  await expect(page.getByRole('heading', { name: 'Conversation history', exact: true })).toBeVisible()
+  await page.goBack()
+  await expect(testChatComposer(page)).toBeVisible()
 })
 
 test('fences a delayed history open after the operator returns to a new chat', async ({ page }) => {

@@ -22895,11 +22895,16 @@
                 ],
                 "maxLength": 200,
                 "description": "The first of those messages with text. A longer one is clipped to 200 characters ending in \"…\". Null until there is one."
+              },
+              "firstMessageClipped": {
+                "type": "boolean",
+                "description": "Whether firstMessage was cut to fit, so a message that really ends in \"…\" reads as whole."
               }
             },
             "required": [
               "turnCount",
-              "firstMessage"
+              "firstMessage",
+              "firstMessageClipped"
             ]
           }
         ]

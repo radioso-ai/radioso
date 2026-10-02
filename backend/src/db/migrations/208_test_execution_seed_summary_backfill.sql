@@ -4,14 +4,19 @@
 -- has a row in agent_test_execution_turns, and a side retained from a comparison copies its turns
 -- along. Only a single-revision test can be seeded, so only those are read, and side 0 holds the whole
 -- thread. The first copied message with any non-whitespace character labels the test, kept to 201
--- characters, one more than a label shows; the app's seed summary applies the same two rules.
+-- characters, one more than a label shows, as the app's seed summary does (its whitespace test is
+-- JavaScript's, which can differ from Postgres's on rare Unicode spaces).
+--
+-- A test seeded by a still-running older instance after this runs keeps the defaults: its list count
+-- leaves out the copied messages. Its transcript is unaffected.
 --
 -- Only rows still at the default are touched, so a re-run changes nothing.
 --
 -- Locks. A separate migration from 207, so 207's ACCESS EXCLUSIVE on agent_test_executions has
 -- already committed. This UPDATE takes ROW EXCLUSIVE and locks only the rows it changes: reads of
--- test executions never wait, and a write to one being backfilled waits for this transaction. It reads
--- each side-0 history once; retention bounds how many there are.
+-- test executions never wait, and a write to one being backfilled waits for this transaction. It
+-- expands only the side-0 histories of single-revision tests still at the default, once each;
+-- retention bounds how many there are.
 UPDATE agent_test_executions AS execution
 SET seeded_turn_count = copied.turn_count,
     seeded_first_message = copied.first_message
@@ -22,6 +27,11 @@ FROM (
     (array_agg(left(item.entry ->> 'content', 201) ORDER BY item.ordinal)
       FILTER (WHERE item.entry ->> 'content' ~ '\S'))[1] AS first_message
   FROM agent_test_execution_sides AS side
+  JOIN agent_test_executions AS candidate
+    ON candidate.id = side.execution_id
+   AND candidate.mode = 'single'
+   AND candidate.seeded_turn_count = 0
+   AND candidate.seeded_first_message IS NULL
   CROSS JOIN LATERAL jsonb_array_elements(side.history) WITH ORDINALITY AS item(entry, ordinal)
   WHERE side.side_ordinal = 0
     AND item.entry ->> 'role' = 'user'

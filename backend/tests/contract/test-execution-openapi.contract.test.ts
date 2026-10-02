@@ -29,7 +29,7 @@ describe("test execution OpenAPI contract", () => {
     registerTestExecutionPaths(registry, security);
     const document = new OpenApiGeneratorV31(registry.definitions).generateDocument({ openapi: "3.1.0", info: { title: "test", version: "1" } });
     expect(document.components?.schemas?.TestExecutionHistoryListItem).toMatchObject({
-      allOf: [{ $ref: "#/components/schemas/TestExecutionHistoryItem" }, { properties: { turnCount: { type: "integer", minimum: 0 }, firstMessage: { type: ["string", "null"], maxLength: 200 } }, required: ["turnCount", "firstMessage"] }],
+      allOf: [{ $ref: "#/components/schemas/TestExecutionHistoryItem" }, { properties: { turnCount: { type: "integer", minimum: 0 }, firstMessage: { type: ["string", "null"], maxLength: 200 }, firstMessageClipped: { type: "boolean" } }, required: ["turnCount", "firstMessage", "firstMessageClipped"] }],
     });
   });
 });

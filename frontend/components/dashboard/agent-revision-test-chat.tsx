@@ -859,6 +859,7 @@ export function AgentRevisionTestChat({
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (!message.trim() || isSending || isStarting) return;
+    setLinkOpenFailure(null);
     const text = message.trim();
     const requestGeneration = testRequestGeneration.current;
     const nextMode = mode;

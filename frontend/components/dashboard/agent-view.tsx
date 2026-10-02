@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { RefreshCw, X } from 'lucide-react'
 
@@ -373,20 +373,43 @@ export function AgentView({
     agentTestExecutionFromConversation: undefined,
   }), [accountId, routeState, selectedAgentId])
   const historyOpen = routeState.agentTestChatView === 'history'
+  // Whether the history view's entry was pushed from this chat, so leaving it can step back.
+  const pushedHistoryEntry = useRef(false)
+  useEffect(() => {
+    const onPopState = () => {
+      pushedHistoryEntry.current = false
+    }
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [])
+  // The view is client state, so these are shallow history entries with no server round trip.
   const changeHistoryOpen = useCallback((open: boolean) => {
     if (open === historyOpen) return
-    const href = buildDashboardHref(accountId, {
+    const testChatHref = (view: 'history' | undefined) => buildDashboardHref(accountId, {
       ...routeState,
       section: 'agents',
       agentId: selectedAgentId,
-      agentTestChatView: open ? 'history' : undefined,
-      // Choosing history supersedes a saved test still opening from the URL; Test Chat drops it.
-      ...(open ? { agentTestExecutionId: undefined, agentTestExecutionFromConversation: undefined } : {}),
+      agentTestChatView: view,
+      // Opening history supersedes a saved test still opening from the URL; Test Chat drops it.
+      agentTestExecutionId: undefined,
+      agentTestExecutionFromConversation: undefined,
     })
-    // Never push a duplicate entry: Back would land on the same view.
-    if (href === `${window.location.pathname}${window.location.search}`) return
-    // A shallow history entry: the view is client state, so it needs no server round trip.
-    window.history.pushState(null, '', href)
+    if (open) {
+      // Rewrite the chat entry first, so Back never returns to an open command that was dropped.
+      const chatHref = testChatHref(undefined)
+      if (chatHref !== `${window.location.pathname}${window.location.search}`) window.history.replaceState(null, '', chatHref)
+      window.history.pushState(null, '', testChatHref('history'))
+      pushedHistoryEntry.current = true
+      return
+    }
+    // Leaving history returns to the chat entry it came from, so the browser's Back then leaves
+    // Test Chat instead of bouncing between the two views.
+    if (pushedHistoryEntry.current) {
+      pushedHistoryEntry.current = false
+      window.history.back()
+      return
+    }
+    window.history.replaceState(null, '', testChatHref(undefined))
   }, [accountId, historyOpen, routeState, selectedAgentId])
 
   const agentUnavailableContent = agentSelectionPending ? (

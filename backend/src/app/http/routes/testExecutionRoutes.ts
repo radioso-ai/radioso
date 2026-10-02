@@ -55,6 +55,7 @@ const presentHistorySummary = (execution: TestExecutionSummary) => ({
   ...presentHistory(execution),
   turnCount: execution.turnCount,
   firstMessage: execution.firstMessage,
+  firstMessageClipped: execution.firstMessageClipped,
 });
 
 const presentDetail = (execution: TestExecution, attempts: readonly TestExecutionAttemptRecord[]) => {

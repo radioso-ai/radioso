@@ -9615,6 +9615,8 @@ export interface components {
             turnCount: number;
             /** @description The first of those messages with text. A longer one is clipped to 200 characters ending in "…". Null until there is one. */
             firstMessage: string | null;
+            /** @description Whether firstMessage was cut to fit, so a message that really ends in "…" reads as whole. */
+            firstMessageClipped: boolean;
         };
         TestExecutionHistoryListResponse: {
             executions: components["schemas"]["TestExecutionHistoryListItem"][];

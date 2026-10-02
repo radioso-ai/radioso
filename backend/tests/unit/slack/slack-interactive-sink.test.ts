@@ -238,9 +238,9 @@ describe("SlackOperatorNotificationSink", () => {
         channelId: "COPS",
         kind: "operator_notification",
         conversationRef: "conv_1",
-        // No routine, collected values, or entry page are known, so the formatted notice is
-        // empty once its headline is dropped; the post falls back to the conversation id.
-        text: "conv_1",
+        // No routine, collected values, or entry page are known, so the post is just the
+        // generic default subject and headline.
+        text: "Conversation needs a human\nA conversation needs a human operator.",
       },
     });
     const payload = enqueued[0].payload as { blocks: Array<Record<string, unknown>> };
@@ -269,6 +269,9 @@ describe("SlackOperatorNotificationSink", () => {
 
     expect(enqueued).toHaveLength(1);
     const expectedText = [
+      "Book accommodation: needs a human",
+      "A conversation needs a human operator.",
+      "",
       "Collected:",
       "  Program: Yoga retreat",
       "  Arrival date: 2026-10-12",
@@ -279,7 +282,7 @@ describe("SlackOperatorNotificationSink", () => {
     expect(payload.blocks[0]).toMatchObject({ type: "section", text: { text: expectedText } });
   });
 
-  it("posts a completion notice to the operator channel, led by the authored subject and intro", async () => {
+  it("posts a completion notice to the operator channel, led by the authored subject, then the headline and intro", async () => {
     const { sink, enqueued } = createSink();
 
     await sink.deliver({
@@ -297,6 +300,7 @@ describe("SlackOperatorNotificationSink", () => {
       payload: {
         text: [
           "New booking: Ada Lovelace",
+          "A visitor completed a request in chat.",
           "Confirm the room today.",
           "",
           "Collected:",
@@ -304,6 +308,25 @@ describe("SlackOperatorNotificationSink", () => {
         ].join("\n"),
       },
     });
+  });
+
+  it("makes a hand-off and a completion post for the same routine distinguishable by subject and headline", async () => {
+    const { sink, enqueued } = createSink();
+    const shared = {
+      workspaceId: "ws_1",
+      conversationId: "conv_1",
+      agentId: "agent_1",
+      routine: { id: "routine_1", name: "Book accommodation" },
+    } as const;
+
+    await sink.deliver({ ...shared, kind: "handoff" as const, reason: "routine_handoff" }, { requestId: "request_1" });
+    await sink.deliver({ ...shared, kind: "completion" as const, reason: "routine_completed" }, { requestId: "request_2" });
+
+    expect(enqueued).toHaveLength(2);
+    const [handoffPost, completionPost] = enqueued.map((entry) => (entry.payload as { text: string }).text);
+    expect(handoffPost).toBe("Book accommodation: needs a human\nA conversation needs a human operator.");
+    expect(completionPost).toBe("Book accommodation: completed\nA visitor completed a request in chat.");
+    expect(handoffPost).not.toBe(completionPost);
   });
 
   it("posts a notice's visitor-given values and authored text as literal text, never as a mention or a link", async () => {

@@ -56,12 +56,11 @@ export class SlackOperatorNotificationSink implements OperatorNotificationSink {
       return;
     }
     if (notification.kind !== "approval") {
-      // The formatter's headline is the email's opening sentence; the Slack post already
-      // says what the message is, so the section carries the detail lines only. An authored
-      // subject is the line the routine's author chose to lead with, so it leads here too.
+      // Slack has no separate subject field, so the post's text leads with the formatter's
+      // subject line (authored, or its per-kind default) before the headline and the rest of
+      // the formatted lines — the same content the email splits across Subject: and body.
       const formatted = formatRoutineEndingNotification(notification);
-      const [, ...detailLines] = formatted.lines;
-      const noticeText = [...(formatted.notice.subject ? [formatted.notice.subject] : []), ...detailLines].join("\n").trim();
+      const noticeText = [formatted.subject, ...formatted.lines].join("\n").trim();
       const message = buildOwnershipMessage({
         conversationId: notification.conversationId,
         workspaceId: notification.workspaceId,

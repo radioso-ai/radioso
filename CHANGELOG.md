@@ -9,6 +9,24 @@ Cut a release with the **Cut Release** workflow. It reads the commits since the 
 tag, writes the entry above this line, tags the commit, and publishes a GitHub Release. A
 deploy then ships a release that already exists; it never mints one.
 
+## [1.13.0] - 2026-10-02
+
+### Added
+
+- **routines:** let a routine ending notify the team without handing off the conversation ([#1398](https://github.com/radioso-ai/radioso/pull/1398))
+
+### Fixed
+
+- **deps:** patch critical and high-severity Dependabot alerts ([#1394](https://github.com/radioso-ai/radioso/pull/1394))
+
+### Database migrations
+
+This release adds 1 migration. They run at service startup, so deploy one stack at a time; overlapping deploys contend on the same DDL lock and stall until one gives up.
+
+- `206_routine_terminal_operator_notice.sql`
+
+[1.13.0]: https://github.com/radioso-ai/radioso/compare/v1.12.1...v1.13.0
+
 ## [1.12.1] - 2026-10-01
 
 ### Fixed

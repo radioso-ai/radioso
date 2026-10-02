@@ -50,7 +50,7 @@ import type { DirectiveMatchGatewayFactory } from "../../shared/infra/llm/contex
 import {
   ApplicationModuleCoordinator,
   createApplicationExtensionRegistry,
-  routineEmittableActionHandlers,
+  routineAuthorableActionHandlers,
   type ApplicationDirectiveRegistration,
   type ApplicationModule,
 } from "./applicationModule.js";
@@ -168,7 +168,7 @@ export const createDefaultApplicationComposition = (options: {
     ...(options.modules ?? []),
   ]);
 
-  const routineActionHandlerRegistrations = routineEmittableActionHandlers(registry.actionHandlerRegistrations);
+  const routineActionHandlerRegistrations = routineAuthorableActionHandlers(registry.actionHandlerRegistrations);
 
   return {
     capabilityPolicy: registry.capabilityPolicy ?? new DefaultAllowCapabilityPolicy(),

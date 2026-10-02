@@ -186,17 +186,20 @@ export interface ApplicationDirectiveRegistration {
  * may be supplied directly or as a factory resolved at dependency-build time with a
  * minimal context, mirroring the other host-supplied provider registrations.
  */
+type ActionQueueSource = "routine_action_step" | "outside_turn";
+
 interface ApplicationActionHandlerRegistration {
   type: string;
   requiredCapabilities?: string[];
   /**
-   * Whether a routine step may emit this action. Every registration says so explicitly, so a new
-   * handler is never admitted into routines by default. An action that only host code queues — a
-   * transfer notice written with its transfer — sets false: routine authoring never offers it and a
-   * routine step naming it fails validation and serving, while the worker still dispatches the rows
-   * host code queues.
+   * Where this action is queued from. Every registration says so explicitly, so a new handler is
+   * never admitted into routines by default.
+   * - `routine_action_step`: an author writes it as a routine action step.
+   * - `outside_turn`: only host code queues it, in its own transaction — a transfer notice written
+   *   with its transfer. Routine authoring never offers it and a routine step naming it fails
+   *   validation and serving, while the worker still dispatches the rows host code queues.
    */
-  emittableByRoutines: boolean;
+  queuedFrom: ActionQueueSource;
   handler:
     | ActionHandler
     | ((context: {
@@ -217,11 +220,11 @@ interface ApplicationActionHandlerRegistration {
       }) => ActionHandler);
 }
 
-/** The action handlers a routine step may emit; see `emittableByRoutines`. */
-export const routineEmittableActionHandlers = (
+/** The action handlers an author may write as a routine action step; see `queuedFrom`. */
+export const routineAuthorableActionHandlers = (
   registrations: readonly ApplicationActionHandlerRegistration[],
 ): ApplicationActionHandlerRegistration[] =>
-  registrations.filter((registration) => registration.emittableByRoutines);
+  registrations.filter((registration) => registration.queuedFrom === "routine_action_step");
 
 type ApplicationAccountCreatedHook = (context: {
   accountId: string;

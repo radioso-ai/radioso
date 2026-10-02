@@ -124,8 +124,8 @@ describe("default application composition", () => {
         "slack.post",
       ]),
     );
-    // Every registration says whether a routine may emit it; nothing is admitted by default.
-    expect(composition.actionHandlerRegistrations.filter((registration) => typeof registration.emittableByRoutines !== "boolean"))
+    // Every registration says where it is queued from; nothing is admitted by default.
+    expect(composition.actionHandlerRegistrations.filter((registration) => typeof registration.queuedFrom !== "string"))
       .toEqual([]);
     expect(composition.organizationCreationGuardRegistration).toBeTypeOf("function");
     expect(composition.oauthProviders).toEqual([]);

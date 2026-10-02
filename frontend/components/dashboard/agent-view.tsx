@@ -359,21 +359,26 @@ export function AgentView({
   )
   const evalsHref = buildDashboardHref(accountId, { ...routeState, section: 'eval', evalCaseId: undefined })
   // The share link for one saved test: anyone in this workspace who can manage agents can open it.
-  const testExecutionHref = useCallback((executionId: string) => buildAgentSectionHref(
-    accountId,
-    { ...routeState, agentTestExecutionId: executionId, agentTestExecutionFromConversation: undefined },
-    selectedAgentId,
-    agentSectionRoute('chat'),
-  ), [accountId, routeState, selectedAgentId])
+  const testExecutionHref = useCallback((executionId: string) => buildDashboardHref(accountId, {
+    ...routeState,
+    ...agentSectionRoute('chat'),
+    section: 'agents',
+    agentId: selectedAgentId,
+    agentRoutineId: undefined,
+    anchor: undefined,
+    agentTestExecutionId: executionId,
+    agentTestExecutionFromConversation: undefined,
+  }), [accountId, routeState, selectedAgentId])
   const historyOpen = routeState.agentTestChatView === 'history'
   const changeHistoryOpen = useCallback((open: boolean) => {
     if (open === historyOpen) return
-    router.push(buildDashboardHref(accountId, {
+    // A shallow history entry: the view is client state, so it needs no server round trip.
+    window.history.pushState(null, '', buildDashboardHref(accountId, {
       ...routeState,
       section: 'agents',
       agentTestChatView: open ? 'history' : undefined,
-    }), { scroll: false })
-  }, [accountId, historyOpen, routeState, router])
+    }))
+  }, [accountId, historyOpen, routeState])
 
   const agentUnavailableContent = agentSelectionPending ? (
     <div className="flex min-h-48 items-center justify-center text-sm text-muted-foreground">

@@ -9611,9 +9611,9 @@ export interface components {
             attempts: components["schemas"]["TestExecutionAttemptRecord"][];
         };
         TestExecutionHistoryListItem: components["schemas"]["TestExecutionHistoryItem"] & {
-            /** @description Messages the operator sent in this test. A greeting is not one. */
+            /** @description User messages in this test, including any copied from a real conversation it continues. A greeting is not one. */
             turnCount: number;
-            /** @description The first message the operator sent, clipped to 200 characters. Null until one is sent. */
+            /** @description The first user message in this test, clipped to 200 characters. Null until there is one. */
             firstMessage: string | null;
         };
         TestExecutionHistoryListResponse: {

@@ -29,6 +29,7 @@ import {
   TurnDiagnosticsPanel,
 } from "@/components/dashboard/turn-inspector/turn-diagnostics-panel";
 import { getPrimaryLeafTrace } from "@/lib/turn-trace";
+import { copyDashboardLink } from "@/lib/copy-dashboard-link";
 import {
   Dialog,
   DialogContent,
@@ -237,7 +238,21 @@ export function AgentRevisionTestChat({
   const view: View = historyOpen ? "history" : "chat";
   const onHistoryOpenChangeRef = useRef(onHistoryOpenChange);
   onHistoryOpenChangeRef.current = onHistoryOpenChange;
-  const setView = useCallback((next: View) => onHistoryOpenChangeRef.current(next === "history"), []);
+  // The view the operator last asked for. The route catches up a render later, so a slow
+  // history open that resolves after Back to chat must check this, not `view`.
+  const requestedView = useRef<View>(view);
+  useEffect(() => {
+    requestedView.current = view;
+  }, [view]);
+  const setView = useCallback((next: View) => {
+    requestedView.current = next;
+    onHistoryOpenChangeRef.current(next === "history");
+  }, []);
+  const [linkNotice, setLinkNotice] = useState<string | null>(null);
+  const linkNoticeTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (linkNoticeTimeout.current !== null) clearTimeout(linkNoticeTimeout.current);
+  }, []);
   const [selected, setSelected] = useState<string[]>(cachedSession?.selected ?? []);
   const [contextOpen, setContextOpen] = useState(false);
   const [evalsOpen, setEvalsOpen] = useState(false);
@@ -727,6 +742,7 @@ export function AgentRevisionTestChat({
   useEffect(() => {
     if (
       loading ||
+      view === "history" ||
       !state?.proactiveGreetingEnabled ||
       !selected.length ||
       execution ||
@@ -739,7 +755,7 @@ export function AgentRevisionTestChat({
     proactiveStartKey.current = key;
     writeAgentRevisionTestChatSession(sessionKey, { proactiveStartKey: key });
     void startRef.current();
-  }, [agentId, execution, isStarting, loading, mode, openExecutionId, selected, sessionKey, state]);
+  }, [agentId, execution, isStarting, loading, mode, openExecutionId, selected, sessionKey, state, view]);
 
   const changeMode = useCallback(
     (next: Mode) => {
@@ -1424,12 +1440,18 @@ export function AgentRevisionTestChat({
   };
   const copyExecutionLink = async (executionId: string) => {
     if (!testExecutionHref) return;
-    try {
-      await navigator.clipboard.writeText(new URL(testExecutionHref(executionId), window.location.href).toString());
-      setRestartNotice("Link copied.");
-    } catch {
-      setError("Could not copy the link.");
+    const result = await copyDashboardLink(testExecutionHref(executionId));
+    if (linkNoticeTimeout.current !== null) clearTimeout(linkNoticeTimeout.current);
+    linkNoticeTimeout.current = null;
+    if (!result.copied) {
+      setLinkNotice(`Copy this link: ${result.url}`);
+      return;
     }
+    setLinkNotice("Link copied.");
+    linkNoticeTimeout.current = setTimeout(() => {
+      linkNoticeTimeout.current = null;
+      setLinkNotice(null);
+    }, 3000);
   };
   const actionMenu = (
     <DropdownMenu>
@@ -1457,7 +1479,7 @@ export function AgentRevisionTestChat({
         <DropdownMenuItem onSelect={() => setView("history")}>
           Conversation history
         </DropdownMenuItem>
-        {execution && testExecutionHref ? (
+        {execution && testExecutionHref && view === "chat" ? (
           <DropdownMenuItem onSelect={() => void copyExecutionLink(execution.executionId)}>
             <Link2 className="mr-2 h-4 w-4" />
             Copy link to this chat
@@ -1531,7 +1553,9 @@ export function AgentRevisionTestChat({
             <section>
               <TestExecutionHistoryView
                 agentId={agentId}
-                onOpen={reopenExecution}
+                onOpen={(saved) => {
+                  if (requestedView.current === "history") reopenExecution(saved);
+                }}
                 linkFor={testExecutionHref}
               />
             </section>
@@ -1563,6 +1587,14 @@ export function AgentRevisionTestChat({
                 className="rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground"
               >
                 {restartNotice}
+              </p>
+            ) : null}
+            {linkNotice ? (
+              <p
+                role="status"
+                className="break-all rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground"
+              >
+                {linkNotice}
               </p>
             ) : null}
             {execution?.state === "partial" ? (

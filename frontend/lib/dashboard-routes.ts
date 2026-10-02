@@ -842,6 +842,10 @@ export const buildAgentSectionHref = (
   agentTab: target.agentTab,
   anchor: target.anchor,
   agentRoutineId: undefined,
+  // A section link lands on the section itself, never on an open command or a sub-view.
+  agentTestExecutionId: undefined,
+  agentTestExecutionFromConversation: undefined,
+  agentTestChatView: undefined,
 })
 
 export const buildAccountRoute = (

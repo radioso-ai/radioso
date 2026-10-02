@@ -9605,8 +9605,14 @@ export interface components {
             testValues: unknown[];
             attempts: components["schemas"]["TestExecutionAttemptRecord"][];
         };
+        TestExecutionHistoryListItem: components["schemas"]["TestExecutionHistoryItem"] & {
+            /** @description User messages in this test, including any copied from a real conversation it continues. A greeting is not one. */
+            turnCount: number;
+            /** @description The first user message in this test, clipped to 200 characters. Null until there is one. */
+            firstMessage: string | null;
+        };
         TestExecutionHistoryListResponse: {
-            executions: components["schemas"]["TestExecutionHistoryItem"][];
+            executions: components["schemas"]["TestExecutionHistoryListItem"][];
             nextCursor: string | null;
             hasMore: boolean;
         };

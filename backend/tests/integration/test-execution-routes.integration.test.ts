@@ -27,6 +27,10 @@ describe("test execution HTTP streaming", () => {
     summarizedFirstMessage = "x".repeat(20_000);
     const clippedList = await request(app).get(`/api/v1/agents/${agentId}/test-executions`).set(adminSessionHeaders(session)).expect(200);
     expect(clippedList.body.executions[0].firstMessage).toHaveLength(200);
+    // The clip never splits a surrogate pair.
+    summarizedFirstMessage = `${"x".repeat(199)}😀 and more`;
+    const surrogateList = await request(app).get(`/api/v1/agents/${agentId}/test-executions`).set(adminSessionHeaders(session)).expect(200);
+    expect(surrogateList.body.executions[0].firstMessage).toBe("x".repeat(199));
     const detail = await request(app).get(`/api/v1/agents/${agentId}/test-executions/${executionId}`).set(adminSessionHeaders(session)).expect(200);
     expect(detail.body).toMatchObject({ execution: expect.objectContaining({ skillEffects: "suppressed", testValues: [{ name: "tier", value: "gold" }], sides: [expect.objectContaining({ state: "ready" })], attempts: [expect.objectContaining({ attemptId, failureCode: "provider_timeout" })] }) });
     const retained = await request(app).post(`/api/v1/agents/${agentId}/test-executions/${executionId}/sides/${execution.sides[0].id}/retain`).set(adminSessionHeaders(session)).expect(201);

@@ -201,7 +201,8 @@ export class TestExecutionRepository implements TestExecutionRepositoryPort {
       .select([
         "side.execution_id",
         sql<string>`(SELECT count(DISTINCT entry ->> 'turnId') FROM jsonb_array_elements(side.history) AS entry WHERE entry ->> 'role' = 'user')`.as("turn_count"),
-        sql<string | null>`(SELECT entry ->> 'content' FROM jsonb_array_elements(side.history) WITH ORDINALITY AS item(entry, ordinal) WHERE entry ->> 'role' = 'user' ORDER BY ordinal LIMIT 1)`.as("first_message"),
+        // A label, not a transcript: one character past the 200 every surface shows, so callers can still tell it was clipped.
+        sql<string | null>`(SELECT left(entry ->> 'content', 201) FROM jsonb_array_elements(side.history) WITH ORDINALITY AS item(entry, ordinal) WHERE entry ->> 'role' = 'user' ORDER BY ordinal LIMIT 1)`.as("first_message"),
       ])
       .where("side.workspace_id", "=", input.workspaceId)
       .where("side.agent_id", "=", input.agentId)

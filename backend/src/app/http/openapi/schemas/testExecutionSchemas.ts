@@ -31,8 +31,8 @@ export const registerTestExecutionSchemas = (registry: OpenAPIRegistry) => {
   const TestExecutionHistoryDetailSchema = registry.register("TestExecutionHistoryDetail", TestExecutionHistoryItemSchema.extend({ testValues: z.array(z.unknown()), sides: z.array(TestExecutionHistorySideSchema), attempts: z.array(TestExecutionAttemptRecordSchema) }));
   // Only the list carries the count; a detail already holds the whole transcript.
   const TestExecutionHistoryListItemSchema = registry.register("TestExecutionHistoryListItem", TestExecutionHistoryItemSchema.extend({
-    turnCount: z.number().int().min(0).describe("Messages the operator sent in this test. A greeting is not one."),
-    firstMessage: z.string().max(200).nullable().describe("The first message the operator sent, clipped to 200 characters. Null until one is sent."),
+    turnCount: z.number().int().min(0).describe("User messages in this test, including any copied from a real conversation it continues. A greeting is not one."),
+    firstMessage: z.string().max(200).nullable().describe("The first user message in this test, clipped to 200 characters. Null until there is one."),
   }));
   const TestExecutionHistoryListResponseSchema = registry.register("TestExecutionHistoryListResponse", z.object({ executions: z.array(TestExecutionHistoryListItemSchema), nextCursor: z.string().nullable(), hasMore: z.boolean() }));
   const TestExecutionHistoryDetailResponseSchema = registry.register("TestExecutionHistoryDetailResponse", z.object({ execution: TestExecutionHistoryDetailSchema }));

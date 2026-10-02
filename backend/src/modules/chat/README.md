@@ -280,8 +280,10 @@ imports from `services/`.
   `PostgresAssistantTurnPersistence` records a turn's `handoff_requested` event in
   the turn's transaction when the handoff changed ownership.
 - Routine endings: `services/routineEndingEffects.ts` is the one place every chat
-  path (routine, coverage, rendered; streaming or not) turns the engine's ending
-  report into effects. `ProcessTurnResult.handoff` becomes the ownership change;
+  path (routine, coverage, rendered; streaming or not; a resume after an approval in
+  `services/approvalResumeTurn.ts`) turns the engine's ending report into effects.
+  `ProcessTurnResult.handoff` (and the same field on
+  `ConversationRoutineDecisionResult`) becomes the ownership change;
   `ProcessTurnResult.operatorNotice` queues `handoff.notify` for a hand-off and
   `completion.notify` for a completion with an operator notice, with the authored
   `notice` text on the payload. A hand-off reported without an `operatorNotice`

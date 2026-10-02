@@ -292,8 +292,11 @@ imports from `services/`.
   action type, reason code, and notification kind. Both action types dispatch
   through one `RoutineEndingNotifyActionHandler`, registered once per row in
   `app/composition/builtIn/contactRoutineModule.ts`, which resolves the agent and
-  routine names, the routine's slot order, and the conversation's stored channel and
-  entry page at delivery, and hands the notice to the `operatorNotifications` sinks.
+  routine names, the routine's slot order, and the conversation's entry page at
+  delivery, and hands the notice to the `operatorNotifications` sinks. The handler
+  routes and looks up by the queued action row's own workspace and conversation
+  ids, never by copies of those ids on the payload, since a routine action-step
+  payload carries visitor-filled variables under arbitrary keys.
   `includeTurnFailureDebug` attaches a `turnFailure` fact (failed or superseded,
   never both classified as the same) to the user message of a turn that never
   produced an assistant reply — the read-side counterpart to

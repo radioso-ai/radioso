@@ -1,7 +1,7 @@
 ---
 title: "Human takeover"
 description: "Let an operator own a conversation while the AI stays silent, reply as a human, hand back, and see who did what — from the dashboard or the API."
-last_updated: 2026-10-01
+last_updated: 2026-10-02
 ---
 
 # Human takeover
@@ -27,7 +27,7 @@ Handoff is request-driven. The AI does not silently decide to transfer a convers
 
 In the agent's **Profile → Answers** settings, turn on **Hand off on retrieval miss** to enable this trigger.
 
-Both request human ownership, notify an operator through the contact-delivery transport with a `handoff.notify` action, and record a `hitl.ownership` audit event. A routine handoff's notice names the routine and lists the values it collected; a retrieval-miss notice carries the ids and the reason. The webhook body is documented under [Operator notifications](/api/agents-and-skills#operator-notifications).
+Both request human ownership, notify an operator through the contact-delivery transport with a `handoff.notify` action, and record a `hitl.ownership` audit event. The notice's email and Slack text carry a subject line (naming the routine by default), the headline, any authored intro, the collected values, the entry page, and a link to the conversation; the ids, the reason, and the routine travel on the webhook JSON instead. The webhook body is documented under [Operator notifications](/api/agents-and-skills#operator-notifications).
 
 A routine can also notify operators without handing off: a finish ending with **Notify the team** on sends the same kind of notice through a `completion.notify` action, with `reason` set to `routine_completed`. The conversation stays with the agent, so that notice changes no ownership and creates no Inbox item.
 

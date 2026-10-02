@@ -1,7 +1,7 @@
 ---
 title: "Human Takeover"
 description: "Operator API and contract for taking over conversations, suppressing AI while handling manual responses, and reading who did what to a conversation."
-last_updated: 2026-10-01
+last_updated: 2026-10-02
 ---
 
 # Human Takeover
@@ -53,10 +53,12 @@ miss** to enable this trigger.
 
 Both triggers request human ownership and notify an operator through the existing
 contact-delivery transport with a `handoff.notify` action. They also record
-`hitl.ownership` audit events. A routine handoff's notice names the routine and
-lists the values it collected; a retrieval-miss notice carries the ids and the
-reason. See [Authoring routines](./authoring-routines.md#operator-notices)
-for the `handoff.notify` payload and queue semantics.
+`hitl.ownership` audit events. The notice's email and Slack text carry a subject
+line (naming the routine by default), the headline, any authored intro, the
+collected values, the entry page, and a link to the conversation; the ids, the
+reason, and the routine travel on the webhook JSON instead. See
+[Authoring routines](./authoring-routines.md#operator-notices) for the
+`handoff.notify` payload and queue semantics.
 
 A routine can also notify operators without a handoff: a `complete` terminal
 with an operator notice queues a `completion.notify` action through the same

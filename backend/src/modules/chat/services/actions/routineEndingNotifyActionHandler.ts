@@ -45,14 +45,20 @@ export class RoutineEndingNotifyActionHandler implements ActionHandler {
   }
 
   async handle(input: { payload: Record<string, unknown>; context: ActionHandlerContext }): Promise<void> {
-    const conversationId = asString(input.payload.conversationId) ?? input.context.conversationId ?? "unknown";
-    const workspaceId = asString(input.payload.workspaceId) ?? input.context.workspaceId ?? "unknown";
+    // The queued row is the trusted source for its own workspace and conversation: a routine
+    // action-step payload can carry visitor-filled variables under any key, so a payload copy
+    // of these ids (even one the system wrote itself) must never override the row's own ids for
+    // routing or lookups. `routineId` and `agentId` have no row-level column, so they still come
+    // from the payload.
+    const conversationId = input.context.conversationId ?? "unknown";
+    const workspaceId = input.context.workspaceId ?? "unknown";
     const agentId = asString(input.payload.agentId) ?? "unknown";
     const routineId = asString(input.payload.routineId);
     const subject = await this.subjects?.resolve({ workspaceId, agentId, routineId, conversationId });
+    const { conversationId: _payloadConversationId, workspaceId: _payloadWorkspaceId, ...routingSafePayload } = input.payload;
     const notification = routineEndingNotificationFromAction({
       kind: this.ending.notificationKind,
-      payload: input.payload,
+      payload: routingSafePayload,
       fallback: { conversationId, workspaceId, reason: this.ending.reason },
       ...(subject ? { subject } : {}),
     });

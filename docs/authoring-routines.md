@@ -396,9 +396,10 @@ The email reads as plain prose for whoever picks it up, not a log: it carries
   the order the routine declares them;
 - the page the conversation started on, when the conversation has one.
 
-The Slack post carries the same lines without the headline, led by the authored
-subject when the ending has one. Slack shows every line as plain text, so neither
-a visitor's answer nor your intro can mention the channel or add a link. The webhook body carries the ids, the reason, the
+The Slack post carries the same subject, headline, intro, collected values, and
+entry page as one block of text, led by the subject line. Slack shows every
+line as plain text, so neither a visitor's answer nor your intro can mention
+the channel or add a link. The webhook body carries the ids, the reason, the
 routine, the collected values in that same order, and the authored subject and
 intro as JSON fields; the entry page appears only in the email and Slack text. If
 the routine is deleted before the notice goes out, the collected values still

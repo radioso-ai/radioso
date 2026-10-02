@@ -496,6 +496,19 @@ describe("TestExecutionService", () => {
       expect(create).toHaveBeenCalledWith(expect.objectContaining({ seededSummary: { turnCount: 2, firstMessage: "hello" } }));
     });
 
+    it("labels a copied test by its first user message with text, kept only as long as a label needs", async () => {
+      const { service, repository } = seededSetup(async () => seed([
+        { role: "user", content: "", messageId: "m-attachment", createdAt: new Date(10) },
+        { role: "assistant", content: "I see a photo", messageId: "m-reply", createdAt: new Date(20) },
+        { role: "user", content: "w".repeat(5_000), messageId: "m-long", createdAt: new Date(30) },
+      ]));
+      const create = vi.spyOn(repository, "create");
+
+      await service.start({ idempotencyKey: "idem-seed", workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [], seedConversationId });
+
+      expect(create).toHaveBeenCalledWith(expect.objectContaining({ seededSummary: { turnCount: 2, firstMessage: "w".repeat(TEST_EXECUTION_LABEL_CHARS + 1) } }));
+    });
+
     it("groups a seeded user message with the assistant reply that follows it under one turn", async () => {
       const { service } = seededSetup(async () => seed(thread));
 
@@ -653,9 +666,9 @@ describe("TestExecutionService turn reads", () => {
     expect(summarize).toHaveBeenCalledWith(expect.objectContaining({ firstMessageChars: TEST_EXECUTION_LABEL_CHARS + 1 }));
     expect(page).toEqual({
       executions: [
-        { ...item("execution-1"), turnCount: 2, firstMessage: "Can I book a demo?" },
-        { ...item("execution-2"), turnCount: 0, firstMessage: null },
-        { ...item("execution-3"), turnCount: 1, firstMessage: `${"z".repeat(TEST_EXECUTION_LABEL_CHARS - 1)}…` },
+        { ...item("execution-1"), turnCount: 2, firstMessage: "Can I book a demo?", firstMessageClipped: false },
+        { ...item("execution-2"), turnCount: 0, firstMessage: null, firstMessageClipped: false },
+        { ...item("execution-3"), turnCount: 1, firstMessage: `${"z".repeat(TEST_EXECUTION_LABEL_CHARS - 1)}…`, firstMessageClipped: true },
       ],
       nextCursor: "cursor-2",
       hasMore: true,

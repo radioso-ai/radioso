@@ -23,7 +23,6 @@ describe("test execution HTTP streaming", () => {
     await request(app).get(`/api/v1/agents/${agentId}/test-executions`).expect(401);
     const list = await request(app).get(`/api/v1/agents/${agentId}/test-executions`).set(adminSessionHeaders(session)).expect(200);
     expect(list.body).toMatchObject({ executions: [expect.objectContaining({ id: executionId, skillEffects: "suppressed", turnCount: 3, firstMessage: "Where is my order?", sides: [expect.objectContaining({ revision, state: "ready" })] })] });
-    // A list row is a label; it never ships a whole long opening message.
     const detail = await request(app).get(`/api/v1/agents/${agentId}/test-executions/${executionId}`).set(adminSessionHeaders(session)).expect(200);
     expect(detail.body).toMatchObject({ execution: expect.objectContaining({ skillEffects: "suppressed", testValues: [{ name: "tier", value: "gold" }], sides: [expect.objectContaining({ state: "ready" })], attempts: [expect.objectContaining({ attemptId, failureCode: "provider_timeout" })] }) });
     const retained = await request(app).post(`/api/v1/agents/${agentId}/test-executions/${executionId}/sides/${execution.sides[0].id}/retain`).set(adminSessionHeaders(session)).expect(201);

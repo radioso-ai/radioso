@@ -123,6 +123,34 @@ describe("RoutineEndingNotifyActionHandler", () => {
     expect(notification).not.toHaveProperty("collected");
   });
 
+  it("routes and looks up by the queued row's own ids, ignoring differing ids on the payload", async () => {
+    const dispatch = vi.fn<OperatorNotificationDispatcher["dispatch"]>();
+    dispatch.mockResolvedValue();
+    const resolve = vi.fn(async () => ({ agentName: "Retreat desk", routineName: "Book accommodation" }));
+    const handler = new RoutineEndingNotifyActionHandler({ ending: ROUTINE_ENDING_NOTICE_ACTIONS.handoff, dispatcher: { dispatch }, subjects: { resolve } });
+
+    await handler.handle({
+      payload: {
+        // A routine action-step payload can carry visitor-filled variables under any key;
+        // these must never override the queued row's own ids.
+        conversationId: "visitor_filled_conv",
+        workspaceId: "visitor_filled_ws",
+        agentId: "agent_1",
+        reason: "routine_handoff",
+      },
+      context,
+    });
+
+    expect(resolve).toHaveBeenCalledWith({ workspaceId: "ws_1", agentId: "agent_1", routineId: null, conversationId: "conv_1" });
+    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceId: "ws_1",
+      conversationId: "conv_1",
+    }), expect.objectContaining({
+      workspaceId: "ws_1",
+      conversationId: "conv_1",
+    }));
+  });
+
   it.each([
     ["handoff", ROUTINE_ENDING_NOTICE_ACTIONS.handoff, "routine_handoff"],
     ["completion", ROUTINE_ENDING_NOTICE_ACTIONS.complete, "routine_completed"],

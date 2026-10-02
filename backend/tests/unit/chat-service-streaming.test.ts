@@ -2317,6 +2317,7 @@ describe("chat service streaming", () => {
       },
     );
     const now = new Date("2026-07-19T12:00:00.000Z");
+    const decisionTransaction = {} as never;
 
     await service.resumeAwaitingDecisionTurn({
       record: {
@@ -2343,10 +2344,12 @@ describe("chat service streaming", () => {
       },
       optionId: "approve",
       decidedBy: "account-1",
-      transaction: {} as never,
+      transaction: decisionTransaction,
     });
 
     const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0][0];
+    // The ending's effects commit in the decision's own transaction, never a separate one.
+    expect(persisted.transaction).toBe(decisionTransaction);
     expect(persisted.ownershipHandoff ?? null).toEqual(ownershipHandoff);
     if (ownershipHandoff) {
       expect(persisted.ownershipAuditEvent).toMatchObject({ eventType: "hitl.ownership" });

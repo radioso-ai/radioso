@@ -2,6 +2,7 @@ import { API_BASE, buildError, getStoredActiveWorkspaceId, request } from './api
 import { createClientId } from './client-id'
 import type { AgentGreetingDraft, TurnTraceEnvelope } from './api-types'
 import type { EvalSnapshot } from './api-eval'
+import type { components } from '../../typescript-sdk/src/generated/types'
 
 export type RevisionStatus = 'unpublished' | 'draft_clean' | 'draft_dirty' | 'published_changed_since_draft'
 export type EvidenceState = 'current' | 'configuration_changed' | 'environment_changed' | 'comparability_unknown'
@@ -96,12 +97,8 @@ export interface TestExecutionHistoryItem extends Omit<TestExecution, 'sides'> {
 }
 
 /** A row of the saved-test list; only the list counts messages, a detail carries the transcript. */
-export interface TestExecutionHistoryListItem extends TestExecutionHistoryItem {
-  /** User messages in this test: those copied from a real conversation it continues, plus those the operator sent. A greeting is not one. */
-  turnCount: number
-  /** The first of those messages with text, clipped to 200 characters ending in "…"; null until there is one. */
-  firstMessage: string | null
-}
+export type TestExecutionHistoryListItem = TestExecutionHistoryItem &
+  Pick<components['schemas']['TestExecutionHistoryListItem'], 'turnCount' | 'firstMessage' | 'firstMessageClipped'>
 
 export interface TestExecutionHistoryDetail extends Omit<TestExecutionHistoryItem, 'sides'> {
   testValues: Array<{ contextVariableId: string; value: unknown }>

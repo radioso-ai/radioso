@@ -122,7 +122,11 @@ export interface TestExecutionHistoryItem {
   sides: readonly TestExecutionHistorySide[];
 }
 
-/** The most of a test's opening message any list shows; the store reads one more so a longer one shows as clipped. */
+/**
+ * The most of a test's opening message any list shows; the store reads one more so a longer one shows
+ * as clipped. A seeded test stores its label at this length plus one (migration 208 hard-codes 201), so
+ * raising it needs those rows refilled, or their labels would read as whole.
+ */
 export const TEST_EXECUTION_LABEL_CHARS = 200;
 
 /** A test's opening message as a list label: whole, or clipped on a character boundary and marked with an ellipsis. */
@@ -401,7 +405,8 @@ export class TestExecutionService {
    * What a seed copied in, for the history list: each user message is a turn (see `seededHistory`),
    * and the first with any non-whitespace character labels the test. It is kept to one code point
    * more than a label shows, the same unit SQL `left` cuts in, so a longer one still reads as
-   * clipped; migration 208 backfills older tests by the same two rules.
+   * clipped. Migration 208 backfills older tests the same way, except that its whitespace test is
+   * Postgres's `[[:space:]]`, which can differ from JavaScript's `\s` on rare Unicode spaces.
    */
   private seededSummary(messages: readonly TestExecutionSeedMessage[]): TestExecutionSeededSummary {
     const userMessages = messages.filter((message) => message.role === "user");

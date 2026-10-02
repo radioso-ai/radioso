@@ -34,6 +34,7 @@ export const registerTestExecutionSchemas = (registry: OpenAPIRegistry) => {
   const TestExecutionHistoryListItemSchema = registry.register("TestExecutionHistoryListItem", TestExecutionHistoryItemSchema.extend({
     turnCount: z.number().int().min(0).describe("User messages in this test: those copied from a real conversation it continues, plus those the operator sent. A greeting is not one."),
     firstMessage: z.string().max(TEST_EXECUTION_LABEL_CHARS).nullable().describe(`The first of those messages with text. A longer one is clipped to ${TEST_EXECUTION_LABEL_CHARS} characters ending in "…". Null until there is one.`),
+    firstMessageClipped: z.boolean().describe("Whether firstMessage was cut to fit, so a message that really ends in \"…\" reads as whole."),
   }));
   const TestExecutionHistoryListResponseSchema = registry.register("TestExecutionHistoryListResponse", z.object({ executions: z.array(TestExecutionHistoryListItemSchema), nextCursor: z.string().nullable(), hasMore: z.boolean() }));
   const TestExecutionHistoryDetailResponseSchema = registry.register("TestExecutionHistoryDetailResponse", z.object({ execution: TestExecutionHistoryDetailSchema }));

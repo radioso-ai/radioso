@@ -54,7 +54,9 @@ Use `GET /api/v1/agents/{agentId}/test-executions?limit=50` to page through
 private Test Chat history. Each row carries `turnCount`, the number of user
 messages in the test, counting both those copied from a real conversation it
 continues and those the operator sent, and `firstMessage`, the first of them
-with text, as a label of at most 200 characters ending in `…` when it is longer. A greeting is
+with text, as a label of at most 200 characters ending in `…` when it is longer;
+`firstMessageClipped` says whether it was cut, so a message that really ends in
+`…` reads as whole. A greeting is
 not counted, and `firstMessage` is `null` until there is a user message with text. Then use `GET /api/v1/agents/{agentId}/test-executions/{executionId}`
 to reopen one execution with its frozen values, side transcripts, and retry
 evidence. These endpoints require `workspace.agents.manage` and never add test

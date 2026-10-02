@@ -5794,6 +5794,13 @@ CREATE UNIQUE INDEX agent_skills_one_default_answer ON public.agent_skills USING
 
 
 --
+-- Name: agent_test_execution_turns_execution_created_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX agent_test_execution_turns_execution_created_idx ON public.agent_test_execution_turns USING btree (execution_id, created_at, turn_id);
+
+
+--
 -- Name: agent_test_executions_idempotency_key_key; Type: INDEX; Schema: public; Owner: -
 --
 

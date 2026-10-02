@@ -7,6 +7,7 @@ import {
   buildDashboardHref,
   buildLegacyDashboardHref,
   DEFAULT_QUALITY_RANGE,
+  isValidTestExecutionId,
   type DashboardRouteState,
   parseDashboardRoute,
   retargetDashboardRouteToWorkspace,
@@ -342,17 +343,18 @@ describe('dashboard route state', () => {
     })
   })
 
-  it('ignores a testExecution link value that is not a test id', () => {
+  it('keeps a testExecution link value as given, for Test Chat to check before it opens anything', () => {
     const agentId = '67acb0c8-caad-4a1b-9fef-70cbca3f7d12'
 
-    // A shared link is a link from someone else; it must never steer the API path.
     expect(parseDashboardRoute(['agents', agentId], new URLSearchParams({
       testExecution: '../../../workspaces?x=',
-      fromConversation: '1',
     }))).toEqual({
       section: 'agents',
       agentId,
+      agentTestExecutionId: '../../../workspaces?x=',
     })
+    expect(isValidTestExecutionId('../../../workspaces?x=')).toBe(false)
+    expect(isValidTestExecutionId('11111111-1111-4111-8111-111111111111')).toBe(true)
   })
 
   it('marks a test execution opened as a copy of a real conversation', () => {

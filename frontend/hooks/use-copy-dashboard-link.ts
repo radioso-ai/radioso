@@ -47,5 +47,14 @@ export function useCopyDashboardLink() {
     }, COPIED_FEEDBACK_MS)
   }, [])
 
-  return { copy, copiedKey, uncopied }
+  /** Forgets any feedback, as when the operator moves to another view. */
+  const reset = useCallback(() => {
+    latestCopy.current += 1
+    if (feedbackTimeout.current !== null) clearTimeout(feedbackTimeout.current)
+    feedbackTimeout.current = null
+    setCopiedKey(null)
+    setUncopied(null)
+  }, [])
+
+  return { copy, copiedKey, uncopied, reset }
 }

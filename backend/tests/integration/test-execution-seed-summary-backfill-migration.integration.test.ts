@@ -95,7 +95,7 @@ describeIfDatabase("test execution seed summary backfill (208)", () => {
     await applyTestMigration(database, migrationFile);
 
     expect(await summary(seeded)).toEqual({ seeded_turn_count: 3, seeded_first_message: "copied question" });
-    expect(await summary(longSeeded)).toEqual({ seeded_turn_count: 1, seeded_first_message: "q".repeat(201) });
+    expect(await summary(longSeeded)).toEqual({ seeded_turn_count: 1, seeded_first_message: "q".repeat(1_000) });
     expect(await summary(plain)).toEqual({ seeded_turn_count: 0, seeded_first_message: null });
     expect(await summary(comparison)).toEqual({ seeded_turn_count: 0, seeded_first_message: null });
 

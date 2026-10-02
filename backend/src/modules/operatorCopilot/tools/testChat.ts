@@ -248,9 +248,15 @@ export const createTestChatCopilotTools = (
         const omissions: Omission<"sessions.firstMessage">[] = [];
         return sessionsOutputSchema.parse({
           sessions: page.sessions.slice(0, MAX_SESSIONS).map(({ firstMessageClipped, ...session }) => {
-            // The label arrives finished from test-execution; only say that it was cut.
-            if (firstMessageClipped) addOmission(omissions, "sessions.firstMessage", "string_length");
-            return { ...session, sides: session.sides.slice(0, 2) };
+            // The label arrives finished from test-execution, so only say that it was cut; bound it
+            // anyway, so a port that hands over more never breaks the output schema.
+            const tooLong = session.firstMessage !== null && session.firstMessage.length > TEST_EXECUTION_LABEL_CHARS;
+            if (firstMessageClipped && !tooLong) addOmission(omissions, "sessions.firstMessage", "string_length");
+            return {
+              ...session,
+              sides: session.sides.slice(0, 2),
+              firstMessage: tooLong ? clipped(session.firstMessage!, TEST_EXECUTION_LABEL_CHARS - 1, "sessions.firstMessage", omissions) : session.firstMessage,
+            };
           }),
           nextCursor: page.nextCursor,
           omissions,

@@ -17,3 +17,9 @@ ALTER TABLE agent_test_executions
 
 ALTER TABLE agent_test_executions
   ADD CONSTRAINT agent_test_executions_seeded_turn_count_check CHECK (seeded_turn_count >= 0);
+
+-- The list labels an unseeded test with its first sent message; this lets that read stop at the first
+-- turn with text instead of sorting every turn the test has. Building it takes SHARE on
+-- agent_test_execution_turns, so a turn being sent waits the moments the build takes.
+CREATE INDEX IF NOT EXISTS agent_test_execution_turns_execution_created_idx
+  ON agent_test_execution_turns (execution_id, created_at, turn_id);

@@ -74,13 +74,13 @@ import {
 } from "./routeScopedDirectiveSteering.js";
 import type { RetrievalTurnPort } from "./retrievalTurnDispatch.js";
 import type { GroundingSummary } from "./groundingAssertions.js";
-import type { TurnTraceEnvelope } from "./turnTraceEnvelope.js";
+import type { OperatorNoticePreview, TurnTraceEnvelope } from "./turnTraceEnvelope.js";
 import type { ChatRoutineTurnReporter } from "../contracts/routineTurnState.js";
-import { buildHandoffNotifyAction } from "./handoffOwnership.js";
+import { ROUTINE_ENDING_NOTICE_ACTIONS } from "./operatorNoticeAction.js";
+import { buildRoutineEndingNotifyAction, operatorNoticeForTurn } from "./routineEndingEffects.js";
 import {
-  formatHandoffNotification,
-  handoffNotificationFromAction,
-  type FormattedHandoffNotification,
+  formatRoutineEndingNotification,
+  routineEndingNotificationFromAction,
 } from "../../operatorNotifications/public.js";
 import type { TurnSkill } from "./turnOutcome.js";
 import {
@@ -403,6 +403,7 @@ export class WorkbenchReplayRunner {
         actions: routineResult.actions,
         pendingDecisionTransition: routineResult.pendingDecisionTransition,
         handoff: routineResult.handoff,
+        operatorNotice: routineResult.operatorNotice,
         routineReporter: routineResult.routineReporter,
         continuation: this.continuation(effects, session.conversation.id, routineStore),
       });
@@ -528,47 +529,54 @@ export class WorkbenchReplayRunner {
   }
 
   /**
-   * The hand-off message content the suppressed `handoff.notify` action carries — the
-   * subject and body fields/values a real dispatch renders — built through the same
-   * payload builder and text formatter the real dispatch handler uses
-   * (`buildHandoffNotifyAction`, `handoffNotificationFromAction`, `formatHandoffNotification`)
-   * so this content cannot drift from what a live handoff sends. It is not the full
-   * delivered payload: live delivery additionally appends an `Open: <conversation URL>`
-   * line and, for a webhook, its own structured fields (see `emailWebhookSink.ts`) — a
-   * replayed turn has no durable conversation to link to, so this preview omits both.
-   * `routineReporter` resolves the routine's display name from the routines this turn ran
-   * against — the same authored name a live handoff's database-backed subject resolver
-   * would find — without a further lookup.
+   * The message content the suppressed `handoff.notify` / `completion.notify` action carries —
+   * the subject and body a real dispatch renders, authored notice text included — built through
+   * the same action builder and text formatter the real dispatch handler uses
+   * (`buildRoutineEndingNotifyAction`, `routineEndingNotificationFromAction`,
+   * `formatRoutineEndingNotification`) so this content cannot drift from what a live notice
+   * sends. It is not the full delivered payload: live delivery additionally appends an
+   * `Open: <conversation URL>` line and, for a webhook, its own structured fields (see
+   * `emailWebhookSink.ts`) — a replayed turn has no durable conversation to link to, so this
+   * preview omits both. `routineReporter` resolves the routine's display name from the routines
+   * this turn ran against — the same authored name a live notice's database-backed subject
+   * resolver would find — without a further lookup; the conversation facts come from the
+   * replayed session the same way.
    */
-  private handoffPreviewFor(input: {
+  private operatorNoticePreviewFor(input: {
     input: WorkbenchReplayInput;
     agent: ReturnType<typeof materializeAgentFromConfig>;
     session: PreparedSession;
     handoff?: ChatTurnAssemblyRoutineResult["handoff"];
+    operatorNotice?: ChatTurnAssemblyRoutineResult["operatorNotice"];
     routineReporter?: ChatRoutineTurnReporter;
-  }): FormattedHandoffNotification | undefined {
-    if (!input.handoff) {
+  }): OperatorNoticePreview | undefined {
+    const notice = operatorNoticeForTurn(input);
+    if (!notice) {
       return undefined;
     }
-    const action = buildHandoffNotifyAction({
+    const ending = ROUTINE_ENDING_NOTICE_ACTIONS[notice.terminalKind];
+    const action = buildRoutineEndingNotifyAction({
       conversationId: input.session.conversation.id,
       workspaceId: input.input.workspaceId,
       agentId: input.agent.id,
       userMessageId: input.session.userMessage.id,
-      reason: "routine_handoff",
-      routineId: input.handoff.routineId,
-      stepId: input.handoff.stepId,
-      collected: input.handoff.collected,
+      notice,
     });
-    const notification = handoffNotificationFromAction({
+    const notification = routineEndingNotificationFromAction({
+      kind: ending.notificationKind,
       payload: action.payload,
-      fallback: { conversationId: input.session.conversation.id, workspaceId: input.input.workspaceId },
+      ids: { conversationId: input.session.conversation.id, workspaceId: input.input.workspaceId },
+      fallback: { reason: ending.reason },
       subject: {
         agentName: input.agent.name,
-        routineName: input.routineReporter?.describeRoutineName(input.handoff.routineId) ?? null,
+        routineName: input.routineReporter?.describeRoutineName(notice.routineId) ?? null,
+        conversation: {
+          entryPageUrl: input.session.conversation.entryPageUrl ?? null,
+        },
       },
     });
-    return formatHandoffNotification(notification);
+    const formatted = formatRoutineEndingNotification(notification);
+    return { kind: ending.notificationKind, subject: formatted.subject, lines: formatted.lines };
   }
 
   private presentResult(input: {
@@ -581,6 +589,7 @@ export class WorkbenchReplayRunner {
     actions?: RoutineActionRequest[];
     pendingDecisionTransition?: ChatTurnAssemblyRoutineResult["pendingDecisionTransition"];
     handoff?: ChatTurnAssemblyRoutineResult["handoff"];
+    operatorNotice?: ChatTurnAssemblyRoutineResult["operatorNotice"];
     routineReporter?: ChatRoutineTurnReporter;
     continuation?: TestExecutionReplayContinuationV1;
   }): WorkbenchReplayResult {
@@ -594,9 +603,9 @@ export class WorkbenchReplayRunner {
       engineTrace: input.engineTrace,
     });
     // A Test Chat/eval replay never dispatches this turn's actions (the caller drops them,
-    // see TrustedTestExecutionRunnerAdapter.run), so a hand-off notify never actually sends.
+    // see TrustedTestExecutionRunnerAdapter.run), so an operator notice never actually sends.
     // Carry its message content on the trace instead.
-    const handoffPreview = this.handoffPreviewFor(input);
+    const handoffPreview = this.operatorNoticePreviewFor(input);
     return {
       answer: input.presentation.answer,
       messageId: input.session.userMessage.id,

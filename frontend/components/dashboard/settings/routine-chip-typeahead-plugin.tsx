@@ -150,6 +150,7 @@ export function ChipTypeaheadPlugin({
   onCreateSkill,
   skillsOnly = false,
   variablesOnly = false,
+  offerContextVariables = true,
   skillMenuNotice = null,
   skillMenuEmptyMessage = null,
 }: {
@@ -157,6 +158,8 @@ export function ChipTypeaheadPlugin({
   // these narrow to nothing rather than being threaded through as empty ceremony.
   variables?: RoutineEditorVariable[]
   reservedRefKinds?: Record<string, RoutineChipKind>
+  // Declares a new variable. Without it `@` offers no "Create variable": a chip for a variable
+  // nobody declared would reference a slot the routine never collects.
   onCreateVariable?: (variable: RoutineEditorVariable) => void
   // Bind one capability and nothing else: `#` behaves as usual, `@` never opens the menu.
   skillsOnly?: boolean
@@ -165,6 +168,10 @@ export function ChipTypeaheadPlugin({
   // (`RoutineBlockInstructionSegment`) — a skill runs through a tool step, not step prose, so
   // this surface must not offer to turn typed text into a skill, flow target, or gate.
   variablesOnly?: boolean
+  // Whether `@` also offers the agent's context variables. A text that reads only the routine's
+  // collected values (an operator notice) turns this off, because nothing substitutes a
+  // context reference there.
+  offerContextVariables?: boolean
   // Shown instead of the skill choices when the host has already bound the one skill it can
   // hold, so the menu explains itself rather than looking broken.
   skillMenuNotice?: string | null
@@ -313,15 +320,17 @@ export function ChipTypeaheadPlugin({
       }))
     // Context the agent already holds about the visitor — read by the step, never collected
     // from the visitor, so it is its own group rather than an Information entry.
-    result.push(...skillCatalog.contextVariables
-      .filter((variable) => !lowered || variable.label.toLowerCase().includes(lowered) || variable.name.toLowerCase().includes(lowered))
-      .map((variable) => new ChipMenuOption(`context-${variable.name}`, {
-        display: variable.label,
-        kind: 'context',
-        isNew: false,
-        refId: variable.name,
-        name: variable.label,
-      })))
+    if (offerContextVariables) {
+      result.push(...skillCatalog.contextVariables
+        .filter((variable) => !lowered || variable.label.toLowerCase().includes(lowered) || variable.name.toLowerCase().includes(lowered))
+        .map((variable) => new ChipMenuOption(`context-${variable.name}`, {
+          display: variable.label,
+          kind: 'context',
+          isNew: false,
+          refId: variable.name,
+          name: variable.label,
+        })))
+    }
     if (raw) {
       // A name identifies one thing: once it's used by a chip, don't offer to
       // create a different kind with the same name (so a variable and an action
@@ -329,7 +338,7 @@ export function ChipTypeaheadPlugin({
       const refId = slugifyVariableKey(raw)
       const reservedKind = reservedRefKinds[refId]
       const canCreate = (kind: RoutineChipKind) => !reservedKind || reservedKind === kind
-      if (!variables.some((variable) => variable.name.toLowerCase() === lowered) && canCreate('variable')) {
+      if (onCreateVariable && !variables.some((variable) => variable.name.toLowerCase() === lowered) && canCreate('variable')) {
         result.push(new ChipMenuOption(`new-variable-${lowered}`, {
           display: `Create variable “${raw}”`,
           kind: 'variable',
@@ -407,7 +416,7 @@ export function ChipTypeaheadPlugin({
       }))
     }
     return result.slice(0, 8)
-  }, [editor, skillCatalog.skills, skillCatalog.contextVariables, variables, reservedRefKinds, query, trigger, skillsOnly, variablesOnly, skillMenuNotice, skillMenuEmptyMessage, onCreateSkill])
+  }, [editor, skillCatalog.skills, skillCatalog.contextVariables, variables, reservedRefKinds, query, trigger, skillsOnly, variablesOnly, offerContextVariables, skillMenuNotice, skillMenuEmptyMessage, onCreateSkill, onCreateVariable])
 
   const onSelectOption = useCallback(
     (option: ChipMenuOption, nodeToReplace: TextNode | null, closeMenu: () => void) => {

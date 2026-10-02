@@ -19,6 +19,7 @@ import {
   renameSlot,
   renameStep,
   replaceInstruction,
+  setEndingNotice,
   slotReferences,
   targetBranchAtStep,
   updateApproval,
@@ -542,3 +543,32 @@ describe('tool exposure', () => {
   })
 })
 
+describe('ending operator notices', () => {
+  const branchedToComplete = () => referenceEnding(addBranch(source(), 'ask_email'), 'ask_email', 0, 'complete')
+
+  it('turns a notice on and off on every copy of the ending, and saves it as authored', () => {
+    const doc = branchedToComplete()
+
+    const on = setEndingNotice(doc, 'complete', { subject: 'Recovery: {{slot.email}}', intro: null })
+    const branchEnding = on.steps[0].branches[0].target
+    expect(branchEnding.kind === 'ending' ? branchEnding.ending?.operatorNotice : undefined).toEqual({ subject: 'Recovery: {{slot.email}}', intro: null })
+    expect(draftFromBlockDoc(on).terminals.find((terminal) => terminal.stableStepId === 'complete')?.operatorNotice)
+      .toEqual({ subject: 'Recovery: {{slot.email}}', intro: null })
+    // The source document is never mutated: the editor keeps immutable snapshots for undo.
+    expect(JSON.stringify(doc)).not.toContain('operatorNotice')
+
+    const off = setEndingNotice(on, 'complete', null)
+    expect(JSON.stringify(off)).not.toContain('operatorNotice')
+    expect(draftFromBlockDoc(off).terminals.find((terminal) => terminal.stableStepId === 'complete')).not.toHaveProperty('operatorNotice')
+  })
+
+  it('follows a slot rename into notice text and counts notice text as a reference', () => {
+    const withNotice = setEndingNotice(branchedToComplete(), 'complete', { subject: 'Recovery: {{slot.email}}', intro: 'Reply to {{ slot.email }} today.' })
+
+    const renamed = renameSlot(withNotice, 'email', 'Customer email')
+
+    const notice = draftFromBlockDoc(renamed).terminals.find((terminal) => terminal.stableStepId === 'complete')?.operatorNotice
+    expect(notice).toEqual({ subject: 'Recovery: {{slot.customer_email}}', intro: 'Reply to {{slot.customer_email}} today.' })
+    expect(slotReferences(renamed, 'customer_email')).toContain('notice in complete')
+  })
+})

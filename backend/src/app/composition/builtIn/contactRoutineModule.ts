@@ -2,15 +2,15 @@ import { capabilityNames } from "../../../shared/domain/capabilityPolicy.js";
 import {
   contactRoutineDefinition,
   CONTACT_SEND_ACTION_TYPE,
-  HANDOFF_NOTIFY_ACTION_TYPE,
   CONTACT_INTENT_SKILL_NAME,
   CONTACT_INTENT_NAME,
   ConfiguredContactDeliveryResolver,
   ContactSendActionHandler,
   EmailWebhookOperatorNotificationSink,
   FetchContactWebhookHttpClient,
-  HandoffNotifyActionHandler,
-  RepositoryHandoffNotificationSubjectResolver,
+  RoutineEndingNotifyActionHandler,
+  RepositoryRoutineEndingNotificationSubjectResolver,
+  ROUTINE_ENDING_NOTICE_ACTIONS,
   ApprovalRequestActionHandler,
   APPROVAL_REQUEST_ACTION_TYPE,
   WorkspaceOwnerContactRecipientResolver,
@@ -167,20 +167,25 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
         );
       },
     });
-    context.registerActionHandler({
-      type: HANDOFF_NOTIFY_ACTION_TYPE,
-      requiredCapabilities: [capabilityNames.humanContact.request],
-      emittableByRoutines: true,
-      handler: ({ database, env, logger, mailService, assertPublicWebsiteUrl }) => {
-        return new HandoffNotifyActionHandler(
-          buildOperatorNotificationDispatcher({ database, env, logger, mailService, assertPublicWebsiteUrl }),
-          new RepositoryHandoffNotificationSubjectResolver(
+    // A routine ending's notice to operators: `handoff.notify` for a hand-off (which also moved
+    // the conversation to a person when the turn committed), `completion.notify` for a
+    // completion that carries a notice. One handler, told which row it delivers.
+    for (const ending of Object.values(ROUTINE_ENDING_NOTICE_ACTIONS)) {
+      context.registerActionHandler({
+        type: ending.type,
+        requiredCapabilities: [capabilityNames.humanContact.request],
+        emittableByRoutines: true,
+        handler: ({ database, env, logger, mailService, assertPublicWebsiteUrl }) => new RoutineEndingNotifyActionHandler({
+          ending,
+          dispatcher: buildOperatorNotificationDispatcher({ database, env, logger, mailService, assertPublicWebsiteUrl }),
+          subjects: new RepositoryRoutineEndingNotificationSubjectResolver(
             new AgentRepository(database.kysely),
             new RoutineDefinitionRepository(database.kysely),
+            new ConversationRepository(database.kysely),
           ),
-        );
-      },
-    });
+        }),
+      });
+    }
     context.registerActionHandler({
       type: APPROVAL_REQUEST_ACTION_TYPE,
       requiredCapabilities: [capabilityNames.humanContact.request],

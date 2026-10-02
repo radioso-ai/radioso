@@ -1,9 +1,10 @@
 import type { AgentContactWebhook } from "../../../agents/public.js";
 import {
-  formatHandoffNotification,
+  formatRoutineEndingNotification,
   type OperatorNotification,
   type OperatorNotificationContext,
   type OperatorNotificationSink,
+  type RoutineEndingOperatorNotification,
 } from "../../../operatorNotifications/public.js";
 import {
   resolveConversationLink,
@@ -30,6 +31,16 @@ const deprecatedDashboardPath = (dashboardUrl: string | null): string | null => 
   } catch {
     return null;
   }
+};
+
+/**
+ * This transport's wording per notification kind: the action type the no-recipient log line
+ * names, and the error a webhook delivery without a client raises.
+ */
+const TRANSPORT_TEXT_BY_KIND: Record<OperatorNotification["kind"], { actionType: string; missingWebhookClientMessage: string }> = {
+  approval: { actionType: "approval.request", missingWebhookClientMessage: "Approval request webhook delivery is not configured" },
+  handoff: { actionType: "handoff.notify", missingWebhookClientMessage: "Handoff webhook delivery is not configured" },
+  completion: { actionType: "completion.notify", missingWebhookClientMessage: "Completion notice webhook delivery is not configured" },
 };
 
 /**
@@ -62,7 +73,7 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
     };
     const target = await this.recipients.resolve(recipientContext);
     if (target.emails.length === 0 && !target.webhook) {
-      const actionType = notification.kind === "approval" ? "approval.request" : "handoff.notify";
+      const { actionType } = TRANSPORT_TEXT_BY_KIND[notification.kind];
       this.logger?.warn(
         { workspaceId: context.workspaceId ?? notification.workspaceId, conversationId: context.conversationId ?? notification.conversationId },
         `${actionType}: no recipient configured for workspace; skipping`,
@@ -100,7 +111,7 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
             requestId: context.requestId,
           },
         }
-      : this.handoffDelivery(notification, context, openLine, links);
+      : this.routineEndingDelivery(notification, context, openLine, links);
 
     await Promise.all([
       ...target.emails.map((to) =>
@@ -114,20 +125,23 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
         webhook: target.webhook,
         payload: delivery.webhookPayload,
         idempotencyKey: `${baseIdempotencyKey}:webhook`,
-        missingClientMessage: notification.kind === "approval"
-          ? "Approval request webhook delivery is not configured"
-          : "Handoff webhook delivery is not configured",
+        missingClientMessage: TRANSPORT_TEXT_BY_KIND[notification.kind].missingWebhookClientMessage,
       }) : Promise.resolve(),
     ]);
   }
 
-  private handoffDelivery(
-    notification: Extract<OperatorNotification, { kind: "handoff" }>,
+  /**
+   * A hand-off and a completion notice share one delivery: the kind only picks the default text
+   * (inside the formatter) and the `reason` the payload already carries. The email stays plain
+   * text, so collected values reach it unescaped and never as markup.
+   */
+  private routineEndingDelivery(
+    notification: RoutineEndingOperatorNotification,
     context: OperatorNotificationContext,
     openLine: string[],
     links: { dashboardUrl: string | null; dashboardPath: string | null },
   ): { subject: string; text: string; webhookPayload: Record<string, unknown> } {
-    const formatted = formatHandoffNotification(notification);
+    const formatted = formatRoutineEndingNotification(notification);
     return {
       subject: formatted.subject,
       text: [...formatted.lines, ...openLine].join("\n"),
@@ -138,6 +152,8 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
         reason: notification.reason,
         routine: notification.routine ?? null,
         collected: notification.collected ?? {},
+        subject: formatted.notice.subject,
+        intro: formatted.notice.intro,
         ...links,
         requestId: context.requestId,
       },

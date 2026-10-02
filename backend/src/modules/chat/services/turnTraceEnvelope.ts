@@ -50,16 +50,24 @@ export interface TurnTraceEnvelope {
    */
   summary?: Record<string, unknown>;
   /**
-   * Present only on a Test Chat turn that ended on a routine hand-off terminal, whose
-   * `handoff.notify` action never dispatches (a replayed turn's actions are never sent —
-   * see `WorkbenchReplayRunner`). Carries the hand-off message content — subject and body
-   * fields/values — built by the same operator-notification text formatter the real
-   * dispatch uses, so an operator can check it before release. It is not the full
-   * delivered payload: live delivery additionally appends an `Open: <conversation URL>`
-   * line and, for a webhook, its own structured fields. Never set on a real conversation's
-   * envelope — a live hand-off actually sends, so it needs no preview.
+   * Present only on a Test Chat turn that ended on a routine ending that notifies operators —
+   * every hand-off, and a completion with an operator notice — whose `handoff.notify` /
+   * `completion.notify` action never dispatches (a replayed turn's actions are never sent —
+   * see `WorkbenchReplayRunner`). `kind` says which notice it is. Carries the message content —
+   * subject and body fields/values, authored notice text included — built by the same
+   * operator-notification text formatter the real dispatch uses, so an operator can check it
+   * before release. It is not the full delivered payload: live delivery additionally appends
+   * an `Open: <conversation URL>` line and, for a webhook, its own structured fields. Never set
+   * on a real conversation's envelope — a live notice actually sends, so it needs no preview.
    */
-  handoffPreview?: { subject: string; lines: string[] };
+  handoffPreview?: OperatorNoticePreview;
+}
+
+/** The operator notice a replayed turn would have sent; see `TurnTraceEnvelope.handoffPreview`. */
+export interface OperatorNoticePreview {
+  kind: "handoff" | "completion";
+  subject: string;
+  lines: string[];
 }
 
 export interface TurnTraceOpenTelemetryCorrelation {

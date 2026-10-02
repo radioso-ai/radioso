@@ -103,11 +103,29 @@ describe("copilot routine readers", () => {
     expect(result.routine.editable).toEqual({
       steps: [{ stableStepId: "collect_topic", kind: "chat", instruction: "Ask how we can help." }],
       stepsTruncated: false,
-      endings: [{ stableStepId: "done", kind: "complete", instruction: null }],
+      endings: [{ stableStepId: "done", kind: "complete", instruction: null, notifiesOperators: false, operatorNotice: null }],
       endingsTruncated: false,
       fields: [{ key: "order_number", type: "text", required: true, description: "The order" }],
       fieldsTruncated: false,
     });
+  });
+
+  it("shows which endings notify operators and the notice text each one carries", async () => {
+    const ports = dependencies([routine({
+      terminals: [
+        { stableStepId: "done", kind: "complete", instruction: null, operatorNotice: { subject: "Booking: {{slot.name}}", intro: null }, ordinal: 0 },
+        { stableStepId: "human", kind: "handoff", instruction: null, ordinal: 1 },
+      ],
+    })]);
+    const tool = ports.descriptors.find((descriptor) => descriptor.name === "routine_definition")!;
+
+    const result = await tool.createTool(context("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"))
+      .invoke({ routineId: "11111111-1111-4111-8111-111111111111" }, {} as never) as { routine: { editable: { endings: unknown[] } } };
+
+    expect(result.routine.editable.endings).toEqual([
+      { stableStepId: "done", kind: "complete", instruction: null, notifiesOperators: true, operatorNotice: { subject: "Booking: {{slot.name}}", intro: null } },
+      { stableStepId: "human", kind: "handoff", instruction: null, notifiesOperators: true, operatorNotice: null },
+    ]);
   });
 
   it("keeps the addressable list short when an element's wording is long", async () => {

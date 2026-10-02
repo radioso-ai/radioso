@@ -155,7 +155,13 @@ export function sanitizeDraftContentForSave(draft: RoutineDefinitionDraft): Rout
       fieldValue: typeof transition.fieldValue === 'string' ? emptyToNull(transition.fieldValue) : transition.fieldValue ?? null,
       fieldValues: transition.fieldValues && transition.fieldValues.length > 0 ? transition.fieldValues : null,
     })),
-    terminals: draft.terminals.map((terminal) => ({ ...terminal, instruction: emptyToNull(terminal.instruction) })),
+    terminals: draft.terminals.map((terminal) => ({
+      ...terminal,
+      instruction: emptyToNull(terminal.instruction),
+      ...(terminal.operatorNotice
+        ? { operatorNotice: { subject: emptyToNull(terminal.operatorNotice.subject), intro: emptyToNull(terminal.operatorNotice.intro) } }
+        : {}),
+    })),
   }
 }
 

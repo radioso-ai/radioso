@@ -6,6 +6,7 @@ import type {
   RoutineFieldGuardOp,
   RoutineFieldGuardUnit,
   RoutineGuardKind,
+  RoutineOperatorNotice,
   RoutineReentryMode,
   RoutineSlotType,
   RoutineStepKind,
@@ -66,6 +67,8 @@ export type RoutineTerminalForm = {
   stableStepId: string
   kind: RoutineTerminalKind
   instruction: string
+  // Carried untouched: the form has no notice fields of its own, and a save must not drop one.
+  operatorNotice?: RoutineOperatorNotice
 }
 
 export type RoutineFormState = {
@@ -288,6 +291,7 @@ export const routineToForm = (routine: RoutineDefinition): RoutineFormState => {
       stableStepId: terminal.stableStepId,
       kind: terminal.kind,
       instruction: terminal.instruction ?? '',
+      ...(terminal.operatorNotice ? { operatorNotice: { ...terminal.operatorNotice } } : {}),
     })),
     completionExport: {
       enabled: routine.completionExport?.enabled ?? false,
@@ -396,6 +400,7 @@ export const formToRoutineDraft = (
       stableStepId: draftTerminalId(terminal, index),
       kind: terminal.kind,
       instruction: nullableText(terminal.instruction),
+      ...(terminal.operatorNotice ? { operatorNotice: { ...terminal.operatorNotice } } : {}),
       ordinal: index,
     })),
     ...(completionExport ? { completionExport } : {}),

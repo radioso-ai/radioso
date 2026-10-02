@@ -1,5 +1,6 @@
 import type { ProcessTurnResult, RoutineActionRequest } from "@radioso/conversation-contract";
 
+import { operatorNoticeActionPayload } from "./operatorNoticeAction.js";
 import { HANDOFF_NOTIFY_ACTION_TYPE } from "./routines/contactRoutine.js";
 import { SKILL_TURN_OUTCOME } from "./assistantTurnOutcomeTypes.js";
 import type { ChatPresentedAnswer } from "./chatAnswerPresenter.js";
@@ -59,33 +60,12 @@ export const suppressedHumanOwnedResponse = (
 /** What the engine reports when a routine ends on a handoff terminal. */
 export type RoutineHandoffEffect = NonNullable<ProcessTurnResult["handoff"]>;
 
-/**
- * Builds the `handoff.notify` action a routine handoff terminal (or a retrieval-miss
- * handoff) emits. Exported so a Test Chat turn — whose actions are suppressed rather than
- * dispatched — can build the identical payload for a hand-off preview.
- */
-export const buildHandoffNotifyAction = (input: {
-  conversationId: string;
-  workspaceId: string;
-  agentId: string;
-  userMessageId: string;
+/** Builds the `handoff.notify` action a retrieval-miss handoff emits. */
+export const buildHandoffNotifyAction = (input: Parameters<typeof operatorNoticeActionPayload>[0] & {
   reason: "routine_handoff" | "retrieval_miss";
-  routineId?: string;
-  stepId?: string;
-  /** The routine's declared slot values, forwarded to the operator notice as-is. */
-  collected?: Record<string, unknown>;
 }): RoutineActionRequest => ({
   type: HANDOFF_NOTIFY_ACTION_TYPE,
-  payload: {
-    conversationId: input.conversationId,
-    workspaceId: input.workspaceId,
-    agentId: input.agentId,
-    userMessageId: input.userMessageId,
-    reason: input.reason,
-    routineId: input.routineId,
-    stepId: input.stepId,
-    ...(input.collected ? { collected: input.collected } : {}),
-  },
+  payload: operatorNoticeActionPayload(input),
 });
 
 /**
@@ -99,22 +79,6 @@ export const routineHandoffOwnership = (
   routineId: handoff.routineId,
   stepId: handoff.stepId,
 });
-
-export const routineHandoffNotifyAction = (input: {
-  session: PreparedSession;
-  workspaceId: string;
-  handoff: RoutineHandoffEffect;
-}): RoutineActionRequest =>
-  buildHandoffNotifyAction({
-    conversationId: input.session.conversation.id,
-    workspaceId: input.workspaceId,
-    agentId: input.session.agent.id,
-    userMessageId: input.session.userMessage.id,
-    reason: "routine_handoff",
-    routineId: input.handoff.routineId,
-    stepId: input.handoff.stepId,
-    collected: input.handoff.collected,
-  });
 
 const shouldRequestRetrievalMissHandoff = (input: {
   session: PreparedSession;

@@ -48,13 +48,18 @@ export const turnTraceEnvelopeSchema = z.object({
   openTelemetry: z.object({ traceId: z.string(), spanId: z.string(), sampled: z.boolean() }).optional(),
   summary: z.record(jsonValueSchema).optional(),
   /**
-   * Only on a Test Chat turn that ended on a routine hand-off terminal — the message
-   * content (subject and body) that terminal's operator notification carries, since a
+   * Only on a Test Chat turn that ended on a routine ending that notifies operators — the
+   * message content (subject and body) that ending's operator notification carries, since a
    * replayed turn never actually delivers it. Live delivery additionally appends an
    * `Open: <conversation URL>` line this preview omits. Absent on a customer
-   * conversation's `turn_trace`, which sends for real.
+   * conversation's `turn_trace`, which sends for real. `kind` is absent on a trace stored
+   * before completions could notify; such a preview is a hand-off.
    */
-  handoffPreview: z.object({ subject: z.string(), lines: z.array(z.string()) }).optional(),
+  handoffPreview: z.object({
+    kind: z.enum(["handoff", "completion"]).optional(),
+    subject: z.string(),
+    lines: z.array(z.string()),
+  }).optional(),
 });
 
 const MAX_MESSAGES = 20;

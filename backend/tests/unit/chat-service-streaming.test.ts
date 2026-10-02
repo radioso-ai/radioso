@@ -15,7 +15,7 @@ import {
   type ChatServiceOptions,
   type ChatStreamEvent,
 } from "../../src/modules/chat/services/chatService.js";
-import { HANDOFF_NOTIFY_ACTION_TYPE } from "../../src/modules/chat/services/routines/contactRoutine.js";
+import { COMPLETION_NOTIFY_ACTION_TYPE, HANDOFF_NOTIFY_ACTION_TYPE } from "../../src/modules/chat/services/routines/contactRoutine.js";
 import { APPROVAL_REQUEST_ACTION_TYPE } from "../../src/modules/chat/services/actions/approvalRequestActionHandler.js";
 import { SKILL_TURN_OUTCOME } from "../../src/modules/chat/services/assistantTurnOutcomeTypes.js";
 import {
@@ -2661,6 +2661,7 @@ describe("chat service streaming", () => {
                     kind: "handoff" as const,
                     stepId: "operator_review",
                     collected: { program: "Yoga retreat", arrival_date: "2026-10-12" },
+                    operatorNotice: {},
                   },
                   awaitingDecision: {
                     stepId: "operator_review",
@@ -3245,6 +3246,104 @@ describe("chat service streaming", () => {
     expect(order).toEqual(["enqueue"]);
   });
 
+  it.each([false, true])("notifies operators of a completion with a notice on the %s path, and the agent keeps answering", async (stream) => {
+    const humanOwned = new Set<string>();
+    const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+      forTurn: async () => ({
+        activator: { activate: async () => ({ kind: "activate" as const, routineId: "routine_booking" }) },
+        runner: {
+          resume: async () => ({
+            response: { answer: "Your request is in. Is there anything else I can help you with?" },
+            nextState: null,
+            terminal: {
+              kind: "complete" as const,
+              stepId: "booked",
+              collected: { name: "Ada Lovelace", arrival: "2026-10-12" },
+              operatorNotice: { subject: "New booking: {{slot.name}}", intro: "Confirm the room." },
+            },
+          }),
+        },
+      }),
+    };
+    const assistantTurnPersistence: NonNullable<ChatServiceOptions["assistantTurnPersistence"]> = {
+      completeAssistantTurn: vi.fn(async (input) => {
+        // What the real persistence does with a hand-off: the conversation becomes human-owned.
+        if (input.ownershipHandoff) humanOwned.add(input.assistantMessage.conversationId);
+        return { message: {
+          id: input.assistantMessage.id!,
+          conversationId: input.assistantMessage.conversationId,
+          workspaceId: input.assistantMessage.workspaceId,
+          role: "assistant" as const,
+          content: input.assistantMessage.content,
+          metadata: input.assistantMessage.metadata,
+          skillName: input.assistantMessage.skillName,
+          skillOutcome: input.assistantMessage.skillOutcome,
+          skillStatus: input.assistantMessage.skillStatus,
+          createdAt: new Date(),
+        }, committedFacts: { insertedActionTypes: [], decisionCreated: false, ownershipChanged: Boolean(input.ownershipHandoff) } };
+      }),
+    };
+    const conversationOwnershipReader: NonNullable<ChatServiceOptions["conversationOwnershipReader"]> = {
+      load: vi.fn(async (conversationId: string) => humanOwned.has(conversationId) ? humanOwnedRecord(conversationId) : null),
+    };
+    const service = makeChatService(
+      new InMemoryConversationRepository(),
+      new InMemoryMessageRepository(),
+      new RetrievalTurnController({ async interpret() { throw new Error("no retrieval"); } } as never),
+      { async answer() { return "x"; }, async *streamAnswer() { yield "x"; } },
+      createAuditService(),
+      fallbackReplyComposer,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+      createConversationEngine(),
+      {
+        routineStore: { loadActive: async () => null, save: vi.fn(async () => {}), clear: vi.fn(async () => {}) },
+        routineProvider,
+        assistantTurnPersistence,
+      },
+      undefined,
+      conversationOwnershipReader,
+    );
+    const runTurn = async (conversationId?: string) => {
+      const request = { workspaceId: "workspace-1", query: "Book me a room", stream, ...(conversationId ? { conversationId } : {}) };
+      if (!stream) {
+        return service.answer(request);
+      }
+      for await (const _event of service.streamAnswer(request)) {
+        // Drain the stream to its committed turn.
+      }
+      return null;
+    };
+
+    await runTurn();
+
+    const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0][0];
+    const conversationId = persisted.assistantMessage.conversationId;
+    expect(persisted.ownershipHandoff ?? null).toBeNull();
+    expect(persisted.ownershipAuditEvent ?? null).toBeNull();
+    expect(persisted.actions).toContainEqual({
+      type: COMPLETION_NOTIFY_ACTION_TYPE,
+      payload: expect.objectContaining({
+        conversationId,
+        workspaceId: "workspace-1",
+        reason: "routine_completed",
+        routineId: "routine_booking",
+        stepId: "booked",
+        collected: { name: "Ada Lovelace", arrival: "2026-10-12" },
+        notice: { subject: "New booking: {{slot.name}}", intro: "Confirm the room." },
+      }),
+    });
+    expect(persisted.actions ?? []).not.toContainEqual(expect.objectContaining({ type: HANDOFF_NOTIFY_ACTION_TYPE }));
+
+    const next = await runTurn(conversationId);
+
+    expect(assistantTurnPersistence.completeAssistantTurn).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[1][0].assistantMessage.content)
+      .toBe("Your request is in. Is there anything else I can help you with?");
+    if (next) {
+      expect(next.ownership?.suppressed ?? false).toBe(false);
+    }
+  });
+
   it("threads routine handoff terminals into ownership handoff and notification action", async () => {
     const routineStore: NonNullable<ChatServiceOptions["routineStore"]> = {
       loadActive: async () => null,
@@ -3262,6 +3361,7 @@ describe("chat service streaming", () => {
               kind: "handoff" as const,
               stepId: "handoff_terminal",
               collected: { topic: "billing", callback_requested: true },
+              operatorNotice: {},
             },
           }),
         },

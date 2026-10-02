@@ -97,9 +97,9 @@ export interface TestExecutionHistoryItem extends Omit<TestExecution, 'sides'> {
 
 /** A row of the saved-test list; only the list counts messages, a detail carries the transcript. */
 export interface TestExecutionHistoryListItem extends TestExecutionHistoryItem {
-  /** Messages the operator sent in this test; a greeting and messages copied from a real conversation are not counted. */
+  /** User messages in this test: those copied from a real conversation it continues, plus those the operator sent. A greeting is not one. */
   turnCount: number
-  /** The first message the operator sent, clipped to 200 characters ending in "…"; null until one is sent. */
+  /** The first of those messages, clipped to 200 characters ending in "…"; null until there is one. */
   firstMessage: string | null
 }
 
@@ -217,7 +217,7 @@ export const agentRevisionsApi = {
   },
 
   getTestExecution(agentId: string, executionId: string): Promise<{ execution: TestExecutionHistoryDetail }> {
-    return request<{ execution: TestExecutionHistoryDetail }>(`/agents/${agentId}/test-executions/${executionId}`, { method: 'GET' })
+    return request<{ execution: TestExecutionHistoryDetail }>(`/agents/${encodeURIComponent(agentId)}/test-executions/${encodeURIComponent(executionId)}`, { method: 'GET' })
   },
 
   retainTestSide(agentId: string, executionId: string, sideId: string): Promise<TestExecution> {

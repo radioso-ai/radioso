@@ -1308,7 +1308,8 @@ export function AgentRevisionTestChat({
     void agentRevisionsApi
       .getTestExecution(agentId, openExecutionId)
       .then((response) => {
-        if (!isCurrent()) return;
+        // The operator chose Conversation history while it loaded; the test is there to open.
+        if (!isCurrent() || requestedView.current === "history") return;
         reopenExecutionRef.current(response.execution, notice);
       })
       .catch((cause) => {

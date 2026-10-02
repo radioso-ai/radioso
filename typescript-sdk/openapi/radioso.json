@@ -22886,7 +22886,7 @@
               "turnCount": {
                 "type": "integer",
                 "minimum": 0,
-                "description": "Messages the operator sent in this test. A greeting and messages copied from a real conversation are not counted."
+                "description": "User messages in this test: those copied from a real conversation it continues, plus those the operator sent. A greeting is not one."
               },
               "firstMessage": {
                 "type": [
@@ -22894,7 +22894,7 @@
                   "null"
                 ],
                 "maxLength": 200,
-                "description": "The first message the operator sent. A longer one is clipped to 200 characters ending in \"…\". Null until one is sent."
+                "description": "The first of those messages. A longer one is clipped to 200 characters ending in \"…\". Null until there is one."
               }
             },
             "required": [

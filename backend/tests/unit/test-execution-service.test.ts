@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { AgentRevision } from "../../src/modules/agents/agentRevision.js";
 import {
+  TEST_EXECUTION_LABEL_CHARS,
   TestExecutionService,
   type TestExecution,
   type TestExecutionAttemptRecord,
@@ -486,6 +487,15 @@ describe("TestExecutionService", () => {
       expect(side.history.map(({ role, content, messageId, createdAt }) => ({ role, content, messageId, createdAt }))).toEqual(thread);
     });
 
+    it("records what the seed copied in, so history can count and label the test without its transcript", async () => {
+      const { service, repository } = seededSetup(async () => seed(thread));
+      const create = vi.spyOn(repository, "create");
+
+      await service.start({ idempotencyKey: "idem-seed", workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [], seedConversationId });
+
+      expect(create).toHaveBeenCalledWith(expect.objectContaining({ seededSummary: { turnCount: 2, firstMessage: "hello" } }));
+    });
+
     it("groups a seeded user message with the assistant reply that follows it under one turn", async () => {
       const { service } = seededSetup(async () => seed(thread));
 
@@ -631,15 +641,21 @@ describe("TestExecutionService turn reads", () => {
     const item = (id: string): TestExecutionHistoryItem => ({ id, mode: "single", generation: 1, state: "completed", createdAt: new Date(0), skillEffects: "suppressed", sides: [] });
     const list = vi.spyOn(repository, "list").mockResolvedValue({ executions: [item("execution-1"), item("execution-2")], nextCursor: "cursor-2", hasMore: true });
     repository.turnSummaries.set("execution-1", { turnCount: 2, firstMessage: "Can I book a demo?" });
+    repository.turnSummaries.set("execution-3", { turnCount: 1, firstMessage: "z".repeat(TEST_EXECUTION_LABEL_CHARS + 1) });
+    list.mockResolvedValueOnce({ executions: [item("execution-1"), item("execution-2"), item("execution-3")], nextCursor: "cursor-2", hasMore: true });
+    const summarize = vi.spyOn(repository, "summarizeTurns");
 
     const page = await service.summaries({ ...scope, limit: 2, cursor: "cursor-1" });
 
     expect(list).toHaveBeenCalledWith({ ...scope, limit: 2, cursor: "cursor-1" });
-    expect(repository.calls).toEqual(["summarize:execution-1,execution-2"]);
+    expect(repository.calls).toEqual(["summarize:execution-1,execution-2,execution-3"]);
+    // The store reads one character past the label, so the service can tell a longer message apart and mark it.
+    expect(summarize).toHaveBeenCalledWith(expect.objectContaining({ firstMessageChars: TEST_EXECUTION_LABEL_CHARS + 1 }));
     expect(page).toEqual({
       executions: [
         { ...item("execution-1"), turnCount: 2, firstMessage: "Can I book a demo?" },
         { ...item("execution-2"), turnCount: 0, firstMessage: null },
+        { ...item("execution-3"), turnCount: 1, firstMessage: `${"z".repeat(TEST_EXECUTION_LABEL_CHARS - 1)}…` },
       ],
       nextCursor: "cursor-2",
       hasMore: true,

@@ -14,7 +14,7 @@ describe("test execution HTTP streaming", () => {
   it("reads private test history through the existing operator permission boundary", async () => {
     const revision = { id: "50000000-0000-4000-8000-000000000001", label: "v2", versionNumber: 2, kind: "published" as const, createdAt: "2026-09-08T10:00:00.000Z", publishedAt: "2026-09-08T10:00:00.000Z" };
     const execution = { id: executionId, generation: 1, mode: "single" as const, state: "partial" as const, createdAt: new Date("2026-09-08T10:01:00.000Z"), skillEffects: "suppressed" as const, testValues: [{ name: "tier", value: "gold" }], sides: [{ id: "50000000-0000-4000-8000-000000000002", revision: { id: revision.id, publishedVersion: 2, publishedAt: new Date(revision.publishedAt), createdAt: new Date(revision.createdAt), snapshot: { customInstruction: null, directives: [], routines: [], contextVariableEnablements: [] }, sourceDraftGeneration: 1, sourceBasePublishedRevisionId: null }, conversationId: "50000000-0000-4000-8000-000000000003", state: "ready" as const, retryable: false, history: [{ turnId, attemptId, role: "user" as const, content: "hello", createdAt: new Date("2026-09-08T10:01:01.000Z") }], continuation: null }] };
-    let summarizedFirstMessage = "Where is my order?";
+    const summarizedFirstMessage = "Where is my order?";
     const start = vi.fn(async (input: Record<string, unknown>) => ({ ...execution, skillEffects: (input.skillEffects as string | undefined) ?? "suppressed" }));
     const testExecutionService = { summaries: async () => ({ executions: [{ ...execution, turnCount: 3, firstMessage: summarizedFirstMessage }], nextCursor: null, hasMore: false }), detail: async () => ({ execution, attempts: [{ executionId, sideId: execution.sides[0].id, turnId, attemptId, fence: 1, state: "failed" as const, failureCode: "provider_timeout", leaseExpiresAt: new Date("2026-09-08T10:02:00.000Z"), createdAt: new Date("2026-09-08T10:01:01.000Z"), updatedAt: new Date("2026-09-08T10:01:02.000Z") }] }), retainSide: async () => execution, start } as unknown as TestExecutionService;
     const { app } = createTestApp({ testExecutionService });
@@ -24,17 +24,6 @@ describe("test execution HTTP streaming", () => {
     const list = await request(app).get(`/api/v1/agents/${agentId}/test-executions`).set(adminSessionHeaders(session)).expect(200);
     expect(list.body).toMatchObject({ executions: [expect.objectContaining({ id: executionId, skillEffects: "suppressed", turnCount: 3, firstMessage: "Where is my order?", sides: [expect.objectContaining({ revision, state: "ready" })] })] });
     // A list row is a label; it never ships a whole long opening message.
-    // The repository reads one character past the label, so a longer message is marked as clipped.
-    summarizedFirstMessage = "x".repeat(201);
-    const clippedList = await request(app).get(`/api/v1/agents/${agentId}/test-executions`).set(adminSessionHeaders(session)).expect(200);
-    expect(clippedList.body.executions[0].firstMessage).toBe(`${"x".repeat(199)}…`);
-    summarizedFirstMessage = "x".repeat(200);
-    const fullList = await request(app).get(`/api/v1/agents/${agentId}/test-executions`).set(adminSessionHeaders(session)).expect(200);
-    expect(fullList.body.executions[0].firstMessage).toBe("x".repeat(200));
-    // The clip never splits a character.
-    summarizedFirstMessage = `${"x".repeat(198)}😀 and more`;
-    const emojiList = await request(app).get(`/api/v1/agents/${agentId}/test-executions`).set(adminSessionHeaders(session)).expect(200);
-    expect(emojiList.body.executions[0].firstMessage).toBe(`${"x".repeat(198)}…`);
     const detail = await request(app).get(`/api/v1/agents/${agentId}/test-executions/${executionId}`).set(adminSessionHeaders(session)).expect(200);
     expect(detail.body).toMatchObject({ execution: expect.objectContaining({ skillEffects: "suppressed", testValues: [{ name: "tier", value: "gold" }], sides: [expect.objectContaining({ state: "ready" })], attempts: [expect.objectContaining({ attemptId, failureCode: "provider_timeout" })] }) });
     const retained = await request(app).post(`/api/v1/agents/${agentId}/test-executions/${executionId}/sides/${execution.sides[0].id}/retain`).set(adminSessionHeaders(session)).expect(201);

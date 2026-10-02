@@ -736,6 +736,39 @@ test('shows a link to copy by hand when the page has no clipboard, only beside i
   await expect(page.getByText(`testExecution=${saved.id}`)).toHaveCount(0)
 })
 
+test('stays on Conversation history when it is chosen while a shared test is still opening', async ({ page }) => {
+  const saved = {
+    id: '33333333-3333-4333-8333-333333333333', generation: 1, mode: 'single', state: 'completed', createdAt: nowIso,
+    skillEffects: 'suppressed', turnCount: 1, firstMessage: 'A slow shared question',
+    sides: [{ id: 'slow-shared-side', revision: published, conversationId: 'slow-shared-conversation', state: 'completed', retryable: false }],
+  }
+  const mocks = await installCockpitMocks(page, {
+    delayExecutionDetail: true,
+    executionHistory: [saved],
+    executionDetail: {
+      ...saved,
+      testValues: [],
+      sides: [{ ...saved.sides[0], history: [
+        { turnId: 'slow-shared-turn', role: 'user', content: 'A slow shared question', attemptId: 'slow-shared-attempt', createdAt: nowIso },
+        { turnId: 'slow-shared-turn', role: 'assistant', content: 'A slow shared answer', attemptId: 'slow-shared-attempt', createdAt: nowIso },
+      ] }],
+      attempts: [{ sideId: 'slow-shared-side', turnId: 'slow-shared-turn', attemptId: 'slow-shared-attempt', fence: 1, state: 'completed', createdAt: nowIso, updatedAt: nowIso }],
+    },
+  })
+  await page.goto(`${testUrl}&testExecution=${saved.id}`)
+  await mocks.executionDetailRequest
+  await clickTestChatAction(page, 'Conversation history')
+  await expect(page.getByRole('heading', { name: 'Conversation history', exact: true })).toBeVisible()
+  await expect(page).toHaveURL(/[?&]view=history/)
+  await expect(page).not.toHaveURL(/testExecution=/)
+
+  mocks.releaseExecutionDetail()
+  await page.waitForTimeout(300)
+  await expect(page.getByRole('heading', { name: 'Conversation history', exact: true })).toBeVisible()
+  await expect(page).toHaveURL(/[?&]view=history/)
+  await expect(page.getByText('A slow shared answer', { exact: true })).toHaveCount(0)
+})
+
 test('gives Conversation history its own link, and starts no greeting behind it', async ({ page }) => {
   const saved = {
     id: 'execution-history-linked', generation: 1, mode: 'compare', state: 'completed', createdAt: nowIso,

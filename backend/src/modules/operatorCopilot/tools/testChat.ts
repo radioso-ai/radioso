@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { clipAtGraphemeBoundary } from "../../../shared/text/clipAtGraphemeBoundary.js";
+import { TEST_EXECUTION_LABEL_CHARS } from "../../test-execution/public.js";
 import type { CopilotToolDescriptor } from "../contracts.js";
 import type { CopilotTestChatPort, CopilotTestChatTurn } from "../contracts/testChat.js";
 import { serializedLength, truncationRecordSchema } from "../payloadCompaction.js";
@@ -10,7 +12,7 @@ export type { CopilotTestChatPort } from "../contracts/testChat.js";
 
 const DEFAULT_SESSIONS = 10;
 const MAX_SESSIONS = 20;
-const FIRST_MESSAGE_CHARS = 200;
+const FIRST_MESSAGE_CHARS = TEST_EXECUTION_LABEL_CHARS;
 const MAX_TURNS = 20;
 const USER_MESSAGE_CHARS = 1_000;
 const TRANSCRIPT_ANSWER_CHARS = 2_000;
@@ -148,9 +150,7 @@ const addOmission = <TField extends string>(omissions: Omission<TField>[], field
 const clipped = <TField extends string>(value: string, max: number, field: TField, omissions: Omission<TField>[]): string => {
   if (value.length <= max) return value;
   addOmission(omissions, field, "string_length");
-  const cut = value.slice(0, max);
-  // Never end on half of a surrogate pair.
-  return `${/[\uD800-\uDBFF]$/.test(cut) ? cut.slice(0, -1) : cut}…`;
+  return `${clipAtGraphemeBoundary(value, max)}…`;
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>

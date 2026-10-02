@@ -7,6 +7,7 @@ import {
 } from "../../shared/domain/usageLimitPolicy.js";
 import type { AgentRevision } from "../agents/public.js";
 import type { SkillEffectPolicy } from "../../shared/domain/turnExecutionMode.js";
+import { clipAtGraphemeBoundary } from "../../shared/text/clipAtGraphemeBoundary.js";
 import {
   freezeTestValues,
   type ContextVariableTestValueCatalogPort,
@@ -121,6 +122,15 @@ export interface TestExecutionHistoryItem {
   sides: readonly TestExecutionHistorySide[];
 }
 
+/** The most of a test's opening message any list shows; the store reads one more so a longer one shows as clipped. */
+export const TEST_EXECUTION_LABEL_CHARS = 200;
+
+/** A test's opening message as a list label: whole, or clipped on a character boundary and marked with an ellipsis. */
+export const testExecutionLabel = (firstMessage: string): string =>
+  firstMessage.length <= TEST_EXECUTION_LABEL_CHARS
+    ? firstMessage
+    : `${clipAtGraphemeBoundary(firstMessage, TEST_EXECUTION_LABEL_CHARS - 1)}…`;
+
 /** A listed execution with the facts that tell one session from another. Still no transcript. */
 export interface TestExecutionSummary extends TestExecutionHistoryItem {
   /** Turns the operator sent a message in; a greeting is not one. */
@@ -232,8 +242,12 @@ export interface TestExecutionRepositoryPort {
   recoverExpiredSides(input: { workspaceId: string; agentId: string; executionId: string; now: Date }): Promise<TestExecution | null>;
   retainSide(input: { workspaceId: string; agentId: string; executionId: string; sideId: string; retainedExecutionId: string; retainedSideId: string; retainedConversationId: string }): Promise<"not_found" | "not_comparison" | "unsettled" | TestExecution>;
   list(input: { workspaceId: string; agentId: string; limit: number; cursor?: string }): Promise<TestExecutionHistoryPage>;
-  /** Turn count and opening user message per execution, read from its first side: comparison sides answer the same aligned messages. */
-  summarizeTranscripts(input: { workspaceId: string; agentId: string; executionIds: readonly string[] }): Promise<ReadonlyMap<string, Pick<TestExecutionSummary, "turnCount" | "firstMessage">>>;
+  /**
+   * Turn count and opening message per execution, from the turns the operator sent: a greeting and
+   * messages copied from a real conversation are not turns. `firstMessage` is at most
+   * `TEST_EXECUTION_LABEL_CHARS + 1` characters.
+   */
+  summarizeTurns(input: { workspaceId: string; agentId: string; executionIds: readonly string[] }): Promise<ReadonlyMap<string, Pick<TestExecutionSummary, "turnCount" | "firstMessage">>>;
   listAttempts(input: { workspaceId: string; agentId: string; executionId: string }): Promise<readonly TestExecutionAttemptRecord[]>;
   /** Claims one aligned turn and every selected side in one short transaction. */
   /**
@@ -412,7 +426,7 @@ export class TestExecutionService {
   /** A list page with each execution's turn count and opening message, read in one projection rather than per execution. */
   async summaries(input: { workspaceId: string; agentId: string; limit: number; cursor?: string }): Promise<TestExecutionSummaryPage> {
     const page = await this.options.repository.list(input);
-    const summaries = await this.options.repository.summarizeTranscripts({ workspaceId: input.workspaceId, agentId: input.agentId, executionIds: page.executions.map((item) => item.id) });
+    const summaries = await this.options.repository.summarizeTurns({ workspaceId: input.workspaceId, agentId: input.agentId, executionIds: page.executions.map((item) => item.id) });
     return { ...page, executions: page.executions.map((item) => ({ ...item, turnCount: summaries.get(item.id)?.turnCount ?? 0, firstMessage: summaries.get(item.id)?.firstMessage ?? null })) };
   }
 

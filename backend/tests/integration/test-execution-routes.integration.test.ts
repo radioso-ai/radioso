@@ -24,13 +24,17 @@ describe("test execution HTTP streaming", () => {
     const list = await request(app).get(`/api/v1/agents/${agentId}/test-executions`).set(adminSessionHeaders(session)).expect(200);
     expect(list.body).toMatchObject({ executions: [expect.objectContaining({ id: executionId, skillEffects: "suppressed", turnCount: 3, firstMessage: "Where is my order?", sides: [expect.objectContaining({ revision, state: "ready" })] })] });
     // A list row is a label; it never ships a whole long opening message.
-    summarizedFirstMessage = "x".repeat(20_000);
+    // The repository reads one character past the label, so a longer message is marked as clipped.
+    summarizedFirstMessage = "x".repeat(201);
     const clippedList = await request(app).get(`/api/v1/agents/${agentId}/test-executions`).set(adminSessionHeaders(session)).expect(200);
-    expect(clippedList.body.executions[0].firstMessage).toHaveLength(200);
-    // The clip never splits a surrogate pair.
-    summarizedFirstMessage = `${"x".repeat(199)}😀 and more`;
-    const surrogateList = await request(app).get(`/api/v1/agents/${agentId}/test-executions`).set(adminSessionHeaders(session)).expect(200);
-    expect(surrogateList.body.executions[0].firstMessage).toBe("x".repeat(199));
+    expect(clippedList.body.executions[0].firstMessage).toBe(`${"x".repeat(199)}…`);
+    summarizedFirstMessage = "x".repeat(200);
+    const fullList = await request(app).get(`/api/v1/agents/${agentId}/test-executions`).set(adminSessionHeaders(session)).expect(200);
+    expect(fullList.body.executions[0].firstMessage).toBe("x".repeat(200));
+    // The clip never splits a character.
+    summarizedFirstMessage = `${"x".repeat(198)}😀 and more`;
+    const emojiList = await request(app).get(`/api/v1/agents/${agentId}/test-executions`).set(adminSessionHeaders(session)).expect(200);
+    expect(emojiList.body.executions[0].firstMessage).toBe(`${"x".repeat(198)}…`);
     const detail = await request(app).get(`/api/v1/agents/${agentId}/test-executions/${executionId}`).set(adminSessionHeaders(session)).expect(200);
     expect(detail.body).toMatchObject({ execution: expect.objectContaining({ skillEffects: "suppressed", testValues: [{ name: "tier", value: "gold" }], sides: [expect.objectContaining({ state: "ready" })], attempts: [expect.objectContaining({ attemptId, failureCode: "provider_timeout" })] }) });
     const retained = await request(app).post(`/api/v1/agents/${agentId}/test-executions/${executionId}/sides/${execution.sides[0].id}/retain`).set(adminSessionHeaders(session)).expect(201);

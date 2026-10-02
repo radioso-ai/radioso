@@ -21,7 +21,7 @@ import {
   type ChatThreadMessage,
 } from "@/components/dashboard/chat-message-thread";
 import { buildAssistantIdentity } from "@/components/chat/assistant-identity";
-import { TestExecutionHistoryView } from "@/components/dashboard/test-execution-history-view";
+import { TestExecutionHistoryView, UncopiedLink } from "@/components/dashboard/test-execution-history-view";
 import { TestSessionsView } from "@/components/dashboard/workbench/test-sessions-view";
 import { TurnFlowOverlay } from "@/components/dashboard/turn-flow-overlay";
 import {
@@ -29,7 +29,7 @@ import {
   TurnDiagnosticsPanel,
 } from "@/components/dashboard/turn-inspector/turn-diagnostics-panel";
 import { getPrimaryLeafTrace } from "@/lib/turn-trace";
-import { copyDashboardLink } from "@/lib/copy-dashboard-link";
+import { useCopyDashboardLink } from "@/hooks/use-copy-dashboard-link";
 import {
   Dialog,
   DialogContent,
@@ -248,11 +248,7 @@ export function AgentRevisionTestChat({
     requestedView.current = next;
     onHistoryOpenChangeRef.current(next === "history");
   }, []);
-  const [linkNotice, setLinkNotice] = useState<string | null>(null);
-  const linkNoticeTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => () => {
-    if (linkNoticeTimeout.current !== null) clearTimeout(linkNoticeTimeout.current);
-  }, []);
+  const executionLink = useCopyDashboardLink();
   const [selected, setSelected] = useState<string[]>(cachedSession?.selected ?? []);
   const [contextOpen, setContextOpen] = useState(false);
   const [evalsOpen, setEvalsOpen] = useState(false);
@@ -1438,21 +1434,6 @@ export function AgentRevisionTestChat({
     event.preventDefault();
     event.currentTarget.form?.requestSubmit();
   };
-  const copyExecutionLink = async (executionId: string) => {
-    if (!testExecutionHref) return;
-    const result = await copyDashboardLink(testExecutionHref(executionId));
-    if (linkNoticeTimeout.current !== null) clearTimeout(linkNoticeTimeout.current);
-    linkNoticeTimeout.current = null;
-    if (!result.copied) {
-      setLinkNotice(`Copy this link: ${result.url}`);
-      return;
-    }
-    setLinkNotice("Link copied.");
-    linkNoticeTimeout.current = setTimeout(() => {
-      linkNoticeTimeout.current = null;
-      setLinkNotice(null);
-    }, 3000);
-  };
   const actionMenu = (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -1480,7 +1461,7 @@ export function AgentRevisionTestChat({
           Conversation history
         </DropdownMenuItem>
         {execution && testExecutionHref && view === "chat" ? (
-          <DropdownMenuItem onSelect={() => void copyExecutionLink(execution.executionId)}>
+          <DropdownMenuItem onSelect={() => void executionLink.copy(execution.executionId, testExecutionHref(execution.executionId))}>
             <Link2 className="mr-2 h-4 w-4" />
             Copy link to this chat
           </DropdownMenuItem>
@@ -1589,13 +1570,17 @@ export function AgentRevisionTestChat({
                 {restartNotice}
               </p>
             ) : null}
-            {linkNotice ? (
+            {/* Keyed to the open test, so New chat or another test hides a link that is not theirs. */}
+            {execution && executionLink.copiedKey === execution.executionId ? (
               <p
                 role="status"
-                className="break-all rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground"
+                className="rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground"
               >
-                {linkNotice}
+                Link copied.
               </p>
+            ) : null}
+            {execution && executionLink.uncopied?.key === execution.executionId ? (
+              <UncopiedLink url={executionLink.uncopied.url} />
             ) : null}
             {execution?.state === "partial" ? (
               <p

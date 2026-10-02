@@ -85,10 +85,10 @@ class MemoryRepository implements TestExecutionRepositoryPort {
   async list(_input?: Parameters<TestExecutionRepositoryPort["list"]>[0]): ReturnType<TestExecutionRepositoryPort["list"]> { return { executions: this.execution ? [this.execution] : [], nextCursor: null, hasMore: false }; }
   attempts: TestExecutionAttemptRecord[] = [];
   async listAttempts() { return this.attempts; }
-  transcriptSummaries = new Map<string, { turnCount: number; firstMessage: string | null }>();
-  async summarizeTranscripts(input: Parameters<TestExecutionRepositoryPort["summarizeTranscripts"]>[0]) {
+  turnSummaries = new Map<string, { turnCount: number; firstMessage: string | null }>();
+  async summarizeTurns(input: Parameters<TestExecutionRepositoryPort["summarizeTurns"]>[0]) {
     this.calls.push(`summarize:${input.executionIds.join(",")}`);
-    return new Map([...this.transcriptSummaries].filter(([id]) => input.executionIds.includes(id)));
+    return new Map([...this.turnSummaries].filter(([id]) => input.executionIds.includes(id)));
   }
   lastLeaseMs: number | null = null;
   claimRefusal: "turn_in_progress" | null = null;
@@ -630,7 +630,7 @@ describe("TestExecutionService turn reads", () => {
     const { service, repository } = setup();
     const item = (id: string): TestExecutionHistoryItem => ({ id, mode: "single", generation: 1, state: "completed", createdAt: new Date(0), skillEffects: "suppressed", sides: [] });
     const list = vi.spyOn(repository, "list").mockResolvedValue({ executions: [item("execution-1"), item("execution-2")], nextCursor: "cursor-2", hasMore: true });
-    repository.transcriptSummaries.set("execution-1", { turnCount: 2, firstMessage: "Can I book a demo?" });
+    repository.turnSummaries.set("execution-1", { turnCount: 2, firstMessage: "Can I book a demo?" });
 
     const page = await service.summaries({ ...scope, limit: 2, cursor: "cursor-1" });
 

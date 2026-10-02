@@ -372,12 +372,16 @@ export function AgentView({
   const historyOpen = routeState.agentTestChatView === 'history'
   const changeHistoryOpen = useCallback((open: boolean) => {
     if (open === historyOpen) return
-    // A shallow history entry: the view is client state, so it needs no server round trip.
-    window.history.pushState(null, '', buildDashboardHref(accountId, {
+    const href = buildDashboardHref(accountId, {
       ...routeState,
       section: 'agents',
       agentTestChatView: open ? 'history' : undefined,
-    }))
+    })
+    // While an open command is in the URL, the route drops `view`; pushing would only duplicate
+    // the entry, and Back would then land on a command that can no longer be consumed.
+    if (href === `${window.location.pathname}${window.location.search}`) return
+    // A shallow history entry: the view is client state, so it needs no server round trip.
+    window.history.pushState(null, '', href)
   }, [accountId, historyOpen, routeState])
 
   const agentUnavailableContent = agentSelectionPending ? (

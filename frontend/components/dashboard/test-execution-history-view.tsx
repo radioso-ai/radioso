@@ -20,7 +20,7 @@ import {
   type TestExecutionHistoryDetail,
   type TestExecutionHistoryListItem,
 } from '@/lib/api-agent-revisions'
-import { copyDashboardLink } from '@/lib/copy-dashboard-link'
+import { useCopyDashboardLink } from '@/hooks/use-copy-dashboard-link'
 
 const timestampFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 
@@ -28,6 +28,11 @@ const revisionLabel = (revision: AgentRevisionSummary): string => {
   if (revision.kind === 'published' && revision.versionNumber !== null) return `v${revision.versionNumber}`
   if (revision.kind === 'candidate') return `Draft · ${timestampFormatter.format(new Date(revision.createdAt))}`
   return 'Legacy revision'
+}
+
+/** The URL to copy by hand when the page has no clipboard access (a plain-HTTP host). */
+export function UncopiedLink({ url }: { url: string }) {
+  return <p role="status" className="break-all rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">Copy this link: <span className="select-all font-mono text-foreground">{url}</span></p>
 }
 
 /** Durable private revision tests. Legacy operator sessions remain in TestSessionsView. */
@@ -42,9 +47,7 @@ export function TestExecutionHistoryView({
   linkFor?: (executionId: string) => string
 }) {
   const [executions, setExecutions] = useState<TestExecutionHistoryListItem[] | null>(null)
-  const [copiedId, setCopiedId] = useState<string | null>(null)
-  const [uncopiedLink, setUncopiedLink] = useState<string | null>(null)
-  const copiedTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const link = useCopyDashboardLink()
   const [error, setError] = useState<string | null>(null)
   const [openingId, setOpeningId] = useState<string | null>(null)
   const [nextCursor, setNextCursor] = useState<string | null>(null)
@@ -89,26 +92,6 @@ export function TestExecutionHistoryView({
     }
   }
 
-  useEffect(() => () => {
-    if (copiedTimeout.current !== null) clearTimeout(copiedTimeout.current)
-  }, [])
-
-  const copyLink = async (executionId: string) => {
-    if (!linkFor) return
-    const result = await copyDashboardLink(linkFor(executionId))
-    if (!result.copied) {
-      setUncopiedLink(result.url)
-      return
-    }
-    setUncopiedLink(null)
-    setCopiedId(executionId)
-    if (copiedTimeout.current !== null) clearTimeout(copiedTimeout.current)
-    copiedTimeout.current = setTimeout(() => {
-      copiedTimeout.current = null
-      setCopiedId(null)
-    }, 1500)
-  }
-
   const loadMore = async () => {
     if (!nextCursor || loadingMore) return
     const requestGeneration = pageRequestGeneration.current + 1
@@ -130,7 +113,7 @@ export function TestExecutionHistoryView({
   if (executions === null) return <div className="flex justify-center p-10"><LogoSpinner imageClassName="h-7 w-7" /></div>
   if (executions.length === 0) return <p className="rounded-lg border border-dashed border-border p-6 text-sm text-muted-foreground">No saved revision tests yet. Your first message creates one and keeps its selected revisions and test values.</p>
 
-  return <div className="space-y-3">{error ? <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{error}</p> : null}{uncopiedLink ? <p role="status" className="break-all rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">Copy this link: <span className="select-all font-mono text-foreground">{uncopiedLink}</span></p> : null}<DashboardTable minWidth="min-w-0">
+  return <div className="space-y-3">{error ? <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{error}</p> : null}{link.uncopied ? <UncopiedLink url={link.uncopied.url} /> : null}<DashboardTable minWidth="min-w-0">
     <DashboardTableHead>
       <DashboardTableHeader>Test</DashboardTableHeader>
       <DashboardTableHeader>Versions</DashboardTableHeader>
@@ -142,9 +125,9 @@ export function TestExecutionHistoryView({
       {executions.map((execution) => <DashboardTableRow key={execution.id}>
         <DashboardTableCell className="max-w-0 font-medium">
           <span className="flex min-w-0 items-center gap-2">
-            {execution.firstMessage === null
-              ? <span className="truncate font-normal text-muted-foreground">No messages yet</span>
-              : <span className="truncate" title={execution.firstMessage}>{execution.firstMessage}</span>}
+            {execution.firstMessage
+              ? <span className="truncate" title={execution.firstMessage}>{execution.firstMessage}</span>
+              : <span className="truncate font-normal text-muted-foreground">No messages yet</span>}
             {execution.mode === 'compare' ? <Badge variant="outline" className="shrink-0">Comparison</Badge> : null}
             {execution.skillEffects === 'allowed' ? (
               <Badge variant="outline" className="shrink-0 border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300">
@@ -159,8 +142,8 @@ export function TestExecutionHistoryView({
         <DashboardTableCell className="w-36 text-right">
           <span className="inline-flex items-center gap-1">
             {linkFor ? (
-              <Button size="icon" variant="ghost" className="h-8 w-8" aria-label={copiedId === execution.id ? 'Link copied' : 'Copy link'} title="Copy link" onClick={() => void copyLink(execution.id)}>
-                {copiedId === execution.id ? <Check className="h-4 w-4" /> : <Link2 className="h-4 w-4" />}
+              <Button size="icon" variant="ghost" className="h-8 w-8" aria-label={link.copiedKey === execution.id ? 'Link copied' : 'Copy link'} title="Copy link" onClick={() => void link.copy(execution.id, linkFor(execution.id))}>
+                {link.copiedKey === execution.id ? <Check className="h-4 w-4" /> : <Link2 className="h-4 w-4" />}
               </Button>
             ) : null}
             <Button size="sm" variant="outline" onClick={() => void open(execution.id)} disabled={openingId !== null}>{openingId === execution.id ? 'Opening…' : 'Open'}</Button>

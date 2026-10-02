@@ -1,7 +1,7 @@
 import type { AgentRevision } from "../../modules/agents/public.js";
 import { sql, type Transaction } from "kysely";
 import { parseAgentRevisionSnapshot } from "../../modules/agents/public.js";
-import type { TestExecution, TestExecutionAttempt, TestExecutionAttemptRecord, TestExecutionClaim, TestExecutionHistoryItem, TestExecutionHistorySide, TestExecutionRepositoryPort, TestExecutionRunnerResult, TestExecutionSide, TestExecutionState } from "../../modules/test-execution/testExecution.js";
+import { TEST_EXECUTION_LABEL_CHARS, type TestExecution, type TestExecutionAttempt, type TestExecutionAttemptRecord, type TestExecutionClaim, type TestExecutionHistoryItem, type TestExecutionHistorySide, type TestExecutionRepositoryPort, type TestExecutionRunnerResult, type TestExecutionSide, type TestExecutionState } from "../../modules/test-execution/testExecution.js";
 import { currentTimestamp, toJsonb, transactionAdvisoryLock } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { DB, Db } from "../../shared/infra/kysely/types.js";
 import { decodeCursorWithKeys, encodeCursor } from "../../shared/domain/cursorPagination.js";
@@ -194,20 +194,19 @@ export class TestExecutionRepository implements TestExecutionRepositoryPort {
     };
   }
 
-  async summarizeTranscripts(input: Parameters<TestExecutionRepositoryPort["summarizeTranscripts"]>[0]): ReturnType<TestExecutionRepositoryPort["summarizeTranscripts"]> {
+  async summarizeTurns(input: Parameters<TestExecutionRepositoryPort["summarizeTurns"]>[0]): ReturnType<TestExecutionRepositoryPort["summarizeTurns"]> {
     if (input.executionIds.length === 0) return new Map();
-    // Computed in Postgres so a list page never ships whole histories (and their turn traces) to count them.
-    const rows = await this.db.selectFrom("agent_test_execution_sides as side")
+    // Read from the turn rows (keyed by execution) rather than the side histories, so a list page
+    // never expands transcripts and their turn traces to count them.
+    const rows = await this.db.selectFrom("agent_test_executions as execution")
       .select([
-        "side.execution_id",
-        sql<string>`(SELECT count(DISTINCT entry ->> 'turnId') FROM jsonb_array_elements(side.history) AS entry WHERE entry ->> 'role' = 'user')`.as("turn_count"),
-        // A label, not a transcript: one character past the 200 every surface shows, so callers can still tell it was clipped.
-        sql<string | null>`(SELECT left(entry ->> 'content', 201) FROM jsonb_array_elements(side.history) WITH ORDINALITY AS item(entry, ordinal) WHERE entry ->> 'role' = 'user' ORDER BY ordinal LIMIT 1)`.as("first_message"),
+        "execution.id as execution_id",
+        sql<string>`(SELECT count(*) FROM agent_test_execution_turns AS turn WHERE turn.execution_id = execution.id)`.as("turn_count"),
+        sql<string | null>`(SELECT left(turn.message, ${TEST_EXECUTION_LABEL_CHARS + 1}) FROM agent_test_execution_turns AS turn WHERE turn.execution_id = execution.id ORDER BY turn.created_at, turn.turn_id LIMIT 1)`.as("first_message"),
       ])
-      .where("side.workspace_id", "=", input.workspaceId)
-      .where("side.agent_id", "=", input.agentId)
-      .where("side.execution_id", "in", input.executionIds)
-      .where("side.side_ordinal", "=", 0)
+      .where("execution.workspace_id", "=", input.workspaceId)
+      .where("execution.agent_id", "=", input.agentId)
+      .where("execution.id", "in", input.executionIds)
       .execute();
     return new Map(rows.map((row) => [row.execution_id, { turnCount: Number(row.turn_count), firstMessage: row.first_message }]));
   }

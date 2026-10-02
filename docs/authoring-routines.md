@@ -397,13 +397,16 @@ The email reads as plain prose for whoever picks it up, not a log: it carries
 - the page the conversation started on, when the conversation has one.
 
 The Slack post carries the same subject, headline, intro, collected values, and
-entry page as one block of text, led by the subject line. Slack shows every
-line as plain text, so neither a visitor's answer nor your intro can mention
-the channel or add a link. The webhook body carries the ids, the reason, the
-routine, the collected values in that same order, and the authored subject and
-intro as JSON fields; the entry page appears only in the email and Slack text. If
-the routine is deleted before the notice goes out, the collected values still
-arrive, in storage order rather than declaration order.
+entry page as one block of text, led by the subject line. Before posting, the
+text escapes `&`, `<`, and `>`, so a collected value or an authored intro can't
+open a channel mention like `<!channel>` or a labelled link
+(`<https://example.com|label>`). `*bold*`, `_italic_`, and `` `code` `` still
+format, and Slack auto-links any bare URL the text contains. The webhook body
+carries the ids, the reason, the routine, the collected values in that same
+order, and the authored subject and intro as JSON fields; the entry page
+appears only in the email and Slack text. If the routine is deleted before the
+notice goes out, the collected values still arrive, in storage order rather
+than declaration order.
 
 A booking desk that receives a "Book accommodation" notice reads the program,
 dates, and guest name in the notice itself instead of opening the transcript

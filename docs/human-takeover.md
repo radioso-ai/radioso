@@ -53,11 +53,14 @@ miss** to enable this trigger.
 
 Both triggers request human ownership and notify an operator through the existing
 contact-delivery transport with a `handoff.notify` action. They also record
-`hitl.ownership` audit events. The notice's email and Slack text carry a subject
-line (naming the routine by default), the headline, any authored intro, the
-collected values, the entry page, and a link to the conversation; the ids, the
-reason, and the routine travel on the webhook JSON instead. See
-[Authoring routines](./authoring-routines.md#operator-notices) for the
+`hitl.ownership` audit events. A routine hand-off's notice defaults its subject
+to the routine's name and lists every value the routine collected; a
+retrieval-miss hand-off has no routine to name and nothing collected, so its
+notice uses the generic default subject and lists no values. Both carry the
+headline, any authored intro, the entry page, and a link to the conversation in
+the email and Slack text. The webhook JSON carries the ids, the reason, and the
+routine — its id and name for a routine hand-off, `null` for a retrieval miss.
+See [Authoring routines](./authoring-routines.md#operator-notices) for the
 `handoff.notify` payload and queue semantics.
 
 A routine can also notify operators without a handoff: a `complete` terminal

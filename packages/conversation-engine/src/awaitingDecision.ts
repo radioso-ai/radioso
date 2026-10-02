@@ -9,6 +9,8 @@ import type {
   TurnContext,
 } from "@radioso/conversation-contract";
 
+import { routineEndingEffects } from "./routineEnding.js";
+
 type RoutineStepLookup = {
   getCurrentStep(state: RoutineState): RoutineStep | null;
 };
@@ -60,5 +62,5 @@ export const resumeAwaitingDecision = async (input: {
     state: resumedState,
     ...(input.steeringResolver ? { steeringResolver: input.steeringResolver } : {}),
   });
-  return { ...result, resumed: true };
+  return { ...result, ...routineEndingEffects(state.routineId, result.terminal), resumed: true };
 };

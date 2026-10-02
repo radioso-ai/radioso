@@ -9,6 +9,21 @@ Cut a release with the **Cut Release** workflow. It reads the commits since the 
 tag, writes the entry above this line, tags the commit, and publishes a GitHub Release. A
 deploy then ships a release that already exists; it never mints one.
 
+## [1.14.0] - 2026-10-02
+
+### Added
+
+- **test-chat:** add message counts and shareable links to test history ([#1399](https://github.com/radioso-ai/radioso/pull/1399))
+
+### Database migrations
+
+This release adds 2 migrations. They run at service startup, so deploy one stack at a time; overlapping deploys contend on the same DDL lock and stall until one gives up.
+
+- `207_test_execution_seed_summary.sql`
+- `208_test_execution_seed_summary_backfill.sql`
+
+[1.14.0]: https://github.com/radioso-ai/radioso/compare/v1.13.0...v1.14.0
+
 ## [1.13.0] - 2026-10-02
 
 ### Added

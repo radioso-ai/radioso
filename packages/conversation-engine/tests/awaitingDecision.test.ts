@@ -120,6 +120,58 @@ describe("resumeAwaitingDecision", () => {
     expect(result.response.answer).toContain("declined");
   });
 
+  it("reports a hand-off ending's ownership and notice the same way a live turn does", async () => {
+    const handoffRoutine: Routine = {
+      ...refundRoutine,
+      steps: refundRoutine.steps.map((step) => step.id === "declined"
+        ? { ...step, metadata: { terminalKind: "handoff" } }
+        : step),
+    };
+    const runner = new DefaultRoutineRunner([handoffRoutine], throwingSelector(), { render: vi.fn(renderer.render) }, {
+      dispatch: vi.fn(async () => ({ status: "completed" as const })),
+    });
+
+    const result = await resumeAwaitingDecision({
+      suspendedReader: readerFor(suspendedAtGate),
+      routineRunner: runner,
+      turn,
+      sessionId: "session_1",
+      decision: { handle: "decision_1", optionId: "reject" },
+    });
+
+    expect(result.handoff).toEqual({ routineId: "refund_flow", stepId: "declined", collected: {} });
+    expect(result.operatorNotice).toBeUndefined();
+  });
+
+  it("reports a completion ending's operator notice without a hand-off", async () => {
+    const noticeRoutine: Routine = {
+      ...refundRoutine,
+      steps: refundRoutine.steps.map((step) => step.id === "confirmed"
+        ? { ...step, metadata: { terminalKind: "complete", operatorNotice: { subject: "Refund issued" } } }
+        : step),
+    };
+    const runner = new DefaultRoutineRunner([noticeRoutine], throwingSelector(), { render: vi.fn(renderer.render) }, {
+      dispatch: vi.fn(async () => ({ status: "completed" as const })),
+    });
+
+    const result = await resumeAwaitingDecision({
+      suspendedReader: readerFor(suspendedAtGate),
+      routineRunner: runner,
+      turn,
+      sessionId: "session_1",
+      decision: { handle: "decision_1", optionId: "approve" },
+    });
+
+    expect(result.handoff).toBeUndefined();
+    expect(result.operatorNotice).toEqual({
+      routineId: "refund_flow",
+      stepId: "confirmed",
+      terminalKind: "complete",
+      collected: {},
+      subject: "Refund issued",
+    });
+  });
+
   it("CONTROL calls the selector when the same gate uses llm decision edges", async () => {
     const llmGateRoutine: Routine = {
       ...refundRoutine,

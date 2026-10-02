@@ -2246,6 +2246,129 @@ describe("chat service streaming", () => {
       })]);
   });
 
+  it.each([
+    {
+      ending: "hand-off",
+      decision: {
+        terminal: { kind: "handoff" as const, stepId: "escalate", collected: { order: "A-17" } },
+        handoff: { routineId: "refund-flow", stepId: "escalate", collected: { order: "A-17" } },
+      },
+      ownershipHandoff: { reason: "routine_handoff", routineId: "refund-flow", stepId: "escalate" },
+      notifyType: HANDOFF_NOTIFY_ACTION_TYPE,
+      reason: "routine_handoff",
+    },
+    {
+      ending: "completion with a notice",
+      decision: {
+        terminal: { kind: "complete" as const, stepId: "refunded", collected: { order: "A-17" }, operatorNotice: { subject: "Refund issued" } },
+        operatorNotice: {
+          routineId: "refund-flow",
+          stepId: "refunded",
+          terminalKind: "complete" as const,
+          collected: { order: "A-17" },
+          subject: "Refund issued",
+        },
+      },
+      ownershipHandoff: null,
+      notifyType: COMPLETION_NOTIFY_ACTION_TYPE,
+      reason: "routine_completed",
+    },
+  ])("applies a $ending ending reached after an approval like any other turn", async ({ decision, ownershipHandoff, notifyType, reason }) => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const agentRepository = new InMemoryAgentRepository();
+    const agent = await agentRepository.create("workspace-1", { name: "Support" });
+    const conversation = await conversationRepository.create({ workspaceId: "workspace-1", agentId: agent.id });
+    await messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "user",
+      content: "Please refund order A-17.",
+    });
+    const assistantTurnPersistence = createCapturingAssistantTurnPersistence();
+    const conversationEngine = createConversationEngine();
+    vi.spyOn(conversationEngine, "resumeAwaitingDecision").mockResolvedValue({
+      resumed: true,
+      response: { answer: "Resumed." },
+      nextState: null,
+      ...decision,
+    });
+    const service = makeChatService(
+      conversationRepository,
+      messageRepository,
+      new RetrievalTurnController({ async interpret() { throw new Error("no retrieval"); } } as never),
+      { async answer() { return "unused"; }, async *streamAnswer() { yield "unused"; } },
+      createAuditService(),
+      fallbackReplyComposer,
+      undefined, undefined, undefined,
+      { resolve: vi.fn(async () => agent) },
+      undefined, undefined, undefined, undefined, undefined,
+      conversationEngine,
+      {
+        routineStore: undefined,
+        routineProvider: {
+          forTurn: vi.fn(async () => ({
+            activator: { activate: vi.fn(async () => null) },
+            runner: {} as never,
+          })),
+        },
+        suspendedRoutineReader: { loadSuspended: vi.fn(async () => null) },
+        assistantTurnPersistence,
+      },
+    );
+    const now = new Date("2026-07-19T12:00:00.000Z");
+    const decisionTransaction = {} as never;
+
+    await service.resumeAwaitingDecisionTurn({
+      record: {
+        id: "decision-1",
+        handle: "refund-approval",
+        conversationId: conversation.id,
+        sessionId: conversation.id,
+        workspaceId: "workspace-1",
+        agentId: agent.id,
+        routineId: "refund-flow",
+        stepId: "await-approval",
+        reason: "refund_review",
+        options: [{ id: "approve", label: "Approve" }],
+        deciderScope: {},
+        contentHash: "hash-1",
+        status: "resolved",
+        decision: { optionId: "approve" },
+        decidedBy: "account-1",
+        decidedByUserId: null,
+        decidedAt: now,
+        deadline: null,
+        createdAt: now,
+        updatedAt: now,
+      },
+      optionId: "approve",
+      decidedBy: "account-1",
+      transaction: decisionTransaction,
+    });
+
+    const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0][0];
+    // The ending's effects commit in the decision's own transaction, never a separate one.
+    expect(persisted.transaction).toBe(decisionTransaction);
+    expect(persisted.ownershipHandoff ?? null).toEqual(ownershipHandoff);
+    if (ownershipHandoff) {
+      expect(persisted.ownershipAuditEvent).toMatchObject({ eventType: "hitl.ownership" });
+    } else {
+      expect(persisted.ownershipAuditEvent ?? null).toBeNull();
+    }
+    expect(persisted.actions).toContainEqual({
+      type: notifyType,
+      payload: expect.objectContaining({
+        conversationId: conversation.id,
+        workspaceId: "workspace-1",
+        agentId: agent.id,
+        reason,
+        routineId: "refund-flow",
+        collected: { order: "A-17" },
+      }),
+    });
+  });
+
   it("skips routine activation when a suspended routine exists for the conversation", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();

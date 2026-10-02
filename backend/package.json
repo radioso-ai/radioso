@@ -123,7 +123,7 @@
     "re2": "1.26.1",
     "redis": "6.2.1",
     "swagger-ui-express": "^5.0.1",
-    "undici": "8.10.0",
+    "undici": "8.10.2",
     "yaml": "^2.8.3",
     "zod": "^3.25.76",
     "zod-to-json-schema": "3.25.2"

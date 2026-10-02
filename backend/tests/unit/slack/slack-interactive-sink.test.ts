@@ -238,12 +238,9 @@ describe("SlackOperatorNotificationSink", () => {
         channelId: "COPS",
         kind: "operator_notification",
         conversationRef: "conv_1",
-        text: [
-          "Agent: agent_1",
-          "Reason: Customer asked for a human",
-          "Conversation: conv_1",
-          "Workspace: ws_1",
-        ].join("\n"),
+        // No routine, collected values, or entry page are known, so the formatted notice is
+        // empty once its headline is dropped; the post falls back to the conversation id.
+        text: "conv_1",
       },
     });
     const payload = enqueued[0].payload as { blocks: Array<Record<string, unknown>> };
@@ -272,12 +269,6 @@ describe("SlackOperatorNotificationSink", () => {
 
     expect(enqueued).toHaveLength(1);
     const expectedText = [
-      "Agent: Retreat desk (agent_1)",
-      "Routine: Book accommodation",
-      "Reason: routine_handoff",
-      "Conversation: conv_1",
-      "Workspace: ws_1",
-      "",
       "Collected:",
       "  Program: Yoga retreat",
       "  Arrival date: 2026-10-12",
@@ -308,12 +299,6 @@ describe("SlackOperatorNotificationSink", () => {
           "New booking: Ada Lovelace",
           "Confirm the room today.",
           "",
-          "Agent: agent_1",
-          "Routine: Book accommodation",
-          "Reason: routine_completed",
-          "Conversation: conv_1",
-          "Workspace: ws_1",
-          "",
           "Collected:",
           "  Name: Ada Lovelace",
         ].join("\n"),
@@ -331,7 +316,7 @@ describe("SlackOperatorNotificationSink", () => {
       routine: { id: "routine_1", name: "Book accommodation" },
       collected: { guest_name: "<!channel>", note: "<https://x|Open> & more" },
       notice: { subject: "New booking: {{slot.guest_name}}", intro: "Read {{slot.note}} <!here>" },
-      conversation: { channel: "web", entryPageUrl: "https://example.com/book?room=1&ref=<x|y>" },
+      conversation: { entryPageUrl: "https://example.com/book?room=1&ref=<x|y>" },
     }, { requestId: "request_1" });
 
     const payload = enqueued[0].payload as { text: string; blocks: Array<{ type: string; text?: { text?: string } }> };

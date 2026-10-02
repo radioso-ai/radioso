@@ -20,7 +20,6 @@ export type OperatorNoticeTemplate = {
 
 /** Facts already stored about the conversation, shown as context lines; `null` when not stored. */
 export type OperatorNoticeConversationFacts = {
-  channel: string | null;
   entryPageUrl: string | null;
 };
 

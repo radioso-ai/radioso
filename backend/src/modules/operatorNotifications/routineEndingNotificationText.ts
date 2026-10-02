@@ -45,13 +45,12 @@ const labelForSlotKey = (key: string): string => {
 const renderCollectedValue = (value: HandoffCollectedValue): string =>
   typeof value === "boolean" ? (value ? "yes" : "no") : String(value);
 
-const collectedLines = (collected: Record<string, HandoffCollectedValue> | undefined): string[] => {
+const collectedBlock = (collected: Record<string, HandoffCollectedValue> | undefined): string[] | null => {
   const entries = Object.entries(collected ?? {});
   if (entries.length === 0) {
-    return [];
+    return null;
   }
   return [
-    "",
     "Collected:",
     ...entries.map(([key, value]) => `  ${labelForSlotKey(key)}: ${renderCollectedValue(value)}`),
   ];
@@ -78,8 +77,12 @@ const renderTemplate = (
   return options.singleLine ? rendered.replace(LINE_BREAKS, " ").trim() : rendered;
 };
 
-const contextLines = (notification: RoutineEndingOperatorNotification): string[] => [
-  ...(notification.conversation?.channel ? [`Channel: ${notification.conversation.channel}`] : []),
+/**
+ * The notice's last section: the entry page, when known. Always rendered as its own section
+ * (even empty) so a single blank line separates it from whatever precedes it — the sink's
+ * `Open:` link follows directly after, with no blank line of its own.
+ */
+const footerLines = (notification: RoutineEndingOperatorNotification): string[] => [
   ...(notification.conversation?.entryPageUrl ? [`Entry page: ${notification.conversation.entryPageUrl}`] : []),
 ];
 
@@ -89,31 +92,28 @@ const contextLines = (notification: RoutineEndingOperatorNotification): string[]
  * replaces the default, the authored intro follows the headline, and every collected value is
  * always listed after the details so a template can never hide what the routine gathered. Sinks
  * append transport-specific lines (such as the dashboard link) themselves.
+ *
+ * The body reads as plain prose for non-technical staff, not a log: no agent, routine, reason,
+ * conversation, workspace, or channel identifiers. Those still travel on the webhook JSON
+ * (`notification.reason`, `notification.routine`, …), just not in this human-readable text.
+ * The headline/intro, collected values, and footer sections join with one blank line each; the
+ * collected section is left out entirely when there are no values, so a notice missing them never
+ * prints a stray blank. The footer section always reserves its separating blank line, even with
+ * no entry page, because a sink's `Open:` link follows directly after it.
  */
 export const formatRoutineEndingNotification = (
   notification: RoutineEndingOperatorNotification,
 ): FormattedRoutineEndingNotification => {
   const defaults = DEFAULT_TEXT[notification.kind];
   const routineName = notification.routine?.name ?? null;
-  const agentLine = notification.agentName
-    ? `Agent: ${notification.agentName} (${notification.agentId})`
-    : `Agent: ${notification.agentId}`;
   const subject = renderTemplate(notification.notice?.subject, notification.collected, { singleLine: true });
   const intro = renderTemplate(notification.notice?.intro, notification.collected, { singleLine: false });
+  const headline = [defaults.headline, ...(intro ? [intro] : [])];
+  const collected = collectedBlock(notification.collected);
+  const sections: string[][] = [headline, ...(collected ? [collected] : []), footerLines(notification)];
   return {
     subject: subject || (routineName ? defaults.routineSubject(routineName) : defaults.genericSubject),
-    lines: [
-      defaults.headline,
-      ...(intro ? [intro] : []),
-      "",
-      agentLine,
-      ...(routineName ? [`Routine: ${routineName}`] : []),
-      `Reason: ${notification.reason}`,
-      `Conversation: ${notification.conversationId}`,
-      `Workspace: ${notification.workspaceId}`,
-      ...contextLines(notification),
-      ...collectedLines(notification.collected),
-    ],
+    lines: sections.flatMap((section, index) => (index === 0 ? section : ["", ...section])),
     notice: { subject, intro },
   };
 };

@@ -130,7 +130,7 @@ describe("routineEndingNotificationFromAction", () => {
       subject: {
         agentName: "Retreat desk",
         routineName: "Book accommodation",
-        conversation: { channel: "embed", entryPageUrl: null },
+        conversation: { entryPageUrl: null },
       },
     });
 
@@ -144,7 +144,7 @@ describe("routineEndingNotificationFromAction", () => {
       routine: { id: "routine_1", name: "Book accommodation" },
       collected: { name: "Ada" },
       notice: { subject: "Booking: {{slot.name}}" },
-      conversation: { channel: "embed", entryPageUrl: null },
+      conversation: { entryPageUrl: null },
     });
   });
 });

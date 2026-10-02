@@ -1,7 +1,7 @@
 ---
 title: "Authoring Routines"
 description: "Create and edit dashboard routines in the Document view, read the Map, connect skills, and try a change in a test chat before it ships."
-last_updated: 2026-10-01
+last_updated: 2026-10-02
 ---
 
 # Authoring Routines
@@ -387,26 +387,22 @@ and nothing appears in the Inbox. Both notices go to the agent's contact
 recipients by email, to the contact webhook when one is configured, and to the
 Slack escalation channel when the workspace has one.
 
-The email carries:
+The email reads as plain prose for whoever picks it up, not a log: it carries
 
 - the subject: the ending's **Subject** with collected values filled in, or the
   default for its kind;
 - the headline, then the ending's **Intro** when it has one;
-- the routine's name, the agent's name, the reason (`routine_handoff` or
-  `routine_completed`), and the conversation and workspace ids;
-- the channel the conversation came in on and the page it started on, when the
-  conversation has them;
 - every value the routine collected — its declared slots, keyed by slot key, in
-  the order the routine declares them.
+  the order the routine declares them;
+- the page the conversation started on, when the conversation has one.
 
 The Slack post carries the same lines without the headline, led by the authored
 subject when the ending has one. Slack shows every line as plain text, so neither
 a visitor's answer nor your intro can mention the channel or add a link. The webhook body carries the ids, the reason, the
 routine, the collected values in that same order, and the authored subject and
-intro as JSON fields; the agent's name, the channel, and the entry page appear
-only in the email and Slack text. If the routine is deleted before the notice goes
-out, the collected values still arrive, in storage order rather than declaration
-order.
+intro as JSON fields; the entry page appears only in the email and Slack text. If
+the routine is deleted before the notice goes out, the collected values still
+arrive, in storage order rather than declaration order.
 
 A booking desk that receives a "Book accommodation" notice reads the program,
 dates, and guest name in the notice itself instead of opening the transcript

@@ -1522,6 +1522,13 @@ export interface ConversationRoutineYieldSink {
 
 export interface ConversationRoutineDecisionResult extends ConversationRoutineResumeResult {
   resumed: boolean;
+  /**
+   * The routine-ending effects `terminal` implies, as a live turn reports them on
+   * `ProcessTurnResult`: a resumed routine that lands on an ending hands off and notifies the
+   * same way.
+   */
+  handoff?: ProcessTurnResult["handoff"];
+  operatorNotice?: RoutineOperatorNoticeEffect;
 }
 
 /**

@@ -736,7 +736,7 @@ test('shows a link to copy by hand when the page has no clipboard, only beside i
   await expect(page.getByText(`testExecution=${saved.id}`)).toHaveCount(0)
 })
 
-test('stays on Conversation history when it is chosen while a shared test is still opening', async ({ page }) => {
+test('drops a shared test still opening once the operator moves to Conversation history and back', async ({ page }) => {
   const saved = {
     id: '33333333-3333-4333-8333-333333333333', generation: 1, mode: 'single', state: 'completed', createdAt: nowIso,
     skillEffects: 'suppressed', turnCount: 1, firstMessage: 'A slow shared question',
@@ -762,11 +762,14 @@ test('stays on Conversation history when it is chosen while a shared test is sti
   await expect(page).toHaveURL(/[?&]view=history/)
   await expect(page).not.toHaveURL(/testExecution=/)
 
+  // Coming back to the chat before it loads does not revive the open the operator walked away from.
+  await page.getByRole('button', { name: 'Back to chat', exact: true }).click()
+  await expect(testChatComposer(page)).toBeVisible()
   mocks.releaseExecutionDetail()
   await page.waitForTimeout(300)
-  await expect(page.getByRole('heading', { name: 'Conversation history', exact: true })).toBeVisible()
-  await expect(page).toHaveURL(/[?&]view=history/)
+  await expect(testChatComposer(page)).toBeVisible()
   await expect(page.getByText('A slow shared answer', { exact: true })).toHaveCount(0)
+  await expect(page).not.toHaveURL(/testExecution=/)
 })
 
 test('gives Conversation history its own link, and starts no greeting behind it', async ({ page }) => {

@@ -44,9 +44,11 @@ interface CopilotTestChatSessionHeader {
 
 export interface CopilotTestChatSessionSummary extends CopilotTestChatSessionHeader {
   readonly sides: ReadonlyArray<CopilotTestChatSide>;
-  /** Turns the operator sent a message in; the greeting is not one. */
+  /** Turns with a user message: those copied from a real conversation it continues, plus those the operator sent. The greeting is not one. */
   readonly turnCount: number;
+  /** The first of those messages with text, as a label of at most `TEST_EXECUTION_LABEL_CHARS`. */
   readonly firstMessage: string | null;
+  readonly firstMessageClipped: boolean;
 }
 
 export interface CopilotTestChatSession extends CopilotTestChatSessionHeader {

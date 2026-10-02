@@ -3,8 +3,8 @@
 -- agent_test_execution_turns; these columns hold only the copied part: how many user messages it
 -- brought in and the first of them.
 --
--- Rows written before these columns existed read 0 and null, so a test seeded before then lists
--- only what the operator sent in it. Its transcript is unchanged.
+-- Rows written before these columns existed start at 0 and null; migration 208 fills them in for
+-- tests seeded before then.
 --
 -- Locks. ADD COLUMN with a constant default and ADD CONSTRAINT take ACCESS EXCLUSIVE on
 -- agent_test_executions for the catalog change and the CHECK scan; no table rewrite.

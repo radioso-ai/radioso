@@ -238,16 +238,21 @@ export function AgentRevisionTestChat({
   const view: View = historyOpen ? "history" : "chat";
   const onHistoryOpenChangeRef = useRef(onHistoryOpenChange);
   onHistoryOpenChangeRef.current = onHistoryOpenChange;
-  // The view the operator last asked for. The route catches up a render later, so a slow
-  // history open that resolves after Back to chat must check this, not `view`.
-  const requestedView = useRef<View>(view);
-  useEffect(() => {
-    requestedView.current = view;
-  }, [view]);
-  const setView = useCallback((next: View) => {
-    requestedView.current = next;
-    onHistoryOpenChangeRef.current(next === "history");
+  // The view the operator last asked for, and a generation that moves on every view change and New
+  // chat. The route catches up a render later, so an open still loading checks this, not `view`: a
+  // history row's open only lands while history is still wanted, and a link's open only if nothing
+  // superseded it since it started, even when the operator has since come back to the same view.
+  const viewIntent = useRef<{ view: View; generation: number }>({ view, generation: 0 });
+  const supersedePendingOpens = useCallback((next: View) => {
+    viewIntent.current = { view: next, generation: viewIntent.current.generation + 1 };
   }, []);
+  useEffect(() => {
+    if (viewIntent.current.view !== view) supersedePendingOpens(view);
+  }, [supersedePendingOpens, view]);
+  const setView = useCallback((next: View) => {
+    supersedePendingOpens(next);
+    onHistoryOpenChangeRef.current(next === "history");
+  }, [supersedePendingOpens]);
   const executionLink = useCopyDashboardLink();
   const [selected, setSelected] = useState<string[]>(cachedSession?.selected ?? []);
   const [contextOpen, setContextOpen] = useState(false);
@@ -1302,14 +1307,15 @@ export function AgentRevisionTestChat({
     if (consumedOpenExecutionId.current === openExecutionId) return;
     consumedOpenExecutionId.current = openExecutionId;
     const isCurrent = () => consumedOpenExecutionId.current === openExecutionId;
+    const intent = viewIntent.current.generation;
     const notice = openExecutionFromConversation
       ? "Continuing a copy of the conversation. The original is untouched."
       : undefined;
     void agentRevisionsApi
       .getTestExecution(agentId, openExecutionId)
       .then((response) => {
-        // The operator chose Conversation history while it loaded; the test is there to open.
-        if (!isCurrent() || requestedView.current === "history") return;
+        // The operator moved on while it loaded (history, back, or New chat); the test is in history to open.
+        if (!isCurrent() || viewIntent.current.generation !== intent) return;
         reopenExecutionRef.current(response.execution, notice);
       })
       .catch((cause) => {
@@ -1452,6 +1458,7 @@ export function AgentRevisionTestChat({
           onSelect={() => {
             proactiveStartKey.current = null;
             writeAgentRevisionTestChatSession(sessionKey, { proactiveStartKey: null });
+            supersedePendingOpens(view);
             clearChatExecution("New chat ready.");
           }}
         >
@@ -1536,7 +1543,7 @@ export function AgentRevisionTestChat({
               <TestExecutionHistoryView
                 agentId={agentId}
                 onOpen={(saved) => {
-                  if (requestedView.current === "history") reopenExecution(saved);
+                  if (viewIntent.current.view === "history") reopenExecution(saved);
                 }}
                 linkFor={testExecutionHref}
               />

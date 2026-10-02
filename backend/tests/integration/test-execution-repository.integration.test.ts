@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { TestExecutionRepository } from "../../src/db/repositories/testExecutionRepository.js";
@@ -112,6 +113,30 @@ describeDb("test execution repository", () => {
 
     expect(await database.query("SELECT 1 FROM agent_test_execution_turns WHERE execution_id = $1 AND turn_id = $2", [execution.id, turnId])).toEqual([]);
     expect(await database.query("SELECT 1 FROM agent_test_execution_attempts WHERE execution_id = $1 AND turn_id = $2", [execution.id, turnId])).toEqual([]);
+  });
+
+  it("backfills what a test seeded before migration 207 copied in, from history entries no sent turn owns", async () => {
+    const seededId = randomUUID(), plainId = randomUUID(), operatorTurn = randomUUID(), plainTurn = randomUUID();
+    const entry = (turnId: string, role: "user" | "assistant", content: string, at: number) => ({ turnId, attemptId: randomUUID(), role, content, createdAt: new Date(at) });
+    const side = (id: string, history: ReturnType<typeof entry>[]) => ({ id: randomUUID(), executionId: id, revision: frozenRevision(), conversationId: randomUUID(), state: "ready" as const, retryable: false, continuation: null, history });
+    const sentTurn = (id: string, turnId: string, message: string) =>
+      database.query("INSERT INTO agent_test_execution_turns (execution_id, turn_id, message, input_fingerprint, state) VALUES ($1, $2, $3, 'fingerprint', 'completed')", [id, turnId, message]);
+    // Written the way a seeded start was before 207: the copied thread in history, no summary columns.
+    await repository.create({ id: seededId, workspaceId, agentId, mode: "single", generation: 1, testValues: [], skillEffects: "suppressed", idempotencyKey: seededId, sides: [side(seededId, [
+      entry(randomUUID(), "user", "", 1), entry(randomUUID(), "user", "copied question", 2), entry(randomUUID(), "assistant", "copied answer", 3),
+      entry(operatorTurn, "user", "operator question", 4), entry(operatorTurn, "assistant", "answer", 5),
+    ])] });
+    await sentTurn(seededId, operatorTurn, "operator question");
+    await repository.create({ id: plainId, workspaceId, agentId, mode: "single", generation: 1, testValues: [], skillEffects: "suppressed", idempotencyKey: plainId, sides: [side(plainId, [
+      entry(randomUUID(), "assistant", "Hi!", 1), entry(plainTurn, "user", "plain question", 2),
+    ])] });
+    await sentTurn(plainId, plainTurn, "plain question");
+
+    await database.query(readFileSync(new URL("../../src/db/migrations/208_test_execution_seed_summary_backfill.sql", import.meta.url), "utf8"));
+    const summaries = await repository.summarizeTurns({ workspaceId, agentId, executionIds: [seededId, plainId], firstMessageChars: 201 });
+
+    expect(summaries.get(seededId)).toEqual({ turnCount: 3, firstMessage: "copied question" });
+    expect(summaries.get(plainId)).toEqual({ turnCount: 1, firstMessage: "plain question" });
   });
 
   it("summarizes each listed execution from its sent turns and what its seed copied in, never from its transcript", async () => {

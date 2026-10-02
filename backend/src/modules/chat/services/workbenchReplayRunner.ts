@@ -565,7 +565,8 @@ export class WorkbenchReplayRunner {
     const notification = routineEndingNotificationFromAction({
       kind: ending.notificationKind,
       payload: action.payload,
-      fallback: { conversationId: input.session.conversation.id, workspaceId: input.input.workspaceId, reason: ending.reason },
+      ids: { conversationId: input.session.conversation.id, workspaceId: input.input.workspaceId },
+      fallback: { reason: ending.reason },
       subject: {
         agentName: input.agent.name,
         routineName: input.routineReporter?.describeRoutineName(notice.routineId) ?? null,

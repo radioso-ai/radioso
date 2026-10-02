@@ -81,12 +81,19 @@ const noticeFromPayload = (value: unknown): OperatorNoticeTemplate | null => {
 export const routineEndingNotificationFromAction = (input: {
   kind: RoutineEndingOperatorNotification["kind"];
   payload: Record<string, unknown>;
+  /**
+   * The queued action row's own ids: authoritative regardless of what the payload carries. A
+   * routine action-step payload can carry visitor-filled variables under any key, so a payload
+   * copy of these ids (even one the system wrote itself) must never override the row's own ids
+   * for routing or lookups.
+   */
+  ids: { conversationId: string; workspaceId: string };
   /** Used only when the payload itself omits the field. */
-  fallback: { conversationId: string; workspaceId: string; reason: string };
+  fallback: { reason: string };
   subject?: RoutineEndingNotificationSubject;
 }): RoutineEndingOperatorNotification => {
-  const conversationId = asString(input.payload.conversationId) ?? input.fallback.conversationId;
-  const workspaceId = asString(input.payload.workspaceId) ?? input.fallback.workspaceId;
+  const conversationId = input.ids.conversationId;
+  const workspaceId = input.ids.workspaceId;
   const agentId = asString(input.payload.agentId) ?? "unknown";
   const reason = asString(input.payload.reason) ?? input.fallback.reason;
   const routineId = asString(input.payload.routineId);

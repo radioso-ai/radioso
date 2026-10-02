@@ -148,7 +148,7 @@ describe("RoutineEndingNotifyActionHandler", () => {
     const resolve = vi.fn(async () => ({
       agentName: "Retreat desk",
       routineName: "Book accommodation",
-      conversation: { channel: "embed", entryPageUrl: "https://ananda.example/stays" },
+      conversation: { entryPageUrl: "https://ananda.example/stays" },
     }));
     const handler = new RoutineEndingNotifyActionHandler({ ending: ROUTINE_ENDING_NOTICE_ACTIONS.complete, dispatcher: { dispatch }, subjects: { resolve } });
 
@@ -176,7 +176,7 @@ describe("RoutineEndingNotifyActionHandler", () => {
       routine: { id: "routine_1", name: "Book accommodation" },
       collected: { name: "Ada" },
       notice: { subject: "Booking: {{slot.name}}" },
-      conversation: { channel: "embed", entryPageUrl: "https://ananda.example/stays" },
+      conversation: { entryPageUrl: "https://ananda.example/stays" },
     }, expect.objectContaining({ idempotencyKey: "routine-action:conv_1:completion.notify" }));
   });
 
@@ -206,6 +206,7 @@ describe("RoutineEndingNotifyActionHandler", () => {
       "  Guest name: Ada",
       "  Arrival date: 2026-10-12",
       "  Nights: 3",
+      "",
     ]);
     expect(JSON.stringify(notification.collected)).toBe('{"guest_name":"Ada","arrival_date":"2026-10-12","nights":3}');
   });

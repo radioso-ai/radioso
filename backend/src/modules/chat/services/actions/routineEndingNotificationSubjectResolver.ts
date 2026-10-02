@@ -22,7 +22,7 @@ interface RoutineEndingNotificationConversationLookup {
   findByIdAndWorkspaceId(
     conversationId: string,
     workspaceId: string,
-  ): Promise<{ sourceChannel: string | null; entryPageUrl: string | null } | null>;
+  ): Promise<{ entryPageUrl: string | null } | null>;
 }
 
 /**
@@ -53,9 +53,7 @@ export class RepositoryRoutineEndingNotificationSubjectResolver implements Routi
       agentName: agent?.name ?? null,
       routineName: routine?.name ?? null,
       ...(routine ? { routineSlotKeys: routine.slots.map((slot) => slot.key) } : {}),
-      ...(conversation
-        ? { conversation: { channel: conversation.sourceChannel, entryPageUrl: conversation.entryPageUrl } }
-        : {}),
+      ...(conversation ? { conversation: { entryPageUrl: conversation.entryPageUrl } } : {}),
     };
   }
 }

@@ -222,10 +222,8 @@ describe("EmailWebhookOperatorNotificationSink", () => {
     expect(sent[0].to).toBe("owner@business.example");
     expect(sent[0].subject).toBe("Conversation needs a human");
     expect(sent[0].idempotencyKey).toBe("routine-action:conv_1:handoff.notify:email:owner%40business.example");
-    expect(sent[0].text).toContain("Conversation: conv_1");
-    expect(sent[0].text).toContain("Workspace: ws_1");
-    expect(sent[0].text).toContain("Agent: agent_1");
-    expect(sent[0].text).toContain("Reason: routine_handoff");
+    // Plain prose for non-technical staff: just the headline, nothing technical underneath.
+    expect(sent[0].text).toBe("A conversation needs a human operator.\n");
     // No link resolver is wired here, so the mail omits the line rather than printing a
     // path that does not resolve. See the permalink cases below.
     expect(sent[0].text).not.toContain("Open:");
@@ -292,16 +290,11 @@ describe("EmailWebhookOperatorNotificationSink", () => {
     expect(sent[0].text).toBe([
       "A conversation needs a human operator.",
       "",
-      "Agent: Retreat desk (agent_1)",
-      "Routine: Book accommodation",
-      "Reason: routine_handoff",
-      "Conversation: conv_1",
-      "Workspace: ws_1",
-      "",
       "Collected:",
       "  Program: Yoga retreat",
       "  Arrival date: 2026-10-12",
       "  Guests: 2",
+      "",
       "Open: https://app.radioso.ai/w/support-abc/activity?itemId=conv_1",
     ].join("\n"));
   });
@@ -390,7 +383,7 @@ describe("EmailWebhookOperatorNotificationSink", () => {
     routine: { id: "routine_1", name: "Book accommodation" },
     collected: { name: "Ada Lovelace", arrival_date: "2026-10-12" },
     notice: { subject: "New booking: {{slot.name}}", intro: "Confirm {{slot.arrival_date}} with the guest." },
-    conversation: { channel: "embed", entryPageUrl: "https://ananda.example/stays" },
+    conversation: { entryPageUrl: "https://ananda.example/stays" },
   };
 
   it("emails a completion notice in plain text with the authored subject and intro and every collected value", async () => {
@@ -412,17 +405,11 @@ describe("EmailWebhookOperatorNotificationSink", () => {
       "A conversation completed a routine.",
       "Confirm 2026-10-12 with the guest.",
       "",
-      "Agent: Retreat desk (agent_1)",
-      "Routine: Book accommodation",
-      "Reason: routine_completed",
-      "Conversation: conv_1",
-      "Workspace: ws_1",
-      "Channel: embed",
-      "Entry page: https://ananda.example/stays",
-      "",
       "Collected:",
       "  Name: Ada Lovelace",
       "  Arrival date: 2026-10-12",
+      "",
+      "Entry page: https://ananda.example/stays",
       "Open: https://app.radioso.ai/w/support-abc/activity?itemId=conv_1",
     ].join("\n"));
   });

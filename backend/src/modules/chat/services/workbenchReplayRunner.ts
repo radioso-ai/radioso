@@ -570,7 +570,6 @@ export class WorkbenchReplayRunner {
         agentName: input.agent.name,
         routineName: input.routineReporter?.describeRoutineName(notice.routineId) ?? null,
         conversation: {
-          channel: input.session.conversation.sourceChannel ?? null,
           entryPageUrl: input.session.conversation.entryPageUrl ?? null,
         },
       },

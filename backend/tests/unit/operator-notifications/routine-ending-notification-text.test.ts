@@ -11,17 +11,10 @@ const base = {
 };
 
 describe("formatRoutineEndingNotification", () => {
-  it("keeps the generic subject and id-only lines when no names or values are known", () => {
+  it("reads as just the headline and a blank line for a retrieval-miss hand-off with nothing else known", () => {
     expect(formatRoutineEndingNotification(base)).toEqual({
       subject: "Conversation needs a human",
-      lines: [
-        "A conversation needs a human operator.",
-        "",
-        "Agent: agent_1",
-        "Reason: routine_handoff",
-        "Conversation: conv_1",
-        "Workspace: ws_1",
-      ],
+      lines: ["A conversation needs a human operator.", ""],
       notice: { subject: null, intro: null },
     });
   });
@@ -44,22 +37,17 @@ describe("formatRoutineEndingNotification", () => {
     expect(formatted.lines).toEqual([
       "A conversation needs a human operator.",
       "",
-      "Agent: Retreat desk (agent_1)",
-      "Routine: Book accommodation",
-      "Reason: routine_handoff",
-      "Conversation: conv_1",
-      "Workspace: ws_1",
-      "",
       "Collected:",
       "  Program: Yoga retreat",
       "  Arrival date: 2026-10-12",
       "  Guests: 2",
       "  Needs transfer: yes",
       "  Vegetarian: no",
+      "",
     ]);
   });
 
-  it("falls back to the generic subject and skips the routine line when the routine has no name", () => {
+  it("falls back to the generic subject when the routine has no name, and lists no collected values", () => {
     const formatted = formatRoutineEndingNotification({
       ...base,
       routine: { id: "routine_1", name: null },
@@ -68,7 +56,6 @@ describe("formatRoutineEndingNotification", () => {
 
     expect(formatted.subject).toBe("Conversation needs a human");
     expect(formatted.lines).not.toContain("Collected:");
-    expect(formatted.lines.some((line) => line.startsWith("Routine:"))).toBe(false);
   });
 
   const booking = {
@@ -83,7 +70,6 @@ describe("formatRoutineEndingNotification", () => {
 
     expect(formatted.subject).toBe("Book accommodation: completed");
     expect(formatted.lines[0]).toBe("A conversation completed a routine.");
-    expect(formatted.lines).toContain("Reason: routine_completed");
     expect(formatRoutineEndingNotification({ ...base, kind: "completion", reason: "routine_completed" }).subject).toBe("Routine completed");
   });
 
@@ -135,22 +121,31 @@ describe("formatRoutineEndingNotification", () => {
       notice: { subject: "Booking", intro: "See below." },
     });
 
-    expect(formatted.lines.slice(-4)).toEqual([
+    expect(formatted.lines).toEqual([
+      "A conversation needs a human operator.",
+      "See below.",
+      "",
       "Collected:",
       "  Name: Ada Lovelace",
       "  Arrival: 2026-10-12",
       "  Guests: 2",
+      "",
     ]);
   });
 
-  it("adds the stored channel and entry page as context lines when known", () => {
+  it("adds the entry page as a footer line, directly after a single blank line, when known", () => {
     const formatted = formatRoutineEndingNotification({
       ...booking,
-      conversation: { channel: "embed", entryPageUrl: "https://ananda.example/stays" },
+      conversation: { entryPageUrl: "https://ananda.example/stays" },
     });
 
-    expect(formatted.lines).toEqual(expect.arrayContaining(["Channel: embed", "Entry page: https://ananda.example/stays"]));
-    expect(formatRoutineEndingNotification({ ...booking, conversation: { channel: null, entryPageUrl: null } }).lines
-      .some((line) => line.startsWith("Channel:") || line.startsWith("Entry page:"))).toBe(false);
+    expect(formatted.lines.slice(-2)).toEqual(["", "Entry page: https://ananda.example/stays"]);
+  });
+
+  it("ends in a single blank line, reserved for the sink's Open link, when the entry page is not known", () => {
+    const formatted = formatRoutineEndingNotification({ ...booking, conversation: { entryPageUrl: null } });
+
+    expect(formatted.lines.at(-1)).toBe("");
+    expect(formatted.lines.some((line) => line.startsWith("Entry page:"))).toBe(false);
   });
 });

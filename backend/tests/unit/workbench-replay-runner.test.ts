@@ -1456,9 +1456,6 @@ describe("WorkbenchReplayRunner", () => {
       subject: "Book accommodation: needs a human",
       lines: expect.arrayContaining([
         "A conversation needs a human operator.",
-        "Agent: Support (agent-1)",
-        "Routine: Book accommodation",
-        "Reason: routine_handoff",
       ]),
     });
     expect(JSON.stringify(result.turnTrace?.handoffPreview)).toContain("A stay at Ananda");
@@ -1532,8 +1529,6 @@ describe("WorkbenchReplayRunner", () => {
       lines: expect.arrayContaining([
         "A conversation completed a routine.",
         "Confirm 2 guests with Ada Lovelace.",
-        "Routine: Book accommodation",
-        "Reason: routine_completed",
         "  Name: Ada Lovelace",
       ]),
     });

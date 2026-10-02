@@ -1,7 +1,7 @@
 import { Router, type Response } from "express";
 import { z } from "zod";
 
-import { testExecutionLabel, type TestExecutionService, type TestExecution, type TestExecutionAttemptRecord, type TestExecutionEvent, type TestExecutionHistoryItem, type TestExecutionSummary } from "../../../modules/test-execution/testExecution.js";
+import type { TestExecutionService, TestExecution, TestExecutionAttemptRecord, TestExecutionEvent, TestExecutionHistoryItem, TestExecutionSummary } from "../../../modules/test-execution/testExecution.js";
 import type { EvalSnapshotService } from "../../../modules/eval/services/evalSnapshotService.js";
 import type { WorkspaceSessionDependencies } from "../middleware/requireWorkspaceSession.js";
 import { requireWorkspaceSession } from "../middleware/requireWorkspaceSession.js";
@@ -54,7 +54,7 @@ const presentHistory = (execution: TestExecutionHistoryItem) => ({
 const presentHistorySummary = (execution: TestExecutionSummary) => ({
   ...presentHistory(execution),
   turnCount: execution.turnCount,
-  firstMessage: execution.firstMessage === null ? null : testExecutionLabel(execution.firstMessage),
+  firstMessage: execution.firstMessage,
 });
 
 const presentDetail = (execution: TestExecution, attempts: readonly TestExecutionAttemptRecord[]) => {

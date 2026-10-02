@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { TestExecutionRepository } from "../../src/db/repositories/testExecutionRepository.js";
 import type { AgentRevision } from "../../src/modules/agents/agentRevision.js";
-import { TEST_EXECUTION_LABEL_CHARS, TestExecutionService } from "../../src/modules/test-execution/testExecution.js";
+import { TestExecutionService } from "../../src/modules/test-execution/testExecution.js";
 import { ContextVariableRepository } from "../../src/db/repositories/contextVariableRepository.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { NoopUsageLimitPolicy } from "../../src/shared/domain/usageLimitPolicy.js";
@@ -114,7 +114,7 @@ describeDb("test execution repository", () => {
     expect(await database.query("SELECT 1 FROM agent_test_execution_attempts WHERE execution_id = $1 AND turn_id = $2", [execution.id, turnId])).toEqual([]);
   });
 
-  it("summarizes each listed execution from the turns the operator sent, not from its transcript", async () => {
+  it("summarizes each listed execution from its sent turns and what its seed copied in, never from its transcript", async () => {
     const executionId = randomUUID(), seededId = randomUUID(), longId = randomUUID();
     const entry = (role: "user" | "assistant", content: string, at: number) => ({ turnId: randomUUID(), attemptId: randomUUID(), role, content, createdAt: new Date(at) });
     const side = (id: string, history: ReturnType<typeof entry>[], revision = frozenRevision()) => ({ id: randomUUID(), executionId: id, revision, conversationId: randomUUID(), state: "ready" as const, retryable: false, continuation: null, history });
@@ -127,20 +127,25 @@ describeDb("test execution repository", () => {
     ] });
     await sentTurn(executionId, "second question", "2026-09-08T10:02:00.000Z");
     await sentTurn(executionId, "first question", "2026-09-08T10:01:00.000Z");
-    // A copy of a real conversation that the operator has not written in yet.
-    await repository.create({ id: seededId, workspaceId, agentId, mode: "single", generation: 1, testValues: [], skillEffects: "suppressed", idempotencyKey: seededId, sides: [
-      side(seededId, [entry("user", "a customer's question", 1), entry("assistant", "a reply", 2)]),
+    // A copy of a real conversation: what it copied in is recorded at start, and the operator then sends one message.
+    await repository.create({ id: seededId, workspaceId, agentId, mode: "single", generation: 1, testValues: [], skillEffects: "suppressed", idempotencyKey: seededId, seededSummary: { turnCount: 2, firstMessage: "a customer's question" }, sides: [
+      side(seededId, [entry("user", "a customer's question", 1), entry("assistant", "a reply", 2), entry("user", "a follow-up", 3)]),
     ] });
+    await sentTurn(seededId, "the operator's question", "2026-09-08T10:04:00.000Z");
     // A long opening message is read only far enough to label the row and show that it was clipped.
     await repository.create({ id: longId, workspaceId, agentId, mode: "single", generation: 1, testValues: [], skillEffects: "suppressed", idempotencyKey: longId, sides: [side(longId, [])] });
     await sentTurn(longId, "y".repeat(20_000), "2026-09-08T10:03:00.000Z");
 
-    const summaries = await repository.summarizeTurns({ workspaceId, agentId, executionIds: [executionId, seededId, longId] });
+    const emptyId = randomUUID();
+    await repository.create({ id: emptyId, workspaceId, agentId, mode: "single", generation: 1, testValues: [], skillEffects: "suppressed", idempotencyKey: emptyId, sides: [side(emptyId, [entry("assistant", "Hi!", 1)])] });
+
+    const summaries = await repository.summarizeTurns({ workspaceId, agentId, executionIds: [executionId, seededId, longId, emptyId], firstMessageChars: 201 });
 
     expect(summaries.get(executionId)).toEqual({ turnCount: 2, firstMessage: "first question" });
-    expect(summaries.get(seededId)).toEqual({ turnCount: 0, firstMessage: null });
-    expect(summaries.get(longId)).toEqual({ turnCount: 1, firstMessage: "y".repeat(TEST_EXECUTION_LABEL_CHARS + 1) });
-    await expect(repository.summarizeTurns({ workspaceId: randomUUID(), agentId, executionIds: [executionId] })).resolves.toEqual(new Map());
+    expect(summaries.get(seededId)).toEqual({ turnCount: 3, firstMessage: "a customer's question" });
+    expect(summaries.get(longId)).toEqual({ turnCount: 1, firstMessage: "y".repeat(201) });
+    expect(summaries.get(emptyId)).toEqual({ turnCount: 0, firstMessage: null });
+    await expect(repository.summarizeTurns({ workspaceId: randomUUID(), agentId, executionIds: [executionId], firstMessageChars: 201 })).resolves.toEqual(new Map());
   });
 
   it("claims all comparison sides atomically and serializes simultaneous completions", async () => {

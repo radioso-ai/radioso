@@ -5,6 +5,9 @@ import type { SkillAuthoringDescriptor } from "@/lib/api-routine-skill-catalog";
 type ApiSchemas = components["schemas"];
 type TransferRequestFixture = operations["transferConversationOwnership"]["requestBody"]["content"]["application/json"];
 
+/** Test execution ids are UUIDs, as the backend mints them; a dashboard link drops anything else. */
+const testExecutionFixtureId = (generation: number) => `00000000-0000-4000-8000-${String(generation).padStart(12, "0")}`;
+
 export const workspaceId = "workspace-1";
 export const workspaceKey = "workspace-key";
 export const accountId = "account-1";
@@ -2075,7 +2078,7 @@ export const installDashboardApiMocks = async (
         createdAt: message.createdAt,
       }));
       const execution = {
-        id: `execution-${generation}`,
+        id: testExecutionFixtureId(generation),
         generation,
         mode: body.mode ?? "single",
         skillEffects: body.skillEffects ?? "suppressed",
@@ -2122,8 +2125,8 @@ export const installDashboardApiMocks = async (
         status: 200,
         contentType: "text/event-stream",
         body: [
-          { type: "message_delta", executionId: `execution-${generation}`, generation, sideId: `side-${generation}-0`, delta: answer, turnId, attemptId },
-          { type: "side_completed", executionId: `execution-${generation}`, generation, sideId: `side-${generation}-0`, messageId: `message-${generation}`, turnId, attemptId },
+          { type: "message_delta", executionId: testExecutionFixtureId(generation), generation, sideId: `side-${generation}-0`, delta: answer, turnId, attemptId },
+          { type: "side_completed", executionId: testExecutionFixtureId(generation), generation, sideId: `side-${generation}-0`, messageId: `message-${generation}`, turnId, attemptId },
         ].map((event) => `data: ${JSON.stringify(event)}\n\n`).join(""),
       });
       return;

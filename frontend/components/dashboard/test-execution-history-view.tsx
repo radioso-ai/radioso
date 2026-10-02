@@ -113,7 +113,7 @@ export function TestExecutionHistoryView({
   if (executions === null) return <div className="flex justify-center p-10"><LogoSpinner imageClassName="h-7 w-7" /></div>
   if (executions.length === 0) return <p className="rounded-lg border border-dashed border-border p-6 text-sm text-muted-foreground">No saved revision tests yet. Your first message creates one and keeps its selected revisions and test values.</p>
 
-  return <div className="space-y-3">{error ? <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{error}</p> : null}{link.uncopied ? <UncopiedLink url={link.uncopied.url} /> : null}<DashboardTable minWidth="min-w-0">
+  return <div className="space-y-3">{error ? <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{error}</p> : null}<DashboardTable minWidth="min-w-0">
     <DashboardTableHead>
       <DashboardTableHeader>Test</DashboardTableHeader>
       <DashboardTableHeader>Versions</DashboardTableHeader>
@@ -135,6 +135,7 @@ export function TestExecutionHistoryView({
               </Badge>
             ) : null}
           </span>
+          {link.uncopied?.key === execution.id ? <div className="mt-2 font-normal"><UncopiedLink url={link.uncopied.url} /></div> : null}
         </DashboardTableCell>
         <DashboardTableCell className="text-sm text-muted-foreground">{execution.sides.map((side) => revisionLabel(side.revision)).join(' · ')}</DashboardTableCell>
         <DashboardTableCell className="w-24 text-right text-sm tabular-nums text-muted-foreground">{execution.turnCount}</DashboardTableCell>

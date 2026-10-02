@@ -375,14 +375,16 @@ export function AgentView({
     const href = buildDashboardHref(accountId, {
       ...routeState,
       section: 'agents',
+      agentId: selectedAgentId,
       agentTestChatView: open ? 'history' : undefined,
+      // Choosing history supersedes a saved test still opening from the URL; Test Chat drops it.
+      ...(open ? { agentTestExecutionId: undefined, agentTestExecutionFromConversation: undefined } : {}),
     })
-    // While an open command is in the URL, the route drops `view`; pushing would only duplicate
-    // the entry, and Back would then land on a command that can no longer be consumed.
+    // Never push a duplicate entry: Back would land on the same view.
     if (href === `${window.location.pathname}${window.location.search}`) return
     // A shallow history entry: the view is client state, so it needs no server round trip.
     window.history.pushState(null, '', href)
-  }, [accountId, historyOpen, routeState])
+  }, [accountId, historyOpen, routeState, selectedAgentId])
 
   const agentUnavailableContent = agentSelectionPending ? (
     <div className="flex min-h-48 items-center justify-center text-sm text-muted-foreground">

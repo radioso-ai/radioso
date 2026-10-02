@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { Check, Link2 } from 'lucide-react'
 
 import {
   DashboardTable,
@@ -17,7 +18,7 @@ import {
   agentRevisionsApi,
   type AgentRevisionSummary,
   type TestExecutionHistoryDetail,
-  type TestExecutionHistoryItem,
+  type TestExecutionHistoryListItem,
 } from '@/lib/api-agent-revisions'
 
 const timestampFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' })
@@ -32,11 +33,16 @@ const revisionLabel = (revision: AgentRevisionSummary): string => {
 export function TestExecutionHistoryView({
   agentId,
   onOpen,
+  linkFor,
 }: {
   agentId: string
   onOpen: (execution: TestExecutionHistoryDetail) => void
+  /** The dashboard link that opens one saved test; without it the row offers no link. */
+  linkFor?: (executionId: string) => string
 }) {
-  const [executions, setExecutions] = useState<TestExecutionHistoryItem[] | null>(null)
+  const [executions, setExecutions] = useState<TestExecutionHistoryListItem[] | null>(null)
+  const [copiedId, setCopiedId] = useState<string | null>(null)
+  const copiedTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [openingId, setOpeningId] = useState<string | null>(null)
   const [nextCursor, setNextCursor] = useState<string | null>(null)
@@ -81,6 +87,25 @@ export function TestExecutionHistoryView({
     }
   }
 
+  useEffect(() => () => {
+    if (copiedTimeout.current !== null) clearTimeout(copiedTimeout.current)
+  }, [])
+
+  const copyLink = async (executionId: string) => {
+    if (!linkFor) return
+    try {
+      await navigator.clipboard.writeText(new URL(linkFor(executionId), window.location.href).toString())
+      setCopiedId(executionId)
+      if (copiedTimeout.current !== null) clearTimeout(copiedTimeout.current)
+      copiedTimeout.current = setTimeout(() => {
+        copiedTimeout.current = null
+        setCopiedId(null)
+      }, 1500)
+    } catch {
+      setError('Could not copy the link.')
+    }
+  }
+
   const loadMore = async () => {
     if (!nextCursor || loadingMore) return
     const requestGeneration = pageRequestGeneration.current + 1
@@ -106,14 +131,18 @@ export function TestExecutionHistoryView({
     <DashboardTableHead>
       <DashboardTableHeader>Test</DashboardTableHeader>
       <DashboardTableHeader>Versions</DashboardTableHeader>
+      <DashboardTableHeader className="w-24 text-right">Messages</DashboardTableHeader>
       <DashboardTableHeader className="w-44">Created</DashboardTableHeader>
-      <DashboardTableHeader className="w-28" />
+      <DashboardTableHeader className="w-36" />
     </DashboardTableHead>
     <DashboardTableBody>
       {executions.map((execution) => <DashboardTableRow key={execution.id}>
-        <DashboardTableCell className="font-medium">
-          <span className="flex items-center gap-2">
-            <span>{execution.mode === 'compare' ? 'Comparison' : 'Single revision test'}</span>
+        <DashboardTableCell className="max-w-0 font-medium">
+          <span className="flex min-w-0 items-center gap-2">
+            {execution.firstMessage === null
+              ? <span className="truncate font-normal text-muted-foreground">No messages yet</span>
+              : <span className="truncate" title={execution.firstMessage}>{execution.firstMessage}</span>}
+            {execution.mode === 'compare' ? <Badge variant="outline" className="shrink-0">Comparison</Badge> : null}
             {execution.skillEffects === 'allowed' ? (
               <Badge variant="outline" className="shrink-0 border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300">
                 Skills ran for real
@@ -122,8 +151,18 @@ export function TestExecutionHistoryView({
           </span>
         </DashboardTableCell>
         <DashboardTableCell className="text-sm text-muted-foreground">{execution.sides.map((side) => revisionLabel(side.revision)).join(' · ')}</DashboardTableCell>
+        <DashboardTableCell className="w-24 text-right text-sm tabular-nums text-muted-foreground">{execution.turnCount}</DashboardTableCell>
         <DashboardTableCell className="w-44 text-sm text-muted-foreground">{timestampFormatter.format(new Date(execution.createdAt))}</DashboardTableCell>
-        <DashboardTableCell className="w-28 text-right"><Button size="sm" variant="outline" onClick={() => void open(execution.id)} disabled={openingId !== null}>{openingId === execution.id ? 'Opening…' : 'Open'}</Button></DashboardTableCell>
+        <DashboardTableCell className="w-36 text-right">
+          <span className="inline-flex items-center gap-1">
+            {linkFor ? (
+              <Button size="icon" variant="ghost" className="h-8 w-8" aria-label={copiedId === execution.id ? 'Link copied' : 'Copy link'} title="Copy link" onClick={() => void copyLink(execution.id)}>
+                {copiedId === execution.id ? <Check className="h-4 w-4" /> : <Link2 className="h-4 w-4" />}
+              </Button>
+            ) : null}
+            <Button size="sm" variant="outline" onClick={() => void open(execution.id)} disabled={openingId !== null}>{openingId === execution.id ? 'Opening…' : 'Open'}</Button>
+          </span>
+        </DashboardTableCell>
       </DashboardTableRow>)}
     </DashboardTableBody>
   </DashboardTable>{nextCursor ? <Button variant="outline" size="sm" onClick={() => void loadMore()} disabled={loadingMore}>{loadingMore ? 'Loading…' : 'Load more'}</Button> : null}</div>

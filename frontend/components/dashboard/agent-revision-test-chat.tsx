@@ -11,7 +11,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-import { AlertCircle, Ellipsis, Loader2, Plus, Send, Workflow, X } from "lucide-react";
+import { AlertCircle, Ellipsis, Link2, Loader2, Plus, Send, Workflow, X } from "lucide-react";
 import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
@@ -202,7 +202,11 @@ export function AgentRevisionTestChat({
   actionsContainer,
   titleContainer,
   openExecutionId,
+  openExecutionFromConversation = false,
   onOpenExecutionConsumed,
+  testExecutionHref,
+  historyOpen,
+  onHistoryOpenChange,
 }: {
   agentId: string;
   workspaceId: string;
@@ -214,15 +218,26 @@ export function AgentRevisionTestChat({
   titleContainer?: HTMLElement | null;
   /** A saved execution to open on arrival (e.g. one seeded from a real conversation). */
   openExecutionId?: string;
+  /** The execution to open was just copied from a real conversation rather than shared as a link. */
+  openExecutionFromConversation?: boolean;
   /** Called once the open command has been acted on, so the caller can drop it from the route. */
   onOpenExecutionConsumed?: () => void;
+  /** The dashboard link that opens one saved test, for sharing it. */
+  testExecutionHref?: (executionId: string) => string;
+  /** Whether the route shows Conversation history instead of the chat. */
+  historyOpen: boolean;
+  onHistoryOpenChange: (open: boolean) => void;
 }) {
   const sessionKey = agentRevisionTestChatSessionKey(workspaceId, agentId);
   const cachedSession = readAgentRevisionTestChatSession(sessionKey);
   const [state, setState] = useState<AgentRevisionState | null>(cachedSession?.state ?? null);
   const [revisions, setRevisions] = useState<AgentRevisionSummary[]>(cachedSession?.revisions ?? []);
   const [mode, setMode] = useState<Mode>(cachedSession?.mode ?? "single");
-  const [view, setView] = useState<View>(cachedSession?.view ?? "chat");
+  // The route owns which view shows, so Conversation history has its own link.
+  const view: View = historyOpen ? "history" : "chat";
+  const onHistoryOpenChangeRef = useRef(onHistoryOpenChange);
+  onHistoryOpenChangeRef.current = onHistoryOpenChange;
+  const setView = useCallback((next: View) => onHistoryOpenChangeRef.current(next === "history"), []);
   const [selected, setSelected] = useState<string[]>(cachedSession?.selected ?? []);
   const [contextOpen, setContextOpen] = useState(false);
   const [evalsOpen, setEvalsOpen] = useState(false);
@@ -380,7 +395,6 @@ export function AgentRevisionTestChat({
       state,
       revisions,
       mode,
-      view,
       selected,
       message,
       execution,
@@ -427,7 +441,6 @@ export function AgentRevisionTestChat({
     valueError,
     valueInputs,
     revisionValueError,
-    view,
   ]);
   useEffect(
     () =>
@@ -1259,10 +1272,10 @@ export function AgentRevisionTestChat({
       }
       setView("chat");
     },
-    [clearChatExecution, pollReopenedExecution, sessionKey, setExecutionState],
+    [clearChatExecution, pollReopenedExecution, sessionKey, setExecutionState, setView],
   );
 
-  // "Continue in test chat" arrives with the seeded execution's id in the route.
+  // "Continue in test chat" and a shared test link arrive with the execution's id in the route.
   // It is opened through the same path as a saved test from history, once the
   // revision list is loaded so the execution's revision resolves in the selector.
   // The command is consumed exactly once per id; a background reload while the
@@ -1277,14 +1290,14 @@ export function AgentRevisionTestChat({
     if (consumedOpenExecutionId.current === openExecutionId) return;
     consumedOpenExecutionId.current = openExecutionId;
     const isCurrent = () => consumedOpenExecutionId.current === openExecutionId;
+    const notice = openExecutionFromConversation
+      ? "Continuing a copy of the conversation. The original is untouched."
+      : undefined;
     void agentRevisionsApi
       .getTestExecution(agentId, openExecutionId)
       .then((response) => {
         if (!isCurrent()) return;
-        reopenExecutionRef.current(
-          response.execution,
-          "Continuing a copy of the conversation. The original is untouched.",
-        );
+        reopenExecutionRef.current(response.execution, notice);
       })
       .catch((cause) => {
         if (isCurrent())
@@ -1293,7 +1306,7 @@ export function AgentRevisionTestChat({
       .finally(() => {
         if (isCurrent()) onOpenExecutionConsumedRef.current?.();
       });
-  }, [agentId, hasState, loading, openExecutionId]);
+  }, [agentId, hasState, loading, openExecutionFromConversation, openExecutionId]);
   useEffect(
     () => () => {
       consumedOpenExecutionId.current = null;
@@ -1409,6 +1422,15 @@ export function AgentRevisionTestChat({
     event.preventDefault();
     event.currentTarget.form?.requestSubmit();
   };
+  const copyExecutionLink = async (executionId: string) => {
+    if (!testExecutionHref) return;
+    try {
+      await navigator.clipboard.writeText(new URL(testExecutionHref(executionId), window.location.href).toString());
+      setRestartNotice("Link copied.");
+    } catch {
+      setError("Could not copy the link.");
+    }
+  };
   const actionMenu = (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -1435,6 +1457,12 @@ export function AgentRevisionTestChat({
         <DropdownMenuItem onSelect={() => setView("history")}>
           Conversation history
         </DropdownMenuItem>
+        {execution && testExecutionHref ? (
+          <DropdownMenuItem onSelect={() => void copyExecutionLink(execution.executionId)}>
+            <Link2 className="mr-2 h-4 w-4" />
+            Copy link to this chat
+          </DropdownMenuItem>
+        ) : null}
         <DropdownMenuItem asChild>
           <Link href={agentVersionsHref}>Agent versions</Link>
         </DropdownMenuItem>
@@ -1504,6 +1532,7 @@ export function AgentRevisionTestChat({
               <TestExecutionHistoryView
                 agentId={agentId}
                 onOpen={reopenExecution}
+                linkFor={testExecutionHref}
               />
             </section>
             <section>

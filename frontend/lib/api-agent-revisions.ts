@@ -95,6 +95,14 @@ export interface TestExecutionHistoryItem extends Omit<TestExecution, 'sides'> {
   sides: Array<Omit<TestExecution['sides'][number], 'state' | 'history'> & { state: ExecutionState | 'ready' }>
 }
 
+/** A row of the saved-test list; only the list counts messages, a detail carries the transcript. */
+export interface TestExecutionHistoryListItem extends TestExecutionHistoryItem {
+  /** Messages the operator sent in this test. A greeting is not one. */
+  turnCount: number
+  /** The first message the operator sent, clipped to 200 characters; null until one is sent. */
+  firstMessage: string | null
+}
+
 export interface TestExecutionHistoryDetail extends Omit<TestExecutionHistoryItem, 'sides'> {
   testValues: Array<{ contextVariableId: string; value: unknown }>
   sides: Array<Omit<TestExecution['sides'][number], 'state' | 'history'> & {
@@ -201,11 +209,11 @@ export const agentRevisionsApi = {
     })
   },
 
-  listTestExecutions(agentId: string, input: { limit?: number; cursor?: string } = {}): Promise<{ executions: TestExecutionHistoryItem[]; nextCursor: string | null; hasMore: boolean }> {
+  listTestExecutions(agentId: string, input: { limit?: number; cursor?: string } = {}): Promise<{ executions: TestExecutionHistoryListItem[]; nextCursor: string | null; hasMore: boolean }> {
     const query = new URLSearchParams()
     if (input.limit !== undefined) query.set('limit', String(input.limit))
     if (input.cursor) query.set('cursor', input.cursor)
-    return request<{ executions: TestExecutionHistoryItem[]; nextCursor: string | null; hasMore: boolean }>(`/agents/${agentId}/test-executions${query.size ? `?${query}` : ''}`, { method: 'GET' })
+    return request<{ executions: TestExecutionHistoryListItem[]; nextCursor: string | null; hasMore: boolean }>(`/agents/${agentId}/test-executions${query.size ? `?${query}` : ''}`, { method: 'GET' })
   },
 
   getTestExecution(agentId: string, executionId: string): Promise<{ execution: TestExecutionHistoryDetail }> {

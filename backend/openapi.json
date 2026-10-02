@@ -22875,13 +22875,42 @@
           }
         ]
       },
+      "TestExecutionHistoryListItem": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/TestExecutionHistoryItem"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "turnCount": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Messages the operator sent in this test. A greeting is not one."
+              },
+              "firstMessage": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 200,
+                "description": "The first message the operator sent, clipped to 200 characters. Null until one is sent."
+              }
+            },
+            "required": [
+              "turnCount",
+              "firstMessage"
+            ]
+          }
+        ]
+      },
       "TestExecutionHistoryListResponse": {
         "type": "object",
         "properties": {
           "executions": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/TestExecutionHistoryItem"
+              "$ref": "#/components/schemas/TestExecutionHistoryListItem"
             }
           },
           "nextCursor": {

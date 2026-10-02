@@ -122,7 +122,7 @@ export interface TestExecutionHistoryItem {
 }
 
 /** A listed execution with the facts that tell one session from another. Still no transcript. */
-interface TestExecutionSummary extends TestExecutionHistoryItem {
+export interface TestExecutionSummary extends TestExecutionHistoryItem {
   /** Turns the operator sent a message in; a greeting is not one. */
   turnCount: number;
   firstMessage: string | null;

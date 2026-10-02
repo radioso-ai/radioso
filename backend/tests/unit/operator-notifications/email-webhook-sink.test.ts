@@ -326,7 +326,8 @@ describe("EmailWebhookOperatorNotificationSink", () => {
     const notification = routineEndingNotificationFromAction({
       kind: "handoff",
       payload: action.payload,
-      fallback: { conversationId: "conv_1", workspaceId: "ws_1", reason: "routine_handoff" },
+      ids: { conversationId: "conv_1", workspaceId: "ws_1" },
+      fallback: { reason: "routine_handoff" },
       subject: { agentName: "Retreat desk", routineName: "Book accommodation" },
     });
     const preview = formatRoutineEndingNotification(notification);

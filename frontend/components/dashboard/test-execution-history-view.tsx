@@ -127,7 +127,7 @@ export function TestExecutionHistoryView({
           <span className="flex min-w-0 items-center gap-2">
             {execution.firstMessage
               ? <span className="truncate" title={execution.firstMessage}>{execution.firstMessage}</span>
-              : <span className="truncate font-normal text-muted-foreground">No messages yet</span>}
+              : <span className="truncate font-normal text-muted-foreground">{execution.turnCount > 0 ? 'Messages without text' : 'No messages yet'}</span>}
             {execution.mode === 'compare' ? <Badge variant="outline" className="shrink-0">Comparison</Badge> : null}
             {execution.skillEffects === 'allowed' ? (
               <Badge variant="outline" className="shrink-0 border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300">

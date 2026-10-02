@@ -86,8 +86,12 @@ services.
   (query `view=history`) decides whether `agent-revision-test-chat.tsx` shows the
   chat or `TestExecutionHistoryView`. The component asks `agent-view.tsx` to change it
   through `onHistoryOpenChange`, which adds a shallow `window.history.pushState` entry
-  rather than a server navigation. Until the route catches up, `requestedView` fences a
-  slow history open, and a proactive greeting waits for the chat view. Opening a saved
+  rather than a server navigation. `viewIntent` records the view the operator last asked
+  for and a generation that every view change and New chat moves on: a history-row open
+  lands only while history is still wanted, a link open only if nothing superseded it, and
+  a link that fails to open reports in `linkOpenFailure`, which a greeting's start does not
+  clear. `consumeOpenExecutionRoute` skips its replace once the param is already gone. A
+  proactive greeting waits for the chat view. Opening a saved
   test (`testExecution`) always shows the chat, so the route drops `view` when both are
   present, and `buildAgentSectionHref` drops all three Test Chat params so section
   links land on the section.

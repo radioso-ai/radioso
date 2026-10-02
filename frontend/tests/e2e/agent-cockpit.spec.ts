@@ -772,6 +772,52 @@ test('drops a shared test still opening once the operator moves to Conversation 
   await expect(page).not.toHaveURL(/testExecution=/)
 })
 
+test('keeps a shared link that cannot open on screen after the greeting starts', async ({ page }) => {
+  const requestBodies: unknown[] = []
+  const testStarts = () => requestBodies.filter((body) => typeof body === 'object' && body !== null && 'mode' in body)
+  await installCockpitMocks(page, { requestBodies, revisionState: { ...revisionState, proactiveGreetingEnabled: true } })
+  const goneId = '44444444-4444-4444-8444-444444444444'
+  await page.route(new RegExp(`/backend/api/v1/agents/${defaultAgentId}/test-executions/${goneId}$`), async (route) => {
+    await route.fulfill({ status: 404, json: { error: { message: 'Test execution is unavailable.' } } })
+  })
+  await page.goto(`${testUrl}&testExecution=${goneId}`)
+
+  await expect.poll(() => testStarts().length).toBe(1)
+  await expect(page.getByRole('alert').filter({ hasText: /unavailable|Unable to open/ })).toBeVisible()
+  await expect(page).not.toHaveURL(/testExecution=/)
+})
+
+test('New chat from Conversation history drops a row still opening', async ({ page }) => {
+  const saved = {
+    id: '55555555-5555-4555-8555-555555555555', generation: 1, mode: 'single', state: 'completed', createdAt: nowIso,
+    skillEffects: 'suppressed', turnCount: 1, firstMessage: 'An old slow question',
+    sides: [{ id: 'old-slow-side', revision: published, conversationId: 'old-slow-conversation', state: 'completed', retryable: false }],
+  }
+  const mocks = await installCockpitMocks(page, {
+    delayExecutionDetail: true,
+    executionHistory: [saved],
+    executionDetail: {
+      ...saved,
+      testValues: [],
+      sides: [{ ...saved.sides[0], history: [
+        { turnId: 'old-slow-turn', role: 'user', content: 'An old slow question', attemptId: 'old-slow-attempt', createdAt: nowIso },
+        { turnId: 'old-slow-turn', role: 'assistant', content: 'An old slow answer', attemptId: 'old-slow-attempt', createdAt: nowIso },
+      ] }],
+      attempts: [{ sideId: 'old-slow-side', turnId: 'old-slow-turn', attemptId: 'old-slow-attempt', fence: 1, state: 'completed', createdAt: nowIso, updatedAt: nowIso }],
+    },
+  })
+  await page.goto(`${testUrl}&view=history`)
+  await page.getByRole('button', { name: 'Open', exact: true }).click()
+  await mocks.executionDetailRequest
+  await clickTestChatAction(page, 'New chat')
+  await expect(testChatComposer(page)).toBeVisible()
+  await expect(page).not.toHaveURL(/[?&]view=history/)
+
+  mocks.releaseExecutionDetail()
+  await page.waitForTimeout(300)
+  await expect(page.getByText('An old slow answer', { exact: true })).toHaveCount(0)
+})
+
 test('gives Conversation history its own link, and starts no greeting behind it', async ({ page }) => {
   const saved = {
     id: 'execution-history-linked', generation: 1, mode: 'compare', state: 'completed', createdAt: nowIso,

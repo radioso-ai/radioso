@@ -15615,7 +15615,7 @@ components:
                 - string
                 - "null"
               maxLength: 200
-              description: The first of those messages. A longer one is clipped to 200 characters ending in "…". Null until there is one.
+              description: The first of those messages with text. A longer one is clipped to 200 characters ending in "…". Null until there is one.
           required:
             - turnCount
             - firstMessage

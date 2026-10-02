@@ -99,7 +99,7 @@ export interface TestExecutionHistoryItem extends Omit<TestExecution, 'sides'> {
 export interface TestExecutionHistoryListItem extends TestExecutionHistoryItem {
   /** User messages in this test: those copied from a real conversation it continues, plus those the operator sent. A greeting is not one. */
   turnCount: number
-  /** The first of those messages, clipped to 200 characters ending in "…"; null until there is one. */
+  /** The first of those messages with text, clipped to 200 characters ending in "…"; null until there is one. */
   firstMessage: string | null
 }
 

@@ -398,21 +398,22 @@ export class TestExecutionService {
   }
 
   /**
+   * What a seed copied in, for the history list: each user message is a turn (see `seededHistory`),
+   * and the first with any non-whitespace character labels the test. It is kept to one code point
+   * more than a label shows, the same unit SQL `left` cuts in, so a longer one still reads as
+   * clipped; migration 208 backfills older tests by the same two rules.
+   */
+  private seededSummary(messages: readonly TestExecutionSeedMessage[]): TestExecutionSeededSummary {
+    const userMessages = messages.filter((message) => message.role === "user");
+    const first = userMessages.find((message) => /\S/u.test(message.content));
+    return { turnCount: userMessages.length, firstMessage: first ? Array.from(first.content).slice(0, TEST_EXECUTION_LABEL_CHARS + 1).join("") : null };
+  }
+
+  /**
    * A durable turn is one user message and the assistant reply that answers it, so a seeded
    * user message and the reply that follows share a turn; a leading or consecutive assistant
    * message stands as its own turn. Seeded turns keep their source message ids.
    */
-  /**
-   * What a seed copied in, for the history list: each user message is a turn (see `seededHistory`),
-   * and the first with text labels the test. Only as much of it is kept as a label can show, plus one
-   * character so a longer one still reads as clipped.
-   */
-  private seededSummary(messages: readonly TestExecutionSeedMessage[]): TestExecutionSeededSummary {
-    const userMessages = messages.filter((message) => message.role === "user");
-    const first = userMessages.find((message) => message.content.trim() !== "");
-    return { turnCount: userMessages.length, firstMessage: first ? clipAtGraphemeBoundary(first.content, TEST_EXECUTION_LABEL_CHARS + 1) : null };
-  }
-
   private seededHistory(messages: readonly TestExecutionSeedMessage[]): TestExecutionHistoryEntry[] {
     let turn: { turnId: string; attemptId: string; answered: boolean } | null = null;
     return messages.map((message) => {

@@ -509,6 +509,19 @@ describe("TestExecutionService", () => {
       expect(create).toHaveBeenCalledWith(expect.objectContaining({ seededSummary: { turnCount: 2, firstMessage: "w".repeat(TEST_EXECUTION_LABEL_CHARS + 1) } }));
     });
 
+    it("keeps a copied label longer than the label limit even when an emoji straddles the cut", async () => {
+      const opening = `${"a".repeat(TEST_EXECUTION_LABEL_CHARS)}😀 and more`;
+      const { service, repository } = seededSetup(async () => seed([{ role: "user", content: opening, messageId: "m-1", createdAt: new Date(10) }]));
+      const create = vi.spyOn(repository, "create");
+
+      await service.start({ idempotencyKey: "idem-seed", workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [], seedConversationId });
+
+      // One code point past the label, as SQL `left` counts, so the list still marks it clipped.
+      const stored = create.mock.calls[0][0].seededSummary?.firstMessage;
+      expect(stored).toBe(`${"a".repeat(TEST_EXECUTION_LABEL_CHARS)}😀`);
+      expect(stored!.length).toBeGreaterThan(TEST_EXECUTION_LABEL_CHARS);
+    });
+
     it("groups a seeded user message with the assistant reply that follows it under one turn", async () => {
       const { service } = seededSetup(async () => seed(thread));
 

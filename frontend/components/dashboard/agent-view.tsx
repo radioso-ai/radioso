@@ -329,6 +329,9 @@ export function AgentView({
   // The execution id in the URL is a one-shot open command from "Continue in
   // test chat"; dropping it once adopted keeps refresh and back from re-opening it.
   const consumeOpenExecutionRoute = useCallback(() => {
+    // The operator may have moved on (Conversation history drops the param) before this route
+    // state re-rendered; replacing then would rewrite their newer entry with a stale one.
+    if (!new URLSearchParams(window.location.search).has('testExecution')) return
     router.replace(buildDashboardHref(accountId, {
       ...routeState,
       section: 'agents',

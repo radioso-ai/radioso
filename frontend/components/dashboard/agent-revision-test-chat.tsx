@@ -249,8 +249,12 @@ export function AgentRevisionTestChat({
   useEffect(() => {
     if (viewIntent.current.view !== view) supersedePendingOpens(view);
   }, [supersedePendingOpens, view]);
+  // Why a test opened from a link could not open. Kept apart from `error`, which starting a chat
+  // clears, so a proactive greeting cannot wipe it; the operator's next move does.
+  const [linkOpenFailure, setLinkOpenFailure] = useState<string | null>(null);
   const setView = useCallback((next: View) => {
     supersedePendingOpens(next);
+    setLinkOpenFailure(null);
     onHistoryOpenChangeRef.current(next === "history");
   }, [supersedePendingOpens]);
   const executionLink = useCopyDashboardLink();
@@ -1319,8 +1323,8 @@ export function AgentRevisionTestChat({
         reopenExecutionRef.current(response.execution, notice);
       })
       .catch((cause) => {
-        if (isCurrent())
-          setError(errorMessage(cause, "Unable to open this test conversation."));
+        if (isCurrent() && viewIntent.current.generation === intent)
+          setLinkOpenFailure(errorMessage(cause, "Unable to open this test conversation."));
       })
       .finally(() => {
         if (isCurrent()) onOpenExecutionConsumedRef.current?.();
@@ -1458,7 +1462,10 @@ export function AgentRevisionTestChat({
           onSelect={() => {
             proactiveStartKey.current = null;
             writeAgentRevisionTestChatSession(sessionKey, { proactiveStartKey: null });
-            supersedePendingOpens(view);
+            // From Conversation history, a new chat is where the operator wants to be.
+            if (view === "history") setView("chat");
+            else supersedePendingOpens(view);
+            setLinkOpenFailure(null);
             clearChatExecution("New chat ready.");
           }}
         >
@@ -1568,6 +1575,14 @@ export function AgentRevisionTestChat({
                 className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
               >
                 {error}
+              </p>
+            ) : null}
+            {linkOpenFailure ? (
+              <p
+                role="alert"
+                className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+              >
+                {linkOpenFailure}
               </p>
             ) : null}
             {restartNotice ? (

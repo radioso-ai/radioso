@@ -9608,7 +9608,7 @@ export interface components {
         TestExecutionHistoryListItem: components["schemas"]["TestExecutionHistoryItem"] & {
             /** @description User messages in this test: those copied from a real conversation it continues, plus those the operator sent. A greeting is not one. */
             turnCount: number;
-            /** @description The first of those messages. A longer one is clipped to 200 characters ending in "…". Null until there is one. */
+            /** @description The first of those messages with text. A longer one is clipped to 200 characters ending in "…". Null until there is one. */
             firstMessage: string | null;
         };
         TestExecutionHistoryListResponse: {

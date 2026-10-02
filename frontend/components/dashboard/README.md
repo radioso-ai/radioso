@@ -65,12 +65,42 @@ services.
   `seedConversationId` set and no test values (`agentRevisionsApi.startTest`) — the
   backend copies the source thread into the side's history and carries its routine
   state, without a greeting — then navigates to the agent's Test Chat tab with
-  `agentTestExecutionId` (`dashboard-routes` param, query key `testExecution`).
+  `agentTestExecutionId` (`dashboard-routes` param, query key `testExecution`) and
+  `agentTestExecutionFromConversation` (query key `fromConversation=1`, which picks the
+  "continuing a copy" notice).
   `agent-revision-test-chat.tsx` treats the param as a one-shot open command: once its
   revision list is loaded it fetches the execution and adopts it through the same
   `reopenExecution` path a saved test from History uses, and `agent-view.tsx` then
-  drops the param from the URL so refresh and back do not re-open it. The original
+  drops both params from the URL so refresh and back do not re-open it. The original
   conversation is untouched.
+- Share a saved test: `agent-view.tsx` passes `testExecutionHref` (the
+  `?testExecution=<id>` link above, without `fromConversation`) into Test Chat, which
+  backs the **Copy link to this chat** menu item and the per-row link button in
+  `test-execution-history-view.tsx`. Both copy through `hooks/use-copy-dashboard-link.ts`
+  (over `lib/copy-dashboard-link.ts`), which keys its feedback to the copied test and
+  hands back the URL for `UncopiedLink` to show when the page has no clipboard access
+  (a plain-HTTP host). Anyone with `workspace.agents.manage` in the workspace can open the link. The
+  history list labels each test by its clipped `firstMessage` and shows its `turnCount`
+  as **Messages**.
+- Conversation history is route state, not component state: `agentTestChatView`
+  (query `view=history`) decides whether `agent-revision-test-chat.tsx` shows the
+  chat or `TestExecutionHistoryView`. The component asks `agent-view.tsx` to change it
+  through `onHistoryOpenChange`, which works on shallow browser-history entries rather
+  than server navigations: opening history rewrites the chat entry without any pending
+  `testExecution`, then pushes the history entry with a `history.state` marker; leaving
+  it steps back to that chat entry when the marker is there (it survives Back and
+  Forward), or rewrites the entry when history was the landing page, so the browser's
+  Back leaves Test Chat instead of bouncing between the two views. The route keeps a
+  `testExecution` value as given; Test Chat checks it is a UUID (`isValidTestExecutionId`)
+  before asking the API, and says so in `linkOpenFailure` when it is not. `viewIntent` records the view the operator last asked
+  for and a generation that every view change and New chat moves on: a history-row open
+  lands only while history is still wanted, a link open only if nothing superseded it, and
+  a link that fails to open reports in `linkOpenFailure`, which a greeting's start does not
+  clear. `consumeOpenExecutionRoute` skips its replace once the param is already gone. A
+  proactive greeting waits for the chat view. Opening a saved
+  test (`testExecution`) always shows the chat, so the route drops `view` when both are
+  present, and `buildAgentSectionHref` drops all three Test Chat params so section
+  links land on the section.
 - Test an unpublished routine: **Test draft** on a saved draft in
   `settings/assistant-routines-section.tsx` navigates to the agent's Test Chat tab
   (`agent-revision-test-chat.tsx`), whose Draft candidate is built from the agent draft

@@ -56,7 +56,7 @@ export class TestExecutionRepository implements TestExecutionRepositoryPort {
       await transactionAdvisoryLock(testExecutionStartLockKey(input.workspaceId, input.agentId, input.idempotencyKey)).execute(trx);
       const replay = await trx.selectFrom("agent_test_executions").select("id").where("workspace_id", "=", input.workspaceId).where("agent_id", "=", input.agentId).where("idempotency_key", "=", input.idempotencyKey).executeTakeFirst();
       if (replay) return replay.id;
-      await trx.insertInto("agent_test_executions").values({ id: input.id, workspace_id: input.workspaceId, agent_id: input.agentId, mode: input.mode, generation: input.generation, state: input.state ?? "running", test_values: toJsonb(input.testValues), skill_effects: input.skillEffects, idempotency_key: input.idempotencyKey }).execute();
+      await trx.insertInto("agent_test_executions").values({ id: input.id, workspace_id: input.workspaceId, agent_id: input.agentId, mode: input.mode, generation: input.generation, state: input.state ?? "running", test_values: toJsonb(input.testValues), skill_effects: input.skillEffects, idempotency_key: input.idempotencyKey, seeded_turn_count: input.seededSummary?.turnCount ?? 0, seeded_first_message: input.seededSummary?.firstMessage ?? null }).execute();
       for (const [sideOrdinal, side] of input.sides.entries()) await trx.insertInto("agent_test_execution_sides").values({ id: side.id, execution_id: input.id, workspace_id: input.workspaceId, agent_id: input.agentId, revision_id: side.revision.id, conversation_id: side.conversationId, state: side.state, retryable: side.retryable, history: toJsonb(side.history), continuation: side.continuation === null ? null : toJsonb(side.continuation), active_turn_id: null, active_attempt_id: null, active_fence: null, side_ordinal: sideOrdinal }).execute();
       return input.id;
     });
@@ -194,19 +194,21 @@ export class TestExecutionRepository implements TestExecutionRepositoryPort {
     };
   }
 
-  async summarizeTranscripts(input: Parameters<TestExecutionRepositoryPort["summarizeTranscripts"]>[0]): ReturnType<TestExecutionRepositoryPort["summarizeTranscripts"]> {
+  async summarizeTurns(input: Parameters<TestExecutionRepositoryPort["summarizeTurns"]>[0]): ReturnType<TestExecutionRepositoryPort["summarizeTurns"]> {
     if (input.executionIds.length === 0) return new Map();
-    // Computed in Postgres so a list page never ships whole histories (and their turn traces) to count them.
-    const rows = await this.db.selectFrom("agent_test_execution_sides as side")
+    // Read from the seed summary and the turn rows (keyed by execution), never the side histories, so
+    // a list page does not expand transcripts and their turn traces. COALESCE skips the turn lookup for
+    // a seeded test, and `left` runs once, on the one message chosen.
+    const rows = await this.db.selectFrom("agent_test_executions as execution")
       .select([
-        "side.execution_id",
-        sql<string>`(SELECT count(DISTINCT entry ->> 'turnId') FROM jsonb_array_elements(side.history) AS entry WHERE entry ->> 'role' = 'user')`.as("turn_count"),
-        sql<string | null>`(SELECT entry ->> 'content' FROM jsonb_array_elements(side.history) WITH ORDINALITY AS item(entry, ordinal) WHERE entry ->> 'role' = 'user' ORDER BY ordinal LIMIT 1)`.as("first_message"),
+        "execution.id as execution_id",
+        sql<string>`execution.seeded_turn_count + (SELECT count(*) FROM agent_test_execution_turns AS turn WHERE turn.execution_id = execution.id)`.as("turn_count"),
+        // A whitespace-only message is a sent turn but never a label, matching the seed summary's rule.
+        sql<string | null>`left(COALESCE(execution.seeded_first_message, (SELECT turn.message FROM agent_test_execution_turns AS turn WHERE turn.execution_id = execution.id AND turn.message ~ '\\S' ORDER BY turn.created_at, turn.turn_id LIMIT 1)), ${input.firstMessageChars})`.as("first_message"),
       ])
-      .where("side.workspace_id", "=", input.workspaceId)
-      .where("side.agent_id", "=", input.agentId)
-      .where("side.execution_id", "in", input.executionIds)
-      .where("side.side_ordinal", "=", 0)
+      .where("execution.workspace_id", "=", input.workspaceId)
+      .where("execution.agent_id", "=", input.agentId)
+      .where("execution.id", "in", input.executionIds)
       .execute();
     return new Map(rows.map((row) => [row.execution_id, { turnCount: Number(row.turn_count), firstMessage: row.first_message }]));
   }

@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { clipAtGraphemeBoundary } from "../../../shared/text/clipAtGraphemeBoundary.js";
+import { TEST_EXECUTION_LABEL_CHARS } from "../../test-execution/public.js";
 import type { CopilotToolDescriptor } from "../contracts.js";
 import type { CopilotTestChatPort, CopilotTestChatTurn } from "../contracts/testChat.js";
 import { serializedLength, truncationRecordSchema } from "../payloadCompaction.js";
@@ -10,7 +12,6 @@ export type { CopilotTestChatPort } from "../contracts/testChat.js";
 
 const DEFAULT_SESSIONS = 10;
 const MAX_SESSIONS = 20;
-const FIRST_MESSAGE_CHARS = 200;
 const MAX_TURNS = 20;
 const USER_MESSAGE_CHARS = 1_000;
 const TRANSCRIPT_ANSWER_CHARS = 2_000;
@@ -75,7 +76,7 @@ const sessionsOutputSchema = z.object({
     ...sessionHeader,
     sides: z.array(sideSchema).max(2),
     turnCount: z.number().int().nonnegative(),
-    firstMessage: z.string().max(FIRST_MESSAGE_CHARS + 1).nullable(),
+    firstMessage: z.string().max(TEST_EXECUTION_LABEL_CHARS).nullable(),
   }).strict()).max(MAX_SESSIONS),
   nextCursor: z.string().nullable(),
   omissions: omissionsSchema(["sessions.firstMessage"]),
@@ -148,9 +149,7 @@ const addOmission = <TField extends string>(omissions: Omission<TField>[], field
 const clipped = <TField extends string>(value: string, max: number, field: TField, omissions: Omission<TField>[]): string => {
   if (value.length <= max) return value;
   addOmission(omissions, field, "string_length");
-  const cut = value.slice(0, max);
-  // Never end on half of a surrogate pair.
-  return `${/[\uD800-\uDBFF]$/.test(cut) ? cut.slice(0, -1) : cut}…`;
+  return `${clipAtGraphemeBoundary(value, max)}…`;
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -202,7 +201,7 @@ export interface TestChatCopilotToolDependencies {
   readonly agentLookup: CopilotAgentLookupPort;
 }
 
-const SESSIONS_DESCRIPTION = "List an agent's recent Test Chat sessions, newest first: the revision each side ran (a draft candidate or a published version), the session's state and skill-effects policy, how many messages were sent, and the first one. Test Chat sessions are private test runs and never appear in conversation_history_search. Read one with test_chat_transcript.";
+const SESSIONS_DESCRIPTION = `List an agent's recent Test Chat sessions, newest first: the revision each side ran (a draft candidate or a published version), the session's state and skill-effects policy, how many user messages it has (counting any copied from a real conversation it continues), and the first of them with text as a label of up to ${TEST_EXECUTION_LABEL_CHARS} characters. Test Chat sessions are private test runs and never appear in conversation_history_search. Read one with test_chat_transcript.`;
 const TRANSCRIPT_DESCRIPTION = "Read one Test Chat session: per side, the revision it ran and each turn's message, answer, state or failure code, and the stages the turn went through. Use test_chat_turn_trace for one turn's full diagnostic spine.";
 const TURN_TRACE_DESCRIPTION = "Inspect one Test Chat turn's full diagnostic spine, in the same trace shape turn_trace returns for a customer conversation, with the revision the turn ran on and its failure code when it did not answer. A routine's captured slot values are shown here (Test Chat is a private test run whose trace is never persisted to a durable audit record) — each value capped to 500 characters (truncated: true marks a cut one) and slot count capped to 50 (omittedSlotCount reports the rest); turn_trace, on a customer conversation, reports only which slots were filled, never their values. If the turn ended on a routine ending that notifies operators (every hand-off, and a completion that carries an operator notice), the trace's handoffPreview carries the notice's kind (handoff or completion; absent on an older trace, which is a hand-off) and the message content (subject and body, authored notice text included) the operator notification would have sent; Test Chat never actually delivers it, and live delivery additionally appends the conversation link."
 const SEND_DESCRIPTION = "Send one message through Test Chat, the private, revision-pinned test surface of the dashboard, and return the answer, outcome, and the stages the turn went through. Without testExecutionId it starts a session on revisionId, or on a fresh candidate of the saved draft (the published revision when the draft has no changes); with testExecutionId it continues that single-revision session. Skills never act outward here. The session stays in the agent's Test Chat history, where the operator can open it; read the turn with test_chat_turn_trace. Sending while the session's previous turn is still running answers a retryable operation_conflict rather than starting a second turn; resend the same message once that turn settles. Metered at up to 30 calls per minute per grant, separate from every other tool's shared 6-per-minute budget; an exhausted budget returns retryAfterSeconds and a resetAt time to retry after.";
@@ -248,11 +247,17 @@ export const createTestChatCopilotTools = (
         });
         const omissions: Omission<"sessions.firstMessage">[] = [];
         return sessionsOutputSchema.parse({
-          sessions: page.sessions.slice(0, MAX_SESSIONS).map((session) => ({
-            ...session,
-            sides: session.sides.slice(0, 2),
-            firstMessage: session.firstMessage === null ? null : clipped(session.firstMessage, FIRST_MESSAGE_CHARS, "sessions.firstMessage", omissions),
-          })),
+          sessions: page.sessions.slice(0, MAX_SESSIONS).map(({ firstMessageClipped, ...session }) => {
+            // The label arrives finished from test-execution, so only say that it was cut; bound it
+            // anyway, so a port that hands over more never breaks the output schema.
+            const tooLong = session.firstMessage !== null && session.firstMessage.length > TEST_EXECUTION_LABEL_CHARS;
+            if (firstMessageClipped && !tooLong) addOmission(omissions, "sessions.firstMessage", "string_length");
+            return {
+              ...session,
+              sides: session.sides.slice(0, 2),
+              firstMessage: tooLong ? clipped(session.firstMessage!, TEST_EXECUTION_LABEL_CHARS - 1, "sessions.firstMessage", omissions) : session.firstMessage,
+            };
+          }),
           nextCursor: page.nextCursor,
           omissions,
         });

@@ -15601,13 +15601,35 @@ components:
           required:
             - testValues
             - attempts
+    TestExecutionHistoryListItem:
+      allOf:
+        - $ref: "#/components/schemas/TestExecutionHistoryItem"
+        - type: object
+          properties:
+            turnCount:
+              type: integer
+              minimum: 0
+              description: "User messages in this test: those copied from a real conversation it continues, plus those the operator sent. A greeting is not one."
+            firstMessage:
+              type:
+                - string
+                - "null"
+              maxLength: 200
+              description: The first of those messages with text. A longer one is clipped to 200 characters ending in "…". Null until there is one.
+            firstMessageClipped:
+              type: boolean
+              description: Whether firstMessage was cut to fit, so a message that really ends in "…" reads as whole.
+          required:
+            - turnCount
+            - firstMessage
+            - firstMessageClipped
     TestExecutionHistoryListResponse:
       type: object
       properties:
         executions:
           type: array
           items:
-            $ref: "#/components/schemas/TestExecutionHistoryItem"
+            $ref: "#/components/schemas/TestExecutionHistoryListItem"
         nextCursor:
           type:
             - string

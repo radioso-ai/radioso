@@ -41,7 +41,13 @@ its outcome could not be saved, the turn reads `failed` with the event's code
 (`stale_attempt`, `persistence_failed`), even though the store may still show
 another attempt running it.
 `summaries` returns a list page with each execution's turn count and opening
-message, computed by one repository projection over the first side's history.
+message, read by `summarizeTurns` from what the seed copied in (recorded at
+`start` as `seeded_turn_count` and `seeded_first_message`) plus the turns the
+operator sent (`agent_test_execution_turns`), never from side histories; a
+greeting is not a turn. The store returns the opening message cut to
+`TEST_EXECUTION_LABEL_CHARS + 1` characters, and `summaries` finishes it with
+`testExecutionLabel`, clipped on a character boundary with an ellipsis, so every
+surface shows the same label.
 These reads leave out continuations, conversation ids, and frozen sample values.
 
 `start` without `revisionIds` runs a single test on the agent's default

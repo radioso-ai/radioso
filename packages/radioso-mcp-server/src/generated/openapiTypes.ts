@@ -9605,8 +9605,16 @@ export interface components {
             testValues: unknown[];
             attempts: components["schemas"]["TestExecutionAttemptRecord"][];
         };
+        TestExecutionHistoryListItem: components["schemas"]["TestExecutionHistoryItem"] & {
+            /** @description User messages in this test: those copied from a real conversation it continues, plus those the operator sent. A greeting is not one. */
+            turnCount: number;
+            /** @description The first of those messages with text. A longer one is clipped to 200 characters ending in "…". Null until there is one. */
+            firstMessage: string | null;
+            /** @description Whether firstMessage was cut to fit, so a message that really ends in "…" reads as whole. */
+            firstMessageClipped: boolean;
+        };
         TestExecutionHistoryListResponse: {
-            executions: components["schemas"]["TestExecutionHistoryItem"][];
+            executions: components["schemas"]["TestExecutionHistoryListItem"][];
             nextCursor: string | null;
             hasMore: boolean;
         };

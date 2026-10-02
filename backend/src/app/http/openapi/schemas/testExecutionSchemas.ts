@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
+import { TEST_EXECUTION_LABEL_CHARS } from "../../../../modules/test-execution/public.js";
 import { retryTestExecutionSideSchema, sendTestExecutionMessageSchema, startTestExecutionSchema } from "../../routes/agentRevisionRequestSchemas.js";
 
 const uuid = z.string().uuid();
@@ -29,7 +30,13 @@ export const registerTestExecutionSchemas = (registry: OpenAPIRegistry) => {
   const TestExecutionHistoryItemSchema = registry.register("TestExecutionHistoryItem", z.object({ id: uuid, generation: z.number().int().positive(), mode: z.enum(["single", "compare"]), state: z.enum(["running", "partial", "failed", "completed"]), createdAt: z.string().datetime(), skillEffects: skillEffectsSchema, sides: z.array(TestExecutionHistorySideSummarySchema) }));
   const TestExecutionAttemptRecordSchema = registry.register("TestExecutionAttemptRecord", z.object({ executionId: uuid, sideId: uuid, turnId: uuid, attemptId: uuid, fence: z.number().int().positive(), state: z.enum(["running", "failed", "completed"]), failureCode: z.string().nullable(), leaseExpiresAt: z.string().datetime(), createdAt: z.string().datetime(), updatedAt: z.string().datetime() }));
   const TestExecutionHistoryDetailSchema = registry.register("TestExecutionHistoryDetail", TestExecutionHistoryItemSchema.extend({ testValues: z.array(z.unknown()), sides: z.array(TestExecutionHistorySideSchema), attempts: z.array(TestExecutionAttemptRecordSchema) }));
-  const TestExecutionHistoryListResponseSchema = registry.register("TestExecutionHistoryListResponse", z.object({ executions: z.array(TestExecutionHistoryItemSchema), nextCursor: z.string().nullable(), hasMore: z.boolean() }));
+  // Only the list carries the count; a detail already holds the whole transcript.
+  const TestExecutionHistoryListItemSchema = registry.register("TestExecutionHistoryListItem", TestExecutionHistoryItemSchema.extend({
+    turnCount: z.number().int().min(0).describe("User messages in this test: those copied from a real conversation it continues, plus those the operator sent. A greeting is not one."),
+    firstMessage: z.string().max(TEST_EXECUTION_LABEL_CHARS).nullable().describe(`The first of those messages with text. A longer one is clipped to ${TEST_EXECUTION_LABEL_CHARS} characters ending in "…". Null until there is one.`),
+    firstMessageClipped: z.boolean().describe("Whether firstMessage was cut to fit, so a message that really ends in \"…\" reads as whole."),
+  }));
+  const TestExecutionHistoryListResponseSchema = registry.register("TestExecutionHistoryListResponse", z.object({ executions: z.array(TestExecutionHistoryListItemSchema), nextCursor: z.string().nullable(), hasMore: z.boolean() }));
   const TestExecutionHistoryDetailResponseSchema = registry.register("TestExecutionHistoryDetailResponse", z.object({ execution: TestExecutionHistoryDetailSchema }));
   const TestExecutionParamsSchema = z.object({ agentId: uuid, executionId: uuid });
   const TestExecutionRetryParamsSchema = TestExecutionParamsSchema.extend({ sideId: uuid });

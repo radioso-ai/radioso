@@ -148,7 +148,8 @@ describe("Test Chat copilot descriptors", () => {
         createdAt: "2026-09-20T10:00:00.000Z",
         sides: [{ sideId: SIDE_ID, revision: { id: PUBLISHED_ID, kind: "published" as const, versionNumber: 3, createdAt: "2026-09-01T00:00:00.000Z" }, state: "completed" as const }],
         turnCount: 4,
-        firstMessage: "x".repeat(900),
+        firstMessage: `${"x".repeat(199)}…`,
+        firstMessageClipped: true,
       }],
       nextCursor: "cursor-2",
     }));
@@ -160,8 +161,31 @@ describe("Test Chat copilot descriptors", () => {
       turnCount: 4,
       sides: [{ revision: { id: PUBLISHED_ID, kind: "published", versionNumber: 3 } }],
     });
-    expect(output.sessions[0].firstMessage.length).toBeLessThanOrEqual(201);
+    // The label arrives finished; the tool only reports that it was cut.
+    expect(output.sessions[0].firstMessage).toBe(`${"x".repeat(199)}…`);
+    expect(output.sessions[0]).not.toHaveProperty("firstMessageClipped");
     expect(output.nextCursor).toBe("cursor-2");
+    expect(output.omissions).toEqual([{ field: "sessions.firstMessage", reason: "string_length", omittedCount: 1 }]);
+  });
+
+  it("still bounds a first message that arrives longer than a label", async () => {
+    const listSessions = vi.fn(async () => ({
+      sessions: [{
+        testExecutionId: EXECUTION_ID,
+        mode: "single" as const,
+        state: "completed" as const,
+        skillEffects: "suppressed" as const,
+        createdAt: "2026-09-20T10:00:00.000Z",
+        sides: [{ sideId: SIDE_ID, revision: { id: PUBLISHED_ID, kind: "published" as const, versionNumber: 3, createdAt: "2026-09-01T00:00:00.000Z" }, state: "completed" as const }],
+        turnCount: 1,
+        firstMessage: "y".repeat(900),
+        firstMessageClipped: false,
+      }],
+      nextCursor: null,
+    }));
+    const output = await invoke(port({ listSessions }), "test_chat_sessions", {});
+
+    expect(output.sessions[0].firstMessage.length).toBeLessThanOrEqual(200);
     expect(output.omissions).toEqual([{ field: "sessions.firstMessage", reason: "string_length", omittedCount: 1 }]);
   });
 
@@ -380,6 +404,7 @@ describe("Test Chat tools through the operator MCP catalog", () => {
         ],
         turnCount: 0,
         firstMessage: null,
+        firstMessageClipped: false,
       }],
       nextCursor: null,
     }));
@@ -488,6 +513,7 @@ const serviceHarness = (options: {
         sides: [{ id: SIDE_ID, revision: revision(), conversationId: "c1000000-0000-4000-8000-000000000001", state: "completed", retryable: false }],
         turnCount: 1,
         firstMessage: "Can I book a demo?",
+        firstMessageClipped: false,
       }],
       nextCursor: "cursor-2",
       hasMore: true,
@@ -545,6 +571,7 @@ describe("TestChatService", () => {
         sides: [{ sideId: SIDE_ID, revision: candidateRevision, state: "completed" }],
         turnCount: 1,
         firstMessage: "Can I book a demo?",
+        firstMessageClipped: false,
       }],
       nextCursor: "cursor-2",
     });

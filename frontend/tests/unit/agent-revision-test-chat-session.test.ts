@@ -17,7 +17,6 @@ const session = (): AgentRevisionTestChatSession => ({
   state: null,
   revisions: [],
   mode: 'single',
-  view: 'chat',
   selected: [],
   message: 'private composer text',
   execution: null,

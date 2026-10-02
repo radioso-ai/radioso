@@ -16,7 +16,13 @@ import type { AgentContextVariableEnablement, ContextVariable } from "../../src/
 import { capabilityNames, type CapabilityPolicy } from "../../src/shared/domain/capabilityPolicy.js";
 import type { ActionCapabilityMap } from "../../src/shared/domain/actionCapabilities.js";
 import { createDefaultApplicationComposition } from "../../src/app/composition/defaultComposition.js";
+import { chatTurnQueuedActionTypes } from "../../src/app/composition/applicationModule.js";
 import { CONVERSATION_TRANSFER_NOTICE_ACTION_TYPE } from "../../src/modules/handoff/public.js";
+import {
+  APPROVAL_REQUEST_ACTION_TYPE,
+  COMPLETION_NOTIFY_ACTION_TYPE,
+  HANDOFF_NOTIFY_ACTION_TYPE,
+} from "../../src/modules/chat/composition.js";
 import { InMemoryRoutineDefinitionRepository } from "../support/fakes.js";
 
 const workspaceId = "11111111-1111-4111-8111-111111111111";
@@ -340,6 +346,7 @@ const contextVariableEnablement = (
 
 const createService = (options: {
   actionCapabilities?: ActionCapabilityMap;
+  hostQueuedActionTypes?: ReadonlySet<string>;
   capabilityPolicy?: CapabilityPolicy;
   knownWebhookDestinations?: Set<string>;
   skillAuthoringCatalog?: SkillAuthoringCatalog;
@@ -1059,15 +1066,19 @@ describe("RoutineDefinitionService", () => {
     expect(validation.diagnostics[0]?.message).toContain("unknown.send");
   });
 
-  it("reports an action step for a host-queued action a routine may not emit", async () => {
-    // The composed map is the one serving uses: a transfer notice has a worker handler, but only
-    // the transfer route may queue it.
+  it.each([
+    [HANDOFF_NOTIFY_ACTION_TYPE, true],
+    [COMPLETION_NOTIFY_ACTION_TYPE, true],
+    [APPROVAL_REQUEST_ACTION_TYPE, true],
+    [CONVERSATION_TRANSFER_NOTICE_ACTION_TYPE, false],
+  ])("reports an action step for the host-queued %s action", async (actionType, queuesWithTurn) => {
     const composition = createDefaultApplicationComposition({ logger: { error: () => undefined } });
     const { service } = createService({
-      actionCapabilities: composition.actionCapabilityMap,
+      actionCapabilities: composition.routineActionCapabilityMap,
+      hostQueuedActionTypes: chatTurnQueuedActionTypes(composition.actionHandlerRegistrations),
       capabilityPolicy: new FakeCapabilityPolicy(),
     });
-    const draft = await service.createDraft(workspaceId, agentId, actionDraft(CONVERSATION_TRANSFER_NOTICE_ACTION_TYPE));
+    const draft = await service.createDraft(workspaceId, agentId, actionDraft(actionType));
 
     const validation = await service.validate(workspaceId, agentId, { id: draft.routine.id });
 
@@ -1075,9 +1086,12 @@ describe("RoutineDefinitionService", () => {
       ok: false,
       diagnostics: [expect.objectContaining({ code: "unregistered_action_type", location: "step:step_send" })],
     });
-    // A handler is registered for it; it is only not one a routine may emit.
-    expect(validation.diagnostics[0]?.message).not.toContain("no action handler is registered");
-    expect(validation.diagnostics[0]?.message).toContain("no action a routine may emit");
+    if (queuesWithTurn) {
+      expect(validation.diagnostics[0]?.message).toContain("routine's endings and approval steps");
+      expect(validation.diagnostics[0]?.message).toContain("ending");
+    } else {
+      expect(validation.diagnostics[0]?.message).toContain("no action an author may write as an action step");
+    }
   });
 
   it("clears an action step when the workspace has the required capability", async () => {

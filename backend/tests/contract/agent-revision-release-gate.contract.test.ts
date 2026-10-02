@@ -118,4 +118,48 @@ describe("agent revision release gate (HTTP)", () => {
 
     expect(response.body.candidate.id).toEqual(expect.any(String));
   });
+
+  it("refuses to publish an enabled routine with a host-queued handoff notice action step", async () => {
+    const { app } = createTestApp();
+    const { token } = await issueTestToken(app, "revision-gate-handoff-notice@example.com");
+    const headers = { Authorization: `Bearer ${token}` };
+
+    const { agentId, routineId } = await createAgentAndRoutine(app, headers, {
+      steps: [{
+        stableStepId: "step_notify",
+        kind: "action",
+        instruction: "Notify the team.",
+        toolRef: null,
+        actionType: "handoff.notify",
+        ordinal: 0,
+        metadata: {},
+      }],
+      transitions: [{
+        fromStep: "step_notify",
+        toRef: "terminal_complete",
+        guardKind: "default",
+        guardText: null,
+        outcomeStatus: null,
+        counterLimit: null,
+        ordinal: 0,
+      }],
+      completionExport: { enabled: false, triggerKinds: [], destinationRef: "" },
+    });
+    const expectedDraftGeneration = await draftGeneration(app, headers, agentId);
+
+    const response = await request(app)
+      .post(`/api/v1/agents/${agentId}/revisions/candidates`)
+      .set(headers)
+      .send({ expectedDraftGeneration })
+      .expect(422);
+
+    expect(response.body.error.code).toBe("revision_invalid");
+    expect(response.body.error.details.diagnostics).toContainEqual(
+      expect.objectContaining({
+        routineId,
+        code: "unregistered_action_type",
+        location: "step:step_notify",
+      }),
+    );
+  });
 });

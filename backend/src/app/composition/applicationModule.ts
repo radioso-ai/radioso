@@ -180,24 +180,29 @@ export interface ApplicationDirectiveRegistration {
   routes?: string[];
 }
 
-/**
- * Registers an {@link ActionHandler} for one action `type` emitted by a routine. The
- * worker dispatcher routes outbox rows to the handler by exact type match. The handler
- * may be supplied directly or as a factory resolved at dependency-build time with a
- * minimal context, mirroring the other host-supplied provider registrations.
- */
-type ActionQueueSource = "routine_action_step" | "outside_turn";
+const ACTION_QUEUE_SOURCES = ["routine_action_step", "chat_turn", "outside_turn"] as const;
+type ActionQueueSource = (typeof ACTION_QUEUE_SOURCES)[number];
 
+/**
+ * Registers an {@link ActionHandler} for one action `type`. Registering it lets host code queue
+ * the action, under `requiredCapabilities`, and lets the worker dispatcher route outbox rows to
+ * the handler by exact type match. The handler may be supplied directly or as a factory resolved
+ * at dependency-build time with a minimal context, mirroring the other host-supplied provider
+ * registrations.
+ */
 interface ApplicationActionHandlerRegistration {
   type: string;
   requiredCapabilities?: string[];
   /**
-   * Where this action is queued from. Every registration says so explicitly, so a new handler is
-   * never admitted into routines by default.
-   * - `routine_action_step`: an author writes it as a routine action step.
-   * - `outside_turn`: only host code queues it, in its own transaction — a transfer notice written
-   *   with its transfer. Routine authoring never offers it and a routine step naming it fails
-   *   validation and serving, while the worker still dispatches the rows host code queues.
+   * Where this action is queued from. Every registration says so explicitly, and the worker
+   * dispatches every registered action.
+   * - `routine_action_step`: an author writes it as a routine action step; routine authoring
+   *   offers it, and the chat turn running the step queues it.
+   * - `chat_turn`: host code queues it with a chat turn and builds its payload — a routine ending's
+   *   operator notice or an approval step's request. Authoring never offers it; an action step
+   *   naming it fails validation and publishing.
+   * - `outside_turn`: host code queues it in its own transaction — a transfer notice written with
+   *   its transfer. Neither authoring nor a chat turn admits it.
    */
   queuedFrom: ActionQueueSource;
   handler:
@@ -225,6 +230,21 @@ export const routineAuthorableActionHandlers = (
   registrations: readonly ApplicationActionHandlerRegistration[],
 ): ApplicationActionHandlerRegistration[] =>
   registrations.filter((registration) => registration.queuedFrom === "routine_action_step");
+
+/** The action handlers a chat turn may queue, whether authored or host-queued. */
+export const chatTurnQueueableActionHandlers = (
+  registrations: readonly ApplicationActionHandlerRegistration[],
+): ApplicationActionHandlerRegistration[] =>
+  registrations.filter((registration) => registration.queuedFrom !== "outside_turn");
+
+/** Action types host code queues with a chat turn rather than from an authored action step. */
+export const chatTurnQueuedActionTypes = (
+  registrations: readonly ApplicationActionHandlerRegistration[],
+): ReadonlySet<string> => new Set(
+  registrations
+    .filter((registration) => registration.queuedFrom === "chat_turn")
+    .map((registration) => registration.type),
+);
 
 type ApplicationAccountCreatedHook = (context: {
   accountId: string;
@@ -443,6 +463,12 @@ const createRegistrationContext = (registry: ApplicationExtensionRegistry): Appl
     registry.publishedRoutineRegistrationSource = source;
   },
   registerActionHandler(registration) {
+    // A module built against an older registration contract must fail loudly, not drop out of authoring.
+    if (!(ACTION_QUEUE_SOURCES as readonly unknown[]).includes(registration.queuedFrom)) {
+      throw new Error(
+        `Action handler "${registration.type}" needs queuedFrom set to one of: ${ACTION_QUEUE_SOURCES.join(", ")}`,
+      );
+    }
     registry.actionHandlerRegistrations.push(registration);
   },
   registerContactHistoryProvider(provider) {

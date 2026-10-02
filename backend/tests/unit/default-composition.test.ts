@@ -96,37 +96,41 @@ describe("default application composition", () => {
     expect(composition.actionCapabilityMap.requiredCapabilitiesFor(CONTACT_SEND_ACTION_TYPE)).toEqual([
       capabilityNames.humanContact.request,
     ]);
-    expect(composition.actionCapabilityMap.has(HANDOFF_NOTIFY_ACTION_TYPE)).toBe(true);
-    expect(composition.actionCapabilityMap.requiredCapabilitiesFor(HANDOFF_NOTIFY_ACTION_TYPE)).toEqual([
-      capabilityNames.humanContact.request,
-    ]);
-    // A completion's operator notice is queued with the turn the same way, under the same capability.
-    expect(composition.actionCapabilityMap.has(COMPLETION_NOTIFY_ACTION_TYPE)).toBe(true);
-    expect(composition.actionCapabilityMap.requiredCapabilitiesFor(COMPLETION_NOTIFY_ACTION_TYPE)).toEqual([
-      capabilityNames.humanContact.request,
-    ]);
+    // A routine ending's and an approval step's operator notices are queued with the turn.
+    for (const noticeType of [HANDOFF_NOTIFY_ACTION_TYPE, COMPLETION_NOTIFY_ACTION_TYPE, APPROVAL_REQUEST_ACTION_TYPE]) {
+      expect(composition.actionCapabilityMap.has(noticeType)).toBe(true);
+      expect(composition.actionCapabilityMap.requiredCapabilitiesFor(noticeType)).toEqual([
+        capabilityNames.humanContact.request,
+      ]);
+    }
     expect(composition.actionCapabilityMap.has(WEBHOOK_SEND_ACTION_TYPE)).toBe(true);
     expect(composition.actionCapabilityMap.requiredCapabilitiesFor(WEBHOOK_SEND_ACTION_TYPE)).toEqual([]);
-    // The worker dispatches a transfer notice, but only the transfer route queues one: routines
-    // can neither author nor emit it.
-    expect(composition.actionHandlerRegistrations.map((registration) => registration.type))
-      .toContain(CONVERSATION_TRANSFER_NOTICE_ACTION_TYPE);
+    expect(composition.actionCapabilityMap.has("slack.post")).toBe(true);
     expect(composition.actionCapabilityMap.has(CONVERSATION_TRANSFER_NOTICE_ACTION_TYPE)).toBe(false);
-    expect(composition.routineActionHandlerRegistrations.map((registration) => registration.type))
-      .not.toContain(CONVERSATION_TRANSFER_NOTICE_ACTION_TYPE);
-    expect(composition.routineActionHandlerRegistrations.map((registration) => registration.type)).toEqual(
+    // The worker dispatches every registered action, including host-only notices.
+    expect(composition.actionHandlerRegistrations.map((registration) => registration.type)).toEqual(
       expect.arrayContaining([
-        CONTACT_SEND_ACTION_TYPE,
         HANDOFF_NOTIFY_ACTION_TYPE,
+        COMPLETION_NOTIFY_ACTION_TYPE,
         APPROVAL_REQUEST_ACTION_TYPE,
-        WEBHOOK_SEND_ACTION_TYPE,
-        // The Slack escalation skill posts from a routine step (`routine_post`).
-        "slack.post",
+        CONVERSATION_TRANSFER_NOTICE_ACTION_TYPE,
       ]),
     );
+    const authorableTypes = [CONTACT_SEND_ACTION_TYPE, WEBHOOK_SEND_ACTION_TYPE, "slack.post"];
+    expect(composition.routineActionHandlerRegistrations.map((registration) => registration.type).sort())
+      .toEqual(authorableTypes.sort());
+    for (const hostOnlyType of [
+      HANDOFF_NOTIFY_ACTION_TYPE,
+      COMPLETION_NOTIFY_ACTION_TYPE,
+      APPROVAL_REQUEST_ACTION_TYPE,
+      CONVERSATION_TRANSFER_NOTICE_ACTION_TYPE,
+    ]) {
+      expect(composition.routineActionCapabilityMap.has(hostOnlyType)).toBe(false);
+    }
     // Every registration says where it is queued from; nothing is admitted by default.
-    expect(composition.actionHandlerRegistrations.filter((registration) => typeof registration.queuedFrom !== "string"))
-      .toEqual([]);
+    expect(composition.actionHandlerRegistrations.every((registration) =>
+      ["routine_action_step", "chat_turn", "outside_turn"].includes(registration.queuedFrom),
+    )).toBe(true);
     expect(composition.organizationCreationGuardRegistration).toBeTypeOf("function");
     expect(composition.oauthProviders).toEqual([]);
   });

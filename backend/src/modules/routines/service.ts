@@ -61,6 +61,7 @@ interface RoutineDefinitionServiceOptions {
   };
   repository: RoutineDefinitionRepositoryPort;
   actionCapabilities?: ActionCapabilityMap;
+  hostQueuedActionTypes?: ReadonlySet<string>;
   capabilityPolicy?: CapabilityPolicy;
   webhookDestinations?: {
     existsByIdAndWorkspace(workspaceId: string, destinationId: string): Promise<boolean>;
@@ -576,10 +577,13 @@ export class RoutineDefinitionService {
         continue;
       }
       if (!this.options.actionCapabilities.has(step.actionType)) {
+        const hostQueuedMessage = this.options.hostQueuedActionTypes?.has(step.actionType)
+          ? ` Radioso queues this type itself for a routine's endings and approval steps; remove the action step, and to notify the team set the notice on the routine's ending.`
+          : "";
         diagnostics.push({
           code: "unregistered_action_type",
           location: `step:${step.stableStepId}`,
-          message: `unregistered action type: action step "${step.stableStepId}" references "${step.actionType}", but no action a routine may emit is registered under that type.`,
+          message: `unregistered action type: action step "${step.stableStepId}" references "${step.actionType}", but no action an author may write as an action step is registered under that type.${hostQueuedMessage}`,
         });
         continue;
       }

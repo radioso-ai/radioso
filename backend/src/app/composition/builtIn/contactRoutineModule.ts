@@ -174,7 +174,8 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
       context.registerActionHandler({
         type: ending.type,
         requiredCapabilities: [capabilityNames.humanContact.request],
-        queuedFrom: "routine_action_step",
+        // The turn that reaches the ending queues it; an author sets the notice on the ending.
+        queuedFrom: "chat_turn",
         handler: ({ database, env, logger, mailService, assertPublicWebsiteUrl }) => new RoutineEndingNotifyActionHandler({
           ending,
           dispatcher: buildOperatorNotificationDispatcher({ database, env, logger, mailService, assertPublicWebsiteUrl }),
@@ -189,7 +190,8 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
     context.registerActionHandler({
       type: APPROVAL_REQUEST_ACTION_TYPE,
       requiredCapabilities: [capabilityNames.humanContact.request],
-      queuedFrom: "routine_action_step",
+      // The turn that reaches an approval step queues it.
+      queuedFrom: "chat_turn",
       handler: ({ database, env, logger, mailService, assertPublicWebsiteUrl }) => {
         return new ApprovalRequestActionHandler(
           buildOperatorNotificationDispatcher({ database, env, logger, mailService, assertPublicWebsiteUrl }),

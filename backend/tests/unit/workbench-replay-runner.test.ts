@@ -1371,7 +1371,10 @@ describe("WorkbenchReplayRunner", () => {
     expect(forTurn).toHaveBeenCalledWith(expect.objectContaining({ includeSlotValues: false }));
   });
 
-  it("carries a hand-off preview matching the real notification builder, without dispatching it", async () => {
+  it.each([
+    ["with the operator notice it reports", true],
+    ["for a hand-off reported without an operator notice", false],
+  ])("carries a hand-off preview matching the real notification builder, without dispatching it (%s)", async (_label, reportsNotice) => {
     const fakeEngine = {
       async attemptRoutine(input: AttemptRoutineInput): Promise<ProcessTurnResult | null> {
         await input.routineStore!.save({
@@ -1390,6 +1393,16 @@ describe("WorkbenchReplayRunner", () => {
             stepId: "handoff",
             collected: { program: "A stay at Ananda", guests: 2 },
           },
+          ...(reportsNotice
+            ? {
+                operatorNotice: {
+                  routineId: "contact",
+                  stepId: "handoff",
+                  terminalKind: "handoff",
+                  collected: { program: "A stay at Ananda", guests: 2 },
+                },
+              }
+            : {}),
         } as unknown as ProcessTurnResult;
       },
       async processTurn(): Promise<ProcessTurnResult> {
@@ -1439,15 +1452,86 @@ describe("WorkbenchReplayRunner", () => {
     ]));
     expect(describeRoutineName).toHaveBeenCalledWith("contact");
     expect(result.turnTrace?.handoffPreview).toMatchObject({
+      kind: "handoff",
       subject: "Book accommodation: needs a human",
       lines: expect.arrayContaining([
         "A conversation needs a human operator.",
-        "Agent: Support (agent-1)",
-        "Routine: Book accommodation",
-        "Reason: routine_handoff",
       ]),
     });
     expect(JSON.stringify(result.turnTrace?.handoffPreview)).toContain("A stay at Ananda");
+  });
+
+  it("previews a completion notice with its authored subject and intro, and hands nothing off", async () => {
+    const fakeEngine = {
+      async attemptRoutine(input: AttemptRoutineInput): Promise<ProcessTurnResult | null> {
+        await input.routineStore!.save({
+          sessionId: input.sessionId,
+          routineId: "booking",
+          path: ["done"],
+          variables: {},
+          status: "completed",
+        });
+        return {
+          response: { answer: "Your request is in. Is there anything else I can help you with?" },
+          trace: emptyTrace(),
+          decision: { reason: "routine_completed" },
+          operatorNotice: {
+            routineId: "booking",
+            stepId: "done",
+            terminalKind: "complete",
+            collected: { name: "Ada Lovelace", guests: 2 },
+            subject: "New booking: {{slot.name}}",
+            intro: "Confirm {{slot.guests}} guests with {{slot.name}}.",
+          },
+        } as unknown as ProcessTurnResult;
+      },
+      async processTurn(): Promise<ProcessTurnResult> {
+        throw new Error("grounding must not run when a routine claims the turn");
+      },
+    } as unknown as ConversationEngine;
+    const reporter: ChatRoutineTurnReporter = {
+      describe: () => null,
+      describeDeclined: () => null,
+      describeInvocation: () => null,
+      describeRoutineName: () => "Book accommodation",
+    };
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn([]),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: fakeEngine,
+      turnRouter: stubTurnRouter("retrieval"),
+      routineProvider: {
+        async forTurn() {
+          return { activator: {} as never, runner: {} as never, reporter };
+        },
+      },
+      chatGateway: chatGatewayStub(),
+      chatAnswerPresenter: presenterStub(),
+    });
+
+    const result = await runner.run({
+      workspaceId: "ws-1",
+      executionMode: "safe_test" as const,
+      sourceAgentId: "agent-1",
+      baselineAgentConfig: projectInternalAgentConfig(agent()),
+      query: "Please book Ananda for me",
+      history: [],
+    });
+
+    expect(result.handoff).toBeUndefined();
+    expect(result.actions ?? []).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "completion.notify" }),
+    ]));
+    expect(result.turnTrace?.handoffPreview).toMatchObject({
+      kind: "completion",
+      subject: "New booking: Ada Lovelace",
+      lines: expect.arrayContaining([
+        "A visitor completed a request in chat.",
+        "Confirm 2 guests with Ada Lovelace.",
+        "  Name: Ada Lovelace",
+      ]),
+    });
   });
 
   it("wires the coverage routine port into a replayed turn's reported coverage verdict", async () => {

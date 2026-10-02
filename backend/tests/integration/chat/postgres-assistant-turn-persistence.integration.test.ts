@@ -559,6 +559,46 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
     expect(result).not.toHaveProperty("postCommitReceipt");
   });
 
+  it("queues a completion notice with the turn and leaves the conversation with the agent", async () => {
+    const { workspace, conversation } = await seedConversation();
+
+    const result = await persistence.completeAssistantTurn({
+      workspaceId: workspace.id,
+      conversationId: conversation.id,
+      actions: [{
+        type: "completion.notify",
+        payload: {
+          conversationId: conversation.id,
+          workspaceId: workspace.id,
+          reason: "routine_completed",
+          routineId: "routine_1",
+          stepId: "booked",
+          collected: { name: "Ada" },
+          notice: { subject: "New booking: {{slot.name}}" },
+        },
+      }],
+      assistantMessage: {
+        conversationId: conversation.id,
+        workspaceId: workspace.id,
+        role: "assistant",
+        content: "Your request is in. Is there anything else I can help you with?",
+      },
+      auditEvent: { eventType: "chat.answer", eventStatus: "success", workspaceId: workspace.id, metadata: {} },
+    });
+
+    expect(result.committedFacts).toEqual({
+      insertedActionTypes: ["completion.notify"],
+      decisionCreated: false,
+      ownershipChanged: false,
+    });
+    expect(await new ConversationOwnershipRepository(database.kysely).load(conversation.id)).toBeNull();
+    const queued = await database.queryOne<{ type: string; payload: Record<string, unknown> }>(
+      "SELECT type, payload FROM routine_action_requests WHERE conversation_id = $1",
+      [conversation.id],
+    );
+    expect(queued).toMatchObject({ type: "completion.notify", payload: { notice: { subject: "New booking: {{slot.name}}" } } });
+  });
+
   it("does not report a duplicate contact action as newly inserted", async () => {
     const { accountId, workspace, conversation } = await seedConversation();
     const action = { type: "contact.send", payload: { email: "visitor@example.com" } };

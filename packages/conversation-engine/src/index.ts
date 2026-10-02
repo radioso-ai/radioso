@@ -109,6 +109,7 @@ const mergePostEvidenceRoutineResult = (
     trace: createTrace(stages, routineResult.trace.links),
     actions: routineResult.actions,
     handoff: routineResult.handoff,
+    operatorNotice: routineResult.operatorNotice,
     routineExecution: routineResult.routineExecution,
     routineClarificationRoutineIds: routineResult.routineClarificationRoutineIds,
     awaitingDecision: routineResult.awaitingDecision,

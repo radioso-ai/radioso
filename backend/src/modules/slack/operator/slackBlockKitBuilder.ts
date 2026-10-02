@@ -62,8 +62,11 @@ const mrkdwnContext = (text: string): Record<string, unknown> => ({
   elements: [{ type: "mrkdwn", text }],
 });
 
-/** Slack mrkdwn reserves `&`, `<`, `>`; the permalink's query string carries `&`. */
-const escapeMrkdwn = (text: string): string =>
+/**
+ * Slack mrkdwn reserves `&`, `<`, `>`; the permalink's query string carries `&`. Escaped, text
+ * shows literally: `<!channel>` mentions no one and `<url|label>` links nowhere.
+ */
+export const escapeMrkdwn = (text: string): string =>
   text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 
 /** Null when there is no link: a post without one beats a post with a link that does not route. */

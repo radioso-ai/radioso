@@ -3,7 +3,7 @@ import type {
   PendingDecisionRepository,
 } from "../../../db/repositories/pendingDecisionRepository.js";
 import {
-  formatHandoffNotification,
+  formatRoutineEndingNotification,
   type OperatorNotification,
   type OperatorNotificationContext,
   type OperatorNotificationSink,
@@ -22,7 +22,7 @@ import {
   enqueueSlackPostAction,
   slackPostIdempotencyKey,
 } from "../outbox/slackPostAction.js";
-import { buildDecisionMessage, buildOwnershipMessage } from "./slackBlockKitBuilder.js";
+import { buildDecisionMessage, buildOwnershipMessage, escapeMrkdwn } from "./slackBlockKitBuilder.js";
 
 const isPendingApproval = (decision: PendingDecisionRecord, notification: OperatorNotification): boolean =>
   notification.kind === "approval" &&
@@ -55,15 +55,21 @@ export class SlackOperatorNotificationSink implements OperatorNotificationSink {
     if (!binding?.escalationChannelId) {
       return;
     }
-    if (notification.kind === "handoff") {
-      // The formatter's headline is the email's opening sentence; the Slack post already
-      // says what the message is, so the section carries the detail lines only.
-      const [, ...detailLines] = formatHandoffNotification(notification).lines;
+    if (notification.kind !== "approval") {
+      // Slack has no separate subject field, so the post's text leads with the formatter's
+      // subject line (authored, or its per-kind default) before the headline and the rest of
+      // the formatted lines — the same content the email splits across Subject: and body.
+      const formatted = formatRoutineEndingNotification(notification);
+      const noticeText = [formatted.subject, ...formatted.lines].join("\n").trim();
       const message = buildOwnershipMessage({
         conversationId: notification.conversationId,
         workspaceId: notification.workspaceId,
         state: "ai_owned",
-        contextText: detailLines.join("\n").trim(),
+        // The notice is plain text on every transport, and visitors supply much of it (collected
+        // values, the entry page). Escaped whole, authored text included, it posts literally:
+        // no value can mention the channel or forge a link, and the author's text reads the
+        // same here as in the email.
+        contextText: escapeMrkdwn(noticeText),
         dashboardUrl: await this.resolveDashboardUrl(notification),
       });
 
@@ -73,10 +79,10 @@ export class SlackOperatorNotificationSink implements OperatorNotificationSink {
         conversationId: notification.conversationId,
         idempotencyKey: slackPostIdempotencyKey({
           kind: "operator_notification",
-          // Scope to this handoff event, not the conversation: a conversation can re-enter human
+          // Scope to this notice, not the conversation: a conversation can re-enter human
           // ownership after a hand-back, and each re-escalation must post again. The per-action
-          // idempotency key still dedupes a retry of the same handoff.
-          sourceId: `handoff:${notification.conversationId}:${context.idempotencyKey ?? context.requestId}`,
+          // idempotency key still dedupes a retry of the same notice.
+          sourceId: `${notification.kind}:${notification.conversationId}:${context.idempotencyKey ?? context.requestId}`,
         }),
         payload: {
           installationId: installation.id,

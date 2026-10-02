@@ -187,6 +187,24 @@ describe('routine block document', () => {
     expect(unexposed.restored).not.toHaveProperty('exposure')
   })
 
+  it('carries each ending\'s operator notice through the document and back, on referenced and unreferenced endings', () => {
+    const finishedNotice = { subject: 'Account {{slot.account_id}} reviewed', intro: null }
+    const humanNotice = { subject: null, intro: 'Call the customer back.' }
+    const { projected, restored } = roundTrip(draft({
+      terminals: [
+        { stableStepId: 'finished', kind: 'complete', instruction: 'All done.', operatorNotice: finishedNotice, ordinal: 5 },
+        { stableStepId: 'human', kind: 'handoff', instruction: 'A person will take over.', operatorNotice: humanNotice, ordinal: 6 },
+      ],
+    }))
+
+    const branchEnding = projected.doc.steps[0]?.branches[0]?.target
+    expect(branchEnding?.kind === 'ending' ? branchEnding.ending?.operatorNotice : undefined).toEqual(finishedNotice)
+    expect(projected.doc.unreferencedEndings[0]?.operatorNotice).toEqual(humanNotice)
+    expect(restored.terminals.find((terminal) => terminal.stableStepId === 'finished')?.operatorNotice).toEqual(finishedNotice)
+    expect(restored.terminals.find((terminal) => terminal.stableStepId === 'human')?.operatorNotice).toEqual(humanNotice)
+    expect(roundTrip(draft()).restored.terminals.every((terminal) => !('operatorNotice' in terminal))).toBe(true)
+  })
+
   it('holds a half-typed tool name mid-edit', () => {
     const projected = routineToBlockDoc(draft({ exposure: { enabled: true, toolName: 'Escalate Account', description: '' } }))
     expect(projected).toMatchObject({ ok: true, doc: { exposure: { toolName: 'Escalate Account' } } })

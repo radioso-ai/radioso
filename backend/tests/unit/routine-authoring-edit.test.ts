@@ -188,10 +188,22 @@ describe("routine authoring edits", () => {
         "collect_topic → confirm": { guardKind: "default", guardText: null, outcomeStatus: null, counterLimit: null, fieldRef: null, fieldOp: null, fieldValue: null, fieldValues: null, fieldUnit: null, ordinal: 0 },
         "confirm → done": { guardKind: "default", guardText: null, outcomeStatus: null, counterLimit: null, fieldRef: null, fieldOp: null, fieldValue: null, fieldValues: null, fieldUnit: null, ordinal: 0 },
       },
-      terminals: { done: { kind: "complete", instruction: "Thank them.", ordinal: 0 } },
+      terminals: { done: { kind: "complete", instruction: "Thank them.", operatorNotice: null, ordinal: 0 } },
       completionExport: null,
       exposure: null,
     });
+  });
+
+  it("keeps an ending's operator notice when an edit rewrites only the ending's message, and shows the notice to a reviewer", () => {
+    const operatorNotice = { subject: "Support: {{slot.order_number}}", intro: null };
+    const source = routine({ terminals: [{ stableStepId: "done", kind: "complete", instruction: "Thank them.", operatorNotice, ordinal: 0 }] });
+
+    const patched = applyRoutineFieldPatch(source, routineFieldPatchSchema.parse({
+      terminals: [{ stableStepId: "done", instruction: "Thank them warmly." }],
+    }));
+
+    expect(patched.terminals).toEqual([{ stableStepId: "done", kind: "complete", instruction: "Thank them warmly.", operatorNotice, ordinal: 0 }]);
+    expect(projectRoutineForReview(patched)).toMatchObject({ terminals: { done: { operatorNotice } } });
   });
 
   it("applies and projects a tool exposure change, leaving everything else as stored", () => {

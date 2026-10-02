@@ -3524,3 +3524,44 @@ describe("DefaultRoutineRunner bounded re-asks (#1376)", () => {
     expect(next.nextState?.reaskCount).toBe(3);
   });
 });
+
+describe("DefaultRoutineRunner operator notices", () => {
+  const nameSlot = { id: "slot_name", key: "name", type: "text" as const, required: true };
+  const ending = (metadata: Record<string, unknown>): Routine => ({
+    id: "contact",
+    rootStepId: "ask_name",
+    slots: [nameSlot],
+    steps: [
+      { id: "ask_name", kind: "chat", action: "Ask for {{slot.name}}." },
+      { id: "done", kind: "terminal", action: "Confirm the booking request.", metadata },
+    ],
+    transitions: [{ from: "ask_name", to: "done", condition: "The user gave their name." }],
+  });
+  const landingOnDone = (): ConversationRoutineNextStepSelector => ({
+    select: vi.fn(async () => ({ nextStepId: "done", variables: { name: "Ada" } })),
+  });
+  const renderer: ConversationRoutineStepRenderer = { render: vi.fn(async ({ step }) => ({ answer: `[${step.id}]` })) };
+
+  it("reports the notice template the landed terminal step carries, with the declared slot values", async () => {
+    const runner = new DefaultRoutineRunner([ending({ terminalKind: "complete", operatorNotice: { subject: "Booking: {{slot.name}}" } })], landingOnDone(), renderer);
+
+    const result = await runner.resume({ turn, state: state(["ask_name"]) });
+
+    expect(result.terminal).toEqual({
+      kind: "complete",
+      stepId: "done",
+      collected: { name: "Ada" },
+      operatorNotice: { subject: "Booking: {{slot.name}}" },
+    });
+  });
+
+  it("reports no notice for a terminal step without notice metadata, and keeps only text fields of a malformed one", async () => {
+    const quiet = await new DefaultRoutineRunner([ending({ terminalKind: "complete" })], landingOnDone(), renderer)
+      .resume({ turn, state: state(["ask_name"]) });
+    expect(quiet.terminal).not.toHaveProperty("operatorNotice");
+
+    const malformed = await new DefaultRoutineRunner([ending({ terminalKind: "handoff", operatorNotice: { subject: 42, intro: "Call back." } })], landingOnDone(), renderer)
+      .resume({ turn, state: state(["ask_name"]) });
+    expect(malformed.terminal?.operatorNotice).toEqual({ intro: "Call back." });
+  });
+});

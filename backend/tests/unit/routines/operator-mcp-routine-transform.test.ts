@@ -169,6 +169,27 @@ describe("applyOperatorMcpRoutineTransform", () => {
     })).toThrow(/slot_email.*referenced/u);
   });
 
+  it("rejects removing a slot an ending's operator notice still reads", () => {
+    const noticeOnly = routine();
+    noticeOnly.steps[0] = { ...noticeOnly.steps[0], instruction: "Start." };
+    noticeOnly.terminals[0] = { ...noticeOnly.terminals[0], operatorNotice: { subject: null, intro: "Reply to {{slot.email}}." } };
+    expect(() => applyOperatorMcpRoutineTransform(noticeOnly, {
+      operations: [{ kind: "remove_slot", stableSlotId: "slot_email" }],
+    })).toThrow(/slot_email.*referenced/u);
+  });
+
+  it("replaces an ending's operator notice when the client names the stored ending exactly", () => {
+    const source = routine();
+    source.terminals[0] = { ...source.terminals[0], operatorNotice: { subject: "Eligibility", intro: null } };
+    const next = { ...source.terminals[0], operatorNotice: { subject: "Eligibility: {{slot.email}}", intro: "Follow up today." } };
+
+    const transformed = applyOperatorMcpRoutineTransform(source, {
+      operations: [{ kind: "replace_terminal", previous: source.terminals[0], next }],
+    });
+
+    expect(transformed.terminals).toEqual([next]);
+  });
+
   it("detects structured variable bindings without mistaking ordinary prose for a slot reference", () => {
     const bound = routine();
     bound.steps[0] = { ...bound.steps[0], instruction: "Send an email.", metadata: { inputBindings: { email: { kind: "variableRef", ref: "email" } } } };

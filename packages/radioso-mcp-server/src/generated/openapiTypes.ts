@@ -5445,6 +5445,10 @@ export interface components {
                 /** @enum {string} */
                 kind: "complete" | "handoff";
                 instruction?: string | null;
+                operatorNotice?: {
+                    subject?: string | null;
+                    intro?: string | null;
+                };
                 ordinal: number;
             }[];
             completionExport?: {
@@ -5549,6 +5553,10 @@ export interface components {
                 /** @enum {string} */
                 kind: "complete" | "handoff";
                 instruction?: string | null;
+                operatorNotice?: {
+                    subject?: string | null;
+                    intro?: string | null;
+                };
                 ordinal: number;
             }[];
             completionExport?: {
@@ -5664,6 +5672,10 @@ export interface components {
                 /** @enum {string} */
                 kind: "complete" | "handoff";
                 instruction?: string | null;
+                operatorNotice?: {
+                    subject?: string | null;
+                    intro?: string | null;
+                };
                 ordinal: number;
             }[];
             completionExport?: {
@@ -5795,6 +5807,10 @@ export interface components {
                     /** @enum {string} */
                     kind: "complete" | "handoff";
                     instruction?: string | null;
+                    operatorNotice?: {
+                        subject?: string | null;
+                        intro?: string | null;
+                    };
                     ordinal: number;
                 }[];
                 completionExport?: {
@@ -6163,6 +6179,10 @@ export interface components {
                     /** @enum {string} */
                     kind: "complete" | "handoff";
                     instruction?: string | null;
+                    operatorNotice?: {
+                        subject?: string | null;
+                        intro?: string | null;
+                    };
                     ordinal: number;
                 }[];
                 completionExport?: {

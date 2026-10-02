@@ -3972,6 +3972,22 @@ components:
                   - "null"
                 minLength: 1
                 maxLength: 4000
+              operatorNotice:
+                type: object
+                properties:
+                  subject:
+                    type:
+                      - string
+                      - "null"
+                    minLength: 1
+                    maxLength: 200
+                  intro:
+                    type:
+                      - string
+                      - "null"
+                    minLength: 1
+                    maxLength: 2000
+                additionalProperties: false
               ordinal:
                 type: integer
                 minimum: 0
@@ -4350,6 +4366,22 @@ components:
                       - "null"
                     minLength: 1
                     maxLength: 4000
+                  operatorNotice:
+                    type: object
+                    properties:
+                      subject:
+                        type:
+                          - string
+                          - "null"
+                        minLength: 1
+                        maxLength: 200
+                      intro:
+                        type:
+                          - string
+                          - "null"
+                        minLength: 1
+                        maxLength: 2000
+                    additionalProperties: false
                   ordinal:
                     type: integer
                     minimum: 0
@@ -4788,6 +4820,22 @@ components:
                   - "null"
                 minLength: 1
                 maxLength: 4000
+              operatorNotice:
+                type: object
+                properties:
+                  subject:
+                    type:
+                      - string
+                      - "null"
+                    minLength: 1
+                    maxLength: 200
+                  intro:
+                    type:
+                      - string
+                      - "null"
+                    minLength: 1
+                    maxLength: 2000
+                additionalProperties: false
               ordinal:
                 type: integer
                 minimum: 0
@@ -5220,6 +5268,22 @@ components:
                       - "null"
                     minLength: 1
                     maxLength: 4000
+                  operatorNotice:
+                    type: object
+                    properties:
+                      subject:
+                        type:
+                          - string
+                          - "null"
+                        minLength: 1
+                        maxLength: 200
+                      intro:
+                        type:
+                          - string
+                          - "null"
+                        minLength: 1
+                        maxLength: 2000
+                    additionalProperties: false
                   ordinal:
                     type: integer
                     minimum: 0
@@ -6340,6 +6404,22 @@ components:
                       - "null"
                     minLength: 1
                     maxLength: 4000
+                  operatorNotice:
+                    type: object
+                    properties:
+                      subject:
+                        type:
+                          - string
+                          - "null"
+                        minLength: 1
+                        maxLength: 200
+                      intro:
+                        type:
+                          - string
+                          - "null"
+                        minLength: 1
+                        maxLength: 2000
+                    additionalProperties: false
                   ordinal:
                     type: integer
                     minimum: 0

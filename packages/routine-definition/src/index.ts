@@ -19,6 +19,8 @@ export const ROUTINE_DEFINITION_LIMITS = {
   fieldValue: 500,
   exposureToolName: 63,
   exposureDescription: 500,
+  operatorNoticeSubject: 200,
+  operatorNoticeIntro: 2000,
 } as const;
 
 // Reentry policy for a completed routine instance within a conversation (issue #746).
@@ -347,18 +349,41 @@ const routineTerminalSharedFields = {
   kind: z.enum(routineTerminalKinds),
 };
 
-const routineTerminalSchemaFor = <TInstruction extends z.ZodTypeAny>(instruction: TInstruction) => z.object({
+/**
+ * What the operators are told when a routine ends on this terminal. Both texts are optional
+ * and may reference `{{slot.<key>}}`; an absent text renders the default for the ending's
+ * kind, so `{}` is a complete notice. Whether an ending notifies at all is
+ * {@link endingNotifiesOperators}, not the presence of text.
+ */
+const routineOperatorNoticeSchemaFor = <TText extends z.ZodTypeAny>(text: (maxLength: number) => TText) => z.object({
+  subject: text(ROUTINE_DEFINITION_LIMITS.operatorNoticeSubject),
+  intro: text(ROUTINE_DEFINITION_LIMITS.operatorNoticeIntro),
+}).strict();
+
+export const routineOperatorNoticeSchema = routineOperatorNoticeSchemaFor(optionalTrimmedText);
+
+const routineOperatorNoticeEditingSchema = routineOperatorNoticeSchemaFor(editingOptionalText);
+
+const routineTerminalSchemaFor = <
+  TInstruction extends z.ZodTypeAny,
+  TOperatorNotice extends z.ZodTypeAny,
+>(instruction: TInstruction, operatorNotice: TOperatorNotice) => z.object({
   ...routineTerminalSharedFields,
   instruction,
+  // Optional with no default: absent means "this ending sends no notice of its own", and a
+  // hand-off notifies regardless (endingNotifiesOperators).
+  operatorNotice: operatorNotice.optional(),
   ordinal: z.number().int().min(0),
 }).strict();
 
 export const routineTerminalSchema = routineTerminalSchemaFor(
   optionalTrimmedText(ROUTINE_DEFINITION_LIMITS.instruction),
+  routineOperatorNoticeSchema,
 );
 
 const routineTerminalEditingSchema = routineTerminalSchemaFor(
   editingOptionalText(ROUTINE_DEFINITION_LIMITS.instruction),
+  routineOperatorNoticeEditingSchema,
 );
 
 const routineCompletionExportFields = {
@@ -623,6 +648,18 @@ export const collectedSlotsByStep = (
   return collectedByStep;
 };
 export type RoutineTerminalKind = typeof routineTerminalKinds[number];
+export type RoutineOperatorNotice = z.infer<typeof routineOperatorNoticeSchema>;
+
+/**
+ * Whether a routine ending notifies operators. `kind` decides who owns the conversation
+ * afterwards; the notice is a side effect: a hand-off always notifies, and a completion
+ * notifies only when the author gave it an operator notice. This is the one statement of
+ * the rule; the compiler applies it and every other layer reads its result.
+ */
+export const endingNotifiesOperators = (terminal: {
+  kind: RoutineTerminalKind;
+  operatorNotice?: RoutineOperatorNotice;
+}): boolean => terminal.kind === "handoff" || terminal.operatorNotice !== undefined;
 export type RoutineValidationCode = typeof routineValidationCodes[number];
 export type RoutineCompletionExportTriggerKind = typeof routineCompletionExportTriggerKinds[number];
 export type RoutineInputBinding = z.infer<typeof routineInputBindingSchema>;

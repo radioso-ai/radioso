@@ -13,8 +13,10 @@ import {
   $isElementNode,
   COMMAND_PRIORITY_LOW,
   KEY_BACKSPACE_COMMAND,
+  RootNode,
   type EditorState,
 } from 'lexical'
+import { $restoreEditorState } from '@lexical/utils'
 
 import { HeadingNode } from '@lexical/rich-text'
 
@@ -23,7 +25,8 @@ import { ChipTypeaheadPlugin, type RoutineEditorVariable } from '@/components/da
 import { $initializeFromParagraphs, $readProseParagraphs } from '@/components/dashboard/settings/routine-prose-nodes'
 import { RoutineVariablesProvider } from '@/components/dashboard/settings/routine-variables-context'
 import type { RoutineSlotType } from '@/lib/api-types'
-import type { ChipDocVariable, ProseParagraph } from '@/lib/routine-prose'
+import { proseParagraphsToInstruction } from '@/lib/routine-document'
+import { blockSegmentsToInstruction, type ChipDocVariable, type ProseParagraph } from '@/lib/routine-prose'
 
 export type { RoutineEditorVariable }
 
@@ -99,6 +102,30 @@ function EmptyStepBackspacePlugin({ onEmptyBackspace }: { onEmptyBackspace?: () 
   return null
 }
 
+// The length of the text the editor stores: a chip counts as its `{{slot.<key>}}` token, not as
+// the label it shows, because the stored text is what a save is checked against.
+const $storedTextLength = (): number => blockSegmentsToInstruction(proseParagraphsToInstruction($readProseParagraphs())).length
+
+// Refuses an edit that would make the stored text longer than `maxLength`, restoring the state
+// before it, so the field never holds text its save would reject. An overflowing paste is
+// refused whole rather than cut through the middle of a reference. Text that already ran over
+// when it loaded can still be shortened.
+function MaxLengthPlugin({ maxLength }: { maxLength?: number }) {
+  const [editor] = useLexicalComposerContext()
+
+  useEffect(() => {
+    if (maxLength === undefined) return undefined
+    return editor.registerNodeTransform(RootNode, () => {
+      if ($storedTextLength() <= maxLength) return
+      const previous = editor.getEditorState()
+      if (previous.read($storedTextLength) > maxLength) return
+      $restoreEditorState(editor, previous)
+    })
+  }, [editor, maxLength])
+
+  return null
+}
+
 // Opens a step's instruction editor with the caret already at the end, for the one moment
 // that matters: right after Backspace removed the step after it, so typing continues where
 // the operator left off instead of landing at the start of whatever text is already there.
@@ -133,10 +160,15 @@ export function RoutineInstructionEditor({
   autoFocusEnd,
   onAutoFocused,
   ariaLabel,
+  placeholder = 'Write the routine in plain language. Type @ to insert a variable.',
+  offerContextVariables = true,
+  maxLength,
 }: {
   initialContent: ProseParagraph[]
   variables: ChipDocVariable[]
-  onCreateVariable: (variable: RoutineEditorVariable) => void
+  // Declares the variable an author names with `@`. A text that may only read the variables
+  // the routine already declares leaves it out, and `@` then offers no "Create variable".
+  onCreateVariable?: (variable: RoutineEditorVariable) => void
   // Every line the author wrote, in order. A step instruction is one string, so the host
   // decides how the lines join — the editor never drops the ones after the first.
   onChange: (paragraphs: ProseParagraph[]) => void
@@ -151,6 +183,11 @@ export function RoutineInstructionEditor({
   autoFocusEnd?: boolean
   onAutoFocused?: () => void
   ariaLabel?: string
+  placeholder?: string
+  // Whether `@` also offers the agent's context variables.
+  offerContextVariables?: boolean
+  // The longest stored text the field accepts, as its save validates it.
+  maxLength?: number
 }): JSX.Element {
   const reservedRefKinds = useMemo(
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion -- keeps the literal from widening to string, so fromEntries yields Record<string, RoutineChipKind>.
@@ -223,7 +260,7 @@ export function RoutineInstructionEditor({
               }
               placeholder={() => (
                 <div className="pointer-events-none absolute left-0 top-0 text-sm leading-7 text-muted-foreground">
-                  Write the routine in plain language. Type @ to insert a variable.
+                  {placeholder}
                 </div>
               )}
               ErrorBoundary={LexicalErrorBoundary}
@@ -233,7 +270,8 @@ export function RoutineInstructionEditor({
           <OnParagraphChangePlugin onParagraphChange={onChange} />
           <EmptyStepBackspacePlugin onEmptyBackspace={onEmptyBackspace} />
           <AutoFocusEndPlugin enabled={autoFocusEnd} onDone={onAutoFocused} />
-          <ChipTypeaheadPlugin variables={variables} reservedRefKinds={reservedRefKinds} onCreateVariable={onCreateVariable} variablesOnly />
+          <MaxLengthPlugin maxLength={maxLength} />
+          <ChipTypeaheadPlugin variables={variables} reservedRefKinds={reservedRefKinds} onCreateVariable={onCreateVariable} variablesOnly offerContextVariables={offerContextVariables} />
         </div>
       </RoutineVariablesProvider>
     </LexicalComposer>

@@ -143,10 +143,9 @@ import {
 import {
   isHumanAgentMessage,
   retrievalMissHandoffForTurn,
-  routineHandoffNotifyAction,
-  routineHandoffOwnership,
   suppressedHumanOwnedResponse,
 } from "./handoffOwnership.js";
+import { routineEndingEffectsForTurn } from "./routineEndingEffects.js";
 import {
   ChatTurnSupersededError,
   InMemoryConversationTurnRegistry,
@@ -945,13 +944,11 @@ export class ChatService {
       this.checkTurnCancellation(coordination, "routing");
       if (routineTurn) {
         session = this.withResponseLanguage(session, await responseLanguagePromise);
-        const ownershipHandoff = routineTurn.handoff ? routineHandoffOwnership(routineTurn.handoff) : null;
-        const actions = routineTurn.handoff
-          ? [
-              ...(routineTurn.actions ?? []),
-              routineHandoffNotifyAction({ session, workspaceId: input.workspaceId, handoff: routineTurn.handoff }),
-            ]
-          : routineTurn.actions;
+        const { ownershipHandoff, actions } = routineEndingEffectsForTurn({
+          session,
+          workspaceId: input.workspaceId,
+          turn: routineTurn,
+        });
         this.beginTurnEmission(coordination);
         const completedTurn = await this.chatTurnLifecycle.completeAssistantTurn({
           workspaceId: input.workspaceId,
@@ -1049,18 +1046,16 @@ export class ChatService {
         const engineTrace = clarificationTurn?.kind === "continue" && clarificationTurn.stage && renderedTurn.engineTrace
           ? this.chatTurnAssembly.conversationTraceWithStage(renderedTurn.engineTrace, clarificationTurn.stage)
           : renderedTurn.engineTrace;
-        const coverageOwnershipHandoff = renderedTurn.handoff ? routineHandoffOwnership(renderedTurn.handoff) : null;
-        const coverageActions = renderedTurn.handoff
-          ? [
-              ...(actions ?? []),
-              routineHandoffNotifyAction({ session, workspaceId: input.workspaceId, handoff: renderedTurn.handoff }),
-            ]
-          : actions;
+        const routineEnding = routineEndingEffectsForTurn({
+          session,
+          workspaceId: input.workspaceId,
+          turn: { handoff: renderedTurn.handoff, operatorNotice: renderedTurn.operatorNotice, actions },
+        });
         const retrievalMissHandoff = retrievalMissHandoffForTurn({
           session,
           presentation,
           workspaceId: input.workspaceId,
-          actions: coverageActions,
+          actions: routineEnding.actions,
         });
         this.beginTurnEmission(coordination);
         const completedTurn = await this.chatTurnLifecycle.completeAssistantTurn({
@@ -1074,7 +1069,7 @@ export class ChatService {
           engineTrace,
           modelCallTrace,
           actions: retrievalMissHandoff.actions,
-          ownershipHandoff: coverageOwnershipHandoff ?? retrievalMissHandoff.ownershipHandoff,
+          ownershipHandoff: routineEnding.ownershipHandoff ?? retrievalMissHandoff.ownershipHandoff,
           routineStateTransition: renderedTurn.routineStateTransition,
           routineReporter: renderedTurn.routineReporter,
           pendingDecisionTransition: renderedTurn.pendingDecisionTransition,
@@ -1120,18 +1115,16 @@ export class ChatService {
       const renderedTurn = preparedTurn;
       const { presentation, actions } = renderedTurn;
       const engineTrace = renderedTurn.engineTrace;
-      const coverageOwnershipHandoff = renderedTurn.handoff ? routineHandoffOwnership(renderedTurn.handoff) : null;
-      const coverageActions = renderedTurn.handoff
-        ? [
-            ...(actions ?? []),
-            routineHandoffNotifyAction({ session, workspaceId: input.workspaceId, handoff: renderedTurn.handoff }),
-          ]
-        : actions;
+      const routineEnding = routineEndingEffectsForTurn({
+        session,
+        workspaceId: input.workspaceId,
+        turn: { handoff: renderedTurn.handoff, operatorNotice: renderedTurn.operatorNotice, actions },
+      });
       const retrievalMissHandoff = retrievalMissHandoffForTurn({
         session,
         presentation,
         workspaceId: input.workspaceId,
-        actions: coverageActions,
+        actions: routineEnding.actions,
       });
       this.beginTurnEmission(coordination);
       const completedTurn = await this.chatTurnLifecycle.completeAssistantTurn({
@@ -1145,7 +1138,7 @@ export class ChatService {
         engineTrace,
         modelCallTrace,
         actions: retrievalMissHandoff.actions,
-        ownershipHandoff: coverageOwnershipHandoff ?? retrievalMissHandoff.ownershipHandoff,
+        ownershipHandoff: routineEnding.ownershipHandoff ?? retrievalMissHandoff.ownershipHandoff,
         routineStateTransition: renderedTurn.routineStateTransition,
         routineReporter: renderedTurn.routineReporter,
         pendingDecisionTransition: renderedTurn.pendingDecisionTransition,
@@ -1427,13 +1420,11 @@ export class ChatService {
           this.checkTurnCancellation(coordination, "rendering");
         }
         session = this.withResponseLanguage(session, await responseLanguagePromise);
-        const ownershipHandoff = routineTurn.handoff ? routineHandoffOwnership(routineTurn.handoff) : null;
-        const actions = routineTurn.handoff
-          ? [
-              ...(routineTurn.actions ?? []),
-              routineHandoffNotifyAction({ session, workspaceId: input.workspaceId, handoff: routineTurn.handoff }),
-            ]
-          : routineTurn.actions;
+        const { ownershipHandoff, actions } = routineEndingEffectsForTurn({
+          session,
+          workspaceId: input.workspaceId,
+          turn: routineTurn,
+        });
         // Durably enqueue the action + advance routine state + persist the reply BEFORE
         // streaming the confirmation. The routine reply is rendered whole (not token-
         // streamed), so delaying the chunk costs nothing — but it means the visitor only
@@ -1677,24 +1668,16 @@ export class ChatService {
           ? persistedQuestionSuggestions
           : undefined,
       };
-      const coverageOwnershipHandoff = coverageRoutineEffects.handoff
-        ? routineHandoffOwnership(coverageRoutineEffects.handoff)
-        : null;
-      const coverageActions = coverageRoutineEffects.handoff
-        ? [
-            ...(actions ?? []),
-            routineHandoffNotifyAction({
-              session: preparedSession,
-              workspaceId: input.workspaceId,
-              handoff: coverageRoutineEffects.handoff,
-            }),
-          ]
-        : actions;
+      const routineEnding = routineEndingEffectsForTurn({
+        session: preparedSession,
+        workspaceId: input.workspaceId,
+        turn: { handoff: coverageRoutineEffects.handoff, operatorNotice: coverageRoutineEffects.operatorNotice, actions },
+      });
       const retrievalMissHandoff = retrievalMissHandoffForTurn({
         session: preparedSession,
         presentation,
         workspaceId: input.workspaceId,
-        actions: coverageActions,
+        actions: routineEnding.actions,
       });
 
       if (!emissionStarted) {
@@ -1710,7 +1693,7 @@ export class ChatService {
         engineTrace,
         modelCallTrace,
         actions: retrievalMissHandoff.actions,
-        ownershipHandoff: coverageOwnershipHandoff ?? retrievalMissHandoff.ownershipHandoff,
+        ownershipHandoff: routineEnding.ownershipHandoff ?? retrievalMissHandoff.ownershipHandoff,
         routineStateTransition: coverageRoutineEffects.routineStateTransition,
         routineReporter: coverageRoutineEffects.routineReporter,
         pendingDecisionTransition: coverageRoutineEffects.pendingDecisionTransition,

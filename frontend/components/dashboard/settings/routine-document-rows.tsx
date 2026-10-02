@@ -1,7 +1,7 @@
 'use client'
 
 import { useContext, type ReactNode } from 'react'
-import { AlertTriangle, ArrowDown, ArrowUp, CheckCircle2, CircleDashed, CornerUpRight, GitBranch, Plus, Trash2 } from 'lucide-react'
+import { AlertTriangle, ArrowDown, ArrowUp, BellRing, CheckCircle2, CircleDashed, CornerUpRight, GitBranch, Plus, Trash2 } from 'lucide-react'
 
 import { findRoutineSkillDescriptor, RoutineSkillCatalogContext } from '@/components/dashboard/settings/routine-skill-catalog-popover'
 import { Button } from '@/components/ui/button'
@@ -92,8 +92,9 @@ export function RoutineInformationSection({ slots, editable = false, editingSlot
   return <section aria-labelledby="routine-document-information" className="space-y-3"><h2 id="routine-document-information" className="text-xl font-semibold tracking-tight text-foreground">Collected information</h2>{slots.length === 0 ? <p className="mt-2 text-sm text-muted-foreground">No information is collected.</p> : <ul className="mt-2 space-y-0.5">{slots.map((slot) => <li key={slot.stableSlotId} className={editingSlotId === slot.stableSlotId ? 'rounded-md border border-border bg-muted/30 p-3 text-sm' : 'text-sm'}>{editingSlotId === slot.stableSlotId ? renderEditor?.(slot) : <button type="button" aria-label={slot.key} onClick={() => onEditSlot?.(slot)} disabled={!editable} className="group flex w-full items-baseline gap-2 text-left disabled:cursor-default"><span className="shrink-0 font-medium text-foreground">{slot.key}</span><span className="shrink-0 text-xs text-muted-foreground">{slot.type}{slot.required ? ', required' : ', optional'}</span>{slot.description ? <span className="min-w-0 truncate text-xs text-muted-foreground">{slot.description}</span> : null}<EditHint editable={editable} /></button>}{editingSlotId === slot.stableSlotId ? null : <DiagnosticNotes notes={notesFor?.(slot)} />}</li>)}</ul>}</section>
 }
 
+// A hand-off always tells the team, so only a finish that does says so.
 function EndingPhrase({ ending, muted = false }: { ending: RoutineBlockEnding; muted?: boolean }) {
-  return <span className={`inline-flex items-baseline gap-1 ${muted ? 'text-muted-foreground' : ''}`}>{ending.kind === 'complete' ? <CheckCircle2 className="h-3.5 w-3.5 self-center" /> : <CornerUpRight className="h-3.5 w-3.5 self-center" />}<span>{ending.kind === 'complete' ? 'Finish' : 'Hand off'}{ending.instruction ? <>: <InlineSlotText text={ending.instruction} /></> : null}</span></span>
+  return <span className={`inline-flex items-baseline gap-1 ${muted ? 'text-muted-foreground' : ''}`}>{ending.kind === 'complete' ? <CheckCircle2 className="h-3.5 w-3.5 self-center" /> : <CornerUpRight className="h-3.5 w-3.5 self-center" />}<span>{ending.kind === 'complete' ? 'Finish' : 'Hand off'}{ending.instruction ? <>: <InlineSlotText text={ending.instruction} /></> : null}</span>{ending.kind === 'complete' && ending.operatorNotice ? <span className="inline-flex items-baseline gap-1 text-xs text-muted-foreground"><BellRing className="h-3 w-3 self-center" />notifies the team</span> : null}</span>
 }
 
 function BranchTarget({ branch, index }: { branch: RoutineBlockBranch; index?: RoutineDocumentIndex }) {

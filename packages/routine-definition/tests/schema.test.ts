@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   collectContextVariableRefs,
+  endingNotifiesOperators,
   ROUTINE_DEFINITION_LIMITS,
   routineDefinitionDraftEditingInputSchema,
   routineDefinitionDraftUpdateInputSchema,
@@ -358,3 +359,59 @@ describe("routine exposure", () => {
   });
 });
 
+
+describe("routine ending operator notice", () => {
+  const draft = {
+    name: "Book accommodation",
+    activation: { triggerDescription: "A guest wants to book a stay", gateRef: null, priority: 0 },
+    slots: [],
+    steps: [{ stableStepId: "ask", kind: "chat", instruction: "Ask for the dates.", toolRef: null, actionType: null, captureKey: null, ordinal: 0, metadata: {} }],
+    transitions: [],
+  };
+
+  it("accepts a notice on both ending kinds and reads an empty notice back as default text", () => {
+    for (const kind of ["complete", "handoff"] as const) {
+      expect(routineTerminalSchema.parse({ ...validTerminal, kind, operatorNotice: { subject: " New booking: {{slot.name}} ", intro: "Please confirm." } }).operatorNotice)
+        .toEqual({ subject: "New booking: {{slot.name}}", intro: "Please confirm." });
+      expect(routineTerminalSchema.parse({ ...validTerminal, kind, operatorNotice: {} }).operatorNotice)
+        .toEqual({ subject: null, intro: null });
+    }
+  });
+
+  it("is optional: an ending without a notice reads back without one", () => {
+    const parsed = routineDefinitionDraftInputSchema.parse({ ...draft, terminals: [validTerminal] });
+    expect("operatorNotice" in parsed.terminals[0]).toBe(false);
+  });
+
+  it("carries the notice through the draft, editing, and definition schemas", () => {
+    const terminal = { ...validTerminal, operatorNotice: { subject: "Booking", intro: null } };
+    expect(routineDefinitionDraftInputSchema.parse({ ...draft, terminals: [terminal] }).terminals[0].operatorNotice)
+      .toEqual({ subject: "Booking", intro: null });
+    expect(routineDefinitionDraftEditingInputSchema.parse({ ...draft, terminals: [terminal] }).terminals[0].operatorNotice)
+      .toEqual({ subject: "Booking", intro: null });
+    expect(routineDefinitionSchema.parse({
+      ...draft, terminals: [terminal], id: "r1", agentId: "a1", lineageId: "l1", version: 1, createdAt: new Date(), updatedAt: new Date(),
+    }).terminals[0].operatorNotice).toEqual({ subject: "Booking", intro: null });
+  });
+
+  it("holds empty notice text only while editing", () => {
+    const terminal = { ...validTerminal, operatorNotice: { subject: "", intro: "" } };
+    expect(routineDefinitionDraftEditingInputSchema.safeParse({ ...draft, terminals: [terminal] }).success).toBe(true);
+    expect(routineDefinitionDraftInputSchema.safeParse({ ...draft, terminals: [terminal] }).success).toBe(false);
+  });
+
+  it("bounds the notice text and rejects unknown notice fields", () => {
+    expect(routineTerminalSchema.safeParse({ ...validTerminal, operatorNotice: { subject: "s".repeat(ROUTINE_DEFINITION_LIMITS.operatorNoticeSubject) } }).success).toBe(true);
+    expect(routineTerminalSchema.safeParse({ ...validTerminal, operatorNotice: { subject: "s".repeat(ROUTINE_DEFINITION_LIMITS.operatorNoticeSubject + 1) } }).success).toBe(false);
+    expect(routineTerminalSchema.safeParse({ ...validTerminal, operatorNotice: { intro: "i".repeat(ROUTINE_DEFINITION_LIMITS.operatorNoticeIntro) } }).success).toBe(true);
+    expect(routineTerminalSchema.safeParse({ ...validTerminal, operatorNotice: { intro: "i".repeat(ROUTINE_DEFINITION_LIMITS.operatorNoticeIntro + 1) } }).success).toBe(false);
+    expect(routineTerminalSchema.safeParse({ ...validTerminal, operatorNotice: { subject: "Booking", body: "x" } }).success).toBe(false);
+  });
+
+  it("decides which endings notify operators: every hand-off, and a completion only when it carries a notice", () => {
+    expect(endingNotifiesOperators({ kind: "handoff" })).toBe(true);
+    expect(endingNotifiesOperators({ kind: "handoff", operatorNotice: { subject: null, intro: null } })).toBe(true);
+    expect(endingNotifiesOperators({ kind: "complete" })).toBe(false);
+    expect(endingNotifiesOperators({ kind: "complete", operatorNotice: { subject: null, intro: null } })).toBe(true);
+  });
+});

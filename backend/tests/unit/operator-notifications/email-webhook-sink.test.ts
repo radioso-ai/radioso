@@ -6,7 +6,7 @@ import type {
   ContactNotificationMailer,
   ContactWebhookHttpClient,
 } from "../../../src/modules/chat/services/actions/contactSendActionHandler.js";
-import { formatHandoffNotification, handoffNotificationFromAction } from "../../../src/modules/operatorNotifications/public.js";
+import { formatRoutineEndingNotification, routineEndingNotificationFromAction } from "../../../src/modules/operatorNotifications/public.js";
 
 type SentMessage = Parameters<ContactNotificationMailer["send"]>[0];
 type WebhookRequest = Parameters<ContactWebhookHttpClient["post"]>[0];
@@ -222,10 +222,8 @@ describe("EmailWebhookOperatorNotificationSink", () => {
     expect(sent[0].to).toBe("owner@business.example");
     expect(sent[0].subject).toBe("Conversation needs a human");
     expect(sent[0].idempotencyKey).toBe("routine-action:conv_1:handoff.notify:email:owner%40business.example");
-    expect(sent[0].text).toContain("Conversation: conv_1");
-    expect(sent[0].text).toContain("Workspace: ws_1");
-    expect(sent[0].text).toContain("Agent: agent_1");
-    expect(sent[0].text).toContain("Reason: routine_handoff");
+    // Plain prose for non-technical staff: just the headline, nothing technical underneath.
+    expect(sent[0].text).toBe("A conversation needs a human operator.\n");
     // No link resolver is wired here, so the mail omits the line rather than printing a
     // path that does not resolve. See the permalink cases below.
     expect(sent[0].text).not.toContain("Open:");
@@ -262,6 +260,8 @@ describe("EmailWebhookOperatorNotificationSink", () => {
       reason: "routine_handoff",
       routine: null,
       collected: {},
+      subject: null,
+      intro: null,
       dashboardUrl: null,
       dashboardPath: null,
       requestId: "request_1",
@@ -290,16 +290,11 @@ describe("EmailWebhookOperatorNotificationSink", () => {
     expect(sent[0].text).toBe([
       "A conversation needs a human operator.",
       "",
-      "Agent: Retreat desk (agent_1)",
-      "Routine: Book accommodation",
-      "Reason: routine_handoff",
-      "Conversation: conv_1",
-      "Workspace: ws_1",
-      "",
       "Collected:",
       "  Program: Yoga retreat",
       "  Arrival date: 2026-10-12",
       "  Guests: 2",
+      "",
       "Open: https://app.radioso.ai/w/support-abc/activity?itemId=conv_1",
     ].join("\n"));
   });
@@ -328,12 +323,14 @@ describe("EmailWebhookOperatorNotificationSink", () => {
       stepId: "handoff",
       collected: { program: "Yoga retreat", arrival_date: "2026-10-12", guests: 2 },
     });
-    const notification = handoffNotificationFromAction({
+    const notification = routineEndingNotificationFromAction({
+      kind: "handoff",
       payload: action.payload,
-      fallback: { conversationId: "conv_1", workspaceId: "ws_1" },
+      ids: { conversationId: "conv_1", workspaceId: "ws_1" },
+      fallback: { reason: "routine_handoff" },
       subject: { agentName: "Retreat desk", routineName: "Book accommodation" },
     });
-    const preview = formatHandoffNotification(notification);
+    const preview = formatRoutineEndingNotification(notification);
 
     await sink.deliver(notification, { ...context, idempotencyKey: "routine-action:conv_1:handoff.notify" });
 
@@ -371,6 +368,75 @@ describe("EmailWebhookOperatorNotificationSink", () => {
       reason: "routine_handoff",
       routine: { id: "routine_1", name: "Book accommodation" },
       collected: { program: "Yoga retreat", arrival_date: "2026-10-12" },
+      subject: null,
+      intro: null,
+      dashboardUrl: null,
+      dashboardPath: null,
+      requestId: "request_1",
+    });
+  });
+
+  const completionNotification = {
+    ...handoffNotification,
+    kind: "completion" as const,
+    reason: "routine_completed",
+    agentName: "Retreat desk",
+    routine: { id: "routine_1", name: "Book accommodation" },
+    collected: { name: "Ada Lovelace", arrival_date: "2026-10-12" },
+    notice: { subject: "New booking: {{slot.name}}", intro: "Confirm {{slot.arrival_date}} with the guest." },
+    conversation: { entryPageUrl: "https://ananda.example/stays" },
+  };
+
+  it("emails a completion notice in plain text with the authored subject and intro and every collected value", async () => {
+    const { mailer, sent } = recordingMailer();
+    const sink = new EmailWebhookOperatorNotificationSink(
+      mailer,
+      { resolve: async () => ({ emails: ["reception@ananda.example"], webhook: null }) },
+      undefined,
+      undefined,
+      { resolve: async () => "https://app.radioso.ai/w/support-abc/activity?itemId=conv_1" },
+    );
+
+    await sink.deliver(completionNotification, { ...context, idempotencyKey: "routine-action:conv_1:completion.notify" });
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0].subject).toBe("New booking: Ada Lovelace");
+    expect(sent[0].idempotencyKey).toBe("routine-action:conv_1:completion.notify:email:reception%40ananda.example");
+    expect(sent[0].text).toBe([
+      "A visitor completed a request in chat.",
+      "Confirm 2026-10-12 with the guest.",
+      "",
+      "Collected:",
+      "  Name: Ada Lovelace",
+      "  Arrival date: 2026-10-12",
+      "",
+      "Entry page: https://ananda.example/stays",
+      "Open: https://app.radioso.ai/w/support-abc/activity?itemId=conv_1",
+    ].join("\n"));
+  });
+
+  it("posts a completion notice to the webhook with reason routine_completed and the rendered subject and intro", async () => {
+    const { mailer } = recordingMailer();
+    const { httpClient, requests } = recordingWebhookClient();
+    const sink = new EmailWebhookOperatorNotificationSink(
+      mailer,
+      { resolve: async () => ({ emails: [], webhook: { url: "https://hooks.example.com/notices" } }) },
+      undefined,
+      httpClient,
+    );
+
+    await sink.deliver(completionNotification, { ...context, idempotencyKey: "routine-action:conv_1:completion.notify" });
+
+    expect(requests[0].headers["Idempotency-Key"]).toBe("routine-action:conv_1:completion.notify:webhook");
+    expect(JSON.parse(requests[0].rawBody)).toEqual({
+      conversationId: "conv_1",
+      workspaceId: "ws_1",
+      agentId: "agent_1",
+      reason: "routine_completed",
+      routine: { id: "routine_1", name: "Book accommodation" },
+      collected: { name: "Ada Lovelace", arrival_date: "2026-10-12" },
+      subject: "New booking: Ada Lovelace",
+      intro: "Confirm 2026-10-12 with the guest.",
       dashboardUrl: null,
       dashboardPath: null,
       requestId: "request_1",

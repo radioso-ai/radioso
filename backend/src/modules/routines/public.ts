@@ -1,4 +1,5 @@
 export {
+  endingNotifiesOperators,
   ROUTINE_DEFINITION_LIMITS,
   routineDefinitionDraftInputSchema,
   routineDefinitionDraftUpdateInputSchema,

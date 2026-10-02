@@ -1,7 +1,7 @@
 ---
 title: "Authoring Routines"
 description: "Create and edit dashboard routines in the Document view, read the Map, connect skills, and try a change in a test chat before it ships."
-last_updated: 2026-09-22
+last_updated: 2026-10-02
 ---
 
 # Authoring Routines
@@ -261,6 +261,24 @@ The routine's **Completion message** controls its default finish. Its **Handoff
 message** controls the standard escalation reply. A named ending carries its own
 message and appears as a target in the branch rows that reach it.
 
+An ending can also tell your team what the routine collected. A hand-off always
+does: the conversation goes to a person, and that person needs the details. A
+finish does when you turn on **Notify the team** in the ending's editor. The
+agent keeps the conversation, so a booking routine can end with "Is there
+anything else I can help you with?" while reception gets the booking by email.
+The row of a finish that notifies reads *notifies the team*.
+
+**Subject** and **Intro** are optional. Type `@` in either to insert a collected
+value, such as `New booking: {{slot.guest_name}}`; the notice fills it in when it
+sends. `@` offers only the values the routine collects; to put a new one in a
+notice, have a step ask for it first.
+A subject holds up to 200 characters and an intro up to 2,000; the field stops
+taking text at the limit. Leave them blank for the default subject, `Book accommodation: completed`
+for a finish or `Book accommodation: needs a human` for a hand-off. Whatever you
+write, the notice lists every collected value below the intro, so a short
+subject never hides what the guest said. See [Operator notices](#operator-notices)
+for what the team receives.
+
 ### Read validation notes
 
 The editor validates while you work. A note appears next to the row or field that
@@ -354,22 +372,56 @@ When the terminal matches `triggerKinds`, the runtime emits a `webhook.send`
 action. The action worker resolves the destination, signs the JSON body with its
 secret, and delivers it through the action outbox.
 
-### Handoff notifications
+### Operator notices
 
-When a routine reaches a `handoff` terminal, the chat turn sends the routine's
-reply, requests human ownership of the conversation, and queues a
-`handoff.notify` action. The notice reaches the agent's contact recipients by
-email and, when one is configured, the contact webhook, and the Slack
-escalation channel when the workspace has one. Each carries the routine's name,
-the agent's name, the reason, the conversation and workspace ids, and every
-value the routine collected — its declared slots, keyed by slot key, in the
-order the routine declares them. A booking desk that receives a "Book
-accommodation" handoff reads the program, dates, and guest name in the notice
-itself instead of opening the transcript first. Slot values that are text,
-numbers, or yes/no appear in the notice; a slot holding a structured value is
-left out of it. The email adds a `dashboardUrl` line that opens the conversation
-in the dashboard; the webhook body is documented under
-[Handoff and approval notifications](../docs-portal/content/api/agents-and-skills.mdx).
+A routine's ending decides two separate things. Its kind decides who has the
+conversation next: a hand-off moves it to a person, a finish leaves it with the
+agent. Its notice decides whether your team hears about it: every hand-off sends
+one, and a finish sends one when **Notify the team** is on.
+
+When a routine reaches a hand-off, the chat turn sends the routine's reply,
+requests human ownership of the conversation, and queues a `handoff.notify`
+action. When it reaches a finish that notifies, the turn sends the reply and
+queues a `completion.notify` action; the agent goes on answering the visitor,
+and nothing appears in the Inbox. Both notices go to the agent's contact
+recipients by email, to the contact webhook when one is configured, and to the
+Slack escalation channel when the workspace has one.
+
+The email reads as plain prose for whoever picks it up, not a log: it carries
+
+- the subject: the ending's **Subject** with collected values filled in, or the
+  default for its kind;
+- the headline, then the ending's **Intro** when it has one;
+- every value the routine collected — its declared slots, keyed by slot key, in
+  the order the routine declares them;
+- the page the conversation started on, when the conversation has one.
+
+The Slack post carries the same subject, headline, intro, collected values, and
+entry page as one block of text, led by the subject line. Before posting, the
+text escapes `&`, `<`, and `>`, so a collected value or an authored intro can't
+open a channel mention like `<!channel>` or a labelled link
+(`<https://example.com|label>`). `*bold*`, `_italic_`, and `` `code` `` still
+format, and Slack auto-links any bare URL the text contains. The webhook body
+carries the ids, the reason, the routine, the collected values in that same
+order, and the authored subject and intro as JSON fields; the entry page
+appears only in the email and Slack text. If the routine is deleted before the
+notice goes out, the collected values still arrive, in storage order rather
+than declaration order.
+
+A booking desk that receives a "Book accommodation" notice reads the program,
+dates, and guest name in the notice itself instead of opening the transcript
+first. Slot values that are text, numbers, or yes/no appear in the notice; a slot
+holding a structured value is left out of it. Dates appear as the routine stored
+them (`2026-10-12`), which reads the same in every language on your team. A
+`{{slot.<key>}}` in the subject or intro whose value the routine never collected
+shows a dash (`—`), and the notice still goes out. The email is plain text and
+ends with an `Open:` line that opens the conversation in the dashboard; the
+webhook body is documented under
+[Operator notifications](../docs-portal/content/api/agents-and-skills.mdx).
+
+Test Chat never sends a notice. A test turn that reaches an ending that notifies
+shows what the notice would say — its kind, subject, and body — in the turn's
+trace instead.
 
 ## How a routine goes live
 

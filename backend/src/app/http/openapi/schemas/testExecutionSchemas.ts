@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
+import { TEST_EXECUTION_LABEL_CHARS } from "../../../../modules/test-execution/public.js";
 import { retryTestExecutionSideSchema, sendTestExecutionMessageSchema, startTestExecutionSchema } from "../../routes/agentRevisionRequestSchemas.js";
 
 const uuid = z.string().uuid();
@@ -31,8 +32,8 @@ export const registerTestExecutionSchemas = (registry: OpenAPIRegistry) => {
   const TestExecutionHistoryDetailSchema = registry.register("TestExecutionHistoryDetail", TestExecutionHistoryItemSchema.extend({ testValues: z.array(z.unknown()), sides: z.array(TestExecutionHistorySideSchema), attempts: z.array(TestExecutionAttemptRecordSchema) }));
   // Only the list carries the count; a detail already holds the whole transcript.
   const TestExecutionHistoryListItemSchema = registry.register("TestExecutionHistoryListItem", TestExecutionHistoryItemSchema.extend({
-    turnCount: z.number().int().min(0).describe("User messages in this test, including any copied from a real conversation it continues. A greeting is not one."),
-    firstMessage: z.string().max(200).nullable().describe("The first user message in this test, clipped to 200 characters. Null until there is one."),
+    turnCount: z.number().int().min(0).describe("Messages the operator sent in this test. A greeting and messages copied from a real conversation are not counted."),
+    firstMessage: z.string().max(TEST_EXECUTION_LABEL_CHARS).nullable().describe(`The first message the operator sent. A longer one is clipped to ${TEST_EXECUTION_LABEL_CHARS} characters ending in "…". Null until one is sent.`),
   }));
   const TestExecutionHistoryListResponseSchema = registry.register("TestExecutionHistoryListResponse", z.object({ executions: z.array(TestExecutionHistoryListItemSchema), nextCursor: z.string().nullable(), hasMore: z.boolean() }));
   const TestExecutionHistoryDetailResponseSchema = registry.register("TestExecutionHistoryDetailResponse", z.object({ execution: TestExecutionHistoryDetailSchema }));

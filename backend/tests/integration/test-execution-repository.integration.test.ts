@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { TestExecutionRepository } from "../../src/db/repositories/testExecutionRepository.js";
 import type { AgentRevision } from "../../src/modules/agents/agentRevision.js";
-import { TestExecutionService } from "../../src/modules/test-execution/testExecution.js";
+import { TEST_EXECUTION_LABEL_CHARS, TestExecutionService } from "../../src/modules/test-execution/testExecution.js";
 import { ContextVariableRepository } from "../../src/db/repositories/contextVariableRepository.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { NoopUsageLimitPolicy } from "../../src/shared/domain/usageLimitPolicy.js";
@@ -114,29 +114,33 @@ describeDb("test execution repository", () => {
     expect(await database.query("SELECT 1 FROM agent_test_execution_attempts WHERE execution_id = $1 AND turn_id = $2", [execution.id, turnId])).toEqual([]);
   });
 
-  it("summarizes each listed execution's operator turns and opening message from its first side only", async () => {
-    const executionId = randomUUID(), emptyId = randomUUID(), turnA = randomUUID(), turnB = randomUUID();
-    const entry = (turnId: string, role: "user" | "assistant", content: string, at: number) => ({ turnId, attemptId: randomUUID(), role, content, createdAt: new Date(at) });
+  it("summarizes each listed execution from the turns the operator sent, not from its transcript", async () => {
+    const executionId = randomUUID(), seededId = randomUUID(), longId = randomUUID();
+    const entry = (role: "user" | "assistant", content: string, at: number) => ({ turnId: randomUUID(), attemptId: randomUUID(), role, content, createdAt: new Date(at) });
+    const side = (id: string, history: ReturnType<typeof entry>[], revision = frozenRevision()) => ({ id: randomUUID(), executionId: id, revision, conversationId: randomUUID(), state: "ready" as const, retryable: false, continuation: null, history });
+    const sentTurn = (id: string, message: string, at: string) =>
+      database.query("INSERT INTO agent_test_execution_turns (execution_id, turn_id, message, input_fingerprint, state, created_at) VALUES ($1, $2, $3, 'fingerprint', 'completed', $4)", [id, randomUUID(), message, at]);
+    // A comparison: two sent turns answered on both sides, after a greeting.
     await repository.create({ id: executionId, workspaceId, agentId, mode: "compare", generation: 1, testValues: [], skillEffects: "suppressed", idempotencyKey: executionId, sides: [
-      { id: randomUUID(), executionId, revision: frozenRevision(), conversationId: randomUUID(), state: "ready", retryable: false, continuation: null, history: [
-        entry(randomUUID(), "assistant", "Hi!", 1), entry(turnA, "user", "first question", 2), entry(turnA, "assistant", "answer", 3), entry(turnB, "user", "second question", 4),
-      ] },
-      { id: randomUUID(), executionId, revision: frozenRevision(secondRevisionId), conversationId: randomUUID(), state: "ready", retryable: false, continuation: null, history: [entry(randomUUID(), "user", "not the first side", 1)] },
+      side(executionId, [entry("assistant", "Hi!", 1), entry("user", "first question", 2), entry("assistant", "answer", 3), entry("user", "second question", 4)]),
+      side(executionId, [entry("assistant", "Hi!", 1), entry("user", "first question", 2)], frozenRevision(secondRevisionId)),
     ] });
-    await repository.create({ id: emptyId, workspaceId, agentId, mode: "single", generation: 1, testValues: [], skillEffects: "suppressed", idempotencyKey: emptyId, sides: [{ id: randomUUID(), executionId: emptyId, revision: frozenRevision(), conversationId: randomUUID(), state: "ready", retryable: false, history: [], continuation: null }] });
+    await sentTurn(executionId, "second question", "2026-09-08T10:02:00.000Z");
+    await sentTurn(executionId, "first question", "2026-09-08T10:01:00.000Z");
+    // A copy of a real conversation that the operator has not written in yet.
+    await repository.create({ id: seededId, workspaceId, agentId, mode: "single", generation: 1, testValues: [], skillEffects: "suppressed", idempotencyKey: seededId, sides: [
+      side(seededId, [entry("user", "a customer's question", 1), entry("assistant", "a reply", 2)]),
+    ] });
+    // A long opening message is read only far enough to label the row and show that it was clipped.
+    await repository.create({ id: longId, workspaceId, agentId, mode: "single", generation: 1, testValues: [], skillEffects: "suppressed", idempotencyKey: longId, sides: [side(longId, [])] });
+    await sentTurn(longId, "y".repeat(20_000), "2026-09-08T10:03:00.000Z");
 
-    const summaries = await repository.summarizeTranscripts({ workspaceId, agentId, executionIds: [executionId, emptyId] });
+    const summaries = await repository.summarizeTurns({ workspaceId, agentId, executionIds: [executionId, seededId, longId] });
 
     expect(summaries.get(executionId)).toEqual({ turnCount: 2, firstMessage: "first question" });
-    expect(summaries.get(emptyId)).toEqual({ turnCount: 0, firstMessage: null });
-    await expect(repository.summarizeTranscripts({ workspaceId: randomUUID(), agentId, executionIds: [executionId] })).resolves.toEqual(new Map());
-
-    // A long opening message is read only far enough to label the row and show that it was clipped.
-    const longId = randomUUID();
-    await repository.create({ id: longId, workspaceId, agentId, mode: "single", generation: 1, testValues: [], skillEffects: "suppressed", idempotencyKey: longId, sides: [
-      { id: randomUUID(), executionId: longId, revision: frozenRevision(), conversationId: randomUUID(), state: "ready", retryable: false, continuation: null, history: [entry(randomUUID(), "user", "y".repeat(20_000), 1)] },
-    ] });
-    expect((await repository.summarizeTranscripts({ workspaceId, agentId, executionIds: [longId] })).get(longId)?.firstMessage).toBe("y".repeat(201));
+    expect(summaries.get(seededId)).toEqual({ turnCount: 0, firstMessage: null });
+    expect(summaries.get(longId)).toEqual({ turnCount: 1, firstMessage: "y".repeat(TEST_EXECUTION_LABEL_CHARS + 1) });
+    await expect(repository.summarizeTurns({ workspaceId: randomUUID(), agentId, executionIds: [executionId] })).resolves.toEqual(new Map());
   });
 
   it("claims all comparison sides atomically and serializes simultaneous completions", async () => {

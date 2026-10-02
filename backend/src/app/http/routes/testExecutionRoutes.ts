@@ -1,7 +1,7 @@
 import { Router, type Response } from "express";
 import { z } from "zod";
 
-import type { TestExecutionService, TestExecution, TestExecutionAttemptRecord, TestExecutionEvent, TestExecutionHistoryItem, TestExecutionSummary } from "../../../modules/test-execution/testExecution.js";
+import { testExecutionLabel, type TestExecutionService, type TestExecution, type TestExecutionAttemptRecord, type TestExecutionEvent, type TestExecutionHistoryItem, type TestExecutionSummary } from "../../../modules/test-execution/testExecution.js";
 import type { EvalSnapshotService } from "../../../modules/eval/services/evalSnapshotService.js";
 import type { WorkspaceSessionDependencies } from "../middleware/requireWorkspaceSession.js";
 import { requireWorkspaceSession } from "../middleware/requireWorkspaceSession.js";
@@ -16,13 +16,6 @@ const retryParams = executionParams.extend({ sideId: z.string().uuid() });
 const retainParams = executionParams.extend({ sideId: z.string().uuid() });
 const testExecutionEvalSnapshotParams = retainParams.extend({ messageId: z.string().min(1) });
 const historyPageQuerySchema = z.object({ limit: z.coerce.number().int().min(1).max(100).default(50), cursor: z.string().min(1).optional() });
-// A list row labels a test; a message can run to 20,000 characters.
-const FIRST_MESSAGE_LABEL_CHARS = 200;
-const clipLabel = (text: string): string => {
-  if (text.length <= FIRST_MESSAGE_LABEL_CHARS) return text;
-  const end = /[\uD800-\uDBFF]/.test(text[FIRST_MESSAGE_LABEL_CHARS - 1]) ? FIRST_MESSAGE_LABEL_CHARS - 1 : FIRST_MESSAGE_LABEL_CHARS;
-  return text.slice(0, end);
-};
 
 interface TestExecutionRouteDependencies extends WorkspaceSessionDependencies {
   testExecutionService: TestExecutionService;
@@ -61,7 +54,7 @@ const presentHistory = (execution: TestExecutionHistoryItem) => ({
 const presentHistorySummary = (execution: TestExecutionSummary) => ({
   ...presentHistory(execution),
   turnCount: execution.turnCount,
-  firstMessage: execution.firstMessage === null ? null : clipLabel(execution.firstMessage),
+  firstMessage: execution.firstMessage === null ? null : testExecutionLabel(execution.firstMessage),
 });
 
 const presentDetail = (execution: TestExecution, attempts: readonly TestExecutionAttemptRecord[]) => {

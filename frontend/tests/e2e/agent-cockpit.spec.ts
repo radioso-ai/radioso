@@ -700,6 +700,42 @@ test('shares a saved test as a link that opens it on a fresh visit', async ({ pa
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(link)
 })
 
+test('shows a link to copy by hand when the page has no clipboard, only beside its own test', async ({ page }) => {
+  // A dashboard served over plain HTTP has no clipboard access.
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true })
+  })
+  const saved = {
+    id: '22222222-2222-4222-8222-222222222222', generation: 1, mode: 'single', state: 'completed', createdAt: nowIso,
+    skillEffects: 'suppressed', turnCount: 1, firstMessage: 'Is the shop open on Sunday?',
+    sides: [{ id: 'plain-side', revision: published, conversationId: 'plain-conversation', state: 'completed', retryable: false }],
+  }
+  await installCockpitMocks(page, {
+    executionHistory: [saved],
+    executionDetail: {
+      ...saved,
+      testValues: [],
+      sides: [{ ...saved.sides[0], history: [
+        { turnId: 'plain-turn', role: 'user', content: 'Is the shop open on Sunday?', attemptId: 'plain-attempt', createdAt: nowIso },
+        { turnId: 'plain-turn', role: 'assistant', content: 'Yes, from ten.', attemptId: 'plain-attempt', createdAt: nowIso },
+      ] }],
+      attempts: [{ sideId: 'plain-side', turnId: 'plain-turn', attemptId: 'plain-attempt', fence: 1, state: 'completed', createdAt: nowIso, updatedAt: nowIso }],
+    },
+  })
+  await page.goto(testUrl)
+  await clickTestChatAction(page, 'Conversation history')
+  await page.getByRole('row').filter({ hasText: 'Is the shop open on Sunday?' }).getByRole('button', { name: 'Copy link', exact: true }).click()
+  await expect(page.getByText(`testExecution=${saved.id}`)).toBeVisible()
+
+  await page.getByRole('button', { name: 'Open', exact: true }).click()
+  await expect(page.getByText('Yes, from ten.', { exact: true })).toBeVisible()
+  await clickTestChatAction(page, 'Copy link to this chat')
+  await expect(page.getByText(`testExecution=${saved.id}`)).toBeVisible()
+
+  await clickTestChatAction(page, 'New chat')
+  await expect(page.getByText(`testExecution=${saved.id}`)).toHaveCount(0)
+})
+
 test('gives Conversation history its own link, and starts no greeting behind it', async ({ page }) => {
   const saved = {
     id: 'execution-history-linked', generation: 1, mode: 'compare', state: 'completed', createdAt: nowIso,

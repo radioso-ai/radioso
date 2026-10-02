@@ -76,9 +76,10 @@ services.
 - Share a saved test: `agent-view.tsx` passes `testExecutionHref` (the
   `?testExecution=<id>` link above, without `fromConversation`) into Test Chat, which
   backs the **Copy link to this chat** menu item and the per-row link button in
-  `test-execution-history-view.tsx`. Both copy through `lib/copy-dashboard-link.ts`,
-  which hands back the URL to show when the page has no clipboard access (a plain-HTTP
-  host). Anyone with `workspace.agents.manage` in the workspace can open the link. The
+  `test-execution-history-view.tsx`. Both copy through `hooks/use-copy-dashboard-link.ts`
+  (over `lib/copy-dashboard-link.ts`), which keys its feedback to the copied test and
+  hands back the URL for `UncopiedLink` to show when the page has no clipboard access
+  (a plain-HTTP host). Anyone with `workspace.agents.manage` in the workspace can open the link. The
   history list labels each test by its clipped `firstMessage` and shows its `turnCount`
   as **Messages**.
 - Conversation history is route state, not component state: `agentTestChatView`

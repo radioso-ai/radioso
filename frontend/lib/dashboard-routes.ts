@@ -345,8 +345,8 @@ const parseAgentTab = (value: string | null): AgentTab | undefined => {
 }
 
 const isValidAgentId = (value: string): boolean => UUID_PATTERN.test(value)
-// A shared test link comes from someone else, and the id goes into an API path.
-const isValidTestExecutionId = (value: string | null): value is string => value !== null && UUID_PATTERN.test(value)
+/** A shared test link comes from someone else; check its id before it reaches an API path. */
+export const isValidTestExecutionId = (value: string): boolean => UUID_PATTERN.test(value)
 
 const parseKnowledgeTab = (value: string | null): KnowledgeTab | undefined => {
   if (value === 'documents' || value === 'sources' || value === 'ingestion') {
@@ -961,8 +961,8 @@ export const parseDashboardRoute = (
       ...(secondSegment ? { agentId: secondSegment } : {}),
       ...(fourthSegment ? { agentRoutineId: fourthSegment } : {}),
       agentTab: parseAgentTab(searchParams?.get('tab') ?? null),
-      ...(isValidTestExecutionId(searchParams?.get('testExecution') ?? null)
-        ? { agentTestExecutionId: searchParams?.get('testExecution') ?? undefined }
+      ...(searchParams?.get('testExecution')
+        ? { agentTestExecutionId: searchParams.get('testExecution') ?? undefined }
         : {}),
       ...(searchParams?.get('fromConversation') === '1'
         ? { agentTestExecutionFromConversation: true }

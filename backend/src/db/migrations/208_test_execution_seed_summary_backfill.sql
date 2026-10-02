@@ -3,8 +3,8 @@
 -- are the user entries in its side history that no sent turn owns: every message the operator sends
 -- has a row in agent_test_execution_turns, and a side retained from a comparison copies its turns
 -- along. Only a single-revision test can be seeded, so only those are read, and side 0 holds the whole
--- thread. The first copied message with any non-whitespace character labels the test, kept to 201
--- characters, one more than a label shows, as the app's seed summary does (its whitespace test is
+-- thread. The first copied message with any non-whitespace character labels the test, kept to 1,000
+-- characters, as the app's seed summary does (its whitespace test is
 -- JavaScript's, which can differ from Postgres's on rare Unicode spaces).
 --
 -- A test seeded by a still-running older instance after this runs keeps the defaults: its list count
@@ -24,15 +24,28 @@ FROM (
   SELECT
     side.execution_id,
     count(*) AS turn_count,
-    (array_agg(left(item.entry ->> 'content', 201) ORDER BY item.ordinal)
-      FILTER (WHERE item.entry ->> 'content' ~ '\S'))[1] AS first_message
+    -- Stops at the first copied message with text, so only that one is cut.
+    (
+      SELECT left(first_item.entry ->> 'content', 1000)
+      FROM jsonb_array_elements(side.history) WITH ORDINALITY AS first_item(entry, ordinal)
+      WHERE first_item.entry ->> 'role' = 'user'
+        AND first_item.entry ->> 'content' ~ '\S'
+        AND NOT EXISTS (
+          SELECT 1
+          FROM agent_test_execution_turns AS turn
+          WHERE turn.execution_id = side.execution_id
+            AND turn.turn_id::text = first_item.entry ->> 'turnId'
+        )
+      ORDER BY first_item.ordinal
+      LIMIT 1
+    ) AS first_message
   FROM agent_test_execution_sides AS side
   JOIN agent_test_executions AS candidate
     ON candidate.id = side.execution_id
    AND candidate.mode = 'single'
    AND candidate.seeded_turn_count = 0
    AND candidate.seeded_first_message IS NULL
-  CROSS JOIN LATERAL jsonb_array_elements(side.history) WITH ORDINALITY AS item(entry, ordinal)
+  CROSS JOIN LATERAL jsonb_array_elements(side.history) AS item(entry)
   WHERE side.side_ordinal = 0
     AND item.entry ->> 'role' = 'user'
     AND NOT EXISTS (
@@ -41,7 +54,7 @@ FROM (
       WHERE turn.execution_id = side.execution_id
         AND turn.turn_id::text = item.entry ->> 'turnId'
     )
-  GROUP BY side.execution_id
+  GROUP BY side.execution_id, side.history
 ) AS copied
 WHERE execution.id = copied.execution_id
   AND execution.mode = 'single'

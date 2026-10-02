@@ -506,7 +506,7 @@ describe("TestExecutionService", () => {
 
       await service.start({ idempotencyKey: "idem-seed", workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [], seedConversationId });
 
-      expect(create).toHaveBeenCalledWith(expect.objectContaining({ seededSummary: { turnCount: 2, firstMessage: "w".repeat(TEST_EXECUTION_LABEL_CHARS + 1) } }));
+      expect(create).toHaveBeenCalledWith(expect.objectContaining({ seededSummary: { turnCount: 2, firstMessage: "w".repeat(1_000) } }));
     });
 
     it("keeps a copied label longer than the label limit even when an emoji straddles the cut", async () => {
@@ -516,9 +516,9 @@ describe("TestExecutionService", () => {
 
       await service.start({ idempotencyKey: "idem-seed", workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [], seedConversationId });
 
-      // One code point past the label, as SQL `left` counts, so the list still marks it clipped.
+      // Kept whole well past the label, so the list still sees it is longer and marks it clipped.
       const stored = create.mock.calls[0][0].seededSummary?.firstMessage;
-      expect(stored).toBe(`${"a".repeat(TEST_EXECUTION_LABEL_CHARS)}😀`);
+      expect(stored).toBe(opening);
       expect(stored!.length).toBeGreaterThan(TEST_EXECUTION_LABEL_CHARS);
     });
 

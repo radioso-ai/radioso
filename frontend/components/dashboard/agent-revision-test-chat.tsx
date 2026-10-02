@@ -30,6 +30,7 @@ import {
 } from "@/components/dashboard/turn-inspector/turn-diagnostics-panel";
 import { getPrimaryLeafTrace } from "@/lib/turn-trace";
 import { useCopyDashboardLink } from "@/hooks/use-copy-dashboard-link";
+import { isValidTestExecutionId } from "@/lib/dashboard-routes";
 import {
   Dialog,
   DialogContent,
@@ -252,12 +253,14 @@ export function AgentRevisionTestChat({
   // Why a test opened from a link could not open. Kept apart from `error`, which starting a chat
   // clears, so a proactive greeting cannot wipe it; the operator's next move does.
   const [linkOpenFailure, setLinkOpenFailure] = useState<string | null>(null);
+  const executionLink = useCopyDashboardLink();
+  const resetExecutionLink = executionLink.reset;
   const setView = useCallback((next: View) => {
     supersedePendingOpens(next);
     setLinkOpenFailure(null);
+    resetExecutionLink();
     onHistoryOpenChangeRef.current(next === "history");
-  }, [supersedePendingOpens]);
-  const executionLink = useCopyDashboardLink();
+  }, [resetExecutionLink, supersedePendingOpens]);
   const [selected, setSelected] = useState<string[]>(cachedSession?.selected ?? []);
   const [contextOpen, setContextOpen] = useState(false);
   const [evalsOpen, setEvalsOpen] = useState(false);
@@ -1316,6 +1319,11 @@ export function AgentRevisionTestChat({
     const notice = openExecutionFromConversation
       ? "Continuing a copy of the conversation. The original is untouched."
       : undefined;
+    if (!isValidTestExecutionId(openExecutionId)) {
+      setLinkOpenFailure("This test link is incomplete. Ask for it again.");
+      onOpenExecutionConsumedRef.current?.();
+      return;
+    }
     void agentRevisionsApi
       .getTestExecution(agentId, openExecutionId)
       .then((response) => {
@@ -1463,10 +1471,8 @@ export function AgentRevisionTestChat({
           onSelect={() => {
             proactiveStartKey.current = null;
             writeAgentRevisionTestChatSession(sessionKey, { proactiveStartKey: null });
-            // From Conversation history, a new chat is where the operator wants to be.
-            if (view === "history") setView("chat");
-            else supersedePendingOpens(view);
-            setLinkOpenFailure(null);
+            // From Conversation history too, a new chat is where the operator wants to be.
+            setView("chat");
             clearChatExecution("New chat ready.");
           }}
         >

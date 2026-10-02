@@ -122,12 +122,26 @@ export interface TestExecutionHistoryItem {
   sides: readonly TestExecutionHistorySide[];
 }
 
-/**
- * The most of a test's opening message any list shows; the store reads one more so a longer one shows
- * as clipped. A seeded test stores its label at this length plus one (migration 208 hard-codes 201), so
- * raising it needs those rows refilled, or their labels would read as whole.
- */
+/** The most of a test's opening message any list shows; the store reads one more so a longer one shows as clipped. */
 export const TEST_EXECUTION_LABEL_CHARS = 200;
+
+/**
+ * How much of a seed's first message a test keeps for its label, in code points: well past any label,
+ * so the label limit can change without refilling rows. Migration 208 uses the same 1,000.
+ */
+const SEEDED_FIRST_MESSAGE_CHARS = 1_000;
+
+/** The first `count` code points of `text`, without walking the rest of a long paste. */
+const leadingCodePoints = (text: string, count: number): string => {
+  let end = 0;
+  let taken = 0;
+  for (const codePoint of text) {
+    if (taken === count) break;
+    end += codePoint.length;
+    taken += 1;
+  }
+  return text.slice(0, end);
+};
 
 /** A test's opening message as a list label: whole, or clipped on a character boundary and marked with an ellipsis. */
 const testExecutionLabel = (firstMessage: string): { label: string; clipped: boolean } =>
@@ -403,15 +417,15 @@ export class TestExecutionService {
 
   /**
    * What a seed copied in, for the history list: each user message is a turn (see `seededHistory`),
-   * and the first with any non-whitespace character labels the test. It is kept to one code point
-   * more than a label shows, the same unit SQL `left` cuts in, so a longer one still reads as
-   * clipped. Migration 208 backfills older tests the same way, except that its whitespace test is
-   * Postgres's `[[:space:]]`, which can differ from JavaScript's `\s` on rare Unicode spaces.
+   * and the first with any non-whitespace character labels the test, kept to
+   * `SEEDED_FIRST_MESSAGE_CHARS` code points. Migration 208 backfills older tests the same way, except
+   * that its whitespace test is Postgres's `[[:space:]]`, which can differ from JavaScript's `\s` on
+   * rare Unicode spaces.
    */
   private seededSummary(messages: readonly TestExecutionSeedMessage[]): TestExecutionSeededSummary {
     const userMessages = messages.filter((message) => message.role === "user");
     const first = userMessages.find((message) => /\S/u.test(message.content));
-    return { turnCount: userMessages.length, firstMessage: first ? Array.from(first.content).slice(0, TEST_EXECUTION_LABEL_CHARS + 1).join("") : null };
+    return { turnCount: userMessages.length, firstMessage: first ? leadingCodePoints(first.content, SEEDED_FIRST_MESSAGE_CHARS) : null };
   }
 
   /**

@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { RefreshCw, X } from 'lucide-react'
 
@@ -204,6 +204,8 @@ function AgentSettingsDashboardPage({
   )
 }
 
+/** history.state key marking a Conversation history entry pushed over the Test Chat entry. */
+const TEST_CHAT_HISTORY_OVER_CHAT = 'radiosoTestChatHistoryOverChat'
 export function AgentView({
   accountId,
   routeState,
@@ -373,15 +375,6 @@ export function AgentView({
     agentTestExecutionFromConversation: undefined,
   }), [accountId, routeState, selectedAgentId])
   const historyOpen = routeState.agentTestChatView === 'history'
-  // Whether the history view's entry was pushed from this chat, so leaving it can step back.
-  const pushedHistoryEntry = useRef(false)
-  useEffect(() => {
-    const onPopState = () => {
-      pushedHistoryEntry.current = false
-    }
-    window.addEventListener('popstate', onPopState)
-    return () => window.removeEventListener('popstate', onPopState)
-  }, [])
   // The view is client state, so these are shallow history entries with no server round trip.
   const changeHistoryOpen = useCallback((open: boolean) => {
     if (open === historyOpen) return
@@ -398,14 +391,14 @@ export function AgentView({
       // Rewrite the chat entry first, so Back never returns to an open command that was dropped.
       const chatHref = testChatHref(undefined)
       if (chatHref !== `${window.location.pathname}${window.location.search}`) window.history.replaceState(null, '', chatHref)
-      window.history.pushState(null, '', testChatHref('history'))
-      pushedHistoryEntry.current = true
+      // Marks this entry as pushed over the chat, so leaving it can step back; the marker travels
+      // with the entry through Back and Forward, which a component-wide flag could not follow.
+      window.history.pushState({ [TEST_CHAT_HISTORY_OVER_CHAT]: true }, '', testChatHref('history'))
       return
     }
     // Leaving history returns to the chat entry it came from, so the browser's Back then leaves
     // Test Chat instead of bouncing between the two views.
-    if (pushedHistoryEntry.current) {
-      pushedHistoryEntry.current = false
+    if ((window.history.state as Record<string, unknown> | null)?.[TEST_CHAT_HISTORY_OVER_CHAT] === true) {
       window.history.back()
       return
     }

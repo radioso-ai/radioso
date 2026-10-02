@@ -203,7 +203,8 @@ export class TestExecutionRepository implements TestExecutionRepositoryPort {
       .select([
         "execution.id as execution_id",
         sql<string>`execution.seeded_turn_count + (SELECT count(*) FROM agent_test_execution_turns AS turn WHERE turn.execution_id = execution.id)`.as("turn_count"),
-        sql<string | null>`left(COALESCE(execution.seeded_first_message, (SELECT turn.message FROM agent_test_execution_turns AS turn WHERE turn.execution_id = execution.id ORDER BY turn.created_at, turn.turn_id LIMIT 1)), ${input.firstMessageChars})`.as("first_message"),
+        // A whitespace-only message is a sent turn but never a label, matching the seed summary's rule.
+        sql<string | null>`left(COALESCE(execution.seeded_first_message, (SELECT turn.message FROM agent_test_execution_turns AS turn WHERE turn.execution_id = execution.id AND turn.message ~ '\\S' ORDER BY turn.created_at, turn.turn_id LIMIT 1)), ${input.firstMessageChars})`.as("first_message"),
       ])
       .where("execution.workspace_id", "=", input.workspaceId)
       .where("execution.agent_id", "=", input.agentId)

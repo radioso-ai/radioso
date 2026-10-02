@@ -168,6 +168,27 @@ describe("Test Chat copilot descriptors", () => {
     expect(output.omissions).toEqual([{ field: "sessions.firstMessage", reason: "string_length", omittedCount: 1 }]);
   });
 
+  it("still bounds a first message that arrives longer than a label", async () => {
+    const listSessions = vi.fn(async () => ({
+      sessions: [{
+        testExecutionId: EXECUTION_ID,
+        mode: "single" as const,
+        state: "completed" as const,
+        skillEffects: "suppressed" as const,
+        createdAt: "2026-09-20T10:00:00.000Z",
+        sides: [{ sideId: SIDE_ID, revision: { id: PUBLISHED_ID, kind: "published" as const, versionNumber: 3, createdAt: "2026-09-01T00:00:00.000Z" }, state: "completed" as const }],
+        turnCount: 1,
+        firstMessage: "y".repeat(900),
+        firstMessageClipped: false,
+      }],
+      nextCursor: null,
+    }));
+    const output = await invoke(port({ listSessions }), "test_chat_sessions", {});
+
+    expect(output.sessions[0].firstMessage.length).toBeLessThanOrEqual(200);
+    expect(output.omissions).toEqual([{ field: "sessions.firstMessage", reason: "string_length", omittedCount: 1 }]);
+  });
+
   it("reads a transcript as turns with coarse stages, keeping the most recent turns", async () => {
     const turns = Array.from({ length: 24 }, (_unused, index) => turn({
       turnId: `70000000-0000-4000-8000-0000000000${String(index).padStart(2, "0")}`,

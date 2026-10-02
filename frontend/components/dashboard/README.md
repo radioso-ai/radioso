@@ -87,9 +87,12 @@ services.
   chat or `TestExecutionHistoryView`. The component asks `agent-view.tsx` to change it
   through `onHistoryOpenChange`, which works on shallow browser-history entries rather
   than server navigations: opening history rewrites the chat entry without any pending
-  `testExecution`, then pushes the history entry; leaving it steps back to that chat
-  entry (or rewrites the entry when history was the landing page), so the browser's Back
-  leaves Test Chat instead of bouncing between the two views. `viewIntent` records the view the operator last asked
+  `testExecution`, then pushes the history entry with a `history.state` marker; leaving
+  it steps back to that chat entry when the marker is there (it survives Back and
+  Forward), or rewrites the entry when history was the landing page, so the browser's
+  Back leaves Test Chat instead of bouncing between the two views. The route keeps a
+  `testExecution` value as given; Test Chat checks it is a UUID (`isValidTestExecutionId`)
+  before asking the API, and says so in `linkOpenFailure` when it is not. `viewIntent` records the view the operator last asked
   for and a generation that every view change and New chat moves on: a history-row open
   lands only while history is still wanted, a link open only if nothing superseded it, and
   a link that fails to open reports in `linkOpenFailure`, which a greeting's start does not

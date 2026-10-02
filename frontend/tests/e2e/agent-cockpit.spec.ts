@@ -793,6 +793,19 @@ test('keeps a shared link that cannot open on screen after the greeting starts',
   await expect(page).not.toHaveURL(/testExecution=/)
 })
 
+test('says so when a shared link carries a broken test id, without asking the API', async ({ page }) => {
+  await installCockpitMocks(page)
+  const detailRequests: string[] = []
+  page.on('request', (request) => {
+    if (/\/test-executions\/[^/?]+$/.test(new URL(request.url()).pathname)) detailRequests.push(request.url())
+  })
+  await page.goto(`${testUrl}&testExecution=1111-broken`)
+
+  await expect(page.getByRole('alert').filter({ hasText: 'This test link is incomplete' })).toBeVisible()
+  await expect(page).not.toHaveURL(/testExecution=/)
+  expect(detailRequests).toEqual([])
+})
+
 test('New chat from Conversation history drops a row still opening', async ({ page }) => {
   const saved = {
     id: '55555555-5555-4555-8555-555555555555', generation: 1, mode: 'single', state: 'completed', createdAt: nowIso,
@@ -871,6 +884,13 @@ test('gives Conversation history its own link, and starts no greeting behind it'
   await expect(page.getByRole('heading', { name: 'Conversation history', exact: true })).toBeVisible()
   await page.goBack()
   await expect(testChatComposer(page)).toBeVisible()
+  // Reached by Forward, the history entry still knows it sits over the chat.
+  await page.goForward()
+  await expect(page.getByRole('heading', { name: 'Conversation history', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Back to chat', exact: true }).click()
+  await expect(testChatComposer(page)).toBeVisible()
+  await page.goForward()
+  await expect(page.getByRole('heading', { name: 'Conversation history', exact: true })).toBeVisible()
 })
 
 test('fences a delayed history open after the operator returns to a new chat', async ({ page }) => {

@@ -127,6 +127,8 @@ describeDb("test execution repository", () => {
     ] });
     await sentTurn(executionId, "second question", "2026-09-08T10:02:00.000Z");
     await sentTurn(executionId, "first question", "2026-09-08T10:01:00.000Z");
+    // A whitespace-only message counts as sent but never labels the test.
+    await sentTurn(executionId, "   ", "2026-09-08T10:00:00.000Z");
     // A copy of a real conversation: what it copied in is recorded at start, and the operator then sends one message.
     await repository.create({ id: seededId, workspaceId, agentId, mode: "single", generation: 1, testValues: [], skillEffects: "suppressed", idempotencyKey: seededId, seededSummary: { turnCount: 2, firstMessage: "a customer's question" }, sides: [
       side(seededId, [entry("user", "a customer's question", 1), entry("assistant", "a reply", 2), entry("user", "a follow-up", 3)]),
@@ -141,7 +143,7 @@ describeDb("test execution repository", () => {
 
     const summaries = await repository.summarizeTurns({ workspaceId, agentId, executionIds: [executionId, seededId, longId, emptyId], firstMessageChars: 201 });
 
-    expect(summaries.get(executionId)).toEqual({ turnCount: 2, firstMessage: "first question" });
+    expect(summaries.get(executionId)).toEqual({ turnCount: 3, firstMessage: "first question" });
     expect(summaries.get(seededId)).toEqual({ turnCount: 3, firstMessage: "a customer's question" });
     expect(summaries.get(longId)).toEqual({ turnCount: 1, firstMessage: "y".repeat(201) });
     expect(summaries.get(emptyId)).toEqual({ turnCount: 0, firstMessage: null });

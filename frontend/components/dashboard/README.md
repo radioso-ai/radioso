@@ -76,14 +76,20 @@ services.
 - Share a saved test: `agent-view.tsx` passes `testExecutionHref` (the
   `?testExecution=<id>` link above, without `fromConversation`) into Test Chat, which
   backs the **Copy link to this chat** menu item and the per-row link button in
-  `test-execution-history-view.tsx`. Anyone with `workspace.agents.manage` in the
-  workspace can open it. The history list labels each test by its clipped
-  `firstMessage` and shows its `turnCount` as **Messages**.
+  `test-execution-history-view.tsx`. Both copy through `lib/copy-dashboard-link.ts`,
+  which hands back the URL to show when the page has no clipboard access (a plain-HTTP
+  host). Anyone with `workspace.agents.manage` in the workspace can open the link. The
+  history list labels each test by its clipped `firstMessage` and shows its `turnCount`
+  as **Messages**.
 - Conversation history is route state, not component state: `agentTestChatView`
   (query `view=history`) decides whether `agent-revision-test-chat.tsx` shows the
-  chat or `TestExecutionHistoryView`, and the component asks `agent-view.tsx` to push
-  the change through `onHistoryOpenChange`. Opening a saved test (`testExecution`)
-  always shows the chat, so the route drops `view` when both are present.
+  chat or `TestExecutionHistoryView`. The component asks `agent-view.tsx` to change it
+  through `onHistoryOpenChange`, which adds a shallow `window.history.pushState` entry
+  rather than a server navigation. Until the route catches up, `requestedView` fences a
+  slow history open, and a proactive greeting waits for the chat view. Opening a saved
+  test (`testExecution`) always shows the chat, so the route drops `view` when both are
+  present, and `buildAgentSectionHref` drops all three Test Chat params so section
+  links land on the section.
 - Test an unpublished routine: **Test draft** on a saved draft in
   `settings/assistant-routines-section.tsx` navigates to the agent's Test Chat tab
   (`agent-revision-test-chat.tsx`), whose Draft candidate is built from the agent draft

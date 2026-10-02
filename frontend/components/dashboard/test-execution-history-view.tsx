@@ -20,6 +20,7 @@ import {
   type TestExecutionHistoryDetail,
   type TestExecutionHistoryListItem,
 } from '@/lib/api-agent-revisions'
+import { copyDashboardLink } from '@/lib/copy-dashboard-link'
 
 const timestampFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 
@@ -42,6 +43,7 @@ export function TestExecutionHistoryView({
 }) {
   const [executions, setExecutions] = useState<TestExecutionHistoryListItem[] | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [uncopiedLink, setUncopiedLink] = useState<string | null>(null)
   const copiedTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [openingId, setOpeningId] = useState<string | null>(null)
@@ -93,17 +95,18 @@ export function TestExecutionHistoryView({
 
   const copyLink = async (executionId: string) => {
     if (!linkFor) return
-    try {
-      await navigator.clipboard.writeText(new URL(linkFor(executionId), window.location.href).toString())
-      setCopiedId(executionId)
-      if (copiedTimeout.current !== null) clearTimeout(copiedTimeout.current)
-      copiedTimeout.current = setTimeout(() => {
-        copiedTimeout.current = null
-        setCopiedId(null)
-      }, 1500)
-    } catch {
-      setError('Could not copy the link.')
+    const result = await copyDashboardLink(linkFor(executionId))
+    if (!result.copied) {
+      setUncopiedLink(result.url)
+      return
     }
+    setUncopiedLink(null)
+    setCopiedId(executionId)
+    if (copiedTimeout.current !== null) clearTimeout(copiedTimeout.current)
+    copiedTimeout.current = setTimeout(() => {
+      copiedTimeout.current = null
+      setCopiedId(null)
+    }, 1500)
   }
 
   const loadMore = async () => {
@@ -127,7 +130,7 @@ export function TestExecutionHistoryView({
   if (executions === null) return <div className="flex justify-center p-10"><LogoSpinner imageClassName="h-7 w-7" /></div>
   if (executions.length === 0) return <p className="rounded-lg border border-dashed border-border p-6 text-sm text-muted-foreground">No saved revision tests yet. Your first message creates one and keeps its selected revisions and test values.</p>
 
-  return <div className="space-y-3">{error ? <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{error}</p> : null}<DashboardTable minWidth="min-w-0">
+  return <div className="space-y-3">{error ? <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{error}</p> : null}{uncopiedLink ? <p role="status" className="break-all rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">Copy this link: <span className="select-all font-mono text-foreground">{uncopiedLink}</span></p> : null}<DashboardTable minWidth="min-w-0">
     <DashboardTableHead>
       <DashboardTableHeader>Test</DashboardTableHeader>
       <DashboardTableHeader>Versions</DashboardTableHeader>

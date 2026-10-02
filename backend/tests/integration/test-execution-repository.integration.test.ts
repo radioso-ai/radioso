@@ -130,6 +130,13 @@ describeDb("test execution repository", () => {
     expect(summaries.get(executionId)).toEqual({ turnCount: 2, firstMessage: "first question" });
     expect(summaries.get(emptyId)).toEqual({ turnCount: 0, firstMessage: null });
     await expect(repository.summarizeTranscripts({ workspaceId: randomUUID(), agentId, executionIds: [executionId] })).resolves.toEqual(new Map());
+
+    // A long opening message is read only far enough to label the row and show that it was clipped.
+    const longId = randomUUID();
+    await repository.create({ id: longId, workspaceId, agentId, mode: "single", generation: 1, testValues: [], skillEffects: "suppressed", idempotencyKey: longId, sides: [
+      { id: randomUUID(), executionId: longId, revision: frozenRevision(), conversationId: randomUUID(), state: "ready", retryable: false, continuation: null, history: [entry(randomUUID(), "user", "y".repeat(20_000), 1)] },
+    ] });
+    expect((await repository.summarizeTranscripts({ workspaceId, agentId, executionIds: [longId] })).get(longId)?.firstMessage).toBe("y".repeat(201));
   });
 
   it("claims all comparison sides atomically and serializes simultaneous completions", async () => {

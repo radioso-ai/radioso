@@ -415,6 +415,28 @@ describe('dashboard route state', () => {
     })
   })
 
+  it('points agent section links at the section, not at an open test or the history view', () => {
+    const agentId = '67acb0c8-caad-4a1b-9fef-70cbca3f7d12'
+    const onHistory: DashboardRouteState = {
+      section: 'agents',
+      workspacePublicRouteKey: 'support-abc123',
+      agentId,
+      agentTestChatView: 'history',
+    }
+    const openingTest: DashboardRouteState = {
+      section: 'agents',
+      workspacePublicRouteKey: 'support-abc123',
+      agentId,
+      agentTestExecutionId: '11111111-1111-4111-8111-111111111111',
+      agentTestExecutionFromConversation: true,
+    }
+
+    expect(buildAgentSectionHref('account-1', onHistory, agentId, { agentTab: 'chat' }))
+      .toBe(`/w/support-abc123/agents/${agentId}`)
+    expect(buildAgentSectionHref('account-1', openingTest, agentId, { agentTab: 'chat' }))
+      .toBe(`/w/support-abc123/agents/${agentId}`)
+  })
+
   it('drops the test-execution parameter outside the agent chat tab', () => {
     const agentId = '67acb0c8-caad-4a1b-9fef-70cbca3f7d12'
     const executionId = '11111111-1111-4111-8111-111111111111'

@@ -392,10 +392,6 @@ export class TestExecutionService {
     });
   }
 
-  list(input: { workspaceId: string; agentId: string; limit: number; cursor?: string }): Promise<TestExecutionHistoryPage> {
-    return this.options.repository.list(input);
-  }
-
   /**
    * The effective agent for an id-scoped Test Chat call. The caller's own agentId, when given, is
    * used as-is: every read and write below is already scoped by (workspaceId, agentId,

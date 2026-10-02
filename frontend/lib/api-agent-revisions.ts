@@ -97,9 +97,9 @@ export interface TestExecutionHistoryItem extends Omit<TestExecution, 'sides'> {
 
 /** A row of the saved-test list; only the list counts messages, a detail carries the transcript. */
 export interface TestExecutionHistoryListItem extends TestExecutionHistoryItem {
-  /** Messages the operator sent in this test. A greeting is not one. */
+  /** User messages in this test, including any copied from a real conversation it continues. A greeting is not one. */
   turnCount: number
-  /** The first message the operator sent, clipped to 200 characters; null until one is sent. */
+  /** The first user message in this test, clipped to 200 characters; null until there is one. */
   firstMessage: string | null
 }
 

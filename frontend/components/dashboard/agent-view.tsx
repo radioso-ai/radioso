@@ -333,6 +333,7 @@ export function AgentView({
       ...routeState,
       section: 'agents',
       agentTestExecutionId: undefined,
+      agentTestExecutionFromConversation: undefined,
     }))
   }, [accountId, routeState, router])
 
@@ -357,6 +358,22 @@ export function AgentView({
     agentSectionRoute('changes'),
   )
   const evalsHref = buildDashboardHref(accountId, { ...routeState, section: 'eval', evalCaseId: undefined })
+  // The share link for one saved test: anyone in this workspace who can manage agents can open it.
+  const testExecutionHref = useCallback((executionId: string) => buildAgentSectionHref(
+    accountId,
+    { ...routeState, agentTestExecutionId: executionId, agentTestExecutionFromConversation: undefined },
+    selectedAgentId,
+    agentSectionRoute('chat'),
+  ), [accountId, routeState, selectedAgentId])
+  const historyOpen = routeState.agentTestChatView === 'history'
+  const changeHistoryOpen = useCallback((open: boolean) => {
+    if (open === historyOpen) return
+    router.push(buildDashboardHref(accountId, {
+      ...routeState,
+      section: 'agents',
+      agentTestChatView: open ? 'history' : undefined,
+    }), { scroll: false })
+  }, [accountId, historyOpen, routeState, router])
 
   const agentUnavailableContent = agentSelectionPending ? (
     <div className="flex min-h-48 items-center justify-center text-sm text-muted-foreground">
@@ -483,7 +500,11 @@ export function AgentView({
             actionsContainer={testActionsContainer}
             titleContainer={testTitleContainer}
             openExecutionId={routeState.agentTestExecutionId}
+            openExecutionFromConversation={routeState.agentTestExecutionFromConversation === true}
             onOpenExecutionConsumed={consumeOpenExecutionRoute}
+            testExecutionHref={testExecutionHref}
+            historyOpen={historyOpen}
+            onHistoryOpenChange={changeHistoryOpen}
           />
         </DashboardPage>
       ) : null}

@@ -12,6 +12,7 @@ import { parseUsageDetailsQuery } from './usage-details'
 
 export type DashboardSection = 'agents' | 'knowledge' | 'activity' | 'quality' | 'eval' | 'settings' | 'account' | 'copilot'
 export type AgentTab = 'chat' | 'behavior' | 'channels'
+export type AgentTestChatView = 'history'
 export type KnowledgeTab = 'documents' | 'sources' | 'ingestion'
 export type ActivityTab = 'needs-attention' | 'all'
 export type SettingsTab = 'workspace' | 'api-access' | 'providers'
@@ -85,6 +86,10 @@ export interface DashboardRouteState {
   agentRoutineId?: string
   /** When opening the agent chat tab, open this saved test execution instead of starting a fresh one. */
   agentTestExecutionId?: string
+  /** The opened test execution was just copied from a real conversation, so the chat says so. */
+  agentTestExecutionFromConversation?: boolean
+  /** Which Test Chat view the agent chat tab shows; absent means the chat itself. */
+  agentTestChatView?: AgentTestChatView
   knowledgeTab?: KnowledgeTab
   settingsTab?: SettingsTab
   accountTab?: AccountTab
@@ -136,6 +141,8 @@ const routeStateKeys: Array<keyof DashboardRouteState> = [
   'agentTab',
   'agentRoutineId',
   'agentTestExecutionId',
+  'agentTestExecutionFromConversation',
+  'agentTestChatView',
   'knowledgeTab',
   'settingsTab',
   'accountTab',
@@ -415,6 +422,16 @@ const normalizeState = (state: DashboardRouteState): DashboardRouteState => {
       state.agentTestExecutionId
     ) {
       normalized.agentTestExecutionId = state.agentTestExecutionId
+      if (state.agentTestExecutionFromConversation) {
+        normalized.agentTestExecutionFromConversation = true
+      }
+    } else if (
+      state.agentId &&
+      !state.agentRoutineId &&
+      (state.agentTab ?? DEFAULT_AGENT_TAB) === 'chat' &&
+      state.agentTestChatView
+    ) {
+      normalized.agentTestChatView = state.agentTestChatView
     }
     if (state.anchor) {
       normalized.anchor = state.anchor
@@ -602,6 +619,12 @@ const buildQueryString = (normalized: DashboardRouteState) => {
     }
     if (normalized.agentTestExecutionId) {
       searchParams.set('testExecution', normalized.agentTestExecutionId)
+    }
+    if (normalized.agentTestExecutionFromConversation) {
+      searchParams.set('fromConversation', '1')
+    }
+    if (normalized.agentTestChatView) {
+      searchParams.set('view', normalized.agentTestChatView)
     }
     if (normalized.anchor) {
       searchParams.set('anchor', normalized.anchor)
@@ -934,6 +957,12 @@ export const parseDashboardRoute = (
       agentTab: parseAgentTab(searchParams?.get('tab') ?? null),
       ...(searchParams?.get('testExecution')
         ? { agentTestExecutionId: searchParams.get('testExecution') ?? undefined }
+        : {}),
+      ...(searchParams?.get('fromConversation') === '1'
+        ? { agentTestExecutionFromConversation: true }
+        : {}),
+      ...(searchParams?.get('view') === 'history'
+        ? { agentTestChatView: 'history' as const }
         : {}),
       anchor: parseAnchor(searchParams?.get('anchor') ?? null),
     })

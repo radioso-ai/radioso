@@ -9610,8 +9610,14 @@ export interface components {
             testValues: unknown[];
             attempts: components["schemas"]["TestExecutionAttemptRecord"][];
         };
+        TestExecutionHistoryListItem: components["schemas"]["TestExecutionHistoryItem"] & {
+            /** @description Messages the operator sent in this test. A greeting is not one. */
+            turnCount: number;
+            /** @description The first message the operator sent, clipped to 200 characters. Null until one is sent. */
+            firstMessage: string | null;
+        };
         TestExecutionHistoryListResponse: {
-            executions: components["schemas"]["TestExecutionHistoryItem"][];
+            executions: components["schemas"]["TestExecutionHistoryListItem"][];
             nextCursor: string | null;
             hasMore: boolean;
         };

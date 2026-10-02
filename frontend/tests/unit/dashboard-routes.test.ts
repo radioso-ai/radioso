@@ -342,6 +342,79 @@ describe('dashboard route state', () => {
     })
   })
 
+  it('marks a test execution opened as a copy of a real conversation', () => {
+    const agentId = '67acb0c8-caad-4a1b-9fef-70cbca3f7d12'
+    const executionId = '11111111-1111-4111-8111-111111111111'
+
+    expect(buildDashboardHref('account-1', {
+      section: 'agents',
+      workspacePublicRouteKey: 'support-abc123',
+      agentId,
+      agentTestExecutionId: executionId,
+      agentTestExecutionFromConversation: true,
+    })).toBe(`/w/support-abc123/agents/${agentId}?testExecution=${executionId}&fromConversation=1`)
+
+    expect(parseDashboardRoute(['agents', agentId], new URLSearchParams({
+      testExecution: executionId,
+      fromConversation: '1',
+    }))).toEqual({
+      section: 'agents',
+      agentId,
+      agentTestExecutionId: executionId,
+      agentTestExecutionFromConversation: true,
+    })
+
+    expect(buildDashboardHref('account-1', {
+      section: 'agents',
+      workspacePublicRouteKey: 'support-abc123',
+      agentId,
+      agentTestExecutionFromConversation: true,
+    })).toBe(`/w/support-abc123/agents/${agentId}`)
+  })
+
+  it('round-trips the Test Chat conversation history view (view=history)', () => {
+    const agentId = '67acb0c8-caad-4a1b-9fef-70cbca3f7d12'
+
+    expect(buildDashboardHref('account-1', {
+      section: 'agents',
+      workspacePublicRouteKey: 'support-abc123',
+      agentId,
+      agentTestChatView: 'history',
+    })).toBe(`/w/support-abc123/agents/${agentId}?view=history`)
+
+    expect(parseDashboardRoute(['agents', agentId], new URLSearchParams({
+      view: 'history',
+    }))).toEqual({
+      section: 'agents',
+      agentId,
+      agentTestChatView: 'history',
+    })
+
+    // Opening a saved test shows its chat, so it wins over the history view.
+    expect(buildDashboardHref('account-1', {
+      section: 'agents',
+      workspacePublicRouteKey: 'support-abc123',
+      agentId,
+      agentTestChatView: 'history',
+      agentTestExecutionId: '11111111-1111-4111-8111-111111111111',
+    })).toBe(`/w/support-abc123/agents/${agentId}?testExecution=11111111-1111-4111-8111-111111111111`)
+
+    expect(buildDashboardHref('account-1', {
+      section: 'agents',
+      workspacePublicRouteKey: 'support-abc123',
+      agentId,
+      agentTab: 'behavior',
+      agentTestChatView: 'history',
+    })).toBe(`/w/support-abc123/agents/${agentId}?tab=behavior`)
+
+    expect(parseDashboardRoute(['agents', agentId], new URLSearchParams({
+      view: 'transcript',
+    }))).toEqual({
+      section: 'agents',
+      agentId,
+    })
+  })
+
   it('drops the test-execution parameter outside the agent chat tab', () => {
     const agentId = '67acb0c8-caad-4a1b-9fef-70cbca3f7d12'
     const executionId = '11111111-1111-4111-8111-111111111111'

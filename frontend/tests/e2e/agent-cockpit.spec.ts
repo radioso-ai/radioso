@@ -162,7 +162,8 @@ async function installCockpitMocks(page: Page, options: CockpitMockOptions = {})
   })
   await page.route(new RegExp(`/backend/api/v1/agents/${defaultAgentId}/test-executions(?:\\?.*)?$`), async (route) => {
     if (route.request().method() === 'GET') {
-      await route.fulfill({ json: { executions: options.executionHistory ?? [], nextCursor: null, hasMore: false } })
+      const executions = (options.executionHistory ?? []).map((execution) => ({ turnCount: 0, firstMessage: null, ...(execution as object) }))
+      await route.fulfill({ json: { executions, nextCursor: null, hasMore: false } })
       return
     }
     startReceived?.()
@@ -654,6 +655,77 @@ test('reopens a durable comparison with its recorded versions, values, and trans
   await page.getByRole('button', { name: 'Test chat actions', exact: true }).click()
   await expect(page.getByRole('menuitemcheckbox', { name: 'Run skills for real' })).toHaveAttribute('aria-checked', 'true')
   await page.keyboard.press('Escape')
+})
+
+test('shares a saved test as a link that opens it on a fresh visit', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+  const saved = {
+    id: '11111111-1111-4111-8111-111111111111', generation: 2, mode: 'single', state: 'completed', createdAt: nowIso,
+    skillEffects: 'suppressed', turnCount: 2, firstMessage: 'Where is my parcel?',
+    sides: [{ id: 'shared-side', revision: published, conversationId: 'shared-conversation', state: 'completed', retryable: false }],
+  }
+  await installCockpitMocks(page, {
+    executionHistory: [saved],
+    executionDetail: {
+      ...saved,
+      testValues: [],
+      sides: [{ ...saved.sides[0], history: [
+        { turnId: 'shared-turn-1', role: 'user', content: 'Where is my parcel?', attemptId: 'shared-attempt-1', createdAt: nowIso },
+        { turnId: 'shared-turn-1', role: 'assistant', content: 'It ships tomorrow.', attemptId: 'shared-attempt-1', createdAt: nowIso },
+        { turnId: 'shared-turn-2', role: 'user', content: 'Can I change the address?', attemptId: 'shared-attempt-2', createdAt: nowIso },
+        { turnId: 'shared-turn-2', role: 'assistant', content: 'Yes, until it ships.', attemptId: 'shared-attempt-2', createdAt: nowIso },
+      ] }],
+      attempts: ['shared-attempt-1', 'shared-attempt-2'].map((attemptId, index) => ({ sideId: 'shared-side', turnId: `shared-turn-${index + 1}`, attemptId, fence: 1, state: 'completed', createdAt: nowIso, updatedAt: nowIso })),
+    },
+  })
+  await page.goto(testUrl)
+  await clickTestChatAction(page, 'Conversation history')
+  const row = page.getByRole('row').filter({ hasText: 'Where is my parcel?' })
+  await expect(page.getByRole('columnheader', { name: 'Messages', exact: true })).toBeVisible()
+  await expect(row.getByRole('cell', { name: '2', exact: true })).toBeVisible()
+  await row.getByRole('button', { name: 'Copy link', exact: true }).click()
+  await expect(row.getByRole('button', { name: 'Link copied', exact: true })).toBeVisible()
+  const link = await page.evaluate(() => navigator.clipboard.readText())
+  expect(new URL(link).searchParams.get('testExecution')).toBe(saved.id)
+
+  // A colleague opening the link starts with no in-memory test chat session.
+  await page.goto(link)
+  await expect(page.getByText('Can I change the address?', { exact: true })).toBeVisible()
+  await expect(page.getByText('Yes, until it ships.', { exact: true })).toBeVisible()
+  await expect(page.getByText(/Continuing a copy/)).toHaveCount(0)
+
+  await page.evaluate(() => navigator.clipboard.writeText(''))
+  await clickTestChatAction(page, 'Copy link to this chat')
+  await expect(page.getByText('Link copied.', { exact: true })).toBeVisible()
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(link)
+})
+
+test('gives Conversation history its own link that survives a reload', async ({ page }) => {
+  const saved = {
+    id: 'execution-history-linked', generation: 1, mode: 'compare', state: 'completed', createdAt: nowIso,
+    skillEffects: 'suppressed', turnCount: 3, firstMessage: 'Do you ship to Iceland?',
+    sides: [
+      { id: 'linked-left', revision: published, conversationId: 'linked-left-conversation', state: 'completed', retryable: false },
+      { id: 'linked-right', revision: candidate, conversationId: 'linked-right-conversation', state: 'completed', retryable: false },
+    ],
+  }
+  await installCockpitMocks(page, { executionHistory: [saved, { ...saved, id: 'execution-history-empty', mode: 'single', turnCount: 0, firstMessage: null, sides: [saved.sides[0]] }] })
+  await page.goto(testUrl)
+  await clickTestChatAction(page, 'Conversation history')
+  await expect(page).toHaveURL(/[?&]view=history/)
+
+  await page.reload()
+  await expect(page.getByRole('heading', { name: 'Conversation history', exact: true })).toBeVisible()
+  const row = page.getByRole('row').filter({ hasText: 'Do you ship to Iceland?' })
+  await expect(row.getByText('Comparison', { exact: true })).toBeVisible()
+  await expect(row.getByRole('cell', { name: '3', exact: true })).toBeVisible()
+  await expect(page.getByText('No messages yet', { exact: true })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Back to chat', exact: true }).click()
+  await expect(page).not.toHaveURL(/[?&]view=history/)
+  await expect(testChatComposer(page)).toBeVisible()
+  await page.goBack()
+  await expect(page.getByRole('heading', { name: 'Conversation history', exact: true })).toBeVisible()
 })
 
 test('fences a delayed history open after the operator returns to a new chat', async ({ page }) => {

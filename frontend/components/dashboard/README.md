@@ -65,12 +65,25 @@ services.
   `seedConversationId` set and no test values (`agentRevisionsApi.startTest`) — the
   backend copies the source thread into the side's history and carries its routine
   state, without a greeting — then navigates to the agent's Test Chat tab with
-  `agentTestExecutionId` (`dashboard-routes` param, query key `testExecution`).
+  `agentTestExecutionId` (`dashboard-routes` param, query key `testExecution`) and
+  `agentTestExecutionFromConversation` (query key `fromConversation=1`, which picks the
+  "continuing a copy" notice).
   `agent-revision-test-chat.tsx` treats the param as a one-shot open command: once its
   revision list is loaded it fetches the execution and adopts it through the same
   `reopenExecution` path a saved test from History uses, and `agent-view.tsx` then
-  drops the param from the URL so refresh and back do not re-open it. The original
+  drops both params from the URL so refresh and back do not re-open it. The original
   conversation is untouched.
+- Share a saved test: `agent-view.tsx` passes `testExecutionHref` (the
+  `?testExecution=<id>` link above, without `fromConversation`) into Test Chat, which
+  backs the **Copy link to this chat** menu item and the per-row link button in
+  `test-execution-history-view.tsx`. Anyone with `workspace.agents.manage` in the
+  workspace can open it. The history list labels each test by its clipped
+  `firstMessage` and shows its `turnCount` as **Messages**.
+- Conversation history is route state, not component state: `agentTestChatView`
+  (query `view=history`) decides whether `agent-revision-test-chat.tsx` shows the
+  chat or `TestExecutionHistoryView`, and the component asks `agent-view.tsx` to push
+  the change through `onHistoryOpenChange`. Opening a saved test (`testExecution`)
+  always shows the chat, so the route drops `view` when both are present.
 - Test an unpublished routine: **Test draft** on a saved draft in
   `settings/assistant-routines-section.tsx` navigates to the agent's Test Chat tab
   (`agent-revision-test-chat.tsx`), whose Draft candidate is built from the agent draft

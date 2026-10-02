@@ -26,7 +26,7 @@ export class TestChatService implements Port {
 
   async listSessions({ workspaceId, agentId, limit, cursor }: Parameters<Port["listSessions"]>[0]): ReturnType<Port["listSessions"]> {
     const page = await this.dependencies.executions.summaries({ workspaceId, agentId, limit, ...(cursor ? { cursor } : {}) });
-    return { sessions: page.executions.map((item) => ({ ...presentHeader(item), sides: item.sides.map(presentSide), turnCount: item.turnCount, firstMessage: item.firstMessage })), nextCursor: page.nextCursor };
+    return { sessions: page.executions.map((item) => ({ ...presentHeader(item), sides: item.sides.map(presentSide), turnCount: item.turnCount, firstMessage: item.firstMessage, firstMessageClipped: item.firstMessageClipped })), nextCursor: page.nextCursor };
   }
 
   async readSession({ workspaceId, agentId, testExecutionId }: Parameters<Port["readSession"]>[0]): ReturnType<Port["readSession"]> {

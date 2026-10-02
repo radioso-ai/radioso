@@ -28,6 +28,7 @@ interface TestExecutionEvalSnapshotHistoryEntry {
 }
 
 export {
+  TEST_EXECUTION_LABEL_CHARS,
   type TestExecution,
   type TestExecutionHistoryEntry,
   type TestExecutionService,

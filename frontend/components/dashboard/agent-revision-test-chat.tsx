@@ -11,7 +11,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-import { AlertCircle, Ellipsis, Loader2, Plus, Send, Workflow, X } from "lucide-react";
+import { AlertCircle, Ellipsis, Link2, Loader2, Plus, Send, Workflow, X } from "lucide-react";
 import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
@@ -21,7 +21,7 @@ import {
   type ChatThreadMessage,
 } from "@/components/dashboard/chat-message-thread";
 import { buildAssistantIdentity } from "@/components/chat/assistant-identity";
-import { TestExecutionHistoryView } from "@/components/dashboard/test-execution-history-view";
+import { TestExecutionHistoryView, UncopiedLink } from "@/components/dashboard/test-execution-history-view";
 import { TestSessionsView } from "@/components/dashboard/workbench/test-sessions-view";
 import { TurnFlowOverlay } from "@/components/dashboard/turn-flow-overlay";
 import {
@@ -29,6 +29,8 @@ import {
   TurnDiagnosticsPanel,
 } from "@/components/dashboard/turn-inspector/turn-diagnostics-panel";
 import { getPrimaryLeafTrace } from "@/lib/turn-trace";
+import { useCopyDashboardLink } from "@/hooks/use-copy-dashboard-link";
+import { isValidTestExecutionId } from "@/lib/dashboard-routes";
 import {
   Dialog,
   DialogContent,
@@ -202,7 +204,11 @@ export function AgentRevisionTestChat({
   actionsContainer,
   titleContainer,
   openExecutionId,
+  openExecutionFromConversation = false,
   onOpenExecutionConsumed,
+  testExecutionHref,
+  historyOpen,
+  onHistoryOpenChange,
 }: {
   agentId: string;
   workspaceId: string;
@@ -214,15 +220,47 @@ export function AgentRevisionTestChat({
   titleContainer?: HTMLElement | null;
   /** A saved execution to open on arrival (e.g. one seeded from a real conversation). */
   openExecutionId?: string;
+  /** The execution to open was just copied from a real conversation rather than shared as a link. */
+  openExecutionFromConversation?: boolean;
   /** Called once the open command has been acted on, so the caller can drop it from the route. */
   onOpenExecutionConsumed?: () => void;
+  /** The dashboard link that opens one saved test, for sharing it. */
+  testExecutionHref?: (executionId: string) => string;
+  /** Whether the route shows Conversation history instead of the chat. */
+  historyOpen: boolean;
+  onHistoryOpenChange: (open: boolean) => void;
 }) {
   const sessionKey = agentRevisionTestChatSessionKey(workspaceId, agentId);
   const cachedSession = readAgentRevisionTestChatSession(sessionKey);
   const [state, setState] = useState<AgentRevisionState | null>(cachedSession?.state ?? null);
   const [revisions, setRevisions] = useState<AgentRevisionSummary[]>(cachedSession?.revisions ?? []);
   const [mode, setMode] = useState<Mode>(cachedSession?.mode ?? "single");
-  const [view, setView] = useState<View>(cachedSession?.view ?? "chat");
+  // The route owns which view shows, so Conversation history has its own link.
+  const view: View = historyOpen ? "history" : "chat";
+  const onHistoryOpenChangeRef = useRef(onHistoryOpenChange);
+  onHistoryOpenChangeRef.current = onHistoryOpenChange;
+  // The view the operator last asked for, and a generation that moves on every view change and New
+  // chat. The route catches up a render later, so an open still loading checks this, not `view`: a
+  // history row's open only lands while history is still wanted, and a link's open only if nothing
+  // superseded it since it started, even when the operator has since come back to the same view.
+  const viewIntent = useRef<{ view: View; generation: number }>({ view, generation: 0 });
+  const supersedePendingOpens = useCallback((next: View) => {
+    viewIntent.current = { view: next, generation: viewIntent.current.generation + 1 };
+  }, []);
+  useEffect(() => {
+    if (viewIntent.current.view !== view) supersedePendingOpens(view);
+  }, [supersedePendingOpens, view]);
+  // Why a test opened from a link could not open. Kept apart from `error`, which starting a chat
+  // clears, so a proactive greeting cannot wipe it; the operator's next move does.
+  const [linkOpenFailure, setLinkOpenFailure] = useState<string | null>(null);
+  const executionLink = useCopyDashboardLink();
+  const resetExecutionLink = executionLink.reset;
+  const setView = useCallback((next: View) => {
+    supersedePendingOpens(next);
+    setLinkOpenFailure(null);
+    resetExecutionLink();
+    onHistoryOpenChangeRef.current(next === "history");
+  }, [resetExecutionLink, supersedePendingOpens]);
   const [selected, setSelected] = useState<string[]>(cachedSession?.selected ?? []);
   const [contextOpen, setContextOpen] = useState(false);
   const [evalsOpen, setEvalsOpen] = useState(false);
@@ -380,7 +418,6 @@ export function AgentRevisionTestChat({
       state,
       revisions,
       mode,
-      view,
       selected,
       message,
       execution,
@@ -427,7 +464,6 @@ export function AgentRevisionTestChat({
     valueError,
     valueInputs,
     revisionValueError,
-    view,
   ]);
   useEffect(
     () =>
@@ -714,6 +750,7 @@ export function AgentRevisionTestChat({
   useEffect(() => {
     if (
       loading ||
+      view === "history" ||
       !state?.proactiveGreetingEnabled ||
       !selected.length ||
       execution ||
@@ -726,7 +763,7 @@ export function AgentRevisionTestChat({
     proactiveStartKey.current = key;
     writeAgentRevisionTestChatSession(sessionKey, { proactiveStartKey: key });
     void startRef.current();
-  }, [agentId, execution, isStarting, loading, mode, openExecutionId, selected, sessionKey, state]);
+  }, [agentId, execution, isStarting, loading, mode, openExecutionId, selected, sessionKey, state, view]);
 
   const changeMode = useCallback(
     (next: Mode) => {
@@ -825,6 +862,7 @@ export function AgentRevisionTestChat({
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (!message.trim() || isSending || isStarting) return;
+    setLinkOpenFailure(null);
     const text = message.trim();
     const requestGeneration = testRequestGeneration.current;
     const nextMode = mode;
@@ -1259,10 +1297,10 @@ export function AgentRevisionTestChat({
       }
       setView("chat");
     },
-    [clearChatExecution, pollReopenedExecution, sessionKey, setExecutionState],
+    [clearChatExecution, pollReopenedExecution, sessionKey, setExecutionState, setView],
   );
 
-  // "Continue in test chat" arrives with the seeded execution's id in the route.
+  // "Continue in test chat" and a shared test link arrive with the execution's id in the route.
   // It is opened through the same path as a saved test from history, once the
   // revision list is loaded so the execution's revision resolves in the selector.
   // The command is consumed exactly once per id; a background reload while the
@@ -1277,23 +1315,30 @@ export function AgentRevisionTestChat({
     if (consumedOpenExecutionId.current === openExecutionId) return;
     consumedOpenExecutionId.current = openExecutionId;
     const isCurrent = () => consumedOpenExecutionId.current === openExecutionId;
+    const intent = viewIntent.current.generation;
+    const notice = openExecutionFromConversation
+      ? "Continuing a copy of the conversation. The original is untouched."
+      : undefined;
+    if (!isValidTestExecutionId(openExecutionId)) {
+      setLinkOpenFailure("This test link is incomplete. Ask for it again.");
+      onOpenExecutionConsumedRef.current?.();
+      return;
+    }
     void agentRevisionsApi
       .getTestExecution(agentId, openExecutionId)
       .then((response) => {
-        if (!isCurrent()) return;
-        reopenExecutionRef.current(
-          response.execution,
-          "Continuing a copy of the conversation. The original is untouched.",
-        );
+        // The operator moved on while it loaded (history, back, or New chat); the test is in history to open.
+        if (!isCurrent() || viewIntent.current.generation !== intent) return;
+        reopenExecutionRef.current(response.execution, notice);
       })
       .catch((cause) => {
-        if (isCurrent())
-          setError(errorMessage(cause, "Unable to open this test conversation."));
+        if (isCurrent() && viewIntent.current.generation === intent)
+          setLinkOpenFailure(errorMessage(cause, "Unable to open this test conversation."));
       })
       .finally(() => {
         if (isCurrent()) onOpenExecutionConsumedRef.current?.();
       });
-  }, [agentId, hasState, loading, openExecutionId]);
+  }, [agentId, hasState, loading, openExecutionFromConversation, openExecutionId]);
   useEffect(
     () => () => {
       consumedOpenExecutionId.current = null;
@@ -1426,6 +1471,8 @@ export function AgentRevisionTestChat({
           onSelect={() => {
             proactiveStartKey.current = null;
             writeAgentRevisionTestChatSession(sessionKey, { proactiveStartKey: null });
+            // From Conversation history too, a new chat is where the operator wants to be.
+            setView("chat");
             clearChatExecution("New chat ready.");
           }}
         >
@@ -1435,6 +1482,12 @@ export function AgentRevisionTestChat({
         <DropdownMenuItem onSelect={() => setView("history")}>
           Conversation history
         </DropdownMenuItem>
+        {execution && testExecutionHref && view === "chat" ? (
+          <DropdownMenuItem onSelect={() => void executionLink.copy(execution.executionId, testExecutionHref(execution.executionId))}>
+            <Link2 className="mr-2 h-4 w-4" />
+            Copy link to this chat
+          </DropdownMenuItem>
+        ) : null}
         <DropdownMenuItem asChild>
           <Link href={agentVersionsHref}>Agent versions</Link>
         </DropdownMenuItem>
@@ -1503,7 +1556,10 @@ export function AgentRevisionTestChat({
             <section>
               <TestExecutionHistoryView
                 agentId={agentId}
-                onOpen={reopenExecution}
+                onOpen={(saved) => {
+                  if (viewIntent.current.view === "history") reopenExecution(saved);
+                }}
+                linkFor={testExecutionHref}
               />
             </section>
             <section>
@@ -1528,6 +1584,14 @@ export function AgentRevisionTestChat({
                 {error}
               </p>
             ) : null}
+            {linkOpenFailure ? (
+              <p
+                role="alert"
+                className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+              >
+                {linkOpenFailure}
+              </p>
+            ) : null}
             {restartNotice ? (
               <p
                 role="status"
@@ -1535,6 +1599,18 @@ export function AgentRevisionTestChat({
               >
                 {restartNotice}
               </p>
+            ) : null}
+            {/* Keyed to the open test, so New chat or another test hides a link that is not theirs. */}
+            {execution && executionLink.copiedKey === execution.executionId ? (
+              <p
+                role="status"
+                className="rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground"
+              >
+                Link copied.
+              </p>
+            ) : null}
+            {execution && executionLink.uncopied?.key === execution.executionId ? (
+              <UncopiedLink url={executionLink.uncopied.url} />
             ) : null}
             {execution?.state === "partial" ? (
               <p

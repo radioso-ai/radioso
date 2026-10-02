@@ -204,6 +204,8 @@ function AgentSettingsDashboardPage({
   )
 }
 
+/** history.state key marking a Conversation history entry pushed over the Test Chat entry. */
+const TEST_CHAT_HISTORY_OVER_CHAT = 'radiosoTestChatHistoryOverChat'
 export function AgentView({
   accountId,
   routeState,
@@ -329,10 +331,14 @@ export function AgentView({
   // The execution id in the URL is a one-shot open command from "Continue in
   // test chat"; dropping it once adopted keeps refresh and back from re-opening it.
   const consumeOpenExecutionRoute = useCallback(() => {
+    // The operator may have moved on (Conversation history drops the param) before this route
+    // state re-rendered; replacing then would rewrite their newer entry with a stale one.
+    if (!new URLSearchParams(window.location.search).has('testExecution')) return
     router.replace(buildDashboardHref(accountId, {
       ...routeState,
       section: 'agents',
       agentTestExecutionId: undefined,
+      agentTestExecutionFromConversation: undefined,
     }))
   }, [accountId, routeState, router])
 
@@ -357,6 +363,47 @@ export function AgentView({
     agentSectionRoute('changes'),
   )
   const evalsHref = buildDashboardHref(accountId, { ...routeState, section: 'eval', evalCaseId: undefined })
+  // The share link for one saved test: anyone in this workspace who can manage agents can open it.
+  const testExecutionHref = useCallback((executionId: string) => buildDashboardHref(accountId, {
+    ...routeState,
+    ...agentSectionRoute('chat'),
+    section: 'agents',
+    agentId: selectedAgentId,
+    agentRoutineId: undefined,
+    anchor: undefined,
+    agentTestExecutionId: executionId,
+    agentTestExecutionFromConversation: undefined,
+  }), [accountId, routeState, selectedAgentId])
+  const historyOpen = routeState.agentTestChatView === 'history'
+  // The view is client state, so these are shallow history entries with no server round trip.
+  const changeHistoryOpen = useCallback((open: boolean) => {
+    if (open === historyOpen) return
+    const testChatHref = (view: 'history' | undefined) => buildDashboardHref(accountId, {
+      ...routeState,
+      section: 'agents',
+      agentId: selectedAgentId,
+      agentTestChatView: view,
+      // Opening history supersedes a saved test still opening from the URL; Test Chat drops it.
+      agentTestExecutionId: undefined,
+      agentTestExecutionFromConversation: undefined,
+    })
+    if (open) {
+      // Rewrite the chat entry first, so Back never returns to an open command that was dropped.
+      const chatHref = testChatHref(undefined)
+      if (chatHref !== `${window.location.pathname}${window.location.search}`) window.history.replaceState(null, '', chatHref)
+      // Marks this entry as pushed over the chat, so leaving it can step back; the marker travels
+      // with the entry through Back and Forward, which a component-wide flag could not follow.
+      window.history.pushState({ [TEST_CHAT_HISTORY_OVER_CHAT]: true }, '', testChatHref('history'))
+      return
+    }
+    // Leaving history returns to the chat entry it came from, so the browser's Back then leaves
+    // Test Chat instead of bouncing between the two views.
+    if ((window.history.state as Record<string, unknown> | null)?.[TEST_CHAT_HISTORY_OVER_CHAT] === true) {
+      window.history.back()
+      return
+    }
+    window.history.replaceState(null, '', testChatHref(undefined))
+  }, [accountId, historyOpen, routeState, selectedAgentId])
 
   const agentUnavailableContent = agentSelectionPending ? (
     <div className="flex min-h-48 items-center justify-center text-sm text-muted-foreground">
@@ -483,7 +530,11 @@ export function AgentView({
             actionsContainer={testActionsContainer}
             titleContainer={testTitleContainer}
             openExecutionId={routeState.agentTestExecutionId}
+            openExecutionFromConversation={routeState.agentTestExecutionFromConversation === true}
             onOpenExecutionConsumed={consumeOpenExecutionRoute}
+            testExecutionHref={testExecutionHref}
+            historyOpen={historyOpen}
+            onHistoryOpenChange={changeHistoryOpen}
           />
         </DashboardPage>
       ) : null}

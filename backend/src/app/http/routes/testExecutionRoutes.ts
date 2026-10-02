@@ -1,7 +1,7 @@
 import { Router, type Response } from "express";
 import { z } from "zod";
 
-import type { TestExecutionService, TestExecution, TestExecutionAttemptRecord, TestExecutionEvent, TestExecutionHistoryItem } from "../../../modules/test-execution/testExecution.js";
+import type { TestExecutionService, TestExecution, TestExecutionAttemptRecord, TestExecutionEvent, TestExecutionHistoryItem, TestExecutionSummary } from "../../../modules/test-execution/testExecution.js";
 import type { EvalSnapshotService } from "../../../modules/eval/services/evalSnapshotService.js";
 import type { WorkspaceSessionDependencies } from "../middleware/requireWorkspaceSession.js";
 import { requireWorkspaceSession } from "../middleware/requireWorkspaceSession.js";
@@ -49,6 +49,13 @@ const presentHistory = (execution: TestExecutionHistoryItem) => ({
   sides: presentHistorySides(execution.sides),
   state: execution.state,
   createdAt: execution.createdAt.toISOString(),
+});
+
+const presentHistorySummary = (execution: TestExecutionSummary) => ({
+  ...presentHistory(execution),
+  turnCount: execution.turnCount,
+  firstMessage: execution.firstMessage,
+  firstMessageClipped: execution.firstMessageClipped,
 });
 
 const presentDetail = (execution: TestExecution, attempts: readonly TestExecutionAttemptRecord[]) => {
@@ -113,8 +120,8 @@ export const createTestExecutionRoutes = (dependencies: TestExecutionRouteDepend
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const { agentId } = agentParams.parse(req.params);
-      const page = await dependencies.testExecutionService.list({ workspaceId, agentId, ...historyPageQuerySchema.parse(req.query) });
-      res.json({ executions: page.executions.map(presentHistory), nextCursor: page.nextCursor, hasMore: page.hasMore });
+      const page = await dependencies.testExecutionService.summaries({ workspaceId, agentId, ...historyPageQuerySchema.parse(req.query) });
+      res.json({ executions: page.executions.map(presentHistorySummary), nextCursor: page.nextCursor, hasMore: page.hasMore });
     } catch (error) { next(error); }
   });
 

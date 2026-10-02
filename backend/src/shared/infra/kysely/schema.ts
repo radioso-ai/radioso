@@ -265,6 +265,8 @@ export interface AgentTestExecutions {
   id: string;
   idempotency_key: string;
   mode: string;
+  seeded_first_message: string | null;
+  seeded_turn_count: Generated<number>;
   skill_effects: Generated<string>;
   state: string;
   test_values: Json;

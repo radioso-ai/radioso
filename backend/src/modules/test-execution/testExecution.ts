@@ -7,6 +7,7 @@ import {
 } from "../../shared/domain/usageLimitPolicy.js";
 import type { AgentRevision } from "../agents/public.js";
 import type { SkillEffectPolicy } from "../../shared/domain/turnExecutionMode.js";
+import { clipAtGraphemeBoundary } from "../../shared/text/clipAtGraphemeBoundary.js";
 import {
   freezeTestValues,
   type ContextVariableTestValueCatalogPort,
@@ -121,11 +122,47 @@ export interface TestExecutionHistoryItem {
   sides: readonly TestExecutionHistorySide[];
 }
 
-/** A listed execution with the facts that tell one session from another. Still no transcript. */
-interface TestExecutionSummary extends TestExecutionHistoryItem {
-  /** Turns the operator sent a message in; a greeting is not one. */
+/** The most of a test's opening message any list shows; the store reads one more so a longer one shows as clipped. */
+export const TEST_EXECUTION_LABEL_CHARS = 200;
+
+/**
+ * How much of a seed's first message a test keeps for its label, in code points: well past any label,
+ * so the label limit can change without refilling rows. Migration 208 uses the same 1,000.
+ */
+const SEEDED_FIRST_MESSAGE_CHARS = 1_000;
+
+/** The first `count` code points of `text`, without walking the rest of a long paste. */
+const leadingCodePoints = (text: string, count: number): string => {
+  let end = 0;
+  let taken = 0;
+  for (const codePoint of text) {
+    if (taken === count) break;
+    end += codePoint.length;
+    taken += 1;
+  }
+  return text.slice(0, end);
+};
+
+/** A test's opening message as a list label: whole, or clipped on a character boundary and marked with an ellipsis. */
+const testExecutionLabel = (firstMessage: string): { label: string; clipped: boolean } =>
+  firstMessage.length <= TEST_EXECUTION_LABEL_CHARS
+    ? { label: firstMessage, clipped: false }
+    : { label: `${clipAtGraphemeBoundary(firstMessage, TEST_EXECUTION_LABEL_CHARS - 1)}…`, clipped: true };
+
+/** What a seed copied in, recorded at start: its user messages count as turns, and the first labels the test. */
+export interface TestExecutionSeededSummary {
   turnCount: number;
   firstMessage: string | null;
+}
+
+/** A listed execution with the facts that tell one session from another. Still no transcript. */
+export interface TestExecutionSummary extends TestExecutionHistoryItem {
+  /** Turns with a user message: those a seed copied in plus those the operator sent. A greeting is not one. */
+  turnCount: number;
+  /** The first of those messages with text, as a list label (`testExecutionLabel`); null until there is one. */
+  firstMessage: string | null;
+  /** Whether `firstMessage` was cut to fit the label. */
+  firstMessageClipped: boolean;
 }
 
 interface TestExecutionSummaryPage extends Omit<TestExecutionHistoryPage, "executions"> {
@@ -223,7 +260,7 @@ export interface TestExecutionSeedSource {
 
 export interface TestExecutionRepositoryPort {
   /** `idempotencyKey` fences a start: a repeated key for the same workspace/agent replays the execution it already created instead of starting a second one. */
-  create(input: Omit<TestExecution, "createdAt" | "state"> & { state?: TestExecutionState; idempotencyKey: string }): Promise<TestExecution>;
+  create(input: Omit<TestExecution, "createdAt" | "state"> & { state?: TestExecutionState; idempotencyKey: string; seededSummary?: TestExecutionSeededSummary }): Promise<TestExecution>;
   find(input: { workspaceId: string; agentId: string; executionId: string }): Promise<TestExecution | null>;
   /** Scoped by workspace alone: the read a caller with only an execution id, not yet an agent id, needs. Null for an id this workspace does not own. */
   findAgentId(input: { workspaceId: string; executionId: string }): Promise<string | null>;
@@ -232,8 +269,12 @@ export interface TestExecutionRepositoryPort {
   recoverExpiredSides(input: { workspaceId: string; agentId: string; executionId: string; now: Date }): Promise<TestExecution | null>;
   retainSide(input: { workspaceId: string; agentId: string; executionId: string; sideId: string; retainedExecutionId: string; retainedSideId: string; retainedConversationId: string }): Promise<"not_found" | "not_comparison" | "unsettled" | TestExecution>;
   list(input: { workspaceId: string; agentId: string; limit: number; cursor?: string }): Promise<TestExecutionHistoryPage>;
-  /** Turn count and opening user message per execution, read from its first side: comparison sides answer the same aligned messages. */
-  summarizeTranscripts(input: { workspaceId: string; agentId: string; executionIds: readonly string[] }): Promise<ReadonlyMap<string, Pick<TestExecutionSummary, "turnCount" | "firstMessage">>>;
+  /**
+   * Turn count and opening message per execution, from what its seed copied in plus the turns the
+   * operator sent, never from its transcript; a greeting is not a turn. `firstMessage` is the raw
+   * text cut to `firstMessageChars` characters.
+   */
+  summarizeTurns(input: { workspaceId: string; agentId: string; executionIds: readonly string[]; firstMessageChars: number }): Promise<ReadonlyMap<string, { turnCount: number; firstMessage: string | null }>>;
   listAttempts(input: { workspaceId: string; agentId: string; executionId: string }): Promise<readonly TestExecutionAttemptRecord[]>;
   /** Claims one aligned turn and every selected side in one short transaction. */
   /**
@@ -347,6 +388,7 @@ export class TestExecutionService {
     const execution = await this.options.repository.create({
       id: executionId, workspaceId: input.workspaceId, agentId: input.agentId, mode: input.mode,
       generation: 1, testValues, skillEffects, sides, idempotencyKey: input.idempotencyKey,
+      ...(seed ? { seededSummary: this.seededSummary(seed.messages) } : {}),
     });
     await this.audit(input, "agent.test_execution.started", "success", {
       executionId, mode: input.mode, sideCount: sides.length, skillEffects,
@@ -374,6 +416,19 @@ export class TestExecutionService {
   }
 
   /**
+   * What a seed copied in, for the history list: each user message is a turn (see `seededHistory`),
+   * and the first with any non-whitespace character labels the test, kept to
+   * `SEEDED_FIRST_MESSAGE_CHARS` code points. Migration 208 backfills older tests the same way, except
+   * that its whitespace test is Postgres's `[[:space:]]`, which can differ from JavaScript's `\s` on
+   * rare Unicode spaces.
+   */
+  private seededSummary(messages: readonly TestExecutionSeedMessage[]): TestExecutionSeededSummary {
+    const userMessages = messages.filter((message) => message.role === "user");
+    const first = userMessages.find((message) => /\S/u.test(message.content));
+    return { turnCount: userMessages.length, firstMessage: first ? leadingCodePoints(first.content, SEEDED_FIRST_MESSAGE_CHARS) : null };
+  }
+
+  /**
    * A durable turn is one user message and the assistant reply that answers it, so a seeded
    * user message and the reply that follows share a turn; a leading or consecutive assistant
    * message stands as its own turn. Seeded turns keep their source message ids.
@@ -390,10 +445,6 @@ export class TestExecutionService {
         content: message.content, messageId: message.messageId, createdAt: message.createdAt,
       };
     });
-  }
-
-  list(input: { workspaceId: string; agentId: string; limit: number; cursor?: string }): Promise<TestExecutionHistoryPage> {
-    return this.options.repository.list(input);
   }
 
   /**
@@ -416,8 +467,12 @@ export class TestExecutionService {
   /** A list page with each execution's turn count and opening message, read in one projection rather than per execution. */
   async summaries(input: { workspaceId: string; agentId: string; limit: number; cursor?: string }): Promise<TestExecutionSummaryPage> {
     const page = await this.options.repository.list(input);
-    const summaries = await this.options.repository.summarizeTranscripts({ workspaceId: input.workspaceId, agentId: input.agentId, executionIds: page.executions.map((item) => item.id) });
-    return { ...page, executions: page.executions.map((item) => ({ ...item, turnCount: summaries.get(item.id)?.turnCount ?? 0, firstMessage: summaries.get(item.id)?.firstMessage ?? null })) };
+    const summaries = await this.options.repository.summarizeTurns({ firstMessageChars: TEST_EXECUTION_LABEL_CHARS + 1, workspaceId: input.workspaceId, agentId: input.agentId, executionIds: page.executions.map((item) => item.id) });
+    return { ...page, executions: page.executions.map((item) => {
+      const summary = summaries.get(item.id);
+      const label = summary?.firstMessage ? testExecutionLabel(summary.firstMessage) : null;
+      return { ...item, turnCount: summary?.turnCount ?? 0, firstMessage: label?.label ?? null, firstMessageClipped: label?.clipped ?? false };
+    }) };
   }
 
   /**

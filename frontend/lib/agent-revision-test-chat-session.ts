@@ -12,7 +12,6 @@ export type AgentRevisionTestChatSession = {
   state: AgentRevisionState | null
   revisions: AgentRevisionSummary[]
   mode: 'single' | 'compare'
-  view: 'chat' | 'history'
   selected: string[]
   message: string
   execution: TestExecutionState | null

@@ -2,6 +2,7 @@ import { API_BASE, buildError, getStoredActiveWorkspaceId, request } from './api
 import { createClientId } from './client-id'
 import type { AgentGreetingDraft, TurnTraceEnvelope } from './api-types'
 import type { EvalSnapshot } from './api-eval'
+import type { components } from '../../typescript-sdk/src/generated/types'
 
 export type RevisionStatus = 'unpublished' | 'draft_clean' | 'draft_dirty' | 'published_changed_since_draft'
 export type EvidenceState = 'current' | 'configuration_changed' | 'environment_changed' | 'comparability_unknown'
@@ -94,6 +95,10 @@ export interface TestExecutionHistoryItem extends Omit<TestExecution, 'sides'> {
   createdAt: string
   sides: Array<Omit<TestExecution['sides'][number], 'state' | 'history'> & { state: ExecutionState | 'ready' }>
 }
+
+/** A row of the saved-test list; only the list counts messages, a detail carries the transcript. */
+export type TestExecutionHistoryListItem = TestExecutionHistoryItem &
+  Pick<components['schemas']['TestExecutionHistoryListItem'], 'turnCount' | 'firstMessage' | 'firstMessageClipped'>
 
 export interface TestExecutionHistoryDetail extends Omit<TestExecutionHistoryItem, 'sides'> {
   testValues: Array<{ contextVariableId: string; value: unknown }>
@@ -201,15 +206,15 @@ export const agentRevisionsApi = {
     })
   },
 
-  listTestExecutions(agentId: string, input: { limit?: number; cursor?: string } = {}): Promise<{ executions: TestExecutionHistoryItem[]; nextCursor: string | null; hasMore: boolean }> {
+  listTestExecutions(agentId: string, input: { limit?: number; cursor?: string } = {}): Promise<{ executions: TestExecutionHistoryListItem[]; nextCursor: string | null; hasMore: boolean }> {
     const query = new URLSearchParams()
     if (input.limit !== undefined) query.set('limit', String(input.limit))
     if (input.cursor) query.set('cursor', input.cursor)
-    return request<{ executions: TestExecutionHistoryItem[]; nextCursor: string | null; hasMore: boolean }>(`/agents/${agentId}/test-executions${query.size ? `?${query}` : ''}`, { method: 'GET' })
+    return request<{ executions: TestExecutionHistoryListItem[]; nextCursor: string | null; hasMore: boolean }>(`/agents/${agentId}/test-executions${query.size ? `?${query}` : ''}`, { method: 'GET' })
   },
 
   getTestExecution(agentId: string, executionId: string): Promise<{ execution: TestExecutionHistoryDetail }> {
-    return request<{ execution: TestExecutionHistoryDetail }>(`/agents/${agentId}/test-executions/${executionId}`, { method: 'GET' })
+    return request<{ execution: TestExecutionHistoryDetail }>(`/agents/${encodeURIComponent(agentId)}/test-executions/${encodeURIComponent(executionId)}`, { method: 'GET' })
   },
 
   retainTestSide(agentId: string, executionId: string, sideId: string): Promise<TestExecution> {

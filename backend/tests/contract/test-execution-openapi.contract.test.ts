@@ -23,4 +23,13 @@ describe("test execution OpenAPI contract", () => {
     expect(retry?.responses?.["200"]?.content?.["text/event-stream"]?.schema).toBeDefined();
     expect(document.components?.schemas?.TestExecutionEvent).toMatchObject({ oneOf: expect.any(Array) });
   });
+
+  it("lists each saved test with its opening message and the number of messages the operator sent", () => {
+    const { registry, security } = createOpenApiRegistry();
+    registerTestExecutionPaths(registry, security);
+    const document = new OpenApiGeneratorV31(registry.definitions).generateDocument({ openapi: "3.1.0", info: { title: "test", version: "1" } });
+    expect(document.components?.schemas?.TestExecutionHistoryListItem).toMatchObject({
+      allOf: [{ $ref: "#/components/schemas/TestExecutionHistoryItem" }, { properties: { turnCount: { type: "integer", minimum: 0 }, firstMessage: { type: ["string", "null"], maxLength: 200 }, firstMessageClipped: { type: "boolean" } }, required: ["turnCount", "firstMessage", "firstMessageClipped"] }],
+    });
+  });
 });

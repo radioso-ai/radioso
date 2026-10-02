@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { AgentRevision } from "../../src/modules/agents/agentRevision.js";
 import {
+  TEST_EXECUTION_LABEL_CHARS,
   TestExecutionService,
   type TestExecution,
   type TestExecutionAttemptRecord,
@@ -85,10 +86,10 @@ class MemoryRepository implements TestExecutionRepositoryPort {
   async list(_input?: Parameters<TestExecutionRepositoryPort["list"]>[0]): ReturnType<TestExecutionRepositoryPort["list"]> { return { executions: this.execution ? [this.execution] : [], nextCursor: null, hasMore: false }; }
   attempts: TestExecutionAttemptRecord[] = [];
   async listAttempts() { return this.attempts; }
-  transcriptSummaries = new Map<string, { turnCount: number; firstMessage: string | null }>();
-  async summarizeTranscripts(input: Parameters<TestExecutionRepositoryPort["summarizeTranscripts"]>[0]) {
+  turnSummaries = new Map<string, { turnCount: number; firstMessage: string | null }>();
+  async summarizeTurns(input: Parameters<TestExecutionRepositoryPort["summarizeTurns"]>[0]) {
     this.calls.push(`summarize:${input.executionIds.join(",")}`);
-    return new Map([...this.transcriptSummaries].filter(([id]) => input.executionIds.includes(id)));
+    return new Map([...this.turnSummaries].filter(([id]) => input.executionIds.includes(id)));
   }
   lastLeaseMs: number | null = null;
   claimRefusal: "turn_in_progress" | null = null;
@@ -486,6 +487,41 @@ describe("TestExecutionService", () => {
       expect(side.history.map(({ role, content, messageId, createdAt }) => ({ role, content, messageId, createdAt }))).toEqual(thread);
     });
 
+    it("records what the seed copied in, so history can count and label the test without its transcript", async () => {
+      const { service, repository } = seededSetup(async () => seed(thread));
+      const create = vi.spyOn(repository, "create");
+
+      await service.start({ idempotencyKey: "idem-seed", workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [], seedConversationId });
+
+      expect(create).toHaveBeenCalledWith(expect.objectContaining({ seededSummary: { turnCount: 2, firstMessage: "hello" } }));
+    });
+
+    it("labels a copied test by its first user message with text, kept only as long as a label needs", async () => {
+      const { service, repository } = seededSetup(async () => seed([
+        { role: "user", content: "", messageId: "m-attachment", createdAt: new Date(10) },
+        { role: "assistant", content: "I see a photo", messageId: "m-reply", createdAt: new Date(20) },
+        { role: "user", content: "w".repeat(5_000), messageId: "m-long", createdAt: new Date(30) },
+      ]));
+      const create = vi.spyOn(repository, "create");
+
+      await service.start({ idempotencyKey: "idem-seed", workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [], seedConversationId });
+
+      expect(create).toHaveBeenCalledWith(expect.objectContaining({ seededSummary: { turnCount: 2, firstMessage: "w".repeat(1_000) } }));
+    });
+
+    it("keeps a copied label longer than the label limit even when an emoji straddles the cut", async () => {
+      const opening = `${"a".repeat(TEST_EXECUTION_LABEL_CHARS)}😀 and more`;
+      const { service, repository } = seededSetup(async () => seed([{ role: "user", content: opening, messageId: "m-1", createdAt: new Date(10) }]));
+      const create = vi.spyOn(repository, "create");
+
+      await service.start({ idempotencyKey: "idem-seed", workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [], seedConversationId });
+
+      // Kept whole well past the label, so the list still sees it is longer and marks it clipped.
+      const stored = create.mock.calls[0][0].seededSummary?.firstMessage;
+      expect(stored).toBe(opening);
+      expect(stored!.length).toBeGreaterThan(TEST_EXECUTION_LABEL_CHARS);
+    });
+
     it("groups a seeded user message with the assistant reply that follows it under one turn", async () => {
       const { service } = seededSetup(async () => seed(thread));
 
@@ -630,16 +666,22 @@ describe("TestExecutionService turn reads", () => {
     const { service, repository } = setup();
     const item = (id: string): TestExecutionHistoryItem => ({ id, mode: "single", generation: 1, state: "completed", createdAt: new Date(0), skillEffects: "suppressed", sides: [] });
     const list = vi.spyOn(repository, "list").mockResolvedValue({ executions: [item("execution-1"), item("execution-2")], nextCursor: "cursor-2", hasMore: true });
-    repository.transcriptSummaries.set("execution-1", { turnCount: 2, firstMessage: "Can I book a demo?" });
+    repository.turnSummaries.set("execution-1", { turnCount: 2, firstMessage: "Can I book a demo?" });
+    repository.turnSummaries.set("execution-3", { turnCount: 1, firstMessage: "z".repeat(TEST_EXECUTION_LABEL_CHARS + 1) });
+    list.mockResolvedValueOnce({ executions: [item("execution-1"), item("execution-2"), item("execution-3")], nextCursor: "cursor-2", hasMore: true });
+    const summarize = vi.spyOn(repository, "summarizeTurns");
 
     const page = await service.summaries({ ...scope, limit: 2, cursor: "cursor-1" });
 
     expect(list).toHaveBeenCalledWith({ ...scope, limit: 2, cursor: "cursor-1" });
-    expect(repository.calls).toEqual(["summarize:execution-1,execution-2"]);
+    expect(repository.calls).toEqual(["summarize:execution-1,execution-2,execution-3"]);
+    // The store reads one character past the label, so the service can tell a longer message apart and mark it.
+    expect(summarize).toHaveBeenCalledWith(expect.objectContaining({ firstMessageChars: TEST_EXECUTION_LABEL_CHARS + 1 }));
     expect(page).toEqual({
       executions: [
-        { ...item("execution-1"), turnCount: 2, firstMessage: "Can I book a demo?" },
-        { ...item("execution-2"), turnCount: 0, firstMessage: null },
+        { ...item("execution-1"), turnCount: 2, firstMessage: "Can I book a demo?", firstMessageClipped: false },
+        { ...item("execution-2"), turnCount: 0, firstMessage: null, firstMessageClipped: false },
+        { ...item("execution-3"), turnCount: 1, firstMessage: `${"z".repeat(TEST_EXECUTION_LABEL_CHARS - 1)}…`, firstMessageClipped: true },
       ],
       nextCursor: "cursor-2",
       hasMore: true,

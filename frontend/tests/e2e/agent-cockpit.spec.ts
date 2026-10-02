@@ -162,7 +162,8 @@ async function installCockpitMocks(page: Page, options: CockpitMockOptions = {})
   })
   await page.route(new RegExp(`/backend/api/v1/agents/${defaultAgentId}/test-executions(?:\\?.*)?$`), async (route) => {
     if (route.request().method() === 'GET') {
-      await route.fulfill({ json: { executions: options.executionHistory ?? [], nextCursor: null, hasMore: false } })
+      const executions = (options.executionHistory ?? []).map((execution) => ({ turnCount: 0, firstMessage: null, ...(execution as object) }))
+      await route.fulfill({ json: { executions, nextCursor: null, hasMore: false } })
       return
     }
     startReceived?.()
@@ -654,6 +655,242 @@ test('reopens a durable comparison with its recorded versions, values, and trans
   await page.getByRole('button', { name: 'Test chat actions', exact: true }).click()
   await expect(page.getByRole('menuitemcheckbox', { name: 'Run skills for real' })).toHaveAttribute('aria-checked', 'true')
   await page.keyboard.press('Escape')
+})
+
+test('shares a saved test as a link that opens it on a fresh visit', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+  const saved = {
+    id: '11111111-1111-4111-8111-111111111111', generation: 2, mode: 'single', state: 'completed', createdAt: nowIso,
+    skillEffects: 'suppressed', turnCount: 2, firstMessage: 'Where is my parcel?',
+    sides: [{ id: 'shared-side', revision: published, conversationId: 'shared-conversation', state: 'completed', retryable: false }],
+  }
+  await installCockpitMocks(page, {
+    executionHistory: [saved],
+    executionDetail: {
+      ...saved,
+      testValues: [],
+      sides: [{ ...saved.sides[0], history: [
+        { turnId: 'shared-turn-1', role: 'user', content: 'Where is my parcel?', attemptId: 'shared-attempt-1', createdAt: nowIso },
+        { turnId: 'shared-turn-1', role: 'assistant', content: 'It ships tomorrow.', attemptId: 'shared-attempt-1', createdAt: nowIso },
+        { turnId: 'shared-turn-2', role: 'user', content: 'Can I change the address?', attemptId: 'shared-attempt-2', createdAt: nowIso },
+        { turnId: 'shared-turn-2', role: 'assistant', content: 'Yes, until it ships.', attemptId: 'shared-attempt-2', createdAt: nowIso },
+      ] }],
+      attempts: ['shared-attempt-1', 'shared-attempt-2'].map((attemptId, index) => ({ sideId: 'shared-side', turnId: `shared-turn-${index + 1}`, attemptId, fence: 1, state: 'completed', createdAt: nowIso, updatedAt: nowIso })),
+    },
+  })
+  await page.goto(testUrl)
+  await clickTestChatAction(page, 'Conversation history')
+  const row = page.getByRole('row').filter({ hasText: 'Where is my parcel?' })
+  await expect(page.getByRole('columnheader', { name: 'Messages', exact: true })).toBeVisible()
+  await expect(row.getByRole('cell', { name: '2', exact: true })).toBeVisible()
+  await row.getByRole('button', { name: 'Copy link', exact: true }).click()
+  await expect(row.getByRole('button', { name: 'Link copied', exact: true })).toBeVisible()
+  const link = await page.evaluate(() => navigator.clipboard.readText())
+  expect(new URL(link).searchParams.get('testExecution')).toBe(saved.id)
+
+  // A colleague opening the link starts with no in-memory test chat session.
+  await page.goto(link)
+  await expect(page.getByText('Can I change the address?', { exact: true })).toBeVisible()
+  await expect(page.getByText('Yes, until it ships.', { exact: true })).toBeVisible()
+  await expect(page.getByText(/Continuing a copy/)).toHaveCount(0)
+
+  await page.evaluate(() => navigator.clipboard.writeText(''))
+  await clickTestChatAction(page, 'Copy link to this chat')
+  await expect(page.getByText('Link copied.', { exact: true })).toBeVisible()
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(link)
+})
+
+test('shows a link to copy by hand when the page has no clipboard, only beside its own test', async ({ page }) => {
+  // A dashboard served over plain HTTP has no clipboard access.
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true })
+  })
+  const saved = {
+    id: '22222222-2222-4222-8222-222222222222', generation: 1, mode: 'single', state: 'completed', createdAt: nowIso,
+    skillEffects: 'suppressed', turnCount: 1, firstMessage: 'Is the shop open on Sunday?',
+    sides: [{ id: 'plain-side', revision: published, conversationId: 'plain-conversation', state: 'completed', retryable: false }],
+  }
+  await installCockpitMocks(page, {
+    executionHistory: [saved],
+    executionDetail: {
+      ...saved,
+      testValues: [],
+      sides: [{ ...saved.sides[0], history: [
+        { turnId: 'plain-turn', role: 'user', content: 'Is the shop open on Sunday?', attemptId: 'plain-attempt', createdAt: nowIso },
+        { turnId: 'plain-turn', role: 'assistant', content: 'Yes, from ten.', attemptId: 'plain-attempt', createdAt: nowIso },
+      ] }],
+      attempts: [{ sideId: 'plain-side', turnId: 'plain-turn', attemptId: 'plain-attempt', fence: 1, state: 'completed', createdAt: nowIso, updatedAt: nowIso }],
+    },
+  })
+  await page.goto(testUrl)
+  await clickTestChatAction(page, 'Conversation history')
+  await page.getByRole('row').filter({ hasText: 'Is the shop open on Sunday?' }).getByRole('button', { name: 'Copy link', exact: true }).click()
+  await expect(page.getByText(`testExecution=${saved.id}`)).toBeVisible()
+
+  await page.getByRole('button', { name: 'Open', exact: true }).click()
+  await expect(page.getByText('Yes, from ten.', { exact: true })).toBeVisible()
+  await clickTestChatAction(page, 'Copy link to this chat')
+  await expect(page.getByText(`testExecution=${saved.id}`)).toBeVisible()
+
+  await clickTestChatAction(page, 'New chat')
+  await expect(page.getByText(`testExecution=${saved.id}`)).toHaveCount(0)
+})
+
+test('drops a shared test still opening once the operator moves to Conversation history and back', async ({ page }) => {
+  const saved = {
+    id: '33333333-3333-4333-8333-333333333333', generation: 1, mode: 'single', state: 'completed', createdAt: nowIso,
+    skillEffects: 'suppressed', turnCount: 1, firstMessage: 'A slow shared question',
+    sides: [{ id: 'slow-shared-side', revision: published, conversationId: 'slow-shared-conversation', state: 'completed', retryable: false }],
+  }
+  const mocks = await installCockpitMocks(page, {
+    delayExecutionDetail: true,
+    executionHistory: [saved],
+    executionDetail: {
+      ...saved,
+      testValues: [],
+      sides: [{ ...saved.sides[0], history: [
+        { turnId: 'slow-shared-turn', role: 'user', content: 'A slow shared question', attemptId: 'slow-shared-attempt', createdAt: nowIso },
+        { turnId: 'slow-shared-turn', role: 'assistant', content: 'A slow shared answer', attemptId: 'slow-shared-attempt', createdAt: nowIso },
+      ] }],
+      attempts: [{ sideId: 'slow-shared-side', turnId: 'slow-shared-turn', attemptId: 'slow-shared-attempt', fence: 1, state: 'completed', createdAt: nowIso, updatedAt: nowIso }],
+    },
+  })
+  await page.goto(`${testUrl}&testExecution=${saved.id}`)
+  await mocks.executionDetailRequest
+  await clickTestChatAction(page, 'Conversation history')
+  await expect(page.getByRole('heading', { name: 'Conversation history', exact: true })).toBeVisible()
+  await expect(page).toHaveURL(/[?&]view=history/)
+  await expect(page).not.toHaveURL(/testExecution=/)
+
+  // Coming back to the chat before it loads does not revive the open the operator walked away from.
+  await page.getByRole('button', { name: 'Back to chat', exact: true }).click()
+  await expect(testChatComposer(page)).toBeVisible()
+  mocks.releaseExecutionDetail()
+  await page.waitForTimeout(300)
+  await expect(testChatComposer(page)).toBeVisible()
+  await expect(page.getByText('A slow shared answer', { exact: true })).toHaveCount(0)
+  await expect(page).not.toHaveURL(/testExecution=/)
+  // No entry behind it still holds the dropped open command.
+  await page.goForward()
+  await expect(page.getByRole('heading', { name: 'Conversation history', exact: true })).toBeVisible()
+  await page.goBack()
+  await expect(page).not.toHaveURL(/testExecution=/)
+  await expect(testChatComposer(page)).toBeVisible()
+})
+
+test('keeps a shared link that cannot open on screen after the greeting starts', async ({ page }) => {
+  const requestBodies: unknown[] = []
+  const testStarts = () => requestBodies.filter((body) => typeof body === 'object' && body !== null && 'mode' in body)
+  await installCockpitMocks(page, { requestBodies, revisionState: { ...revisionState, proactiveGreetingEnabled: true } })
+  const goneId = '44444444-4444-4444-8444-444444444444'
+  await page.route(new RegExp(`/backend/api/v1/agents/${defaultAgentId}/test-executions/${goneId}$`), async (route) => {
+    await route.fulfill({ status: 404, json: { error: { message: 'Test execution is unavailable.' } } })
+  })
+  await page.goto(`${testUrl}&testExecution=${goneId}`)
+
+  await expect.poll(() => testStarts().length).toBe(1)
+  await expect(page.getByRole('alert').filter({ hasText: /unavailable|Unable to open/ })).toBeVisible()
+  await expect(page).not.toHaveURL(/testExecution=/)
+})
+
+test('says so when a shared link carries a broken test id, without asking the API', async ({ page }) => {
+  await installCockpitMocks(page)
+  const detailRequests: string[] = []
+  page.on('request', (request) => {
+    if (/\/test-executions\/[^/?]+$/.test(new URL(request.url()).pathname)) detailRequests.push(request.url())
+  })
+  await page.goto(`${testUrl}&testExecution=1111-broken`)
+
+  await expect(page.getByRole('alert').filter({ hasText: 'This test link is incomplete' })).toBeVisible()
+  await expect(page).not.toHaveURL(/testExecution=/)
+  expect(detailRequests).toEqual([])
+})
+
+test('New chat from Conversation history drops a row still opening', async ({ page }) => {
+  const saved = {
+    id: '55555555-5555-4555-8555-555555555555', generation: 1, mode: 'single', state: 'completed', createdAt: nowIso,
+    skillEffects: 'suppressed', turnCount: 1, firstMessage: 'An old slow question',
+    sides: [{ id: 'old-slow-side', revision: published, conversationId: 'old-slow-conversation', state: 'completed', retryable: false }],
+  }
+  const mocks = await installCockpitMocks(page, {
+    delayExecutionDetail: true,
+    executionHistory: [saved],
+    executionDetail: {
+      ...saved,
+      testValues: [],
+      sides: [{ ...saved.sides[0], history: [
+        { turnId: 'old-slow-turn', role: 'user', content: 'An old slow question', attemptId: 'old-slow-attempt', createdAt: nowIso },
+        { turnId: 'old-slow-turn', role: 'assistant', content: 'An old slow answer', attemptId: 'old-slow-attempt', createdAt: nowIso },
+      ] }],
+      attempts: [{ sideId: 'old-slow-side', turnId: 'old-slow-turn', attemptId: 'old-slow-attempt', fence: 1, state: 'completed', createdAt: nowIso, updatedAt: nowIso }],
+    },
+  })
+  await page.goto(`${testUrl}&view=history`)
+  await page.getByRole('button', { name: 'Open', exact: true }).click()
+  await mocks.executionDetailRequest
+  await clickTestChatAction(page, 'New chat')
+  await expect(testChatComposer(page)).toBeVisible()
+  await expect(page).not.toHaveURL(/[?&]view=history/)
+
+  mocks.releaseExecutionDetail()
+  await page.waitForTimeout(300)
+  await expect(page.getByText('An old slow answer', { exact: true })).toHaveCount(0)
+})
+
+test('gives Conversation history its own link, and starts no greeting behind it', async ({ page }) => {
+  const saved = {
+    id: 'execution-history-linked', generation: 1, mode: 'compare', state: 'completed', createdAt: nowIso,
+    skillEffects: 'suppressed', turnCount: 3, firstMessage: 'Do you ship to Iceland?',
+    sides: [
+      { id: 'linked-left', revision: published, conversationId: 'linked-left-conversation', state: 'completed', retryable: false },
+      { id: 'linked-right', revision: candidate, conversationId: 'linked-right-conversation', state: 'completed', retryable: false },
+    ],
+  }
+  const requestBodies: unknown[] = []
+  const testStarts = () => requestBodies.filter((body) => typeof body === 'object' && body !== null && 'mode' in body)
+  await installCockpitMocks(page, {
+    requestBodies,
+    revisionState: { ...revisionState, proactiveGreetingEnabled: true },
+    executionHistory: [saved, { ...saved, id: 'execution-history-empty', mode: 'single', turnCount: 0, firstMessage: null, sides: [saved.sides[0]] }],
+  })
+  const revisionsLoaded = Promise.all([
+    page.waitForResponse((response) => response.url().endsWith(`/agents/${defaultAgentId}/revision-state`)),
+    page.waitForResponse((response) => response.url().endsWith(`/agents/${defaultAgentId}/revisions?include=published`)),
+  ])
+  await page.goto(`${testUrl}&view=history`)
+  await expect(page.getByRole('heading', { name: 'Conversation history', exact: true })).toBeVisible()
+  const row = page.getByRole('row').filter({ hasText: 'Do you ship to Iceland?' })
+  await expect(row.getByText('Comparison', { exact: true })).toBeVisible()
+  await expect(row.getByRole('cell', { name: '3', exact: true })).toBeVisible()
+  await expect(page.getByText('No messages yet', { exact: true })).toBeVisible()
+  // With the chat's revisions loaded, a greeting would start on the next render; give it one beat.
+  await revisionsLoaded
+  await page.waitForTimeout(300)
+  expect(testStarts()).toEqual([])
+
+  await page.getByRole('button', { name: 'Back to chat', exact: true }).click()
+  await expect(page).not.toHaveURL(/[?&]view=history/)
+  await expect(testChatComposer(page)).toBeVisible()
+  await expect.poll(() => testStarts().length).toBe(1)
+
+  await clickTestChatAction(page, 'Conversation history')
+  await expect(page).toHaveURL(/[?&]view=history/)
+  await expect(testChatMenuItem(page, 'Copy link to this chat')).toHaveCount(0)
+  // Back to chat steps back to the chat's own entry instead of stacking a new one.
+  await page.getByRole('button', { name: 'Back to chat', exact: true }).click()
+  await expect(testChatComposer(page)).toBeVisible()
+  await expect(page).not.toHaveURL(/[?&]view=history/)
+  await page.goForward()
+  await expect(page.getByRole('heading', { name: 'Conversation history', exact: true })).toBeVisible()
+  await page.goBack()
+  await expect(testChatComposer(page)).toBeVisible()
+  // Reached by Forward, the history entry still knows it sits over the chat.
+  await page.goForward()
+  await expect(page.getByRole('heading', { name: 'Conversation history', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Back to chat', exact: true }).click()
+  await expect(testChatComposer(page)).toBeVisible()
+  await page.goForward()
+  await expect(page.getByRole('heading', { name: 'Conversation history', exact: true })).toBeVisible()
 })
 
 test('fences a delayed history open after the operator returns to a new chat', async ({ page }) => {

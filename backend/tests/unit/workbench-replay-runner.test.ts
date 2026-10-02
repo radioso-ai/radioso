@@ -1527,7 +1527,7 @@ describe("WorkbenchReplayRunner", () => {
       kind: "completion",
       subject: "New booking: Ada Lovelace",
       lines: expect.arrayContaining([
-        "A conversation completed a routine.",
+        "A visitor completed a request in chat.",
         "Confirm 2 guests with Ada Lovelace.",
         "  Name: Ada Lovelace",
       ]),

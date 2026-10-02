@@ -69,7 +69,7 @@ describe("formatRoutineEndingNotification", () => {
     const formatted = formatRoutineEndingNotification({ ...booking, kind: "completion", reason: "routine_completed" });
 
     expect(formatted.subject).toBe("Book accommodation: completed");
-    expect(formatted.lines[0]).toBe("A conversation completed a routine.");
+    expect(formatted.lines[0]).toBe("A visitor completed a request in chat.");
     expect(formatRoutineEndingNotification({ ...base, kind: "completion", reason: "routine_completed" }).subject).toBe("Routine completed");
   });
 
@@ -83,7 +83,7 @@ describe("formatRoutineEndingNotification", () => {
 
     expect(formatted.subject).toBe("New booking: Ada Lovelace, 2 guests");
     expect(formatted.lines.slice(0, 3)).toEqual([
-      "A conversation completed a routine.",
+      "A visitor completed a request in chat.",
       "Please confirm 2026-10-12 with Ada Lovelace.",
       "",
     ]);

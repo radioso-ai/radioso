@@ -22,7 +22,7 @@ const DEFAULT_TEXT: Record<RoutineEndingOperatorNotification["kind"], {
     genericSubject: "Conversation needs a human",
   },
   completion: {
-    headline: "A conversation completed a routine.",
+    headline: "A visitor completed a request in chat.",
     routineSubject: (routineName) => `${routineName}: completed`,
     genericSubject: "Routine completed",
   },

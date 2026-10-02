@@ -402,7 +402,7 @@ describe("EmailWebhookOperatorNotificationSink", () => {
     expect(sent[0].subject).toBe("New booking: Ada Lovelace");
     expect(sent[0].idempotencyKey).toBe("routine-action:conv_1:completion.notify:email:reception%40ananda.example");
     expect(sent[0].text).toBe([
-      "A conversation completed a routine.",
+      "A visitor completed a request in chat.",
       "Confirm 2026-10-12 with the guest.",
       "",
       "Collected:",

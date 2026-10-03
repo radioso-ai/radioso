@@ -35,6 +35,11 @@ import {
 } from "../../../modules/retrieval/public.js";
 import { NOTIFY_SKILLS_ADAPTER } from "../../../modules/notify/notifyExecutor.js";
 import type { ConversationDurability, SkillEffectPolicy } from "../../../shared/domain/turnExecutionMode.js";
+import type {
+  SkillEffectSuppressionSite,
+  SuppressedSkillEffect,
+  SuppressedSkillEffectsSource,
+} from "../../../shared/domain/suppressedSkillEffect.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 
 interface RepositoryAgentSkillTurnSkillProviderOptions {
@@ -247,7 +252,7 @@ const requiresDurableConversationDenied = (
 const recordSafeTestSuppression = (
   metricsRegistry: Pick<MetricsRegistry, "incrementCounter"> | null | undefined,
   kind: AgentSkillKind,
-  surface: "turn" | "staged_tool",
+  surface: SkillEffectSuppressionSite,
 ): void => {
   metricsRegistry?.incrementCounter("agent_skill_safe_test_dispatch_total", {
     help: "Agent-skill executions suppressed by the safe-test execution policy.",
@@ -258,6 +263,17 @@ const recordSafeTestSuppression = (
       surface,
     },
   });
+};
+
+type RecordSkillEffectSuppression = (agentSkill: AgentSkillSpine, site: SkillEffectSuppressionSite) => void;
+
+/** Counts a suppression on the unchanged safe-test counter and adds it to the turn's collector. */
+const skillEffectSuppressionRecorder = (
+  metricsRegistry: Pick<MetricsRegistry, "incrementCounter"> | null | undefined,
+  suppressedEffects: SuppressedSkillEffect[],
+): RecordSkillEffectSuppression => (agentSkill, site) => {
+  recordSafeTestSuppression(metricsRegistry, agentSkill.kind, site);
+  suppressedEffects.push({ skillName: agentSkill.skillName, site });
 };
 
 const runtimeSkillDefinitionForAgentSkill = (agentSkill: AgentSkillSpine): RuntimeSkillDefinition => ({
@@ -295,7 +311,7 @@ const turnSkillForAgentSkill = (
   throwIfCancelled: () => void,
   skillEffects: SkillEffectPolicy | undefined,
   conversationDurability: ConversationDurability | undefined,
-  metricsRegistry: Pick<MetricsRegistry, "incrementCounter"> | null | undefined,
+  recordSuppression: RecordSkillEffectSuppression,
 ): TurnSkill => {
   const skill = runtimeSkillDefinitionForAgentSkill(agentSkill);
   const renderer = new GenericTurnOutcomeRenderer();
@@ -307,7 +323,7 @@ const turnSkillForAgentSkill = (
         return settledFailure(session, agentSkill.skillName, "no_execution");
       }
       if (shouldSuppressForSafeTest(skillEffects, agentSkill, skill.execution)) {
-        recordSafeTestSuppression(metricsRegistry, agentSkill.kind, "turn");
+        recordSuppression(agentSkill, "turn");
         return settledFailure(session, agentSkill.skillName, SAFE_TEST_SUPPRESSION_REASON);
       }
       if (requiresDurableConversationDenied(conversationDurability, skill)) {
@@ -366,7 +382,7 @@ const stagedToolFactoryForAgentSkill = (
   throwIfCancelled: () => void,
   skillEffects: SkillEffectPolicy | undefined,
   conversationDurability: ConversationDurability | undefined,
-  metricsRegistry: Pick<MetricsRegistry, "incrementCounter"> | null | undefined,
+  recordSuppression: RecordSkillEffectSuppression,
 ): AgenticRetrievalToolFactory => ({ registry, snippetChars }) => {
   const skill = runtimeSkillDefinitionForAgentSkill(agentSkill);
   const toolName = stagedToolNameForSkill(agentSkill.skillName);
@@ -384,7 +400,7 @@ const stagedToolFactoryForAgentSkill = (
         return { ok: false, skillName: agentSkill.skillName, directiveNames: [...directiveNames], error: "no_execution" };
       }
       if (shouldSuppressForSafeTest(skillEffects, agentSkill, skill.execution)) {
-        recordSafeTestSuppression(metricsRegistry, agentSkill.kind, "staged_tool");
+        recordSuppression(agentSkill, "staged_tool");
         return {
           ok: false,
           skillName: agentSkill.skillName,
@@ -482,8 +498,10 @@ export class RepositoryAgentSkillTurnSkillProvider implements AgentSkillTurnSkil
   async forSession(
     session: PreparedSession,
     coordination?: { throwIfCancelled?: () => void },
-  ): Promise<AgentSkillTurnRuntime> {
+  ): Promise<AgentSkillTurnRuntime & SuppressedSkillEffectsSource> {
     const throwIfCancelled = coordination?.throwIfCancelled ?? (() => undefined);
+    const suppressedEffects: SuppressedSkillEffect[] = [];
+    const recordSuppression = skillEffectSuppressionRecorder(this.options.metricsRegistry, suppressedEffects);
     // Directives read from the conversation's frozen revision snapshot
     // (session.agent.authoredDirectives) so a pinned turn cannot see an operator's
     // in-flight live edit. Agent-selectable skills must be frozen the same way: only
@@ -515,7 +533,7 @@ export class RepositoryAgentSkillTurnSkillProvider implements AgentSkillTurnSkil
           throwIfCancelled,
           session.skillEffects,
           session.conversationDurability,
-          this.options.metricsRegistry,
+          recordSuppression,
         ));
       }
       if (!capabilityDenied && stagingCapable) {
@@ -536,10 +554,11 @@ export class RepositoryAgentSkillTurnSkillProvider implements AgentSkillTurnSkil
               throwIfCancelled,
               session.skillEffects,
               session.conversationDurability,
-              this.options.metricsRegistry,
+              recordSuppression,
             )]
           : [];
       }),
+      suppressedEffects: () => [...suppressedEffects],
     };
   }
 

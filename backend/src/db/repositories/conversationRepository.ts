@@ -364,10 +364,13 @@ export class ConversationRepository implements ConversationRepositoryPort {
    * waits for the first to commit and then creates nothing.
    */
   async createIfAbsent(input: CreateConversationInput & { id: string }): Promise<boolean> {
+    // The table has two unique indexes that both contain `id` (the primary key and
+    // `(workspace_id, id)`); a concurrent creator of the same id can trip either one first,
+    // so the arbiter is left open: any duplicate of this id means "already exists".
     const row = await this.db
       .insertInto("conversations")
       .values(conversationInsertValues(input.id, input))
-      .onConflict((conflict) => conflict.column("id").doNothing())
+      .onConflict((conflict) => conflict.doNothing())
       .returning("id")
       .executeTakeFirst();
     return row !== undefined;

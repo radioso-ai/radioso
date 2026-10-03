@@ -1,0 +1,26 @@
+Return-Path: <alice@example.test>
+Delivered-To: QZ2K7XN4VTM3RLHJWPC6YGBSFD@in.relay.test
+Received: from mx.in.relay.test (mx.in.relay.test [192.0.2.50])
+	by inbound.in.relay.test with ESMTPS id 7f1c5d3e60
+	for <QZ2K7XN4VTM3RLHJWPC6YGBSFD@in.relay.test>;
+	Sat, 03 Oct 2026 14:35:19 +0000 (UTC)
+X-Forwarded-To: QZ2K7XN4VTM3RLHJWPC6YGBSFD@in.relay.test
+X-Forwarded-For: support+thrA7k2m9qzx4p@customer.test QZ2K7XN4VTM3RLHJWPC6YGBSFD@in.relay.test
+Delivered-To: support+thrA7k2m9qzx4p@customer.test
+Received: from mail-sor-f41.example.test (mail-sor-f41.example.test [203.0.113.41])
+	by mx.google-workspace.example.test with SMTP id b4d6e2f0c3
+	for <support+thrA7k2m9qzx4p@customer.test>;
+	Sat, 03 Oct 2026 14:35:14 +0000 (UTC)
+Message-ID: <msg-0005@example.test>
+From: Alice Carter <alice@example.test>
+To: support+thrA7k2m9qzx4p@customer.test
+Subject: One more question
+Date: Sat, 03 Oct 2026 14:35:00 +0000
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+Sorry, started a fresh email instead of replying to the old one - does
+the billing address change apply to past invoices too?
+
+Alice

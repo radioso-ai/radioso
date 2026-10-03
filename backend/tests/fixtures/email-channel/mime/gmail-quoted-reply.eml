@@ -1,0 +1,37 @@
+Return-Path: <grace@example.test>
+Received: from mx.in.relay.test (mx.in.relay.test [192.0.2.50])
+	by inbound.in.relay.test with ESMTPS id 4d5e6f7081
+	for <QZ2K7XN4VTM3RLHJWPC6YGBSFD@in.relay.test>;
+	Sat, 03 Oct 2026 16:10:10 +0000 (UTC)
+Message-ID: <msg-0101@example.test>
+In-Reply-To: <out-0101@in.relay.test>
+References: <out-0101@in.relay.test>
+From: Grace Lin <grace@example.test>
+To: support@customer.test
+Subject: Re: Your trial is ending soon
+Date: Sat, 03 Oct 2026 16:10:00 +0000
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="b0101gmail"
+
+--b0101gmail
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+Thanks, I'll upgrade before Friday.
+
+On Sat, Oct 3, 2026 at 3:55 PM, Support <support@customer.test> wrote:
+> Hi Grace, just a reminder that your trial ends on Friday. Let us know
+> if you'd like help choosing a plan.
+
+--b0101gmail
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+<div dir="ltr">Thanks, I'll upgrade before Friday.</div>
+<div class="gmail_quote">
+<div dir="ltr" class="gmail_attr">On Sat, Oct 3, 2026 at 3:55 PM, Support
+&lt;support@customer.test&gt; wrote:<br></div>
+<blockquote class="gmail_quote">Hi Grace, just a reminder that your trial
+ends on Friday. Let us know if you'd like help choosing a plan.</blockquote>
+</div>
+--b0101gmail--

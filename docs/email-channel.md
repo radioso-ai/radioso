@@ -1,7 +1,7 @@
 ---
 title: "Email Channel"
-description: "Connect a support mailbox to a Radioso agent by forwarding, verify sending on your own domain, and work the mailbox event log and raw mail from operator settings."
-last_updated: 2026-10-03
+description: "Connect a support mailbox to a Radioso agent by forwarding, verify sending on your own domain, reply with delivery tracked through to the customer, and work the mailbox event log and raw mail from operator settings."
+last_updated: 2026-10-04
 ---
 
 # Email Channel
@@ -99,6 +99,68 @@ missing step named — retrying once the domain verifies is safe. Removing a
 sending domain revokes its authority first, halts anything queued to send,
 and keeps every conversation and its history intact.
 
+## Send a reply and track delivery
+
+Reply to an email conversation from the Inbox the same way you'd reply on any
+other channel. It goes out `From` the mailbox's real address and display
+name — `support@customer.com`, not the relay — once that domain's sending
+records have verified; until then the reply is refused before anything is
+written, with the missing step named (see Verify sending, above).
+
+**Headers.** Every outbound email carries a `Message-ID` Radioso generates on
+the sending domain, plus `In-Reply-To` and `References` naming the message it
+continues. The provider assigns its own id on its own domain when it accepts
+the send, and that's the id Radioso looks up and records right after
+sending, rather than trust the one it supplied — thread matching then works
+against whichever id the customer's mail client ends up quoting.
+`Reply-To` is set to the mailbox's real address so the customer's reply
+travels through their forward; once the mailbox's setup check has proven
+that a plus-addressed message actually reaches the relay, `Reply-To` also
+carries an opaque plus-address thread token, which keeps the reply on the
+right thread even if the customer's client drops `In-Reply-To` and
+`References`. Before that check has passed, `Reply-To` carries no token, so
+a reply can't bounce against a forward nobody has proven handles
+plus-addressing. Agent-authored mail carries `Auto-Submitted:
+auto-generated`; an operator's reply carries no `Auto-Submitted` header at
+all.
+
+**Delivery states.** Each outbound message shows one state:
+
+| State | What it means to you |
+|---|---|
+| `queued` | Recorded and waiting on its first attempt to the provider. |
+| `accepted` | The provider has taken the message; it hasn't confirmed the mailbox received it yet. |
+| `delivered` | The provider confirms the message reached the customer's mail server. |
+| `bounced` | The provider or the customer's own mail service rejected it — a bad address, a full mailbox, a policy block. The sanitized reason is on the message. |
+| `failed` | The provider rejected the send outright. |
+| `uncertain` | The outcome never resolved. See below — it needs an operator decision, never an automatic resend. |
+| `halted` | The domain or mailbox lost sending authority after the reply was queued, so nothing was ever sent to the provider. |
+
+`bounced`, `failed`, `uncertain`, and `halted` each flag the conversation
+with a `delivery_failed` item in the Inbox. [Human Takeover](human-takeover.md#delivery-failures)
+covers clearing that flag.
+
+**When a send is uncertain.** A crash or a timeout between Radioso and the
+provider doesn't risk sending the customer two emails: every send carries a
+stable idempotency key and a frozen copy of its request, so a retry inside
+the provider's 24-hour idempotency window replays byte-for-byte, and the
+provider either returns the original result or sends exactly once. That
+retry happens on its own. Only once that window closes with the outcome
+still unknown does the send become `uncertain` — and from there, nothing
+resends it automatically. An operator resolves it: mark it sent, once
+you've confirmed delivery some other way (the customer replied, say), or ask
+for a resend, which sends a fresh copy under a new idempotency key and is
+recorded against the deciding operator. A domain or mailbox that lost
+sending authority while a send was still unresolved skips straight to
+`uncertain` with no further retry, since there would be nothing valid left
+to retry with.
+
+**Late provider evidence.** A provider event or a reconciliation lookup can
+report a delivery outcome after a send has already gone `uncertain`.
+Radioso applies it without any operator step: a late `delivered` clears the
+flag on its own, while a late `bounced` or `failed` keeps the flag open,
+now carrying that reason.
+
 ## The event log, retention, and raw access
 
 Every accepted email is recorded as an event on the mailbox with its
@@ -157,7 +219,9 @@ events past retention.
 **Provider outage.** Inbound fetches and sends both retry inside their own
 jobs; nothing accepted is dropped, and the backlog just grows until the
 provider recovers. After it does, check for sends stuck `uncertain` — they
-need reconciliation or an operator decision, never a blind resend.
+need reconciliation or an operator decision, never a blind resend. See
+[Human Takeover](human-takeover.md#delivery-failures) to mark one sent or
+resend it.
 
 **Webhook secret rotation.** Set the new value in
 `EMAIL_CHANNEL_WEBHOOK_SECRET`, put the current value in
@@ -173,10 +237,13 @@ hours of downtime, Resend's own retries give up; replay the event from the
 provider's dashboard instead — the dedupe keys make a replay safe even if it
 arrives twice.
 
-**Bounce spike.** Check the sending domain's readiness and per-record
-status first; a spike usually means a DNS record stopped resolving. Disable
-the affected mailboxes while you sort out the domain, so nothing queues
-against it in the meantime.
+**Bounce spike.** The `Bounce spike` alert or a run of `bounced` delivery
+failures in the Inbox (see [Monitoring and alerts](monitoring-alerts.md)) is
+the first sign. Check the sending domain's readiness and per-record status
+first; a spike usually means a DNS record stopped resolving. Disable the
+affected mailboxes while you sort out the domain, so nothing queues against
+it in the meantime, then acknowledge the cleared failures once you've
+confirmed the cause.
 
 **Pre-creating the closing index before migration 214, on large tables.**
 Migration 214 adds `conversation_activity_workspace_closed_v2_idx`, a

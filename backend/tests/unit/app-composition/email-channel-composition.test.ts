@@ -1,12 +1,27 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createDefaultEmailChannelDrainDispatcher } from "../../../src/app/composition/defaultComposition.js";
-import { createEmailChannelComposition } from "../../../src/app/composition/emailChannel.js";
+import {
+  createDefaultApplicationComposition,
+  createDefaultEmailChannelDrainDispatcher,
+} from "../../../src/app/composition/defaultComposition.js";
+import {
+  createEmailChannelApplicationModule,
+  createEmailChannelComposition,
+  createPostgresEmailSendUnitOfWork,
+} from "../../../src/app/composition/emailChannel.js";
+import type { ApplicationModuleRegistrationContext } from "../../../src/app/composition/applicationModule.js";
 import { parseEmailChannelConfig } from "../../../src/app/config/env.js";
 import { EmailPlugin } from "../../../src/modules/connectors/plugins/email/emailPlugin.js";
-import { CustomerReplyDeliveryDispatcher } from "../../../src/modules/customerReplyDelivery/public.js";
 import { CloudTasksEmailChannelDrainDispatcher } from "../../../src/modules/emailChannel/infra/cloudTasksEmailChannelDrainDispatcher.js";
-import { EmailMailboxRepository, NoopEmailChannelDrainDispatcher } from "../../../src/modules/emailChannel/public.js";
+import {
+  EmailCustomerReplyDeliverer,
+  EmailDeliveryFailureResolver,
+  EmailMailboxRepository,
+  EmailSendActionHandler,
+  EmailSendIntentRepository,
+  EmailThreadRepository,
+  NoopEmailChannelDrainDispatcher,
+} from "../../../src/modules/emailChannel/public.js";
 import { LocalInboundEmailReceiver } from "../../../src/modules/mail/adapters/localInboundReceiver.js";
 import { ResendInboundEmailReceiver } from "../../../src/modules/mail/adapters/resendInboundReceiver.js";
 import { LocalEmailDomainProvisioner } from "../../../src/modules/mail/adapters/localDomainProvisioner.js";
@@ -36,6 +51,7 @@ const compose = (config: ReturnType<typeof parseEmailChannelConfig>) =>
     conversationIngest: { ingest: vi.fn() },
     agents: { findByIdAndWorkspaceId: vi.fn(async () => null) },
     audit: { record: vi.fn() },
+    actionDrain: { requestDrain: vi.fn(async () => undefined) },
     metrics: null,
     logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } as never,
   });
@@ -81,21 +97,52 @@ describe("email channel composition", () => {
     expect(composition?.mailboxes.modes()).toEqual({ supportedModes: ["operator_only"], defaultMode: "operator_only" });
   });
 
-  it("refuses replies on email conversations with 409 email_sending_not_available", async () => {
+  it("routes replies on email conversations through the email.send deliverer, and resolves their delivery failures", () => {
     const composition = compose(localConfig());
-    const dispatcher = new CustomerReplyDeliveryDispatcher({ email: composition!.customerReplyDeliverer });
 
-    await expect(dispatcher.route({
-      id: "conversation-1",
-      workspaceId: "workspace-1",
-      sourceChannel: "email",
-      channelContext: {
-        provider: "email",
-        mailbox: { id: "mailbox-1", address: "support@customer.test" },
-        threadKey: "thread-1",
-        participant: { address: "alice@example.test" },
-      },
-    })).rejects.toMatchObject({ statusCode: 409, code: "email_sending_not_available" });
+    expect(composition?.customerReplyDeliverer).toBeInstanceOf(EmailCustomerReplyDeliverer);
+    expect(composition?.deliveryFailureResolver).toBeInstanceOf(EmailDeliveryFailureResolver);
+  });
+
+  it("registers the email.send handler, host-queued only, when the channel is configured", () => {
+    const registrations: Parameters<ApplicationModuleRegistrationContext["registerActionHandler"]>[0][] = [];
+    const context = { registerActionHandler: (registration: (typeof registrations)[number]) => registrations.push(registration) };
+    const drainDispatcherFor = vi.fn(() => new NoopEmailChannelDrainDispatcher());
+
+    createEmailChannelApplicationModule({ config: undefined, drainDispatcherFor }).register?.(context as never);
+    expect(registrations).toEqual([]);
+
+    createEmailChannelApplicationModule({ config: localConfig(), drainDispatcherFor }).register?.(context as never);
+    expect(registrations).toEqual([expect.objectContaining({ type: "email.send", emittableByRoutines: false })]);
+    const factory = registrations[0].handler;
+    if (typeof factory !== "function") throw new Error("expected a handler factory");
+    const handler = factory({
+      database: { kysely: fakeDb().db } as never,
+      env: workerEnv as never,
+      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } as never,
+      auditService: { record: vi.fn() } as never,
+      telemetryService: {} as never,
+      webhookDestinations: {} as never,
+      mailService: {} as never,
+      assertPublicWebsiteUrl: vi.fn(),
+      errorReporter: {} as never,
+      metrics: null,
+    });
+    expect(handler).toBeInstanceOf(EmailSendActionHandler);
+    expect(drainDispatcherFor).toHaveBeenCalledWith(workerEnv, localConfig());
+  });
+
+  it("is part of the default composition only when an email provider is configured", () => {
+    const logger = { error: vi.fn() };
+    const types = (env: Record<string, string>) =>
+      createDefaultApplicationComposition({ logger, env }).actionHandlerRegistrations.map((registration) => registration.type);
+
+    expect(types({})).not.toContain("email.send");
+    expect(types({
+      EMAIL_CHANNEL_PROVIDER: "local",
+      EMAIL_CHANNEL_INBOUND_DOMAIN: "in.radioso.test",
+      EMAIL_CHANNEL_WEBHOOK_SECRET: SECRET,
+    })).toContain("email.send");
   });
 
   it("follows EMAIL_CHANNEL_WORKERS_ENABLED for the worker", async () => {
@@ -110,6 +157,19 @@ describe("email channel composition", () => {
     expect(disabled.worker.running).toBe(false);
   });
 
+  it("binds a send-intent change, its delivery failure and its activity to one transaction", async () => {
+    const { db, execute } = fakeDb();
+    const activity = { record: vi.fn(async () => undefined) };
+    const unitOfWork = createPostgresEmailSendUnitOfWork({ db: db as never, activity });
+
+    const scope = await unitOfWork.run(async (unit) => unit);
+
+    expect(execute).toHaveBeenCalledOnce();
+    expect(scope.intents).toBeInstanceOf(EmailSendIntentRepository);
+    expect(scope.threads).toBeInstanceOf(EmailThreadRepository);
+    expect(Object.keys(scope.failures).sort()).toEqual(["clear", "open", "retarget"]);
+  });
+
   it("binds mailbox policy changes to one transaction over the mailbox repository", async () => {
     const { db, execute } = fakeDb();
     const composition = createEmailChannelComposition({
@@ -120,6 +180,7 @@ describe("email channel composition", () => {
       conversationIngest: { ingest: vi.fn() },
       agents: { findByIdAndWorkspaceId: vi.fn(async () => null) },
       audit: { record: vi.fn() },
+      actionDrain: { requestDrain: vi.fn(async () => undefined) },
       metrics: null,
       logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } as never,
     })!;

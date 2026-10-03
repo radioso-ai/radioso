@@ -79,6 +79,7 @@ describe("default application composition", () => {
       "radioso-oss-organization-creation",
       "radioso-customer-email",
       "radioso-slack",
+      "radioso-email-channel",
     ]);
     expect(composition.directiveRegistrations.map((registration) => registration.directive.name)).toEqual([
       "concise-readable-formatting",
@@ -260,6 +261,7 @@ describe("default application composition", () => {
       "radioso-oss-organization-creation",
       "radioso-customer-email",
       "radioso-slack",
+      "radioso-email-channel",
       "connector-module",
     ]);
   });

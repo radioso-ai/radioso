@@ -84,10 +84,8 @@ export interface DashboardRouteState {
   agentId?: string
   agentTab?: AgentTab
   agentRoutineId?: string
-  /** When opening the agent chat tab, open this saved test execution instead of starting a fresh one. */
+  /** The agent chat tab's open test, carried as route state rather than a one-shot open command. */
   agentTestExecutionId?: string
-  /** The opened test execution was just copied from a real conversation, so the chat says so. */
-  agentTestExecutionFromConversation?: boolean
   /** Which Test Chat view the agent chat tab shows; absent means the chat itself. */
   agentTestChatView?: AgentTestChatView
   knowledgeTab?: KnowledgeTab
@@ -141,7 +139,6 @@ const routeStateKeys: Array<keyof DashboardRouteState> = [
   'agentTab',
   'agentRoutineId',
   'agentTestExecutionId',
-  'agentTestExecutionFromConversation',
   'agentTestChatView',
   'knowledgeTab',
   'settingsTab',
@@ -424,9 +421,6 @@ const normalizeState = (state: DashboardRouteState): DashboardRouteState => {
       state.agentTestExecutionId
     ) {
       normalized.agentTestExecutionId = state.agentTestExecutionId
-      if (state.agentTestExecutionFromConversation) {
-        normalized.agentTestExecutionFromConversation = true
-      }
     } else if (
       state.agentId &&
       !state.agentRoutineId &&
@@ -621,9 +615,6 @@ const buildQueryString = (normalized: DashboardRouteState) => {
     }
     if (normalized.agentTestExecutionId) {
       searchParams.set('testExecution', normalized.agentTestExecutionId)
-    }
-    if (normalized.agentTestExecutionFromConversation) {
-      searchParams.set('fromConversation', '1')
     }
     if (normalized.agentTestChatView) {
       searchParams.set('view', normalized.agentTestChatView)
@@ -844,9 +835,8 @@ export const buildAgentSectionHref = (
   agentTab: target.agentTab,
   anchor: target.anchor,
   agentRoutineId: undefined,
-  // A section link lands on the section itself, never on an open command or a sub-view.
+  // A section link lands on the section itself, never on an open test or a sub-view.
   agentTestExecutionId: undefined,
-  agentTestExecutionFromConversation: undefined,
   agentTestChatView: undefined,
 })
 
@@ -963,9 +953,6 @@ export const parseDashboardRoute = (
       agentTab: parseAgentTab(searchParams?.get('tab') ?? null),
       ...(searchParams?.get('testExecution')
         ? { agentTestExecutionId: searchParams.get('testExecution') ?? undefined }
-        : {}),
-      ...(searchParams?.get('fromConversation') === '1'
-        ? { agentTestExecutionFromConversation: true }
         : {}),
       ...(searchParams?.get('view') === 'history'
         ? { agentTestChatView: 'history' as const }

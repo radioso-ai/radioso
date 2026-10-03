@@ -41,7 +41,7 @@ class MemoryRepository implements TestExecutionRepositoryPort {
   async create(input: Parameters<TestExecutionRepositoryPort["create"]>[0]) {
     const existing = this.byIdempotencyKey.get(input.idempotencyKey);
     if (existing) return existing;
-    this.execution = { ...input, state: input.state ?? "running", createdAt: new Date(0) };
+    this.execution = { ...input, state: input.state ?? "running", createdAt: new Date(0), seededTurnCount: input.seededSummary?.turnCount ?? 0 };
     this.byIdempotencyKey.set(input.idempotencyKey, this.execution);
     return this.execution;
   }
@@ -154,6 +154,7 @@ describe("TestExecutionService", () => {
     expect(execution.sides.map((side) => side.conversationId)).not.toContain(undefined);
     expect(execution.testValues[0]).toMatchObject({ name: "account_tier", trust: "verified", value: "gold" });
     expect(repository.execution?.mode).toBe("compare");
+    expect(execution.seededTurnCount).toBe(0);
   });
 
   it("persists one isolated assistant-first greeting per selected immutable side", async () => {
@@ -491,9 +492,11 @@ describe("TestExecutionService", () => {
       const { service, repository } = seededSetup(async () => seed(thread));
       const create = vi.spyOn(repository, "create");
 
-      await service.start({ idempotencyKey: "idem-seed", workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [], seedConversationId });
+      const execution = await service.start({ idempotencyKey: "idem-seed", workspaceId, agentId, accountId: null, mode: "single", revisionIds: [ids[0]], testValues: [], seedConversationId });
 
       expect(create).toHaveBeenCalledWith(expect.objectContaining({ seededSummary: { turnCount: 2, firstMessage: "hello" } }));
+      // The copy notice reads this straight off the execution, not by re-deriving it from history.
+      expect(execution.seededTurnCount).toBe(2);
     });
 
     it("labels a copied test by its first user message with text, kept only as long as a label needs", async () => {

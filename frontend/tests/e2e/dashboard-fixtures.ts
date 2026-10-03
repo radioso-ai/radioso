@@ -6,7 +6,7 @@ type ApiSchemas = components["schemas"];
 type TransferRequestFixture = operations["transferConversationOwnership"]["requestBody"]["content"]["application/json"];
 
 /** Test execution ids are UUIDs, as the backend mints them; a dashboard link drops anything else. */
-const testExecutionFixtureId = (generation: number) => `00000000-0000-4000-8000-${String(generation).padStart(12, "0")}`;
+export const testExecutionFixtureId = (generation: number) => `00000000-0000-4000-8000-${String(generation).padStart(12, "0")}`;
 
 export const workspaceId = "workspace-1";
 export const workspaceKey = "workspace-key";
@@ -2082,6 +2082,8 @@ export const installDashboardApiMocks = async (
         generation,
         mode: body.mode ?? "single",
         skillEffects: body.skillEffects ?? "suppressed",
+        // What the seed copied in, the way the backend's `seeded_turn_count` does: user messages only.
+        seededTurnCount: seededHistory.filter((entry) => entry.role === "user").length,
         sides: (body.revisionIds?.length ? body.revisionIds : [defaultCandidateRevisionId]).map((revisionId, index) => ({
           id: `side-${generation}-${index}`,
           revision: revisionId === defaultPublishedRevisionId ? defaultPublishedRevision : defaultCandidateRevision,

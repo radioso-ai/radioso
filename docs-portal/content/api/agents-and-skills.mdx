@@ -1,7 +1,7 @@
 ---
 title: "Agents and skills"
 description: "Configure workspace agents, directives, named agent skills, revisions, and inspect the read-only skills catalog exposed by the API."
-last_updated: 2026-10-02
+last_updated: 2026-10-03
 ---
 
 # Agents and skills
@@ -59,8 +59,10 @@ with text, as a label of at most 200 characters ending in `…` when it is longe
 `…` reads as whole. A greeting is
 not counted, and `firstMessage` is `null` until there is a user message with text. Then use `GET /api/v1/agents/{agentId}/test-executions/{executionId}`
 to reopen one execution with its frozen values, side transcripts, and retry
-evidence. These endpoints require `workspace.agents.manage` and never add test
-conversations to public or visitor history.
+evidence. The detail also carries `seededTurnCount`, the user messages a seed
+conversation copied in; it is `0` for a test that started fresh. These
+endpoints require `workspace.agents.manage` and never add test conversations
+to public or visitor history.
 
 To continue a real conversation as a private test, start a `single` execution with
 `seedConversationId` set to a conversation in the same workspace and agent. The

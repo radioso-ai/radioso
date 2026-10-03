@@ -32,4 +32,13 @@ describe("test execution OpenAPI contract", () => {
       allOf: [{ $ref: "#/components/schemas/TestExecutionHistoryItem" }, { properties: { turnCount: { type: "integer", minimum: 0 }, firstMessage: { type: ["string", "null"], maxLength: 200 }, firstMessageClipped: { type: "boolean" } }, required: ["turnCount", "firstMessage", "firstMessageClipped"] }],
     });
   });
+
+  it("carries the detail's seeded turn count for the copy notice", () => {
+    const { registry, security } = createOpenApiRegistry();
+    registerTestExecutionPaths(registry, security);
+    const document = new OpenApiGeneratorV31(registry.definitions).generateDocument({ openapi: "3.1.0", info: { title: "test", version: "1" } });
+    expect(document.components?.schemas?.TestExecutionHistoryDetail).toMatchObject({
+      allOf: [{ $ref: "#/components/schemas/TestExecutionHistoryItem" }, { properties: expect.objectContaining({ seededTurnCount: expect.objectContaining({ type: "integer", minimum: 0 }) }), required: expect.arrayContaining(["seededTurnCount"]) }],
+    });
+  });
 });

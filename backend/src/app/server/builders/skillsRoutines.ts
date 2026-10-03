@@ -11,6 +11,7 @@ import {
   RoutineDraftAssistService,
   RoutineTriggerEmbeddingService,
 } from "../../../modules/routines/public.js";
+import { chatTurnQueuedActionTypes } from "../../composition/applicationModule.js";
 import { PlatformSettingsService } from "../../../modules/settings/composition.js";
 import type { ContextVariableEnablementReaderPort } from "../../../modules/context-variables/public.js";
 import type {
@@ -154,7 +155,8 @@ export const buildRoutineAuthoringServices = (input: {
   const routineDefinitionService = new RoutineDefinitionService({
     agentRepository: input.repositories.agentRepository,
     repository: input.repositories.routineDefinitionRepository,
-    actionCapabilities: input.composition.actionCapabilityMap,
+    actionCapabilities: input.composition.routineActionCapabilityMap,
+    hostQueuedActionTypes: chatTurnQueuedActionTypes(input.composition.actionHandlerRegistrations),
     capabilityPolicy: input.composition.capabilityPolicy,
     skillAuthoringCatalog: input.skillAuthoringCatalog,
     contextVariableReader: input.contextVariableReader,

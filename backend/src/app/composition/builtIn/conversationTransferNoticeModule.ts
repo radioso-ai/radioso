@@ -24,7 +24,7 @@ export const createConversationTransferNoticeApplicationModule = (): Application
     context.registerActionHandler({
       type: CONVERSATION_TRANSFER_NOTICE_ACTION_TYPE,
       // An operator action, not a routine one: only a transfer queues it.
-      emittableByRoutines: false,
+      queuedFrom: "outside_turn",
       handler: ({ auditService, database, env, errorReporter, logger, mailService }) => {
         const workspaces = new WorkspaceRepository(database.kysely);
         return new ConversationTransferNoticeActionHandler({

@@ -448,24 +448,25 @@ R3 blocks T088 (S1 drain wiring). R1 and R2 block S3 and can run in parallel wit
 
 ### Schema
 
-- [ ] T110 [US3] Create `backend/src/db/migrations/215_conversation_delivery_failures.sql`.
-- [ ] T111 [US3] Create `backend/src/db/migrations/216_email_send_intents.sql` (with `version` and `reconcile_lease_until`), plus `ALTER TABLE email_thread_messages ADD CONSTRAINT … FOREIGN KEY (send_intent_id)`.
+- [x] T110 [US3] Create `backend/src/db/migrations/215_conversation_delivery_failures.sql`.
+- [x] T111 [US3] Create `backend/src/db/migrations/216_email_send_intents.sql` (with `version` and `reconcile_lease_until`), plus `ALTER TABLE email_thread_messages ADD CONSTRAINT … FOREIGN KEY (send_intent_id)`.
 - [ ] T112 [US3] Create `backend/src/db/migrations/217_conversation_activity_closed_idx_v1_drop.sql` (`SET LOCAL lock_timeout='3s'`; `DROP INDEX IF EXISTS conversation_activity_workspace_closed_idx`). It ships only after S1's query switch is live in every region.
-- [ ] T113 [US3] Regenerate and check both snapshots (after T110–T112).
+  - **Deferred (2026-10-04)**: not created in this release; ship after the S1 query switch is live in every region.
+- [x] T113 [US3] Regenerate and check both snapshots (after T110–T112).
 
 ### Tests first
 
-- [ ] T114 [P] [US3] Write `backend/tests/unit/mail/email-header-values.test.ts`: reject CR, LF, missing brackets, whitespace and display-name injection.
-- [ ] T115 [P] [US3] Extend `backend/tests/unit/mail/emailService.test.ts`:
+- [x] T114 [P] [US3] Write `backend/tests/unit/mail/email-header-values.test.ts`: reject CR, LF, missing brackets, whitespace and display-name injection.
+- [x] T115 [P] [US3] Extend `backend/tests/unit/mail/emailService.test.ts`:
   - `channel_reply` redaction in `log` and `noop`;
   - transactional kinds unchanged;
   - `providerMessageId` and `deliveredMessageId` present on every driver result;
   - `lookup` returns `null` on `log` and `noop`;
   - `from.name: null` and `replyTo: null` are still accepted (NB-1).
-- [ ] T116 [P] [US3] Write `backend/tests/unit/mail/resend-driver.test.ts` (after T008, T014): headers, `Idempotency-Key`, the 409 variants, 5xx and timeout → unknown, 4xx → rejected, `lookup`.
-- [ ] T117 [P] [US3] Write `backend/tests/unit/email-channel/outbound-headers.test.ts` (after T009): Message-ID domain, threading headers, `References` trimming, `Auto-Submitted` for agents only, `replySubject`, `Reply-To` gated on `plusAddressVerified`.
-- [ ] T118 [P] [US3] Write `backend/tests/unit/email-channel/send-authority.test.ts` for the operator-trigger first-attempt checks (research B6).
-- [ ] T119 [P] [US3] Write `backend/tests/unit/email-channel/send-intent-transitions.test.ts` covering every row of the data-model send-intent machine, including:
+- [x] T116 [P] [US3] Write `backend/tests/unit/mail/resend-driver.test.ts` (after T008, T014): headers, `Idempotency-Key`, the 409 variants, 5xx and timeout → unknown, 4xx → rejected, `lookup`.
+- [x] T117 [P] [US3] Write `backend/tests/unit/email-channel/outbound-headers.test.ts` (after T009): Message-ID domain, threading headers, `References` trimming, `Auto-Submitted` for agents only, `replySubject`, `Reply-To` gated on `plusAddressVerified`.
+- [x] T118 [P] [US3] Write `backend/tests/unit/email-channel/send-authority.test.ts` for the operator-trigger first-attempt checks (research B6).
+- [x] T119 [P] [US3] Write `backend/tests/unit/email-channel/send-intent-transitions.test.ts` covering every row of the data-model send-intent machine, including:
   - unknown outcome with authority valid → re-POST;
   - unknown outcome with authority revoked → `uncertain`;
   - late provider evidence from `uncertain`;
@@ -487,7 +488,7 @@ R3 blocks T088 (S1 drain wiring). R1 and R2 block S3 and can run in parallel wit
   - refuses with `409 email_sending_not_verified`, naming the step, when the domain is unverified or removed;
   - when ready, enqueues `email.send` with `email:send:msg:<messageId>` and a payload of ids and authority only.
 - [ ] T124 [P] [US3] Extend `backend/tests/unit/customer-reply-delivery.test.ts`: provider `email` dispatched by registration; web unaffected.
-- [ ] T125 [P] [US3] Write `backend/tests/unit/delivery-failures.test.ts`: `open` idempotent per open message; `retarget`; `clear` (`later_delivery`, `provider_evidence`, `operator_resolved`); the reader's agent filter.
+- [x] T125 [P] [US3] Write `backend/tests/unit/delivery-failures.test.ts`: `open` idempotent per open message; `retarget`; `clear` (`later_delivery`, `provider_evidence`, `operator_resolved`); the reader's agent filter.
 - [ ] T126 [P] [US3] Extend `backend/tests/unit/operatorCopilot/copilot-needs-attention.test.ts` and `copilot-triage-tools.test.ts`: the `delivery_failed` kind; the `delivery_failures` triage source under `workspace.conversation.takeover`; an unauthorized source reported as a gap.
 - [ ] T127 [P] [US3] Write `backend/tests/contract/delivery-failures.contract.test.ts`: list, acknowledge, and `resolve` (`marked_sent` for `uncertain` only; `resend` for `uncertain` or `halted` when sending is ready); `sessionOnly` takeover permission; audit `hitl.delivery_failure`.
 - [ ] T128 [P] [US3] Write `backend/tests/contract/email-send-action.contract.test.ts`: payload v1 (ports §7a) and the key formats.
@@ -507,12 +508,12 @@ R3 blocks T088 (S1 drain wiring). R1 and R2 block S3 and can run in parallel wit
 
 ### Implementation
 
-- [ ] T132 [P] [US3] Implement `backend/src/modules/mail/emailHeaderValues.ts` (after T114).
-- [ ] T133 [US3] Extend `backend/src/modules/mail/emailService.ts` (types, required result fields, redaction, `lookup`, `EmailSendError`). Update every `EmailDriver` / `EmailService` fake found by `rg -l "EmailDriver|EmailSendResult" backend/tests` in the same task (after T115, T132).
-- [ ] T134 [US3] Extend `backend/src/modules/mail/adapters/resendDriver.ts` over `resendApi.ts` (after T116, T133).
-- [ ] T135 [P] [US3] Implement `backend/src/modules/emailChannel/outbound/outboundHeaders.ts`, `sendAuthority.ts` and `sendIntentTransitions.ts` (after T117–T119).
-- [ ] T136 [US3] Implement `backend/src/modules/emailChannel/persistence/emailSendIntentRepository.ts` with `transition(id, expectedVersion, event)` and the reconcile claim (after T113, T135).
-- [ ] T137 [US3] Implement `backend/src/modules/customerReplyDelivery/deliveryFailures.ts` and `backend/src/db/repositories/conversationDeliveryFailureRepository.ts`, export them from `customerReplyDelivery/public.ts`, and record the `delivery_failed` and `delivery_failure_cleared` activities (after T113, T125).
+- [x] T132 [P] [US3] Implement `backend/src/modules/mail/emailHeaderValues.ts` (after T114).
+- [x] T133 [US3] Extend `backend/src/modules/mail/emailService.ts` (types, required result fields, redaction, `lookup`, `EmailSendError`). Update every `EmailDriver` / `EmailService` fake found by `rg -l "EmailDriver|EmailSendResult" backend/tests` in the same task (after T115, T132).
+- [x] T134 [US3] Extend `backend/src/modules/mail/adapters/resendDriver.ts` over `resendApi.ts` (after T116, T133).
+- [x] T135 [P] [US3] Implement `backend/src/modules/emailChannel/outbound/outboundHeaders.ts`, `sendAuthority.ts` and `sendIntentTransitions.ts` (after T117–T119).
+- [x] T136 [US3] Implement `backend/src/modules/emailChannel/persistence/emailSendIntentRepository.ts` with `transition(id, expectedVersion, event)` and the reconcile claim (after T113, T135).
+- [x] T137 [US3] Implement `backend/src/modules/customerReplyDelivery/deliveryFailures.ts` and `backend/src/db/repositories/conversationDeliveryFailureRepository.ts`, export them from `customerReplyDelivery/public.ts`, and record the `delivery_failed` and `delivery_failure_cleared` activities (after T113, T125).
 - [ ] T138 [US3] Implement `backend/src/modules/emailChannel/outbound/emailSendActionHandler.ts` (after T120, T134–T137).
 - [ ] T139 [US3] Implement `backend/src/modules/emailChannel/outbound/providerDeliveryEvents.ts`, and route `delivery_status` events and DSN bounces to it from `emailInboundProcessor.ts` (after T121, T138).
 - [ ] T140 [US3] Implement `backend/src/modules/emailChannel/outbound/sendReconciler.ts`, add its claim step to `emailChannelSweep.ts`, and schedule `reconcile` drains (after T122, T138).

@@ -258,6 +258,50 @@ Related docs:
 - [Slack Skills](../slack-skills.md)
 - `specs/092-slack-channel/`
 
+## Email Channel
+
+Owns sending and receiving domains, mailboxes and their relay tokens,
+engagement modes and budgets, inbound event classification and thread
+resolution, the mailbox event log, and raw-message access for a
+customer-owned mailbox forwarded to a Radioso-operated relay address. A
+mailbox's engagement mode gates whether an agent ever runs a turn on its
+mail; this release ships `operator_only` only.
+
+Should not own conversation or routine behavior, and does not reuse
+`backend/src/modules/customerEmail/` — that module sends through a
+workspace's own OAuth-connected mailbox as an agent skill, a different
+product surface documented separately.
+
+Public surfaces and key files:
+
+- `backend/src/modules/mail/public.ts` — provider-neutral ports:
+  `EmailDriver`, `InboundEmailReceiver`, `EmailDomainProvisioner`; Resend and
+  `local` adapters live in `backend/src/modules/mail/adapters/`.
+- `backend/src/modules/emailChannel/public.ts` — `MailboxService`,
+  `SendingDomainService`, `EventLogReader`, `ConversationEmailFactsReader`,
+  `EmailChannelCopilotView`, and the `email_domains` / `email_mailboxes` /
+  inbound / thread repositories.
+- `backend/src/modules/connectors/plugins/email/` — pure functions with no
+  I/O: `emailEngagementDisposition.ts`, `emailInboundClassification.ts`,
+  `emailThreadResolution.ts`.
+- `backend/src/modules/emailChannel/README.md`
+
+Useful searches:
+
+- `rg "EmailChannel|email-channel|EMAIL_CHANNEL" backend/src backend/tests`
+- `rg "emailEngagementDisposition|emailInboundClassification|emailThreadResolution" backend/src backend/tests`
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/email-channel tests/unit/mail`
+- `cd backend && pnpm exec vitest run tests/integration/email-channel-persistence.integration.test.ts tests/integration/email-channel-schema-migrations.integration.test.ts`
+
+Related docs:
+
+- [Email Channel](../email-channel.md)
+- [Customer Email Connections](../customer-email-skills.md)
+- `specs/1403-email-channel/`
+
 ## Agent Skill Definitions (shared spine)
 
 External MCP skills (`externalSkills`), customer email skills (`customerEmail`),

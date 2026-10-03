@@ -27,6 +27,7 @@ import { createWorkspaceRoutes } from "./workspaceRoutes.js";
 import { createOauthConnectionRoutes } from "./oauthConnectionRoutes.js";
 import { createCustomerEmailConnectionRoutes } from "./customerEmailConnectionRoutes.js";
 import { createSlackConnectionRoutes } from "./slackConnectionRoutes.js";
+import { createEmailChannelRoutes } from "./emailChannelRoutes.js";
 import { createEmailSkillRoutes } from "./emailSkillRoutes.js";
 import { createWebhookSkillRoutes } from "./webhookSkillRoutes.js";
 import { createSlackSkillRoutes } from "./slackSkillRoutes.js";
@@ -70,6 +71,7 @@ export const createApiRouteMounts = (_dependencies: AppDependencies): readonly A
   { path: "/api/v1", createRouter: createOauthConnectionRoutes },
   { path: "/api/v1", createRouter: createCustomerEmailConnectionRoutes },
   { path: "/api/v1", createRouter: createSlackConnectionRoutes },
+  { path: "/api/v1", createRouter: createEmailChannelRoutes },
   { path: "/api/v1", createRouter: createEmailSkillActivityRoutes },
   { path: "/api/v1/agents", createRouter: createAgentRoutes },
   {

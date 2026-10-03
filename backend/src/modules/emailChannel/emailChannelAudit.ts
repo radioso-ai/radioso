@@ -16,7 +16,8 @@ type EmailChannelAuditEvent =
   | {
       eventType: "email_channel.mailbox";
       action: "created" | "updated" | "removed" | "mode_changed" | "relay_token_rotated";
-    };
+    }
+  | { eventType: "email_channel.event"; action: "retried" };
 
 export interface EmailChannelAuditDependencies {
   audit: Pick<AuditPort, "record">;
@@ -51,4 +52,27 @@ export const recordEmailChannelAudit = async (
       "email_channel_audit_failed",
     );
   }
+};
+
+/**
+ * Records an operator's access to raw customer mail (FR-046) before the content is returned. Unlike
+ * a settings change there is nothing committed to protect, so a failed write refuses the access
+ * rather than serving content nobody could account for.
+ */
+export const recordRawMessageAccess = async (
+  deps: Pick<EmailChannelAuditDependencies, "audit">,
+  access: { actor: EmailChannelActor; workspaceId: string; deliveryId: string; conversationId: string | null },
+): Promise<void> => {
+  await deps.audit.record({
+    accountId: access.actor.accountId ?? null,
+    workspaceId: access.workspaceId,
+    eventType: "email_channel.raw_message",
+    eventStatus: "success",
+    metadata: {
+      action: "viewed",
+      actorUserId: access.actor.userId,
+      deliveryId: access.deliveryId,
+      conversationId: access.conversationId,
+    },
+  });
 };

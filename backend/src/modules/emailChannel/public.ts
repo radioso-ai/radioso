@@ -13,8 +13,9 @@ export { EmailMailboxRepository } from "./persistence/emailMailboxRepository.js"
 export { EmailThreadRepository } from "./persistence/emailThreadRepository.js";
 export { lockThreadResolution } from "./persistence/threadResolutionLock.js";
 export { SendingDomainService } from "./domains/sendingDomainService.js";
-export { MailboxService } from "./mailboxes/mailboxService.js";
+export { MAILBOX_SETTING_BOUNDS, MailboxService } from "./mailboxes/mailboxService.js";
 export { EventLogReader } from "./eventLog/eventLogReader.js";
+export { InboundEventActions } from "./eventLog/inboundEventActions.js";
 export { ConversationEmailFactsReader, type ConversationEmailFacts } from "./facts/conversationEmailFacts.js";
 export { EmailChannelCopilotView } from "./copilot/emailChannelCopilotView.js";
 export {

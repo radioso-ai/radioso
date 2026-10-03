@@ -824,6 +824,8 @@ export const createTestDependencies = (overrides: {
   agentSkillTurnSkillProvider?: AgentSkillTurnSkillProvider;
   realtimeRolloutPolicy?: RealtimeRolloutPolicy;
   testExecutionService?: TestExecutionService;
+  /** The email channel's operator services; omitted means the deployment has no email provider. */
+  emailChannel?: AppDependencies["emailChannel"];
   /** Composes the agent tool catalog over the test app's agent row and published-revision readers. */
   agentToolCatalog?: (readers: {
     agentRepository: Pick<AgentRepositoryPort, "findByIdAndWorkspaceId">;
@@ -2266,6 +2268,7 @@ export const createTestDependencies = (overrides: {
     documentSources: documentSourceRepository,
   });
   const copilotToolCatalog = createCopilotToolCatalog({
+    emailChannel: null,
     agentService: {
       get: agentService.get.bind(agentService),
       listExisting: agentService.listExisting.bind(agentService),
@@ -2545,6 +2548,7 @@ export const createTestDependencies = (overrides: {
     publicConversationEventBus,
     contactHistoryProvider: overrides.contactHistoryProvider ?? new NoopContactHistoryProvider(),
     applicationRouteMounts: overrides.applicationRouteMounts ?? [],
+    emailChannel: overrides.emailChannel,
     applicationModules: new ApplicationModuleCoordinator({
       logger,
       registry: createApplicationExtensionRegistry(),
@@ -2805,6 +2809,7 @@ export const createTestApp = (overrides: {
   realtimeRolloutPolicy?: RealtimeRolloutPolicy;
   testExecutionService?: TestExecutionService;
   agentToolCatalog?: NonNullable<Parameters<typeof createTestDependencies>[0]>["agentToolCatalog"];
+  emailChannel?: AppDependencies["emailChannel"];
 } = {}) => {
   const {
     dependencies,

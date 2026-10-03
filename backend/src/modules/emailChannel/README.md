@@ -32,8 +32,11 @@ It does not own:
 ## Entry points
 
 - `public.ts` — `MailboxService`, `SendingDomainService`, `EventLogReader`,
-  `ConversationEmailFactsReader`, `EmailChannelCopilotView`, and the
-  `email_domains` / `email_mailboxes` / inbound / thread-link repositories.
+  `InboundEventActions`, `ConversationEmailFactsReader`,
+  `EmailChannelCopilotView`, and the `email_domains` / `email_mailboxes` /
+  inbound / thread-link repositories. The HTTP routes that call them live in
+  `backend/src/app/http/routes/emailChannelRoutes.ts`; Ray's read tools in
+  `backend/src/modules/operatorCopilot/tools/emailChannel.ts`.
 - `mailboxes/` — relay-token issuance and rotation (`relayTokens.ts`),
   routing (`mailboxRouting.ts`), engagement-mode ordering
   (`effectiveMode.ts`), receiving-state derivation
@@ -44,8 +47,9 @@ It does not own:
 - `content/` — the quoted-history stripper (`quotedHistory.ts`), the
   customer-text extraction step (`customerText.ts`), and the sanitized raw
   message view (`rawMessageView.ts`).
-- `eventLog/`, `facts/`, `copilot/` — the mailbox event log, the
-  conversation-level email facts, and the read-only Ray projection.
+- `eventLog/`, `facts/`, `copilot/` — the mailbox event log with its
+  operator actions (retry a failed delivery, open its audited raw message),
+  the conversation-level email facts, and the read-only Ray projection.
 - `persistence/` — one repository per table, no business rules.
 - `drains.ts` — the drain and sweep ports the worker and the task routes
   call; `infra/` holds the Cloud Tasks drain dispatcher built on the shared
@@ -60,9 +64,15 @@ It does not own:
 ```bash
 cd backend
 pnpm exec vitest run tests/unit/email-channel
+pnpm exec vitest run tests/contract/email-channel-settings.contract.test.ts
+pnpm exec vitest run tests/unit/operatorCopilot/email-channel-tools.test.ts
 pnpm exec vitest run tests/unit/mail
 pnpm exec vitest run tests/integration/email-channel-persistence.integration.test.ts
 pnpm exec vitest run tests/integration/email-channel-schema-migrations.integration.test.ts
+pnpm exec vitest run tests/integration/email-thread-protocol.integration.test.ts       # B15 interleavings, two workers
+pnpm exec vitest run tests/integration/email-inbound.integration.test.ts               # end to end: SC-002, SC-003, B16
+pnpm exec vitest run tests/integration/email-channel-crash-recovery.integration.test.ts # SC-007 inbound
+pnpm run email:dev -- inbound <file.eml> --relay <relay address>                      # local provider, running API
 ```
 
 Spec: `specs/1403-email-channel/`. Operator-facing behavior:

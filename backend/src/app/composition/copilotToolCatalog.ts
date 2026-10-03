@@ -23,6 +23,7 @@ import {
   type CopilotContextVariablesPort,
   type CopilotWorkspaceSettingsPort,
   type CopilotProductDocsPort,
+  type CopilotEmailChannelPort,
 } from "../../modules/operatorCopilot/tools/index.js";
 import type { DocumentInventoryPort } from "../../modules/documents/contracts/index.js";
 import type { CopilotWebsiteAnalysisProbePort } from "../../modules/operatorCopilot/contracts/agentAuthoring.js";
@@ -173,6 +174,8 @@ export const createCopilotToolCatalog = (deps: {
   readonly skillCapabilityRegistry: CopilotSkillCapabilityTargetsPort;
   readonly contextVariables: CopilotContextVariablesPort;
   readonly workspaceSettings: CopilotWorkspaceSettingsPort;
+  /** Null when the deployment has no email provider. */
+  readonly emailChannel: CopilotEmailChannelPort | null;
   readonly productDocs: CopilotProductDocsPort;
   readonly proposalRepository: Pick<CopilotRepositoryPort, "createProposal">;
   readonly proposalRecovery: CopilotMcpProposalRecoveryPort;

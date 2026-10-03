@@ -19,7 +19,8 @@ type ProductionDescriptorName =
   | "retrieval_settings" | "prepare_retrieval_settings"
   | "proposal_detail"
   | "prepare_document_import" | "prepare_document_removal" | "prepare_document_reprocess"
-  | "test_chat_sessions" | "test_chat_transcript" | "test_chat_turn_trace" | "send_test_chat_message";
+  | "test_chat_sessions" | "test_chat_transcript" | "test_chat_turn_trace" | "send_test_chat_message"
+  | "email_channel_configuration" | "email_channel_events" | "email_conversation_facts";
 
 const rayOnly = (reason: string) => ({ rayOnly: { reason } }) as const;
 
@@ -46,6 +47,9 @@ export const copilotCapabilityProvenance: Readonly<Record<ProductionDescriptorNa
   document_status: { backingOperationIds: ["listDocuments", "listDocumentSources", "listDocumentsBySource"], applicationPrimitiveIds: ["documents.status.read", "documents.source-status.read"] },
   list_documents: { applicationPrimitiveIds: ["documents.inventory.read"] },
   document_chunks: { applicationPrimitiveIds: ["documents.chunks.read"] },
+  email_channel_configuration: { backingOperationIds: ["getEmailChannel", "getEmailMailbox"] },
+  email_channel_events: { backingOperationIds: ["listEmailMailboxEvents"] },
+  email_conversation_facts: { backingOperationIds: ["getConversationEmailFacts"] },
   eval_results: { backingOperationIds: ["listEvalCases"] },
   needs_attention: { applicationPrimitiveIds: ["operatorCopilot.needs-attention"], ...rayOnly("Ray composes the authorized escalation sources into one operator working list carrying the handles its follow-up acts consume.") },
   product_docs: { applicationPrimitiveIds: ["productDocs.corpus.read"] },

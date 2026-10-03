@@ -7,7 +7,7 @@ import { readInboundMimeContent, type InboundEmailMessage } from "../../mail/pub
  * plain text, and HTML sanitized server-side for a sandboxed frame. Relay tokens and thread tokens
  * never reach the view.
  */
-interface RawMessageView {
+export interface RawMessageView {
   headers: readonly { name: string; value: string }[];
   text: string | null;
   sanitizedHtml: string | null;

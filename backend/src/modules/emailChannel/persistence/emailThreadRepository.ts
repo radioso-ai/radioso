@@ -49,6 +49,8 @@ interface ThreadIndexEntry {
   ccAddresses: readonly string[];
   attachments: readonly ThreadAttachment[];
   inboundDeliveryId: string | null;
+  /** The send intent an outbound id belongs to; absent or null for inbound and referenced ids. */
+  sendIntentId?: string | null;
 }
 
 export interface ThreadIndexRecord extends ThreadIndexEntry {
@@ -104,6 +106,7 @@ const mapIndex = (row: IndexRow): ThreadIndexRecord => ({
   ccAddresses: row.cc_addresses,
   attachments: readAttachments(row.attachments),
   inboundDeliveryId: row.inbound_delivery_id,
+  sendIntentId: row.send_intent_id,
   createdAt: row.created_at,
 });
 
@@ -197,6 +200,37 @@ export class EmailThreadRepository {
     return changed(result);
   }
 
+  /**
+   * Restarts the thread's automatic-send budget: an operator-authorized send renews it when its
+   * intent materializes (research B8). Customer input never does.
+   */
+  async renewSendBudget(conversationId: string): Promise<boolean> {
+    const result = await this.db
+      .updateTable("email_thread_links")
+      .set({ auto_sends_since_renewal: 0, budget_renewed_at: currentTimestamp(), updated_at: currentTimestamp() })
+      .where("conversation_id", "=", conversationId)
+      .execute();
+    return changed(result);
+  }
+
+  /**
+   * The newest customer message's Message-Id and the `References` it carried, which an outbound
+   * reply threads under (RFC 5322 §3.6.4). Null before any inbound message is indexed.
+   */
+  async findLatestInboundThreading(conversationId: string): Promise<{ rfcMessageId: string; referenceIds: string[] } | null> {
+    const row = await this.db
+      .selectFrom("email_thread_messages as indexed")
+      .leftJoin("email_inbound_deliveries as delivery", "delivery.id", "indexed.inbound_delivery_id")
+      .select(["indexed.rfc_message_id as rfcMessageId", "delivery.reference_ids as referenceIds"])
+      .where("indexed.conversation_id", "=", conversationId)
+      .where("indexed.direction", "=", "inbound")
+      .orderBy("indexed.created_at", "desc")
+      .orderBy("indexed.id", "desc")
+      .limit(1)
+      .executeTakeFirst();
+    return row ? { rfcMessageId: row.rfcMessageId, referenceIds: row.referenceIds ?? [] } : null;
+  }
+
   /** Inserts index rows; a Message-Id the mailbox already indexed is skipped. Returns the count written. */
   async insertIndexEntries(entries: readonly ThreadIndexEntry[]): Promise<number> {
     if (entries.length === 0) return 0;
@@ -214,6 +248,7 @@ export class EmailThreadRepository {
         cc_addresses: [...entry.ccAddresses],
         attachments: toJsonb(entry.attachments),
         inbound_delivery_id: entry.inboundDeliveryId,
+        send_intent_id: entry.sendIntentId ?? null,
       })))
       .onConflict((oc) => oc.columns(["mailbox_id", "rfc_message_id"]).doNothing())
       .returning("id")

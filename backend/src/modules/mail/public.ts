@@ -19,6 +19,7 @@ export {
 } from "./emailHeaderValues.js";
 export {
   InboundFetchError,
+  type DeliveryStatusFacts,
   type InboundEmailMessage,
   type InboundEmailReceiver,
   type InboundEnvelope,

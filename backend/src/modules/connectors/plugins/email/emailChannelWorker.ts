@@ -6,10 +6,12 @@ const DEFAULT_POLL_INTERVAL_MS = 5_000;
 const DEFAULT_SWEEP_INTERVAL_MS = 5 * 60_000;
 /** Events one interval tick claims. */
 const POLL_BATCH = 10;
-/** The stages with work in this slice; review and reconcile stages arrive with their runners. */
+/** The stages with work in this slice; the review stage arrives with its runner. */
 const INBOUND_STAGES: ReadonlySet<EmailChannelDrainStage> = new Set(["inbound", "all"]);
+const RECONCILE_STAGES: ReadonlySet<EmailChannelDrainStage> = new Set(["reconcile", "all"]);
 
-type EmailChannelDrainResult = { claimed: number; errored: number } & Record<InboundEventOutcome, number>;
+/** `claimed` counts inbound events; `reconciled` the send intents claimed for reconciliation. */
+type EmailChannelDrainResult = { claimed: number; errored: number; reconciled: number } & Record<InboundEventOutcome, number>;
 
 type EmailChannelSweepRun = Awaited<ReturnType<EmailChannelSweep["run"]>> & { drained: number };
 
@@ -18,7 +20,7 @@ interface EmailChannelWorkerOptions {
   enabled: boolean;
   events: Pick<EmailInboundRepository, "claimDueEvents">;
   processor: Pick<EmailInboundProcessor, "process">;
-  sweep: Pick<EmailChannelSweep, "run">;
+  sweep: Pick<EmailChannelSweep, "run" | "reconcileSends">;
   logger: {
     warn(fields: Record<string, unknown>, message: string): void;
     error(fields: Record<string, unknown>, message: string): void;
@@ -31,6 +33,7 @@ interface EmailChannelWorkerOptions {
 const emptyResult = (): EmailChannelDrainResult => ({
   claimed: 0,
   errored: 0,
+  reconciled: 0,
   processed: 0,
   ignored: 0,
   retrying: 0,
@@ -78,10 +81,19 @@ export class EmailChannelWorker {
     this.sweepTimer = null;
   }
 
-  /** Claims up to `maxJobs` due events of `stage` and runs each through stage 1. */
+  /**
+   * Claims up to `maxJobs` due events of `stage` and runs each through stage 1, and up to
+   * `maxJobs` sends due reconciliation for the `reconcile` stage.
+   */
   async drain(request: { maxJobs: number; stage: EmailChannelDrainStage }): Promise<EmailChannelDrainResult> {
     const result = emptyResult();
-    if (!this.options.enabled || !INBOUND_STAGES.has(request.stage)) {
+    if (!this.options.enabled) {
+      return result;
+    }
+    if (RECONCILE_STAGES.has(request.stage)) {
+      result.reconciled = await this.options.sweep.reconcileSends({ maxJobs: request.maxJobs });
+    }
+    if (!INBOUND_STAGES.has(request.stage)) {
       return result;
     }
     const events = await this.options.events.claimDueEvents({

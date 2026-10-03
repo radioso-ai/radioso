@@ -17,8 +17,8 @@ import {
 } from "../outbound/sendIntentTransitions.js";
 import { readEnum, readOptionalEnum } from "./columnValues.js";
 
-type SendTrigger = "operator_reply" | "held_release" | "auto_reply" | "audited_resend";
-type SendAuthorKind = "agent" | "operator";
+export type SendTrigger = "operator_reply" | "held_release" | "auto_reply" | "audited_resend";
+export type SendAuthorKind = "agent" | "operator";
 
 const SEND_INTENT_STATES: readonly SendIntentState[] = ["queued", "accepted", "delivered", "bounced", "failed", "uncertain", "halted"];
 const HALT_REASONS: readonly SendHaltReason[] = ["sending_not_verified", "domain_removed", "mailbox_removed"];
@@ -30,7 +30,7 @@ const ENGAGEMENT_MODES = ["operator_only", "draft", "auto"] as const satisfies r
 const RECONCILABLE_STATES: readonly SendIntentState[] = ["queued", "accepted", "uncertain"];
 
 /** The authority the send was enqueued under: the `email.send` payload's `authority` (ports §7a). */
-interface SendAuthoritySnapshot {
+export interface SendAuthoritySnapshot {
   policyVersion: number;
   ownershipVersion: number;
   mode: EngagementMode;
@@ -41,7 +41,7 @@ interface SendAuthoritySnapshot {
  * The provider request, frozen on the first attempt so that every re-POST under the idempotency
  * key is byte-identical (research A5). Customer content: never log it.
  */
-interface SendRequestSnapshot {
+export interface SendRequestSnapshot {
   from: { email: string; name: string | null };
   to: string;
   replyTo: string | null;
@@ -51,7 +51,7 @@ interface SendRequestSnapshot {
   body: { text: string; html: string | null } | null;
 }
 
-interface EmailSendIntentRecord extends SendIntentSnapshot {
+export interface EmailSendIntentRecord extends SendIntentSnapshot {
   id: string;
   workspaceId: string;
   mailboxId: string;
@@ -78,6 +78,15 @@ interface EmailSendIntentRecord extends SendIntentSnapshot {
   updatedAt: Date;
 }
 
+/** A sent message's delivery, as the inbox's per-message email facts show it. */
+export interface SendDeliveryState {
+  messageId: string;
+  state: SendIntentState;
+  /** Sanitized: a provider code, a bounce status code or a halt reason. */
+  failureCode: string | null;
+  createdAt: Date;
+}
+
 interface MaterializeSendIntentInput {
   /** Minted by the caller, so the Message-ID derived from it is known before the insert. */
   id: string;
@@ -96,12 +105,12 @@ interface MaterializeSendIntentInput {
 }
 
 /** A fenced write either lands at `expectedVersion + 1` or reports the row as it is now. */
-type FencedWriteOutcome =
+export type FencedWriteOutcome =
   | { outcome: "applied"; intent: EmailSendIntentRecord }
   | { outcome: "conflict"; current: EmailSendIntentRecord }
   | { outcome: "not_found" };
 
-type SendIntentTransitionOutcome =
+export type SendIntentTransitionOutcome =
   | { outcome: "applied"; intent: EmailSendIntentRecord; effects: readonly SendIntentEffect[] }
   | { outcome: "ignored"; reason: "terminal" | "not_applicable"; intent: EmailSendIntentRecord }
   | { outcome: "conflict"; current: EmailSendIntentRecord }
@@ -358,6 +367,95 @@ export class EmailSendIntentRepository {
       .returning("id")
       .executeTakeFirst();
     return row !== undefined;
+  }
+
+  /** A message's attempt-chains, oldest first: its send, then each audited resend of it. */
+  async listByMessageId(messageId: string): Promise<EmailSendIntentRecord[]> {
+    const rows = await this.db
+      .selectFrom("email_send_intents")
+      .selectAll()
+      .where("message_id", "=", messageId)
+      .orderBy("created_at", "asc")
+      .orderBy("id", "asc")
+      .execute();
+    return rows.map(mapIntent);
+  }
+
+  /** The intent a provider event names by the provider's own id (research A6); null for a foreign id. */
+  async findByProviderMessageId(provider: string, providerMessageId: string): Promise<EmailSendIntentRecord | null> {
+    const row = await this.db
+      .selectFrom("email_send_intents")
+      .selectAll()
+      .where("provider", "=", provider)
+      .where("provider_message_id", "=", providerMessageId)
+      .executeTakeFirst();
+    return row ? mapIntent(row) : null;
+  }
+
+  /**
+   * The intents behind the mailbox's outbound Message-Ids, supplied or delivered, through the
+   * thread index those ids were recorded in on acceptance. An inbound delivery status report
+   * names them (research A12).
+   */
+  async findByOutboundRfcMessageIds(mailboxId: string, rfcMessageIds: readonly string[]): Promise<EmailSendIntentRecord[]> {
+    if (rfcMessageIds.length === 0) return [];
+    const rows = await this.db
+      .selectFrom("email_send_intents")
+      .selectAll()
+      .where("id", "in", (eb) =>
+        eb
+          .selectFrom("email_thread_messages")
+          .select("send_intent_id")
+          .where("mailbox_id", "=", mailboxId)
+          .where("direction", "=", "outbound")
+          .where("rfc_message_id", "in", [...rfcMessageIds])
+          .where("send_intent_id", "is not", null),
+      )
+      .execute();
+    return rows.map(mapIntent);
+  }
+
+  /**
+   * Records the recipient's complaint once (research A6). It changes no delivery state, but bumps
+   * `version` like every write, so a writer that read before it re-reads.
+   */
+  async recordComplaint(id: string): Promise<boolean> {
+    const row = await this.db
+      .updateTable("email_send_intents")
+      .set((eb) => ({
+        complained_at: currentTimestamp(),
+        version: eb("version", "+", 1),
+        updated_at: currentTimestamp(),
+      }))
+      .where("id", "=", id)
+      .where("complained_at", "is", null)
+      .returning("id")
+      .executeTakeFirst();
+    return row !== undefined;
+  }
+
+  /**
+   * Each of a conversation's sent messages with the state of its newest intent: an audited resend
+   * supersedes the attempt-chain before it. Ids, states and sanitized codes only.
+   */
+  async listDeliveryStates(conversationId: string): Promise<SendDeliveryState[]> {
+    const rows = await this.db
+      .selectFrom("email_send_intents")
+      .select(["message_id", "state", "failure_code", "created_at"])
+      .where("conversation_id", "=", conversationId)
+      .orderBy("created_at", "asc")
+      .orderBy("id", "asc")
+      .execute();
+    const newest = new Map<string, SendDeliveryState>();
+    for (const row of rows) {
+      newest.set(row.message_id, {
+        messageId: row.message_id,
+        state: readEnum(row.state, SEND_INTENT_STATES, "email_send_intents.state"),
+        failureCode: row.failure_code,
+        createdAt: row.created_at,
+      });
+    }
+    return [...newest.values()];
   }
 
   /**

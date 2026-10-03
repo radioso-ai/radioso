@@ -44,18 +44,27 @@ const trimReferences = (ids: readonly RfcMessageId[]): RfcMessageId[] => {
 };
 
 /**
+ * The Message-ID Radioso supplies for one outbound message: the send intent's own UUID on the
+ * mailbox's sending domain, so it is known before the intent is written (research A7).
+ */
+export const outboundMessageId = (sendingDomain: string, newMessageUuid: string): RfcMessageId => {
+  if (!UUID.test(newMessageUuid)) {
+    throw new Error("The new outbound message identifier must be a UUID.");
+  }
+  return rfcMessageId(`<${newMessageUuid}@${sendingDomain.toLowerCase()}>`);
+};
+
+/**
  * Threading headers for one outbound email (FR-033, FR-034): a fresh Message-ID on the sending
  * domain, `In-Reply-To` the latest inbound message, `References` its chain plus that message
  * (RFC 5322 §3.6.4), and `Auto-Submitted: auto-generated` on agent-authored mail only (RFC 3834).
  */
 export const buildOutboundHeaders = (input: OutboundHeadersInput): OutboundThreadingHeaders => {
-  if (!UUID.test(input.newMessageUuid)) {
-    throw new Error("The new outbound message identifier must be a UUID.");
-  }
+  const messageId = outboundMessageId(input.sendingDomain, input.newMessageUuid);
   const parent = input.latestInbound.rfcMessageId;
   const chain = parent === null ? input.latestInbound.references : [...input.latestInbound.references, parent];
   return {
-    messageId: rfcMessageId(`<${input.newMessageUuid}@${input.sendingDomain.toLowerCase()}>`),
+    messageId,
     inReplyTo: parent,
     references: trimReferences(uniqueInOrder(chain)),
     autoSubmitted: input.authorKind === "agent" ? "auto-generated" : null,

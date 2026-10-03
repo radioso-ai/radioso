@@ -96,6 +96,10 @@ const harness = (options: { supportedModes?: readonly EngagementMode[] } = {}) =
     config: { inboundDomain: INBOUND_DOMAIN, supportedModes: ["operator_only"] },
   });
   const logger = { warn: vi.fn() };
+  const deliveryEvents = {
+    applyStatus: vi.fn(async (): Promise<"applied" | "ignored" | "foreign"> => "applied"),
+    applyDsnBounce: vi.fn(async () => 0),
+  };
   const processor = new EmailInboundProcessor({
     receiver: { provider: "local", fetchMessage },
     inbound,
@@ -103,6 +107,7 @@ const harness = (options: { supportedModes?: readonly EngagementMode[] } = {}) =
     domains,
     threads,
     receipts,
+    deliveryEvents,
     threadProtocol,
     chat: { ingest },
     drains: { requestDrain },
@@ -183,6 +188,7 @@ const harness = (options: { supportedModes?: readonly EngagementMode[] } = {}) =
     log,
     logger,
     ingest,
+    deliveryEvents,
     fetchMessage,
     fetchFailures,
     ingestFailures,
@@ -460,6 +466,91 @@ describe("EmailInboundProcessor: fetch retries", () => {
     expect(await h.runEvent(event.id)).toBe("ignored");
     expect(h.inbound.events.get(event.id)?.state).toBe("ignored");
     expect(h.fetchMessage).not.toHaveBeenCalled();
+  });
+});
+
+describe("EmailInboundProcessor: evidence about sent mail", () => {
+  const bounced = { type: "bounced", bounce: { type: "Permanent", subType: "General", statusCode: "5.1.1" } } as const;
+
+  it("routes a provider delivery event to the send it names, by the provider's email id", async () => {
+    const h = harness();
+    const event = h.inbound.seedEvent({ eventKind: "delivery_status", providerObjectId: "re_sent_1", envelope: { status: bounced } });
+
+    expect(await h.runEvent(event.id)).toBe("processed");
+
+    expect(h.deliveryEvents.applyStatus).toHaveBeenCalledWith({ provider: "local", providerMessageId: "re_sent_1", status: bounced });
+    expect(h.inbound.events.get(event.id)?.state).toBe("processed");
+    expect(h.fetchMessage).not.toHaveBeenCalled();
+  });
+
+  it("settles an event about mail it did not send as ignored", async () => {
+    const h = harness();
+    h.deliveryEvents.applyStatus.mockResolvedValueOnce("foreign");
+    const event = h.inbound.seedEvent({ eventKind: "delivery_status", providerObjectId: "re_transactional", envelope: { status: { type: "delivered", bounce: null } } });
+
+    expect(await h.runEvent(event.id)).toBe("ignored");
+  });
+
+  it("does not read bounce detail that is not the provider's sanitized tokens", async () => {
+    const h = harness();
+    const event = h.inbound.seedEvent({
+      eventKind: "delivery_status",
+      envelope: { status: { type: "bounced", bounce: { type: "Permanent", subType: null, statusCode: "550 alice@example.test unknown" } } },
+    });
+
+    expect(await h.runEvent(event.id)).toBe("ignored");
+    expect(h.deliveryEvents.applyStatus).not.toHaveBeenCalled();
+  });
+
+  it("retries a delivery event whose send could not be updated", async () => {
+    const h = harness();
+    h.deliveryEvents.applyStatus.mockRejectedValueOnce(new Error("database unavailable"));
+    const event = h.inbound.seedEvent({ eventKind: "delivery_status", envelope: { status: bounced } });
+
+    expect(await h.runEvent(event.id)).toBe("retrying");
+    expect(h.requestDrain).toHaveBeenCalledWith(expect.objectContaining({ stage: "inbound", scheduleAt: expect.any(Date) }));
+  });
+
+  it("bounces the sends an inbound delivery status report names, and drops the report", async () => {
+    const h = harness();
+    const mailbox = h.seedMailbox();
+    h.threads.index.push({
+      workspaceId,
+      mailboxId: mailbox.id,
+      conversationId: randomUUID(),
+      messageId: randomUUID(),
+      direction: "outbound",
+      origin: "radioso_generated",
+      rfcMessageId: "<sent-1@customer.test>",
+      subject: "Re: Order 1234",
+      ccAddresses: [],
+      attachments: [],
+      inboundDeliveryId: null,
+      sendIntentId: randomUUID(),
+    });
+
+    const { deliveries } = await h.receive(h.message({
+      from: { address: "mailer-daemon@example.test", displayName: null },
+      deliveredTo: [h.relayAddressOf(mailbox)],
+      report: { kind: "delivery_status", originalMessageIds: ["<sent-1@customer.test>", "<elsewhere@example.test>"] },
+    }));
+
+    expect(h.deliveryEvents.applyDsnBounce).toHaveBeenCalledWith({ mailboxId: mailbox.id, rfcMessageIds: ["<sent-1@customer.test>"] });
+    expect(deliveries).toEqual([expect.objectContaining({ classification: "bounce", disposition: "drop" })]);
+    expect(h.ingest).not.toHaveBeenCalled();
+  });
+
+  it("applies no bounce for a report that names none of the mailbox's sends", async () => {
+    const h = harness();
+    const mailbox = h.seedMailbox();
+
+    await h.receive(h.message({
+      from: { address: "mailer-daemon@example.test", displayName: null },
+      deliveredTo: [h.relayAddressOf(mailbox)],
+      report: { kind: "delivery_status", originalMessageIds: ["<elsewhere@example.test>"] },
+    }));
+
+    expect(h.deliveryEvents.applyDsnBounce).not.toHaveBeenCalled();
   });
 });
 

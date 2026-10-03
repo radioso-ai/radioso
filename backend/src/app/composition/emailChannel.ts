@@ -4,44 +4,69 @@ import { resolveTxt } from "node:dns/promises";
 import type { ConnectorChatPort, ConnectorPlugin } from "@radioso/connector-api";
 import type { Kysely } from "kysely";
 
-import type { parseEmailChannelConfig } from "../config/env.js";
+import type { Env, parseEmailChannelConfig } from "../config/env.js";
+import { ActionRequestRepository } from "../../db/repositories/actionRequestRepository.js";
+import { ConversationActivityRepository } from "../../db/repositories/conversationActivityRepository.js";
 import { ConversationOwnershipRepository } from "../../db/repositories/conversationOwnershipRepository.js";
 import { ConversationRepository } from "../../db/repositories/conversationRepository.js";
+import { MessageRepository } from "../../db/repositories/messageRepository.js";
 import type { AuditPort } from "../../modules/audit/contracts/index.js";
+import type { ActionDrainDispatcherPort } from "../../modules/chat/composition.js";
 import {
   createEmailChannelConnector,
   type EmailChannelWorker,
   type EmailThreadProtocolUnitOfWork,
 } from "../../modules/connectors/plugins/index.js";
 import type { ConversationActivityRecorder } from "../../modules/conversationActivity/contracts/index.js";
-import type { CustomerChannelReplyDeliverer } from "../../modules/customerReplyDelivery/public.js";
+import {
+  bindDeliveryFailureRecorder,
+  ConversationDeliveryFailureRepository,
+  DeliveryFailures,
+  type CustomerChannelReplyDeliverer,
+  type DeliveryFailureResolverPort,
+  type DeliveryFailureUnitOfWork,
+} from "../../modules/customerReplyDelivery/public.js";
 import {
   ConversationEmailFactsReader,
+  EMAIL_SEND_ACTION_TYPE,
   EmailChannelCopilotView,
   EmailChannelSweep,
   EmailCustomerReplyDeliverer,
+  EmailDeliveryFailureResolver,
   EmailDomainRepository,
   EmailInboundRepository,
   EmailMailboxRepository,
+  EmailSendActionHandler,
+  EmailSendIntentRepository,
   EmailThreadRepository,
   EventLogReader,
   InboundEventActions,
   MailboxService,
+  ProviderDeliveryEvents,
+  ProviderSendAttempt,
+  SendIntentWriter,
+  SendReconciler,
   SendingDomainService,
   lockThreadResolution,
+  type DeliveryResolutionUnitOfWork,
   type EmailChannelDrainDispatcherPort,
+  type EmailSendUnitOfWork,
   type EngagementMode,
   type MailboxPolicyChangeUnitOfWork,
 } from "../../modules/emailChannel/public.js";
 import { LocalEmailDomainProvisioner } from "../../modules/mail/adapters/localDomainProvisioner.js";
+import { LocalEmailDriver } from "../../modules/mail/adapters/localEmailDriver.js";
 import { LocalInboundEmailReceiver } from "../../modules/mail/adapters/localInboundReceiver.js";
 import { ResendApiClient } from "../../modules/mail/adapters/resendApi.js";
 import { ResendEmailDomainProvisioner } from "../../modules/mail/adapters/resendDomainProvisioner.js";
 import { ResendInboundEmailReceiver } from "../../modules/mail/adapters/resendInboundReceiver.js";
-import type { EmailDomainProvisioner, InboundEmailReceiver } from "../../modules/mail/public.js";
+import { ResendEmailDriver, type EmailDomainProvisioner, type EmailDriver, type InboundEmailReceiver } from "../../modules/mail/public.js";
+import type { ErrorReporter } from "../../shared/errors/errorReporter.js";
 import type { DB, Db } from "../../shared/infra/kysely/types.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
+import { pushActionDrainAfterCommit, type QueuedOutboxRow } from "./actionDrainAfterCommit.js";
+import type { ApplicationModule } from "./applicationModule.js";
 import { createPostgresMailboxPolicyChangeUnitOfWork } from "./mailboxPolicyChange.js";
 
 type EmailChannelConfig = NonNullable<ReturnType<typeof parseEmailChannelConfig>>;
@@ -76,6 +101,8 @@ interface EmailChannelComposition extends EmailChannelOperatorServices {
   policyChanges: MailboxPolicyChangeUnitOfWork;
   /** The token-free projection Ray's email channel tools read (ports §8). */
   copilotView: EmailChannelCopilotView;
+  /** The email half of a teammate's decision on a failed reply: mark it sent, or resend it. */
+  deliveryFailureResolver: DeliveryFailureResolverPort;
 }
 
 interface EmailChannelCompositionInput {
@@ -88,14 +115,19 @@ interface EmailChannelCompositionInput {
   conversationIngest: Pick<ConnectorChatPort, "ingest">;
   agents: { findByIdAndWorkspaceId(agentId: string, workspaceId: string): Promise<{ id: string } | null> };
   audit: Pick<AuditPort, "record">;
+  /** Pushed once a resolution that queued a resend commits. */
+  actionDrain: ActionDrainDispatcherPort;
+  errorReporter?: Pick<ErrorReporter, "report">;
   metrics: MetricsRegistry | null;
   logger: AppLogger;
 }
 
 /**
  * Assembles the email channel: provider adapters, the webhook plugin, the inbound processor and
- * its worker and sweep, the settings services and the reply deliverer. Null when no email
- * provider is configured, so nothing of the channel is mounted or started.
+ * its worker and sweep, the send path's reconciler and provider-event processor, the settings
+ * services and the reply deliverer. Null when no email provider is configured, so nothing of the
+ * channel is mounted or started. The `email.send` handler is registered by
+ * `createEmailChannelApplicationModule`, because the outbox worker is built before the channel.
  */
 export const createEmailChannelComposition = (input: EmailChannelCompositionInput): EmailChannelComposition | null => {
   const { config, db, metrics, logger } = input;
@@ -105,6 +137,7 @@ export const createEmailChannelComposition = (input: EmailChannelCompositionInpu
   const clock = () => new Date();
   const randomBytesOf = (size: number): Uint8Array => randomBytes(size);
   const { receiver, provisioner } = providerAdapters(config);
+  const sends = createEmailSendServices({ config, db, activity: input.activity, drains: input.drains, audit: input.audit, metrics, logger, clock });
 
   const domainRecords = new EmailDomainRepository(db);
   const mailboxRecords = new EmailMailboxRepository(db);
@@ -141,6 +174,7 @@ export const createEmailChannelComposition = (input: EmailChannelCompositionInpu
     domains: domainRecords,
     threads,
     receipts: mailboxes,
+    deliveryEvents: sends.deliveryEvents,
     threadProtocol: createPostgresThreadProtocolUnitOfWork({ db, activity: input.activity }),
     chat: input.conversationIngest,
     drains: input.drains,
@@ -154,6 +188,7 @@ export const createEmailChannelComposition = (input: EmailChannelCompositionInpu
     sweep: new EmailChannelSweep({
       inbound,
       domains: sendingDomains,
+      sends: sends.reconciler,
       clock,
       logger,
       config: { eventRetentionDays: config.eventRetentionDays },
@@ -161,7 +196,14 @@ export const createEmailChannelComposition = (input: EmailChannelCompositionInpu
   });
 
   const eventLog = new EventLogReader({ mailboxes: mailboxRecords, deliveries: inbound, clock });
-  const conversationFacts = new ConversationEmailFactsReader({ threads, mailboxes: mailboxRecords, domains: domainRecords });
+  const conversationFacts = new ConversationEmailFactsReader({
+    threads,
+    mailboxes: mailboxRecords,
+    domains: domainRecords,
+    sends: sends.intents,
+  });
+  const ownership = new ConversationOwnershipRepository(db);
+  const ownershipVersions = { versionOf: async (conversationId: string) => (await ownership.load(conversationId))?.version ?? 0 };
 
   return {
     supportedModes: SUPPORTED_MODES,
@@ -169,7 +211,11 @@ export const createEmailChannelComposition = (input: EmailChannelCompositionInpu
     provisioner,
     plugin: connector.plugin,
     worker: connector.worker,
-    customerReplyDeliverer: new EmailCustomerReplyDeliverer(),
+    customerReplyDeliverer: new EmailCustomerReplyDeliverer({
+      mailboxes: mailboxRecords,
+      domains: domainRecords,
+      ownership: ownershipVersions,
+    }),
     policyChanges,
     inboundDomain: config.inboundDomain,
     sendingDomains,
@@ -194,7 +240,174 @@ export const createEmailChannelComposition = (input: EmailChannelCompositionInpu
       supportedModes: SUPPORTED_MODES,
       clock,
     }),
+    deliveryFailureResolver: new EmailDeliveryFailureResolver({
+      intents: sends.intents,
+      mailboxes: mailboxRecords,
+      domains: domainRecords,
+      ownership: ownershipVersions,
+      unitOfWork: createPostgresDeliveryResolutionUnitOfWork({
+        db,
+        activity: input.activity,
+        actionDrain: input.actionDrain,
+        errorReporter: input.errorReporter,
+        logger,
+      }),
+      metrics,
+    }),
   };
+};
+
+/**
+ * Registers the `email.send` outbox handler when the email channel is configured (research B6).
+ * Host code alone queues sends, in the transaction that writes what they deliver, so routines
+ * never emit one. The worker builds the handler with its own database, metrics and audit sink.
+ */
+export const createEmailChannelApplicationModule = (input: {
+  config: EmailChannelConfig | undefined;
+  drainDispatcherFor: (env: Env, config: EmailChannelConfig) => EmailChannelDrainDispatcherPort;
+}): ApplicationModule => ({
+  id: "radioso-email-channel",
+  name: "Radioso Email Channel",
+  register(context) {
+    const { config } = input;
+    if (!config) return;
+    context.registerActionHandler({
+      type: EMAIL_SEND_ACTION_TYPE,
+      emittableByRoutines: false,
+      handler: ({ database, env, logger, auditService, metrics }) =>
+        createEmailSendServices({
+          config,
+          db: database.kysely,
+          activity: new ConversationActivityRepository(database.kysely),
+          drains: input.drainDispatcherFor(env, config),
+          audit: auditService,
+          metrics: metrics ?? null,
+          logger,
+          clock: () => new Date(),
+        }).handler,
+    });
+  },
+});
+
+/**
+ * The send path (research B6, B18): the action handler, the reconciler and the provider-event
+ * processor, sharing one channel driver and one fenced writer whose unit of work binds the
+ * transition, its delivery failure and its thread index rows to one transaction.
+ */
+const createEmailSendServices = (input: {
+  config: EmailChannelConfig;
+  db: Kysely<DB>;
+  activity: ConversationActivityRecorder;
+  drains: EmailChannelDrainDispatcherPort;
+  audit: Pick<AuditPort, "record">;
+  metrics: MetricsRegistry | null;
+  logger: AppLogger;
+  clock: () => Date;
+}) => {
+  const { config, db, metrics, logger, clock } = input;
+  const driver = channelEmailDriver(config);
+  const intents = new EmailSendIntentRepository(db);
+  const mailboxes = new EmailMailboxRepository(db);
+  const domains = new EmailDomainRepository(db);
+  const unitOfWork = createPostgresEmailSendUnitOfWork({ db, activity: input.activity });
+  const writer = new SendIntentWriter({ unitOfWork, metrics, logger });
+  const attempt = new ProviderSendAttempt({ driver, writer, unitOfWork, drains: input.drains, metrics, logger, clock });
+  return {
+    intents,
+    handler: new EmailSendActionHandler({
+      intents,
+      unitOfWork,
+      messages: new MessageRepository(db),
+      mailboxes,
+      domains,
+      threads: new EmailThreadRepository(db),
+      attempt,
+      writer,
+      failures: createPostgresDeliveryFailures({ db, activity: input.activity }),
+      provider: config.provider.kind,
+      metrics,
+      logger,
+      createId: randomUUID,
+    }),
+    reconciler: new SendReconciler({ intents, mailboxes, domains, driver, attempt, writer, metrics, logger }),
+    deliveryEvents: new ProviderDeliveryEvents({ intents, writer, audit: input.audit, metrics, logger }),
+  };
+};
+
+/** The channel's sending driver, separate from transactional mail's (quickstart §1). */
+const channelEmailDriver = (config: EmailChannelConfig): EmailDriver =>
+  config.provider.kind === "resend"
+    ? new ResendEmailDriver({ api: new ResendApiClient({ apiKey: config.provider.apiKey }) })
+    : new LocalEmailDriver({ spoolDir: config.provider.spoolDir });
+
+/**
+ * Binds one send-intent change to one Postgres transaction: the fenced transition, the delivery
+ * failure it raises, retargets or clears with its activity, and the thread index rows and budget
+ * renewal it implies. Only binds; what is written is the send path's decision.
+ */
+export const createPostgresEmailSendUnitOfWork = (deps: {
+  db: Kysely<DB>;
+  activity: ConversationActivityRecorder;
+}): EmailSendUnitOfWork => ({
+  run: (work) => deps.db.transaction().execute((trx) => work({
+    intents: new EmailSendIntentRepository(trx),
+    threads: new EmailThreadRepository(trx),
+    failures: bindDeliveryFailureRecorder({
+      failures: new ConversationDeliveryFailureRepository(trx),
+      activity: { record: (event) => deps.activity.record(trx, event) },
+    }),
+  })),
+});
+
+/**
+ * Binds a teammate's resolution to one Postgres transaction: the send intent's operator-resolution
+ * transition, the failure it clears with its activity, and a resend's outbox row. The action drain
+ * is pushed only after commit, when a resend was queued, and is best-effort.
+ */
+const createPostgresDeliveryResolutionUnitOfWork = (deps: {
+  db: Kysely<DB>;
+  activity: ConversationActivityRecorder;
+  actionDrain: ActionDrainDispatcherPort;
+  errorReporter?: Pick<ErrorReporter, "report">;
+  logger: Pick<AppLogger, "warn">;
+}): DeliveryResolutionUnitOfWork => ({
+  async run(work) {
+    let queued: QueuedOutboxRow | null = null;
+    const result = await deps.db.transaction().execute((trx) => {
+      const outbox = new ActionRequestRepository(trx);
+      return work({
+        intents: new EmailSendIntentRepository(trx),
+        failures: bindDeliveryFailureRecorder({
+          failures: new ConversationDeliveryFailureRepository(trx),
+          activity: { record: (event) => deps.activity.record(trx, event) },
+        }),
+        outbox: {
+          enqueue: async (request) => {
+            const enqueued = await outbox.enqueue(request);
+            queued = request;
+            return enqueued;
+          },
+        },
+      });
+    });
+    if (queued) await pushActionDrainAfterCommit(deps, "email_delivery_resend_drain_push_failed", queued);
+    return result;
+  },
+});
+
+/**
+ * Delivery failures over Postgres: each change commits with the activity it records, and the reads
+ * serve the operator surfaces. Channel-neutral; the send path binds its own recorder to the
+ * transition's transaction instead.
+ */
+export const createPostgresDeliveryFailures = (deps: { db: Kysely<DB>; activity: ConversationActivityRecorder }): DeliveryFailures => {
+  const writes: DeliveryFailureUnitOfWork = {
+    run: (work) => deps.db.transaction().execute((trx) => work({
+      failures: new ConversationDeliveryFailureRepository(trx),
+      activity: { record: (event) => deps.activity.record(trx, event) },
+    })),
+  };
+  return new DeliveryFailures({ writes, reads: new ConversationDeliveryFailureRepository(deps.db) });
 };
 
 const providerAdapters = (config: EmailChannelConfig): { receiver: InboundEmailReceiver; provisioner: EmailDomainProvisioner } => {

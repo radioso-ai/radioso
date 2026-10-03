@@ -1,4 +1,4 @@
-import type { Env } from "../config/env.js";
+import { parseEmailChannelConfig, type Env } from "../config/env.js";
 import { registerBuiltInConnectors } from "../../modules/connectors/plugins/index.js";
 import { ConnectorRegistry } from "../../modules/connectors/services/connectorRegistry.js";
 import type { ConnectorPlugin } from "@radioso/connector-api";
@@ -71,6 +71,7 @@ import { createAnswerDirectivesApplicationModule } from "./builtIn/answerDirecti
 import { createContactRoutineApplicationModule } from "./builtIn/contactRoutineModule.js";
 import { createWebhookSendApplicationModule } from "./builtIn/webhookSendModule.js";
 import { createConversationTransferNoticeApplicationModule } from "./builtIn/conversationTransferNoticeModule.js";
+import { createEmailChannelApplicationModule } from "./emailChannel.js";
 import { createCustomerEmailApplicationModule } from "../../modules/customerEmail/composition.js";
 import { createSlackApplicationModule } from "../../modules/slack/composition.js";
 import { createOssOrganizationCreationApplicationModule } from "../../modules/auth/composition.js";
@@ -145,7 +146,7 @@ export const createDefaultApplicationComposition = (options: {
     | "SLACK_OAUTH_CLIENT_ID"
     | "SLACK_OAUTH_CLIENT_SECRET"
     | "SLACK_SIGNING_SECRET"
-  >>;
+  >> & Parameters<typeof parseEmailChannelConfig>[0];
   modules?: ApplicationModule[];
   widgetOrigin?: string;
 }): ApplicationComposition => {
@@ -171,6 +172,10 @@ export const createDefaultApplicationComposition = (options: {
     createOssOrganizationCreationApplicationModule(),
     createCustomerEmailApplicationModule(options.env),
     createSlackApplicationModule(options.env),
+    createEmailChannelApplicationModule({
+      config: parseEmailChannelConfig(options.env ?? {}),
+      drainDispatcherFor: createDefaultEmailChannelDrainDispatcher,
+    }),
     ...(options.modules ?? []),
   ]);
 

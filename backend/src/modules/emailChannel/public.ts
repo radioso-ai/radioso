@@ -27,4 +27,14 @@ export {
 } from "./drains.js";
 export { EmailChannelSweep } from "./maintenance/emailChannelSweep.js";
 export { EmailCustomerReplyDeliverer } from "./operator/emailCustomerReplyDeliverer.js";
+export {
+  EmailDeliveryFailureResolver,
+  type DeliveryResolutionUnitOfWork,
+} from "./operator/emailDeliveryFailureResolver.js";
+export { EMAIL_SEND_ACTION_TYPE, emailSendKey, type EmailSendActionPayload } from "./outbound/emailSendAction.js";
+export { EmailSendActionHandler } from "./outbound/emailSendActionHandler.js";
+export { ProviderDeliveryEvents } from "./outbound/providerDeliveryEvents.js";
+export { ProviderSendAttempt } from "./outbound/providerSendAttempt.js";
+export { SendIntentWriter, type EmailSendScope, type EmailSendUnitOfWork } from "./outbound/sendIntentWriter.js";
+export { SendReconciler } from "./outbound/sendReconciler.js";
 export { CloudTasksEmailChannelDrainDispatcher } from "./infra/cloudTasksEmailChannelDrainDispatcher.js";

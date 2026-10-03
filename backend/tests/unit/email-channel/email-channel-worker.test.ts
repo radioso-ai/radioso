@@ -14,7 +14,8 @@ const harness = (options: { enabled?: boolean } = {}) => {
   const process = vi.fn(async (_event: InboundEventRecord) => "processed" as const);
   const domains = { refreshDue: vi.fn(async () => 2), cleanupRemoved: vi.fn(async () => 1) };
   const logger = { warn: vi.fn(), error: vi.fn() };
-  const sweep = new EmailChannelSweep({ inbound, domains, clock, logger, config: { eventRetentionDays: 30 } });
+  const sends = { run: vi.fn(async (_request: { maxJobs: number }) => ({ claimed: 0, reposted: 0, settled: 0, uncertain: 0, deferred: 0, skipped: 0, errored: 0 })) };
+  const sweep = new EmailChannelSweep({ inbound, domains, sends, clock, logger, config: { eventRetentionDays: 30 } });
   const worker = new EmailChannelWorker({
     enabled: options.enabled ?? true,
     events: inbound,
@@ -29,6 +30,7 @@ const harness = (options: { enabled?: boolean } = {}) => {
     inbound,
     process,
     domains,
+    sends,
     logger,
     sweep,
     worker,
@@ -94,6 +96,18 @@ describe("EmailChannelWorker", () => {
     expect((await h.worker.drain({ maxJobs: 5, stage: "all" })).claimed).toBe(1);
   });
 
+  it("reconciles due sends for the reconcile and all stages only", async () => {
+    const h = harness();
+    h.sends.run.mockResolvedValue({ claimed: 2, reposted: 1, settled: 1, uncertain: 0, deferred: 0, skipped: 0, errored: 0 });
+
+    expect(await h.worker.drain({ maxJobs: 4, stage: "reconcile" })).toMatchObject({ reconciled: 2, claimed: 0 });
+    expect(await h.worker.drain({ maxJobs: 4, stage: "all" })).toMatchObject({ reconciled: 2 });
+    expect(await h.worker.drain({ maxJobs: 4, stage: "inbound" })).toMatchObject({ reconciled: 0 });
+    expect(await h.worker.drain({ maxJobs: 4, stage: "review" })).toMatchObject({ reconciled: 0 });
+    expect(h.sends.run).toHaveBeenCalledTimes(2);
+    expect(h.sends.run).toHaveBeenCalledWith({ maxJobs: 4 });
+  });
+
   it("keeps draining when one event throws, and leaves that event to its lease", async () => {
     const h = harness();
     h.inbound.seedEvent();
@@ -155,6 +169,16 @@ describe("EmailChannelSweep", () => {
     expect(h.domains.refreshDue).toHaveBeenCalledWith(7);
     expect(h.domains.cleanupRemoved).toHaveBeenCalledWith(7);
     expect(result).toMatchObject({ refreshedDomains: 2, cleanedDomains: 1 });
+  });
+
+  it("claims and reconciles the sends due a re-POST or a lookup", async () => {
+    const h = harness();
+    h.sends.run.mockResolvedValueOnce({ claimed: 3, reposted: 1, settled: 1, uncertain: 1, deferred: 0, skipped: 0, errored: 0 });
+
+    const result = await h.sweep.run({ maxJobs: 7 });
+
+    expect(h.sends.run).toHaveBeenCalledWith({ maxJobs: 7 });
+    expect(result.reconciledSends).toBe(3);
   });
 
   it("purges conversation-less deliveries and settled events past the retention window", async () => {

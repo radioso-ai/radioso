@@ -72,8 +72,15 @@ export type UsageCountKind = "conversation" | "copilot" | "test_run" | "pulse_re
 
 export type PlanUsageWeights = Readonly<Record<UsageCountKind, number>>;
 
+/**
+ * Whether catalog prices include VAT. Every Stripe price the catalog defines carries this as its
+ * `tax_behavior`; `exclusive` means Stripe Tax adds VAT on top of the catalog number at checkout.
+ */
+export type PlanTaxBehavior = "exclusive" | "inclusive";
+
 export interface PlanCatalog {
   readonly currency: string;
+  readonly taxBehavior: PlanTaxBehavior;
   readonly plans: readonly Plan[];
   readonly defaultPlanId: PlanId;
   readonly selfServeCeilingPlanId: PlanId;

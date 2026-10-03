@@ -86,37 +86,45 @@ Message-queue impact is reviewed in S1, S2 and S6. Read `docs/document-writer-pr
   - How: register a test relay domain with receiving, forward a base mailbox from each tenant, and save the webhook body, the receiving-API body and the raw `.eml`.
   - Go/no-go: **no-go for the relay topology** if neither source carries the relay address.
   - Blocks: T054, T066, T083.
-- [ ] T008 [S0] **Does Resend keep our headers?**
+  - **Result (2026-10-03)**: Direct delivery recorded (research A2); forwarded case blocked on Google Workspace and M365 tenants. Receiving address provisioned: `87164684@rexuatrena.resend.app`.
+- [x] T008 [S0] **Does Resend keep our headers?**
   - Question: does Resend keep a supplied `Message-ID` and pass `Auto-Submitted` through (research A7)?
   - How: `POST /emails` with `headers: { Message-ID, Auto-Submitted, In-Reply-To, References }` to a test mailbox. Inspect the raw message received and compare `GET /emails/{id}` `message_id`.
   - Go/no-go: Message-ID is go if preserved **or** retrievable. `Auto-Submitted` stripped is **no-go for every agent-authored send** (S3 release, S6). Documenting the stripping does not satisfy FR-034.
   - Blocks: T116, T120, and the S3 agent-send gate in T173 and T191.
+  - **Result (2026-10-03)**: **Go.** Message-ID is replaced by SES but retrievable via `GET /emails/{id}`; `Auto-Submitted`, `In-Reply-To`, `References` pass through verbatim (research A7).
 - [ ] T009 [S0] **Does plus addressing survive forwarding?**
   - Question: does `support+tok@tenant` reach the base mailbox and get forwarded on default settings, and is the tag visible at the relay? What does Google's forwarding-confirmation mail look like at the relay (research A9)?
   - How: send externally to the plus address on both tenants, and start a Gmail forwarding setup to the relay.
   - Go/no-go: go either way, because plus addressing is gated by the setup check.
   - Blocks: T062 (`plus_address` step) and T117 (`Reply-To` gating).
+  - **Result (2026-10-03)**: Blocked on tenants (research A9).
 - [ ] T010 [S0] **Do forwarders keep threading headers?**
   - Question: do the forwarders keep `Message-ID`, `From`, `To`, `In-Reply-To` and `References` on automatic forward (research A9)?
   - How: reply externally to a T008 message and let each tenant forward it.
   - Go/no-go: go either way. Rewrites fall back to the plus token, then to a new thread.
   - Blocks: final threading fixtures in T005, and T067 and T068.
-- [ ] T011 [S0] **What do the Domains API payloads look like?**
+  - **Result (2026-10-03)**: Blocked on tenants (research A9).
+- [x] T011 [S0] **What do the Domains API payloads look like?**
   - Question: what are the exact `capabilities`, per-record status and status values, and the "already registered" error (research A4)?
   - How: create, get and verify a domain with sending only, then with receiving, plus a domain held by a second account.
   - Go/no-go: go if sending and receiving are reported separately.
   - Blocks: T055.
-- [ ] T012 [S0] **Which regions support Receiving?**
+  - **Result (2026-10-03)**: **Go.** Sending and receiving reported separately; payloads and duplicate error recorded (research A4); cross-account claim error unverified.
+- [x] T012 [S0] **Which regions support Receiving?**
   - Question: does `eu-west-1` support Receiving (research A8, plan Accepted deviations, item 10)?
   - How: create a receiving domain in `eu-west-1`, or get a written answer from Resend.
   - Go/no-go: **EU rollout is no-go** without confirmation or a written residency decision. US is unaffected.
   - Blocks: T246.
-- [ ] T013 [S0] **How do signing and delivery events behave?**
+  - **Result (2026-10-03)**: **Technical go** for `eu-west-1` receiving MX. **Residency decision open**: Resend stores all account data in the US regardless of region (research A8).
+- [x] T013 [S0] **How do signing and delivery events behave?**
   - Question: what is the `whsec_` format, does a dashboard replay mint a new `svix-id`, and what do `email.bounced`, `email.suppressed`, `email.delivered` and `email.failed` contain (research A3, A6)?
   - How: trigger each event and replay one.
   - Output: sanitized JSON in `backend/tests/fixtures/email-channel/webhooks/resend/`, and spam, auth-failed and unknown variants in `backend/tests/fixtures/email-channel/protocol/adapter-verdicts.json`.
   - Blocks: T054 and T121.
+  - **Result (2026-10-03)**: `whsec_` format, retry schedule, and event payloads recorded from live probes and docs (research A3, A6); replay-id behaviour unverified. Fixtures under `backend/tests/fixtures/email-channel/resend/`.
 - [ ] T014 [S0] Record every answer and the go/no-go result in the matching "Open risk" lines of `specs/1403-email-channel/research.md` (A2, A3, A4, A7, A8, A9), and commit the sanitized fixtures. **Gate**: T054, T055, T116 and T121 cannot merge before this task. A relay no-go stops S1 and goes back to the coordinator. An `Auto-Submitted` no-go stops T173, T191 and Phase 9.
+  - **Result (2026-10-03)**: research A1–A8 updated and fixtures committed; A9 and the forwarded-mail half of A2 remain. Gate stays open for T054, T066, and T083 only; T055, T116, and T121 are unblocked.
 
 ---
 

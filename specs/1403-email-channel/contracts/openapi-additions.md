@@ -32,7 +32,7 @@ EmailChannelOverview = {
   configured: boolean;                       // provider + inbound domain present in this deployment
   inboundDomain: string | null;
   supportedModes: ("operator_only" | "draft" | "auto")[];   // S1/S2: ["operator_only"]; S3+: + "draft"; S6+: + "auto"
-  defaultMode: "operator_only" | "draft";                   // "draft" once supported (FR-005)
+  defaultMode: "operator_only" | "draft" | null;            // "draft" once supported (FR-005); null with configured: false and supportedModes: []
   domains: EmailDomain[];
   mailboxes: EmailMailbox[];
 }

@@ -292,15 +292,15 @@ R3 blocks T088 (S1 drain wiring). R1 and R2 block S3 and can run in parallel wit
   - a participant mismatch is an exception and no turn;
   - `last_received_at` updated;
   - no `run_review_turn` is reachable under S1 `supportedModes`.
-- [ ] T067 [US2] Write `backend/tests/integration/email-thread-protocol.integration.test.ts` covering research B15 interleavings (i)–(vii) with two concurrent workers and the out-of-order fixtures (after T010). Each case asserts the expected single conversation, or two for the two-mailbox case.
-- [ ] T068 [US2] Write `backend/tests/integration/email-inbound.integration.test.ts`, end to end with the local receiver:
+- [x] T067 [US2] Write `backend/tests/integration/email-thread-protocol.integration.test.ts` covering research B15 interleavings (i)–(vii) with two concurrent workers and the out-of-order fixtures (after T010). Each case asserts the expected single conversation, or two for the two-mailbox case.
+- [x] T068 [US2] Write `backend/tests/integration/email-inbound.integration.test.ts`, end to end with the local receiver:
   - the SC-002 corpus;
   - a never-issued token gives a workspace-less `no_mailbox`;
   - an unknown address on a direct-receiving domain gives a workspace-attributed `no_mailbox`;
   - `mailbox_disabled`;
   - SC-003: no `protocol/` fixture runs a turn and all of them appear in the event log;
   - mail accepted under policy v1 and processed after v2 runs under the lower autonomy.
-- [ ] T069 [US2] Write `backend/tests/integration/email-channel-crash-recovery.integration.test.ts` (inbound). A test-only fault hook fires after: event persisted; fetched; resolved and reserved; ingested; indexed. Exactly one message per delivery and no split thread (the inbound half of SC-007).
+- [x] T069 [US2] Write `backend/tests/integration/email-channel-crash-recovery.integration.test.ts` (inbound). A test-only fault hook fires after: event persisted; fetched; resolved and reserved; ingested; indexed. Exactly one message per delivery and no split thread (the inbound half of SC-007).
 - [x] T070 [P] [US2] Write `backend/tests/contract/email-webhook.contract.test.ts`, beside `slack-webhook.contract.test.ts`:
   - persisted, 200;
   - duplicate `svix-id`, 200 and no row;
@@ -321,7 +321,7 @@ R3 blocks T088 (S1 drain wiring). R1 and R2 block S3 and can run in parallel wit
   - the `email` deliverer refuses with `409 email_sending_not_available`;
   - the scheduled drain dispatcher (Cloud Tasks with `scheduleAt`) vs no-op;
   - `MailboxPolicyChangeUnitOfWork` bound.
-- [ ] T076 [P] [US1] Write `backend/tests/contract/email-channel-settings.contract.test.ts` for every S1 endpoint in openapi-additions §1 plus `getConversationEmailFacts`:
+- [x] T076 [P] [US1] Write `backend/tests/contract/email-channel-settings.contract.test.ts` for every S1 endpoint in openapi-additions §1 plus `getConversationEmailFacts`:
   - permissions;
   - every documented error, including `domain_claimed_elsewhere` without naming the other workspace and `engagement_mode_unavailable`;
   - `supportedModes` and `defaultMode` in the overview;
@@ -330,7 +330,7 @@ R3 blocks T088 (S1 drain wiring). R1 and R2 block S3 and can run in parallel wit
 
   `backend/tests/contract/api-principal-route-policy.contract.test.ts` fails until T090.
 - [x] T077 [P] [US1] Write `backend/tests/unit/email-channel/conversation-email-facts.test.ts`: the latest projection and per-message subject, CC, attachments and `rawDeliveryId`; delivery is `null` in S1.
-- [ ] T078 [P] [US1] Write `backend/tests/unit/operatorCopilot/email-channel-tools.test.ts` for `email_channel_configuration`, `email_channel_events` and `email_conversation_facts`:
+- [x] T078 [P] [US1] Write `backend/tests/unit/operatorCopilot/email-channel-tools.test.ts` for `email_channel_configuration`, `email_channel_events` and `email_conversation_facts`:
   - built on `EmailChannelCopilotView` (ports §8);
   - no `relayAddress`, setup-check recipient, thread token or raw content;
   - object-rooted output schemas;
@@ -360,19 +360,19 @@ R3 blocks T088 (S1 drain wiring). R1 and R2 block S3 and can run in parallel wit
 
 ### HTTP contract and governance
 
-- [ ] T089 [US1] Create `backend/src/app/http/routes/emailChannelRoutes.ts` with the settings router and `GET /api/v1/conversations/:conversationId/email`, mounted where `slackConnectionRoutes.ts` is (after T076, T080).
-- [ ] T090 [US1] Register the contract (after T089):
+- [x] T089 [US1] Create `backend/src/app/http/routes/emailChannelRoutes.ts` with the settings router and `GET /api/v1/conversations/:conversationId/email`, mounted where `slackConnectionRoutes.ts` is (after T076, T080).
+- [x] T090 [US1] Register the contract (after T089):
   - `backend/src/app/http/openapi/paths/emailChannelPaths.ts` and `schemas/emailChannelSchemas.ts`, registered in `openApiPaths.ts`;
   - `backend/src/app/http/apiPrincipalRoutePolicy.ts`: permission tuples for the `/email-channel` routes and `sessionOnly(…, "workspace.conversation.takeover")` for the facts route (openapi-additions §5a);
   - `backend/src/app/http/openapi/operationPermissionRequirements.ts`: `getEmailChannel`, `getEmailMailbox`, `listEmailMailboxEvents` and `getConversationEmailFacts`.
 
   Then run `cd backend && pnpm run generate:openapi`. This regenerate also carries the `CLOSING_ACTIVITY_KINDS` enum change from T028.
-- [ ] T091 [US1] Run `cd typescript-sdk && pnpm run sync` and `cd packages/radioso-mcp-server && pnpm run sync:openapi && pnpm run check:openapi`, and commit the generated files (after T090).
+- [x] T091 [US1] Run `cd typescript-sdk && pnpm run sync` and `cd packages/radioso-mcp-server && pnpm run sync:openapi && pnpm run check:openapi`, and commit the generated files (after T090).
 
 ### Ray (lands with the endpoints)
 
-- [ ] T092 [US1] Create `backend/src/modules/operatorCopilot/tools/emailChannel.ts` with the three read tools over `EmailChannelCopilotView`, and register it in `tools/index.ts` (after T078, T080).
-- [ ] T093 [US1] Governance and coverage (after T091, T092):
+- [x] T092 [US1] Create `backend/src/modules/operatorCopilot/tools/emailChannel.ts` with the three read tools over `EmailChannelCopilotView`, and register it in `tools/index.ts` (after T078, T080).
+- [x] T093 [US1] Governance and coverage (after T091, T092):
   - provenance entries in `backend/src/modules/operatorCopilot/capabilityProvenance.ts`;
   - read dispositions in `backend/src/modules/operatorCopilot/operatorMcpDisposition.ts`;
   - coverage in `backend/tests/unit/operatorCopilot/catalogCoverage.ts`: S1 reads → tools; `rotateEmailMailboxRelayToken` → `neverListExclusion("secret_rotation")`; 9 mutations → `deferred`; raw view → `permanent`;
@@ -383,11 +383,11 @@ R3 blocks T088 (S1 drain wiring). R1 and R2 block S3 and can run in parallel wit
 
 ### Frontend
 
-- [ ] T094 [P] [US1] Extend `frontend/tests/unit/agent-channel-catalog.test.ts` for the `email-channel` status: `available`, `active`, and `attention` when a mailbox is silent or its domain is unverified.
-- [ ] T095 [US1] Add the `email-channel` id and entry to `frontend/lib/agent-channel-catalog.ts` (`:1`, `:35-53`), and create `frontend/lib/api-email-channel.ts` (after T091, T094).
-- [ ] T096 [P] [US1] Write `frontend/tests/unit/email-setup-check-state.test.ts` for the polling state machine: `base` then `plus_address`, and timeout.
-- [ ] T097 [US1] Implement `frontend/lib/email-setup-check-state.ts` (after T096).
-- [ ] T098 [US1] Write the Playwright journey `frontend/tests/e2e/email-channel-setup.spec.ts` first, using the local provider and `email:dev`:
+- [x] T094 [P] [US1] Extend `frontend/tests/unit/agent-channel-catalog.test.ts` for the `email-channel` status: `available`, `active`, and `attention` when a mailbox is silent or its domain is unverified.
+- [x] T095 [US1] Add the `email-channel` id and entry to `frontend/lib/agent-channel-catalog.ts` (`:1`, `:35-53`), and create `frontend/lib/api-email-channel.ts` (after T091, T094).
+- [x] T096 [P] [US1] Write `frontend/tests/unit/email-setup-check-state.test.ts` for the polling state machine: `base` then `plus_address`, and timeout.
+- [x] T097 [US1] Implement `frontend/lib/email-setup-check-state.ts` (after T096).
+- [x] T098 [US1] Write the Playwright journey `frontend/tests/e2e/email-channel-setup.spec.ts` first, using the local provider and `email:dev`:
   - add a mailbox; relay address with copy; forwarding guidance for Google and M365 (policy step, then rule);
   - receiving `waiting`, then `ok`;
   - per-record DNS copy and status; claimed-elsewhere message;
@@ -397,12 +397,12 @@ R3 blocks T088 (S1 drain wiring). R1 and R2 block S3 and can run in parallel wit
   - an operator-only conversation in the Inbox with its sender and subject header;
   - the composer explains that sending is unavailable;
   - focus kept and async status announced (FR-042).
-- [ ] T099 [US1] Create `frontend/components/dashboard/settings/email-channel-card.tsx`, `email-domain-records.tsx` and `email-mailbox-events.tsx`, and mount the card in `workspace-assistant-channels-tab.tsx:1051`. It has loading, empty, error, success and partial states, and its modes come from `supportedModes` (after T095, T097, T098).
-- [ ] T100 [US1] Create `frontend/components/dashboard/inbox/email-conversation-header.tsx`, mounted from `inbox-response-view.tsx` for `provider === "email"`, and add a disabled state with the server reason to `operator-composer.tsx` (after T095, T098).
+- [x] T099 [US1] Create `frontend/components/dashboard/settings/email-channel-card.tsx`, `email-domain-records.tsx` and `email-mailbox-events.tsx`, and mount the card in `workspace-assistant-channels-tab.tsx:1051`. It has loading, empty, error, success and partial states, and its modes come from `supportedModes` (after T095, T097, T098).
+- [x] T100 [US1] Create `frontend/components/dashboard/inbox/email-conversation-header.tsx`, mounted from `inbox-response-view.tsx` for `provider === "email"`, and add a disabled state with the server reason to `operator-composer.tsx` (after T095, T098).
 
 ### Dev tooling, infrastructure, docs
 
-- [ ] T101 [P] [US2] Create `backend/scripts/emailChannelDev.ts` (`inbound`, `inbound --replay`, `verify-domain`) and the `email:dev` script in `backend/package.json`. It is dev-only.
+- [x] T101 [P] [US2] Create `backend/scripts/emailChannelDev.ts` (`inbound`, `inbound --replay`, `verify-domain`) and the `email:dev` script in `backend/package.json`. It is dev-only.
 - [x] T102 [P] Terraform, then `terraform validate`:
   - `infra/terraform/queue.tf`: an `email_channel` queue with low max concurrency;
   - `scheduler.tf`: `email_channel_sweep`, 5 min, `/internal/tasks/email-channel/sweep`;
@@ -429,7 +429,8 @@ R3 blocks T088 (S1 drain wiring). R1 and R2 block S3 and can run in parallel wit
 
 ### Verification (S1)
 
-- [ ] T106 [US1] [US2] Backend: `cd backend && pnpm run test:unit && pnpm run test:contract && pnpm run test:integration`, then `pnpm run lint`, `cd backend && pnpm run lint`, `pnpm run lint:dead-code:ci` and `cd backend && pnpm run build`.
+- [x] T106 [US1] [US2] Backend: `cd backend && pnpm run test:unit && pnpm run test:contract && pnpm run test:integration`, then `pnpm run lint`, `cd backend && pnpm run lint`, `pnpm run lint:dead-code:ci` and `cd backend && pnpm run build`.
+  - **Result (2026-10-03)**: unit 8010 passed; contract 527 passed; integration 1364 passed after fixing `createIfAbsent`; root lint, backend lint, dead-code ratchet, both DB snapshot checks, product-docs sync, SDK and MCP checks, and `pnpm run build` all pass. The `tsconfig.json` (tests) typecheck has ~95 pre-existing errors in unrelated files.
 - [ ] T107 [US1] Frontend: `cd frontend && pnpm test && pnpm run build && PLAYWRIGHT_PORT=<free> pnpm run test:e2e -- email-channel-setup`.
 - [ ] T108 [US1] [US2] Walk through quickstart §2–§3 with the local provider (mailbox, inbound, human-owned conversation, replay with no duplicate), then run `pnpm run ci:local -- origin/main`.
 - [ ] T109 [US2] Record the message-queue impact review in the PR: AMQP untouched; inbound job tables; the `email_channel` queue with scheduled drains; the sweep; retry semantics; the queue docs; `connectorPlugin.d.ts:32` still accurate.
@@ -806,6 +807,18 @@ R3 blocks T088 (S1 drain wiring). R1 and R2 block S3 and can run in parallel wit
 - [ ] T247 Enable `auto` only after reviewed drafts, every non-publish outcome-table row green, and explicit owner opt-in. Rehearse rollback: workers off, webhooks still persisting, no `uncertain` replay, stale `queued_auto` rows returned to `pending`.
 
 ---
+
+## Follow-ups found while implementing S1 (2026-10-03)
+
+Not fixed in S1; each needs a small decision before it is tasked.
+
+1. **Same Message-Id through two provider events** (research B15 gap): the same inbound message delivered to one mailbox by two different provider events (for example two forwarding rules) opens a second conversation. Decide whether the thread index dedupes on `(mailbox, inbound Message-Id)` and attaches, or records a `channel_exception`.
+2. **Retry after relay-token rotation grace**: a failed delivery retried after its mailbox's previous token left the grace period cannot resolve a mailbox and cannot be retried again. Decide whether retries resolve by the mailbox id stored on the delivery instead of the address.
+3. **Frontend channel list is copied in five files** (`agent-channel-catalog.ts`, `dashboard-areas.ts`, `area-subnavs.tsx`, `agent-view.tsx`, `api-types.ts`): a missing shared port. Extract one catalog the others derive from before the next channel.
+4. **Unconfigured overview shape**: `getEmailChannel` returns `configured: false`, `supportedModes: []`, `defaultMode: null`; `openapi-additions.md` now says so. Other settings routes return 503 and the facts route 404 when the channel is unconfigured.
+5. **`email_backlog` gauge** from `contracts/events.md` is not emitted yet; the sweep has the counts.
+6. **Playwright journey stubs the API in the browser**, matching the existing e2e setup; it does not drive the local provider or `email:dev`. The end-to-end path is covered by the backend integration suites instead.
+7. **Forwarded-mail fixtures** (Google Workspace, Microsoft 365) are still `it.todo` in the Resend receiver test and the thread-protocol suite; they need the tenant checks from S0 (T007, T009, T010).
 
 ## Dependencies & Execution Order
 

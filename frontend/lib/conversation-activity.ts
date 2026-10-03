@@ -82,6 +82,16 @@ export const activityLine = (entry: ConversationActivityEntry): string => {
       return `${actorName(entry)} resolved the feedback`
     case 'feedback_dismissed':
       return `${actorName(entry)} dismissed the feedback`
+    case 'channel_exception':
+      return 'Channel exception'
+    case 'delivery_failed':
+      return 'Delivery failed'
+    case 'delivery_failure_cleared':
+      return 'Delivery failure cleared'
+    case 'held_reply_released':
+      return `${actorName(entry)} sent the agent's draft`
+    case 'held_reply_discarded':
+      return `${actorName(entry)} discarded the agent's draft`
   }
 }
 
@@ -93,9 +103,12 @@ export const recentlyClosedKindLabel = (
     case 'handoff':
       return 'Handoff'
     case 'approval':
+      if (item.outcome === 'held_reply_released') return 'Draft sent'
       return item.decisionLabel ? `Approval · ${item.decisionLabel}` : 'Approval'
     case 'negative_feedback':
       return item.outcome === 'feedback_dismissed' ? 'Feedback dismissed' : 'Feedback resolved'
+    case 'delivery_failed':
+      return 'Delivery failure'
   }
 }
 

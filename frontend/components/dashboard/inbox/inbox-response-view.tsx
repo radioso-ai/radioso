@@ -45,6 +45,7 @@ import {
 } from '@/lib/needs-attention'
 import { useSkillCatalog } from '@/lib/skill-catalog'
 import { cn } from '@/lib/utils'
+import { EmailConversationHeader, emailSendUnavailableReason, useConversationEmailFacts } from './email-conversation-header'
 import { InboxReadOnlyFooter } from './inbox-readonly-footer'
 import { InboxSituationCard } from './inbox-situation-card'
 import { useConversationOperators } from './use-conversation-operators'
@@ -212,6 +213,8 @@ export function InboxResponseView({
   } = useHistoryDocumentDialogState()
 
   const skillCatalog = useSkillCatalog(conversationId)
+  const isEmailConversation = conversationDetail?.channelContext?.provider === 'email'
+  const emailFacts = useConversationEmailFacts(conversationId, isEmailConversation)
 
   const handleChanged = useCallback(async (result: OperatorActionResult) => {
     await Promise.all([refetchDetail(), onOperatorChanged(result)])
@@ -353,6 +356,7 @@ export function InboxResponseView({
           </div>
         ) : (
           <div className="space-y-4">
+            {isEmailConversation ? <EmailConversationHeader {...emailFacts} /> : null}
             {effectiveItem ? (
               <InboxSituationCard
                 handoffReason={effectiveOwnership?.reason ?? null}
@@ -397,6 +401,7 @@ export function InboxResponseView({
           onTeammatesStale={teammates.refresh}
           onChanged={handleChanged}
           externalError={handBackRunner.error}
+          sendUnavailableReason={isEmailConversation ? emailSendUnavailableReason(emailFacts.facts) : null}
           trailingActions={showDoneControl ? (
             <Tooltip>
               <TooltipTrigger asChild>

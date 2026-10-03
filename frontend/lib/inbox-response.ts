@@ -129,13 +129,18 @@ export const freshestOwnership = (
 
 // ── Channel label (FR-006) ──────────────────────────────────────────────────
 
+const CHANNEL_LABELS: Partial<Record<ConversationChannelContext['provider'], string>> = {
+  slack: 'Slack',
+  email: 'Email',
+}
+
 /**
  * Labels the channel only when it adds information. The default web embed is
- * never labeled; a non-default channel such as Slack is.
+ * never labeled; a non-default channel such as Slack or email is.
  */
 export const informativeChannelLabel = (
   channelContext: ConversationChannelContext | null | undefined,
-): string | null => channelContext?.provider === 'slack' ? 'Slack' : null
+): string | null => (channelContext ? CHANNEL_LABELS[channelContext.provider] ?? null : null)
 
 // ── Situation card (FR-007) ─────────────────────────────────────────────────
 

@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ChevronDown, Send } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -11,7 +11,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Textarea } from '@/components/ui/textarea'
-import { hitlApi, isHitlApiStatusError, transferFailureCause } from '@/lib/api-hitl'
+import { hitlApi, isHitlApiStatusError, replyRefusalReason, transferFailureCause } from '@/lib/api-hitl'
 import type { ConversationOperator, ConversationOwnership, PendingApprovalDecision } from '@/lib/api-types'
 import { deriveOperatorActions, ownershipMenu } from '@/lib/operator-actions'
 import { cn } from '@/lib/utils'
@@ -31,9 +31,12 @@ export type OperatorActionResult =
 
 const genericError = 'Something went wrong. Try again.'
 
-/** A failure the caller can explain: its message, and what to re-read because of it. */
+/**
+ * A failure the caller can explain: its message (null when the caller shows the
+ * failure itself), and what to do because of it.
+ */
 interface ExplainedFailure {
-  message: string
+  message: string | null
   followUp?: () => void
 }
 const NO_TEAMMATES: readonly ConversationOperator[] = []
@@ -78,14 +81,16 @@ export function useOperatorActionRunner(
     try {
       await onChanged(await callback())
     } catch (caught) {
-      if (isHitlApiStatusError(caught, 409) || isHitlApiStatusError(caught, 422)) {
+      const explained = explainFailure?.(caught) ?? null
+      if (explained) {
+        setError(explained.message)
+        explained.followUp?.()
+      } else if (isHitlApiStatusError(caught, 409) || isHitlApiStatusError(caught, 422)) {
         const invalidOption = isHitlApiStatusError(caught, 422)
         setError(invalidOption ? 'That option is no longer valid - refreshing.' : 'This conversation changed - refreshing.')
         await onChanged({ kind: 'refresh', conversationId, reason: invalidOption ? 'invalid_option' : 'conflict' })
       } else {
-        const explained = explainFailure?.(caught) ?? null
-        setError(explained?.message ?? genericError)
-        explained?.followUp?.()
+        setError(genericError)
       }
     } finally {
       inFlightRef.current = false
@@ -130,6 +135,13 @@ interface OperatorComposerProps {
    * send error when both are set.
    */
   externalError?: string | null
+  /**
+   * Why the conversation's channel cannot take a reply now (an email mailbox
+   * whose domain is not verified, say). Send stays disabled and the reason
+   * shows in its place; the draft is kept. A send the server refuses for its
+   * channel does the same with the server's reason.
+   */
+  sendUnavailableReason?: string | null
 }
 
 /**
@@ -158,8 +170,13 @@ export function OperatorComposer({
   disabled,
   trailingActions,
   externalError,
+  sendUnavailableReason = null,
 }: OperatorComposerProps) {
   const [message, setMessage] = useState('')
+  const [refusal, setRefusal] = useState<{ conversationId: string; reason: string } | null>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const focusDraftRef = useRef(false)
+  const unavailableReasonId = useId()
   const actions = useMemo(() => deriveOperatorActions(ownership, currentUserId), [ownership, currentUserId])
   const menu = useMemo(
     () => ownershipMenu(actions, teammates, currentUserId),
@@ -169,6 +186,14 @@ export function OperatorComposer({
   const trimmedMessage = message.trim()
   const isDisabled = disabled || runner.isBusy
   const visibleError = runner.error ?? externalError ?? null
+  const unavailableReason = (refusal?.conversationId === conversationId ? refusal.reason : null) ?? sendUnavailableReason
+
+  // A refused send disables Send, which would drop focus; it returns to the draft once the composer settles.
+  useEffect(() => {
+    if (!focusDraftRef.current || isDisabled) return
+    focusDraftRef.current = false
+    textareaRef.current?.focus()
+  })
 
   const transferTo = useCallback((target: { kind: 'me' | 'teammate'; userId: string }) => {
     const toUserId = target.userId
@@ -212,6 +237,18 @@ export function OperatorComposer({
       await hitlApi.replyAsHuman(conversationId, { message: trimmedMessage, expectedVersion: version })
       setMessage('')
       return { kind: 'reply', conversationId }
+    }, (caught) => {
+      const reason = replyRefusalReason(caught)
+      if (!reason) {
+        return null
+      }
+      return {
+        message: null,
+        followUp: () => {
+          setRefusal({ conversationId, reason })
+          focusDraftRef.current = true
+        },
+      }
     })
   }, [actions.claimsOnSend, actions.version, conversationId, runner, trimmedMessage])
 
@@ -284,7 +321,9 @@ export function OperatorComposer({
   return (
     <div className={containerClassName}>
       <Textarea
+        ref={textareaRef}
         aria-label="Reply to the visitor"
+        aria-describedby={unavailableReason ? unavailableReasonId : undefined}
         placeholder="Reply to the visitor - sending takes over the conversation"
         value={message}
         disabled={isDisabled}
@@ -296,12 +335,18 @@ export function OperatorComposer({
           {visibleError}
         </p>
       ) : null}
+      {unavailableReason ? (
+        <p id={unavailableReasonId} className="text-xs text-muted-foreground" role="status" aria-live="polite">
+          {unavailableReason}
+        </p>
+      ) : null}
       <div className="flex items-center gap-2">
         <Button
           type="button"
           size="sm"
           className="gap-1.5"
-          disabled={isDisabled || trimmedMessage.length === 0}
+          disabled={isDisabled || trimmedMessage.length === 0 || unavailableReason !== null}
+          aria-describedby={unavailableReason ? unavailableReasonId : undefined}
           onClick={handleSend}
         >
           <Send className="h-3.5 w-3.5" aria-hidden />

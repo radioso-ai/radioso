@@ -163,6 +163,55 @@ describe('OperatorComposer', () => {
     await act(async () => root.unmount())
   })
 
+  it('keeps the draft and disables Send with the server reason when the channel refuses the reply', async () => {
+    vi.spyOn(hitlApi, 'takeOverConversation')
+      .mockResolvedValue({ ownership: { state: 'human_owned', version: 2 } } as never)
+    vi.spyOn(hitlApi, 'replyAsHuman').mockRejectedValue(Object.assign(new Error('refused'), {
+      status: 409,
+      error: { code: 'email_sending_not_available', message: 'Replies to email conversations cannot be sent yet.' },
+    }))
+    const changed = vi.fn()
+    const { root, container } = await renderComposer({ state: 'ai_owned', version: 1 }, changed)
+
+    const textarea = container.querySelector('textarea') as HTMLTextAreaElement
+    await typeInto(textarea, 'my draft reply')
+    await clickSend(container)
+
+    expect(changed).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('Replies to email conversations cannot be sent yet.')
+    expect(container.textContent).not.toContain('conversation changed')
+    expect(textarea.value).toBe('my draft reply')
+    const send = [...container.querySelectorAll('button')].find((button) => button.textContent?.includes('Send'))
+    expect(send?.disabled).toBe(true)
+    await act(async () => root.unmount())
+  })
+
+  it('disables Send with the reason the caller gives, without sending', async () => {
+    const reply = vi.spyOn(hitlApi, 'replyAsHuman')
+    const root = createRoot(document.createElement('div'))
+    const container = (root as unknown as { _internalRoot: { containerInfo: HTMLElement } })._internalRoot.containerInfo
+    await act(async () => {
+      root.render(
+        <OperatorComposer
+          conversationId="conversation-a"
+          ownership={{ state: 'ai_owned', version: 1 } as never}
+          currentUserId="user-me"
+          onChanged={vi.fn()}
+          sendUnavailableReason="Replies wait until this mailbox's domain is verified."
+        />,
+      )
+    })
+
+    const textarea = container.querySelector('textarea') as HTMLTextAreaElement
+    await typeInto(textarea, 'a reply')
+    await clickSend(container)
+
+    expect(reply).not.toHaveBeenCalled()
+    expect(container.textContent).toContain("Replies wait until this mailbox's domain is verified.")
+    expect(textarea.value).toBe('a reply')
+    await act(async () => root.unmount())
+  })
+
   it('offers no reply to a conversation a teammate holds, and reassigns it to me by transferring it to the signed-in teammate', async () => {
     const transfer = vi.spyOn(hitlApi, 'transferConversation')
       .mockResolvedValue({ ownership: { state: 'human_owned', version: 8 } } as never)

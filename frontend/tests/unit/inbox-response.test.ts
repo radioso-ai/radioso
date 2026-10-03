@@ -123,6 +123,15 @@ describe('informativeChannelLabel', () => {
     })).toBe('Slack')
   })
 
+  it('labels an email channel', () => {
+    expect(informativeChannelLabel({
+      provider: 'email',
+      mailbox: { id: 'mailbox-1', address: 'support@customer.test' },
+      threadKey: '8b3c1f4e-1d2a-4c5b-9e7f-0a1b2c3d4e5f',
+      participant: { address: 'ana@example.test' },
+    })).toBe('Email')
+  })
+
   it('does not label the default web embed', () => {
     expect(informativeChannelLabel({ provider: 'web' })).toBeNull()
   })

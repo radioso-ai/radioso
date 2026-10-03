@@ -36,6 +36,7 @@ export type AgentSectionId =
   | 'mcp-channel'
   | 'slack-channel'
   | 'whatsapp-channel'
+  | 'email-channel'
   | 'channels-overview'
   | 'danger'
 
@@ -54,6 +55,7 @@ const AGENT_SECTION_ROUTES: Record<AgentSectionId, AgentSectionRoute> = {
   'mcp-channel': { agentTab: 'channels', anchor: 'mcp-channel' },
   'slack-channel': { agentTab: 'channels', anchor: 'slack-channel' },
   'whatsapp-channel': { agentTab: 'channels', anchor: 'whatsapp-channel' },
+  'email-channel': { agentTab: 'channels', anchor: 'email-channel' },
   'channels-overview': { agentTab: 'channels' },
   danger: { agentTab: 'behavior', anchor: 'agent-danger-zone' },
 }
@@ -82,6 +84,7 @@ const CHANNEL_ANCHORS: Record<string, AgentSectionId> = {
   'mcp-channel': 'mcp-channel',
   'slack-channel': 'slack-channel',
   'whatsapp-channel': 'whatsapp-channel',
+  'email-channel': 'email-channel',
 }
 
 export const agentSectionRoute = (section: AgentSectionId): AgentSectionRoute => AGENT_SECTION_ROUTES[section]

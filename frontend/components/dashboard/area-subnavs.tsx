@@ -10,6 +10,7 @@ import {
   FlaskConical,
   FolderOpen,
   KeyRound,
+  Mail,
   ChevronDown,
   FileJson,
   Globe,
@@ -42,6 +43,7 @@ import { getLastSelectedAgentId, setLastSelectedAgentId } from '@/lib/agent-sele
 import { agentChannelCredentialsApi } from '@/lib/api-agent-channel-credentials'
 import { slackApi } from '@/lib/api-slack'
 import { connectorsApi } from '@/lib/api-connectors'
+import { emailChannelApi } from '@/lib/api-email-channel'
 import { resolveAgentChannelCatalog, type AgentChannelCatalogId, type AgentChannelCatalogStatus } from '@/lib/agent-channel-catalog'
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -127,6 +129,7 @@ const channelMetadata: Record<AgentChannelCatalogId, { label: string; icon: Luci
   'mcp-channel': { label: 'MCP', icon: Wrench },
   'slack-channel': { label: 'Slack', icon: MessageCircle },
   'whatsapp-channel': { label: 'WhatsApp', icon: MessageCircle },
+  'email-channel': { label: 'Email', icon: Mail },
 }
 
 // One word per state, shared by every channel, so "on", "active" and
@@ -204,7 +207,8 @@ export function AgentAreaSubNav({ accountId, routeState }: { accountId: string; 
       slackApi.getInstallStatus(activeWorkspaceId, selectedAgentId),
       slackApi.listBindings(activeWorkspaceId, selectedAgentId),
       connectorsApi.get('whatsapp'),
-    ]).then(([general, rest, mcp, slack, bindings, whatsappConnector]) => {
+      emailChannelApi.getOverview(activeWorkspaceId),
+    ]).then(([general, rest, mcp, slack, bindings, whatsappConnector, emailOverview]) => {
       if (!active) return
       const generalSettings = general.status === 'fulfilled' ? general.value : null
       const restCredentials = rest.status === 'fulfilled' ? rest.value.credentials.filter((credential) => credential.status === 'active') : []
@@ -213,6 +217,7 @@ export function AgentAreaSubNav({ accountId, routeState }: { accountId: string; 
       const slackBindings = bindings.status === 'fulfilled' ? bindings.value.bindings : []
       const slackBound = slackBindings.some((binding) => binding.answeringAgentId === selectedAgentId)
       const whatsapp = whatsappConnector.status === 'fulfilled' ? whatsappConnector.value : null
+      const email = emailOverview.status === 'fulfilled' ? emailOverview.value : null
       setChannelCatalog(resolveAgentChannelCatalog({
         webChatEnabled: Boolean(generalSettings?.anonymousChatEnabled || generalSettings?.websiteEmbedEnabled),
         apiCredentialCount: restCredentials.length,
@@ -223,6 +228,8 @@ export function AgentAreaSubNav({ accountId, routeState }: { accountId: string; 
         whatsappAvailable: whatsappConnector.status === 'fulfilled',
         whatsappConfigured: whatsapp?.enabled ?? false,
         whatsappError: Boolean(whatsapp?.errorStatus),
+        emailAvailable: email?.configured ?? false,
+        emailMailboxes: email?.mailboxes.filter((mailbox) => mailbox.agentId === selectedAgentId) ?? [],
       }))
     })
     return () => { active = false }

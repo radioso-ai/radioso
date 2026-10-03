@@ -42,7 +42,7 @@ An operator adds `support@customer.com` as a mailbox in workspace settings and b
 3. **Given** `customer.com` is not yet a sending domain for the workspace, **When** the operator adds the mailbox, **Then** the sending domain is registered with the provider and the card shows the DKIM, SPF, and DMARC records with per-record copy and per-record status, with sending `pending`.
 4. **Given** the operator adds a sending domain already claimed by another workspace, **When** they submit it, **Then** the request is refused and the UI says the domain is claimed elsewhere, without naming the other workspace.
 5. **Given** a sending domain whose records resolve, **When** verification runs, **Then** every mailbox on that domain shows `sending: ok`, and replies on their conversations become sendable.
-6. **Given** a mailbox receiving mail but whose sending domain is not verified, **When** an operator or the agent produces a reply, **Then** the reply is held with reason `sending_not_verified` and the card says what is missing.
+6. **Given** a mailbox receiving mail but whose sending domain is not verified, **When** the agent produces a reply, **Then** it is held with reason `sending_not_verified`; **and when** an operator submits a reply, **Then** it is refused before anything is written, the composer says what is missing, and retrying after verification is safe.
 7. **Given** a mailbox bound to an agent in `operator_only` mode, **When** forwarded mail arrives at its relay address, **Then** a conversation opens with `sourceChannel: "email"`, an `email` channel context naming the mailbox, human ownership with reason `operator_only_mailbox`, and no agent turn runs.
 8. **Given** mail arrives at the inbound domain for a relay token that matches no mailbox, **When** it is processed, **Then** an event with disposition `no_mailbox` is recorded, visible in the workspace event log with sender and subject, and no conversation opens.
 9. **Given** a mailbox, **When** the operator disables it, **Then** later mail to its relay address is recorded with disposition `mailbox_disabled` in the event log, and any unsent automatic reply on its conversations is halted.
@@ -161,7 +161,8 @@ A mailbox is set to `auto`. When the review turn ends as a grounded, complete an
 - The customer writes to the plus-address token directly with a new subject. It continues the conversation the token names; the subject change is recorded on the message.
 - A sending domain's DNS records are later removed. Provider verification lapses within the freshness window, sending readiness drops, queued sends hold, inbound is unaffected because it arrives through the relay, and the settings card flags the domain.
 - The customer removes the forwarding rule. Radioso cannot see this; the mailbox's last-received time and silence notice are the only signal, and the setup check re-proves the path.
-- A webhook arrives for a relay token that matches no mailbox. Recorded `no_mailbox`, visible in the event log, acknowledged, not retried.
+- A webhook arrives for a relay token of a removed mailbox or one inside its rotation grace period. Recorded `no_mailbox` in that workspace's event log, acknowledged, not retried. A token that was never issued names no workspace; it is counted in deployment metrics and swept by retention.
+- Microsoft 365 blocks external auto-forwarding until an admin changes the outbound anti-spam policy, and Google asks the forwarding target to confirm a code. The setup panel surfaces the confirmation message that arrives at the relay address, and the docs state both.
 - The provider reports spam. Recorded with disposition `spam` as a bounded event; mailboxes that opt in get an operator-only conversation instead; no turn runs; `unknown` verdicts are treated as not spam. Authentication results are recorded on every event and never drop a message on their own, because forwarding routinely breaks SPF.
 - The customer's mail service rewrites the forwarded message (new Message-Id, subject prefix, wrapped body). Thread resolution falls back from headers to the plus-address token to a new conversation; the raw event keeps whatever arrived.
 - A held reply exists and the operator takes over. The draft is superseded.
@@ -225,7 +226,7 @@ A mailbox is set to `auto`. When the review turn ends as a grounded, complete an
   - Do not call the Resend SDK outside `mail/adapters/`.
   - Do not create a new workspace package; existing modules and contracts are sufficient homes.
   - Do not make direct MX on a customer domain the default or only receiving path; the relay is the default.
-  - Do not resolve the mailbox from the `To` header; only the relay token on the delivered-to address identifies the mailbox.
+  - Do not resolve the mailbox from the customer's own address; only a relay-domain address, wherever it appears in the envelope or headers, identifies the mailbox.
   - Do not ingest attachments or pass their content to the agent.
   - Do not reuse `backend/src/modules/customerEmail/` for channel delivery; it sends as the customer's own OAuth mailbox and is a different product surface.
   - Do not let any email transport fact populate `verified_customer_id` this release.
@@ -264,7 +265,7 @@ The single source of truth for what happens to an accepted inbound message. "Tur
 - **FR-001**: An operator with workspace settings permission MUST be able to add a mailbox by its real address, bind it to an agent, and receive an opaque relay address on the deployment's inbound domain with forwarding instructions; each mailbox MUST carry a display name, engagement mode, enabled flag, thread send budget, hourly generation budget, thread context bound, spam opt-in, and silence threshold, all with safe defaults.
 - **FR-002**: The deployment's inbound domain MUST be configuration, provisioned once per deployment; relay tokens MUST be opaque, high-entropy, unique per mailbox, and rotatable by the operator, and the mailbox MUST be resolved only from the relay token on the delivered-to address.
 - **FR-003**: Adding a mailbox MUST register its address's domain as a sending domain for the workspace if not already present and show the DKIM, SPF, and DMARC records with per-record copy and status; a sending domain MUST be unique across workspaces, MUST refresh readiness on a bounded cadence and on provider events, and MUST emit audit events on readiness changes.
-- **FR-004**: A mailbox MUST accept inbound regardless of sending readiness and MUST hold every outbound reply with reason `sending_not_verified` until its sending domain is verified.
+- **FR-004**: A mailbox MUST accept inbound regardless of sending readiness; until its sending domain is verified, agent-authored replies MUST be held with reason `sending_not_verified` and operator replies MUST be refused before any write with the missing step named.
 - **FR-005**: Engagement mode MUST be one of `operator_only`, `draft`, `auto`, defaulting to `draft`.
 - **FR-006**: Each mailbox MUST record its last received time and expose a receiving state of waiting, ok, or silent; a guided setup check MUST prove the forward path by waiting for a message the operator sends to the real address.
 - **FR-006a**: Direct receiving on a customer-owned domain or subdomain MUST be available as an advanced option that names the consequence that all mail for that domain routes to Radioso, requires typed confirmation, and tracks receiving readiness separately; it MUST NOT be the default path.
@@ -288,11 +289,11 @@ The single source of truth for what happens to an accepted inbound message. "Tur
 - **FR-017**: The engagement disposition MUST be a pure function of mailbox mode, classification, ownership state, participant match, and budgets, returning `ingest_only`, `run_review_turn`, or `drop` with a reason.
 - **FR-018**: `operator_only` MUST run no turn and MUST create or continue the conversation as human-owned with reason `operator_only_mailbox`.
 - **FR-019**: Every email turn MUST run in `review` execution mode: durable, externally visible skill effects suppressed, routines not activated, hand-off and coverage signals recorded, output returned to the caller and never persisted as an assistant message.
-- **FR-020**: The publication decision MUST be a pure function of the typed turn result, mailbox mode, send budget, and ownership, returning `publish` only for an `auto` mailbox with a grounded, complete, non-hand-off result and budget room, and `hold` with a reason otherwise; it MUST fail closed on unknown or unavailable results.
+- **FR-020**: The publication decision MUST be a pure function of the typed turn result, mailbox mode, send budget, ownership, sending readiness, and the list of suppressed skill effects, returning `publish` only for an `auto` mailbox with a grounded, complete, non-hand-off result, budget room, sending ready, and no suppressed effect, and `hold` with a reason otherwise; it MUST fail closed on unknown or unavailable results.
 - **FR-021**: A human-owned conversation MUST NOT run a turn on inbound email, regardless of mode.
-- **FR-022**: Each thread MUST have an automatic send budget per operator renewal, defaulting to three, that customer input never resets; reaching it MUST hold the next candidate reply with reason `send_budget`.
-- **FR-023**: Each mailbox MUST have an hourly generation budget; when reached, accepted inbound MUST be ingested as human-owned with reason `generation_budget`.
-- **FR-024**: Inbound messages on one thread inside a coalescing window MUST produce one review turn; the review turn's thread context MUST be bounded by the mailbox setting.
+- **FR-022**: Each thread MUST have an automatic send budget, defaulting to three, that customer input never resets and that an operator reply or a held-reply release on the thread renews; reaching it MUST hold the next candidate reply with reason `send_budget`.
+- **FR-023**: Each mailbox MUST have a generation budget over a fixed one-hour window anchored at its first generation; when reached, accepted inbound MUST be ingested as human-owned with reason `generation_budget`.
+- **FR-024**: Inbound messages on one thread inside a deployment-configured coalescing window MUST produce one review turn; the review turn's thread context MUST be bounded by the mailbox setting; a terminal review failure MUST hand off with reason `review_unavailable`.
 - **FR-025**: A mode downgrade MUST halt unsent automatic sends and supersede pending drafts' publish eligibility; an upgrade MUST apply only to inbound accepted after the change.
 - **FR-026**: Operators MUST be able to author finer engagement rules as directives; no email-specific rule text MUST exist in code or prompts.
 
@@ -305,7 +306,7 @@ The single source of truth for what happens to an accepted inbound message. "Tur
 
 **Outbound**
 
-- **FR-031**: Every outbound email MUST be a send intent with a stable idempotency key, written with its message and its `email.send` outbox action in one transaction, and sent by a worker through `EmailDriver` with at-least-once retry reusing the key.
+- **FR-031**: Every outbound email MUST originate as an `email.send` outbox action carrying a stable idempotency key. For operator replies and released held replies the action MUST be written in the same transaction as the message it delivers. For automatic replies the action MUST reference the held-reply record, and the customer-visible message row MUST be written only at dispatch after re-authorization succeeds, so held content never exists as a message row before it is sent. The worker MUST materialize the send intent under the key on first dispatch and send through `EmailDriver` with at-least-once retry reusing the key.
 - **FR-032**: Before calling the provider the worker MUST revalidate mailbox mode and enabled flag, domain sending readiness, ownership, and send budget, and MUST hold instead of send if any changed.
 - **FR-033**: Every outbound email MUST set `From` to the mailbox's real address and display name, a Radioso-generated `Message-Id` on the sending domain, `In-Reply-To` and `References` from the thread, `Reply-To` to the mailbox's real address with an opaque high-entropy plus-address thread token so the customer's reply travels through their forward, and a subject continuing the thread; header values MUST be typed and MUST reject CR, LF, and malformed identifiers.
 - **FR-034**: Agent-authored emails MUST carry `Auto-Submitted: auto-generated`; operator-authored emails MUST NOT.
@@ -344,7 +345,7 @@ The single source of truth for what happens to an accepted inbound message. "Tur
 
 ### Measurable Outcomes
 
-- **SC-001**: An operator connects a mailbox and passes the setup check in one settings session with one external step, adding a forwarding rule; sending verifies in the same session once the DNS records are published, with no other external step.
+- **SC-001**: An operator connects a mailbox and passes the setup check in one settings session with the external steps their mail service requires (a forwarding rule; for Microsoft 365 also the tenant policy change; for Google also the confirmation code); sending verifies in the same session once the DNS records are published.
 - **SC-002**: Against the committed threading corpus (first-contact, pre-reply follow-up, header-threaded reply, token-only reply, two-mailbox message, participant mismatch, duplicate event), every case resolves to the expected conversation.
 - **SC-003**: Against the committed protocol fixture set (each RFC 3834 header, DSN report, self-sender, provider spam and auth-failed verdicts, unknown verdict), zero fixtures run a turn and every fixture appears in the event log.
 - **SC-004**: On a `draft` mailbox, zero send intents exist for any held reply in `pending`, and no held reply text appears in customer-visible history endpoints.
@@ -372,7 +373,9 @@ The single source of truth for what happens to an accepted inbound message. "Tur
 - Resend offers inbound webhooks with content fetch, a domains API with separate receiving and sending status, idempotency keys, and bounce events on the plans Radioso Cloud and self-hosters use. The plan MUST verify each before building on it; the ports let a self-hoster swap providers without touching channel code.
 - The provider preserves a supplied `Message-Id`; if not, reconciliation uses the delivered id per FR-035.
 - Radioso Cloud operates one inbound relay domain per region; self-hosters point their own inbound domain at the provider and set it in `.env`.
-- Common mail services (Google Workspace, Microsoft 365) forward plus-addressed mail to the base mailbox's forwarding target; Message-Id threading is primary and the plus token is the fallback.
+- Plus addressing is not assumed. The plus-token `Reply-To` is enabled per mailbox only after a setup-check step proves the customer's mail service forwards plus-addressed mail; until then `Reply-To` is the plain address and Message-Id threading stands alone.
+- Resend exposes SPF, DKIM, and DMARC results but no spam verdict; with Resend the `spam` disposition never triggers and is covered by fixtures for other providers.
+- Resend region support for receiving is unverified; EU rollout is blocked until inbound content is confirmed to be processed in an EU region or an explicit decision accepts otherwise.
 - Forwarded mail arrives with the original sender in `From`, the original recipient in `To`, and the relay address as delivered-to; SPF failures on forwarded mail are expected.
 - The existing operator reply unit of work (message and outbox in one transaction, conversation and ownership locked) is the model for release and auto-send.
 - Email conversations count toward conversation metering like any other channel.

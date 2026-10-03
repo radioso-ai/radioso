@@ -45,9 +45,14 @@ describe("catalog invariants", () => {
       expect(plan.interval).toBe("month");
     }
     expect(PLAN_CATALOG.managedService.interval).toBe("month");
+    expect(["exclusive", "inclusive"]).toContain(PLAN_CATALOG.taxBehavior);
     expect(Object.keys(PLAN_CATALOG.countsAs).sort()).toEqual(
       ["conversation", "copilot", "other", "pulse_report", "test_run"],
     );
+  });
+
+  it("prices every Stripe price excluding VAT, so Stripe Tax adds VAT on top of the catalog number", () => {
+    expect(PLAN_CATALOG.taxBehavior).toBe("exclusive");
   });
 
   it("has unique plan ids", () => {

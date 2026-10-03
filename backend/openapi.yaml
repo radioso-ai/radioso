@@ -9845,6 +9845,38 @@ components:
               type: string
           required:
             - provider
+        - type: object
+          properties:
+            provider:
+              type: string
+              enum:
+                - email
+            mailbox:
+              type: object
+              properties:
+                id:
+                  type: string
+                  format: uuid
+                address:
+                  type: string
+              required:
+                - id
+                - address
+            threadKey:
+              type: string
+              format: uuid
+            participant:
+              type: object
+              properties:
+                address:
+                  type: string
+              required:
+                - address
+          required:
+            - provider
+            - mailbox
+            - threadKey
+            - participant
     ConversationRequestContext:
       type: object
       properties:
@@ -10648,6 +10680,11 @@ components:
             - approval_decided
             - feedback_resolved
             - feedback_dismissed
+            - channel_exception
+            - delivery_failed
+            - delivery_failure_cleared
+            - held_reply_released
+            - held_reply_discarded
         createdAt:
           type: string
           format: date-time
@@ -10760,6 +10797,7 @@ components:
             - handoff
             - approval
             - negative_feedback
+            - delivery_failed
         outcome:
           type: string
           enum:
@@ -10767,6 +10805,8 @@ components:
             - approval_decided
             - feedback_resolved
             - feedback_dismissed
+            - held_reply_released
+            - delivery_failure_cleared
         closedAt:
           type: string
           format: date-time

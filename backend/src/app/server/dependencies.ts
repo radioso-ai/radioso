@@ -20,7 +20,11 @@ import { resolveGcpRedisCredentialsProvider } from "../../runtime/gcpMetadataRed
 import type { RealtimePublisherComposition } from "../composition/realtimePublisherComposition.js";
 import { AgentRevisionService, AgentService, AgentSurfaceExtensionRegistry, createRoutineScopedReferenceGuard, projectInternalAgentConfig, projectInternalAgentExternalSkills, serializeAuthoredDirectivesWithIds } from "../../modules/agents/public.js";
 import { AgentRetrievalAuthoringService } from "../../modules/agentSkills/public.js";
-import { InMemoryPublicConversationEventBus, TrustedTestExecutionRunnerAdapter } from "../../modules/chat/composition.js";
+import {
+  ConversationIngestService,
+  InMemoryPublicConversationEventBus,
+  TrustedTestExecutionRunnerAdapter,
+} from "../../modules/chat/composition.js";
 import { TestExecutionService } from "../../modules/test-execution/testExecution.js";
 import {
   createFacetExtractionWorker,
@@ -116,6 +120,7 @@ import { createTeammateLabelReader } from "../composition/teammateLabelReader.js
 import { createPostgresOwnershipReplyUnitOfWork } from "../composition/conversationOwnershipReplies.js";
 import { createConversationActivityComposition } from "../composition/conversationActivity.js";
 import { createPostgresOwnershipChangeUnitOfWork } from "../composition/conversationOwnershipChanges.js";
+import { createPostgresConversationIngestUnitOfWork } from "../composition/conversationIngest.js";
 import { ConversationOwnershipService, OperatorIdentityResolver } from "../../modules/handoff/public.js";
 import { buildConversationLinkResolver } from "../composition/conversationLinkResolver.js";
 import { resolveWorkspaceManagedLlmModels } from "../../shared/infra/llm/workspaceManagedModels.js";
@@ -500,6 +505,14 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     publisher: realtimePublisherComposition.publisher,
     logger,
     errorReporter: infrastructure.errorReportingService,
+  });
+  const conversationIngestService = new ConversationIngestService({
+    unitOfWork: createPostgresConversationIngestUnitOfWork({
+      db: infrastructure.database.kysely,
+      activity: conversationActivity.recorder,
+    }),
+    ownership: conversationOwnershipService,
+    publisher: realtimePublisherComposition.publisher,
   });
   const qualitySignalsService = new QualityTurnsService(
     infrastructure.database.kysely,
@@ -1128,6 +1141,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     chatService: chat.chatService,
     approvalDecisionService: chat.approvalDecisionService,
     conversationOwnershipService,
+    conversationIngestService,
     conversationOperatorDirectory,
     conversationActivityReads: conversationActivity.reads,
     workbenchReplayRunner: chat.workbenchReplayRunner,

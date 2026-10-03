@@ -22,7 +22,38 @@ export type ConnectorChatOutcome =
   | "out_of_scope"
   | "unavailable";
 
+/**
+ * A customer message a connector records without running a turn. The connector allocates both
+ * ids, so a retry with the same ids records nothing twice: an existing conversation (even one
+ * named by `kind: "new"`) and an existing message are left as they are.
+ */
+export interface ConnectorIngestInput {
+  workspaceId: string;
+  agentId: string | null;
+  conversation:
+    | { kind: "new"; conversationId: string; sourceChannel: string; channelContext: ConversationChannelContext }
+    | { kind: "existing"; conversationId: string };
+  message: { id: string; text: string; receivedAt: Date };
+  /** Hands the conversation to a person, with this reason, when the AI owns it; null leaves ownership as it is. */
+  humanOwnership: { reason: string } | null;
+}
+
+export interface ConnectorIngestResult {
+  conversationId: string;
+  messageId: string;
+  conversationCreated: boolean;
+  messageCreated: boolean;
+  /** Ownership as the ingest left it; version 0 while no ownership row exists. */
+  ownership: { state: "ai_owned" | "human_owned"; version: number };
+}
+
 export interface ConnectorChatPort {
+  /**
+   * Records the customer's message, and the human ownership asked for, in one unit of work. Runs
+   * no turn and reserves no usage.
+   */
+  // Message-queue impact: synchronous host port only; no AMQP or worker payload changes.
+  ingest(input: ConnectorIngestInput): Promise<ConnectorIngestResult>;
   answer(input: {
     workspaceId: string;
     agentId?: string;

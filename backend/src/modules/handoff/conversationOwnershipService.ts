@@ -17,7 +17,7 @@ import { notifyAfterCommit, recordCommittedOwnershipAudit, type CommittedAuditRe
 import type { ConversationOperatorDirectory } from "./conversationOperatorDirectory.js";
 import type { OperatorIdentity, OperatorIdentityResolver } from "./operatorIdentity.js";
 import type { OperatorReplyService, OperatorReplyWriteScope } from "./operatorReplyService.js";
-import type { ConversationOwnershipRecord } from "./ownershipState.js";
+import type { ConversationOwnershipReason, ConversationOwnershipRecord } from "./ownershipState.js";
 import { transferNoticeRequest, type TransferNoticeOutboxPort } from "./transferNotice.js";
 
 /** The signed-in teammate acting on a conversation, in the workspace they act from. */
@@ -69,6 +69,15 @@ export interface OwnershipReplyUnitOfWork {
     reply: OperatorReplyWriteScope;
     activity: ConversationActivityWriter;
   }) => Promise<T>): Promise<T>;
+}
+
+/**
+ * The writes a request for human ownership makes, bound to the transaction of the unit of work that
+ * asks for it — so the handoff commits with whatever that unit of work records, or not at all.
+ */
+export interface HumanOwnershipRequestScope {
+  ownership: Pick<ConversationOwnershipRepository, "requestHandoff">;
+  activity: ConversationActivityWriter;
 }
 
 /** Audit metadata a surface adds to the records its commands cause, e.g. the Slack user who clicked. */
@@ -255,6 +264,30 @@ export class ConversationOwnershipService {
       ...input.auditContext,
     });
     return result;
+  }
+
+  /**
+   * Hands a conversation to a person, unclaimed, inside the caller's unit of work: one the AI owns
+   * (or nobody has ever owned) becomes human-owned with the reason and records `handoff_requested`;
+   * one a person already owns is left exactly as it is. Nothing is announced here — the caller tells
+   * the dashboard once its transaction has committed.
+   */
+  async requestHumanOwnership(scope: HumanOwnershipRequestScope, input: {
+    conversationId: string;
+    workspaceId: string;
+    reason: ConversationOwnershipReason;
+  }): Promise<{ changed: boolean; record: ConversationOwnershipRecord }> {
+    const requested = await scope.ownership.requestHandoff(input);
+    if (requested.changed) {
+      await scope.activity.record({
+        kind: "handoff_requested",
+        conversationId: input.conversationId,
+        workspaceId: input.workspaceId,
+        actorUserId: null,
+        detail: { reason: input.reason },
+      });
+    }
+    return requested;
   }
 
   /** The teammate holding the conversation when it is not the caller, so the caller may not reply. */

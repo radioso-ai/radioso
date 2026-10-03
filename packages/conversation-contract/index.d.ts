@@ -103,6 +103,17 @@ export type ConversationChannelContext =
   | {
       provider: "web";
       origin?: string;
+    }
+  | {
+      /**
+       * Stable identity only: which mailbox, which thread, which participant. The thread's reply
+       * token is a routing secret and never rides here; per-message facts (subject, CC, display
+       * name) live on the email channel's own records.
+       */
+      provider: "email";
+      mailbox: { id: string; address: string };
+      threadKey: string;
+      participant: { address: string };
     };
 
 /**

@@ -6,6 +6,12 @@ export type ConversationOwnershipReason =
   | "routine_handoff"
   | "retrieval_miss"
   | "operator_takeover"
+  /** The conversation arrived at a mailbox that only operators answer. */
+  | "operator_only_mailbox"
+  /** The channel's budget for generated replies ran out. */
+  | "generation_budget"
+  /** A reviewed turn could not produce a reply to review. */
+  | "review_unavailable"
   | (string & {});
 
 /** The owning teammate's profile as it is now. */

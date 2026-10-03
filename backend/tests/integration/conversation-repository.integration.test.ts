@@ -162,6 +162,34 @@ describeIntegration("ConversationRepository (Postgres)", () => {
     expect((await repository.findByIdAndWorkspaceId(without.id, workspaceId))?.channelContext).toBeNull();
   });
 
+  it("creates a conversation under the caller's id once, leaving an existing one as it is", async () => {
+    const id = randomUUID();
+    const channelContext = {
+      provider: "email" as const,
+      mailbox: { id: randomUUID(), address: "support@customer.example" },
+      threadKey: randomUUID(),
+      participant: { address: "person@example.org" },
+    };
+
+    const [first, concurrent] = await Promise.all([
+      repository.createIfAbsent({ id, workspaceId, agentId, sourceChannel: "email", channelContext }),
+      repository.createIfAbsent({ id, workspaceId, agentId, sourceChannel: "email", channelContext }),
+    ]);
+    const again = await repository.createIfAbsent({ id, workspaceId, sourceChannel: "web", channelContext: null });
+
+    expect([first, concurrent].sort()).toEqual([false, true]);
+    expect(again).toBe(false);
+    await expect(repository.findByIdAndWorkspaceId(id, workspaceId)).resolves.toMatchObject({
+      id,
+      agentId,
+      sourceChannel: "email",
+      callerKind: "human",
+      channelContext,
+      visitorId: null,
+      verifiedCustomerId: null,
+    });
+  });
+
   it("binds verified customer ids once without overwriting an existing binding", async () => {
     const createdBound = await repository.create({ workspaceId, verifiedCustomerId: "customer-created" });
     expect((await repository.findByIdAndWorkspaceId(createdBound.id, workspaceId))?.verifiedCustomerId)

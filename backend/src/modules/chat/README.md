@@ -82,6 +82,13 @@ rows. Start at `test-execution/README.md` and
   lead-back, and the grounded prompt adds `chat/routine-lead-back-decline-handoff.md`
   so a `no_support` answer leaves it out.
 - `composition.ts`: chat module wiring used by application composition.
+- `services/conversationIngestService.ts` (`ConversationIngestPort` in `contracts/`):
+  records a customer message without running a turn, for a channel that decides
+  later whether one runs. The caller allocates the conversation and message ids,
+  so a retry records nothing twice; the conversation, the message, and a handoff
+  through `ConversationOwnershipService.requestHumanOwnership` commit in one
+  `ConversationIngestUnitOfWork` (bound in `app/composition/conversationIngest.ts`).
+  It reserves no usage. `ConnectorChatPort.ingest` delegates to it.
 - `llmAdapters.ts`: LLM-provider registration for chat.
 - `retrievalSupport.ts`: narrow helpers used by retrieval answer assembly.
 

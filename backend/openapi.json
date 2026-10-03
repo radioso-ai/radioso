@@ -14584,6 +14584,54 @@
             "required": [
               "provider"
             ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "provider": {
+                "type": "string",
+                "enum": [
+                  "email"
+                ]
+              },
+              "mailbox": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "address": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "address"
+                ]
+              },
+              "threadKey": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "participant": {
+                "type": "object",
+                "properties": {
+                  "address": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "address"
+                ]
+              }
+            },
+            "required": [
+              "provider",
+              "mailbox",
+              "threadKey",
+              "participant"
+            ]
           }
         ]
       },
@@ -15725,7 +15773,12 @@
               "handed_back",
               "approval_decided",
               "feedback_resolved",
-              "feedback_dismissed"
+              "feedback_dismissed",
+              "channel_exception",
+              "delivery_failed",
+              "delivery_failure_cleared",
+              "held_reply_released",
+              "held_reply_discarded"
             ]
           },
           "createdAt": {
@@ -15878,7 +15931,8 @@
             "enum": [
               "handoff",
               "approval",
-              "negative_feedback"
+              "negative_feedback",
+              "delivery_failed"
             ]
           },
           "outcome": {
@@ -15887,7 +15941,9 @@
               "handed_back",
               "approval_decided",
               "feedback_resolved",
-              "feedback_dismissed"
+              "feedback_dismissed",
+              "held_reply_released",
+              "delivery_failure_cleared"
             ]
           },
           "closedAt": {

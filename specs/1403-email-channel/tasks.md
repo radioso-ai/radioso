@@ -492,7 +492,7 @@ R3 blocks T088 (S1 drain wiring). R1 and R2 block S3 and can run in parallel wit
 - [x] T126 [P] [US3] Extend `backend/tests/unit/operatorCopilot/copilot-needs-attention.test.ts` and `copilot-triage-tools.test.ts`: the `delivery_failed` kind; the `delivery_failures` triage source under `workspace.conversation.takeover`; an unauthorized source reported as a gap.
 - [x] T127 [P] [US3] Write `backend/tests/contract/delivery-failures.contract.test.ts`: list, acknowledge, and `resolve` (`marked_sent` for `uncertain` only; `resend` for `uncertain` or `halted` when sending is ready); `sessionOnly` takeover permission; audit `hitl.delivery_failure`.
 - [x] T128 [P] [US3] Write `backend/tests/contract/email-send-action.contract.test.ts`: payload v1 (ports §7a) and the key formats.
-- [ ] T129 [US3] Write `backend/tests/integration/email-send-idempotency.integration.test.ts`:
+- [x] T129 [US3] Write `backend/tests/integration/email-send-idempotency.integration.test.ts`:
   - a reply via `POST /api/v1/conversations/{id}/reply` commits the message and `email.send` together;
   - refusal before any write when unverified;
   - redelivery after accept gives one provider accept (the fake driver honours keys);
@@ -500,11 +500,11 @@ R3 blocks T088 (S1 drain wiring). R1 and R2 block S3 and can run in parallel wit
   - a bounce webhook → `bounced` plus attention plus sanitized detail;
   - operator mail carries no `Auto-Submitted`;
   - a later customer reply runs no turn (AS3.6).
-- [ ] T130 [US3] Write `backend/tests/integration/email-send-fencing.integration.test.ts`:
+- [x] T130 [US3] Write `backend/tests/integration/email-send-fencing.integration.test.ts`:
   - concurrent webhook `delivered` and reconciler `lookup` on the same intent → a single final state, with the conflict counted;
   - a stale lookup never overwrites `delivered`;
   - unknown outcome then authority revoked → `uncertain`, with no re-POST.
-- [ ] T131 [US3] Extend `backend/tests/integration/email-channel-crash-recovery.integration.test.ts` with crashes after: outbox claim; provider accept before record; record before delivered-id fetch. At most one accept per intent (the outbound half of SC-007).
+- [x] T131 [US3] Extend `backend/tests/integration/email-channel-crash-recovery.integration.test.ts` with crashes after: outbox claim; provider accept before record; record before delivered-id fetch. At most one accept per intent (the outbound half of SC-007).
 
 ### Implementation
 
@@ -547,9 +547,12 @@ R3 blocks T088 (S1 drain wiring). R1 and R2 block S3 and can run in parallel wit
   - `docs/human-takeover.md`: email replies, `delivery_failed`, `email.send` beside `slack.post`;
   - `docs/monitoring-alerts.md`;
   - the portal mdx, then a corpus resync.
-- [ ] T151 [US3] Backend: suites, lint, depcruise, dead code, build.
-- [ ] T152 [US3] Frontend: unit, build, `test:e2e -- email-operator-reply`.
+- [x] T151 [US3] Backend: suites, lint, depcruise, dead code, build.
+  - **Result (2026-10-04)**: unit 8454 passed; contract 575 passed; integration 1407 passed on a fresh disposable database; backend lint, root lint, dead-code ratchet, both snapshot checks, product-docs sync, MCP OpenAPI check, and `pnpm run build` pass.
+- [x] T152 [US3] Frontend: unit, build, `test:e2e -- email-operator-reply`.
+  - **Result (2026-10-04)**: frontend unit 1754 passed; production build passed; `email-operator-reply` journey 7/7 against the production server; `email-channel-setup`, inbox, and sidebar journeys 27/27.
 - [ ] T153 [US3] Record the message-queue review: `email.send` on `routine_action_requests` (lease 300 s, 5 attempts, 60 s backoff); the three key formats; fenced reconciliation; scheduled `reconcile` drains. Walk through `email:dev delivery` and run `pnpm run ci:local -- origin/main`.
+  - **Result (2026-10-04)**: Message-queue review recorded here for the PR: `email.send` rides the existing action outbox (`routine_action_requests`, lease 300 s, 5 attempts, 60 s backoff) with keys `email:send:msg:<id>`, `email:send:msg:<id>:resend:<n>`, `email:send:held:<id>`; send-intent transitions are version-fenced; `reconcile` drains are scheduled through the shared Cloud Tasks dispatcher with `scheduleAt`; AMQP document-worker payloads are untouched; queue docs updated in `docs/email-channel.md#queues`. `ci:local` and the `email:dev delivery` walkthrough are left for the PR stage.
 
 **Checkpoint**: the Inbox is a working email channel with no agent involvement. T244 is unblocked.
 

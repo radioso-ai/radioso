@@ -12,26 +12,51 @@ import request from "supertest";
 import { createPostgresConversationIngestUnitOfWork } from "../../../src/app/composition/conversationIngest.js";
 import { createPostgresOwnershipChangeUnitOfWork } from "../../../src/app/composition/conversationOwnershipChanges.js";
 import { createPostgresOwnershipReplyUnitOfWork } from "../../../src/app/composition/conversationOwnershipReplies.js";
-import { createPostgresThreadProtocolUnitOfWork } from "../../../src/app/composition/emailChannel.js";
+import {
+  createPostgresDeliveryFailures,
+  createPostgresEmailSendUnitOfWork,
+  createPostgresThreadProtocolUnitOfWork,
+} from "../../../src/app/composition/emailChannel.js";
 import { createPostgresMailboxPolicyChangeUnitOfWork } from "../../../src/app/composition/mailboxPolicyChange.js";
+import { ActionRequestRepository } from "../../../src/db/repositories/actionRequestRepository.js";
 import { ConversationActivityRepository } from "../../../src/db/repositories/conversationActivityRepository.js";
 import { ConversationOwnershipRepository } from "../../../src/db/repositories/conversationOwnershipRepository.js";
 import { ConversationRepository } from "../../../src/db/repositories/conversationRepository.js";
-import { ConversationIngestService } from "../../../src/modules/chat/composition.js";
+import { MessageRepository } from "../../../src/db/repositories/messageRepository.js";
+import { ActionDispatcher, ActionHandlerRegistry, ConversationIngestService } from "../../../src/modules/chat/composition.js";
 import { createEmailChannelConnector } from "../../../src/modules/connectors/plugins/index.js";
 import {
+  EMAIL_SEND_ACTION_TYPE,
   EmailChannelSweep,
   EmailDomainRepository,
   EmailInboundRepository,
   EmailMailboxRepository,
+  EmailSendActionHandler,
+  EmailSendIntentRepository,
   EmailThreadRepository,
   MailboxService,
+  ProviderDeliveryEvents,
+  ProviderSendAttempt,
+  SendIntentWriter,
+  SendReconciler,
   generateOpaqueToken,
+  type EmailChannelDrainDispatcherPort,
   type EngagementMode,
 } from "../../../src/modules/emailChannel/public.js";
 import { ConversationOwnershipService } from "../../../src/modules/handoff/public.js";
+import { LocalEmailDriver } from "../../../src/modules/mail/adapters/localEmailDriver.js";
 import { LocalInboundEmailReceiver } from "../../../src/modules/mail/adapters/localInboundReceiver.js";
+import {
+  EmailSendError,
+  rfcMessageId,
+  type EmailDriver,
+  type EmailMessage,
+  type EmailSendResult,
+  type RfcMessageId,
+  type SentEmailStatus,
+} from "../../../src/modules/mail/public.js";
 import { Database } from "../../../src/shared/infra/database.js";
+import { MetricsRegistry } from "../../../src/shared/observability/metrics/metricsRegistry.js";
 import { runAllTestMigrations } from "../../support/databaseMigrations.js";
 
 // Shared by the email channel's Postgres suites (thread protocol, inbound end to end, crash
@@ -89,7 +114,7 @@ export const createEmailChannelDatabase = async (
 
 export type SeededMailbox = NonNullable<Awaited<ReturnType<EmailMailboxRepository["createWithPolicy"]>>>;
 
-export const seedWorkspace = async (database: Database): Promise<{ workspaceId: string; agentId: string }> => {
+export const seedWorkspace = async (database: Database): Promise<{ accountId: string; workspaceId: string; agentId: string }> => {
   const accountId = randomUUID();
   const workspaceId = randomUUID();
   const agentId = randomUUID();
@@ -103,7 +128,7 @@ export const seedWorkspace = async (database: Database): Promise<{ workspaceId: 
     `rk-${workspaceId}`,
   ]);
   await database.execute("INSERT INTO agents (id, workspace_id, name) VALUES ($1, $2, 'Agent')", [agentId, workspaceId]);
-  return { workspaceId, agentId };
+  return { accountId, workspaceId, agentId };
 };
 
 /** A unique stand-in for the fixtures' `customer.test`. */
@@ -167,7 +192,7 @@ export const seedSupportMailbox = async (
   database: Database,
   options: { engagementMode?: EngagementMode; enabled?: boolean; withAgent?: boolean } = {},
 ) => {
-  const { workspaceId, agentId } = await seedWorkspace(database);
+  const { accountId, workspaceId, agentId } = await seedWorkspace(database);
   const domain = await seedDomain(database, workspaceId, uniqueCustomerDomain());
   const mailbox = await seedMailbox(database, {
     workspaceId,
@@ -176,7 +201,7 @@ export const seedSupportMailbox = async (
     engagementMode: options.engagementMode,
     enabled: options.enabled,
   });
-  return { workspaceId, agentId, domain, mailbox };
+  return { accountId, workspaceId, agentId, domain, mailbox };
 };
 
 /** Appends a policy version the way the settings path does, effective now (research B16). */
@@ -271,17 +296,12 @@ export const mountWebhook = async (plugin: ConnectorPlugin): Promise<express.Exp
   return app;
 };
 
-/** Posts a signed `email.received` event, shaped like Resend's, for a spooled message. */
-export const postReceived = async (
+/** Posts a webhook event of `type`, shaped and signed like Resend's; returns the HTTP status. */
+const postSignedEvent = async (
   app: express.Express,
-  input: { emailId: string; receivedFor: readonly string[]; svixId?: string },
+  input: { type: string; data: Record<string, unknown>; svixId?: string },
 ): Promise<number> => {
-  const createdAt = new Date().toISOString();
-  const body = Buffer.from(JSON.stringify({
-    type: "email.received",
-    created_at: createdAt,
-    data: { email_id: input.emailId, created_at: createdAt, to: [], cc: [], received_for: input.receivedFor },
-  }));
+  const body = Buffer.from(JSON.stringify({ type: input.type, created_at: new Date().toISOString(), data: input.data }));
   const svixId = input.svixId ?? `msg_${randomUUID()}`;
   const timestamp = String(Math.floor(Date.now() / 1000));
   const key = Buffer.from(WEBHOOK_SECRET.slice("whsec_".length), "base64");
@@ -292,6 +312,31 @@ export const postReceived = async (
     .send(body.toString("utf8"));
   return response.status;
 };
+
+/** Posts a signed `email.received` event, shaped like Resend's, for a spooled message. */
+export const postReceived = async (
+  app: express.Express,
+  input: { emailId: string; receivedFor: readonly string[]; svixId?: string },
+): Promise<number> =>
+  postSignedEvent(app, {
+    type: "email.received",
+    data: { email_id: input.emailId, created_at: new Date().toISOString(), to: [], cc: [], received_for: input.receivedFor },
+    svixId: input.svixId,
+  });
+
+/**
+ * Posts a signed delivery event about sent mail, such as `email.delivered` or `email.bounced`,
+ * naming the send by the provider's id for it. `bounce` is the provider's bounce object, prose
+ * included, as Resend sends it.
+ */
+export const postDeliveryEvent = async (
+  app: express.Express,
+  input: { type: `email.${string}`; providerMessageId: string; bounce?: { type: string; subType: string; message: string } },
+): Promise<number> =>
+  postSignedEvent(app, {
+    type: input.type,
+    data: { email_id: input.providerMessageId, created_at: new Date().toISOString(), ...(input.bounce ? { bounce: input.bounce } : {}) },
+  });
 
 // ── Host and processor ───────────────────────────────────────────────
 
@@ -339,6 +384,15 @@ class RecordingLogger {
   }
 }
 
+/** The drains a worker asks for, kept so a test can see a reconcile scheduled. */
+class RecordingDrains implements EmailChannelDrainDispatcherPort {
+  readonly requests: Parameters<EmailChannelDrainDispatcherPort["requestDrain"]>[0][] = [];
+
+  async requestDrain(request: Parameters<EmailChannelDrainDispatcherPort["requestDrain"]>[0]): Promise<void> {
+    this.requests.push(request);
+  }
+}
+
 /**
  * The processor's dependencies over real repositories, the local receiver and the host's
  * Postgres ingest, as the channel composition assembles them. Domain refresh is out of these
@@ -346,7 +400,14 @@ class RecordingLogger {
  */
 const createConnectorDependencies = (
   database: Database,
-  options: { spoolDir: string; supportedModes?: readonly EngagementMode[]; logger?: RecordingLogger },
+  options: {
+    spoolDir: string;
+    supportedModes?: readonly EngagementMode[];
+    logger: RecordingLogger;
+    metrics: MetricsRegistry;
+    drains: EmailChannelDrainDispatcherPort;
+    sends: Pick<SendPath, "deliveryEvents" | "reconciler">;
+  },
 ): EmailChannelConnectorDependencies => {
   const db = database.kysely;
   const clock = () => new Date();
@@ -354,7 +415,7 @@ const createConnectorDependencies = (
   const mailboxes = new EmailMailboxRepository(db);
   const domains = new EmailDomainRepository(db);
   const inbound = new EmailInboundRepository(db);
-  const logger = options.logger ?? new RecordingLogger();
+  const { logger, metrics } = options;
   const supportedModes = options.supportedModes ?? ["operator_only"];
   return {
     receiver: new LocalInboundEmailReceiver({ spoolDir: options.spoolDir, signingSecrets: { current: WEBHOOK_SECRET, previous: null } }),
@@ -374,10 +435,11 @@ const createConnectorDependencies = (
       audit: { record: async () => undefined },
       logger,
     }),
+    deliveryEvents: options.sends.deliveryEvents,
     threadProtocol: createPostgresThreadProtocolUnitOfWork({ db, activity: new ConversationActivityRepository(db) }),
     chat: createHostIngest(database),
-    drains: { requestDrain: async () => undefined },
-    metrics: null,
+    drains: options.drains,
+    metrics,
     logger,
     clock,
     createId: randomUUID,
@@ -387,6 +449,7 @@ const createConnectorDependencies = (
     sweep: new EmailChannelSweep({
       inbound,
       domains: { refreshDue: async () => 0, cleanupRemoved: async () => 0 },
+      sends: options.sends.reconciler,
       clock,
       logger,
       config: { eventRetentionDays: 30 },
@@ -394,9 +457,102 @@ const createConnectorDependencies = (
   };
 };
 
+// ── Send path ────────────────────────────────────────────────────────
+
+/** The Message-ID a provider that rewrites the supplied one delivers a message under. */
+export const providerRewrittenMessageId = (providerMessageId: string): RfcMessageId =>
+  rfcMessageId(`<${providerMessageId}@mail.provider.test>`);
+
+/**
+ * The channel's sending provider as a worker sees it: the local driver, which honours an
+ * idempotency key as the provider does (the same key and body return the same id, and the message
+ * goes out once), behind two provider behaviours a test may switch on. `loseNextResponse` accepts
+ * the next send and loses the answer, an unknown outcome. `rewritesMessageId` withholds the
+ * delivered Message-ID from the send response and reports a rewritten one on lookup (research A7).
+ */
+class ProviderDouble implements EmailDriver {
+  /** The idempotency key of every send this worker made, accepted or not. */
+  readonly sendKeys: string[] = [];
+  private responsesToLose = 0;
+
+  constructor(
+    private readonly local: LocalEmailDriver,
+    private readonly behaviour: { rewritesMessageId: boolean },
+  ) {}
+
+  loseNextResponse(): void {
+    this.responsesToLose += 1;
+  }
+
+  async send(message: EmailMessage): Promise<EmailSendResult> {
+    this.sendKeys.push(message.idempotencyKey ?? "");
+    const sent = await this.local.send(message);
+    if (this.responsesToLose > 0) {
+      this.responsesToLose -= 1;
+      throw new EmailSendError("unknown", "timeout");
+    }
+    return this.behaviour.rewritesMessageId ? { ...sent, deliveredMessageId: null } : sent;
+  }
+
+  async lookup(providerMessageId: string): Promise<SentEmailStatus | null> {
+    const status = await this.local.lookup(providerMessageId);
+    if (!status || !this.behaviour.rewritesMessageId || status.deliveredMessageId === null) return status;
+    return { ...status, deliveredMessageId: providerRewrittenMessageId(providerMessageId) };
+  }
+}
+
+type Guard = <T extends object>(owner: string, target: T) => T;
+
+/**
+ * The send path over real repositories, as the channel composition's `createEmailSendServices`
+ * assembles it, and the outbox dispatcher a worker delivers `email.send` actions with. Every
+ * dependency that reaches Postgres or the provider goes through `guard`, so a killed worker makes
+ * no further call on any of them.
+ */
+const createSendPath = (
+  database: Database,
+  options: { driver: EmailDriver; guard: Guard; drains: EmailChannelDrainDispatcherPort; metrics: MetricsRegistry; logger: RecordingLogger },
+) => {
+  const db = database.kysely;
+  const { guard, metrics, logger } = options;
+  const activity = new ConversationActivityRepository(db);
+  const intents = guard("intents", new EmailSendIntentRepository(db));
+  const mailboxes = guard("mailboxes", new EmailMailboxRepository(db));
+  const domains = guard("domains", new EmailDomainRepository(db));
+  const driver = guard("driver", options.driver);
+  const unitOfWork = guard("sends", createPostgresEmailSendUnitOfWork({ db, activity }));
+  const writer = guard("writer", new SendIntentWriter({ unitOfWork, metrics, logger }));
+  const attempt = new ProviderSendAttempt({ driver, writer, unitOfWork, drains: options.drains, metrics, logger, clock: () => new Date() });
+  const handler = new EmailSendActionHandler({
+    intents,
+    unitOfWork,
+    messages: guard("messages", new MessageRepository(db)),
+    mailboxes,
+    domains,
+    threads: guard("threads", new EmailThreadRepository(db)),
+    attempt,
+    writer,
+    failures: guard("failures", createPostgresDeliveryFailures({ db, activity })),
+    provider: "local",
+    metrics,
+    logger,
+    createId: randomUUID,
+  });
+  return {
+    dispatcher: new ActionDispatcher(
+      guard("outbox", new ActionRequestRepository(db)),
+      new ActionHandlerRegistry([{ type: EMAIL_SEND_ACTION_TYPE, handler }]),
+    ),
+    reconciler: new SendReconciler({ intents, mailboxes, domains, driver, attempt, writer, metrics, logger }),
+    deliveryEvents: new ProviderDeliveryEvents({ intents, writer, audit: { record: async () => undefined }, metrics, logger }),
+  };
+};
+
+type SendPath = ReturnType<typeof createSendPath>;
+
 // ── Test seams ───────────────────────────────────────────────────────
 
-/** The stage boundaries of inbound processing a test may pause at or kill the worker at. */
+/** The stage boundaries of inbound processing and of sending a test may pause at or kill the worker at. */
 const SEAMS = [
   "receiver.fetchMessage",
   "inbound.recordFetched",
@@ -404,6 +560,10 @@ const SEAMS = [
   "chat.ingest",
   "inbound.recordIngested",
   "inbound.settleEvent",
+  "outbox.claimPending",
+  "driver.send",
+  "driver.lookup",
+  "writer.apply",
 ] as const;
 export type Seam = (typeof SEAMS)[number];
 type SeamHook = (nth: number) => Promise<void> | void;
@@ -490,7 +650,8 @@ class WorkerSeams {
     }
   }
 
-  private guard<T extends object>(owner: string, target: T): T {
+  /** `target` as `owner`: a dead worker's calls on it fail, and its seams fire. */
+  guard<T extends object>(owner: string, target: T): T {
     return new Proxy(target, {
       get: (object, property) => {
         const value: unknown = Reflect.get(object, property, object);
@@ -538,22 +699,39 @@ export const barrier = (parties: number, timeoutMs = 5_000): { arrive: () => Pro
   };
 };
 
-/** One worker process: its own pool, its own seams, the webhook and the drain over them. */
+/**
+ * One worker process: its own pool, its own seams, its own provider client and metrics, and over
+ * them the webhook, the channel's drain and sweep, and the outbox dispatch that sends `email.send`.
+ */
 export const createWorkerNode = (
   databaseUrl: string,
-  options: { spoolDir: string; supportedModes?: readonly EngagementMode[] },
+  options: { spoolDir: string; supportedModes?: readonly EngagementMode[]; rewritesMessageId?: boolean },
 ) => {
   const database = new Database(databaseUrl);
   const seams = new WorkerSeams();
   const logger = new RecordingLogger();
-  const connector = createEmailChannelConnector(seams.wrap(createConnectorDependencies(database, { ...options, logger })));
+  const metrics = new MetricsRegistry();
+  const drains = new RecordingDrains();
+  const provider = new ProviderDouble(new LocalEmailDriver({ spoolDir: options.spoolDir }), {
+    rewritesMessageId: options.rewritesMessageId ?? false,
+  });
+  const guard: Guard = (owner, target) => seams.guard(owner, target);
+  const sends = createSendPath(database, { driver: provider, guard, drains, metrics, logger });
+  const connector = createEmailChannelConnector(
+    seams.wrap(createConnectorDependencies(database, { ...options, logger, metrics, drains, sends })),
+  );
   // A plugin mounts its router once, at initialization.
   let webhook: Promise<express.Express> | null = null;
   return {
     database,
     seams,
     logger,
+    metrics,
+    drains,
+    provider,
     worker: connector.worker,
+    /** One outbox drain, as the action dispatch worker runs it. */
+    dispatch: () => sends.dispatcher.dispatchPending(),
     webhook: () => (webhook ??= mountWebhook(connector.plugin)),
     close: () => database.close(),
   };

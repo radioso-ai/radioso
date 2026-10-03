@@ -17,7 +17,9 @@ type EmailChannelAuditEvent =
       eventType: "email_channel.mailbox";
       action: "created" | "updated" | "removed" | "mode_changed" | "relay_token_rotated";
     }
-  | { eventType: "email_channel.event"; action: "retried" };
+  | { eventType: "email_channel.event"; action: "retried" }
+  | { eventType: "email_channel.send"; action: "complained" }
+  | { eventType: "hitl.delivery_failure"; action: "provider_evidence" };
 
 export interface EmailChannelAuditDependencies {
   audit: Pick<AuditPort, "record">;

@@ -5,24 +5,42 @@ import { parseArgs } from "node:util";
 
 import { getEnv, parseEmailChannelConfig } from "../src/app/config/env.js";
 import { LocalEmailDomainProvisioner } from "../src/modules/mail/adapters/localDomainProvisioner.js";
+import { LocalEmailDriver } from "../src/modules/mail/adapters/localEmailDriver.js";
 import { normalizeInboundMime } from "../src/modules/mail/public.js";
 import { loadEnvFileIfPresent } from "../src/runtime/loadEnv.js";
 
 /**
  * Development driver for the email channel's `local` provider (quickstart §3). It stands in for
- * the receiving provider: it spools a message where the local receiver reads it and posts the
- * signed `email.received` webhook to the running API, and it verifies local domains. Never part
- * of a deployed runtime; it refuses to run in production or against another provider.
+ * the provider: it spools a message where the local receiver reads it and posts the signed
+ * `email.received` webhook to the running API, posts the delivery events of mail the local driver
+ * sent, and verifies local domains. Never part of a deployed runtime; it refuses to run in
+ * production or against another provider.
  *
  *   pnpm run email:dev -- inbound <file.eml> [--relay <relay address>]... [--url <api base>]
  *   pnpm run email:dev -- inbound --replay <svix-id> [--url <api base>]
+ *   pnpm run email:dev -- delivery (--intent <send intent id> | --email-id <provider id>) --type <event> [--url <api base>]
  *   pnpm run email:dev -- verify-domain <domain>
  */
+
+/** The outbound statuses Resend posts as `email.<type>` (research A6). */
+const DELIVERY_EVENT_TYPES: ReadonlySet<string> = new Set([
+  "sent",
+  "delivered",
+  "delivery_delayed",
+  "bounced",
+  "complained",
+  "failed",
+  "suppressed",
+]);
+type DeliveryEventType = "sent" | "delivered" | "delivery_delayed" | "bounced" | "complained" | "failed" | "suppressed";
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const USAGE = [
   "Usage:",
   "  pnpm run email:dev -- inbound <file.eml> [--relay <relay address>]... [--url <api base>]",
   "  pnpm run email:dev -- inbound --replay <svix-id> [--url <api base>]",
+  "  pnpm run email:dev -- delivery (--intent <send intent id> | --email-id <provider id>) --type <event> [--url <api base>]",
+  `    <event>: ${[...DELIVERY_EVENT_TYPES].join(", ")}`,
   "  pnpm run email:dev -- verify-domain <domain>",
 ].join("\n");
 
@@ -106,6 +124,39 @@ const sendInbound = async (channel: LocalChannel, file: string, relays: readonly
   await post(channel, url, svixId, body);
 };
 
+/** The provider detail Resend attaches to a bounce or suppression; a bounce message names no address here. */
+const deliveryDetail = (type: DeliveryEventType): Record<string, unknown> => {
+  if (type === "bounced") {
+    return { bounce: { type: "Permanent", subType: "General", message: "550 5.1.1 The recipient mailbox does not exist." } };
+  }
+  return type === "suppressed" ? { suppressed: { type: "OnAccountSuppressionList" } } : {};
+};
+
+/**
+ * Posts a delivery event for mail the local driver sent, as the provider would, after recording it
+ * where the driver's `lookup` reads it, so the webhook and the reconciler agree.
+ */
+const sendDelivery = async (
+  channel: LocalChannel,
+  target: { intentId: string | undefined; emailId: string | undefined },
+  type: DeliveryEventType,
+  url: string | undefined,
+) => {
+  const driver = new LocalEmailDriver({ spoolDir: channel.spoolDir });
+  if (target.intentId !== undefined && !UUID.test(target.intentId)) fail("--intent takes a send intent id (a UUID).");
+  const emailId = target.emailId
+    ?? (target.intentId === undefined ? fail(USAGE) : await driver.findByMessageIdLocalPart(target.intentId.toLowerCase()))
+    ?? fail(`The local spool holds no message sent for send intent ${target.intentId ?? ""}.`);
+  if (!(await driver.recordEvent(emailId, type))) fail(`The local spool holds no message ${emailId}.`);
+
+  const createdAt = new Date().toISOString();
+  const body = JSON.stringify({ type: `email.${type}`, created_at: createdAt, data: { email_id: emailId, created_at: createdAt, ...deliveryDetail(type) } });
+  const svixId = `msg_${randomUUID().replaceAll("-", "")}`;
+  await mkdir(webhooksDir(channel), { recursive: true });
+  await writeFile(join(webhooksDir(channel), `${svixId}.json`), body);
+  await post(channel, url, svixId, body);
+};
+
 const replayInbound = async (channel: LocalChannel, svixId: string, url: string | undefined) => {
   if (!SVIX_ID.test(svixId)) fail("A svix-id is letters, digits, '_' and '-' only.");
   const body = await readFile(join(webhooksDir(channel), `${svixId}.json`), "utf8").catch(() =>
@@ -119,9 +170,12 @@ const main = async (): Promise<void> => {
     args: process.argv.slice(2).filter((arg) => arg !== "--"),
     allowPositionals: true,
     options: {
+      "email-id": { type: "string" },
       fixture: { type: "string" },
+      intent: { type: "string" },
       relay: { type: "string", multiple: true },
       replay: { type: "string" },
+      type: { type: "string" },
       url: { type: "string" },
     },
   });
@@ -137,6 +191,12 @@ const main = async (): Promise<void> => {
     await sendInbound(channel, file, values.relay ?? [], values.url);
     return;
   }
+  if (command === "delivery") {
+    const type = values.type;
+    if (type === undefined || !isDeliveryEventType(type)) fail(USAGE);
+    await sendDelivery(localChannel(), { intentId: values.intent, emailId: values["email-id"] }, type, values.url);
+    return;
+  }
   if (command === "verify-domain") {
     const domain = argument ?? fail(USAGE);
     const channel = localChannel();
@@ -146,6 +206,10 @@ const main = async (): Promise<void> => {
   }
   fail(USAGE);
 };
+
+function isDeliveryEventType(value: string): value is DeliveryEventType {
+  return DELIVERY_EVENT_TYPES.has(value);
+}
 
 main().catch((error: unknown) => {
   process.stderr.write(`${error instanceof Error ? error.message : "email:dev failed"}\n`);

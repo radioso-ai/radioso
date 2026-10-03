@@ -23,6 +23,7 @@ import type {
   EmailThreadLinkRecord,
   EmailThreadRepository,
 } from "../../src/modules/emailChannel/persistence/emailThreadRepository.js";
+import { InMemoryEmailSendIntents } from "./inMemoryEmailSend.js";
 
 type Clock = () => Date;
 type Args<T extends (...args: never[]) => unknown> = Parameters<T>;
@@ -751,11 +752,30 @@ export class InMemoryEmailThreads implements Pick<
   | "findIndexedConversations"
   | "findOutboundMessageIds"
   | "listIndexedMessages"
+  | "renewSendBudget"
+  | "findLatestInboundThreading"
 > {
   readonly links = new Map<string, EmailThreadLinkRecord>();
   readonly index: ThreadIndexEntry[] = [];
+  /** The `References` each inbound delivery carried (`email_inbound_deliveries.reference_ids`). */
+  readonly referencesByDelivery = new Map<string, string[]>();
 
-  constructor(private readonly log: string[] = []) {}
+  constructor(private readonly log: string[] = [], private readonly clock: Clock = () => new Date()) {}
+
+  async renewSendBudget(conversationId: string) {
+    const link = this.links.get(conversationId);
+    if (!link) return false;
+    this.links.set(conversationId, { ...link, autoSendsSinceRenewal: 0, budgetRenewedAt: this.clock() });
+    this.log.push("renewSendBudget");
+    return true;
+  }
+
+  async findLatestInboundThreading(conversationId: string) {
+    const latest = this.index.filter((entry) => entry.conversationId === conversationId && entry.direction === "inbound").at(-1);
+    if (!latest) return null;
+    const references = latest.inboundDeliveryId ? this.referencesByDelivery.get(latest.inboundDeliveryId) : undefined;
+    return { rfcMessageId: latest.rfcMessageId, referenceIds: [...(references ?? [])] };
+  }
 
   async upsertLink(input: Args<EmailThreadRepository["upsertLink"]>[0]) {
     if (!this.links.has(input.conversationId)) {
@@ -852,7 +872,8 @@ export const createInMemoryEmailChannel = (options: {
   const domains = new InMemoryEmailDomains(clock);
   const mailboxes = new InMemoryEmailMailboxes(clock);
   const inbound = new InMemoryEmailInbound(clock);
-  const threads = new InMemoryEmailThreads();
+  const threads = new InMemoryEmailThreads([], clock);
+  const sends = new InMemoryEmailSendIntents(clock, threads);
   const sendingDomains = new SendingDomainService({
     domains,
     mailboxes,
@@ -889,7 +910,7 @@ export const createInMemoryEmailChannel = (options: {
       audit,
       logger,
     }),
-    conversationFacts: new ConversationEmailFactsReader({ threads, mailboxes, domains }),
+    conversationFacts: new ConversationEmailFactsReader({ threads, mailboxes, domains, sends }),
   };
-  return { services, domains, mailboxes, inbound, threads };
+  return { services, domains, mailboxes, inbound, threads, sends };
 };

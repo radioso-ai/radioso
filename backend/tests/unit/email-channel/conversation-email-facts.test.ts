@@ -5,13 +5,19 @@ import type {
   EmailThreadLinkRecord,
   ThreadIndexRecord,
 } from "../../../src/modules/emailChannel/persistence/emailThreadRepository.js";
+import type { SendDeliveryState } from "../../../src/modules/emailChannel/persistence/emailSendIntentRepository.js";
 import { InMemoryEmailDomains, InMemoryEmailMailboxes } from "../../support/inMemoryEmailChannel.js";
 
 const workspaceId = "11111111-1111-4111-8111-111111111111";
 const conversationId = "66666666-6666-4666-8666-666666666666";
 const clock = () => new Date("2026-10-03T12:00:00.000Z");
 
-const setup = (overrides: { link?: Partial<EmailThreadLinkRecord>; sendingStatus?: "pending" | "verified"; domainRemoved?: boolean } = {}) => {
+const setup = (overrides: {
+  link?: Partial<EmailThreadLinkRecord>;
+  sendingStatus?: "pending" | "verified";
+  domainRemoved?: boolean;
+  sends?: SendDeliveryState[];
+} = {}) => {
   const domains = new InMemoryEmailDomains(clock);
   const mailboxes = new InMemoryEmailMailboxes(clock);
   const domain = domains.seed({
@@ -75,7 +81,8 @@ const setup = (overrides: { link?: Partial<EmailThreadLinkRecord>; sendingStatus
     findLink: async (id: string) => (id === conversationId ? link : null),
     listIndexedMessages: async (id: string) => (id === conversationId ? index : []),
   };
-  const reader = new ConversationEmailFactsReader({ threads, mailboxes, domains });
+  const sends = { listDeliveryStates: async (id: string) => (id === conversationId ? overrides.sends ?? [] : []) };
+  const reader = new ConversationEmailFactsReader({ threads, mailboxes, domains, sends });
   return { reader, mailbox, mailboxes };
 };
 
@@ -104,10 +111,45 @@ describe("ConversationEmailFactsReader", () => {
     });
   });
 
-  it("reports delivery as null on every message in S1, before the send path exists", async () => {
+  it("reports delivery as null for inbound mail and for an outbound message with no send intent", async () => {
     const { reader } = setup();
     const facts = await reader.read(workspaceId, conversationId);
     expect(facts?.messages.map((message) => message.delivery)).toEqual([null, null, null]);
+  });
+
+  it("reports each sent message's delivery state and sanitized code from its newest send intent", async () => {
+    const { reader } = setup({
+      sends: [
+        { messageId: "m2", state: "bounced", failureCode: "Permanent:General:5.1.1", createdAt: new Date("2026-10-03T11:30:00.000Z") },
+        { messageId: "m3", state: "delivered", failureCode: null, createdAt: new Date("2026-10-03T11:40:00.000Z") },
+      ],
+    });
+
+    const facts = await reader.read(workspaceId, conversationId);
+
+    expect(facts?.messages.find((message) => message.messageId === "m2")?.delivery)
+      .toEqual({ state: "bounced", failureCode: "Permanent:General:5.1.1" });
+    // A send intent never makes an inbound message outbound.
+    expect(facts?.messages.find((message) => message.messageId === "m3")?.delivery).toBeNull();
+  });
+
+  it("lists a send the provider never accepted, which has no thread index entry, as an outbound message", async () => {
+    const { reader } = setup({
+      sends: [{ messageId: "m4", state: "halted", failureCode: "sending_not_verified", createdAt: new Date("2026-10-03T12:30:00.000Z") }],
+    });
+
+    const facts = await reader.read(workspaceId, conversationId);
+
+    expect(facts?.messages.map((message) => message.messageId)).toEqual(["m1", "m2", "m3", "m4"]);
+    expect(facts?.messages.at(-1)).toEqual({
+      messageId: "m4",
+      direction: "outbound",
+      subject: null,
+      cc: [],
+      attachments: [],
+      delivery: { state: "halted", failureCode: "sending_not_verified" },
+      rawDeliveryId: null,
+    });
   });
 
   it("derives the sending state from the mailbox's domain", async () => {

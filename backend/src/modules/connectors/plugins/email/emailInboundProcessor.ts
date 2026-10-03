@@ -1,4 +1,5 @@
 import type { ConnectorChatPort } from "@radioso/connector-api";
+import { z } from "zod";
 
 import type { ConversationActivityWriter } from "../../../conversationActivity/contracts/index.js";
 import {
@@ -17,8 +18,15 @@ import {
   type InboundDeliveryRecord,
   type InboundEventRecord,
   type MailboxService,
+  type ProviderDeliveryEvents,
 } from "../../../emailChannel/public.js";
-import { InboundFetchError, type InboundEmailMessage, type InboundEmailReceiver, type InboundEnvelope } from "../../../mail/public.js";
+import {
+  InboundFetchError,
+  type DeliveryStatusFacts,
+  type InboundEmailMessage,
+  type InboundEmailReceiver,
+  type InboundEnvelope,
+} from "../../../mail/public.js";
 import type { MetricsRegistry } from "../../../../shared/observability/metrics/metricsRegistry.js";
 import { traceOperation } from "../../../../shared/observability/tracing/operations.js";
 import { resolveEngagementDisposition, type EngagementDisposition, type IngestOnlyReason } from "./emailEngagementDisposition.js";
@@ -111,6 +119,8 @@ export interface EmailInboundProcessorDependencies {
   domains: Pick<EmailDomainRepository, "findReceivingVerified">;
   threads: Pick<EmailThreadRepository, "findOutboundMessageIds">;
   receipts: Pick<MailboxService, "recordInboundReceipt">;
+  /** Provider delivery events and inbound delivery status reports settle the sends they name. */
+  deliveryEvents: Pick<ProviderDeliveryEvents, "applyStatus" | "applyDsnBounce">;
   threadProtocol: EmailThreadProtocolUnitOfWork;
   chat: Pick<ConnectorChatPort, "ingest">;
   drains: EmailChannelDrainDispatcherPort;
@@ -150,6 +160,9 @@ export class EmailInboundProcessor {
   constructor(private readonly deps: EmailInboundProcessorDependencies) {}
 
   async process(event: InboundEventRecord): Promise<InboundEventOutcome> {
+    if (event.eventKind === "delivery_status" && event.providerObjectId !== null) {
+      return this.applyDeliveryStatus(event, event.providerObjectId);
+    }
     if (event.eventKind !== "message_received" || event.providerObjectId === null) {
       return this.settle(event, "ignored", null);
     }
@@ -174,6 +187,19 @@ export class EmailInboundProcessor {
   }
 
   // ── Event ──────────────────────────────────────────────────────────
+
+  /** A provider event about mail Radioso sent: it settles the send it names, if it names one. */
+  private async applyDeliveryStatus(event: InboundEventRecord, providerMessageId: string): Promise<InboundEventOutcome> {
+    const status = readDeliveryStatus(event.envelope);
+    if (!status) return this.settle(event, "ignored", null);
+    try {
+      const applied = await this.deps.deliveryEvents.applyStatus({ provider: event.provider, providerMessageId, status });
+      return this.settle(event, applied === "foreign" ? "ignored" : "processed", null);
+    } catch (error) {
+      this.deps.logger.warn({ eventId: event.id, attempt: event.attempts, errorName: errorName(error) }, "email_delivery_status_failed");
+      return hasAttemptsLeft(event) ? this.retryLater(event, PROCESSING_FAILED) : this.settle(event, "failed", PROCESSING_FAILED);
+    }
+  }
 
   private async deliver(event: InboundEventRecord, message: InboundEmailMessage, deliveredTo: readonly string[]): Promise<InboundEventOutcome> {
     const targets = await routeDeliveredTo(deliveredTo, this.routeLookups());
@@ -310,11 +336,15 @@ export class EmailInboundProcessor {
     const bounced = message.report
       ? await this.deps.threads.findOutboundMessageIds(mailbox.id, message.report.originalMessageIds)
       : new Set<string>();
-    const { classification } = classifyInbound({
+    const { classification, bouncedOutboundIds } = classifyInbound({
       message,
       ownAddresses: await this.ownAddresses(mailbox.workspaceId),
       isRadiosoOutboundId: (rfcMessageId) => bounced.has(rfcMessageId),
     });
+    // Before the step is recorded, so a failure repeats it; applying a bounce twice is a no-op.
+    if (bouncedOutboundIds.length > 0) {
+      await this.deps.deliveryEvents.applyDsnBounce({ mailboxId: mailbox.id, rfcMessageIds: bouncedOutboundIds });
+    }
     const content = fetchedContentOf(message, classification, context.customerText, this.deps.config.rawMaxBytes);
     await this.deps.inbound.recordFetched(delivery.id, content);
     await this.deps.receipts.recordInboundReceipt({
@@ -608,6 +638,29 @@ export class EmailInboundProcessor {
 }
 
 const hasAttemptsLeft = (event: InboundEventRecord): boolean => event.attempts <= RETRY_DELAYS_SECONDS.length;
+
+/** Tokens the provider adapter already reduced the bounce detail to; re-checked when read back. */
+const PROVIDER_TOKEN = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/u;
+const ENHANCED_STATUS_CODE = /^[245]\.\d{1,3}\.\d{1,3}$/u;
+
+const deliveryStatusSchema = z.object({
+  status: z.object({
+    type: z.enum(["sent", "delivered", "delivery_delayed", "bounced", "complained", "failed", "suppressed"]),
+    bounce: z
+      .object({
+        type: z.string().regex(PROVIDER_TOKEN),
+        subType: z.string().regex(PROVIDER_TOKEN).nullable(),
+        statusCode: z.string().regex(ENHANCED_STATUS_CODE).nullable(),
+      })
+      .nullable(),
+  }),
+});
+
+/** The delivery status the webhook persisted; null when it is not one this processor can read. */
+const readDeliveryStatus = (envelope: unknown): DeliveryStatusFacts | null => {
+  const parsed = deliveryStatusSchema.safeParse(envelope);
+  return parsed.success ? parsed.data.status : null;
+};
 
 const errorName = (error: unknown): string => (error instanceof Error ? error.name : "unknown");
 

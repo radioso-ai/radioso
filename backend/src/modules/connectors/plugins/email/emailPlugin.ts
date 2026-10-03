@@ -20,7 +20,7 @@ interface EmailChannelConnectorDependencies extends Omit<EmailInboundProcessorDe
   };
   /** `EMAIL_CHANNEL_WORKERS_ENABLED`. */
   workersEnabled: boolean;
-  sweep: Pick<EmailChannelSweep, "run">;
+  sweep: Pick<EmailChannelSweep, "run" | "reconcileSends">;
 }
 
 /**

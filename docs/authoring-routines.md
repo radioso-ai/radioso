@@ -196,7 +196,11 @@ Use the **+ Step** menu to add a **chat**, **skill**, **approval**, or **action*
 step. Chat steps guide the conversation. Skill steps call a capability available
 to the agent, such as `retrieve`, `email`, `webhook_call`, or `mcp_tool`. Action
 steps emit an outbox action, such as `contact.send`, then continue through the
-flow.
+flow. To tell your team, set the notice on the routine's ending instead (see
+[Operator notices](#operator-notices)), which names the routine and lists the
+values it collected. Radioso queues ending and approval notices itself, so
+validation flags an action step naming one, such as `handoff.notify`, and the
+agent can't be published until that step is removed.
 
 Select a skill step to configure its **uses → sets** bindings. Each required
 input receives either a fixed value or an `@` value already held by the routine.

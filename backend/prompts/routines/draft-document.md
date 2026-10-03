@@ -37,7 +37,15 @@ Return one JSON object with this shape:
     "slots": [],
     "steps": [],
     "transitions": [],
-    "terminals": []
+    "terminals": [
+      {
+        "stableStepId": "...",
+        "kind": "complete",
+        "instruction": null,
+        "operatorNotice": null,
+        "ordinal": 0
+      }
+    ]
   }
 }
 
@@ -96,6 +104,10 @@ terminals:
 - At least one terminal must be reachable from the first step through transitions.
 - kind is "handoff" only when the procedure says to hand off or escalate to a human; otherwise "complete".
 - instruction is the terminal instruction or null.
+- operatorNotice is either null or an object with nullable subject and intro strings. A hand-off ending
+  always notifies the team. Set a notice on a complete ending only when the procedure says the team
+  should be told when it finishes; otherwise use null. A notice is never an action step. Use
+  {{slot.key}} when its text refers to a collected value.
 - ordinal is zero-based order.
 
 General rules:

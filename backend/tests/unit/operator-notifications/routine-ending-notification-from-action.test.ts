@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { routineEndingNotificationFromAction } from "../../../src/modules/operatorNotifications/public.js";
 
-const ids = { conversationId: "conv_1", workspaceId: "ws_1" };
+const ids = { conversationId: "conv_1", workspaceId: "ws_1", agentId: "agent_1" };
 const fallback = { reason: "routine_handoff" };
 
 describe("routineEndingNotificationFromAction", () => {
@@ -12,14 +12,14 @@ describe("routineEndingNotificationFromAction", () => {
       payload: {
         conversationId: "conv_1",
         workspaceId: "ws_1",
-        agentId: "agent_1",
+        agentId: "visitor_filled_agent",
         reason: "routine_handoff",
         routineId: "routine_1",
         collected: { program: "Yoga retreat", guests: 2, needs_transfer: true, notes: null, preferences: { room: "single" } },
       },
       ids,
       fallback,
-      subject: { agentName: "Retreat desk", routineName: "Book accommodation" },
+      subject: { agentId: "agent_1", agentName: "Retreat desk", routineName: "Book accommodation" },
     });
 
     expect(notification).toEqual({
@@ -52,6 +52,7 @@ describe("routineEndingNotificationFromAction", () => {
     expect(notification).toEqual(expect.objectContaining({
       workspaceId: "ws_1",
       conversationId: "conv_1",
+      agentId: "agent_1",
     }));
   });
 
@@ -66,6 +67,7 @@ describe("routineEndingNotificationFromAction", () => {
       ids,
       fallback,
       subject: {
+        agentId: "agent_1",
         agentName: null,
         routineName: "Book accommodation",
         routineSlotKeys: ["guest_name", "arrival_date", "room_type", "nights"],
@@ -81,7 +83,7 @@ describe("routineEndingNotificationFromAction", () => {
       payload: { agentId: "agent_1", routineId: "routine_1", collected: storedCollected },
       ids,
       fallback,
-      subject: { agentName: null, routineName: "Book accommodation", routineSlotKeys: ["arrival_date", "guest_name"] },
+      subject: { agentId: "agent_1", agentName: null, routineName: "Book accommodation", routineSlotKeys: ["arrival_date", "guest_name"] },
     });
 
     expect(Object.keys(notification.collected ?? {})).toEqual(["arrival_date", "guest_name", "nights"]);
@@ -93,7 +95,7 @@ describe("routineEndingNotificationFromAction", () => {
       payload: { agentId: "agent_1", routineId: "routine_1", collected: storedCollected },
       ids,
       fallback,
-      subject: { agentName: null, routineName: null },
+      subject: { agentId: "agent_1", agentName: null, routineName: null },
     });
 
     expect(Object.keys(notification.collected ?? {})).toEqual(["nights", "guest_name", "arrival_date"]);
@@ -123,7 +125,7 @@ describe("routineEndingNotificationFromAction", () => {
       kind: "handoff",
       workspaceId: "ws_1",
       conversationId: "conv_1",
-      agentId: "unknown",
+      agentId: "agent_1",
       reason: "routine_handoff",
     });
   });
@@ -134,7 +136,7 @@ describe("routineEndingNotificationFromAction", () => {
       payload: { conversationId: "conv_1", workspaceId: "ws_1", agentId: "agent_1", routineId: "routine_1" },
       ids,
       fallback,
-      subject: { agentName: null, routineName: null },
+      subject: { agentId: "agent_1", agentName: null, routineName: null },
     });
 
     expect(notification).toEqual(expect.objectContaining({
@@ -157,6 +159,7 @@ describe("routineEndingNotificationFromAction", () => {
       ids,
       fallback: { reason: "routine_completed" },
       subject: {
+        agentId: "agent_1",
         agentName: "Retreat desk",
         routineName: "Book accommodation",
         conversation: { entryPageUrl: null },

@@ -25,11 +25,10 @@ const collectedFromPayload = (value: unknown): Record<string, HandoffCollectedVa
 };
 
 /**
- * What a routine-ending notice is about, resolved at delivery: display names next to the ids
- * the payload carries, and the facts already stored about the conversation. Absent when not
- * resolved.
+ * What a routine-ending notice is about, resolved at delivery from the queued row's conversation.
  */
 export interface RoutineEndingNotificationSubject {
+  agentId: string | null;
   agentName: string | null;
   routineName: string | null;
   /** The routine's declared slot keys, in declaration order; absent when the routine no longer exists. */
@@ -87,14 +86,14 @@ export const routineEndingNotificationFromAction = (input: {
    * copy of these ids (even one the system wrote itself) must never override the row's own ids
    * for routing or lookups.
    */
-  ids: { conversationId: string; workspaceId: string };
+  ids: { conversationId: string; workspaceId: string; agentId: string | null };
   /** Used only when the payload itself omits the field. */
   fallback: { reason: string };
   subject?: RoutineEndingNotificationSubject;
 }): RoutineEndingOperatorNotification => {
   const conversationId = input.ids.conversationId;
   const workspaceId = input.ids.workspaceId;
-  const agentId = asString(input.payload.agentId) ?? "unknown";
+  const agentId = input.ids.agentId ?? "unknown";
   const reason = asString(input.payload.reason) ?? input.fallback.reason;
   const routineId = asString(input.payload.routineId);
   const stored = collectedFromPayload(input.payload.collected);

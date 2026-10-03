@@ -34,6 +34,24 @@ export interface CopilotPendingApprovalsPort {
   listPending(workspaceId: string): Promise<ReadonlyArray<CopilotPendingApproval>>;
 }
 
+/** A reply that may not have reached the customer. */
+export interface CopilotDeliveryFailure {
+  readonly conversationId: string;
+  /** The delivering channel's enum code: `bounced`, `failed`, `uncertain` or `halted`. */
+  readonly kind: string;
+  /** The provider's code, sanitized; never its bounce message. */
+  readonly detailCode: string | null;
+  readonly openedAt: Date;
+}
+
+/** The open delivery failures, newest first, a page at a time. */
+export interface CopilotDeliveryFailuresPort {
+  listOpen(workspaceId: string, query: { agentId?: string; cursor?: string; limit: number }): Promise<{
+    readonly items: ReadonlyArray<CopilotDeliveryFailure>;
+    readonly nextCursor: string | null;
+  }>;
+}
+
 /** Records a source Ray could not read, so a swallowed failure is still traceable in support. */
 export interface CopilotTriageLogPort {
   warn(fields: Record<string, unknown>, message: string): void;
@@ -52,6 +70,8 @@ export const copilotTriageSourcePermissions: Record<CopilotTriageSourceId, Accou
   documents: "workspace.documents.read",
   document_sources: "workspace.documents.read",
   evals: "workspace.retrieval.query",
+  // Read from the Inbox, where a teammate acknowledges or resolves one, so it takes the Inbox's permission.
+  delivery_failures: "workspace.conversation.takeover",
 };
 
 /** What one authorized source read produced: the rows it listed and the rows it matched. */
@@ -103,6 +123,40 @@ export const readAuthorizedSource = async <TRow, TSource extends CopilotTriageSo
     );
     return { report: { source, status: "failed", total: null }, items: [] };
   }
+};
+
+const DELIVERY_FAILURE_PAGE_SIZE = 100;
+/**
+ * How many open failures are ranked. Open failures are the exception — each is a reply a person has
+ * to look at — so the window covers any workspace's; it bounds a pathological backlog, where the
+ * count describes the window that was read.
+ */
+const DELIVERY_FAILURE_RANKING_WINDOW = 1_000;
+
+/**
+ * A workspace's open delivery failures, longest wait first. The reader pages newest first, so the
+ * longest waits are on its last page: every page is read, up to the ranking window.
+ */
+export const readOpenDeliveryFailures = async (
+  port: CopilotDeliveryFailuresPort,
+  workspaceId: string,
+  agentId: string | null,
+): Promise<AuthorizedSourceRead<CopilotDeliveryFailure>> => {
+  const failures: CopilotDeliveryFailure[] = [];
+  let cursor: string | null = null;
+  do {
+    const page = await port.listOpen(workspaceId, {
+      ...(agentId === null ? {} : { agentId }),
+      ...(cursor === null ? {} : { cursor }),
+      limit: DELIVERY_FAILURE_PAGE_SIZE,
+    });
+    failures.push(...page.items);
+    cursor = page.nextCursor;
+  } while (cursor !== null && failures.length < DELIVERY_FAILURE_RANKING_WINDOW);
+  return {
+    total: failures.length,
+    items: failures.slice().sort((left, right) => left.openedAt.getTime() - right.openedAt.getTime()),
+  };
 };
 
 /** When the wait started: ownership's own clock while a person holds it, the conversation's otherwise. */

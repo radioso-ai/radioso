@@ -11,6 +11,7 @@ import { currentTimestamp } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { DB, Db } from "../../shared/infra/kysely/types.js";
 
 type FailureRow = Selectable<DB["conversation_delivery_failures"]>;
+type ListQuery = Parameters<DeliveryFailureReadStore["listOpen"]>[1];
 
 const mapFailure = (row: FailureRow): DeliveryFailureRecord => ({
   id: row.id,
@@ -81,15 +82,48 @@ export class ConversationDeliveryFailureRepository implements DeliveryFailureWri
     return rows.map(mapFailure).sort(oldestFirst);
   }
 
-  async listOpen(
+  async acknowledgeOpen(input: Parameters<DeliveryFailureWriteStore["acknowledgeOpen"]>[0]): Promise<DeliveryFailureRecord | null> {
+    const row = await this.db
+      .updateTable("conversation_delivery_failures")
+      .set({ cleared_at: currentTimestamp(), clear_reason: "acknowledged", cleared_by_user_id: input.userId })
+      .where("id", "=", input.failureId)
+      .where("workspace_id", "=", input.workspaceId)
+      .where("cleared_at", "is", null)
+      .returningAll()
+      .executeTakeFirst();
+    return row ? mapFailure(row) : null;
+  }
+
+  async find(workspaceId: string, failureId: string): Promise<DeliveryFailureRecord | null> {
+    const row = await this.db
+      .selectFrom("conversation_delivery_failures")
+      .selectAll()
+      .where("id", "=", failureId)
+      .where("workspace_id", "=", workspaceId)
+      .executeTakeFirst();
+    return row ? mapFailure(row) : null;
+  }
+
+  listOpen(workspaceId: string, query: ListQuery): Promise<DeliveryFailureRecord[]> {
+    return this.list(workspaceId, query, { includeCleared: false });
+  }
+
+  listAll(workspaceId: string, query: ListQuery): Promise<DeliveryFailureRecord[]> {
+    return this.list(workspaceId, query, { includeCleared: true });
+  }
+
+  private async list(
     workspaceId: string,
-    query: Parameters<DeliveryFailureReadStore["listOpen"]>[1],
+    query: ListQuery,
+    options: { includeCleared: boolean },
   ): Promise<DeliveryFailureRecord[]> {
     let select = this.db
       .selectFrom("conversation_delivery_failures as f")
       .selectAll("f")
-      .where("f.workspace_id", "=", workspaceId)
-      .where("f.cleared_at", "is", null);
+      .where("f.workspace_id", "=", workspaceId);
+    if (!options.includeCleared) {
+      select = select.where("f.cleared_at", "is", null);
+    }
     const { agentId, after } = query;
     if (agentId !== undefined) {
       select = select.where((eb) => eb.exists(

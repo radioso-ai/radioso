@@ -66,8 +66,26 @@ const qualityTurn = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
+const deliveryFailure = (overrides: Record<string, unknown> = {}) => ({
+  id: "33333333-3333-4333-8333-333333333333",
+  conversationId: "conversation-delivery",
+  kind: "bounced",
+  detailCode: "mailbox_full",
+  openedAt: new Date("2026-08-26T05:30:00.000Z"),
+  ...overrides,
+});
+
+const deliveryFailurePages = (...pages: Array<Array<ReturnType<typeof deliveryFailure>>>) => {
+  const listOpen = vi.fn(async (_workspaceId: string, query: { cursor?: string }) => {
+    const index = query.cursor === undefined ? 0 : Number(query.cursor);
+    return { items: pages[index] ?? [], nextCursor: index + 1 < pages.length ? String(index + 1) : null };
+  });
+  return { listOpen };
+};
+
 const dependencies = (overrides: Partial<NeedsAttentionCopilotToolDependencies> = {}): NeedsAttentionCopilotToolDependencies => ({
   pendingApprovals: { listPending: vi.fn(async () => []) },
+  deliveryFailures: deliveryFailurePages([]),
   chatHistoryService: {
     getConversation: vi.fn(),
     getConversationTurn: vi.fn(),
@@ -158,6 +176,7 @@ describe("needs_attention", () => {
     expect(result.sources).toEqual(expect.arrayContaining([
       { source: "approvals", status: "unauthorized", total: null, included: 0 },
       { source: "quality", status: "unauthorized", total: null, included: 0 },
+      { source: "delivery_failures", status: "unauthorized", total: null, included: 0 },
       { source: "handoffs", status: "ok", total: 1, included: 1 },
     ]));
   });
@@ -188,7 +207,8 @@ describe("needs_attention", () => {
       },
     };
 
-    const result = await list(populated(), {}, invocation);
+    // Delivery failures read under the same permission, so they are left out to count the approvals' checks alone.
+    const result = await list(populated(), { kinds: ["approval", "handoff", "negative_feedback"] }, invocation);
 
     expect(approvalChecks).toBe(2);
     expect(result.items.map((item) => item.kind)).toEqual(["handoff", "negative_feedback"]);
@@ -312,5 +332,69 @@ describe("needs_attention", () => {
       "workspace-1",
       expect.objectContaining({ agentId: "11111111-1111-4111-8111-111111111111" }),
     );
+  });
+});
+
+describe("needs_attention delivery failures", () => {
+  it("lists a reply that may not have reached the customer by its wait, with its sanitized code", async () => {
+    const deps = populated({ deliveryFailures: deliveryFailurePages([deliveryFailure()]) });
+
+    const result = await list(deps);
+
+    expect(result.items.map((item) => item.kind)).toEqual(["delivery_failed", "approval", "handoff", "negative_feedback"]);
+    expect(result.items[0]).toMatchObject({
+      kind: "delivery_failed",
+      title: "bounced",
+      detail: "mailbox_full",
+      since: "2026-08-26T05:30:00.000Z",
+      conversationId: "conversation-delivery",
+      approvalHandle: null,
+      assistantMessageId: null,
+      dashboardUrl: "/w/acme/activity?itemKind=chat&itemId=conversation-delivery",
+    });
+    expect(result.sources).toContainEqual({ source: "delivery_failures", status: "ok", total: 1, included: 1 });
+  });
+
+  it("reads the failures under the conversation takeover permission and states the gap without it", async () => {
+    const deps = populated({ deliveryFailures: deliveryFailurePages([deliveryFailure()]) });
+
+    const result = await list(deps, {}, context(new Set(["workspace.history.read", "workspace.quality.read"])));
+
+    expect(result.items.map((item) => item.kind)).not.toContain("delivery_failed");
+    expect(result.sources).toContainEqual({ source: "delivery_failures", status: "unauthorized", total: null, included: 0 });
+    expect(deps.deliveryFailures?.listOpen).not.toHaveBeenCalled();
+  });
+
+  it("reads every page, because the reader is newest first and the longest wait is on its last page", async () => {
+    const newest = deliveryFailure({ conversationId: "conversation-newest", openedAt: new Date("2026-08-26T09:00:00.000Z") });
+    const oldest = deliveryFailure({ conversationId: "conversation-oldest", kind: "halted", detailCode: null, openedAt: new Date("2026-08-26T01:00:00.000Z") });
+    const deps = dependencies({ deliveryFailures: deliveryFailurePages([newest], [oldest]) });
+
+    const result = await list(deps, { kinds: ["delivery_failed"], limit: 1 });
+
+    expect(result.items).toEqual([expect.objectContaining({ conversationId: "conversation-oldest", title: "halted", detail: null })]);
+    expect(result.sources).toEqual([{ source: "delivery_failures", status: "ok", total: 2, included: 1 }]);
+    expect(deps.deliveryFailures?.listOpen).toHaveBeenNthCalledWith(2, "workspace-1", expect.objectContaining({ cursor: "1" }));
+  });
+
+  it("scopes the failures to the requested agent and reads no other source when asked for this kind alone", async () => {
+    const deps = populated({ deliveryFailures: deliveryFailurePages([deliveryFailure()]) });
+
+    const result = await list(deps, { kinds: ["delivery_failed"], agentId: "11111111-1111-4111-8111-111111111111" });
+
+    expect(result.sources.map((source) => source.source)).toEqual(["delivery_failures"]);
+    expect(deps.deliveryFailures?.listOpen).toHaveBeenCalledWith(
+      "workspace-1",
+      expect.objectContaining({ agentId: "11111111-1111-4111-8111-111111111111" }),
+    );
+    expect(deps.pendingApprovals.listPending).not.toHaveBeenCalled();
+  });
+
+  it("reports a failure read that threw as failed rather than as no failures", async () => {
+    const deps = populated({ deliveryFailures: { listOpen: vi.fn(async () => { throw new Error("connection reset"); }) } });
+
+    const result = await list(deps);
+
+    expect(result.sources).toContainEqual({ source: "delivery_failures", status: "failed", total: null, included: 0 });
   });
 });

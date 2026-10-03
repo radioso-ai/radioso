@@ -7,6 +7,7 @@ import { createAccountUserRoutes } from "./accountUserRoutes.js";
 import { createAuthRoutes } from "./authRoutes.js";
 import { createConversationActivityRoutes } from "./conversationActivityRoutes.js";
 import { createConversationOwnershipRoutes } from "./conversationOwnershipRoutes.js";
+import { createDeliveryFailureRoutes } from "./deliveryFailureRoutes.js";
 import { createContextVariableRoutes } from "./contextVariableRoutes.js";
 import { createDecisionRoutes } from "./decisionRoutes.js";
 import { createDecisionsQueryRoutes } from "./decisionsQueryRoutes.js";
@@ -95,6 +96,7 @@ export const createApiRouteMounts = (_dependencies: AppDependencies): readonly A
   { path: "/api/v1/copilot", createRouter: createCopilotRoutes },
   { path: "/api/v1/conversations", createRouter: createConversationActivityRoutes },
   { path: "/api/v1/conversations", createRouter: createConversationOwnershipRoutes },
+  { path: "/api/v1/delivery-failures", createRouter: createDeliveryFailureRoutes },
   { path: "/api/v1/history", createRouter: createHistoryRoutes },
   { path: "/api/v1/observability", createRouter: createObservabilityRoutes },
   { path: "/api/v1/retrieval", createRouter: createRetrievalRoutes },

@@ -431,7 +431,8 @@ R3 blocks T088 (S1 drain wiring). R1 and R2 block S3 and can run in parallel wit
 
 - [x] T106 [US1] [US2] Backend: `cd backend && pnpm run test:unit && pnpm run test:contract && pnpm run test:integration`, then `pnpm run lint`, `cd backend && pnpm run lint`, `pnpm run lint:dead-code:ci` and `cd backend && pnpm run build`.
   - **Result (2026-10-03)**: unit 8010 passed; contract 527 passed; integration 1364 passed after fixing `createIfAbsent`; root lint, backend lint, dead-code ratchet, both DB snapshot checks, product-docs sync, SDK and MCP checks, and `pnpm run build` all pass. The `tsconfig.json` (tests) typecheck has ~95 pre-existing errors in unrelated files.
-- [ ] T107 [US1] Frontend: `cd frontend && pnpm test && pnpm run build && PLAYWRIGHT_PORT=<free> pnpm run test:e2e -- email-channel-setup`.
+- [x] T107 [US1] Frontend: `cd frontend && pnpm test && pnpm run build && PLAYWRIGHT_PORT=<free> pnpm run test:e2e -- email-channel-setup`.
+  - **Result (2026-10-03)**: frontend unit 1745 passed; production build passed; the full Playwright suite against the production server ran 359 passed, 16 skipped, 1 failed. All four `email-channel-setup` journeys passed. The one failure is `google-login.spec.ts` (callback path rewrite), unrelated to this change and not touched by it.
 - [ ] T108 [US1] [US2] Walk through quickstart §2–§3 with the local provider (mailbox, inbound, human-owned conversation, replay with no duplicate), then run `pnpm run ci:local -- origin/main`.
 - [ ] T109 [US2] Record the message-queue impact review in the PR: AMQP untouched; inbound job tables; the `email_channel` queue with scheduled drains; the sweep; retry semantics; the queue docs; `connectorPlugin.d.ts:32` still accurate.
 

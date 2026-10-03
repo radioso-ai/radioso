@@ -186,6 +186,50 @@ describe('OperatorComposer', () => {
     await act(async () => root.unmount())
   })
 
+  it('lets the channel state the caller reports replace a refusal, and re-enables Send once sending is ready', async () => {
+    vi.spyOn(hitlApi, 'replyAsHuman').mockRejectedValueOnce(Object.assign(new Error('refused'), {
+      status: 409,
+      error: { code: 'email_sending_not_verified', message: 'The sending domain is not verified.' },
+    }))
+    const root = createRoot(document.createElement('div'))
+    const container = (root as unknown as { _internalRoot: { containerInfo: HTMLElement } })._internalRoot.containerInfo
+    const render = (sendUnavailableReason: string | null) => act(async () => {
+      root.render(
+        <OperatorComposer
+          conversationId="conversation-a"
+          ownership={{ state: 'human_owned', version: 2, ownerUserId: 'user-me' } as never}
+          currentUserId="user-me"
+          onChanged={vi.fn()}
+          sendUnavailableReason={sendUnavailableReason}
+        />,
+      )
+    })
+    const send = () => [...container.querySelectorAll('button')].find((button) => button.textContent?.includes('Send'))
+
+    await render(null)
+    const textarea = container.querySelector('textarea') as HTMLTextAreaElement
+    await typeInto(textarea, 'my draft reply')
+    await clickSend(container)
+    expect(container.textContent).toContain('The sending domain is not verified.')
+    expect(send()?.disabled).toBe(true)
+
+    // The same channel state read again keeps the refusal.
+    await render(null)
+    expect(send()?.disabled).toBe(true)
+
+    // A fresh read that finds the domain unverified explains it in the caller's words.
+    await render("Replies wait until this mailbox's domain is verified.")
+    expect(container.textContent).toContain("Replies wait until this mailbox's domain is verified.")
+    expect(container.textContent).not.toContain('The sending domain is not verified.')
+    expect(send()?.disabled).toBe(true)
+
+    // Sending is ready again: the draft is still there and Send is enabled.
+    await render(null)
+    expect(textarea.value).toBe('my draft reply')
+    expect(send()?.disabled).toBe(false)
+    await act(async () => root.unmount())
+  })
+
   it('disables Send with the reason the caller gives, without sending', async () => {
     const reply = vi.spyOn(hitlApi, 'replyAsHuman')
     const root = createRoot(document.createElement('div'))

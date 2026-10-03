@@ -100,11 +100,18 @@ export const dashboardQueryKeys = {
       workspaceKey(workspaceId, 'attention', 'human-owned', input.pageSize),
     recentlyClosed: (workspaceId: string, input: { limit: number }) =>
       workspaceKey(workspaceId, 'attention', 'recently-closed', input.limit),
+    // No workspace event reports a delivery failure yet, so it polls, and an operator's own
+    // acknowledgement re-reads it by invalidating this key.
+    deliveryFailures: (workspaceId: string, input: { limit: number }) =>
+      workspaceKey(workspaceId, 'attention', 'delivery-failures', input.limit),
   },
   conversations: {
     // Not a live-invalidation family: no workspace event reports a teammate change, so
     // callers re-read it by invalidating this key.
     operators: (workspaceId: string) => workspaceKey(workspaceId, 'conversations', 'operators'),
+    // Polled while the conversation is open, and re-read after an operator's own action on it.
+    emailFacts: (workspaceId: string, conversationId: string) =>
+      workspaceKey(workspaceId, 'conversations', 'email-facts', conversationId),
   },
 } as const
 
@@ -119,6 +126,7 @@ type DashboardQueryFamily =
   | 'attention/decisions'
   | 'attention/human-owned'
   | 'attention/recently-closed'
+  | 'attention/delivery-failures'
 
 const knownFamilies = new Set<DashboardQueryFamily>([
   'documents/list',
@@ -131,6 +139,7 @@ const knownFamilies = new Set<DashboardQueryFamily>([
   'attention/decisions',
   'attention/human-owned',
   'attention/recently-closed',
+  'attention/delivery-failures',
 ])
 
 export const isDashboardQueryFamily = (

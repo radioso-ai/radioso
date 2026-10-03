@@ -1,6 +1,6 @@
 'use client'
 
-import { CheckCircle2, Hand, ShieldCheck, ThumbsDown, type LucideIcon } from 'lucide-react'
+import { CheckCircle2, Hand, MailWarning, ShieldCheck, ThumbsDown, type LucideIcon } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { closedByLine, recentlyClosedKindLabel } from '@/lib/conversation-activity'
@@ -17,6 +17,7 @@ const TYPE_CHIP_META: Record<EscalationType, { label: string; icon: LucideIcon; 
   handoff: { label: 'Handoff', icon: Hand, className: 'bg-amber-500/10 text-amber-700 dark:text-amber-300' },
   approval: { label: 'Approval', icon: ShieldCheck, className: 'bg-primary/10 text-primary' },
   negative_feedback: { label: 'Feedback', icon: ThumbsDown, className: 'bg-destructive/10 text-destructive' },
+  delivery_failed: { label: 'Delivery failure', icon: MailWarning, className: 'bg-destructive/10 text-destructive' },
 }
 
 function TypeChip({ type }: { type: EscalationType }) {

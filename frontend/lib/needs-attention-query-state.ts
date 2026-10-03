@@ -4,9 +4,10 @@ import { useQuery } from '@tanstack/react-query'
 
 import { chatApi } from './api-chat'
 import { hitlApi } from './api-hitl'
+import { replyReviewApi } from './api-reply-review'
 import { QUALITY_SIGNAL_IDS } from './api-quality'
 import { dashboardQueryKeys } from './dashboard-query-keys'
-import { useDashboardQueryPolicy } from '@/components/providers/dashboard-query-provider'
+import { isDashboardQueryRetryable, useDashboardQueryPolicy } from '@/components/providers/dashboard-query-provider'
 import { useQualityTurnsQuery, type QualityTurnsRequest } from './quality-query-state'
 import type { LowQualityTurnsPage } from './api-quality'
 import type { ChatConversationSummary, PendingApprovalDecision } from './api-types'
@@ -24,7 +25,7 @@ export const reconcileAttentionOperatorResult = <T extends { id: string }>(
   : [...conversations]
 
 export const NEEDS_ATTENTION_PAGE_SIZE = 50
-export const NEEDS_ATTENTION_FEEDBACK_PAGE_SIZE = 25
+const NEEDS_ATTENTION_FEEDBACK_PAGE_SIZE = 25
 
 export const allAttentionSourcesTerminal = (
   queriesEnabled: boolean,
@@ -53,12 +54,12 @@ type HumanOwnedConversation = ChatConversationSummary & {
   ownership: NonNullable<ChatConversationSummary['ownership']>
 }
 
-export interface AttentionRailSnapshot {
+interface AttentionRailSnapshot {
   decisions: PendingApprovalDecision[]
   humanOwnedConversations: HumanOwnedConversation[]
 }
 
-export interface AttentionInboxSnapshot extends AttentionRailSnapshot {
+interface AttentionInboxSnapshot extends AttentionRailSnapshot {
   qualitySnapshot: QualityInboxSnapshot
 }
 
@@ -189,11 +190,20 @@ export const needsAttentionQualityInputs: {
   },
 } as const
 
+// A server without the delivery-failures route answers 404: that is no failures, not an outage to retry.
+const retryDeliveryFailures = (attempt: number, error: unknown) =>
+  attempt < 2
+  && isDashboardQueryRetryable(error)
+  && !(typeof error === 'object' && error !== null && 'status' in error && error.status === 404)
+
 export const useAttentionRailQueries = (workspaceId: string) => {
   const policy = useDashboardQueryPolicy()
   const decisionsKey = dashboardQueryKeys.attention.decisions(workspaceId)
   const humanOwnedKey = dashboardQueryKeys.attention.humanOwned(workspaceId, {
     pageSize: NEEDS_ATTENTION_PAGE_SIZE,
+  })
+  const deliveryFailuresKey = dashboardQueryKeys.attention.deliveryFailures(workspaceId, {
+    limit: NEEDS_ATTENTION_PAGE_SIZE,
   })
   const decisions = useQuery({
     queryKey: decisionsKey,
@@ -211,7 +221,14 @@ export const useAttentionRailQueries = (workspaceId: string) => {
     enabled: Boolean(workspaceId) && policy.queriesEnabled,
     refetchInterval: policy.intervalFor(humanOwnedKey),
   })
-  return { decisions, humanOwned, policy }
+  const deliveryFailures = useQuery({
+    queryKey: deliveryFailuresKey,
+    queryFn: ({ signal }) => replyReviewApi.listDeliveryFailures({ state: 'open', limit: NEEDS_ATTENTION_PAGE_SIZE }, signal),
+    enabled: Boolean(workspaceId) && policy.queriesEnabled,
+    refetchInterval: policy.intervalFor(deliveryFailuresKey),
+    retry: retryDeliveryFailures,
+  })
+  return { decisions, humanOwned, deliveryFailures, policy }
 }
 
 export const useNeedsAttentionQueries = (workspaceId: string) => {
@@ -237,7 +254,8 @@ export const useNeedsAttentionQueries = (workspaceId: string) => {
  * The open-item count behind the inbox lens toggle's "Needs you · N" label
  * (spec 1116 unification) — the same client inbox model that drives the tab
  * title in `useInboxAttentionSignal`, so the count never disagrees with what
- * the Needs-you lens's own queue shows. Uses `useAttentionRailQueries` plus
+ * the Needs-you lens's own queue shows. Uses `useAttentionRailQueries`
+ * (approvals, handoffs, delivery failures) plus
  * the one quality-turns query the model needs (commented feedback); the
  * review-summary query the full `useNeedsAttentionQueries` hook also fetches
  * is unused for a plain count, so it's left out here to avoid firing it from
@@ -257,5 +275,6 @@ export const useNeedsAttentionOpenCount = (workspaceId: string): number => {
     decisions: attention.decisions.data?.decisions ?? [],
     conversations: selectHumanOwned(attention.humanOwned.data?.conversations ?? []),
     qualityTurns: commentedFeedback.data?.items ?? [],
+    deliveryFailures: attention.deliveryFailures.data?.items ?? [],
   }).items.length
 }

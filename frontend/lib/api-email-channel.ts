@@ -182,7 +182,10 @@ export const emailChannelApi = {
     return request<EmailDomain>(domainPath(workspaceId, domainId, '/receiving'), post({ confirmation }))
   },
 
-  getConversationFacts(conversationId: string): Promise<ConversationEmailFacts> {
-    return request<ConversationEmailFacts>(`/conversations/${encodeURIComponent(conversationId)}/email`, { method: 'GET' })
+  getConversationFacts(conversationId: string, signal?: AbortSignal): Promise<ConversationEmailFacts> {
+    return request<ConversationEmailFacts>(
+      `/conversations/${encodeURIComponent(conversationId)}/email`,
+      { method: 'GET', ...(signal ? { signal } : {}) },
+    )
   },
 }

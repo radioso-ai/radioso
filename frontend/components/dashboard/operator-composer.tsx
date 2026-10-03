@@ -27,6 +27,12 @@ export type OperatorActionResult =
   | { kind: 'ownership'; conversationId: string; ownershipState: ConversationOwnership['state'] }
   | { kind: 'reply'; conversationId: string }
   | { kind: 'decision_resolved'; agentId: string; handle: string }
+  | {
+    kind: 'delivery_failure_cleared'
+    conversationId: string
+    failureId: string
+    resolution: 'acknowledged' | 'marked_sent' | 'resend'
+  }
   | { kind: 'refresh'; conversationId: string; reason: 'conflict' | 'invalid_option' }
 
 const genericError = 'Something went wrong. Try again.'
@@ -139,7 +145,9 @@ interface OperatorComposerProps {
    * Why the conversation's channel cannot take a reply now (an email mailbox
    * whose domain is not verified, say). Send stays disabled and the reason
    * shows in its place; the draft is kept. A send the server refuses for its
-   * channel does the same with the server's reason.
+   * channel does the same with the server's reason, until this reason changes:
+   * a fresh read of the channel then speaks for it, and once it is null again
+   * (sending is ready) Send is enabled.
    */
   sendUnavailableReason?: string | null
 }
@@ -174,6 +182,12 @@ export function OperatorComposer({
 }: OperatorComposerProps) {
   const [message, setMessage] = useState('')
   const [refusal, setRefusal] = useState<{ conversationId: string; reason: string } | null>(null)
+  // A server refusal holds until the caller reads the channel again and reports a different reason.
+  const [refusalChannelReason, setRefusalChannelReason] = useState(sendUnavailableReason)
+  if (refusalChannelReason !== sendUnavailableReason) {
+    setRefusalChannelReason(sendUnavailableReason)
+    setRefusal(null)
+  }
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const focusDraftRef = useRef(false)
   const unavailableReasonId = useId()

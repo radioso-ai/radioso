@@ -28,6 +28,7 @@ const TYPE_OPTION_LABEL: Record<EscalationType, string> = {
   handoff: 'Handoffs',
   approval: 'Approvals',
   negative_feedback: 'Feedback',
+  delivery_failed: 'Delivery failures',
 }
 
 interface InboxQueueProps {
@@ -109,6 +110,7 @@ export function InboxQueue({
                   <SelectItem value="handoff">{TYPE_OPTION_LABEL.handoff} ({typeCounts.handoff})</SelectItem>
                   <SelectItem value="approval">{TYPE_OPTION_LABEL.approval} ({typeCounts.approval})</SelectItem>
                   <SelectItem value="negative_feedback">{TYPE_OPTION_LABEL.negative_feedback} ({typeCounts.negative_feedback})</SelectItem>
+                  <SelectItem value="delivery_failed">{TYPE_OPTION_LABEL.delivery_failed} ({typeCounts.delivery_failed})</SelectItem>
                 </SelectContent>
               </Select>
               <Select

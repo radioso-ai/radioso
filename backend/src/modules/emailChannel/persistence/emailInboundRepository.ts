@@ -287,6 +287,40 @@ const mapDelivery = (row: DeliveryRow): InboundDeliveryRecord => ({
 const changed = (result: readonly { numUpdatedRows: bigint }[]): boolean =>
   result.some((entry) => entry.numUpdatedRows > 0n);
 
+interface LogEntryRow {
+  id: string;
+  created_at: Date;
+  state: string;
+  classification: string | null;
+  disposition: string | null;
+  disposition_reason: string | null;
+  sender_address: string | null;
+  sender_display_name: string | null;
+  subject: string | null;
+  auth_results: unknown;
+  spam_verdict: string;
+  conversation_id: string | null;
+  thread_conflict: boolean;
+  has_raw: unknown;
+}
+
+const toLogEntry = (row: LogEntryRow): EventLogEntry => ({
+  id: row.id,
+  createdAt: row.created_at,
+  state: readEnum(row.state, DELIVERY_STATES, "email_inbound_deliveries.state"),
+  classification: readOptionalEnum(row.classification, CLASSIFICATIONS, "email_inbound_deliveries.classification"),
+  disposition: readOptionalEnum(row.disposition, DISPOSITIONS, "email_inbound_deliveries.disposition"),
+  dispositionReason: readOptionalEnum(row.disposition_reason, DISPOSITION_REASONS, "email_inbound_deliveries.disposition_reason"),
+  senderAddress: row.sender_address,
+  senderDisplayName: row.sender_display_name,
+  subject: row.subject,
+  authResults: row.auth_results,
+  spamVerdict: readEnum(row.spam_verdict, SPAM_VERDICTS, "email_inbound_deliveries.spam_verdict"),
+  conversationId: row.conversation_id,
+  threadConflict: row.thread_conflict,
+  hasRaw: row.has_raw === true,
+});
+
 /**
  * Inbound provider events (the processing obligation the webhook leaves) and their per-mailbox
  * deliveries (the event log, the content holder and the thread-reservation log).
@@ -645,25 +679,7 @@ export class EmailInboundRepository {
     mailboxId: string,
     query: { cursor: string | null; limit: number; disposition: Disposition | null; states: readonly DeliveryState[] | null },
   ): Promise<{ entries: EventLogEntry[]; nextCursor: string | null }> {
-    let select = this.db
-      .selectFrom("email_inbound_deliveries as d")
-      .select((eb) => [
-        "d.id",
-        "d.created_at",
-        "d.state",
-        "d.classification",
-        "d.disposition",
-        "d.disposition_reason",
-        "d.sender_address",
-        "d.sender_display_name",
-        "d.subject",
-        "d.auth_results",
-        "d.spam_verdict",
-        "d.conversation_id",
-        "d.thread_conflict",
-        eb("d.raw_mime", "is not", null).as("has_raw"),
-      ])
-      .where("d.mailbox_id", "=", mailboxId);
+    let select = this.selectLogEntries().where("d.mailbox_id", "=", mailboxId);
     if (query.disposition) select = select.where("d.disposition", "=", query.disposition);
     if (query.states) select = select.where("d.state", "in", [...query.states]);
     const cursor = query.cursor;
@@ -683,24 +699,87 @@ export class EmailInboundRepository {
     const rows = await select.orderBy("d.created_at", "desc").orderBy("d.id", "desc").limit(query.limit + 1).execute();
     const page = rows.slice(0, query.limit);
     return {
-      entries: page.map((row) => ({
-        id: row.id,
-        createdAt: row.created_at,
-        state: readEnum(row.state, DELIVERY_STATES, "email_inbound_deliveries.state"),
-        classification: readOptionalEnum(row.classification, CLASSIFICATIONS, "email_inbound_deliveries.classification"),
-        disposition: readOptionalEnum(row.disposition, DISPOSITIONS, "email_inbound_deliveries.disposition"),
-        dispositionReason: readOptionalEnum(row.disposition_reason, DISPOSITION_REASONS, "email_inbound_deliveries.disposition_reason"),
-        senderAddress: row.sender_address,
-        senderDisplayName: row.sender_display_name,
-        subject: row.subject,
-        authResults: row.auth_results,
-        spamVerdict: readEnum(row.spam_verdict, SPAM_VERDICTS, "email_inbound_deliveries.spam_verdict"),
-        conversationId: row.conversation_id,
-        threadConflict: row.thread_conflict,
-        hasRaw: row.has_raw === true,
-      })),
+      entries: page.map(toLogEntry),
       nextCursor: rows.length > query.limit ? (page.at(-1)?.id ?? null) : null,
     };
+  }
+
+  async findDelivery(workspaceId: string, deliveryId: string): Promise<InboundDeliveryRecord | null> {
+    const row = await this.db
+      .selectFrom("email_inbound_deliveries")
+      .select(deliveryColumns)
+      .where("id", "=", deliveryId)
+      .where("workspace_id", "=", workspaceId)
+      .executeTakeFirst();
+    return row ? mapDelivery(row) : null;
+  }
+
+  /** One mailbox delivery of the workspace as its event log shows it; null when there is none. */
+  async findLogEntry(workspaceId: string, deliveryId: string): Promise<(EventLogEntry & { mailboxId: string }) | null> {
+    const row = await this.selectLogEntries()
+      .select("d.mailbox_id")
+      .where("d.id", "=", deliveryId)
+      .where("d.workspace_id", "=", workspaceId)
+      .executeTakeFirst();
+    if (!row || row.mailbox_id === null) return null;
+    return { ...toLogEntry(row), mailboxId: row.mailbox_id };
+  }
+
+  /** The stored raw message of a workspace's delivery; `raw` is null when none was kept. */
+  async readRawMessage(
+    workspaceId: string,
+    deliveryId: string,
+  ): Promise<{ mailboxId: string | null; conversationId: string | null; raw: Buffer | null; truncated: boolean } | null> {
+    const row = await this.db
+      .selectFrom("email_inbound_deliveries")
+      .select(["mailbox_id", "conversation_id", "raw_mime", "raw_truncated"])
+      .where("id", "=", deliveryId)
+      .where("workspace_id", "=", workspaceId)
+      .executeTakeFirst();
+    if (!row) return null;
+    return { mailboxId: row.mailbox_id, conversationId: row.conversation_id, raw: row.raw_mime, truncated: row.raw_truncated };
+  }
+
+  /**
+   * An operator's retry of a failed delivery (FR-008): `failed` → `resumeState`, and its event back
+   * to `pending`, due now, in one transaction. The event row is locked first, so no drain claims
+   * it between the two writes; an event a drain is processing is refused rather than raced.
+   */
+  async reopenFailedDelivery(input: {
+    workspaceId: string;
+    deliveryId: string;
+    resumeState: Exclude<DeliveryState, "done" | "failed">;
+  }): Promise<"reopened" | "not_found" | "not_failed" | "in_flight"> {
+    return this.inTransaction(async (trx) => {
+      const delivery = await trx
+        .selectFrom("email_inbound_deliveries")
+        .select(["inbound_event_id", "state"])
+        .where("id", "=", input.deliveryId)
+        .where("workspace_id", "=", input.workspaceId)
+        .executeTakeFirst();
+      if (!delivery) return "not_found";
+      if (delivery.state !== "failed") return "not_failed";
+      const event = await trx
+        .selectFrom("email_inbound_events")
+        .select("state")
+        .where("id", "=", delivery.inbound_event_id)
+        .forUpdate()
+        .executeTakeFirstOrThrow();
+      if (event.state === "processing") return "in_flight";
+      const reopened = await trx
+        .updateTable("email_inbound_deliveries")
+        .set({ state: input.resumeState, last_error_code: null, processed_at: null })
+        .where("id", "=", input.deliveryId)
+        .where("state", "=", "failed")
+        .execute();
+      if (!changed(reopened)) return "not_failed";
+      await trx
+        .updateTable("email_inbound_events")
+        .set({ state: "pending", next_attempt_at: currentTimestamp(), lease_until: null, last_error_code: null, processed_at: null })
+        .where("id", "=", delivery.inbound_event_id)
+        .execute();
+      return "reopened";
+    });
   }
 
   /** Disposition and failure counts for the mailbox's deliveries created since `since`. */
@@ -761,5 +840,29 @@ export class EmailInboundRepository {
       .returning("id")
       .execute();
     return { deliveries: deliveries.length, events: events.length };
+  }
+  private selectLogEntries() {
+    return this.db
+      .selectFrom("email_inbound_deliveries as d")
+      .select((eb) => [
+        "d.id",
+        "d.created_at",
+        "d.state",
+        "d.classification",
+        "d.disposition",
+        "d.disposition_reason",
+        "d.sender_address",
+        "d.sender_display_name",
+        "d.subject",
+        "d.auth_results",
+        "d.spam_verdict",
+        "d.conversation_id",
+        "d.thread_conflict",
+        eb("d.raw_mime", "is not", null).as("has_raw"),
+      ]);
+  }
+
+  private inTransaction<T>(work: (trx: Db) => Promise<T>): Promise<T> {
+    return this.db.isTransaction ? work(this.db) : this.db.transaction().execute(work);
   }
 }

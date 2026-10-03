@@ -849,6 +849,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   const copilotToolCatalog = createCopilotToolCatalog({
     appBaseUrl: env.APP_BASE_URL,
     toolContributions: copilotToolContributions,
+    emailChannel: emailChannel?.copilotView ?? null,
     agentService: {
       get: agentService.get.bind(agentService),
       listExisting: agentService.listExisting.bind(agentService),

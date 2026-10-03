@@ -1,5 +1,17 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 
+import type { EmailChannelOperatorServices } from "../../src/app/composition/emailChannel.js";
+import type { AuditPort } from "../../src/modules/audit/contracts/index.js";
+import {
+  ConversationEmailFactsReader,
+  EventLogReader,
+  InboundEventActions,
+  MailboxService,
+  SendingDomainService,
+  type EmailChannelDrainDispatcherPort,
+  type EngagementMode,
+} from "../../src/modules/emailChannel/public.js";
+import type { EmailDomainProvisioner } from "../../src/modules/mail/public.js";
 import type { EmailDomainRecord, EmailDomainRepository } from "../../src/modules/emailChannel/persistence/emailDomainRepository.js";
 import type { EmailInboundRepository } from "../../src/modules/emailChannel/persistence/emailInboundRepository.js";
 import type {
@@ -363,6 +375,8 @@ export interface InMemoryDelivery extends InboundDelivery {
   rawMime: Buffer | null;
   rawSizeBytes: number | null;
   rawTruncated: boolean;
+  authResults: unknown;
+  spamVerdict: "spam" | "not_spam" | "unknown";
 }
 
 const RESERVED_STATES: readonly InboundDelivery["state"][] = ["resolved", "ingested", "done"];
@@ -389,6 +403,12 @@ export class InMemoryEmailInbound implements Pick<
   | "recordIngested"
   | "settleDelivery"
   | "purgeUnattachedBefore"
+  | "listMailboxLog"
+  | "countMailboxEvents"
+  | "findDelivery"
+  | "findLogEntry"
+  | "readRawMessage"
+  | "reopenFailedDelivery"
 > {
   readonly events = new Map<string, InboundEvent>();
   readonly deliveries = new Map<string, InMemoryDelivery>();
@@ -504,6 +524,8 @@ export class InMemoryEmailInbound implements Pick<
       rawMime: null,
       rawSizeBytes: null,
       rawTruncated: false,
+      authResults: null,
+      spamVerdict: "unknown",
     };
     this.deliveries.set(delivery.id, delivery);
     this.log.push("insertDelivery");
@@ -531,6 +553,8 @@ export class InMemoryEmailInbound implements Pick<
       rawMime: content.rawMime,
       rawSizeBytes: content.rawSizeBytes,
       rawTruncated: content.rawTruncated,
+      authResults: content.authResults,
+      spamVerdict: content.spamVerdict,
     });
   }
 
@@ -611,6 +635,83 @@ export class InMemoryEmailInbound implements Pick<
     return { deliveries: deliveries.length, events: events.length };
   }
 
+  async listMailboxLog(mailboxId: string, query: Args<EmailInboundRepository["listMailboxLog"]>[1]) {
+    const newestFirst = [...this.deliveries.values()]
+      .filter((delivery) => delivery.mailboxId === mailboxId
+        && (query.disposition === null || delivery.disposition === query.disposition)
+        && (query.states === null || query.states.includes(delivery.state)))
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime() || b.id.localeCompare(a.id));
+    const start = query.cursor === null ? 0 : newestFirst.findIndex((delivery) => delivery.id === query.cursor) + 1;
+    const rows = newestFirst.slice(start, start + query.limit + 1);
+    const page = rows.slice(0, query.limit);
+    return {
+      entries: page.map((delivery) => this.logEntryOf(delivery)),
+      nextCursor: rows.length > query.limit ? (page.at(-1)?.id ?? null) : null,
+    };
+  }
+
+  async countMailboxEvents(mailboxId: string, since: Date) {
+    const byDisposition: Record<string, number> = {};
+    let failed = 0;
+    for (const delivery of this.deliveries.values()) {
+      if (delivery.mailboxId !== mailboxId || delivery.createdAt.getTime() < since.getTime()) continue;
+      const key = delivery.disposition ?? "undecided";
+      byDisposition[key] = (byDisposition[key] ?? 0) + 1;
+      if (delivery.state === "failed") failed += 1;
+    }
+    return { byDisposition, failed };
+  }
+
+  async findDelivery(workspaceId: string, deliveryId: string) {
+    const delivery = this.deliveries.get(deliveryId);
+    return delivery && delivery.workspaceId === workspaceId ? { ...delivery } : null;
+  }
+
+  async findLogEntry(workspaceId: string, deliveryId: string) {
+    const delivery = this.deliveries.get(deliveryId);
+    if (!delivery || delivery.workspaceId !== workspaceId || delivery.mailboxId === null) return null;
+    return { ...this.logEntryOf(delivery), mailboxId: delivery.mailboxId };
+  }
+
+  async readRawMessage(workspaceId: string, deliveryId: string) {
+    const delivery = this.deliveries.get(deliveryId);
+    if (!delivery || delivery.workspaceId !== workspaceId) return null;
+    return { mailboxId: delivery.mailboxId, conversationId: delivery.conversationId, raw: delivery.rawMime, truncated: delivery.rawTruncated };
+  }
+
+  async reopenFailedDelivery(input: Args<EmailInboundRepository["reopenFailedDelivery"]>[0]) {
+    const delivery = this.deliveries.get(input.deliveryId);
+    if (!delivery || delivery.workspaceId !== input.workspaceId) return "not_found" as const;
+    if (delivery.state !== "failed") return "not_failed" as const;
+    const event = this.events.get(delivery.inboundEventId);
+    if (event?.state === "processing") return "in_flight" as const;
+    this.deliveries.set(delivery.id, { ...delivery, state: input.resumeState, lastErrorCode: null, processedAt: null });
+    if (event) {
+      this.updateEvent(event, { state: "pending", nextAttemptAt: this.clock(), leaseUntil: null, lastErrorCode: null, processedAt: null });
+    }
+    this.log.push(`reopenFailedDelivery:${input.resumeState}`);
+    return "reopened" as const;
+  }
+
+  private logEntryOf(delivery: InMemoryDelivery) {
+    return {
+      id: delivery.id,
+      createdAt: delivery.createdAt,
+      state: delivery.state,
+      classification: delivery.classification,
+      disposition: delivery.disposition,
+      dispositionReason: delivery.dispositionReason,
+      senderAddress: delivery.senderAddress,
+      senderDisplayName: delivery.senderDisplayName,
+      subject: delivery.subject,
+      authResults: delivery.authResults,
+      spamVerdict: delivery.spamVerdict,
+      conversationId: delivery.conversationId,
+      threadConflict: delivery.threadConflict,
+      hasRaw: delivery.rawMime !== null,
+    };
+  }
+
   private reserved(mailboxId: string): InMemoryDelivery[] {
     return [...this.deliveries.values()]
       .filter((delivery) => delivery.mailboxId === mailboxId && RESERVED_STATES.includes(delivery.state));
@@ -649,6 +750,7 @@ export class InMemoryEmailThreads implements Pick<
   | "insertIndexEntries"
   | "findIndexedConversations"
   | "findOutboundMessageIds"
+  | "listIndexedMessages"
 > {
   readonly links = new Map<string, EmailThreadLinkRecord>();
   readonly index: ThreadIndexEntry[] = [];
@@ -719,9 +821,75 @@ export class InMemoryEmailThreads implements Pick<
       .map((entry) => ({ rfcMessageId: entry.rfcMessageId, conversationId: entry.conversationId }));
   }
 
+  async listIndexedMessages(conversationId: string) {
+    return this.index
+      .filter((entry) => entry.conversationId === conversationId)
+      .map((entry, position) => ({ ...entry, id: `index-${position}`, createdAt: new Date(position) }));
+  }
+
   async findOutboundMessageIds(mailboxId: string, rfcMessageIds: readonly string[]) {
     return new Set(this.index
       .filter((entry) => entry.mailboxId === mailboxId && entry.direction === "outbound" && rfcMessageIds.includes(entry.rfcMessageId))
       .map((entry) => entry.rfcMessageId));
   }
 }
+
+/**
+ * The email channel's operator services over in-memory tables: the real services, so an HTTP
+ * contract test exercises their rules, with the stores exposed for seeding and inspection.
+ */
+export const createInMemoryEmailChannel = (options: {
+  clock: Clock;
+  inboundDomain: string;
+  provisioner: EmailDomainProvisioner;
+  audit: Pick<AuditPort, "record">;
+  agents: { findByIdAndWorkspaceId(agentId: string, workspaceId: string): Promise<{ id: string } | null> };
+  drains?: EmailChannelDrainDispatcherPort;
+  supportedModes?: readonly EngagementMode[];
+}) => {
+  const { clock, inboundDomain, audit } = options;
+  const logger = { warn: () => undefined };
+  const domains = new InMemoryEmailDomains(clock);
+  const mailboxes = new InMemoryEmailMailboxes(clock);
+  const inbound = new InMemoryEmailInbound(clock);
+  const threads = new InMemoryEmailThreads();
+  const sendingDomains = new SendingDomainService({
+    domains,
+    mailboxes,
+    provisioner: options.provisioner,
+    metrics: null,
+    clock,
+    inboundDomain,
+    audit,
+    logger,
+  });
+  const eventLog = new EventLogReader({ mailboxes, deliveries: inbound, clock });
+  const services: EmailChannelOperatorServices = {
+    inboundDomain,
+    sendingDomains,
+    mailboxes: new MailboxService({
+      mailboxes,
+      domainRecords: domains,
+      sendingDomains,
+      policyChanges: inMemoryPolicyChanges(mailboxes),
+      agents: options.agents,
+      randomBytes: (size) => randomBytes(size),
+      clock,
+      config: { inboundDomain, supportedModes: options.supportedModes ?? ["operator_only"] },
+      audit,
+      logger,
+    }),
+    eventLog,
+    inboundEvents: new InboundEventActions({
+      deliveries: inbound,
+      mailboxes,
+      events: eventLog,
+      drains: options.drains ?? { requestDrain: async () => undefined },
+      inboundDomain,
+      audit,
+      logger,
+    }),
+    conversationFacts: new ConversationEmailFactsReader({ threads, mailboxes, domains }),
+  };
+  return { services, domains, mailboxes, inbound, threads };
+};

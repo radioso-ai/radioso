@@ -19,6 +19,7 @@ import { registerExternalSkillsPaths } from "./paths/externalSkillsPaths.js";
 import { registerOauthConnectionPaths } from "./paths/oauthConnectionPaths.js";
 import { registerCustomerEmailPaths } from "./paths/customerEmailPaths.js";
 import { registerSlackPaths } from "./paths/slackPaths.js";
+import { registerEmailChannelPaths } from "./paths/emailChannelPaths.js";
 import { registerWebhookSkillsPaths } from "./paths/webhookSkillsPaths.js";
 import { registerSlackSkillsPaths } from "./paths/slackSkillsPaths.js";
 import { registerAgentSkillsPaths } from "./paths/agentSkillsPaths.js";
@@ -64,6 +65,7 @@ export const registerOpenApiPaths = (
   registerOauthConnectionPaths(registry, schemas, security);
   registerCustomerEmailPaths(registry, schemas, security);
   registerSlackPaths(registry, schemas, security);
+  registerEmailChannelPaths(registry, schemas, security);
   registerWebhookSkillsPaths(registry, schemas, security);
   registerSlackSkillsPaths(registry, schemas, security);
   registerAgentSkillsPaths(registry, schemas, security);

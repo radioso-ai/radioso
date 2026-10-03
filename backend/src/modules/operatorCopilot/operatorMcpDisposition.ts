@@ -52,6 +52,11 @@ export const operatorMcpDispositions: Readonly<Record<string, CopilotMcpDisposit
   },
   cancel_reviewed_proposal: { status: "eligible", inputStrategy: "explicit", scope: "operator:write", retry: { effect: "act", idempotent: true, operationIdentity: "client" } },
   document_status: eligibleRead,
+  // The email channel's token-free projection: explicit workspace-scoped reads, with an optional
+  // mailbox id or a required conversation id, each throwing cleanly when it names nothing.
+  email_channel_configuration: eligibleRead,
+  email_channel_events: eligibleRead,
+  email_conversation_facts: eligibleRead,
   eval_results: eligibleRead,
   needs_attention: contextDependent,
   product_doc_page: deferredRead,

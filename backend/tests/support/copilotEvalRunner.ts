@@ -469,6 +469,7 @@ callerKind: "human" as const,
     skillCapabilityRegistry: { list: () => [] },
     contextVariables: { listByWorkspace: async () => [], listByAgent: async () => [] },
     productDocs: new ProductDocsService(),
+    emailChannel: null,
     workspaceSettings: {
       getRetrievalDefaults: async () => ({}),
       getIngestionSettings: async () => ({}),

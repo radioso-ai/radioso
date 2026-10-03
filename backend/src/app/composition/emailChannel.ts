@@ -16,12 +16,16 @@ import {
 import type { ConversationActivityRecorder } from "../../modules/conversationActivity/contracts/index.js";
 import type { CustomerChannelReplyDeliverer } from "../../modules/customerReplyDelivery/public.js";
 import {
+  ConversationEmailFactsReader,
+  EmailChannelCopilotView,
   EmailChannelSweep,
   EmailCustomerReplyDeliverer,
   EmailDomainRepository,
   EmailInboundRepository,
   EmailMailboxRepository,
   EmailThreadRepository,
+  EventLogReader,
+  InboundEventActions,
   MailboxService,
   SendingDomainService,
   lockThreadResolution,
@@ -48,7 +52,18 @@ type EmailChannelConfig = NonNullable<ReturnType<typeof parseEmailChannelConfig>
  */
 const SUPPORTED_MODES: readonly EngagementMode[] = ["operator_only"];
 
-export interface EmailChannelComposition {
+/** What the operator surfaces call: the settings card, the event log and the inbox's email facts. */
+export interface EmailChannelOperatorServices {
+  /** The deployment's relay domain, shown in the settings overview. */
+  inboundDomain: string;
+  sendingDomains: SendingDomainService;
+  mailboxes: MailboxService;
+  eventLog: EventLogReader;
+  inboundEvents: InboundEventActions;
+  conversationFacts: ConversationEmailFactsReader;
+}
+
+interface EmailChannelComposition extends EmailChannelOperatorServices {
   supportedModes: readonly EngagementMode[];
   receiver: InboundEmailReceiver;
   provisioner: EmailDomainProvisioner;
@@ -59,8 +74,8 @@ export interface EmailChannelComposition {
   /** Registered under `email` in the customer-reply dispatcher. */
   customerReplyDeliverer: CustomerChannelReplyDeliverer;
   policyChanges: MailboxPolicyChangeUnitOfWork;
-  sendingDomains: SendingDomainService;
-  mailboxes: MailboxService;
+  /** The token-free projection Ray's email channel tools read (ports §8). */
+  copilotView: EmailChannelCopilotView;
 }
 
 interface EmailChannelCompositionInput {
@@ -94,6 +109,7 @@ export const createEmailChannelComposition = (input: EmailChannelCompositionInpu
   const domainRecords = new EmailDomainRepository(db);
   const mailboxRecords = new EmailMailboxRepository(db);
   const inbound = new EmailInboundRepository(db);
+  const threads = new EmailThreadRepository(db);
   const policyChanges = createPostgresMailboxPolicyChangeUnitOfWork({ db });
   const sendingDomains = new SendingDomainService({
     domains: domainRecords,
@@ -123,7 +139,7 @@ export const createEmailChannelComposition = (input: EmailChannelCompositionInpu
     inbound,
     mailboxes: mailboxRecords,
     domains: domainRecords,
-    threads: new EmailThreadRepository(db),
+    threads,
     receipts: mailboxes,
     threadProtocol: createPostgresThreadProtocolUnitOfWork({ db, activity: input.activity }),
     chat: input.conversationIngest,
@@ -144,6 +160,9 @@ export const createEmailChannelComposition = (input: EmailChannelCompositionInpu
     }),
   });
 
+  const eventLog = new EventLogReader({ mailboxes: mailboxRecords, deliveries: inbound, clock });
+  const conversationFacts = new ConversationEmailFactsReader({ threads, mailboxes: mailboxRecords, domains: domainRecords });
+
   return {
     supportedModes: SUPPORTED_MODES,
     receiver,
@@ -152,8 +171,29 @@ export const createEmailChannelComposition = (input: EmailChannelCompositionInpu
     worker: connector.worker,
     customerReplyDeliverer: new EmailCustomerReplyDeliverer(),
     policyChanges,
+    inboundDomain: config.inboundDomain,
     sendingDomains,
     mailboxes,
+    eventLog,
+    inboundEvents: new InboundEventActions({
+      deliveries: inbound,
+      mailboxes: mailboxRecords,
+      events: eventLog,
+      drains: input.drains,
+      metrics,
+      inboundDomain: config.inboundDomain,
+      audit: input.audit,
+      logger,
+    }),
+    conversationFacts,
+    copilotView: new EmailChannelCopilotView({
+      mailboxes: mailboxRecords,
+      domains: domainRecords,
+      events: eventLog,
+      facts: conversationFacts,
+      supportedModes: SUPPORTED_MODES,
+      clock,
+    }),
   };
 };
 
@@ -177,7 +217,7 @@ const providerAdapters = (config: EmailChannelConfig): { receiver: InboundEmailR
  * resolution lock, the reservation log, the thread index, the conversation reads and the
  * activity it records. Only binds; what is read and written is the processor's decision.
  */
-const createPostgresThreadProtocolUnitOfWork = (deps: {
+export const createPostgresThreadProtocolUnitOfWork = (deps: {
   db: Kysely<DB>;
   activity: ConversationActivityRecorder;
 }): EmailThreadProtocolUnitOfWork => ({

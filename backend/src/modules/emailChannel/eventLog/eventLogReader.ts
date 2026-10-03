@@ -31,7 +31,7 @@ const FILTER_STATES: Readonly<Record<EmailEventState, readonly DeliveryState[]>>
   failed: ["failed"],
 };
 
-interface EmailEventView {
+export interface EmailEventView {
   id: string;
   createdAt: string;
   state: EmailEventState;
@@ -91,6 +91,8 @@ const toEventView = (entry: EventLogEntry): EmailEventView => ({
   retryable: entry.state === "failed",
 });
 
+export const eventNotFound = (): AppError => notFound("Email event was not found");
+
 const pageSize = (requested: number | undefined): number =>
   requested === undefined || !Number.isFinite(requested)
     ? DEFAULT_PAGE_SIZE
@@ -100,7 +102,7 @@ const pageSize = (requested: number | undefined): number =>
 export class EventLogReader {
   constructor(private readonly deps: {
     mailboxes: Pick<EmailMailboxRepository, "findActive">;
-    deliveries: Pick<EmailInboundRepository, "listMailboxLog" | "countMailboxEvents">;
+    deliveries: Pick<EmailInboundRepository, "listMailboxLog" | "countMailboxEvents" | "findLogEntry">;
     clock: () => Date;
   }) {}
 
@@ -115,6 +117,14 @@ export class EventLogReader {
       states: query.state ? FILTER_STATES[query.state] : null,
     });
     return { items: page.entries.map(toEventView), nextCursor: page.nextCursor };
+  }
+
+  /** One delivery of an active mailbox of the workspace, as its event log shows it. */
+  async get(workspaceId: string, deliveryId: string): Promise<EmailEventView> {
+    const entry = await this.deps.deliveries.findLogEntry(workspaceId, deliveryId);
+    if (!entry) throw eventNotFound();
+    await this.requireMailbox(workspaceId, entry.mailboxId);
+    return toEventView(entry);
   }
 
   /** Counts by disposition, and failures, over the last `windowHours`. */

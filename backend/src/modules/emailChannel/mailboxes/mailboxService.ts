@@ -33,7 +33,8 @@ const MAILBOX_DEFAULTS: Omit<MailboxSettings, "displayName"> = {
   silenceThresholdHours: 72,
 };
 
-const SETTING_BOUNDS: Readonly<Record<NumericSetting, readonly [number, number]>> = {
+/** Inclusive bounds of the numeric mailbox settings; the HTTP contract states the same ones. */
+export const MAILBOX_SETTING_BOUNDS: Readonly<Record<NumericSetting, readonly [number, number]>> = {
   threadSendBudget: [1, 20],
   hourlyGenerationBudget: [1, 1000],
   threadContextMessages: [1, 50],
@@ -157,10 +158,10 @@ const validatedSettings = (request: Partial<MailboxSettings>): Partial<MailboxSe
     }
     settings.displayName = displayName;
   }
-  for (const key of Object.keys(SETTING_BOUNDS) as NumericSetting[]) {
+  for (const key of Object.keys(MAILBOX_SETTING_BOUNDS) as NumericSetting[]) {
     const value = request[key];
     if (value === undefined) continue;
-    const [min, max] = SETTING_BOUNDS[key];
+    const [min, max] = MAILBOX_SETTING_BOUNDS[key];
     if (!Number.isInteger(value) || value < min || value > max) throw badRequest(`${key} must be an integer from ${min} to ${max}`);
     settings[key] = value;
   }

@@ -59,7 +59,7 @@ import type { MessageRepositoryPort } from "../../db/repositories/messageReposit
 import type { ConnectorIngestionPort } from "@radioso/connector-api";
 import type { ConnectorRegistry } from "../../modules/connectors/services/connectorRegistry.js";
 import type { EmailChannelWorker } from "../../modules/connectors/plugins/index.js";
-import type { EmailChannelComposition } from "../composition/emailChannel.js";
+import type { EmailChannelOperatorServices } from "../composition/emailChannel.js";
 import type { ConnectorManagementPort } from "../../modules/connectors/services/connectorManagementService.js";
 import type { Database } from "../../shared/infra/database.js";
 import type { Env } from "../config/env.js";
@@ -265,8 +265,8 @@ export interface AppDependencies {
    * schedule routes in the worker-task runtime. Undefined when no email provider is configured.
    */
   emailChannelWorker?: EmailChannelWorker;
-  /** The email channel's settings services and adapters; undefined when no email provider is configured. */
-  emailChannel?: EmailChannelComposition;
+  /** The email channel's operator services; undefined when no email provider is configured. */
+  emailChannel?: EmailChannelOperatorServices;
   copilotRetentionWorker: CopilotRetentionWorker;
   /** Purges old private test-execution/revision-eval-run evidence (JSONB transcripts, frozen snapshots). */
   testExecutionRetentionWorker: TtlRetentionWorker;

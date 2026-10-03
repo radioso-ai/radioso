@@ -32,6 +32,7 @@ const setup = () => {
   const deliveries = {
     listMailboxLog: vi.fn(async () => ({ entries: [entry({}), entry({ state: "resolved", authResults: {} }), entry({ state: "failed" })], nextCursor: "cursor-id" })),
     countMailboxEvents: vi.fn(async () => ({ byDisposition: { drop: 2, ingest_only: 5 }, failed: 1 })),
+    findLogEntry: vi.fn(async () => null),
   };
   const reader = new EventLogReader({ mailboxes, deliveries, clock: () => now });
   return { reader, deliveries, mailbox };

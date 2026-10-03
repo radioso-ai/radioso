@@ -134,7 +134,7 @@ import type { TurnRouter } from "./turnRouter.js";
 import type { ResponseLanguageDetector } from "../../../shared/services/responseLanguageDetector.js";
 import type { HandoffWaitingMessageGenerator } from "../../../shared/services/handoffWaitingMessageGenerator.js";
 import type { ModelCallUsageAttribution } from "../../../shared/domain/modelCallUsageContext.js";
-import type { TurnExecutionMode } from "../../../shared/domain/turnExecutionMode.js";
+import { turnExecutionCapabilities, type TurnExecutionMode } from "../../../shared/domain/turnExecutionMode.js";
 import { pageReadCapabilityFromRequest } from "./pageRead/pageReadCapabilityResolver.js";
 import {
   isHumanOwned,
@@ -872,6 +872,7 @@ export class ChatService {
     let session: PreparedSession | null = null;
     let assistantMessageId: string | undefined;
     const workflowPolicy = assertInteractiveAssistantWorkflow("chat.turn");
+    const capabilities = turnExecutionCapabilities(input.executionMode);
     let usageReservation: UsageLimitReservation | null = null;
 
     try {
@@ -897,7 +898,9 @@ export class ChatService {
       const ownership = await this.conversationOwnershipReader?.load(session.conversation.id) ?? null;
       this.checkTurnCancellation(coordination, "routing");
       if (isHumanOwned(ownership)) {
-        const waitingMessage = await this.generateHandoffWaitingMessage(input, session);
+        const waitingMessage = capabilities.humanOwnedWaitingMessage === "generate"
+          ? await this.generateHandoffWaitingMessage(input, session)
+          : "";
         this.checkTurnCancellation(coordination, "rendering");
         this.beginTurnEmission(coordination);
         await this.releaseUsageReservation(usageReservation, {
@@ -927,12 +930,13 @@ export class ChatService {
       // turn, there is no retrieval — the routine renders its own reply.
       const routineStartedAt = Date.now();
       this.checkTurnCancellation(coordination, "routing");
+      const routinesActivate = capabilities.routines === "activate";
       // A suspended routine keeps the turn without running: it waits for an operator's
       // decision, not for this input, so the attempt is bypassed and only described.
-      if (suspendedRoutine) {
+      if (routinesActivate && suspendedRoutine) {
         await this.chatTurnAssembly.describeSuspendedRoutineTurn(session, suspendedRoutine);
       }
-      const routineTurn = suspendedRoutine
+      const routineTurn = !routinesActivate || suspendedRoutine
         ? null
         : await this.chatTurnAssembly.attemptRoutineTurn(session, {
             accountId: input.accountId,

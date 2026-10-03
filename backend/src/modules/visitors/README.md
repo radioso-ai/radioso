@@ -41,6 +41,12 @@ neither key, e.g. Slack or MCP without a session — FR-005) and calls
 `attachVerifiedIdentity` at the same site that already calls
 `setVerifiedCustomerId` on a conversation's first verified turn.
 
+Email ingest never reaches `ChatSessionPreparer` at all: it lands through the
+connector host's ingest-only operation, not the session path every other
+channel shares, and carries no visitor key and no `verified_customer_id`. A
+mailbox and the sender's address on the `email` channel context are the
+whole of its identity (spec `specs/1403-email-channel/`, FR-012).
+
 **Future constraint (FR-006):** there is no conversation-delete path in the
 product today. If one is ever added, it must decrement the owning visitor's
 `conversation_count` and delete a visitor that reaches zero — that bookkeeping

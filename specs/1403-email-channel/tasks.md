@@ -281,7 +281,7 @@ R3 blocks T088 (S1 drain wiring). R1 and R2 block S3 and can run in parallel wit
   - `visitor_id` and `verified_customer_id` stay null.
 - [x] T064 [P] [US2] Extend `backend/tests/unit/handoff/conversation-ownership-service.test.ts`: `requestHumanOwnership(scope, …)` writes `human_owned` with the reason and a `handoff_requested` activity in the scope, and is a no-op when already human-owned.
 - [x] T065 [P] [US2] Extend `backend/tests/unit/connectors/connectorChatPort.test.ts`: `ingest` delegates, and `answer` is unchanged.
-- [ ] T066 [P] [US2] Write `backend/tests/unit/email-channel/inbound-processor.test.ts` with fakes (after T007):
+- [x] T066 [P] [US2] Write `backend/tests/unit/email-channel/inbound-processor.test.ts` with fakes (after T007):
   - routing through `mailboxRouting` only (relay or direct);
   - `accepted_policy_version` taken from the event's `received_at`;
   - fan-out per mailbox;
@@ -301,7 +301,7 @@ R3 blocks T088 (S1 drain wiring). R1 and R2 block S3 and can run in parallel wit
   - SC-003: no `protocol/` fixture runs a turn and all of them appear in the event log;
   - mail accepted under policy v1 and processed after v2 runs under the lower autonomy.
 - [ ] T069 [US2] Write `backend/tests/integration/email-channel-crash-recovery.integration.test.ts` (inbound). A test-only fault hook fires after: event persisted; fetched; resolved and reserved; ingested; indexed. Exactly one message per delivery and no split thread (the inbound half of SC-007).
-- [ ] T070 [P] [US2] Write `backend/tests/contract/email-webhook.contract.test.ts`, beside `slack-webhook.contract.test.ts`:
+- [x] T070 [P] [US2] Write `backend/tests/contract/email-webhook.contract.test.ts`, beside `slack-webhook.contract.test.ts`:
   - persisted, 200;
   - duplicate `svix-id`, 200 and no row;
   - replay with a new `svix-id` and the same `email_id`, no row;
@@ -311,10 +311,10 @@ R3 blocks T088 (S1 drain wiring). R1 and R2 block S3 and can run in parallel wit
   - `unsupported` persisted;
   - local ack under 1 s.
 - [x] T071 [P] [US2] Extend `backend/tests/contract/history-channel-context.contract.test.ts`: the `email` context round-trips, with no thread token.
-- [ ] T072 [P] [US2] Write `backend/tests/unit/email-channel/email-channel-worker.test.ts`: interval start and stop; `drain({ maxJobs, stage })` claims due work only; the disabled flag; sweep lease recovery, refresh and retention.
-- [ ] T073 [P] [US2] Write `backend/tests/unit/email-channel-worker-task-routes.test.ts`: drain and sweep sit behind the worker token. Mirror `action-dispatch-worker-task-routes.test.ts`.
-- [ ] T074 [P] [US2] Extend `backend/tests/unit/runtime-startup.test.ts`: both runtimes wire `EmailChannelWorker` when configured and enabled, and neither does otherwise.
-- [ ] T075 [P] [US1] Write `backend/tests/unit/app-composition/email-channel-composition.test.ts`:
+- [x] T072 [P] [US2] Write `backend/tests/unit/email-channel/email-channel-worker.test.ts`: interval start and stop; `drain({ maxJobs, stage })` claims due work only; the disabled flag; sweep lease recovery, refresh and retention.
+- [x] T073 [P] [US2] Write `backend/tests/unit/email-channel-worker-task-routes.test.ts`: drain and sweep sit behind the worker token. Mirror `action-dispatch-worker-task-routes.test.ts`.
+- [x] T074 [P] [US2] Extend `backend/tests/unit/runtime-startup.test.ts`: both runtimes wire `EmailChannelWorker` when configured and enabled, and neither does otherwise.
+- [x] T075 [P] [US1] Write `backend/tests/unit/app-composition/email-channel-composition.test.ts`:
   - `null` when unconfigured;
   - adapter selection;
   - `supportedModes` is `["operator_only"]`;
@@ -351,12 +351,12 @@ R3 blocks T088 (S1 drain wiring). R1 and R2 block S3 and can run in parallel wit
   - `backend/src/modules/chat/services/conversationIngestService.ts`;
   - `backend/src/app/composition/conversationIngest.ts`;
   - `ingest` in `backend/src/modules/connectors/services/connectorChatPort.ts`.
-- [ ] T083 [US2] Implement `backend/src/modules/connectors/plugins/email/emailInboundProcessor.ts` (stage 1 with the research B15 steps), readable top to bottom (after T044–T052, T066, T079, T082).
-- [ ] T084 [US2] Implement `backend/src/modules/connectors/plugins/email/emailWebhook.ts` and `emailPlugin.ts`, mounting `/webhook` and requiring `rawBody` (after T057, T059, T070).
-- [ ] T085 [US2] Implement `backend/src/modules/connectors/plugins/email/emailChannelWorker.ts` and `backend/src/modules/emailChannel/maintenance/emailChannelSweep.ts` (recovery, refresh, retention) (after T072, T083).
-- [ ] T086 [US2] Create `backend/src/app/worker/emailChannelWorkerTaskRoutes.ts`, mount it in `createWorkerTaskApp.ts`, and start and stop the loop in `backend/src/runtime/startWorkerRuntime.ts` (after T073, T074, T085).
-- [ ] T087 [US1] Create `backend/src/modules/emailChannel/operator/emailCustomerReplyDeliverer.ts` in its S1 form, where `route()` refuses with `AppError(409, "email_sending_not_available")`. Register it under `email` in `backend/src/app/server/builders/eval.ts:113-124` (after T075).
-- [ ] T088 [US1] Compose `backend/src/app/composition/emailChannel.ts` (adapters, plugin, worker, sweep, `supportedModes`, deliverer, policy-change unit of work). Add `createDefaultEmailChannelDrainDispatcher` to `backend/src/app/composition/defaultComposition.ts` on top of `backend/src/modules/emailChannel/infra/cloudTasksEmailChannelDrainDispatcher.ts` (R3, with `scheduleAt`). Accept the plugin in `backend/src/modules/connectors/plugins/index.ts:18-31`. Push drains after the webhook commit and at retry times (after T016, T075, T084–T087).
+- [x] T083 [US2] Implement `backend/src/modules/connectors/plugins/email/emailInboundProcessor.ts` (stage 1 with the research B15 steps), readable top to bottom (after T044–T052, T066, T079, T082).
+- [x] T084 [US2] Implement `backend/src/modules/connectors/plugins/email/emailWebhook.ts` and `emailPlugin.ts`, mounting `/webhook` and requiring `rawBody` (after T057, T059, T070).
+- [x] T085 [US2] Implement `backend/src/modules/connectors/plugins/email/emailChannelWorker.ts` and `backend/src/modules/emailChannel/maintenance/emailChannelSweep.ts` (recovery, refresh, retention) (after T072, T083).
+- [x] T086 [US2] Create `backend/src/app/worker/emailChannelWorkerTaskRoutes.ts`, mount it in `createWorkerTaskApp.ts`, and start and stop the loop in `backend/src/runtime/startWorkerRuntime.ts` (after T073, T074, T085).
+- [x] T087 [US1] Create `backend/src/modules/emailChannel/operator/emailCustomerReplyDeliverer.ts` in its S1 form, where `route()` refuses with `AppError(409, "email_sending_not_available")`. Register it under `email` in `backend/src/app/server/builders/eval.ts:113-124` (after T075).
+- [x] T088 [US1] Compose `backend/src/app/composition/emailChannel.ts` (adapters, plugin, worker, sweep, `supportedModes`, deliverer, policy-change unit of work). Add `createDefaultEmailChannelDrainDispatcher` to `backend/src/app/composition/defaultComposition.ts` on top of `backend/src/modules/emailChannel/infra/cloudTasksEmailChannelDrainDispatcher.ts` (R3, with `scheduleAt`). Accept the plugin in `backend/src/modules/connectors/plugins/index.ts:18-31`. Push drains after the webhook commit and at retry times (after T016, T075, T084–T087).
 
 ### HTTP contract and governance
 
@@ -403,13 +403,13 @@ R3 blocks T088 (S1 drain wiring). R1 and R2 block S3 and can run in parallel wit
 ### Dev tooling, infrastructure, docs
 
 - [ ] T101 [P] [US2] Create `backend/scripts/emailChannelDev.ts` (`inbound`, `inbound --replay`, `verify-domain`) and the `email:dev` script in `backend/package.json`. It is dev-only.
-- [ ] T102 [P] Terraform, then `terraform validate`:
+- [x] T102 [P] Terraform, then `terraform validate`:
   - `infra/terraform/queue.tf`: an `email_channel` queue with low max concurrency;
   - `scheduler.tf`: `email_channel_sweep`, 5 min, `/internal/tasks/email-channel/sweep`;
   - `secrets.tf`: `RESEND_CHANNEL_API_KEY`, `EMAIL_CHANNEL_WEBHOOK_SECRET`;
   - `compute.tf`: API and worker env, including `EMAIL_CHANNEL_TASK_QUEUE_NAME`;
   - `variables.tf`: workers disabled by default.
-- [ ] T103 [P] [US1] Create `docs/email-channel.md` after reading `docs/document-writer-prompt.md`. It covers:
+- [x] T103 [P] [US1] Create `docs/email-channel.md` after reading `docs/document-writer-prompt.md`. It covers:
   - topology: relay by default, and direct receiving with its routing rule (research B20);
   - forwarding for Google (confirmation through the raw view) and M365 (policy, then rule);
   - DNS records;
@@ -417,7 +417,7 @@ R3 blocks T088 (S1 drain wiring). R1 and R2 block S3 and can run in parallel wit
   - `#queues` (stages, scheduled drains, sweep);
   - `#operations` runbooks, including pre-creating the closing index `CONCURRENTLY` on large tables;
   - how it differs from the customer-email skill.
-- [ ] T104 [P] [US1] Update the remaining docs:
+- [x] T104 [P] [US1] Update the remaining docs:
   - `docs-portal/content/operators/email-channel.mdx` and its `_meta.js` entry;
   - the channel line in `readme.md` (near `:34`);
   - `docs/architecture/code-map.md`;
@@ -425,7 +425,7 @@ R3 blocks T088 (S1 drain wiring). R1 and R2 block S3 and can run in parallel wit
   - `backend/src/modules/visitors/README.md:38-40` (email ingest has no visitor key);
   - `backend/src/modules/emailChannel/README.md`;
   - a one-line pointer in `docs/customer-email-skills.md`.
-- [ ] T105 [US1] Run `pnpm --dir packages/product-docs run sync` and confirm `sync:check` passes (after T103, T104).
+- [x] T105 [US1] Run `pnpm --dir packages/product-docs run sync` and confirm `sync:check` passes (after T103, T104).
 
 ### Verification (S1)
 

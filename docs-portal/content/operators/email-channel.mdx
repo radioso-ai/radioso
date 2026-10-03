@@ -1,0 +1,54 @@
+---
+title: Email channel
+description: Connect a support mailbox to a Radioso agent by forwarding, verify sending on your own domain, and work the mailbox event log from operator settings.
+---
+
+# Email channel
+
+The email channel lets a customer write to an address they already know — `support@customer.com` — and have a Radioso agent sit behind it, without Radioso taking over that mailbox. You forward your existing address to a relay address Radioso gives you, and once you've added a couple of DNS records, replies go out as your real address again.
+
+Every email the channel accepts is visible to an operator somewhere: as a conversation in the Inbox, or as an event in the mailbox's event log when it never becomes one. "The agent doesn't act" never means "nobody can see it."
+
+You manage it from an agent's **Channels**, alongside Web chat, API, MCP, and Slack.
+
+## What it does
+
+- Each mailbox you add gets its own opaque relay address on an inbound domain Radioso operates. Forwarding your real address to it is the only setup receiving needs — no DNS at all.
+- A mailbox runs in `operator_only` mode: every accepted email opens or continues a human-owned conversation, and the agent never runs a turn on it. Nothing is sent, drafted, or decided without a person.
+- Email conversations show up in the Inbox exactly like any other channel, and they never auto-close on their own. What decides whether one needs attention is whether a person has to act on it — not how long it's been quiet.
+- Replies go out as your real address — `support@customer.com`, not the relay — once you've verified sending for that domain.
+- An email that doesn't turn into a conversation (an autoresponder, a bounce, spam, a message to a mailbox you've disabled) is still recorded: you can see it in the mailbox's event log with its sender, subject, and why it stopped there.
+
+## Connect a mailbox
+
+Add a mailbox and bind it to an agent. Radioso returns a relay address on its inbound domain — forward your real address to it from whatever mail service you already use, and your mailbox stays exactly where it is. Run the setup check and send a message to your real address; once it arrives through the relay, the mailbox shows `receiving: ok` with the time it landed.
+
+**Google Workspace and Gmail** confirm a new forwarding address before they'll use it: they email a confirmation code or link to the destination, which here is the relay address. That confirmation email shows up as an event on your mailbox — open its raw view to read the code and enter it on the Google side.
+
+**Microsoft 365** blocks external automatic forwarding until a tenant admin changes the outbound anti-spam policy to allow it. Do that first; only then create the forwarding rule pointed at the relay address, or the forward fails with a bounce instead of going through.
+
+A mailbox that's received mail before and then gone quiet past its silence threshold shows a notice with the last time anything arrived — a dropped forwarding rule is invisible to Radioso otherwise, so this is the only signal you get.
+
+## Verify sending
+
+Adding a mailbox registers its domain for sending if it isn't registered already. The settings card shows the DKIM and SPF records (and a DMARC recommendation) with a copy button and a status per record. They're additive — adding them doesn't touch anything else already set up on your domain.
+
+Until a domain verifies, the mailbox still receives mail normally, but a reply is refused before anything is written, with the missing step named. Retrying once the domain verifies is safe. A domain can only belong to one workspace: adding one already claimed elsewhere is refused without saying who has it.
+
+## Direct receiving (advanced)
+
+Instead of forwarding, you can point an entire customer-owned domain or subdomain's MX record at Radioso. This is a deliberate trade-off: once you confirm it by typing the domain's name, *every* address on that domain routes to Radioso, not just the mailboxes you've connected. Forwarding is the default for a reason — reach for direct receiving only when you want Radioso to be the domain's mail server outright.
+
+## Common failure modes
+
+- **A mailbox never shows `receiving: ok`.** The forwarding rule either isn't saved on the mail-service side, or (Microsoft 365) the tenant's outbound anti-spam policy still blocks external forwarding. Check the policy before the rule.
+- **Google's confirmation email never arrives in your own inbox.** It isn't supposed to — it goes to the relay address, because that's the forwarding destination Google is confirming. Read it from the mailbox's event log in Radioso instead.
+- **A reply is refused with a missing-step message.** The mailbox's sending domain hasn't verified yet. Add the DKIM and SPF records shown on the domain and wait for them to resolve.
+- **Adding a domain is refused without an explanation of who has it.** Another workspace already claimed that domain for sending. Use a different domain or subdomain.
+- **An email you expected to see never shows up anywhere.** Check the mailbox's event log — automated-sender mail, bounces, spam, and mail from your own mailboxes are recorded there but never open a conversation, by design.
+
+## Read next
+
+- [Human takeover](/operators/human-takeover) — how ownership, handoffs, and the Inbox work across every channel, email included.
+- [Slack channel](/operators/slack-channel) — the other connector channel, for comparison.
+- [Author a directive](/guides/authoring-directives) — write finer rules for when an agent should and shouldn't engage, beyond a mailbox's mode.

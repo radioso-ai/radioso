@@ -62,6 +62,7 @@ const presentDetail = (execution: TestExecution, attempts: readonly TestExecutio
   const historySides = presentHistorySides(execution.sides);
   return {
     ...presentHistory(execution),
+    seededTurnCount: execution.seededTurnCount,
     testValues: execution.testValues,
     sides: execution.sides.map((side, index) => ({
       ...historySides[index],

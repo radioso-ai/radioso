@@ -29,7 +29,10 @@ export const registerTestExecutionSchemas = (registry: OpenAPIRegistry) => {
   const TestExecutionHistorySideSchema = TestExecutionHistorySideSummarySchema.extend({ history: z.array(TestExecutionHistoryEntrySchema) });
   const TestExecutionHistoryItemSchema = registry.register("TestExecutionHistoryItem", z.object({ id: uuid, generation: z.number().int().positive(), mode: z.enum(["single", "compare"]), state: z.enum(["running", "partial", "failed", "completed"]), createdAt: z.string().datetime(), skillEffects: skillEffectsSchema, sides: z.array(TestExecutionHistorySideSummarySchema) }));
   const TestExecutionAttemptRecordSchema = registry.register("TestExecutionAttemptRecord", z.object({ executionId: uuid, sideId: uuid, turnId: uuid, attemptId: uuid, fence: z.number().int().positive(), state: z.enum(["running", "failed", "completed"]), failureCode: z.string().nullable(), leaseExpiresAt: z.string().datetime(), createdAt: z.string().datetime(), updatedAt: z.string().datetime() }));
-  const TestExecutionHistoryDetailSchema = registry.register("TestExecutionHistoryDetail", TestExecutionHistoryItemSchema.extend({ testValues: z.array(z.unknown()), sides: z.array(TestExecutionHistorySideSchema), attempts: z.array(TestExecutionAttemptRecordSchema) }));
+  const TestExecutionHistoryDetailSchema = registry.register("TestExecutionHistoryDetail", TestExecutionHistoryItemSchema.extend({
+    seededTurnCount: z.number().int().min(0).describe("User messages copied in from the real conversation this test continues; 0 when it started fresh."),
+    testValues: z.array(z.unknown()), sides: z.array(TestExecutionHistorySideSchema), attempts: z.array(TestExecutionAttemptRecordSchema),
+  }));
   // Only the list carries the count; a detail already holds the whole transcript.
   const TestExecutionHistoryListItemSchema = registry.register("TestExecutionHistoryListItem", TestExecutionHistoryItemSchema.extend({
     turnCount: z.number().int().min(0).describe("User messages in this test: those copied from a real conversation it continues, plus those the operator sent. A greeting is not one."),

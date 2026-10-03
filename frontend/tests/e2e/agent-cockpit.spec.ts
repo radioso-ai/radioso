@@ -7,6 +7,7 @@ import {
   installDashboardApiMocks,
   nowIso,
   seedDashboardStorage,
+  testExecutionFixtureId,
   type RoutineFixture,
   type RoutineMutationFixture,
   workspaceKey,
@@ -85,6 +86,8 @@ type CockpitMockOptions = {
   agentUpdates?: unknown[]
   executionHistory?: unknown[]
   executionDetail?: unknown
+  /** Per-id detail overrides, for a journey that opens more than one saved test. */
+  executionDetails?: Record<string, unknown>
   delayExecutionDetail?: boolean
   replyBySide?: string[]
   turnTrace?: TurnTraceEnvelope
@@ -176,7 +179,7 @@ async function installCockpitMocks(page: Page, options: CockpitMockOptions = {})
     options.requestBodies?.push(body)
     executionNumber += 1
     const execution: TestExecution = {
-      id: `execution-${executionNumber}`,
+      id: testExecutionFixtureId(executionNumber),
       generation: executionNumber,
       mode: body.mode,
       skillEffects: body.skillEffects ?? 'suppressed',
@@ -209,7 +212,8 @@ async function installCockpitMocks(page: Page, options: CockpitMockOptions = {})
       ...known, createdAt: nowIso, testValues: [], attempts: attemptsByExecution.get(known.id) ?? [],
       state: known.sides.some((side) => side.state === 'failed') ? 'partial' : 'completed',
     }
-    await route.fulfill({ json: { execution: options.executionDetail ?? detail } })
+    const override = requestedId ? options.executionDetails?.[requestedId] : undefined
+    await route.fulfill({ json: { execution: override ?? options.executionDetail ?? detail } })
   })
   await page.route(new RegExp(`/backend/api/v1/agents/${defaultAgentId}/test-executions/[^/]+/messages$`), async (route) => {
     messageReceived?.()
@@ -220,28 +224,28 @@ async function installCockpitMocks(page: Page, options: CockpitMockOptions = {})
     const body = route.request().postDataJSON() as { executionGeneration: number; turnId: string; attemptId: string }
     const sideId = `side-${body.executionGeneration}-0`
     const event = options.failMessage
-      ? { type: 'side_failed', executionId: `execution-${body.executionGeneration}`, generation: body.executionGeneration, sideId, code: 'provider_unavailable', retryable: true, turnId: body.turnId, attemptId: body.attemptId }
-      : { type: 'message_delta', executionId: `execution-${body.executionGeneration}`, generation: body.executionGeneration, sideId, delta: 'A fenced answer.', turnId: body.turnId, attemptId: body.attemptId }
-    const active = executions.get(`execution-${body.executionGeneration}`)
+      ? { type: 'side_failed', executionId: testExecutionFixtureId(body.executionGeneration), generation: body.executionGeneration, sideId, code: 'provider_unavailable', retryable: true, turnId: body.turnId, attemptId: body.attemptId }
+      : { type: 'message_delta', executionId: testExecutionFixtureId(body.executionGeneration), generation: body.executionGeneration, sideId, delta: 'A fenced answer.', turnId: body.turnId, attemptId: body.attemptId }
+    const active = executions.get(testExecutionFixtureId(body.executionGeneration))
     const responseEvents = options.failMessage
       ? `data: ${JSON.stringify(event)}\n\n`
       : options.prematureEof
         ? (() => {
-          const delta = { type: 'message_delta', executionId: `execution-${body.executionGeneration}`, generation: body.executionGeneration, sideId, delta: 'A fenced answer.', turnId: body.turnId, attemptId: body.attemptId }
-          const done = { type: 'side_completed', executionId: `execution-${body.executionGeneration}`, generation: body.executionGeneration, sideId, messageId: 'message-0', turnId: body.turnId, attemptId: body.attemptId }
+          const delta = { type: 'message_delta', executionId: testExecutionFixtureId(body.executionGeneration), generation: body.executionGeneration, sideId, delta: 'A fenced answer.', turnId: body.turnId, attemptId: body.attemptId }
+          const done = { type: 'side_completed', executionId: testExecutionFixtureId(body.executionGeneration), generation: body.executionGeneration, sideId, messageId: 'message-0', turnId: body.turnId, attemptId: body.attemptId }
           return `data: ${JSON.stringify(delta)}\n\ndata: ${JSON.stringify(done)}\n\n`
         })()
       : Array.from({ length: sideCountByGeneration.get(body.executionGeneration) ?? 1 }, (_, index) => {
         const currentSideId = `side-${body.executionGeneration}-${index}`
         const answer = options.replyBySide?.[index] ?? (index === 0 ? 'A fenced answer.' : 'A comparison answer.')
         const activeSide = active?.sides.find((side) => side.id === currentSideId)
-        const attempts = attemptsByExecution.get(`execution-${body.executionGeneration}`) ?? []
-        attemptsByExecution.set(`execution-${body.executionGeneration}`, attempts)
+        const attempts = attemptsByExecution.get(testExecutionFixtureId(body.executionGeneration)) ?? []
+        attemptsByExecution.set(testExecutionFixtureId(body.executionGeneration), attempts)
         if (options.failFirstTurnOnFirstSide && index === 0 && activeSide && !activeSide.history?.length) {
           activeSide.history = [{ turnId: body.turnId, role: 'user', content: route.request().postDataJSON().message, attemptId: body.attemptId, createdAt: nowIso }]
           activeSide.state = 'failed'
           attempts.push({ sideId: currentSideId, turnId: body.turnId, attemptId: body.attemptId, fence: 1, state: 'failed', failureCode: 'runner_failed', createdAt: nowIso, updatedAt: nowIso })
-          return `data: ${JSON.stringify({ type: 'side_failed', executionId: `execution-${body.executionGeneration}`, generation: body.executionGeneration, sideId: currentSideId, code: 'runner_failed', retryable: true, turnId: body.turnId, attemptId: body.attemptId })}\n\n`
+          return `data: ${JSON.stringify({ type: 'side_failed', executionId: testExecutionFixtureId(body.executionGeneration), generation: body.executionGeneration, sideId: currentSideId, code: 'runner_failed', retryable: true, turnId: body.turnId, attemptId: body.attemptId })}\n\n`
         }
         attempts.push({ sideId: currentSideId, turnId: body.turnId, attemptId: body.attemptId, fence: 1, state: 'completed', createdAt: nowIso, updatedAt: nowIso })
         if (activeSide) {
@@ -251,8 +255,8 @@ async function installCockpitMocks(page: Page, options: CockpitMockOptions = {})
           ]
           activeSide.state = 'completed'
         }
-        const delta = { type: 'message_delta', executionId: `execution-${body.executionGeneration}`, generation: body.executionGeneration, sideId: currentSideId, delta: answer, turnId: body.turnId, attemptId: body.attemptId }
-        const done = { type: 'side_completed', executionId: `execution-${body.executionGeneration}`, generation: body.executionGeneration, sideId: currentSideId, messageId: `message-${index}`, turnId: body.turnId, attemptId: body.attemptId, ...(options.turnTrace ? { turnTrace: options.turnTrace } : {}) }
+        const delta = { type: 'message_delta', executionId: testExecutionFixtureId(body.executionGeneration), generation: body.executionGeneration, sideId: currentSideId, delta: answer, turnId: body.turnId, attemptId: body.attemptId }
+        const done = { type: 'side_completed', executionId: testExecutionFixtureId(body.executionGeneration), generation: body.executionGeneration, sideId: currentSideId, messageId: `message-${index}`, turnId: body.turnId, attemptId: body.attemptId, ...(options.turnTrace ? { turnTrace: options.turnTrace } : {}) }
         return `data: ${JSON.stringify(delta)}\n\ndata: ${JSON.stringify(done)}\n\n`
       }).join('')
     await route.fulfill({ contentType: 'text/event-stream', body: responseEvents })
@@ -268,7 +272,7 @@ async function installCockpitMocks(page: Page, options: CockpitMockOptions = {})
     options.retainedSideIds?.push(side.id)
     executionNumber += 1
     const retained: TestExecution = {
-      id: `execution-${executionNumber}`,
+      id: testExecutionFixtureId(executionNumber),
       generation: executionNumber,
       mode: 'single',
       skillEffects: source.skillEffects,
@@ -285,7 +289,7 @@ async function installCockpitMocks(page: Page, options: CockpitMockOptions = {})
     const body = route.request().postDataJSON() as { executionGeneration: number; turnId: string; attemptId: string }
     options.requestBodies?.push(body)
     const sideId = `side-${body.executionGeneration}-0`
-    await route.fulfill({ contentType: 'text/event-stream', body: `data: ${JSON.stringify({ type: 'message_delta', executionId: `execution-${body.executionGeneration}`, generation: body.executionGeneration, sideId, delta: 'Recovered retry answer.', turnId: body.turnId, attemptId: body.attemptId })}\n\ndata: ${JSON.stringify({ type: 'side_completed', executionId: `execution-${body.executionGeneration}`, generation: body.executionGeneration, sideId, messageId: 'retry-message', turnId: body.turnId, attemptId: body.attemptId })}\n\n` })
+    await route.fulfill({ contentType: 'text/event-stream', body: `data: ${JSON.stringify({ type: 'message_delta', executionId: testExecutionFixtureId(body.executionGeneration), generation: body.executionGeneration, sideId, delta: 'Recovered retry answer.', turnId: body.turnId, attemptId: body.attemptId })}\n\ndata: ${JSON.stringify({ type: 'side_completed', executionId: testExecutionFixtureId(body.executionGeneration), generation: body.executionGeneration, sideId, messageId: 'retry-message', turnId: body.turnId, attemptId: body.attemptId })}\n\n` })
   })
   await page.route('**/backend/api/v1/evals/revision-runs', async (route) => {
     options.requestBodies?.push(route.request().postDataJSON())
@@ -558,7 +562,7 @@ test('closes the draft comparison card into its retained published thread', asyn
   await page.keyboard.press('Escape')
 
   await page.getByRole('button', { name: 'Send', exact: true }).click()
-  await expect.poll(() => messageExecutionIds).toEqual(['execution-1', 'execution-2'])
+  await expect.poll(() => messageExecutionIds).toEqual([testExecutionFixtureId(1), testExecutionFixtureId(2)])
   await expect(page.getByText('Keep this unpublished follow-up', { exact: true })).toHaveCount(1)
   await page.screenshot({ path: resolve(process.cwd(), '..', '.context', 'cockpit-retained-published.png'), fullPage: true })
   await page.setViewportSize({ width: 390, height: 844 })
@@ -592,7 +596,7 @@ test('closes the published comparison card into its retained draft thread', asyn
   await page.keyboard.press('Escape')
 
   await page.getByRole('button', { name: 'Send', exact: true }).click()
-  await expect.poll(() => messageExecutionIds).toEqual(['execution-1', 'execution-2'])
+  await expect.poll(() => messageExecutionIds).toEqual([testExecutionFixtureId(1), testExecutionFixtureId(2)])
   await expect(page.getByText('Continue only the draft', { exact: true })).toHaveCount(1)
   await page.screenshot({ path: resolve(process.cwd(), '..', '.context', 'cockpit-retained-draft.png'), fullPage: true })
 })
@@ -614,7 +618,7 @@ test('keeps comparison close controls disabled while their response stream is ac
 
 test('reopens a durable comparison with its recorded versions, values, and transcript', async ({ page }) => {
   const saved = {
-    id: 'execution-history-1', generation: 4, mode: 'compare', state: 'completed', createdAt: nowIso,
+    id: '66666666-6666-4666-8666-666666666666', generation: 4, mode: 'compare', state: 'completed', createdAt: nowIso,
     skillEffects: 'allowed',
     sides: [
       { id: 'history-left', revision: published, conversationId: 'conversation-left', state: 'completed', retryable: false },
@@ -693,6 +697,11 @@ test('shares a saved test as a link that opens it on a fresh visit', async ({ pa
   await expect(page.getByText('Can I change the address?', { exact: true })).toBeVisible()
   await expect(page.getByText('Yes, until it ships.', { exact: true })).toBeVisible()
   await expect(page.getByText(/Continuing a copy/)).toHaveCount(0)
+  // The id stays in the URL as route state, not a one-shot command the component drops.
+  await expect(page).toHaveURL(link)
+  await page.reload()
+  await expect(page.getByText('Yes, until it ships.', { exact: true })).toBeVisible()
+  await expect(page).toHaveURL(link)
 
   await page.evaluate(() => navigator.clipboard.writeText(''))
   await clickTestChatAction(page, 'Copy link to this chat')
@@ -736,7 +745,7 @@ test('shows a link to copy by hand when the page has no clipboard, only beside i
   await expect(page.getByText(`testExecution=${saved.id}`)).toHaveCount(0)
 })
 
-test('drops a shared test still opening once the operator moves to Conversation history and back', async ({ page }) => {
+test('re-opens a shared test still loading when the operator returns to it from Conversation history', async ({ page }) => {
   const saved = {
     id: '33333333-3333-4333-8333-333333333333', generation: 1, mode: 'single', state: 'completed', createdAt: nowIso,
     skillEffects: 'suppressed', turnCount: 1, firstMessage: 'A slow shared question',
@@ -762,20 +771,20 @@ test('drops a shared test still opening once the operator moves to Conversation 
   await expect(page).toHaveURL(/[?&]view=history/)
   await expect(page).not.toHaveURL(/testExecution=/)
 
-  // Coming back to the chat before it loads does not revive the open the operator walked away from.
-  await page.getByRole('button', { name: 'Back to chat', exact: true }).click()
-  await expect(testChatComposer(page)).toBeVisible()
+  // While in history, the abandoned first fetch resolving late must not drag the operator back to
+  // chat: it is superseded, not revived.
   mocks.releaseExecutionDetail()
   await page.waitForTimeout(300)
-  await expect(testChatComposer(page)).toBeVisible()
-  await expect(page.getByText('A slow shared answer', { exact: true })).toHaveCount(0)
-  await expect(page).not.toHaveURL(/testExecution=/)
-  // No entry behind it still holds the dropped open command.
-  await page.goForward()
   await expect(page.getByRole('heading', { name: 'Conversation history', exact: true })).toBeVisible()
-  await page.goBack()
-  await expect(page).not.toHaveURL(/testExecution=/)
-  await expect(testChatComposer(page)).toBeVisible()
+
+  // Going back to chat returns to the exact entry the shared link landed on, so it re-opens the
+  // same test rather than landing on a blank chat; a fresh fetch starts for it.
+  await page.getByRole('button', { name: 'Back to chat', exact: true }).click()
+  await expect(page).toHaveURL(new RegExp(`testExecution=${saved.id}`))
+  await expect(page.getByText('Opening this test…', { exact: true })).toBeVisible()
+  await expect(testChatComposer(page)).toHaveCount(0)
+  mocks.releaseExecutionDetail()
+  await expect(page.getByText('A slow shared answer', { exact: true })).toBeVisible()
 })
 
 test('keeps a shared link that cannot open on screen after the greeting starts', async ({ page }) => {
@@ -790,7 +799,9 @@ test('keeps a shared link that cannot open on screen after the greeting starts',
 
   await expect.poll(() => testStarts().length).toBe(1)
   await expect(page.getByRole('alert').filter({ hasText: /unavailable|Unable to open/ })).toBeVisible()
-  await expect(page).not.toHaveURL(/testExecution=/)
+  // The broken id is cleared, and the greeting's own fresh test takes its place in the URL.
+  await expect(page).toHaveURL(new RegExp(`testExecution=${testExecutionFixtureId(1)}`))
+  await expect(page).not.toHaveURL(new RegExp(`testExecution=${goneId}`))
 })
 
 test('says so when a shared link carries a broken test id, without asking the API', async ({ page }) => {
@@ -806,7 +817,7 @@ test('says so when a shared link carries a broken test id, without asking the AP
   expect(detailRequests).toEqual([])
 })
 
-test('New chat from Conversation history drops a row still opening', async ({ page }) => {
+test('New chat drops a test still opening from a history row', async ({ page }) => {
   const saved = {
     id: '55555555-5555-4555-8555-555555555555', generation: 1, mode: 'single', state: 'completed', createdAt: nowIso,
     skillEffects: 'suppressed', turnCount: 1, firstMessage: 'An old slow question',
@@ -827,10 +838,13 @@ test('New chat from Conversation history drops a row still opening', async ({ pa
   })
   await page.goto(`${testUrl}&view=history`)
   await page.getByRole('button', { name: 'Open', exact: true }).click()
+  // Opening a history row leaves history for chat right away; the fetch fires from there.
+  await expect(page).not.toHaveURL(/[?&]view=history/)
+  await expect(page.getByText('Opening this test…', { exact: true })).toBeVisible()
   await mocks.executionDetailRequest
   await clickTestChatAction(page, 'New chat')
   await expect(testChatComposer(page)).toBeVisible()
-  await expect(page).not.toHaveURL(/[?&]view=history/)
+  await expect(page).not.toHaveURL(new RegExp(`testExecution=${saved.id}`))
 
   mocks.releaseExecutionDetail()
   await page.waitForTimeout(300)
@@ -872,6 +886,8 @@ test('gives Conversation history its own link, and starts no greeting behind it'
   await expect(page).not.toHaveURL(/[?&]view=history/)
   await expect(testChatComposer(page)).toBeVisible()
   await expect.poll(() => testStarts().length).toBe(1)
+  // The chat entry now carries the greeting's own test, not just an empty chat.
+  await expect(page).toHaveURL(new RegExp(`testExecution=${testExecutionFixtureId(1)}`))
 
   await clickTestChatAction(page, 'Conversation history')
   await expect(page).toHaveURL(/[?&]view=history/)
@@ -893,9 +909,9 @@ test('gives Conversation history its own link, and starts no greeting behind it'
   await expect(page.getByRole('heading', { name: 'Conversation history', exact: true })).toBeVisible()
 })
 
-test('fences a delayed history open after the operator returns to a new chat', async ({ page }) => {
+test('browser Back during a slow history open leaves it unopened', async ({ page }) => {
   const saved = {
-    id: 'execution-history-slow', generation: 1, mode: 'single', state: 'completed', createdAt: nowIso,
+    id: '77777777-7777-4777-8777-777777777777', generation: 1, mode: 'single', state: 'completed', createdAt: nowIso,
     sides: [{ id: 'slow-side', revision: candidate, conversationId: 'slow-conversation', state: 'completed', retryable: false }],
   }
   const mocks = await installCockpitMocks(page, {
@@ -911,12 +927,125 @@ test('fences a delayed history open after the operator returns to a new chat', a
   await page.goto(testUrl)
   await clickTestChatAction(page, 'Conversation history')
   await page.getByRole('button', { name: 'Open', exact: true }).click()
+  // Opening leaves history for chat right away; the fetch is already in flight when Back fires.
+  await expect(page.getByText('Opening this test…', { exact: true })).toBeVisible()
   await mocks.executionDetailRequest
-  await page.getByRole('button', { name: 'Back to chat', exact: true }).click()
-  await clickTestChatAction(page, 'New chat')
-  mocks.releaseExecutionDetail()
 
+  await page.goBack()
+  await expect(page.getByRole('heading', { name: 'Conversation history', exact: true })).toBeVisible()
+  mocks.releaseExecutionDetail()
+  await page.waitForTimeout(300)
+  await expect(page).toHaveURL(/view=history/)
+  // History hides the chat, so only returning to it shows whether the late detail loaded.
+  await page.getByRole('button', { name: 'Back to chat', exact: true }).click()
+  await expect(page).not.toHaveURL(/view=history/)
+  await expect(page).not.toHaveURL(new RegExp(saved.id))
+  await expect(testChatComposer(page)).toBeVisible()
   await expect(page.getByText('Old delayed request', { exact: true })).toHaveCount(0)
+})
+
+test('keeps a freshly started test open after reload', async ({ page }) => {
+  await installCockpitMocks(page)
+  await page.goto(testUrl)
+  await testChatComposer(page).fill('Where is my order?')
+  await page.getByRole('button', { name: 'Send', exact: true }).click()
+  await expect(page.getByText('A fenced answer.', { exact: true })).toBeVisible()
+  await expect(page).toHaveURL(new RegExp(`testExecution=${testExecutionFixtureId(1)}`))
+
+  await page.reload()
+  await expect(page.getByText('Where is my order?', { exact: true })).toBeVisible()
+  await expect(page.getByText('A fenced answer.', { exact: true })).toBeVisible()
+  await expect(page).toHaveURL(new RegExp(`testExecution=${testExecutionFixtureId(1)}`))
+})
+
+test('walks Back and Forward through two history-opened tests and the history view between them', async ({ page }) => {
+  const idA = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+  const idB = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+  const savedA = {
+    id: idA, generation: 1, mode: 'single', state: 'completed', createdAt: nowIso,
+    skillEffects: 'suppressed', turnCount: 1, firstMessage: 'Question A',
+    sides: [{ id: 'side-a', revision: published, conversationId: 'conversation-a', state: 'completed', retryable: false }],
+  }
+  const savedB = {
+    id: idB, generation: 2, mode: 'single', state: 'completed', createdAt: nowIso,
+    skillEffects: 'suppressed', turnCount: 1, firstMessage: 'Question B',
+    sides: [{ id: 'side-b', revision: published, conversationId: 'conversation-b', state: 'completed', retryable: false }],
+  }
+  await installCockpitMocks(page, {
+    executionHistory: [savedA, savedB],
+    executionDetails: {
+      [idA]: { ...savedA, testValues: [], sides: [{ ...savedA.sides[0], history: [{ turnId: 'turn-a', role: 'user', content: 'Answer for A', attemptId: 'attempt-a', createdAt: nowIso }] }], attempts: [] },
+      [idB]: { ...savedB, testValues: [], sides: [{ ...savedB.sides[0], history: [{ turnId: 'turn-b', role: 'user', content: 'Answer for B', attemptId: 'attempt-b', createdAt: nowIso }] }], attempts: [] },
+    },
+  })
+  await page.goto(testUrl)
+  await clickTestChatAction(page, 'Conversation history')
+  await page.getByRole('row').filter({ hasText: 'Question A' }).getByRole('button', { name: 'Open', exact: true }).click()
+  await expect(page.getByText('Answer for A', { exact: true })).toBeVisible()
+  await expect(page).toHaveURL(new RegExp(`testExecution=${idA}`))
+
+  await clickTestChatAction(page, 'Conversation history')
+  await page.getByRole('row').filter({ hasText: 'Question B' }).getByRole('button', { name: 'Open', exact: true }).click()
+  await expect(page.getByText('Answer for B', { exact: true })).toBeVisible()
+  await expect(page).toHaveURL(new RegExp(`testExecution=${idB}`))
+
+  await page.goBack()
+  await expect(page.getByRole('heading', { name: 'Conversation history', exact: true })).toBeVisible()
+  await page.goBack()
+  await expect(page.getByText('Answer for A', { exact: true })).toBeVisible()
+  await expect(page).toHaveURL(new RegExp(`testExecution=${idA}`))
+  await page.goForward()
+  await expect(page.getByRole('heading', { name: 'Conversation history', exact: true })).toBeVisible()
+  await page.goForward()
+  await expect(page.getByText('Answer for B', { exact: true })).toBeVisible()
+  await expect(page).toHaveURL(new RegExp(`testExecution=${idB}`))
+})
+
+test('New chat then Back returns to the test left behind', async ({ page }) => {
+  const idA = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
+  const savedA = {
+    id: idA, generation: 1, mode: 'single', state: 'completed', createdAt: nowIso,
+    skillEffects: 'suppressed', turnCount: 1, firstMessage: 'Question before New chat',
+    sides: [{ id: 'side-c', revision: published, conversationId: 'conversation-c', state: 'completed', retryable: false }],
+  }
+  await installCockpitMocks(page, {
+    executionHistory: [savedA],
+    executionDetail: {
+      ...savedA, testValues: [],
+      sides: [{ ...savedA.sides[0], history: [{ turnId: 'turn-c', role: 'user', content: 'Answer before New chat', attemptId: 'attempt-c', createdAt: nowIso }] }],
+      attempts: [],
+    },
+  })
+  await page.goto(testUrl)
+  await clickTestChatAction(page, 'Conversation history')
+  await page.getByRole('button', { name: 'Open', exact: true }).click()
+  await expect(page.getByText('Answer before New chat', { exact: true })).toBeVisible()
+  await expect(page).toHaveURL(new RegExp(`testExecution=${idA}`))
+
+  await clickTestChatAction(page, 'New chat')
+  await expect(page).not.toHaveURL(/testExecution=/)
+  await expect(testChatComposer(page)).toHaveValue('')
+
+  await page.goBack()
+  await expect(page.getByText('Answer before New chat', { exact: true })).toBeVisible()
+  await expect(page).toHaveURL(new RegExp(`testExecution=${idA}`))
+})
+
+test('retaining a comparison side writes the retained test\'s own id into the URL', async ({ page }) => {
+  await installCockpitMocks(page)
+  await page.goto(testUrl)
+
+  await page.getByRole('button', { name: 'Compare versions', exact: true }).click()
+  await testChatComposer(page).fill('Compare this')
+  await page.getByRole('button', { name: 'Send to both', exact: true }).click()
+  await expect(page.getByText('A comparison answer.', { exact: true })).toBeVisible()
+  await expect(page).toHaveURL(new RegExp(`testExecution=${testExecutionFixtureId(1)}`))
+
+  await page.getByRole('button', { name: 'Close v4', exact: true }).click()
+  await expect(page.getByText('A comparison answer.', { exact: true })).toBeVisible()
+  // The retained single thread is its own execution, replacing the comparison's id in the URL.
+  await expect(page).toHaveURL(new RegExp(`testExecution=${testExecutionFixtureId(2)}`))
+  await expect(page).not.toHaveURL(new RegExp(`testExecution=${testExecutionFixtureId(1)}`))
 })
 
 test('new chat keeps a running eval poll and its evidence while clearing only the visible test', async ({ page }) => {
@@ -939,7 +1068,7 @@ test('new chat keeps a running eval poll and its evidence while clearing only th
 test('reopens a later failed turn and retries that recorded turn only', async ({ page }) => {
   const requestBodies: unknown[] = []
   const saved = {
-    id: 'execution-history-failed', generation: 4, mode: 'compare', state: 'partial', createdAt: nowIso,
+    id: '88888888-8888-4888-8888-888888888888', generation: 4, mode: 'compare', state: 'partial', createdAt: nowIso,
     sides: [
       { id: 'failed-left', revision: published, conversationId: 'conversation-left', state: 'completed', retryable: false },
       { id: 'failed-right', revision: candidate, conversationId: 'conversation-right', state: 'failed', retryable: true },
@@ -994,7 +1123,7 @@ test('keeps a failed turn that a later message superseded when a comparison side
 
 test('reopens a session with a failed turn that a later message superseded', async ({ page }) => {
   const saved = {
-    id: 'execution-history-superseded', generation: 1, mode: 'single', state: 'completed', createdAt: nowIso,
+    id: '99999999-9999-4999-8999-999999999999', generation: 1, mode: 'single', state: 'completed', createdAt: nowIso,
     sides: [{ id: 'superseded-side', revision: published, conversationId: 'conversation-superseded', state: 'completed', retryable: false }],
   }
   await installCockpitMocks(page, {
@@ -1665,15 +1794,26 @@ test('keeps the private test execution and draft inputs across cockpit navigatio
   )
   const startedCount = startedTests().length
 
+  const detailRequests: string[] = []
+  page.on('request', (request) => {
+    if (/\/test-executions\/[^/?]+$/.test(new URL(request.url()).pathname)) detailRequests.push(request.url())
+  })
+  await expect(page).toHaveURL(/testExecution=/)
+  const openTestId = new URL(page.url()).searchParams.get('testExecution')
   const cockpit = page.getByRole('navigation', { name: 'Agent cockpit' })
   await cockpit.getByRole('tab', { name: 'Profile', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Profile', level: 1, exact: true })).toBeVisible()
+  // The tab switch's own route drops testExecution; the remounted chat adopts its cached test
+  // back into the URL from the session cache alone, without asking the API for it again.
+  await expect(page).not.toHaveURL(/testExecution=/)
   await page.getByRole('navigation', { name: 'Agent cockpit' }).getByRole('tab', { name: 'Test Chat', exact: true }).click()
   await expect(page.getByText('A fenced answer.', { exact: true })).toBeVisible()
   await expect(page.getByText('Track this order', { exact: true })).toBeVisible()
   await expect(page.getByText('Welcome back to the draft test.', { exact: true })).toHaveCount(1)
   await expect(testChatComposer(page)).toHaveValue('Keep this follow-up unsent')
   expect(startedTests()).toHaveLength(startedCount)
+  await expect(page).toHaveURL(new RegExp(`testExecution=${openTestId}`))
+  expect(detailRequests).toEqual([])
 
   // The selected version and comparison action live in the single-chat card
   // header, alongside the independently scrollable conversation body.

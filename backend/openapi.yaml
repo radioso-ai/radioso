@@ -15591,6 +15591,10 @@ components:
                   - state
                   - retryable
                   - history
+            seededTurnCount:
+              type: integer
+              minimum: 0
+              description: User messages copied in from the real conversation this test continues; 0 when it started fresh.
             testValues:
               type: array
               items: {}
@@ -15599,6 +15603,7 @@ components:
               items:
                 $ref: "#/components/schemas/TestExecutionAttemptRecord"
           required:
+            - seededTurnCount
             - testValues
             - attempts
     TestExecutionHistoryListItem:

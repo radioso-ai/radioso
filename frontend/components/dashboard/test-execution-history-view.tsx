@@ -17,7 +17,6 @@ import { LogoSpinner } from '@/components/ui/spinner'
 import {
   agentRevisionsApi,
   type AgentRevisionSummary,
-  type TestExecutionHistoryDetail,
   type TestExecutionHistoryListItem,
 } from '@/lib/api-agent-revisions'
 import { useCopyDashboardLink } from '@/hooks/use-copy-dashboard-link'
@@ -42,17 +41,16 @@ export function TestExecutionHistoryView({
   linkFor,
 }: {
   agentId: string
-  onOpen: (execution: TestExecutionHistoryDetail) => void
+  /** Names the test to open; the chat view fetches it once the route carries this id. */
+  onOpen: (executionId: string) => void
   /** The dashboard link that opens one saved test; without it the row offers no link. */
   linkFor?: (executionId: string) => string
 }) {
   const [executions, setExecutions] = useState<TestExecutionHistoryListItem[] | null>(null)
   const link = useCopyDashboardLink()
   const [error, setError] = useState<string | null>(null)
-  const [openingId, setOpeningId] = useState<string | null>(null)
   const [nextCursor, setNextCursor] = useState<string | null>(null)
   const [loadingMore, setLoadingMore] = useState(false)
-  const openRequestGeneration = useRef(0)
   const pageRequestGeneration = useRef(0)
 
   useEffect(() => {
@@ -73,24 +71,8 @@ export function TestExecutionHistoryView({
     return () => {
       cancelled = true
       if (pageRequestGeneration.current === requestGeneration) pageRequestGeneration.current += 1
-      openRequestGeneration.current += 1
     }
   }, [agentId])
-
-  const open = async (executionId: string) => {
-    const requestGeneration = openRequestGeneration.current + 1
-    openRequestGeneration.current = requestGeneration
-    setOpeningId(executionId)
-    try {
-      const response = await agentRevisionsApi.getTestExecution(agentId, executionId)
-      if (openRequestGeneration.current !== requestGeneration) return
-      onOpen(response.execution)
-    } catch (cause) {
-      if (openRequestGeneration.current === requestGeneration) setError(cause instanceof Error ? cause.message : 'Could not reopen this private test.')
-    } finally {
-      if (openRequestGeneration.current === requestGeneration) setOpeningId(null)
-    }
-  }
 
   const loadMore = async () => {
     if (!nextCursor || loadingMore) return
@@ -147,7 +129,7 @@ export function TestExecutionHistoryView({
                 {link.copiedKey === execution.id ? <Check className="h-4 w-4" /> : <Link2 className="h-4 w-4" />}
               </Button>
             ) : null}
-            <Button size="sm" variant="outline" onClick={() => void open(execution.id)} disabled={openingId !== null}>{openingId === execution.id ? 'Opening…' : 'Open'}</Button>
+            <Button size="sm" variant="outline" onClick={() => onOpen(execution.id)}>Open</Button>
           </span>
         </DashboardTableCell>
       </DashboardTableRow>)}

@@ -9602,6 +9602,8 @@ export interface components {
                     createdAt: string;
                 }[];
             }[];
+            /** @description User messages copied in from the real conversation this test continues; 0 when it started fresh. */
+            seededTurnCount: number;
             testValues: unknown[];
             attempts: components["schemas"]["TestExecutionAttemptRecord"][];
         };

@@ -4,7 +4,19 @@ export {
   type EmailDriver,
   type EmailMessage,
   type EmailSendResult,
+  type OutboundThreadingHeaders,
+  type SentEmailStatus,
 } from "./emailService.js";
+export { EmailLookupError, EmailSendError } from "./emailSendErrors.js";
+export {
+  EmailHeaderValueError,
+  formatMailbox,
+  headerSafeAddress,
+  parseRfcMessageId,
+  rfcMessageId,
+  type HeaderSafeAddress,
+  type RfcMessageId,
+} from "./emailHeaderValues.js";
 export {
   InboundFetchError,
   type InboundEmailMessage,

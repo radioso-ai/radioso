@@ -30,13 +30,21 @@ class RecordingEmailDriver implements EmailDriver {
 
   async send(message: EmailMessage): Promise<EmailSendResult> {
     this.messages.push(message);
-    return { dispatched: true };
+    return { dispatched: true, providerMessageId: `provider-${this.messages.length}`, deliveredMessageId: null };
+  }
+
+  async lookup(): Promise<null> {
+    return null;
   }
 }
 
 class FailingEmailDriver implements EmailDriver {
   async send(): Promise<EmailSendResult> {
     throw new Error("delivery failed");
+  }
+
+  async lookup(): Promise<null> {
+    return null;
   }
 }
 

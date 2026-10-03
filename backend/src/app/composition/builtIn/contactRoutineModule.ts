@@ -195,6 +195,7 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
       handler: ({ database, env, logger, mailService, assertPublicWebsiteUrl }) => {
         return new ApprovalRequestActionHandler(
           buildOperatorNotificationDispatcher({ database, env, logger, mailService, assertPublicWebsiteUrl }),
+          new ConversationRepository(database.kysely),
         );
       },
     });

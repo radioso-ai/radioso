@@ -14,6 +14,7 @@ import {
 import {
   OWNERSHIP_REPLY_ACTION_ID,
   OWNERSHIP_REPLY_BLOCK_ID,
+  OWNERSHIP_CONTEXT_BLOCK_ID,
   buildOwnershipMessage,
   buildReplyModal,
   buildResolvedDecisionMessage,
@@ -126,7 +127,19 @@ const findAction = (payload: SlackInteractivityPayload, actionId: string): Recor
 const readNumber = (value: unknown): number | null =>
   typeof value === "number" && Number.isInteger(value) ? value : null;
 
-const ownershipContextText = (conversationId: string): string => `Conversation ${conversationId}`;
+/**
+ * The clicked card's notice text, carried onto its replacement so an ownership change keeps the
+ * subject and collected values. Slack echoes the original message in a signed payload, and the
+ * text is mrkdwn this server already escaped, so it is reused as is. A card posted before the
+ * section had a block id leads with its notice section.
+ */
+const ownershipContextText = (payload: SlackInteractivityPayload, conversationId: string): string => {
+  const blocks = isRecord(payload.message) && Array.isArray(payload.message.blocks) ? payload.message.blocks : [];
+  const sections = blocks.filter((block): block is Record<string, unknown> => isRecord(block) && block.type === "section");
+  const section = sections.find((block) => block.block_id === OWNERSHIP_CONTEXT_BLOCK_ID) ?? sections[0];
+  const text = section && isRecord(section.text) && section.text.type === "mrkdwn" ? section.text.text : null;
+  return typeof text === "string" && text.trim() ? text : `Conversation ${conversationId}`;
+};
 
 /**
  * The refusal naming whoever holds a conversation, for the teammate it is shown to: a private
@@ -406,7 +419,7 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
       conversationId: input.conversationId,
       workspaceId: input.workspaceId,
       state: "human_owned",
-      contextText: ownershipContextText(input.conversationId),
+      contextText: ownershipContextText(payload, input.conversationId),
       dashboardUrl: await this.conversationLink(input),
       // The channel can include people outside the workspace, so the card never names anyone by email.
       ownerName: outwardFacingName(result.record.ownerProfile?.displayName, resolved.identity.displayName),
@@ -454,7 +467,7 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
       conversationId: input.conversationId,
       workspaceId,
       state: "ai_owned",
-      contextText: ownershipContextText(input.conversationId),
+      contextText: ownershipContextText(payload, input.conversationId),
       dashboardUrl: await this.conversationLink({ workspaceId, conversationId: input.conversationId }),
     });
     await this.postResponseUrl(payload, {

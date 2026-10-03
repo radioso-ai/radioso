@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  capToSupportedMode,
   effectiveEngagementMode,
   type EngagementMode,
 } from "../../../src/modules/emailChannel/mailboxes/effectiveMode.js";
@@ -54,5 +55,26 @@ describe("effectiveEngagementMode", () => {
       { mode: "draft", enabled: true },
       { mode: "auto", enabled: false },
     )).toEqual({ mode: "draft", enabled: false });
+  });
+});
+
+describe("capToSupportedMode", () => {
+  it.each([
+    [["operator_only"], "auto", "operator_only"],
+    [["operator_only"], "draft", "operator_only"],
+    [["operator_only", "draft"], "auto", "draft"],
+    [["operator_only", "draft"], "draft", "draft"],
+    [["operator_only", "draft", "auto"], "auto", "auto"],
+    [["operator_only", "auto"], "draft", "operator_only"],
+    [["operator_only", "draft", "auto"], "operator_only", "operator_only"],
+    [[], "auto", "operator_only"],
+  ] as const)("supported %j caps %s at %s", (supported, mode, expected) => {
+    expect(capToSupportedMode(mode, supported)).toBe(expected);
+  });
+
+  it("never raises autonomy", () => {
+    for (const mode of MODES) {
+      expect(effectiveEngagementMode({ mode, enabled: true }, { mode: capToSupportedMode(mode, MODES), enabled: true }).mode).toBe(mode);
+    }
   });
 });

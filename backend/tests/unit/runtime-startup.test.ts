@@ -15,6 +15,7 @@ import { startWorkerRuntime } from "../../src/runtime/startWorkerRuntime.js";
 import { startCrawlerWorkerRuntime } from "../../src/runtime/startCrawlerWorkerRuntime.js";
 import { startCrawlerWorkerTaskRuntime } from "../../src/runtime/startCrawlerWorkerTaskRuntime.js";
 import type { ConnectorPlugin } from "@radioso/connector-api";
+import { EmailChannelWorker } from "../../src/modules/connectors/plugins/email/emailChannelWorker.js";
 
 const createEnv = (): Env => ({
   NODE_ENV: "test",
@@ -536,6 +537,79 @@ describe("runtime startup", () => {
     }
   });
 
+  describe("email channel worker", () => {
+    const emailChannelWorker = (enabled: boolean) =>
+      new EmailChannelWorker({
+        enabled,
+        events: { claimDueEvents: vi.fn(async () => []) },
+        processor: { process: vi.fn() },
+        sweep: { run: vi.fn() },
+        logger: { warn: vi.fn(), error: vi.fn() },
+      });
+
+    const startWorker = (dependencies: AppDependencies) =>
+      startWorkerRuntime({
+        env: createEnv(),
+        logger: createLogger().logger as any,
+        ensureNoPendingMigrations: vi.fn().mockResolvedValue(undefined),
+        buildDependencies: () => dependencies,
+      });
+
+    const startWorkerTask = (dependencies: AppDependencies, createApp: (dependencies: AppDependencies) => any = () => ({})) =>
+      startWorkerTaskRuntime({
+        env: createEnv(),
+        logger: createLogger().logger as any,
+        ensureNoPendingMigrations: vi.fn().mockResolvedValue(undefined),
+        buildDependencies: () => dependencies,
+        createApp,
+        listen: (_app, _port, onListening) => {
+          onListening();
+          return { close: (callback?: (error?: Error) => void) => callback?.() };
+        },
+      });
+
+    it("runs the drain loop in the worker runtime when configured and enabled, and stops it on shutdown", async () => {
+      const worker = emailChannelWorker(true);
+      const dependencies = { ...createDependencies(), emailChannelWorker: worker } as AppDependencies;
+
+      const runtime = await startWorker(dependencies);
+      expect(worker.running).toBe(true);
+
+      await runtime.shutdown("test");
+      expect(worker.running).toBe(false);
+    });
+
+    it("hands the worker to the worker-task runtime's routes, which drain on push rather than on a loop", async () => {
+      const worker = emailChannelWorker(true);
+      const dependencies = { ...createDependencies(), emailChannelWorker: worker } as AppDependencies;
+      const createApp = vi.fn((_dependencies: AppDependencies) => ({}) as any);
+
+      const runtime = await startWorkerTask(dependencies, createApp);
+
+      expect(createApp).toHaveBeenCalledWith(expect.objectContaining({ emailChannelWorker: worker }));
+      expect(worker.running).toBe(false);
+      await runtime.shutdown("test");
+    });
+
+    it("wires nothing in either runtime when the email channel is configured but its workers are disabled", async () => {
+      const worker = emailChannelWorker(false);
+      const dependencies = { ...createDependencies(), emailChannelWorker: worker } as AppDependencies;
+
+      const runtime = await startWorker(dependencies);
+      expect(worker.running).toBe(false);
+      expect(await worker.drain({ maxJobs: 5, stage: "all" })).toMatchObject({ claimed: 0 });
+      await runtime.shutdown("test");
+    });
+
+    it("starts and stops both runtimes cleanly when no email provider is configured", async () => {
+      const dependencies = createDependencies();
+      expect(dependencies.emailChannelWorker).toBeUndefined();
+
+      await (await startWorker(dependencies)).shutdown("test");
+      await (await startWorkerTask(dependencies)).shutdown("test");
+    });
+  });
+
   describe("worker runtime parity guard", () => {
     // The contact-outbox incident: `actionDispatchWorker.start()` was wired into
     // startWorkerRuntime (docker-compose) but the production entrypoint,
@@ -565,6 +639,7 @@ describe("runtime startup", () => {
     > = {
       documentProcessingWorker: { route: "POST /internal/tasks/document-processing (and /recover)" },
       actionDispatchWorker: { route: "POST /internal/tasks/actions/drain (and /recover)" },
+      emailChannelWorker: { route: "POST /internal/tasks/email-channel/drain (and /sweep)" },
       vectorIndexReconciler: {
         noPushCounterpart:
           "runs embedding-space reconciliation ticks alongside document processing in the same " +

@@ -7,8 +7,6 @@ export {
 } from "./emailService.js";
 export {
   InboundFetchError,
-  type AuthVerdict,
-  type DeliveryStatusFacts,
   type InboundEmailMessage,
   type InboundEmailReceiver,
   type InboundEnvelope,
@@ -23,9 +21,7 @@ export {
 export type {
   DnsRecordView,
   DomainReadiness,
-  DomainRegistration,
   EmailDomainProvisioner,
-  ReadinessStatus,
 } from "./emailDomainProvisioner.js";
 export { ResendEmailDeliveryError, ResendEmailDriver } from "./adapters/resendDriver.js";
 export {

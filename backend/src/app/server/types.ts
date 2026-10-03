@@ -58,6 +58,8 @@ import type { ConversationRepositoryPort } from "../../db/repositories/conversat
 import type { MessageRepositoryPort } from "../../db/repositories/messageRepository.js";
 import type { ConnectorIngestionPort } from "@radioso/connector-api";
 import type { ConnectorRegistry } from "../../modules/connectors/services/connectorRegistry.js";
+import type { EmailChannelWorker } from "../../modules/connectors/plugins/index.js";
+import type { EmailChannelComposition } from "../composition/emailChannel.js";
 import type { ConnectorManagementPort } from "../../modules/connectors/services/connectorManagementService.js";
 import type { Database } from "../../shared/infra/database.js";
 import type { Env } from "../config/env.js";
@@ -258,6 +260,13 @@ export interface AppDependencies {
   // Worker-process drain loop for the async conversation-action outbox (spec 070).
   // Present in every dependency build; only the worker runtime calls start/stop.
   actionDispatchWorker: ActionDispatchWorker;
+  /**
+   * The email channel's inbound drain and sweep: an interval loop in the worker runtime, push and
+   * schedule routes in the worker-task runtime. Undefined when no email provider is configured.
+   */
+  emailChannelWorker?: EmailChannelWorker;
+  /** The email channel's settings services and adapters; undefined when no email provider is configured. */
+  emailChannel?: EmailChannelComposition;
   copilotRetentionWorker: CopilotRetentionWorker;
   /** Purges old private test-execution/revision-eval-run evidence (JSONB transcripts, frozen snapshots). */
   testExecutionRetentionWorker: TtlRetentionWorker;

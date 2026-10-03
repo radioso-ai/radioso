@@ -123,6 +123,16 @@ export type ConversationActivityEvent = ConversationActivityScope & (
        */
       detail: { assistantMessageId: string; triageTransitionId: string; resolution: string | null };
     }
+  | {
+      kind: "channel_exception";
+      actorUserId: null;
+      /**
+       * A customer's message the channel set aside on this conversation: why, as the channel's
+       * enum code (`participant_mismatch`, `automated_sender`, `thread_conflict`, ...), and the
+       * channel delivery it concerns.
+       */
+      detail: { code: string; deliveryId: string };
+    }
 );
 
 /**

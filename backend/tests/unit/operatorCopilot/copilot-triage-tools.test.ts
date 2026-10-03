@@ -62,8 +62,18 @@ const qualityTurn = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
+const deliveryFailure = (overrides: Record<string, unknown> = {}) => ({
+  id: "failure-1",
+  conversationId: "conversation-delivery",
+  kind: "uncertain",
+  detailCode: null,
+  openedAt: new Date("2026-08-26T05:30:00.000Z"),
+  ...overrides,
+});
+
 const dependencies = (overrides: Partial<WorkspaceTriageCopilotToolDependencies> = {}): WorkspaceTriageCopilotToolDependencies => ({
   pendingApprovals: { listPending: vi.fn(async () => []) },
+  deliveryFailures: { listOpen: vi.fn(async () => ({ items: [], nextCursor: null })) },
   chatHistoryService: {
     getConversation: vi.fn(),
     getConversationTurn: vi.fn(),
@@ -191,6 +201,7 @@ describe("workspace_triage", () => {
       { source: "documents", status: "unauthorized", total: null, included: 0 },
       { source: "document_sources", status: "unauthorized", total: null, included: 0 },
       { source: "evals", status: "unauthorized", total: null, included: 0 },
+      { source: "delivery_failures", status: "unauthorized", total: null, included: 0 },
     ]);
   });
 
@@ -446,5 +457,60 @@ describe("workspace_triage", () => {
       ["conversation-owned", "Ada"],
       ["conversation-orphaned", null],
     ]);
+  });
+});
+
+describe("workspace_triage delivery failures", () => {
+  it("ranks a reply that may not have reached the customer among the escalations, by its wait", async () => {
+    const result = await digest(dependencies({
+      deliveryFailures: { listOpen: vi.fn(async () => ({ items: [deliveryFailure()], nextCursor: null })) },
+      chatHistoryService: {
+        getConversation: vi.fn(),
+        getConversationTurn: vi.fn(),
+        listConversations: vi.fn(async () => ({ conversations: [conversation()], total: 1 })),
+      },
+    }));
+
+    expect(result.items.map((item) => [item.kind, item.urgency, item.conversationId])).toEqual([
+      ["delivery_failed", "blocking", "conversation-delivery"],
+      ["handoff", "blocking", "conversation-1"],
+    ]);
+    expect(result.items[0]).toMatchObject({
+      title: "uncertain",
+      detail: null,
+      since: "2026-08-26T05:30:00.000Z",
+      count: 1,
+      dashboardUrl: "/w/acme/activity?itemKind=chat&itemId=conversation-delivery",
+    });
+    expect(result.sources).toContainEqual({ source: "delivery_failures", status: "ok", total: 1, included: 1 });
+  });
+
+  it("reads the failures only under the conversation takeover permission, stating the gap otherwise", async () => {
+    const listOpen = vi.fn(async () => ({ items: [deliveryFailure()], nextCursor: null }));
+    const permissions = new Set([...ALL_PERMISSIONS].filter((permission) => permission !== "workspace.conversation.takeover"));
+
+    const result = await digest(dependencies({ deliveryFailures: { listOpen } }), context(permissions));
+
+    expect(listOpen).not.toHaveBeenCalled();
+    expect(result.items.map((item) => item.kind)).not.toContain("delivery_failed");
+    expect(result.sources).toContainEqual({ source: "delivery_failures", status: "unauthorized", total: null, included: 0 });
+  });
+
+  it("narrows the failures to the requested agent and holds them to the source cap", async () => {
+    const failures = Array.from({ length: 12 }, (_, index) => deliveryFailure({
+      id: `failure-${index}`,
+      conversationId: `conversation-${index}`,
+      openedAt: new Date(Date.parse("2026-08-26T05:00:00.000Z") - index * 60_000),
+    }));
+    const listOpen = vi.fn(async () => ({ items: failures, nextCursor: null }));
+    const [descriptor] = createWorkspaceTriageCopilotTools(dependencies({ deliveryFailures: { listOpen } }));
+
+    const result = await descriptor.createTool(context()).invoke({ agentId: "agent-1" }, {} as never);
+
+    expect(listOpen).toHaveBeenCalledWith("workspace-1", expect.objectContaining({ agentId: "agent-1" }));
+    expect(result.items.filter((item) => item.kind === "delivery_failed")).toHaveLength(10);
+    // Longest wait first: the oldest failure, opened last in the newest-first read, leads.
+    expect(result.items[0].conversationId).toBe("conversation-11");
+    expect(result.sources).toContainEqual({ source: "delivery_failures", status: "ok", total: 12, included: 10 });
   });
 });

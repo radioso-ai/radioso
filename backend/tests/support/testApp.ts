@@ -189,6 +189,8 @@ import { ProductAnalyticsService } from "../../src/shared/analytics/productAnaly
 import { buildErrorSinks } from "../../src/shared/errors/buildErrorSinks.js";
 import { ErrorReportingService } from "../../src/shared/errors/errorReportingService.js";
 import { createLogger } from "../../src/shared/observability/logger.js";
+import { DeliveryFailureDecisions } from "../../src/modules/customerReplyDelivery/public.js";
+import { createInMemoryDeliveryFailures } from "./inMemoryDeliveryFailures.js";
 import { TtlRetentionWorker } from "../../src/shared/domain/ttlRetentionWorker.js";
 import { loadPromptTemplate } from "../../src/shared/infra/prompts/promptLoader.js";
 import {
@@ -826,6 +828,8 @@ export const createTestDependencies = (overrides: {
   testExecutionService?: TestExecutionService;
   /** The email channel's operator services; omitted means the deployment has no email provider. */
   emailChannel?: AppDependencies["emailChannel"];
+  /** Delivery failures and the decisions on them; omitted means an empty in-memory store no channel resolves. */
+  deliveryFailures?: AppDependencies["deliveryFailures"];
   /** Composes the agent tool catalog over the test app's agent row and published-revision readers. */
   agentToolCatalog?: (readers: {
     agentRepository: Pick<AgentRepositoryPort, "findByIdAndWorkspaceId">;
@@ -2267,8 +2271,10 @@ export const createTestDependencies = (overrides: {
     defaults: retrievalDefaultsProvider,
     documentSources: documentSourceRepository,
   });
+  const deliveryFailureRecords = createInMemoryDeliveryFailures().failures;
   const copilotToolCatalog = createCopilotToolCatalog({
     emailChannel: null,
+    deliveryFailures: deliveryFailureRecords,
     agentService: {
       get: agentService.get.bind(agentService),
       listExisting: agentService.listExisting.bind(agentService),
@@ -2653,6 +2659,12 @@ export const createTestDependencies = (overrides: {
     conversationIngestService,
     conversationOperatorDirectory,
     conversationActivityReads,
+    deliveryFailures: overrides.deliveryFailures ?? new DeliveryFailureDecisions({
+      failures: deliveryFailureRecords,
+      resolver: null,
+      audit: auditService,
+      logger,
+    }),
     workbenchReplayRunner: workbenchReplayRunner as any,
     testExecutionService,
     revisionEvalRunService,
@@ -2810,6 +2822,7 @@ export const createTestApp = (overrides: {
   testExecutionService?: TestExecutionService;
   agentToolCatalog?: NonNullable<Parameters<typeof createTestDependencies>[0]>["agentToolCatalog"];
   emailChannel?: AppDependencies["emailChannel"];
+  deliveryFailures?: AppDependencies["deliveryFailures"];
 } = {}) => {
   const {
     dependencies,

@@ -21644,6 +21644,120 @@
         ],
         "additionalProperties": false
       },
+      "DeliveryFailure": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "conversationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "messageId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Null for a failure that names no message."
+          },
+          "provider": {
+            "type": "string",
+            "description": "The delivering channel's provider."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "bounced",
+              "failed",
+              "uncertain",
+              "halted"
+            ],
+            "description": "`bounced`: bounced or suppressed. `failed`: refused or failed. `uncertain`: the outcome is unknown and nothing will send it again on its own. `halted`: it never went out, because the authority to send it was gone."
+          },
+          "detailCode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The provider's code, sanitized; never its bounce message."
+          },
+          "openedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "clearedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "clearReason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "acknowledged",
+              "later_delivery",
+              "provider_evidence",
+              "operator_resolved"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "conversationId",
+          "messageId",
+          "provider",
+          "kind",
+          "detailCode",
+          "openedAt",
+          "clearedAt",
+          "clearReason"
+        ]
+      },
+      "DeliveryFailurePage": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DeliveryFailure"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Pass back as `cursor` for the next page; null on the last one."
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor"
+        ]
+      },
+      "ResolveDeliveryFailureRequest": {
+        "type": "object",
+        "properties": {
+          "decision": {
+            "type": "string",
+            "enum": [
+              "marked_sent",
+              "resend"
+            ]
+          }
+        },
+        "required": [
+          "decision"
+        ],
+        "additionalProperties": false
+      },
       "PendingApprovalDecisionOption": {
         "type": "object",
         "properties": {
@@ -49671,6 +49785,291 @@
           },
           "409": {
             "description": "Conversation ownership changed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/delivery-failures": {
+      "get": {
+        "tags": [
+          "Conversation Ownership"
+        ],
+        "summary": "List delivery failures",
+        "description": "Replies that may not have reached the customer, newest first: the open ones, or with `state=all` the cleared ones too.",
+        "operationId": "listDeliveryFailures",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "open",
+                "all"
+              ]
+            },
+            "required": false,
+            "name": "state",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": false,
+            "name": "agentId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Delivery failures",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryFailurePage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "An invalid query or cursor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace conversation takeover permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/delivery-failures/{failureId}/acknowledge": {
+      "post": {
+        "tags": [
+          "Conversation Ownership"
+        ],
+        "summary": "Acknowledge a delivery failure",
+        "description": "Clears the failure as seen by the signed-in teammate. Sends nothing.",
+        "operationId": "acknowledgeDeliveryFailure",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "failureId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Failure acknowledged",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryFailure"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid failure id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace conversation takeover permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not a delivery failure of this workspace",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`already_cleared`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/delivery-failures/{failureId}/resolve": {
+      "post": {
+        "tags": [
+          "Conversation Ownership"
+        ],
+        "summary": "Resolve a delivery failure",
+        "description": "An audited decision on a reply whose delivery failed. `marked_sent` settles an `uncertain` send as sent. `resend` sends an `uncertain` or `halted` reply once more, once its channel can send; it is the only way a reply goes out twice.",
+        "operationId": "resolveDeliveryFailure",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "failureId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResolveDeliveryFailureRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Failure resolved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryFailure"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid failure id or decision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace conversation takeover permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not a delivery failure of this workspace",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`not_resolvable`: the failure is cleared or its kind does not admit the decision; `email_sending_not_verified`: the channel cannot send yet",
             "content": {
               "application/json": {
                 "schema": {

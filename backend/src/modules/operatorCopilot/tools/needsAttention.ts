@@ -9,10 +9,12 @@ import {
   escalatedAt,
   latestDownComment,
   readAuthorizedSource,
+  readOpenDeliveryFailures,
   HANDOFF_RANKING_WINDOW,
   MAX_DETAIL_CHARS,
   MAX_TITLE_CHARS,
   type AuthorizedSourceRead,
+  type CopilotDeliveryFailuresPort,
   type CopilotPendingApprovalsPort,
   type CopilotTriageLogPort,
 } from "./escalationSources.js";
@@ -33,15 +35,18 @@ const entityNameSchema = z.string().trim().min(1).max(160);
  * subset where the next move is an operator's, so a failed document or an untriaged backlog count
  * belongs to `workspace_triage` and never here.
  */
-const NEEDS_ATTENTION_KINDS = ["approval", "handoff", "negative_feedback"] as const;
+const NEEDS_ATTENTION_KINDS = ["approval", "handoff", "delivery_failed", "negative_feedback"] as const;
 
 type CopilotNeedsAttentionKind = (typeof NEEDS_ATTENTION_KINDS)[number];
 
-type NeedsAttentionSourceId = "approvals" | "handoffs" | "quality";
+const NEEDS_ATTENTION_SOURCES = ["approvals", "handoffs", "delivery_failures", "quality"] as const;
+
+type NeedsAttentionSourceId = (typeof NEEDS_ATTENTION_SOURCES)[number];
 
 const needsAttentionSourceByKind: Record<CopilotNeedsAttentionKind, NeedsAttentionSourceId> = {
   approval: "approvals",
   handoff: "handoffs",
+  delivery_failed: "delivery_failures",
   negative_feedback: "quality",
 };
 
@@ -76,6 +81,8 @@ interface NeedsAttentionRow {
 export interface NeedsAttentionCopilotToolDependencies {
   readonly agentLookup?: CopilotAgentLookupPort;
   readonly pendingApprovals: CopilotPendingApprovalsPort;
+  /** Absent where no delivering channel's failures are composed into Ray, and then not a source. */
+  readonly deliveryFailures?: CopilotDeliveryFailuresPort;
   readonly chatHistoryService: CopilotConversationHistoryPort;
   readonly qualitySignalsService: CopilotQualitySignalsPort;
   readonly workspaceRouteKeyResolver: CopilotWorkspaceRouteKeyResolver;
@@ -92,7 +99,7 @@ const needsAttentionInputSchema = z.object({
 const needsAttentionOutputSchema = z.object({
   items: z.array(z.object({
     kind: z.enum(NEEDS_ATTENTION_KINDS),
-    /** Workspace data, never composed copy: a reason, preview, or question, or null. */
+    /** Workspace data, never composed copy: a reason, preview, question, or failure kind, or null. */
     title: z.string().nullable(),
     detail: z.string().nullable(),
     since: z.string(),
@@ -112,7 +119,7 @@ const needsAttentionOutputSchema = z.object({
     dashboardUrl: z.string().startsWith("/"),
   }).strict()),
   sources: z.array(z.object({
-    source: z.enum(["approvals", "handoffs", "quality"]),
+    source: z.enum(NEEDS_ATTENTION_SOURCES),
     status: z.enum(["ok", "unauthorized", "failed"]),
     total: z.number().int().nonnegative().nullable(),
     included: z.number().int().nonnegative(),
@@ -120,9 +127,10 @@ const needsAttentionOutputSchema = z.object({
 }).strict();
 
 type NeedsAttentionInput = z.infer<typeof needsAttentionInputSchema>;
+type NeedsAttentionReader = readonly [CopilotNeedsAttentionKind, () => Promise<AuthorizedSourceRead<NeedsAttentionRow>>];
 type NeedsAttentionOutput = z.infer<typeof needsAttentionOutputSchema>;
 
-const needsAttentionDescription = "Read the operator's working queue: the pending approvals, waiting handoffs, and written complaints where the next move is a person's, longest wait first. Each row carries the handle its follow-up needs — the decision handle to resolve, the assistant message id and triage version to transition, the owner of a claimed handoff. Sources report what they matched, so a bounded page is not an empty queue, and a source marked unauthorized or failed is unknown rather than zero. This is the queue to work through; workspace_triage is a one-shot digest that also covers failures and backlog, so do not call both for the same question. Act on a row with the identifiers it gives you — set_triage_state takes the assistantMessageId and triageVersion exactly as they appear here.";
+const needsAttentionDescription = "Read the operator's working queue: the pending approvals, waiting handoffs, replies that may not have reached the customer (delivery_failed, titled by failure kind with the provider's sanitized code as detail), and written complaints where the next move is a person's, longest wait first. Each row carries the handle its follow-up needs — the decision handle to resolve, the assistant message id and triage version to transition, the owner of a claimed handoff. Sources report what they matched, so a bounded page is not an empty queue, and a source marked unauthorized or failed is unknown rather than zero. This is the queue to work through; workspace_triage is a one-shot digest that also covers failures and backlog, so do not call both for the same question. Act on a row with the identifiers it gives you — set_triage_state takes the assistantMessageId and triageVersion exactly as they appear here.";
 
 export const createNeedsAttentionCopilotTools = (
   deps: NeedsAttentionCopilotToolDependencies,
@@ -162,9 +170,14 @@ const buildNeedsAttention = async (
   const kinds = input.kinds ?? [...NEEDS_ATTENTION_KINDS];
   const requested = new Set<CopilotNeedsAttentionKind>(kinds);
 
-  const readers: ReadonlyArray<[CopilotNeedsAttentionKind, () => Promise<AuthorizedSourceRead<NeedsAttentionRow>>]> = [
+  const { deliveryFailures } = deps;
+  const deliveryFailureReaders: NeedsAttentionReader[] = deliveryFailures
+    ? [["delivery_failed", () => readDeliveryFailureQueue(deliveryFailures, context.workspaceId, agentId, limit)]]
+    : [];
+  const readers: ReadonlyArray<NeedsAttentionReader> = [
     ["approval", () => readApprovalQueue(deps, context.workspaceId, agentId, limit)],
     ["handoff", () => readHandoffQueue(deps, context.workspaceId, agentId, limit)],
+    ...deliveryFailureReaders,
     ["negative_feedback", () => readFeedbackQueue(deps, context.workspaceId, agentId, limit)],
   ];
 
@@ -292,6 +305,29 @@ const readHandoffQueue = async (
         takenOverAt: conversation.ownership?.ownerUserId ? conversation.ownership.takenOverAt : null,
         subject: { type: "conversation", id: conversation.id },
       })),
+  };
+};
+
+const readDeliveryFailureQueue = async (
+  deliveryFailures: CopilotDeliveryFailuresPort,
+  workspaceId: string,
+  agentId: string | null,
+  limit: number,
+): Promise<AuthorizedSourceRead<NeedsAttentionRow>> => {
+  const open = await readOpenDeliveryFailures(deliveryFailures, workspaceId, agentId);
+  return {
+    total: open.total,
+    items: open.items.slice(0, limit).map((failure) => ({
+      ...emptyRowFields,
+      kind: "delivery_failed" as const,
+      title: failure.kind,
+      detail: failure.detailCode,
+      since: failure.openedAt.toISOString(),
+      // A failure names its conversation, not the agent; an agent-scoped read has already narrowed it.
+      agentId: null,
+      conversationId: failure.conversationId,
+      subject: { type: "conversation", id: failure.conversationId },
+    })),
   };
 };
 

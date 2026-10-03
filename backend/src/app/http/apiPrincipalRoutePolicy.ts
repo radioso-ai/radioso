@@ -312,6 +312,9 @@ const declarations: readonly PolicyDeclaration[] = [
     ["POST", "/api/v1/agents/:agentId/decisions/:handle/resolve"],
     ["GET", "/api/v1/decisions"],
     ["GET", "/api/v1/conversations/:conversationId/email"],
+    ["GET", "/api/v1/delivery-failures"],
+    ["POST", "/api/v1/delivery-failures/:failureId/acknowledge"],
+    ["POST", "/api/v1/delivery-failures/:failureId/resolve"],
   ].map(([method, path]) => sessionOnly(method, path, "workspace.conversation.takeover")),
   ...[
     ["GET", "/api/v1/connectors", "workspace.settings.read"],

@@ -115,6 +115,7 @@ import type {
 } from "../../modules/eval/composition.js";
 import type { ApprovalDecisionService } from "../../modules/approvals/public.js";
 import type { ConversationActivityReadService } from "../../modules/conversationActivity/public.js";
+import type { DeliveryFailureDecisions } from "../../modules/customerReplyDelivery/public.js";
 import type {
   ConversationOperatorDirectory,
   ConversationOwnershipService,
@@ -254,6 +255,8 @@ export interface AppDependencies {
   conversationOperatorDirectory: ConversationOperatorDirectory;
   /** Operator reads of conversation activity: a conversation's timeline, the Inbox's recently closed items. */
   conversationActivityReads: ConversationActivityReadService;
+  /** Replies that may not have reached the customer: the Inbox lists them, and a teammate acknowledges or resolves one. */
+  deliveryFailures: DeliveryFailureDecisions;
   workbenchReplayRunner: WorkbenchReplayRunner;
   /** Operator-only immutable candidate test executions; never mounted on public chat. */
   testExecutionService: TestExecutionService;

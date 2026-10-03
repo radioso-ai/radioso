@@ -68,6 +68,7 @@ const catalogToolCoverage = {
   getEmailMailbox: "email_channel_configuration",
   listEmailMailboxEvents: "email_channel_events",
   getConversationEmailFacts: "email_conversation_facts",
+  listDeliveryFailures: "needs_attention",
 } as const;
 
 const routineStructuralEditing = deferred(
@@ -167,6 +168,9 @@ const emailConnectionHealthProbe = deferred(
 );
 const emailChannelConfiguration = deferred(
   "Deferred (FR-047): mailboxes, sending domains, the forwarding setup check and inbound retries decide which customer mail reaches which agent and from which domain it is answered, which is customer-visible routing and needs a proposal card. Ray reads the channel through email_channel_configuration and email_channel_events.",
+);
+const deliveryDecisionIsAPersons = permanent(
+  "Permanent exclusion: acknowledging or resolving a delivery failure is an audited decision about a customer-visible send — resend is the only way a reply goes out twice — so it stays with a person. Ray reads open failures through needs_attention.",
 );
 const rawCustomerMail = permanent(
   "Permanent exclusion: raw customer mail and its headers are never model input; Ray reads an email conversation's facts through email_conversation_facts instead.",
@@ -378,6 +382,7 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "removeEmailDomain",
   ], emailChannelConfiguration),
   ...coverage(["getEmailInboundRawMessage"], rawCustomerMail),
+  ...coverage(["acknowledgeDeliveryFailure", "resolveDeliveryFailure"], deliveryDecisionIsAPersons),
   ...coverage(["updateConnectorConfig", "enableConnector", "disableConnector"], connectorConfiguration),
   ...coverage(["syncConnector"], connectorManualSync),
   ...coverage(["deleteAgentRoutine"], routineStructuralEditing),

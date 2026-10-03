@@ -4,7 +4,7 @@ import { getEnv, parseEmailChannelConfig, type Env } from "../config/env.js";
 import { AgentRevisionRuntimeRepository } from "../../db/repositories/agentRevisionRuntimeRepository.js";
 import { createAgentPublicProfileComposition } from "../composition/agentDiscovery.js";
 import { createAgentToolCatalogComposition } from "../composition/agentToolCatalog.js";
-import { createEmailChannelComposition } from "../composition/emailChannel.js";
+import { createEmailChannelComposition, createPostgresDeliveryFailures } from "../composition/emailChannel.js";
 import { apiPrincipalRouteInventory } from "../http/apiPrincipalRoutePolicy.js";
 import { requestSourceDigestPort } from "../http/middleware/requestSource.js";
 import {
@@ -124,6 +124,7 @@ import { createConversationActivityComposition } from "../composition/conversati
 import { createPostgresOwnershipChangeUnitOfWork } from "../composition/conversationOwnershipChanges.js";
 import { createPostgresConversationIngestUnitOfWork } from "../composition/conversationIngest.js";
 import { ConversationOwnershipService, OperatorIdentityResolver } from "../../modules/handoff/public.js";
+import { DeliveryFailureDecisions } from "../../modules/customerReplyDelivery/public.js";
 import { buildConversationLinkResolver } from "../composition/conversationLinkResolver.js";
 import { resolveWorkspaceManagedLlmModels } from "../../shared/infra/llm/workspaceManagedModels.js";
 import type { OperatorMcpClientMetadataSnapshot } from "../../modules/operatorMcpAuthorization/public.js";
@@ -391,6 +392,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     conversationIngest: { ingest: (input) => conversationIngestService.ingest(input) },
     agents: repositories.agentRepository,
     audit: infrastructure.auditService,
+    actionDrain: chat.actionDrainDispatcher,
+    errorReporter: infrastructure.errorReportingService,
     metrics: infrastructure.metricsRegistry,
     logger,
   });
@@ -522,6 +525,18 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     publisher: realtimePublisherComposition.publisher,
     logger,
     errorReporter: infrastructure.errorReportingService,
+  });
+  const deliveryFailureRecords = createPostgresDeliveryFailures({
+    db: infrastructure.database.kysely,
+    activity: conversationActivity.recorder,
+  });
+  const deliveryFailures = new DeliveryFailureDecisions({
+    failures: deliveryFailureRecords,
+    // Resolution settles a send on the channel that carried it. Without the email channel nothing
+    // raises a failure that resolves, so a resolution answers not_resolvable; acknowledgement clears.
+    resolver: emailChannel?.deliveryFailureResolver ?? null,
+    audit: infrastructure.auditService,
+    logger,
   });
   const conversationIngestService = new ConversationIngestService({
     unitOfWork: createPostgresConversationIngestUnitOfWork({
@@ -850,6 +865,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     appBaseUrl: env.APP_BASE_URL,
     toolContributions: copilotToolContributions,
     emailChannel: emailChannel?.copilotView ?? null,
+    deliveryFailures: deliveryFailureRecords,
     agentService: {
       get: agentService.get.bind(agentService),
       listExisting: agentService.listExisting.bind(agentService),
@@ -1162,6 +1178,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     conversationIngestService,
     conversationOperatorDirectory,
     conversationActivityReads: conversationActivity.reads,
+    deliveryFailures,
     workbenchReplayRunner: chat.workbenchReplayRunner,
     testExecutionService,
     chatBootstrapService: chat.chatBootstrapService,

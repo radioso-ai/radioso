@@ -9,7 +9,7 @@ import type {
  * nobody knows and nothing will retry, or halted before it was sent because the authority to send
  * it was gone.
  */
-type DeliveryFailureKind = "bounced" | "failed" | "uncertain" | "halted";
+export type DeliveryFailureKind = "bounced" | "failed" | "uncertain" | "halted";
 
 /**
  * Why the delivering channel clears a failure: a later send on the conversation was delivered,
@@ -57,7 +57,7 @@ type DeliveryFailureClearInput = { conversationId: string; messageId: string | n
 );
 
 /** How a delivering channel raises, settles and clears the failures of the replies it carries. */
-interface DeliveryFailureRecorderPort {
+export interface DeliveryFailureRecorderPort {
   /** Raises a failure on the message; a no-op while one is already open on it. */
   open(input: DeliveryFailureOpenInput): Promise<void>;
   /**
@@ -72,7 +72,7 @@ interface DeliveryFailureRecorderPort {
   clear(input: DeliveryFailureClearInput): Promise<number>;
 }
 
-interface DeliveryFailurePage {
+export interface DeliveryFailurePage {
   items: DeliveryFailureRecord[];
   /** Pass back to read the next page; null on the last one. */
   nextCursor: string | null;
@@ -103,14 +103,19 @@ export interface DeliveryFailureWriteStore {
     reason: DeliveryFailureClearReason;
     clearedByUserId: string | null;
   }): Promise<DeliveryFailureRecord[]>;
+  /** The workspace's open failure `failureId`, now acknowledged by `userId`; null when it has no such open failure. */
+  acknowledgeOpen(input: { workspaceId: string; failureId: string; userId: string }): Promise<DeliveryFailureRecord | null>;
 }
+
+type DeliveryFailureListQuery = { agentId: string | undefined; after: DeliveryFailurePosition | null; limit: number };
 
 export interface DeliveryFailureReadStore {
   /** Up to `limit` open failures, newest first, after `after`; with `agentId`, on that agent's conversations. */
-  listOpen(
-    workspaceId: string,
-    query: { agentId: string | undefined; after: DeliveryFailurePosition | null; limit: number },
-  ): Promise<DeliveryFailureRecord[]>;
+  listOpen(workspaceId: string, query: DeliveryFailureListQuery): Promise<DeliveryFailureRecord[]>;
+  /** As {@link listOpen}, with the cleared failures among them. */
+  listAll(workspaceId: string, query: DeliveryFailureListQuery): Promise<DeliveryFailureRecord[]>;
+  /** The workspace's failure `failureId`, open or cleared; null when the workspace has none of that id. */
+  find(workspaceId: string, failureId: string): Promise<DeliveryFailureRecord | null>;
 }
 
 /** One failure change and the activity it records, bound to one transaction. */
@@ -134,7 +139,7 @@ const failedActivity = (failure: DeliveryFailureRecord): ConversationActivityEve
 
 const clearedActivity = (
   failure: DeliveryFailureRecord,
-  reason: DeliveryFailureClearReason,
+  reason: DeliveryFailureClearReason | "acknowledged",
   actorUserId: string | null,
 ): ConversationActivityEvent => ({
   kind: "delivery_failure_cleared",
@@ -192,8 +197,8 @@ const decodePosition = (cursor: string): DeliveryFailurePosition => {
 
 /**
  * Replies that may not have reached the customer, channel-neutral: a delivering channel raises,
- * settles and clears them, each change in its own unit of work with the activity it records, and
- * operator surfaces read the ones still open.
+ * settles and clears them, each change in its own unit of work with the activity it records;
+ * operator surfaces read them, and a teammate acknowledges one.
  */
 export class DeliveryFailures implements DeliveryFailureRecorderPort, DeliveryFailureReaderPort {
   constructor(private readonly deps: { writes: DeliveryFailureUnitOfWork; reads: DeliveryFailureReadStore }) {}
@@ -210,13 +215,42 @@ export class DeliveryFailures implements DeliveryFailureRecorderPort, DeliveryFa
     return this.deps.writes.run((scope) => bindDeliveryFailureRecorder(scope).clear(input));
   }
 
-  async listOpen(
+  /**
+   * A teammate's acknowledgement: clears the workspace's open failure with the activity it records.
+   * Null when the workspace has no such open failure.
+   */
+  acknowledge(input: { workspaceId: string; failureId: string; userId: string }): Promise<DeliveryFailureRecord | null> {
+    return this.deps.writes.run(async (scope) => {
+      const acknowledged = await scope.failures.acknowledgeOpen(input);
+      if (acknowledged) {
+        await scope.activity.record(clearedActivity(acknowledged, "acknowledged", input.userId));
+      }
+      return acknowledged;
+    });
+  }
+
+  find(workspaceId: string, failureId: string): Promise<DeliveryFailureRecord | null> {
+    return this.deps.reads.find(workspaceId, failureId);
+  }
+
+  listOpen(
     workspaceId: string,
     query: { agentId?: string; cursor?: string; limit: number },
   ): Promise<DeliveryFailurePage> {
+    return this.list(workspaceId, { ...query, state: "open" });
+  }
+
+  /** A workspace's failures newest first: the open ones, or with `state: "all"` the cleared ones too. */
+  async list(
+    workspaceId: string,
+    query: { state: "open" | "all"; agentId?: string; cursor?: string; limit: number },
+  ): Promise<DeliveryFailurePage> {
     const after = query.cursor === undefined ? null : decodePosition(query.cursor);
     // One past the page tells whether another follows.
-    const rows = await this.deps.reads.listOpen(workspaceId, { agentId: query.agentId, after, limit: query.limit + 1 });
+    const page = { agentId: query.agentId, after, limit: query.limit + 1 };
+    const rows = query.state === "all"
+      ? await this.deps.reads.listAll(workspaceId, page)
+      : await this.deps.reads.listOpen(workspaceId, page);
     const items = rows.slice(0, query.limit);
     const last = items.at(-1);
     return {

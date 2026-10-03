@@ -3292,6 +3292,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/delivery-failures": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List delivery failures
+         * @description Replies that may not have reached the customer, newest first: the open ones, or with `state=all` the cleared ones too.
+         */
+        get: operations["listDeliveryFailures"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/delivery-failures/{failureId}/acknowledge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Acknowledge a delivery failure
+         * @description Clears the failure as seen by the signed-in teammate. Sends nothing.
+         */
+        post: operations["acknowledgeDeliveryFailure"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/delivery-failures/{failureId}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resolve a delivery failure
+         * @description An audited decision on a reply whose delivery failed. `marked_sent` settles an `uncertain` send as sent. `resend` sends an `uncertain` or `halted` reply once more, once its channel can send; it is the only way a reply goes out twice.
+         */
+        post: operations["resolveDeliveryFailure"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/decisions": {
         parameters: {
             query?: never;
@@ -9513,6 +9573,41 @@ export interface components {
         };
         EnableEmailDirectReceivingRequest: {
             confirmation: string;
+        };
+        DeliveryFailure: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            conversationId: string;
+            /**
+             * Format: uuid
+             * @description Null for a failure that names no message.
+             */
+            messageId: string | null;
+            /** @description The delivering channel's provider. */
+            provider: string;
+            /**
+             * @description `bounced`: bounced or suppressed. `failed`: refused or failed. `uncertain`: the outcome is unknown and nothing will send it again on its own. `halted`: it never went out, because the authority to send it was gone.
+             * @enum {string}
+             */
+            kind: "bounced" | "failed" | "uncertain" | "halted";
+            /** @description The provider's code, sanitized; never its bounce message. */
+            detailCode: string | null;
+            /** Format: date-time */
+            openedAt: string;
+            /** Format: date-time */
+            clearedAt: string | null;
+            /** @enum {string|null} */
+            clearReason: "acknowledged" | "later_delivery" | "provider_evidence" | "operator_resolved" | null;
+        };
+        DeliveryFailurePage: {
+            items: components["schemas"]["DeliveryFailure"][];
+            /** @description Pass back as `cursor` for the next page; null on the last one. */
+            nextCursor: string | null;
+        };
+        ResolveDeliveryFailureRequest: {
+            /** @enum {string} */
+            decision: "marked_sent" | "resend";
         };
         PendingApprovalDecisionOption: {
             id: string;
@@ -24588,6 +24683,196 @@ export interface operations {
                 };
             };
             /** @description Conversation ownership changed */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listDeliveryFailures: {
+        parameters: {
+            query?: {
+                state?: "open" | "all";
+                agentId?: string;
+                cursor?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Delivery failures */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeliveryFailurePage"];
+                };
+            };
+            /** @description An invalid query or cursor */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace conversation takeover permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    acknowledgeDeliveryFailure: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                failureId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Failure acknowledged */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeliveryFailure"];
+                };
+            };
+            /** @description Invalid failure id */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace conversation takeover permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not a delivery failure of this workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `already_cleared` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    resolveDeliveryFailure: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                failureId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResolveDeliveryFailureRequest"];
+            };
+        };
+        responses: {
+            /** @description Failure resolved */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeliveryFailure"];
+                };
+            };
+            /** @description Invalid failure id or decision */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace conversation takeover permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not a delivery failure of this workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `not_resolvable`: the failure is cleared or its kind does not admit the decision; `email_sending_not_verified`: the channel cannot send yet */
             409: {
                 headers: {
                     [name: string]: unknown;

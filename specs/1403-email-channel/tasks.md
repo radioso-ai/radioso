@@ -472,7 +472,7 @@ R3 blocks T088 (S1 drain wiring). R1 and R2 block S3 and can run in parallel wit
   - late provider evidence from `uncertain`;
   - operator resolution;
   - terminal events ignored.
-- [ ] T120 [P] [US3] Write `backend/tests/unit/email-channel/email-send-action-handler.test.ts` (after T008):
+- [x] T120 [P] [US3] Write `backend/tests/unit/email-channel/email-send-action-handler.test.ts` (after T008):
   - intent materialized by key on first claim (for `operator_reply` and `held_release`);
   - revalidation on the first attempt only;
   - the request snapshot frozen;
@@ -482,16 +482,16 @@ R3 blocks T088 (S1 drain wiring). R1 and R2 block S3 and can run in parallel wit
   - `recordFailureOutcome` → `failed` or `uncertain` plus a delivery failure;
   - author from `messages.source`;
   - send-budget renewal at materialization for operator-authorized triggers.
-- [ ] T121 [P] [US3] Write `backend/tests/unit/email-channel/provider-delivery-events.test.ts` (after T013): every provider status, inbound DSN bounce, foreign ids ignored, out-of-order events, and late evidence on `uncertain`.
-- [ ] T122 [P] [US3] Write `backend/tests/unit/email-channel/send-reconciler.test.ts`: claims with `reconcile_lease_until` (two sweeps never claim the same intent); re-POST inside 23 h; lookup after 24 h → settle or `uncertain`; never a new key.
-- [ ] T123 [P] [US3] Write `backend/tests/unit/email-channel/email-customer-reply-deliverer.test.ts`:
+- [x] T121 [P] [US3] Write `backend/tests/unit/email-channel/provider-delivery-events.test.ts` (after T013): every provider status, inbound DSN bounce, foreign ids ignored, out-of-order events, and late evidence on `uncertain`.
+- [x] T122 [P] [US3] Write `backend/tests/unit/email-channel/send-reconciler.test.ts`: claims with `reconcile_lease_until` (two sweeps never claim the same intent); re-POST inside 23 h; lookup after 24 h → settle or `uncertain`; never a new key.
+- [x] T123 [P] [US3] Write `backend/tests/unit/email-channel/email-customer-reply-deliverer.test.ts`:
   - refuses with `409 email_sending_not_verified`, naming the step, when the domain is unverified or removed;
   - when ready, enqueues `email.send` with `email:send:msg:<messageId>` and a payload of ids and authority only.
-- [ ] T124 [P] [US3] Extend `backend/tests/unit/customer-reply-delivery.test.ts`: provider `email` dispatched by registration; web unaffected.
+- [x] T124 [P] [US3] Extend `backend/tests/unit/customer-reply-delivery.test.ts`: provider `email` dispatched by registration; web unaffected.
 - [x] T125 [P] [US3] Write `backend/tests/unit/delivery-failures.test.ts`: `open` idempotent per open message; `retarget`; `clear` (`later_delivery`, `provider_evidence`, `operator_resolved`); the reader's agent filter.
-- [ ] T126 [P] [US3] Extend `backend/tests/unit/operatorCopilot/copilot-needs-attention.test.ts` and `copilot-triage-tools.test.ts`: the `delivery_failed` kind; the `delivery_failures` triage source under `workspace.conversation.takeover`; an unauthorized source reported as a gap.
-- [ ] T127 [P] [US3] Write `backend/tests/contract/delivery-failures.contract.test.ts`: list, acknowledge, and `resolve` (`marked_sent` for `uncertain` only; `resend` for `uncertain` or `halted` when sending is ready); `sessionOnly` takeover permission; audit `hitl.delivery_failure`.
-- [ ] T128 [P] [US3] Write `backend/tests/contract/email-send-action.contract.test.ts`: payload v1 (ports §7a) and the key formats.
+- [x] T126 [P] [US3] Extend `backend/tests/unit/operatorCopilot/copilot-needs-attention.test.ts` and `copilot-triage-tools.test.ts`: the `delivery_failed` kind; the `delivery_failures` triage source under `workspace.conversation.takeover`; an unauthorized source reported as a gap.
+- [x] T127 [P] [US3] Write `backend/tests/contract/delivery-failures.contract.test.ts`: list, acknowledge, and `resolve` (`marked_sent` for `uncertain` only; `resend` for `uncertain` or `halted` when sending is ready); `sessionOnly` takeover permission; audit `hitl.delivery_failure`.
+- [x] T128 [P] [US3] Write `backend/tests/contract/email-send-action.contract.test.ts`: payload v1 (ports §7a) and the key formats.
 - [ ] T129 [US3] Write `backend/tests/integration/email-send-idempotency.integration.test.ts`:
   - a reply via `POST /api/v1/conversations/{id}/reply` commits the message and `email.send` together;
   - refusal before any write when unverified;
@@ -514,20 +514,20 @@ R3 blocks T088 (S1 drain wiring). R1 and R2 block S3 and can run in parallel wit
 - [x] T135 [P] [US3] Implement `backend/src/modules/emailChannel/outbound/outboundHeaders.ts`, `sendAuthority.ts` and `sendIntentTransitions.ts` (after T117–T119).
 - [x] T136 [US3] Implement `backend/src/modules/emailChannel/persistence/emailSendIntentRepository.ts` with `transition(id, expectedVersion, event)` and the reconcile claim (after T113, T135).
 - [x] T137 [US3] Implement `backend/src/modules/customerReplyDelivery/deliveryFailures.ts` and `backend/src/db/repositories/conversationDeliveryFailureRepository.ts`, export them from `customerReplyDelivery/public.ts`, and record the `delivery_failed` and `delivery_failure_cleared` activities (after T113, T125).
-- [ ] T138 [US3] Implement `backend/src/modules/emailChannel/outbound/emailSendActionHandler.ts` (after T120, T134–T137).
-- [ ] T139 [US3] Implement `backend/src/modules/emailChannel/outbound/providerDeliveryEvents.ts`, and route `delivery_status` events and DSN bounces to it from `emailInboundProcessor.ts` (after T121, T138).
-- [ ] T140 [US3] Implement `backend/src/modules/emailChannel/outbound/sendReconciler.ts`, add its claim step to `emailChannelSweep.ts`, and schedule `reconcile` drains (after T122, T138).
-- [ ] T141 [US3] Replace the S1 refusal in `emailCustomerReplyDeliverer.ts` with the real route (after T123, T138).
-- [ ] T142 [US3] Composition: register `email.send` via `actionHandlerRegistrations` (`backend/src/app/server/builders/chat.ts:522-540`) from `backend/src/app/composition/emailChannel.ts`, and add the `delivery` subcommand to `backend/scripts/emailChannelDev.ts` (after T124, T138–T141).
-- [ ] T143 [US3] Extend `conversation-email-facts.test.ts` first, then `conversationEmailFacts.ts`, with per-message delivery state and the sanitized code.
+- [x] T138 [US3] Implement `backend/src/modules/emailChannel/outbound/emailSendActionHandler.ts` (after T120, T134–T137).
+- [x] T139 [US3] Implement `backend/src/modules/emailChannel/outbound/providerDeliveryEvents.ts`, and route `delivery_status` events and DSN bounces to it from `emailInboundProcessor.ts` (after T121, T138).
+- [x] T140 [US3] Implement `backend/src/modules/emailChannel/outbound/sendReconciler.ts`, add its claim step to `emailChannelSweep.ts`, and schedule `reconcile` drains (after T122, T138).
+- [x] T141 [US3] Replace the S1 refusal in `emailCustomerReplyDeliverer.ts` with the real route (after T123, T138).
+- [x] T142 [US3] Composition: register `email.send` via `actionHandlerRegistrations` (`backend/src/app/server/builders/chat.ts:522-540`) from `backend/src/app/composition/emailChannel.ts`, and add the `delivery` subcommand to `backend/scripts/emailChannelDev.ts` (after T124, T138–T141).
+- [x] T143 [US3] Extend `conversation-email-facts.test.ts` first, then `conversationEmailFacts.ts`, with per-message delivery state and the sanitized code.
 
 ### HTTP, governance, Ray
 
-- [ ] T144 [US3] HTTP (after T127, T137):
+- [x] T144 [US3] HTTP (after T127, T137):
   - create `backend/src/app/http/routes/deliveryFailureRoutes.ts` and `openapi/paths/deliveryFailurePaths.ts`;
   - add `sessionOnly` rows in `apiPrincipalRoutePolicy.ts` and `listDeliveryFailures` in `operationPermissionRequirements.ts`;
   - run `generate:openapi`, the SDK `sync` and the MCP `sync:openapi`.
-- [ ] T145 [US3] Ray (after T126, T144):
+- [x] T145 [US3] Ray (after T126, T144):
   - `delivery_failed` in `backend/src/modules/operatorCopilot/tools/needsAttention.ts` (`:36`, `:42-46`, `:85-120`, `readDeliveryFailureQueue`);
   - the `delivery_failures` source in `triageDigest.ts:43` and `escalationSources.ts:48-55`;
   - coverage: `listDeliveryFailures` → `needs_attention`; `acknowledgeDeliveryFailure` and `resolveDeliveryFailure` → `permanent`;
@@ -535,14 +535,14 @@ R3 blocks T088 (S1 drain wiring). R1 and R2 block S3 and can run in parallel wit
 
 ### Frontend
 
-- [ ] T146 [P] [US3] Extend `frontend/tests/unit/needs-attention.test.ts` and `needs-attention-query-state.test.tsx`: delivery-failure rows are critical, counted and in the lenses.
-- [ ] T147 [US3] Add `'delivery_failed'` and its severity to `frontend/lib/needs-attention.ts:24-35`, create `frontend/lib/needs-attention-reply-review.ts` (builder), add the source in `needs-attention-query-state.ts` beside `:200-213`, and create `frontend/lib/api-reply-review.ts` (after T144, T146).
-- [ ] T148 [US3] Write the Playwright journey `frontend/tests/e2e/email-operator-reply.spec.ts` first: reply → queued → delivered; refusal when unverified; simulated bounce → `delivery_failed` with detail; acknowledge.
-- [ ] T149 [US3] Show delivery state per message in `email-conversation-header.tsx`, enable the composer when sending is ready, and add the lens and count in `frontend/components/dashboard/inbox/inbox-lens-toggle.tsx` if lenses enumerate kinds (after T147, T148).
+- [x] T146 [P] [US3] Extend `frontend/tests/unit/needs-attention.test.ts` and `needs-attention-query-state.test.tsx`: delivery-failure rows are critical, counted and in the lenses.
+- [x] T147 [US3] Add `'delivery_failed'` and its severity to `frontend/lib/needs-attention.ts:24-35`, create `frontend/lib/needs-attention-reply-review.ts` (builder), add the source in `needs-attention-query-state.ts` beside `:200-213`, and create `frontend/lib/api-reply-review.ts` (after T144, T146).
+- [x] T148 [US3] Write the Playwright journey `frontend/tests/e2e/email-operator-reply.spec.ts` first: reply → queued → delivered; refusal when unverified; simulated bounce → `delivery_failed` with detail; acknowledge.
+- [x] T149 [US3] Show delivery state per message in `email-conversation-header.tsx`, enable the composer when sending is ready, and add the lens and count in `frontend/components/dashboard/inbox/inbox-lens-toggle.tsx` if lenses enumerate kinds (after T147, T148).
 
 ### Docs and verification
 
-- [ ] T150 [P] [US3] Docs:
+- [x] T150 [P] [US3] Docs:
   - `docs/email-channel.md`: sending, headers, `Reply-To` gating, delivery states, uncertain resolution and late evidence, bounce runbook;
   - `docs/human-takeover.md`: email replies, `delivery_failed`, `email.send` beside `slack.post`;
   - `docs/monitoring-alerts.md`;

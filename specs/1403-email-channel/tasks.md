@@ -65,15 +65,15 @@ Message-queue impact is reviewed in S1, S2 and S6. Read `docs/document-writer-pr
 ## Phase 1: Setup (Shared Infrastructure)
 
 - [ ] T001 Add `postal-mime`, `html-to-text` and `sanitize-html` (plus `@types/html-to-text` and `@types/sanitize-html` as dev dependencies) to `backend/package.json` with `pnpm --filter backend add`. Commit `pnpm-lock.yaml` and record the licenses in the PR.
-- [ ] T002 [P] Write failing tests in `backend/tests/unit/runtime-config.test.ts`:
+- [x] T002 [P] Write failing tests in `backend/tests/unit/runtime-config.test.ts`:
   - `EMAIL_CHANNEL_*` unset → channel unconfigured;
   - `EMAIL_CHANNEL_PROVIDER=resend` without `RESEND_CHANNEL_API_KEY` → startup error;
   - the inbound domain is lowercased;
   - defaults: coalesce 60, raw cap 2097152, retention 30, review attempts 4, workers disabled.
-- [ ] T003 Add the quickstart.md §1 variables to `backend/src/app/config/env.ts` (after T002).
-- [ ] T004 [P] Add the variables with comments to `.env.example` beside `:242-248`, and add `backend/.email-spool/` to `.gitignore`.
-- [ ] T005 [P] Create `backend/tests/fixtures/email-channel/mime/`: `first-contact.eml`, `pre-reply-follow-up.eml`, `header-threaded-reply.eml`, `token-only-reply.eml`, `two-mailbox.eml`, `participant-mismatch.eml`, `out-of-order-parent.eml` / `out-of-order-child.eml`, `html-only.eml`, `gmail-quoted-reply.eml`, `outlook-quoted-reply.eml`, `apple-quoted-reply.eml`, `non-english-quoted-reply.eml`, `attachments.eml`, `encoded-word-subject.eml`, `iso-8859-1-body.eml`, `direct-receiving.eml`. Use `example.test` addresses, and list each file's purpose in `backend/tests/fixtures/email-channel/README.md`. The threading files are finalized by T010.
-- [ ] T006 [P] Create `backend/tests/fixtures/email-channel/protocol/`: `auto-submitted-auto-replied.eml`, `auto-submitted-no.eml`, `precedence-bulk.eml`, `precedence-list.eml`, `precedence-junk.eml`, `x-auto-response-suppress.eml`, `list-id.eml`, `dsn-radioso-id.eml`, `dsn-foreign-id.eml`, `self-sender.eml`.
+- [x] T003 Add the quickstart.md §1 variables to `backend/src/app/config/env.ts` (after T002).
+- [x] T004 [P] Add the variables with comments to `.env.example` beside `:242-248`, and add `backend/.email-spool/` to `.gitignore`.
+- [x] T005 [P] Create `backend/tests/fixtures/email-channel/mime/`: `first-contact.eml`, `pre-reply-follow-up.eml`, `header-threaded-reply.eml`, `token-only-reply.eml`, `two-mailbox.eml`, `participant-mismatch.eml`, `out-of-order-parent.eml` / `out-of-order-child.eml`, `html-only.eml`, `gmail-quoted-reply.eml`, `outlook-quoted-reply.eml`, `apple-quoted-reply.eml`, `non-english-quoted-reply.eml`, `attachments.eml`, `encoded-word-subject.eml`, `iso-8859-1-body.eml`, `direct-receiving.eml`. Use `example.test` addresses, and list each file's purpose in `backend/tests/fixtures/email-channel/README.md`. The threading files are finalized by T010.
+- [x] T006 [P] Create `backend/tests/fixtures/email-channel/protocol/`: `auto-submitted-auto-replied.eml`, `auto-submitted-no.eml`, `precedence-bulk.eml`, `precedence-list.eml`, `precedence-junk.eml`, `x-auto-response-suppress.eml`, `list-id.eml`, `dsn-radioso-id.eml`, `dsn-foreign-id.eml`, `self-sender.eml`.
 
 ---
 
@@ -134,28 +134,28 @@ R3 blocks T088 (S1 drain wiring). R1 and R2 block S3 and can run in parallel wit
 
 ### R3: shared Cloud Tasks drain dispatcher with `scheduleAt`
 
-- [ ] T015 [P] [R3] Write `backend/tests/unit/cloud-tasks-drain-dispatcher.test.ts` for a generic `CloudTasksDrainDispatcher<Body>`: task path, worker-token header, OIDC audience, JSON body, `scheduleTime` set only when `scheduleAt` is in the future (preserving `cloudTasksFacetExtractionDrainDispatcher.ts:37-45`).
-- [ ] T016 [R3] Implement `backend/src/shared/infra/cloudTasksDrainDispatcher.ts`. Reduce `backend/src/modules/chat/infra/cloudTasksActionDrainDispatcher.ts` and `backend/src/modules/facets/infra/cloudTasksFacetExtractionDrainDispatcher.ts` to wrappers. `cloud-tasks-action-drain-dispatcher.test.ts`, `action-drain-dispatcher.test.ts` and the facet tests pass unchanged (after T015).
-- [ ] T017 [R3] Verify: `cd backend && pnpm run lint`, `pnpm run lint:dead-code:ci`, `pnpm run test:unit`.
+- [x] T015 [P] [R3] Write `backend/tests/unit/cloud-tasks-drain-dispatcher.test.ts` for a generic `CloudTasksDrainDispatcher<Body>`: task path, worker-token header, OIDC audience, JSON body, `scheduleTime` set only when `scheduleAt` is in the future (preserving `cloudTasksFacetExtractionDrainDispatcher.ts:37-45`).
+- [x] T016 [R3] Implement `backend/src/shared/infra/cloudTasksDrainDispatcher.ts`. Reduce `backend/src/modules/chat/infra/cloudTasksActionDrainDispatcher.ts` and `backend/src/modules/facets/infra/cloudTasksFacetExtractionDrainDispatcher.ts` to wrappers. `cloud-tasks-action-drain-dispatcher.test.ts`, `action-drain-dispatcher.test.ts` and the facet tests pass unchanged (after T015).
+- [x] T017 [R3] Verify: `cd backend && pnpm run lint`, `pnpm run lint:dead-code:ci`, `pnpm run test:unit`.
 
 ### R1: execution capabilities and the discriminated completion result
 
-- [ ] T018 [P] [R1] Write `backend/tests/unit/chat/turn-execution-capabilities.test.ts`:
+- [x] T018 [P] [R1] Write `backend/tests/unit/chat/turn-execution-capabilities.test.ts`:
   - a table pinning every `live` and `safe_test` capability (`routines`, `completion`, `ownershipHandoff`, `turnActions`, `humanOwnedWaitingMessage`; ports §3);
   - routine activation **and** the suspended-routine short-circuit (`chatService.ts:933`) behave as before in both modes;
   - a type-level assertion that `CompletedAssistantTurn` has a `persisted` arm.
-- [ ] T019 [R1] Add `TurnExecutionCapabilities` and `turnExecutionCapabilities()` to `backend/src/shared/domain/turnExecutionMode.ts` for `live` and `safe_test` (after T018).
-- [ ] T020 [R1] Replace the `safeTestTurn` boolean in `backend/src/modules/chat/services/chatTurnLifecycle.ts:669-787`, and the mode comparisons in `backend/src/modules/chat/services/chatService.ts` (including `:913-942`), with capability reads. Turn `CompletedAssistantTurn` (`chatTurnLifecycle.ts:152-156`) into a union with only the `persisted` arm, and update its call sites (`chatService.ts:953,1061,1130,1434`, `approvalResumeTurn.ts:192`). `chat-turn-lifecycle.test.ts`, `skill-effect-policy.test.ts`, `chat-session-preparer-skill-effects-and-durability.test.ts` and `workbench-replay-runner.test.ts` pass unmodified (after T019).
+- [x] T019 [R1] Add `TurnExecutionCapabilities` and `turnExecutionCapabilities()` to `backend/src/shared/domain/turnExecutionMode.ts` for `live` and `safe_test` (after T018).
+- [x] T020 [R1] Replace the `safeTestTurn` boolean in `backend/src/modules/chat/services/chatTurnLifecycle.ts:669-787`, and the mode comparisons in `backend/src/modules/chat/services/chatService.ts` (including `:913-942`), with capability reads. Turn `CompletedAssistantTurn` (`chatTurnLifecycle.ts:152-156`) into a union with only the `persisted` arm, and update its call sites (`chatService.ts:953,1061,1130,1434`, `approvalResumeTurn.ts:192`). `chat-turn-lifecycle.test.ts`, `skill-effect-policy.test.ts`, `chat-session-preparer-skill-effects-and-durability.test.ts` and `workbench-replay-runner.test.ts` pass unmodified (after T019).
 
 ### R2: suppressed-effects collector
 
-- [ ] T021 [P] [R2] Extend `backend/tests/unit/agent-skill-turn-skill-provider.test.ts`:
+- [x] T021 [P] [R2] Extend `backend/tests/unit/agent-skill-turn-skill-provider.test.ts`:
   - the provider exposes a per-turn `suppressedEffects()` collector;
   - it records direct turn-skill suppression (`agentSkillTurnSkillProvider.ts:309-311`) and staged-tool suppression (`:386-392`);
   - it is empty for `live`;
   - the persisted reason `suppressed_for_safe_test` and the counter `agent_skill_safe_test_dispatch_total` are unchanged.
-- [ ] T022 [R2] Implement the collector in `backend/src/app/composition/builtIn/agentSkillTurnSkillProvider.ts` with no rename (after T021).
-- [ ] T023 [R1] [R2] Verify: `pnpm run test:unit`, `pnpm run lint`, `pnpm run lint:dead-code:ci`, `cd backend && pnpm run build`, and `cd backend && pnpm run evals:copilot` (one-sample smoke) for unchanged safe-test probes.
+- [x] T022 [R2] Implement the collector in `backend/src/app/composition/builtIn/agentSkillTurnSkillProvider.ts` with no rename (after T021).
+- [x] T023 [R1] [R2] Verify: `pnpm run test:unit`, `pnpm run lint`, `pnpm run lint:dead-code:ci`, `cd backend && pnpm run build`, and `cd backend && pnpm run evals:copilot` (one-sample smoke) for unchanged safe-test probes.
 
 **Checkpoint**: `live` and `safe_test` behave byte for byte as before. The capability seam, the completion union and the collector are ready for `review`.
 

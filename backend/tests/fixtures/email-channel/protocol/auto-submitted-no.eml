@@ -1,0 +1,19 @@
+Return-Path: <paula@example.test>
+Received: from mx.in.relay.test (mx.in.relay.test [192.0.2.50])
+	by inbound.in.relay.test with ESMTPS id c2b3d4e5f6
+	for <QZ2K7XN4VTM3RLHJWPC6YGBSFD@in.relay.test>;
+	Sat, 03 Oct 2026 18:05:10 +0000 (UTC)
+Message-ID: <msg-0202@example.test>
+Auto-Submitted: no
+From: Paula Reyes <paula@example.test>
+To: support@customer.test
+Subject: Quick question
+Date: Sat, 03 Oct 2026 18:05:00 +0000
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+Hi, my mail client stamps Auto-Submitted: no on every message. This is
+a normal question from a person, not an automated response.
+
+Paula

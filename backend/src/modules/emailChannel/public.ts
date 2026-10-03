@@ -10,6 +10,7 @@ export {
   type InboundEventRecord,
 } from "./persistence/emailInboundRepository.js";
 export { EmailMailboxRepository } from "./persistence/emailMailboxRepository.js";
+export { EmailSendIntentRepository } from "./persistence/emailSendIntentRepository.js";
 export { EmailThreadRepository } from "./persistence/emailThreadRepository.js";
 export { lockThreadResolution } from "./persistence/threadResolutionLock.js";
 export { SendingDomainService } from "./domains/sendingDomainService.js";

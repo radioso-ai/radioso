@@ -64,7 +64,7 @@ Message-queue impact is reviewed in S1, S2 and S6. Read `docs/document-writer-pr
 
 ## Phase 1: Setup (Shared Infrastructure)
 
-- [ ] T001 Add `postal-mime`, `html-to-text` and `sanitize-html` (plus `@types/html-to-text` and `@types/sanitize-html` as dev dependencies) to `backend/package.json` with `pnpm --filter backend add`. Commit `pnpm-lock.yaml` and record the licenses in the PR.
+- [x] T001 Add `postal-mime`, `html-to-text` and `sanitize-html` (plus `@types/html-to-text` and `@types/sanitize-html` as dev dependencies) to `backend/package.json` with `pnpm --filter backend add`. Commit `pnpm-lock.yaml` and record the licenses in the PR.
 - [x] T002 [P] Write failing tests in `backend/tests/unit/runtime-config.test.ts`:
   - `EMAIL_CHANNEL_*` unset → channel unconfigured;
   - `EMAIL_CHANNEL_PROVIDER=resend` without `RESEND_CHANNEL_API_KEY` → startup error;
@@ -171,82 +171,82 @@ R3 blocks T088 (S1 drain wiring). R1 and R2 block S3 and can run in parallel wit
 
 ### Schema and activity kinds
 
-- [ ] T024 [P] [US2] Write failing tests:
+- [x] T024 [P] [US2] Write failing tests:
   - `backend/tests/integration/conversation-activity-kinds.integration.test.ts`:
     - after 211–213, the five new kinds insert and unknown kinds are still rejected;
     - 211 and 213 contain `SET LOCAL lock_timeout` (asserted on the SQL text);
     - `conversation_activity_workspace_closed_v2_idx` exists with the extended predicate;
     - the recently-closed query uses it (`EXPLAIN`).
   - `backend/tests/unit/conversation-activity-kinds.test.ts`: presentation for `channel_exception`, `delivery_failed`, `delivery_failure_cleared`, `held_reply_released`, `held_reply_discarded`, and the closing-kinds list.
-- [ ] T025 [US1] Create `backend/src/db/migrations/209_email_channel_keystone.sql`: `email_domains`, `email_mailboxes`, `email_mailbox_policies`, `email_thread_links`, `email_thread_messages`, with no FK on `inbound_delivery_id` or `send_intent_id` (data-model.md matrix).
-- [ ] T026 [US2] Create `backend/src/db/migrations/210_email_inbound_events.sql`: `email_inbound_events`, `email_inbound_deliveries` (including the GIN on `reference_ids` and the reservation index), plus `ALTER TABLE email_thread_messages ADD CONSTRAINT … FOREIGN KEY (inbound_delivery_id)`.
-- [ ] T027 [US2] Create the three-phase widening (research B19):
+- [x] T025 [US1] Create `backend/src/db/migrations/209_email_channel_keystone.sql`: `email_domains`, `email_mailboxes`, `email_mailbox_policies`, `email_thread_links`, `email_thread_messages`, with no FK on `inbound_delivery_id` or `send_intent_id` (data-model.md matrix).
+- [x] T026 [US2] Create `backend/src/db/migrations/210_email_inbound_events.sql`: `email_inbound_events`, `email_inbound_deliveries` (including the GIN on `reference_ids` and the reservation index), plus `ALTER TABLE email_thread_messages ADD CONSTRAINT … FOREIGN KEY (inbound_delivery_id)`.
+- [x] T027 [US2] Create the three-phase widening (research B19):
   - `backend/src/db/migrations/211_conversation_activity_kind_v2_add.sql`: `SET LOCAL lock_timeout='3s'`, `ADD CONSTRAINT conversation_activity_kind_v2_check … NOT VALID` with all five new kinds;
   - `212_conversation_activity_kind_v2_validate.sql`: `VALIDATE CONSTRAINT`;
   - `213_conversation_activity_kind_drop_v1.sql`: `SET LOCAL lock_timeout='3s'`, `DROP CONSTRAINT conversation_activity_kind_check`.
 - [ ] T028 [US2] Create `backend/src/db/migrations/214_conversation_activity_closed_idx_v2.sql` (`SET LOCAL lock_timeout='3s'`; `CREATE INDEX IF NOT EXISTS … WHERE kind IN (…, 'held_reply_released', 'delivery_failure_cleared')`). Extend `CONVERSATION_ACTIVITY_KINDS` and `CLOSING_ACTIVITY_KINDS` in `backend/src/modules/conversationActivity/contracts/index.ts:8-26`, the presentation in `backend/src/modules/conversationActivity/presentation.ts`, and the recently-closed query in `backend/src/modules/conversationActivity/readService.ts` to match the v2 predicate (after T024).
-- [ ] T029 Regenerate `backend/src/shared/infra/kysely/schema.ts` (`db:types`) and `backend/src/db/schema.sql` (`db:schema`), then run `db:schema:check` (after T025–T028).
+- [x] T029 Regenerate `backend/src/shared/infra/kysely/schema.ts` (`db:types`) and `backend/src/db/schema.sql` (`db:schema`), then run `db:schema:check` (after T025–T028).
 
 ### Tests first: pure decisions and content
 
-- [ ] T030 [P] [US1] Write `backend/tests/unit/email-channel/relay-tokens.test.ts`: tokens are 26-character base32 from at least 128 bits; relay and plus-token parsing; customer-domain addresses never parse as relay addresses.
-- [ ] T031 [P] [US1] Write `backend/tests/unit/email-channel/receiving-state.test.ts` for the `waiting`, `ok` and `silent` boundaries.
-- [ ] T032 [P] [US1] Write `backend/tests/unit/email-channel/mailbox-routing.test.ts` for research B20:
+- [x] T030 [P] [US1] Write `backend/tests/unit/email-channel/relay-tokens.test.ts`: tokens are 26-character base32 from at least 128 bits; relay and plus-token parsing; customer-domain addresses never parse as relay addresses.
+- [x] T031 [P] [US1] Write `backend/tests/unit/email-channel/receiving-state.test.ts` for the `waiting`, `ok` and `silent` boundaries.
+- [x] T032 [P] [US1] Write `backend/tests/unit/email-channel/mailbox-routing.test.ts` for research B20:
   - the relay rule (current and previous token);
   - the direct rule (exact address on a receiving-verified domain, `+tag` removed);
   - `direct_unknown` attribution;
   - a customer domain without direct receiving → `null`;
   - a never-issued token → `relay_unknown`.
-- [ ] T033 [P] [US1] Write `backend/tests/unit/email-channel/effective-mode.test.ts`: the lower autonomy of accepted and current wins, and enabled requires both (research B16).
-- [ ] T034 [P] [US2] Write `backend/tests/unit/email-channel/inbound-classification.test.ts`:
+- [x] T033 [P] [US1] Write `backend/tests/unit/email-channel/effective-mode.test.ts`: the lower autonomy of accepted and current wins, and enabled requires both (research B16).
+- [x] T034 [P] [US2] Write `backend/tests/unit/email-channel/inbound-classification.test.ts`:
   - every `protocol/` fixture, plus `adapter-verdicts.json` after T013, maps to its classification;
   - order is self_sender, bounce, automation headers, spam;
   - `Auto-Submitted: no` gives `person`;
   - auth failures never change the result;
   - a body containing automation-like words still gives `person`.
-- [ ] T035 [P] [US2] Write `backend/tests/unit/email-channel/thread-resolution.test.ts` (pure `resolveThread`, ports §6c):
+- [x] T035 [P] [US2] Write `backend/tests/unit/email-channel/thread-resolution.test.ts` (pure `resolveThread`, ports §6c):
   - forward index vs reservation;
   - reverse reference;
   - token;
   - participant mismatch;
   - conflict;
   - new thread.
-- [ ] T036 [P] [US2] Write `backend/tests/unit/email-channel/engagement-disposition.test.ts`: the rule order in ports §6d over `effectiveMode`, every drop and ingest-only reason, `noteOnThread`, spam opt-in, and that `run_review_turn` needs draft/auto, a person, `ai_owned` and an unexhausted budget.
-- [ ] T037 [P] [US2] Write `backend/tests/unit/email-channel/quoted-history.test.ts` over the corpus: confident vs full text, `>`-block plus trailing-colon line, sig-dash, verbatim cut of prior outbound text, no word lists.
-- [ ] T038 [P] [US2] Write `backend/tests/unit/email-channel/customer-text.test.ts`: HTML-only body, ISO-8859-1, encoded-word subject, empty body.
-- [ ] T039 [P] [US2] Write `backend/tests/unit/email-channel/raw-message-view.test.ts`: script, handler, form, remote-resource and CSS `url()` stripping; `cid:` placeholders; relay and plus-token headers hidden; truncation flag.
-- [ ] T040 [P] [US2] Write `backend/tests/unit/mail/inbound-mime-normalizer.test.ts` for the `InboundEmailMessage` fields (ports §1b), DSN `originalMessageIds`, the attachments manifest and the `deliveredTo` union.
-- [ ] T041 [P] [US2] Extend `backend/tests/unit/conversation-source.test.ts`: `callerKindForSourceChannel("email") === "human"`, and `AGENT_SOURCE_CHANNELS` is unchanged.
+- [x] T036 [P] [US2] Write `backend/tests/unit/email-channel/engagement-disposition.test.ts`: the rule order in ports §6d over `effectiveMode`, every drop and ingest-only reason, `noteOnThread`, spam opt-in, and that `run_review_turn` needs draft/auto, a person, `ai_owned` and an unexhausted budget.
+- [x] T037 [P] [US2] Write `backend/tests/unit/email-channel/quoted-history.test.ts` over the corpus: confident vs full text, `>`-block plus trailing-colon line, sig-dash, verbatim cut of prior outbound text, no word lists.
+- [x] T038 [P] [US2] Write `backend/tests/unit/email-channel/customer-text.test.ts`: HTML-only body, ISO-8859-1, encoded-word subject, empty body.
+- [x] T039 [P] [US2] Write `backend/tests/unit/email-channel/raw-message-view.test.ts`: script, handler, form, remote-resource and CSS `url()` stripping; `cid:` placeholders; relay and plus-token headers hidden; truncation flag.
+- [x] T040 [P] [US2] Write `backend/tests/unit/mail/inbound-mime-normalizer.test.ts` for the `InboundEmailMessage` fields (ports §1b), DSN `originalMessageIds`, the attachments manifest and the `deliveredTo` union.
+- [x] T041 [P] [US2] Extend `backend/tests/unit/conversation-source.test.ts`: `callerKindForSourceChannel("email") === "human"`, and `AGENT_SOURCE_CHANNELS` is unchanged.
 
 ### Implementation: pure decisions, content, mail ports
 
-- [ ] T042 [P] [US1] Implement `backend/src/modules/emailChannel/mailboxes/relayTokens.ts` (after T030).
-- [ ] T043 [P] [US1] Implement `backend/src/modules/emailChannel/mailboxes/receivingState.ts` (after T031).
-- [ ] T044 [P] [US1] Implement `backend/src/modules/emailChannel/mailboxes/mailboxRouting.ts` (after T032).
-- [ ] T045 [P] [US1] Implement `backend/src/modules/emailChannel/mailboxes/effectiveMode.ts` (after T033).
-- [ ] T046 [P] [US2] Implement `backend/src/modules/connectors/plugins/email/emailInboundClassification.ts` (after T034).
-- [ ] T047 [P] [US2] Implement `backend/src/modules/connectors/plugins/email/emailThreadResolution.ts` (after T035).
-- [ ] T048 [P] [US2] Implement `backend/src/modules/connectors/plugins/email/emailEngagementDisposition.ts` (after T036).
-- [ ] T049 [P] [US2] Implement `backend/src/modules/emailChannel/content/quotedHistory.ts` (after T037).
-- [ ] T050 [P] [US2] Implement `backend/src/modules/emailChannel/content/customerText.ts` (after T038, T049).
-- [ ] T051 [P] [US2] Implement `backend/src/modules/emailChannel/content/rawMessageView.ts` (after T039).
-- [ ] T052 [US2] Create the ports `backend/src/modules/mail/inboundEmailReceiver.ts` and `backend/src/modules/mail/emailDomainProvisioner.ts`, and `backend/src/modules/mail/inboundMimeNormalizer.ts` (postal-mime). Export them from `backend/src/modules/mail/public.ts` (after T040).
+- [x] T042 [P] [US1] Implement `backend/src/modules/emailChannel/mailboxes/relayTokens.ts` (after T030).
+- [x] T043 [P] [US1] Implement `backend/src/modules/emailChannel/mailboxes/receivingState.ts` (after T031).
+- [x] T044 [P] [US1] Implement `backend/src/modules/emailChannel/mailboxes/mailboxRouting.ts` (after T032).
+- [x] T045 [P] [US1] Implement `backend/src/modules/emailChannel/mailboxes/effectiveMode.ts` (after T033).
+- [x] T046 [P] [US2] Implement `backend/src/modules/connectors/plugins/email/emailInboundClassification.ts` (after T034).
+- [x] T047 [P] [US2] Implement `backend/src/modules/connectors/plugins/email/emailThreadResolution.ts` (after T035).
+- [x] T048 [P] [US2] Implement `backend/src/modules/connectors/plugins/email/emailEngagementDisposition.ts` (after T036).
+- [x] T049 [P] [US2] Implement `backend/src/modules/emailChannel/content/quotedHistory.ts` (after T037).
+- [x] T050 [P] [US2] Implement `backend/src/modules/emailChannel/content/customerText.ts` (after T038, T049).
+- [x] T051 [P] [US2] Implement `backend/src/modules/emailChannel/content/rawMessageView.ts` (after T039).
+- [x] T052 [US2] Create the ports `backend/src/modules/mail/inboundEmailReceiver.ts` and `backend/src/modules/mail/emailDomainProvisioner.ts`, and `backend/src/modules/mail/inboundMimeNormalizer.ts` (postal-mime). Export them from `backend/src/modules/mail/public.ts` (after T040).
 
 ### Adapters (tests first)
 
-- [ ] T053 [P] [US2] Write `backend/tests/unit/mail/local-email-adapters.test.ts`: local verify with the current and `_PREVIOUS` secrets; spool fetch, where a missing file is non-retryable; the local provisioner's pending and verify flip.
-- [ ] T054 [P] [US2] Write `backend/tests/unit/mail/resend-inbound-receiver.test.ts` over the S0 fixtures (after T007, T013, T014):
+- [x] T053 [P] [US2] Write `backend/tests/unit/mail/local-email-adapters.test.ts`: local verify with the current and `_PREVIOUS` secrets; spool fetch, where a missing file is non-retryable; the local provisioner's pending and verify flip.
+- [x] T054 [P] [US2] Write `backend/tests/unit/mail/resend-inbound-receiver.test.ts` over the S0 fixtures (after T007, T013, T014):
   - signature cases;
   - event-kind mapping;
   - fetch via the receiving API and the raw download;
   - retryable vs non-retryable errors;
   - auth mapping;
   - `spamVerdict` is always `unknown`.
-- [ ] T055 [P] [US1] Write `backend/tests/unit/mail/resend-domain-provisioner.test.ts` (after T011, T014): record and capability mapping, `partially_verified`, `claimed_elsewhere`, tracking disabled, advisory DMARC through an injected resolver.
-- [ ] T056 [US2] Create `backend/src/modules/mail/adapters/resendApi.ts`, the shared fetch, auth, timeout and error-classification helper (before T057, T058).
-- [ ] T057 [P] [US2] Implement `backend/src/modules/mail/adapters/resendInboundReceiver.ts` (after T054, T056).
-- [ ] T058 [P] [US1] Implement `backend/src/modules/mail/adapters/resendDomainProvisioner.ts` (after T055, T056).
-- [ ] T059 [P] [US2] Implement `backend/src/modules/mail/adapters/localInboundReceiver.ts` and `localDomainProvisioner.ts` (after T053).
+- [x] T055 [P] [US1] Write `backend/tests/unit/mail/resend-domain-provisioner.test.ts` (after T011, T014): record and capability mapping, `partially_verified`, `claimed_elsewhere`, tracking disabled, advisory DMARC through an injected resolver.
+- [x] T056 [US2] Create `backend/src/modules/mail/adapters/resendApi.ts`, the shared fetch, auth, timeout and error-classification helper (before T057, T058).
+- [x] T057 [P] [US2] Implement `backend/src/modules/mail/adapters/resendInboundReceiver.ts` (after T054, T056).
+- [x] T058 [P] [US1] Implement `backend/src/modules/mail/adapters/resendDomainProvisioner.ts` (after T055, T056).
+- [x] T059 [P] [US2] Implement `backend/src/modules/mail/adapters/localInboundReceiver.ts` and `localDomainProvisioner.ts` (after T053).
 
 ### Tests first: persistence, services, protocol, worker, HTTP, Ray
 

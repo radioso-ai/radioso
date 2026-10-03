@@ -1,1 +1,12 @@
 export type { EngagementMode } from "./mailboxes/effectiveMode.js";
+export type { MailboxPolicyChangeUnitOfWork } from "./mailboxes/mailboxPolicyChangeUnitOfWork.js";
+export { EmailDomainRepository } from "./persistence/emailDomainRepository.js";
+export { EmailInboundRepository } from "./persistence/emailInboundRepository.js";
+export { EmailMailboxRepository } from "./persistence/emailMailboxRepository.js";
+export { EmailThreadRepository } from "./persistence/emailThreadRepository.js";
+export { lockThreadResolution } from "./persistence/threadResolutionLock.js";
+export { SendingDomainService } from "./domains/sendingDomainService.js";
+export { MailboxService } from "./mailboxes/mailboxService.js";
+export { EventLogReader } from "./eventLog/eventLogReader.js";
+export { ConversationEmailFactsReader, type ConversationEmailFacts } from "./facts/conversationEmailFacts.js";
+export { EmailChannelCopilotView } from "./copilot/emailChannelCopilotView.js";

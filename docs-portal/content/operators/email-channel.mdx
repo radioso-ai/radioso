@@ -1,6 +1,6 @@
 ---
 title: Email channel
-description: Connect a support mailbox to a Radioso agent by forwarding, verify sending on your own domain, and work the mailbox event log from operator settings.
+description: Connect a support mailbox to a Radioso agent by forwarding, verify sending on your own domain, reply with delivery tracked through to the customer, and work the mailbox event log from operator settings.
 ---
 
 # Email channel
@@ -35,6 +35,14 @@ Adding a mailbox registers its domain for sending if it isn't registered already
 
 Until a domain verifies, the mailbox still receives mail normally, but a reply is refused before anything is written, with the missing step named. Retrying once the domain verifies is safe. A domain can only belong to one workspace: adding one already claimed elsewhere is refused without saying who has it.
 
+## Reply and track delivery
+
+Replying to an email conversation works like replying on any other channel — it goes out as your mailbox's real address, in the same thread the customer wrote to, once that domain's sending records have verified.
+
+Each outbound message shows a delivery state: `queued`, `accepted`, `delivered`, `bounced`, `failed`, `uncertain`, or `halted`. The last four flag the conversation for attention, with the reason shown on the message.
+
+A send that comes back `uncertain` means its outcome never resolved with the provider. Radioso retries it safely on its own inside the provider's idempotency window — nothing you need to do. Only once that window closes unresolved do you get a decision to make: mark it sent, once you've confirmed delivery some other way, or ask for a resend, which is recorded against you. Radioso never resends a send by itself.
+
 ## Direct receiving (advanced)
 
 Instead of forwarding, you can point an entire customer-owned domain or subdomain's MX record at Radioso. This is a deliberate trade-off: once you confirm it by typing the domain's name, *every* address on that domain routes to Radioso, not just the mailboxes you've connected. Forwarding is the default for a reason — reach for direct receiving only when you want Radioso to be the domain's mail server outright.
@@ -46,6 +54,9 @@ Instead of forwarding, you can point an entire customer-owned domain or subdomai
 - **A reply is refused with a missing-step message.** The mailbox's sending domain hasn't verified yet. Add the DKIM and SPF records shown on the domain and wait for them to resolve.
 - **Adding a domain is refused without an explanation of who has it.** Another workspace already claimed that domain for sending. Use a different domain or subdomain.
 - **An email you expected to see never shows up anywhere.** Check the mailbox's event log — automated-sender mail, bounces, spam, and mail from your own mailboxes are recorded there but never open a conversation, by design.
+- **A reply shows `bounced` or `failed`.** The customer's address rejected it or the provider couldn't deliver it — the reason is on the message. Acknowledge the flag once you've dealt with it, such as following up another way.
+- **A reply shows `halted`.** The mailbox's domain lost its sending verification after the reply was queued, so nothing went out. Re-verify the domain, then resend from the conversation's delivery failure.
+- **A reply has been `uncertain` for a while.** Its outcome never came back from the provider. Mark it sent if you've confirmed the customer got it some other way, or ask for a resend — both are recorded against you.
 
 ## Read next
 

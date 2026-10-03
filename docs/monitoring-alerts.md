@@ -1,7 +1,7 @@
 ---
 title: "Monitoring And Alerts"
 description: "Alert on a Radioso deployment: which signals exist, how to reach them through Prometheus metrics and the ops event feed, and example alert rules that work on any host."
-last_updated: 2026-09-22
+last_updated: 2026-10-04
 ---
 
 # Monitoring And Alerts
@@ -23,6 +23,8 @@ Radioso emits signals through standard interfaces — a Prometheus-compatible me
 | Is inbound email piling up unprocessed | `radioso_email_backlog{table="inbound_events",state="pending"}` | `/metrics` |
 | Is the email webhook being forged or misconfigured | `radioso_email_webhook_requests_total{result=~"bad_signature\|stale_timestamp"}` | `/metrics` |
 | Did an email sending domain stop verifying | `radioso_email_domain_readiness_transitions_total{capability="sending",to!="verified"}` | `/metrics` |
+| Are email sends piling up with no resolved outcome | `radioso_email_send_intents_total{state="uncertain"}` | `/metrics` |
+| Is the email bounce rate spiking | `radioso_email_send_intents_total{state="bounced"}` against `{state="accepted"}` | `/metrics` |
 | Did someone sign up, did a conversation finish | `account.registered`, `chat.completed` | [ops event feed](ops-event-feed.md) |
 | Is a caller being throttled | `security.rate_limit_enforced` | `audit_events` |
 | What exactly broke, with a stack trace | error events | [ops event feed](ops-event-feed.md), `audit_events` |
@@ -128,6 +130,20 @@ groups:
         expr: increase(radioso_email_domain_readiness_transitions_total{capability="sending",to!="verified"}[15m]) > 0
         annotations:
           summary: "An email sending domain lost its verified status"
+
+      - alert: RadiosoEmailSendUncertain
+        expr: increase(radioso_email_send_intents_total{state="uncertain"}[1h]) > 0
+        annotations:
+          summary: "An email send's outcome never resolved and needs an operator decision"
+
+      - alert: RadiosoEmailBounceSpike
+        expr: >
+          sum(increase(radioso_email_send_intents_total{state="accepted"}[1h])) >= 20
+          and
+          (sum(increase(radioso_email_send_intents_total{state="bounced"}[1h]))
+            / sum(increase(radioso_email_send_intents_total{state="accepted"}[1h]))) > 0.2
+        annotations:
+          summary: "More than 20% of accepted email sends bounced in the last hour"
 ```
 
 The outbox and email-backlog alerts earn their place the same way. While the action outbox is stalled, customer-facing work — a contact request, a notification — sits undelivered and nothing else reports it. There is no error and no failed request; the queue just stops.

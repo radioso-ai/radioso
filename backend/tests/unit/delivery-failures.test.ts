@@ -58,6 +58,14 @@ const failureTable = () => {
       }
       return cleared.map((row) => ({ ...row }));
     },
+    async acknowledgeOpen(input) {
+      const row = rows.find((candidate) => candidate.id === input.failureId && candidate.workspaceId === input.workspaceId && candidate.clearedAt === null);
+      if (!row) {
+        return null;
+      }
+      Object.assign(row, { clearedAt: new Date(opened), clearReason: "acknowledged", clearedByUserId: input.userId });
+      return { ...row };
+    },
   };
   return { rows, store };
 };
@@ -70,7 +78,11 @@ const setup = () => {
     activity: { record: async (event) => { activities.push(event); } },
   };
   const writes: DeliveryFailureUnitOfWork = { run: vi.fn(async (work) => work(scope)) };
-  const reads: DeliveryFailureReadStore = { listOpen: vi.fn(async () => []) };
+  const reads: DeliveryFailureReadStore = {
+    listOpen: vi.fn(async () => []),
+    listAll: vi.fn(async () => []),
+    find: vi.fn(async () => null),
+  };
   const failures = new DeliveryFailures({ writes, reads });
   const open = (messageId: string | null, kind: DeliveryFailureRecord["kind"] = "bounced", conversationId = CONVERSATION) =>
     failures.open({ workspaceId: WORKSPACE, conversationId, messageId, provider: "resend", kind, detailCode: null });
@@ -244,6 +256,37 @@ describe("DeliveryFailures recorder", () => {
   });
 });
 
+describe("DeliveryFailures acknowledgement", () => {
+  it("clears the workspace's open failure as acknowledged by the teammate, with the activity naming them", async () => {
+    const { failures, rows, activities, open } = setup();
+    await open("message-1");
+    const [failure] = rows;
+
+    const acknowledged = await failures.acknowledge({ workspaceId: WORKSPACE, failureId: failure.id, userId: TEAMMATE });
+
+    expect(acknowledged).toMatchObject({ id: failure.id, clearReason: "acknowledged", clearedByUserId: TEAMMATE });
+    expect(activities.at(-1)).toEqual({
+      kind: "delivery_failure_cleared",
+      conversationId: CONVERSATION,
+      workspaceId: WORKSPACE,
+      actorUserId: TEAMMATE,
+      detail: { failureId: failure.id, messageId: "message-1", reason: "acknowledged" },
+    });
+  });
+
+  it("acknowledges nothing, and records nothing, for a cleared failure or another workspace's", async () => {
+    const { failures, rows, activities, open } = setup();
+    await open("message-1");
+    const [failure] = rows;
+    await failures.acknowledge({ workspaceId: WORKSPACE, failureId: failure.id, userId: TEAMMATE });
+    const recorded = activities.length;
+
+    await expect(failures.acknowledge({ workspaceId: WORKSPACE, failureId: failure.id, userId: TEAMMATE })).resolves.toBeNull();
+    await expect(failures.acknowledge({ workspaceId: "workspace-2", failureId: failure.id, userId: TEAMMATE })).resolves.toBeNull();
+    expect(activities).toHaveLength(recorded);
+  });
+});
+
 describe("DeliveryFailures reader", () => {
   const failure = (id: string, openedAt: string): DeliveryFailureRecord => ({
     id,
@@ -261,14 +304,16 @@ describe("DeliveryFailures reader", () => {
 
   const reader = (pages: DeliveryFailureRecord[][]) => {
     const listOpen = vi.fn<DeliveryFailureReadStore["listOpen"]>();
+    const listAll = vi.fn<DeliveryFailureReadStore["listAll"]>();
     for (const page of pages) {
       listOpen.mockResolvedValueOnce(page);
+      listAll.mockResolvedValueOnce(page);
     }
     const failures = new DeliveryFailures({
       writes: { run: vi.fn() },
-      reads: { listOpen },
+      reads: { listOpen, listAll, find: vi.fn() },
     });
-    return { failures, listOpen };
+    return { failures, listOpen, listAll };
   };
 
   it("filters to one agent's conversations and pages newest first through an opaque cursor", async () => {
@@ -298,6 +343,15 @@ describe("DeliveryFailures reader", () => {
 
     await expect(failures.listOpen(WORKSPACE, { limit: 50 })).resolves.toEqual({ items: [], nextCursor: null });
     expect(listOpen).toHaveBeenCalledWith(WORKSPACE, { agentId: undefined, after: null, limit: 51 });
+  });
+
+  it("reads the cleared failures too when asked for every state", async () => {
+    const cleared = { ...failure("failure-1", "2026-10-03T10:00:01.000Z"), clearedAt: new Date("2026-10-03T11:00:00.000Z"), clearReason: "acknowledged" as const };
+    const { failures, listOpen, listAll } = reader([[cleared]]);
+
+    await expect(failures.list(WORKSPACE, { state: "all", limit: 10 })).resolves.toEqual({ items: [cleared], nextCursor: null });
+    expect(listAll).toHaveBeenCalledWith(WORKSPACE, { agentId: undefined, after: null, limit: 11 });
+    expect(listOpen).not.toHaveBeenCalled();
   });
 
   it("refuses a cursor no read issued", async () => {

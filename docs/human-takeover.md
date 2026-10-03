@@ -1,7 +1,7 @@
 ---
 title: "Human Takeover"
 description: "Operator API and contract for taking over conversations, suppressing AI while handling manual responses, and reading who did what to a conversation."
-last_updated: 2026-10-02
+last_updated: 2026-10-04
 ---
 
 # Human Takeover
@@ -167,15 +167,21 @@ ownership in `error.details.ownership`. `expectedVersion` must match the
 ownership record you replied from; a stale value also returns `409` with the
 current record.
 
-The ownership check, the saved reply, and its delivery to a customer channel
-such as Slack commit together, with the conversation and its ownership record
-locked in between. A transfer or hand-back that commits first refuses the reply
-with `409`, and no message is saved; one that arrives while the reply is being
-saved waits for it. The Slack post is queued on the action outbox in the same
-database transaction, keyed by the message, so the worker posts each reply once
-and retries a failed post. A reply that could not be saved or queued leaves
-nothing behind, so after a `5xx` you can send it again and the visitor sees it
-once.
+On an email conversation, the reply goes out as an email in the same thread
+the customer wrote to — see [Email channel](email-channel.md#send-a-reply-and-track-delivery)
+for its headers and delivery states. On one whose sending domain has not
+verified, the reply is refused before anything is written at all.
+
+Otherwise, the ownership check, the saved reply, and its delivery to a
+customer channel such as Slack or email commit together, with the
+conversation and its ownership record locked in between. A transfer or
+hand-back that commits first refuses the reply with `409`, and no message is
+saved; one that arrives while the reply is being saved waits for it. The
+Slack post or email send is queued on the action outbox in the same database
+transaction, keyed by the message, so the worker posts or sends each reply
+once and retries a failed attempt. A reply that could not be saved or queued
+leaves nothing behind, so after a `5xx` you can send it again and the
+visitor sees it once.
 
 The visitor, the dashboard, and the customer channel hear of a reply only once
 it has committed, and from then on the reply stands: the endpoint answers `201`
@@ -423,6 +429,57 @@ as an `approval_decided` [activity](#conversation-activity) event.
 
 Operators are notified of a new pending approval through the contact-delivery
 transport with an `approval.request` action, mirroring `handoff.notify`.
+
+## Delivery failures
+
+A reply can fail after it was already accepted for delivery — a bounce, a
+provider rejection, an authority check that failed before the provider was
+even called, or an outcome that never resolved. Each of these flags the
+conversation with a `delivery_failed` item, visible in the Inbox alongside
+handoffs and approvals, carrying the failed message and a sanitized reason.
+It changes no ownership; it is a flag that something meant for the customer
+might not have reached them. Today this is email-specific, through the
+[email channel](email-channel.md#send-a-reply-and-track-delivery); any
+channel's deliverer can open one.
+
+A `delivery_failed` flag clears itself when later evidence from the
+provider shows the message was actually delivered, or when an operator
+acts on it below.
+
+### List open delivery failures
+
+`GET /api/v1/delivery-failures`
+
+Query `state=open|all`, `agentId?`, `cursor?`, `limit` (up to 100). Requires
+the `workspace.conversation.takeover` permission.
+
+### Acknowledge
+
+`POST /api/v1/delivery-failures/{failureId}/acknowledge`
+
+Dismisses a `bounced` or `failed` failure once you've seen it and there is
+nothing further to do — you've already followed up with the customer another
+way, say. Returns `409` with code `already_cleared` on one that is already
+cleared.
+
+### Resolve an uncertain or halted send
+
+`POST /api/v1/delivery-failures/{failureId}/resolve`
+
+Body:
+
+```json
+{ "decision": "marked_sent" }
+```
+
+`decision` is `marked_sent` for a send whose outcome never resolved
+(`uncertain`), once you've confirmed delivery some other way, or `resend`,
+which sends a fresh copy under a new idempotency key and is recorded
+against you. `resend` is available for an `uncertain` or `halted` send once
+sending is ready again; a domain still unverified returns `409` with code
+`email_sending_not_verified`. Radioso never resends a send on its own — this
+is the only path to a second attempt. A send that is not `uncertain` or
+`halted` returns `409` with code `not_resolvable`.
 
 ## Live updates
 

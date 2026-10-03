@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Building2, ChevronLeft, FolderOpen, Globe, KeyRound, MessageCircle, ShieldAlert, Trash2, Wrench } from 'lucide-react'
+import { Building2, ChevronLeft, FolderOpen, Globe, KeyRound, Mail, MessageCircle, ShieldAlert, Trash2, Wrench } from 'lucide-react'
 
 import { ApiChannelCard } from '@/components/dashboard/settings/api-channel-card'
 import { AssistantContextVariablesSection } from '@/components/dashboard/settings/assistant-context-variables-section'
@@ -11,6 +11,7 @@ import { AssistantProfileSection } from '@/components/dashboard/settings/assista
 import { AssistantRoutinesSection } from '@/components/dashboard/settings/assistant-routines-section'
 import { ChatChannelSection } from '@/components/dashboard/settings/chat-channel-section'
 import { ConnectorSetupDialog } from '@/components/dashboard/documents/connector-setup-dialog'
+import { EmailChannelCard } from '@/components/dashboard/settings/email-channel-card'
 import { McpChannelCard } from '@/components/dashboard/settings/mcp-channel-card'
 import { SlackChannelCard } from '@/components/dashboard/settings/slack-channel-card'
 import { SkillList } from '@/components/dashboard/settings/skills/SkillList'
@@ -79,7 +80,7 @@ const writeCachedOrganizationName = (accountId: string, organizationName: string
 
 type GeneralSettingsUpdateInput = Parameters<typeof generalSettingsApi.updateGeneralSettings>[0]
 
-type ChannelId = 'web-chat' | 'api-channel' | 'mcp-channel' | 'slack-channel' | 'whatsapp-channel'
+type ChannelId = 'web-chat' | 'api-channel' | 'mcp-channel' | 'slack-channel' | 'whatsapp-channel' | 'email-channel'
 
 const CHANNEL_TITLES: Record<ChannelId, string> = {
   'web-chat': 'Web chat',
@@ -87,6 +88,7 @@ const CHANNEL_TITLES: Record<ChannelId, string> = {
   'mcp-channel': 'MCP channel',
   'slack-channel': 'Slack',
   'whatsapp-channel': 'WhatsApp',
+  'email-channel': 'Email',
 }
 
 const fallbackRetrievalDefaults: RetrievalDefaults = {
@@ -195,6 +197,7 @@ export function WorkspaceAssistantChannelsTab({
   const showSection = (id: AgentSectionId) => !agentSection || agentSection === id
   const isChannelId = (id: AgentSectionId | undefined): id is ChannelId =>
     id === 'web-chat' || id === 'api-channel' || id === 'mcp-channel' || id === 'slack-channel' || id === 'whatsapp-channel'
+    || id === 'email-channel'
   const resolvedChannel: ChannelId | null = isChannelId(agentSection) ? agentSection : selectedChannel
   const channelIndexEnabled = !agentSection || agentSection === 'channels-overview'
   const organizationDraftVersionRef = useRef(0)
@@ -991,6 +994,12 @@ export function WorkspaceAssistantChannelsTab({
                 description="Manage the workspace WhatsApp connection."
                 onClick={() => setSelectedChannel('whatsapp-channel')}
               />
+              <SettingsRow
+                icon={<Mail className="h-5 w-5 text-primary" />}
+                title={CHANNEL_TITLES['email-channel']}
+                description="Answer mail sent to your own support address."
+                onClick={() => setSelectedChannel('email-channel')}
+              />
             </SettingsRowList>
           </section>
           ) : null}
@@ -1053,6 +1062,12 @@ export function WorkspaceAssistantChannelsTab({
               agentId={agentId}
               agentName={slackAgentName}
             />
+          </section>
+          ) : null}
+
+          {mode === 'channels' && !isAnonLoading && resolvedChannel === 'email-channel' ? (
+          <section className="space-y-6 scroll-mt-24">
+            <EmailChannelCard workspaceId={activeWorkspaceId} agentId={agentId} />
           </section>
           ) : null}
 

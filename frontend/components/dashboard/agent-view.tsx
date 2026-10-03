@@ -80,6 +80,7 @@ const AGENT_SECTION_META: Record<Exclude<AgentSectionId, 'chat' | 'changes'>, Ag
   'mcp-channel': { title: 'MCP', mode: 'channels' },
   'slack-channel': { title: 'Slack', mode: 'channels' },
   'whatsapp-channel': { title: 'WhatsApp', mode: 'channels' },
+  'email-channel': { title: 'Email', mode: 'channels' },
   'channels-overview': { title: 'Channels', mode: 'channels', description: 'Configure the channels where this agent can answer.' },
   danger: { title: 'Danger zone', mode: 'assistant' },
 }

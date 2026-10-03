@@ -1,0 +1,502 @@
+import { expect, test, type Page, type Route } from "@playwright/test";
+
+import {
+  defaultAgentId,
+  installDashboardApiMocks,
+  nowIso,
+  seedDashboardStorage,
+  workspaceId,
+  workspaceKey,
+} from "./dashboard-fixtures";
+
+// The backend's email channel is stubbed at the network layer in the shapes the `local` provider
+// produces: DNS records start `pending`, a domain check flips them (as `email:dev verify-domain`
+// does), and a setup check passes when the test delivers the message through the relay.
+
+type DnsRecord = {
+  purpose: "dkim" | "spf" | "return_path" | "receiving_mx" | "dmarc";
+  type: "TXT" | "MX" | "CNAME";
+  name: string;
+  value: string;
+  priority?: number;
+  status: "pending" | "verified" | "failed" | "advisory";
+};
+
+type SetupCheck = {
+  step: "base" | "plus_address";
+  startedAt: string;
+  status: "waiting" | "passed";
+  passedAt: string | null;
+  instructions: { sendTo: string };
+};
+
+type EmailEvent = {
+  id: string;
+  createdAt: string;
+  state: "pending" | "fetched" | "ingested" | "done" | "failed";
+  classification: string | null;
+  disposition: "ingest_only" | "run_review_turn" | "drop" | null;
+  reason: string | null;
+  sender: { address: string | null; displayName: string | null };
+  subject: string | null;
+  auth: { spf: string; dkim: string; dmarc: string };
+  spamVerdict: "spam" | "not_spam" | "unknown";
+  conversationId: string | null;
+  threadConflict: boolean;
+  hasRaw: boolean;
+  retryable: boolean;
+};
+
+const relayAddress = "r7f3k2m9q@in.radioso.test";
+const mailboxId = "mailbox-support";
+const domainId = "domain-customer";
+
+const sendingRecords = (): DnsRecord[] => [
+  { purpose: "dkim", type: "TXT", name: "resend._domainkey.customer.test", value: "p=MIGfMA0GCSqGSIb3DQEBAQUAA4", status: "pending" },
+  { purpose: "spf", type: "TXT", name: "send.customer.test", value: "v=spf1 include:amazonses.com ~all", status: "pending" },
+  { purpose: "dmarc", type: "TXT", name: "_dmarc.customer.test", value: "v=DMARC1; p=none;", status: "advisory" },
+];
+
+const emailEvent = (overrides: Partial<EmailEvent> & Pick<EmailEvent, "id">): EmailEvent => ({
+  createdAt: nowIso,
+  state: "done",
+  classification: "first_contact",
+  disposition: "ingest_only",
+  reason: null,
+  sender: { address: "ana@example.test", displayName: "Ana Pereira" },
+  subject: "Where is my order?",
+  auth: { spf: "pass", dkim: "pass", dmarc: "pass" },
+  spamVerdict: "not_spam",
+  conversationId: null,
+  threadConflict: false,
+  hasRaw: true,
+  retryable: false,
+  ...overrides,
+});
+
+const json = (route: Route, body: unknown, status = 200) =>
+  route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+
+const refuse = (route: Route, status: number, code: string, message: string) =>
+  json(route, { error: { code, message } }, status);
+
+/** In-memory email channel backend; `deliver` stands in for mail arriving through the relay. */
+const installEmailChannelBackend = async (page: Page) => {
+  const requests: Array<{ method: string; path: string; body?: unknown }> = [];
+  const domains: Array<{
+    id: string;
+    domain: string;
+    sending: { status: "pending" | "verified" | "failed"; checkedAt: string | null };
+    receiving: { status: "not_requested" | "pending" | "verified" | "failed"; checkedAt: string | null };
+    records: DnsRecord[];
+  }> = [];
+  const mailboxes: Array<Record<string, unknown> & {
+    id: string;
+    receiving: { state: string; lastReceivedAt: string | null };
+    sending: { state: string };
+    setupCheck: SetupCheck | null;
+  }> = [];
+  const events: EmailEvent[] = [
+    emailEvent({
+      id: "delivery-confirmation",
+      classification: "forwarding_confirmation",
+      disposition: "drop",
+      reason: "forwarding_confirmation",
+      sender: { address: "forwarding-noreply@google.com", displayName: "Gmail Team" },
+      subject: "Gmail Forwarding Confirmation",
+    }),
+    emailEvent({
+      id: "delivery-failed",
+      state: "failed",
+      disposition: null,
+      reason: "fetch_failed",
+      sender: { address: "bo@example.test", displayName: null },
+      subject: "Refund request",
+      hasRaw: false,
+      retryable: true,
+    }),
+  ];
+  let verifyCount = 0;
+
+  const overview = () => ({
+    configured: true,
+    inboundDomain: "in.radioso.test",
+    supportedModes: ["operator_only"],
+    defaultMode: "operator_only",
+    domains,
+    mailboxes,
+  });
+
+  const deliver = (step: SetupCheck["step"]) => {
+    const mailbox = mailboxes[0];
+    if (!mailbox?.setupCheck || mailbox.setupCheck.step !== step) throw new Error(`No ${step} check is waiting`);
+    mailbox.setupCheck = { ...mailbox.setupCheck, status: "passed", passedAt: nowIso };
+    mailbox.receiving = { state: "ok", lastReceivedAt: nowIso };
+    if (step === "plus_address") mailbox.plusAddressVerified = true;
+  };
+
+  await page.route("**/backend/api/v1/workspaces/*/email-channel**", async (route) => {
+    const request = route.request();
+    const method = request.method();
+    const path = new URL(request.url()).pathname.replace(`/backend/api/v1/workspaces/${workspaceId}/email-channel`, "");
+    const body = request.postDataJSON() as Record<string, unknown> | null;
+    requests.push({ method, path, ...(body ? { body } : {}) });
+
+    if (method === "GET" && path === "") return json(route, overview());
+
+    if (method === "POST" && path === "/mailboxes") {
+      const address = typeof body?.address === "string" ? body.address : "";
+      const domainName = address.split("@")[1] ?? "";
+      if (domainName === "taken.test") {
+        return refuse(route, 409, "domain_claimed_elsewhere", "Domain is claimed elsewhere");
+      }
+      if (!domains.some((domain) => domain.domain === domainName)) {
+        domains.push({
+          id: domainId,
+          domain: domainName,
+          sending: { status: "pending", checkedAt: null },
+          receiving: { status: "not_requested", checkedAt: null },
+          records: sendingRecords(),
+        });
+      }
+      const mailbox = {
+        id: mailboxId,
+        address,
+        displayName: body?.displayName,
+        agentId: body?.agentId ?? null,
+        domainId,
+        relayAddress,
+        engagementMode: body?.engagementMode ?? "operator_only",
+        enabled: true,
+        policyVersion: 1,
+        threadSendBudget: 3,
+        hourlyGenerationBudget: 30,
+        threadContextMessages: 10,
+        spamOptIn: false,
+        silenceThresholdHours: 72,
+        receiving: { state: "waiting_for_first_message", lastReceivedAt: null },
+        sending: { state: "not_verified" },
+        plusAddressVerified: false,
+        setupCheck: null,
+      };
+      mailboxes.push(mailbox);
+      return json(route, mailbox, 201);
+    }
+
+    if (method === "GET" && path === `/mailboxes/${mailboxId}`) return json(route, mailboxes[0]);
+
+    if (method === "POST" && path === `/mailboxes/${mailboxId}/setup-check`) {
+      const step = body?.step as SetupCheck["step"];
+      const check: SetupCheck = {
+        step,
+        startedAt: nowIso,
+        status: "waiting",
+        passedAt: null,
+        instructions: { sendTo: step === "base" ? "support@customer.test" : "support+radioso-check@customer.test" },
+      };
+      mailboxes[0].setupCheck = check;
+      return json(route, check);
+    }
+
+    if (method === "GET" && path === `/mailboxes/${mailboxId}/events`) return json(route, { items: events, nextCursor: null });
+
+    if (method === "POST" && path === "/events/delivery-failed/retry") {
+      const retried = { ...events[1], state: "pending" as const, reason: null, retryable: false };
+      events[1] = retried;
+      return json(route, retried, 202);
+    }
+
+    if (method === "GET" && path === "/events/delivery-confirmation/raw") {
+      return json(route, {
+        headers: [
+          { name: "From", value: "Gmail Team <forwarding-noreply@google.com>" },
+          { name: "Subject", value: "Gmail Forwarding Confirmation" },
+        ],
+        text: "Confirmation code: 482913",
+        sanitizedHtml: "<p>Confirmation code: 482913</p>",
+        truncated: false,
+        attachments: [],
+      });
+    }
+
+    if (method === "POST" && path === "/domains") {
+      return refuse(route, 409, "domain_claimed_elsewhere", "Domain is claimed elsewhere");
+    }
+
+    if (method === "POST" && path === `/domains/${domainId}/verify`) {
+      verifyCount += 1;
+      const domain = domains[0];
+      // The first check finds DKIM only, the second finds everything: a partial state on the way.
+      domain.records = domain.records.map((record) =>
+        record.status === "advisory" || (verifyCount === 1 && record.purpose !== "dkim") ? record : { ...record, status: "verified" });
+      if (verifyCount > 1) {
+        domain.sending = { status: "verified", checkedAt: nowIso };
+        mailboxes.forEach((mailbox) => { mailbox.sending = { state: "ok" }; });
+      }
+      return json(route, domain);
+    }
+
+    if (method === "POST" && path === `/domains/${domainId}/receiving`) {
+      const domain = domains[0];
+      if (body?.confirmation !== domain.domain) {
+        return refuse(route, 400, "confirmation_mismatch", "Confirmation does not match the domain");
+      }
+      domain.receiving = { status: "pending", checkedAt: null };
+      domain.records = [...domain.records, { purpose: "receiving_mx", type: "MX", name: domain.domain, value: "inbound.radioso.test", priority: 10, status: "pending" }];
+      return json(route, domain);
+    }
+
+    return refuse(route, 404, "not_found", `Unhandled email channel route: ${method} ${path}`);
+  });
+
+  return { requests, deliver };
+};
+
+const openEmailChannel = async (page: Page) => {
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=channels&anchor=email-channel`);
+  await expect(page.getByRole("heading", { name: "Email", level: 3 })).toBeVisible();
+};
+
+// The card's one polite live region; spinners are `status` too, so match the live region itself.
+const announcer = (page: Page) => page.locator('#email-channel [aria-live="polite"]');
+
+test("operator adds a mailbox, forwards to its relay address, and passes the setup check", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page);
+  const backend = await installEmailChannelBackend(page);
+
+  await openEmailChannel(page);
+  const card = page.locator("#email-channel");
+  await expect(card.getByText("No mailboxes yet.")).toBeVisible();
+
+  // The mode selector offers only what this server supports.
+  const modes = card.getByRole("group", { name: "Mode" });
+  await expect(modes.getByRole("button")).toHaveText(["Operator only"]);
+
+  // A domain another workspace owns is refused without naming that workspace.
+  await card.getByLabel("Address", { exact: true }).fill("help@taken.test");
+  await card.getByLabel("Display name").fill("Help");
+  await card.getByRole("button", { name: "Add mailbox" }).click();
+  await expect(card.getByRole("alert")).toHaveText("This domain is claimed by another workspace.");
+  await expect(card.getByRole("button", { name: "Add mailbox" })).toBeFocused();
+
+  await card.getByLabel("Address", { exact: true }).fill("support@customer.test");
+  await card.getByLabel("Display name").fill("Support");
+  await card.getByRole("button", { name: "Add mailbox" }).click();
+
+  await expect(announcer(page)).toHaveText("Mailbox added.");
+  await expect(card.getByRole("heading", { name: "support@customer.test" })).toBeFocused();
+  expect(backend.requests).toContainEqual({
+    method: "POST",
+    path: "/mailboxes",
+    body: { address: "support@customer.test", displayName: "Support", agentId: defaultAgentId, engagementMode: "operator_only" },
+  });
+
+  const mailbox = card.getByRole("region", { name: "support@customer.test" });
+  await expect(mailbox.getByText("Receiving: Waiting for first message")).toBeVisible();
+  await expect(mailbox.getByText("Sending: Not verified")).toBeVisible();
+
+  // The relay address copies as is.
+  await expect(mailbox.getByText(relayAddress)).toBeVisible();
+  await mailbox.getByRole("button", { name: "Copy relay address" }).click();
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(relayAddress);
+
+  // Forwarding guidance: Google confirms through the raw view; Microsoft 365 needs the policy first.
+  await expect(mailbox.getByRole("tab", { name: "Google Workspace" })).toHaveAttribute("aria-selected", "true");
+  await expect(mailbox.getByRole("tabpanel").getByRole("listitem")).toHaveCount(3);
+  await expect(mailbox.getByRole("tabpanel")).toContainText("View raw");
+  await mailbox.getByRole("tab", { name: "Microsoft 365" }).click();
+  const microsoftSteps = mailbox.getByRole("tabpanel").getByRole("listitem");
+  await expect(microsoftSteps).toHaveCount(2);
+  await expect(microsoftSteps.nth(0)).toContainText("outbound anti-spam policy");
+  await expect(microsoftSteps.nth(1)).toContainText("forwarding rule");
+
+  // Setup check: the base address, then the plus address, each waiting until mail arrives.
+  await mailbox.getByRole("button", { name: "Run setup check" }).click();
+  await expect(mailbox.getByText("Send any message to support@customer.test.")).toBeVisible();
+  await expect(announcer(page)).toHaveText("Waiting for a message to support@customer.test.");
+  backend.deliver("base");
+
+  await expect(mailbox.getByText("Send any message to support+radioso-check@customer.test.")).toBeVisible();
+  await expect(mailbox.getByText(/^Receiving: OK/)).toBeVisible();
+  backend.deliver("plus_address");
+
+  await expect(mailbox.getByText("Forwarding works.")).toBeVisible();
+  await expect(announcer(page)).toHaveText("Setup check passed.");
+});
+
+test("operator copies DNS records, checks them, and enables direct receiving with a typed confirmation", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page);
+  const backend = await installEmailChannelBackend(page);
+
+  await openEmailChannel(page);
+  const card = page.locator("#email-channel");
+  await card.getByLabel("Address", { exact: true }).fill("support@customer.test");
+  await card.getByLabel("Display name").fill("Support");
+  await card.getByRole("button", { name: "Add mailbox" }).click();
+
+  const domain = card.getByRole("region", { name: "customer.test", exact: true });
+  await expect(domain.getByText("Sending: Pending")).toBeVisible();
+  const dkim = domain.getByRole("row", { name: /DKIM/ });
+  await expect(dkim.getByText("Pending", { exact: true })).toBeVisible();
+  await expect(domain.getByRole("row", { name: /DMARC/ }).getByText("Recommended", { exact: true })).toBeVisible();
+  await dkim.getByRole("button", { name: "Copy DKIM value" }).click();
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe("p=MIGfMA0GCSqGSIb3DQEBAQUAA4");
+
+  // The first check finds only DKIM: a partial state, record by record.
+  const checkDns = domain.getByRole("button", { name: "Check DNS" });
+  await checkDns.click();
+  await expect(dkim.getByText("Verified", { exact: true })).toBeVisible();
+  await expect(domain.getByRole("row", { name: /SPF/ }).getByText("Pending", { exact: true })).toBeVisible();
+  await expect(domain.getByText("1 of 2 required records verified.")).toBeVisible();
+  await expect(announcer(page)).toHaveText("DNS checked. 1 of 2 required records verified.");
+  await expect(checkDns).toBeFocused();
+
+  await checkDns.click();
+  await expect(domain.getByText("Sending: Verified")).toBeVisible();
+  await expect(card.getByRole("region", { name: "support@customer.test" }).getByText("Sending: OK")).toBeVisible();
+
+  // A second domain someone else owns is refused without naming them.
+  await card.getByLabel("Domain", { exact: true }).fill("taken.test");
+  await card.getByRole("button", { name: "Add domain" }).click();
+  await expect(card.getByRole("alert")).toHaveText("This domain is claimed by another workspace.");
+
+  // Direct receiving routes the whole domain, so it waits for the domain to be typed.
+  await domain.getByRole("button", { name: "Direct receiving" }).click();
+  await expect(domain.getByText("All mail for customer.test will route to Radioso.")).toBeVisible();
+  const enable = domain.getByRole("button", { name: "Enable direct receiving" });
+  await expect(enable).toBeDisabled();
+  await domain.getByLabel("Type customer.test to confirm").fill("customer.tes");
+  await expect(enable).toBeDisabled();
+  await domain.getByLabel("Type customer.test to confirm").fill("customer.test");
+  await enable.click();
+  await expect(domain.getByText("Receiving: Pending")).toBeVisible();
+  await expect(domain.getByRole("row", { name: /Receiving MX/ }).getByText("Pending", { exact: true })).toBeVisible();
+  await expect(announcer(page)).toHaveText("Direct receiving requested.");
+  expect(backend.requests).toContainEqual({ method: "POST", path: `/domains/${domainId}/receiving`, body: { confirmation: "customer.test" } });
+});
+
+test("operator retries a failed event and reads a forwarding confirmation in the raw view", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page);
+  const backend = await installEmailChannelBackend(page);
+
+  await openEmailChannel(page);
+  const card = page.locator("#email-channel");
+  await card.getByLabel("Address", { exact: true }).fill("support@customer.test");
+  await card.getByLabel("Display name").fill("Support");
+  await card.getByRole("button", { name: "Add mailbox" }).click();
+  const mailbox = card.getByRole("region", { name: "support@customer.test" });
+
+  await mailbox.getByRole("button", { name: "Events" }).click();
+  const failed = mailbox.getByRole("listitem").filter({ hasText: "Refund request" });
+  await expect(failed.getByText("Failed", { exact: true })).toBeVisible();
+  await failed.getByRole("button", { name: "Retry" }).click();
+  await expect(failed.getByText("Processing", { exact: true })).toBeVisible();
+  await expect(failed.getByRole("button", { name: "Retry" })).toHaveCount(0);
+  await expect(failed).toBeFocused();
+  await expect(announcer(page)).toHaveText("Retry queued.");
+  expect(backend.requests).toContainEqual({ method: "POST", path: "/events/delivery-failed/retry" });
+
+  const confirmation = mailbox.getByRole("listitem").filter({ hasText: "Gmail Forwarding Confirmation" });
+  await confirmation.getByRole("button", { name: "View raw" }).click();
+  const raw = page.getByRole("dialog", { name: "Raw message" });
+  await expect(raw.getByText("Confirmation code: 482913")).toBeVisible();
+  await expect(raw.getByText("Gmail Team <forwarding-noreply@google.com>")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(confirmation.getByRole("button", { name: "View raw" })).toBeFocused();
+});
+
+test("an operator-only email conversation shows its sender and subject, and the composer explains it cannot send", async ({ page }) => {
+  const conversationId = "conversation-email";
+  const ownership = {
+    conversationId,
+    workspaceId,
+    state: "human_owned" as const,
+    ownerAccountId: null,
+    ownerUserId: null,
+    ownerDisplayName: null,
+    reason: "operator_only_mailbox",
+    version: 1,
+    takenOverAt: null,
+    createdAt: nowIso,
+    updatedAt: nowIso,
+  };
+  const channelContext = {
+    provider: "email",
+    mailbox: { id: mailboxId, address: "support@customer.test" },
+    threadKey: "8b3c1f4e-1d2a-4c5b-9e7f-0a1b2c3d4e5f",
+    participant: { address: "ana@example.test" },
+  };
+  const conversation = {
+    id: conversationId,
+    agentId: defaultAgentId,
+    agentName: "Gioia",
+    sourceChannel: "email",
+    sourceOrigin: null,
+    anonymousSessionId: null,
+    createdAt: nowIso,
+    updatedAt: nowIso,
+    messageCount: 1,
+    userMessageCount: 1,
+    assistantMessageCount: 0,
+    preview: "Where is my order?",
+    ownership,
+    channelContext,
+  };
+  const replies: unknown[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    historyList: { conversations: [conversation], total: 1, nextCursor: null, hasMore: false },
+    conversationDetails: {
+      [conversationId]: {
+        ...conversation,
+        conversationId,
+        workspaceId,
+        messagesTotal: 1,
+        messageWindowOffset: 0,
+        messageWindowLimit: 50,
+        hasOlderMessages: false,
+        nextCursor: null,
+        messages: [{ id: "message-1", role: "user", source: "customer", content: "Order 4417 never arrived.", createdAt: nowIso }],
+      },
+    },
+  });
+  await page.route("**/backend/api/v1/quality/turns**", (route) =>
+    json(route, { items: [], total: 0, page: 1, pageSize: 25, totalPages: 1 }));
+  await page.route(`**/backend/api/v1/conversations/${conversationId}/email`, (route) => json(route, {
+    mailbox: { id: mailboxId, address: "support@customer.test", displayName: "Support", engagementMode: "operator_only" },
+    participant: { address: "ana@example.test", displayName: "Ana Pereira" },
+    latest: { subject: "Where is my order?", cc: [], inboundAt: nowIso },
+    sending: { state: "ok" },
+    sendBudget: { used: 0, limit: 3, renewedAt: null },
+    messages: [],
+  }));
+  await page.route(`**/backend/api/v1/conversations/${conversationId}/reply`, (route) => {
+    replies.push(route.request().postDataJSON());
+    return refuse(route, 409, "email_sending_not_available", "Replies to email conversations cannot be sent yet.");
+  });
+
+  await page.goto(`/w/${workspaceKey}/activity`);
+  await page.getByLabel("Inbox queue").getByRole("button", { name: /Where is my order/ }).click();
+
+  const response = page.getByLabel("Response", { exact: true });
+  const header = response.getByRole("region", { name: "Email", exact: true });
+  await expect(header.getByText("Ana Pereira <ana@example.test>")).toBeVisible();
+  await expect(header.getByText("Where is my order?")).toBeVisible();
+  await expect(header.getByText("support@customer.test")).toBeVisible();
+
+  const replyBox = response.getByRole("textbox", { name: "Reply to the visitor" });
+  await replyBox.fill("We are tracking it now.");
+  await response.getByRole("button", { name: "Send" }).click();
+
+  await expect(response.getByText("Replies to email conversations cannot be sent yet.")).toBeVisible();
+  await expect(response.getByRole("button", { name: "Send" })).toBeDisabled();
+  await expect(replyBox).toHaveValue("We are tracking it now.");
+  await expect(replyBox).toBeFocused();
+  expect(replies).toHaveLength(1);
+});

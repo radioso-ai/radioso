@@ -45,6 +45,7 @@ import {
 } from '@/lib/needs-attention'
 import { useSkillCatalog } from '@/lib/skill-catalog'
 import { cn } from '@/lib/utils'
+import { DeliveryFailurePanel } from './delivery-failure-panel'
 import { EmailConversationHeader, emailSendUnavailableReason, useConversationEmailFacts } from './email-conversation-header'
 import { InboxReadOnlyFooter } from './inbox-readonly-footer'
 import { InboxSituationCard } from './inbox-situation-card'
@@ -214,11 +215,15 @@ export function InboxResponseView({
 
   const skillCatalog = useSkillCatalog(conversationId)
   const isEmailConversation = conversationDetail?.channelContext?.provider === 'email'
-  const emailFacts = useConversationEmailFacts(conversationId, isEmailConversation)
+  const emailFacts = useConversationEmailFacts(workspaceId, conversationId, isEmailConversation)
+  const refreshEmailFacts = emailFacts.refresh
 
+  // Every operator action can change what the email header shows: a reply starts a delivery, an
+  // acknowledgement clears a failure.
   const handleChanged = useCallback(async (result: OperatorActionResult) => {
+    refreshEmailFacts()
     await Promise.all([refetchDetail(), onOperatorChanged(result)])
-  }, [onOperatorChanged, refetchDetail])
+  }, [onOperatorChanged, refetchDetail, refreshEmailFacts])
 
   const handBackRunner = useOperatorActionRunner(conversationId ?? '', handleChanged)
 
@@ -270,6 +275,19 @@ export function InboxResponseView({
 
   const renderedMessages = effectiveConversationMessages.map((message) =>
     message.role === 'assistant' ? { ...message, persistedAssistantMessageId: message.id } : message)
+  // A resend goes out through the conversation's channel, so it waits for the same readiness a reply
+  // does, and for the channel to be known at all.
+  const resendUnavailableReason = !conversationDetail
+    ? 'Checking whether this conversation can send.'
+    : !isEmailConversation
+      ? null
+      : emailFacts.facts
+        ? emailSendUnavailableReason(emailFacts.facts)
+        : 'Checking whether this mailbox can send.'
+  const replyPreviews = useMemo(
+    () => new Map(isEmailConversation ? effectiveConversationMessages.map((message) => [message.id, message.content]) : []),
+    [effectiveConversationMessages, isEmailConversation],
+  )
 
   if (!selection) {
     return (
@@ -345,6 +363,18 @@ export function InboxResponseView({
         </button>
       </header>
 
+      {/* Outside the detail branch: an action re-reads the detail, and the panel must keep its
+          outcome and focus through that reload. */}
+      {effectiveItem?.type === 'delivery_failed' && effectiveItem.deliveryFailure ? (
+        <div className="shrink-0 px-6 pt-4">
+          <DeliveryFailurePanel
+            failure={effectiveItem.deliveryFailure}
+            resendUnavailableReason={resendUnavailableReason}
+            onChanged={handleChanged}
+          />
+        </div>
+      ) : null}
+
       <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
         {isDetailLoading && !conversationDetail ? (
           <div className="flex h-full items-center justify-center">
@@ -356,7 +386,14 @@ export function InboxResponseView({
           </div>
         ) : (
           <div className="space-y-4">
-            {isEmailConversation ? <EmailConversationHeader {...emailFacts} /> : null}
+            {isEmailConversation ? (
+              <EmailConversationHeader
+                facts={emailFacts.facts}
+                error={emailFacts.error}
+                isLoading={emailFacts.isLoading}
+                replyPreviews={replyPreviews}
+              />
+            ) : null}
             {effectiveItem ? (
               <InboxSituationCard
                 handoffReason={effectiveOwnership?.reason ?? null}

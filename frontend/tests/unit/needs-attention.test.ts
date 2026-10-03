@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { ChatConversationSummary, ConversationOwnership, LowQualityTurn, PendingApprovalDecision } from '@/lib/api'
+import type { DeliveryFailure } from '@/lib/api-reply-review'
 import {
   buildInboxModel,
   buildInboxItems,
@@ -1120,11 +1121,12 @@ describe('countInboxItemsByType', () => {
       approval: 1,
       handoff: 1,
       negative_feedback: 1,
+      delivery_failed: 0,
     })
   })
 
   it('returns all zeros for an empty queue', () => {
-    expect(countInboxItemsByType([])).toEqual({ all: 0, approval: 0, handoff: 0, negative_feedback: 0 })
+    expect(countInboxItemsByType([])).toEqual({ all: 0, approval: 0, handoff: 0, negative_feedback: 0, delivery_failed: 0 })
   })
 })
 
@@ -1318,5 +1320,118 @@ describe('summarizeAiHandledConversations', () => {
 
   it('returns zero counts for an empty or fully-escalated window', () => {
     expect(summarizeAiHandledConversations([])).toEqual({ totalCount: 0, agentCount: 0 })
+  })
+})
+
+describe('delivery failures in the inbox model', () => {
+  const deliveryFailure = (overrides: Partial<DeliveryFailure> = {}): DeliveryFailure => ({
+    id: 'failure-1',
+    conversationId: 'c-email',
+    messageId: 'message-reply-1',
+    provider: 'email',
+    kind: 'bounced',
+    detailCode: 'mailbox_full',
+    openedAt: '2026-06-19T10:02:00.000Z',
+    clearedAt: null,
+    clearReason: null,
+    ...overrides,
+  })
+
+  it('makes each open failure a critical row, waiting since the failure opened', () => {
+    const failure = deliveryFailure()
+    const items = buildInboxItems({ decisions: [], conversations: [], qualityTurns: [], deliveryFailures: [failure] })
+
+    expect(items).toHaveLength(1)
+    expect(items[0]).toMatchObject({
+      key: 'delivery_failed:failure-1',
+      conversationId: 'c-email',
+      type: 'delivery_failed',
+      severity: 'critical',
+      escalatedAt: '2026-06-19T10:02:00.000Z',
+      deliveryFailure: failure,
+    })
+    expect(items[0].title).toBeTruthy()
+  })
+
+  it('titles the row after its conversation, and carries its agent, when the conversation is loaded', () => {
+    const items = buildInboxItems({
+      decisions: [],
+      conversations: [humanOwned({ id: 'c-email', title: 'Where is my order?', agentId: 'agent-2', agentName: 'Gioia' })],
+      qualityTurns: [],
+      deliveryFailures: [deliveryFailure()],
+    })
+
+    expect(items.find((item) => item.type === 'delivery_failed')).toMatchObject({
+      title: 'Where is my order?',
+      agentId: 'agent-2',
+      agentName: 'Gioia',
+    })
+  })
+
+  it('sorts with the other critical rows, oldest first, above feedback', () => {
+    const items = buildInboxItems({
+      decisions: [decision({ handle: 'd1', conversationId: 'c-approval', createdAt: '2026-06-19T10:03:00.000Z' })],
+      conversations: [],
+      qualityTurns: [commentedQualityTurn({ conversationId: 'c-feedback' })],
+      deliveryFailures: [deliveryFailure({ openedAt: '2026-06-19T10:01:00.000Z' })],
+    })
+
+    expect(items.map((item) => item.type)).toEqual(['delivery_failed', 'approval', 'negative_feedback'])
+  })
+
+  it('drops feedback on a conversation whose reply failed: critical wins', () => {
+    const items = buildInboxItems({
+      decisions: [],
+      conversations: [],
+      qualityTurns: [commentedQualityTurn({ conversationId: 'c-email' })],
+      deliveryFailures: [deliveryFailure()],
+    })
+
+    expect(items.map((item) => item.type)).toEqual(['delivery_failed'])
+  })
+
+  it('keeps one row per failed message on the same conversation', () => {
+    const items = buildInboxItems({
+      decisions: [],
+      conversations: [],
+      qualityTurns: [],
+      deliveryFailures: [
+        deliveryFailure({ id: 'failure-1', messageId: 'message-reply-1' }),
+        deliveryFailure({ id: 'failure-2', messageId: 'message-reply-2', kind: 'uncertain', detailCode: null }),
+      ],
+    })
+
+    expect(items.map((item) => item.key)).toEqual(['delivery_failed:failure-1', 'delivery_failed:failure-2'])
+  })
+
+  it('counts delivery failures in the type counts and the type filter', () => {
+    const items = buildInboxItems({
+      decisions: [],
+      conversations: [humanOwned({ id: 'c-handoff' })],
+      qualityTurns: [],
+      deliveryFailures: [deliveryFailure()],
+    })
+
+    expect(countInboxItemsByType(items)).toMatchObject({ all: 2, handoff: 1, delivery_failed: 1 })
+    expect(filterInboxItems(items, { ...EMPTY_INBOX_FILTERS, type: 'delivery_failed' }, { currentUserId: null })
+      .map((item) => item.key)).toEqual(['delivery_failed:failure-1'])
+  })
+
+  it('finds a selected failure again by its own id after a refetch', () => {
+    const [first, second] = buildInboxItems({
+      decisions: [],
+      conversations: [],
+      qualityTurns: [],
+      deliveryFailures: [deliveryFailure({ id: 'failure-1' }), deliveryFailure({ id: 'failure-2', messageId: 'message-reply-2' })],
+    })
+    const refetched = buildInboxItems({
+      decisions: [],
+      conversations: [],
+      qualityTurns: [],
+      deliveryFailures: [deliveryFailure({ id: 'failure-2', messageId: 'message-reply-2', kind: 'failed' })],
+    })
+
+    expect(findRefreshedInboxItem(refetched, second)?.deliveryFailure?.kind).toBe('failed')
+    expect(findRefreshedInboxItem(refetched, first)).toBeUndefined()
   })
 })

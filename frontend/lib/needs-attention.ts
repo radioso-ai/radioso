@@ -7,9 +7,11 @@ import type {
   QualityTriageState,
 } from '@/lib/api'
 import type { RecentlyClosedInboxItemsResponse } from '@/lib/api-types'
+import type { DeliveryFailure } from '@/lib/api-reply-review'
 import { deriveConversationOutcome } from '@/lib/conversation-outcome'
 import { resolveConversationDisplayTitle } from '@/lib/conversation-title'
 import { formatApprovalCreatedAt } from '@/lib/needs-attention-format'
+import { buildDeliveryFailureRows } from '@/lib/needs-attention-reply-review'
 import { conversationOwner, type ConversationOwner } from '@/lib/operator-actions'
 
 export type HumanOwnedConversationSummary = ChatConversationSummary & {
@@ -17,14 +19,16 @@ export type HumanOwnedConversationSummary = ChatConversationSummary & {
 }
 
 /**
- * The kinds of work that can land in the operator inbox. Approvals and handoffs are
- * blocking escalations a human must act on (critical). Written negative feedback is
- * explicit customer evidence that benefits from a prompt operator response.
+ * The kinds of work that can land in the operator inbox. Approvals, handoffs and
+ * replies that failed to reach the customer are blocking escalations a human must act
+ * on (critical). Written negative feedback is explicit customer evidence that benefits
+ * from a prompt operator response.
  */
 export type EscalationType =
   | 'approval'
   | 'handoff'
   | 'negative_feedback'
+  | 'delivery_failed'
 
 export type EscalationSeverity = 'critical' | 'feedback'
 
@@ -32,6 +36,7 @@ const ESCALATION_SEVERITY: Record<EscalationType, EscalationSeverity> = {
   approval: 'critical',
   handoff: 'critical',
   negative_feedback: 'feedback',
+  delivery_failed: 'critical',
 }
 
 /** A unified, categorized inbox row independent of which source produced it. */
@@ -58,6 +63,12 @@ export interface InboxItem {
    * `conversationId` alone (see `findPendingApprovalDecision`).
    */
   handle?: string
+  /**
+   * Present only for delivery failures — the failure itself. One conversation can
+   * hold several (one per failed reply), so a failure row is matched by this
+   * failure's id, never by its conversation.
+   */
+  deliveryFailure?: DeliveryFailure
   /** Quality evidence used by the negative-feedback review accessory. */
   answerPreview?: string
   feedbackComment?: string | null
@@ -146,8 +157,8 @@ interface InboxModel {
 
 /**
  * Merges the inbox's actionable sources into one ordered list. Critical items
- * (approvals, handoffs) sort above written negative feedback. Critical items are
- * oldest-first, while feedback remains newest-first.
+ * (approvals, handoffs, delivery failures) sort above written negative feedback.
+ * Critical items are oldest-first, while feedback remains newest-first.
  *
  * Dedup is by conversation, critical wins: feedback on a conversation that is already
  * escalated is dropped so it isn't shown twice. Multiple written-feedback turns in one
@@ -161,6 +172,7 @@ export const buildInboxModel = (input: {
   decisions: PendingApprovalDecision[]
   conversations: HumanOwnedConversationSummary[]
   qualityTurns: LowQualityTurn[]
+  deliveryFailures?: readonly DeliveryFailure[]
 }): InboxModel => {
   const approvals: InboxItem[] = input.decisions.map((decision) => ({
     key: `approval:${decision.agentId}:${decision.handle}`,
@@ -179,8 +191,11 @@ export const buildInboxModel = (input: {
 
   const handoffs: InboxItem[] = input.conversations.map(toHandoffInboxItem)
 
+  const deliveryFailures: InboxItem[] = buildDeliveryFailureRows(input.deliveryFailures ?? [], input.conversations)
+    .map((row) => ({ ...row, severity: ESCALATION_SEVERITY[row.type] }))
+
   const escalatedConversationIds = new Set(
-    [...approvals, ...handoffs].map((item) => item.conversationId),
+    [...approvals, ...handoffs, ...deliveryFailures].map((item) => item.conversationId),
   )
 
   const selectedQualityByConversation = new Map<string, LowQualityTurn>()
@@ -226,7 +241,7 @@ export const buildInboxModel = (input: {
   const sortedQuality = quality.sort((left, right) =>
     byTimestampDesc(left.timestamp, right.timestamp))
 
-  const critical = [...approvals, ...handoffs].sort((left, right) =>
+  const critical = [...approvals, ...handoffs, ...deliveryFailures].sort((left, right) =>
     byTimestampAsc(left.escalatedAt ?? left.timestamp, right.escalatedAt ?? right.timestamp))
   return {
     items: [...critical, ...sortedQuality.slice(0, QUALITY_INBOX_ITEM_LIMIT)],
@@ -346,8 +361,9 @@ export const findPendingApprovalDecision = (
  * identity (agentId + handle), same as `findPendingApprovalDecision` and for
  * the same reason: two pending approvals can exist on one conversation, and
  * matching by conversationId + type alone could silently swap the selected
- * approval for the conversation's other one on refetch. Every other type
- * matches by conversationId + type instead — a handoff's key embeds its
+ * approval for the conversation's other one on refetch. A delivery failure
+ * is matched by its own id for the same reason: one conversation can hold a
+ * failure per failed reply. Every other type matches by conversationId + type instead — a handoff's key embeds its
  * ownership version, which changes the moment the operator claims it, and
  * key-matching would otherwise "lose" that item on the very refetch it's
  * trying to track.
@@ -355,11 +371,15 @@ export const findPendingApprovalDecision = (
 export const findRefreshedInboxItem = (
   items: readonly InboxItem[],
   current: InboxItem,
-): InboxItem | undefined => items.find((candidate) => (
-  current.type === 'approval'
-    ? candidate.type === 'approval' && candidate.agentId === current.agentId && candidate.handle === current.handle
-    : candidate.conversationId === current.conversationId && candidate.type === current.type
-))
+): InboxItem | undefined => items.find((candidate) => {
+  if (current.type === 'approval') {
+    return candidate.type === 'approval' && candidate.agentId === current.agentId && candidate.handle === current.handle
+  }
+  if (current.type === 'delivery_failed') {
+    return candidate.type === 'delivery_failed' && candidate.deliveryFailure?.id === current.deliveryFailure?.id
+  }
+  return candidate.conversationId === current.conversationId && candidate.type === current.type
+})
 
 export const selectHumanOwnedConversations = (
   summaries: ChatConversationSummary[],
@@ -520,6 +540,7 @@ export const countInboxItemsByType = (
     approval: 0,
     handoff: 0,
     negative_feedback: 0,
+    delivery_failed: 0,
   }
   for (const item of items) {
     counts[item.type] += 1

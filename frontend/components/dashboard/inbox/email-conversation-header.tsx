@@ -1,9 +1,14 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useMemo } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 
+import { useDashboardQueryPolicy } from '@/components/providers/dashboard-query-provider'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { emailChannelApi, type ConversationEmailFacts } from '@/lib/api-email-channel'
+import { dashboardQueryKeys } from '@/lib/dashboard-query-keys'
+import { replyDeliveryLabel } from '@/lib/needs-attention-reply-review'
+import { cn } from '@/lib/utils'
 
 type EmailFactsState = {
   facts: ConversationEmailFacts | null
@@ -11,27 +16,53 @@ type EmailFactsState = {
   isLoading: boolean
 }
 
-/** Reads an email conversation's sender, mailbox, subject and sending state; idle for any other conversation. */
-export function useConversationEmailFacts(conversationId: string | null, isEmailConversation: boolean): EmailFactsState {
-  const [loaded, setLoaded] = useState<{ conversationId: string; facts: ConversationEmailFacts | null; error: string | null } | null>(null)
+type ReplyDelivery = NonNullable<ConversationEmailFacts['messages'][number]['delivery']>
 
-  useEffect(() => {
-    if (!conversationId || !isEmailConversation) return
-    let active = true
-    emailChannelApi.getConversationFacts(conversationId).then(
-      (facts) => { if (active) setLoaded({ conversationId, facts, error: null }) },
-      (error: unknown) => {
-        if (active) setLoaded({ conversationId, facts: null, error: getApiErrorMessage(error, 'Email details are unavailable.') })
-      },
-    )
-    return () => { active = false }
-  }, [conversationId, isEmailConversation])
+// Facts that are still moving — a reply on its way, or sending not ready — are read again soon;
+// settled facts only slowly, so a domain that stops verifying still reaches the composer.
+const UNSETTLED_FACTS_POLL_MS = 5_000
+const SETTLED_FACTS_POLL_MS = 30_000
 
-  const current = isEmailConversation && loaded?.conversationId === conversationId ? loaded : null
+const isReplyInFlight = (delivery: ReplyDelivery | null) =>
+  delivery?.state === 'queued' || delivery?.state === 'accepted'
+
+const factsPollMs = (facts: ConversationEmailFacts | undefined) =>
+  facts && facts.sending.state === 'ok' && !facts.messages.some((message) => isReplyInFlight(message.delivery))
+    ? SETTLED_FACTS_POLL_MS
+    : UNSETTLED_FACTS_POLL_MS
+
+/**
+ * Reads an email conversation's sender, mailbox, subject, sending state and the delivery of each
+ * reply; idle for any other conversation. `refresh` reads them again after an operator's own action.
+ */
+export function useConversationEmailFacts(
+  workspaceId: string,
+  conversationId: string | null,
+  isEmailConversation: boolean,
+): EmailFactsState & { refresh: () => void } {
+  const policy = useDashboardQueryPolicy()
+  const queryClient = useQueryClient()
+  const queryKey = useMemo(
+    () => dashboardQueryKeys.conversations.emailFacts(workspaceId, conversationId ?? ''),
+    [workspaceId, conversationId],
+  )
+  const isActive = isEmailConversation && conversationId !== null
+  const query = useQuery({
+    queryKey,
+    queryFn: ({ signal }) => emailChannelApi.getConversationFacts(conversationId ?? '', signal),
+    enabled: isActive && policy.queriesEnabled,
+    refetchInterval: (current) => factsPollMs(current.state.data),
+  })
+
+  const refresh = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey })
+  }, [queryClient, queryKey])
+
   return {
-    facts: current?.facts ?? null,
-    error: current?.error ?? null,
-    isLoading: isEmailConversation && conversationId !== null && current === null,
+    facts: isActive ? query.data ?? null : null,
+    error: isActive && query.error ? getApiErrorMessage(query.error, 'Email details are unavailable.') : null,
+    isLoading: isActive && query.data === undefined && !query.error,
+    refresh,
   }
 }
 
@@ -50,8 +81,22 @@ export const emailSendUnavailableReason = (facts: ConversationEmailFacts | null)
 const participantLabel = (participant: ConversationEmailFacts['participant']) =>
   participant.displayName ? `${participant.displayName} <${participant.address}>` : participant.address
 
-/** The email envelope of a conversation: who wrote, to which mailbox, and the latest subject. */
-export function EmailConversationHeader({ facts, error, isLoading }: EmailFactsState) {
+const isReplyFailure = (delivery: ReplyDelivery) =>
+  delivery.state === 'bounced' || delivery.state === 'failed' || delivery.state === 'uncertain' || delivery.state === 'halted'
+
+/**
+ * The email envelope of a conversation — who wrote, to which mailbox, the latest subject — and
+ * where each reply sent from it stands. `replyPreviews` names a reply by its text in the thread.
+ */
+export function EmailConversationHeader({
+  facts,
+  error,
+  isLoading,
+  replyPreviews,
+}: EmailFactsState & { replyPreviews?: ReadonlyMap<string, string> }) {
+  const replies = facts?.messages.flatMap((message) =>
+    message.direction === 'outbound' && message.delivery ? [{ ...message, delivery: message.delivery }] : []) ?? []
+
   return (
     <section aria-label="Email" className="rounded-lg border border-border bg-muted/30 px-4 py-3 text-sm">
       {isLoading ? <p className="text-xs text-muted-foreground">Loading email details...</p> : null}
@@ -71,6 +116,20 @@ export function EmailConversationHeader({ facts, error, isLoading }: EmailFactsS
           <dt className="text-xs text-muted-foreground">Subject</dt>
           <dd className="min-w-0 font-medium text-foreground">{facts.latest.subject ?? '(no subject)'}</dd>
         </dl>
+      ) : null}
+      {replies.length > 0 ? (
+        <ul aria-label="Reply delivery" aria-live="polite" className="mt-2 space-y-1 border-t border-border pt-2">
+          {replies.map((reply) => (
+            <li key={reply.messageId} className="flex items-baseline gap-3 text-xs">
+              <span className="min-w-0 flex-1 truncate text-muted-foreground">
+                {replyPreviews?.get(reply.messageId) ?? reply.subject ?? 'Reply'}
+              </span>
+              <span className={cn('shrink-0 font-medium', isReplyFailure(reply.delivery) ? 'text-destructive' : 'text-foreground')}>
+                {replyDeliveryLabel(reply.delivery.state, reply.delivery.failureCode)}
+              </span>
+            </li>
+          ))}
+        </ul>
       ) : null}
     </section>
   )

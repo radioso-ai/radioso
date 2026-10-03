@@ -25,7 +25,10 @@ import {
   type QualityTriageRecord,
 } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
+import { getHitlApiErrorStatus } from '@/lib/api-hitl'
+import type { DeliveryFailurePage } from '@/lib/api-reply-review'
 import { useOptionalAuth } from '@/lib/auth-context'
+import { dashboardQueryKeys } from '@/lib/dashboard-query-keys'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
 import { decideDefaultInboxLens, hasBlockingInboxLoadError } from '@/lib/inbox-default-lens'
 import { useInboxAttentionSignal } from '@/hooks/use-inbox-attention-signal'
@@ -37,6 +40,7 @@ import {
   findRefreshedInboxItem,
   listInboxAgents,
   listTakenByOperators,
+  RECENTLY_CLOSED_LIMIT,
   selectHumanOwnedConversations,
   type InboxFilters,
   type InboxItem,
@@ -49,7 +53,12 @@ import {
   updateQualityInboxTurn,
   type QualityInboxSnapshot,
 } from '@/lib/needs-attention-quality'
-import { qualityLoadStateFromQueries, qualitySnapshotFromQueries, useNeedsAttentionQueries } from '@/lib/needs-attention-query-state'
+import {
+  NEEDS_ATTENTION_PAGE_SIZE,
+  qualityLoadStateFromQueries,
+  qualitySnapshotFromQueries,
+  useNeedsAttentionQueries,
+} from '@/lib/needs-attention-query-state'
 import { patchQualityTriage } from '@/lib/quality-query-state'
 import { useDashboardQueryInvalidation } from '@/components/providers/dashboard-query-provider'
 import { isTerminalQualityTriageState } from '@/lib/quality-signals'
@@ -121,6 +130,10 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
     () => selectHumanOwnedConversations(attentionQueries.humanOwned.data?.conversations ?? []),
     [attentionQueries.humanOwned.data],
   )
+  const deliveryFailures = useMemo(
+    () => attentionQueries.deliveryFailures.data?.items ?? [],
+    [attentionQueries.deliveryFailures.data],
+  )
   const qualityPresentation = useMemo(() => qualityInboxPresentation(qualitySnapshot), [qualitySnapshot])
   const qualityLoadState = qualityLoadStateFromQueries(
     attentionQueries.commentedFeedback,
@@ -131,8 +144,8 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
     [qualityPresentation.turns, terminalQualityMessageIds],
   )
   const inboxModel = useMemo(
-    () => buildInboxModel({ decisions, conversations: humanOwnedConversations, qualityTurns }),
-    [decisions, humanOwnedConversations, qualityTurns],
+    () => buildInboxModel({ decisions, conversations: humanOwnedConversations, qualityTurns, deliveryFailures }),
+    [decisions, humanOwnedConversations, qualityTurns, deliveryFailures],
   )
   const items = inboxModel.items
   const criticalOpenCount = useMemo(
@@ -140,8 +153,8 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
     [items],
   )
 
-  // Tab title reflects every open item; the chime is critical-only (handoffs +
-  // approvals) - written feedback moves the count but stays quiet.
+  // Tab title reflects every open item; the chime is critical-only (handoffs,
+  // approvals, delivery failures) - written feedback moves the count but stays quiet.
   useInboxAttentionSignal(items.length, criticalOpenCount)
 
   // Re-sync the selected item's live fields (waiting time, taken-by, and —
@@ -164,6 +177,7 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
   const isLoading = attentionQueries.policy.queriesEnabled && (
     attentionQueries.decisions.isLoading
     || attentionQueries.humanOwned.isLoading
+    || attentionQueries.deliveryFailures.isLoading
     || attentionQueries.commentedFeedback.isLoading
     || attentionQueries.reviewSummary.isLoading
   )
@@ -172,6 +186,13 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
     : null
   const conversationError = attentionQueries.humanOwned.error
     ? getApiErrorMessage(attentionQueries.humanOwned.error, 'Failed to load human-owned conversations.')
+    : null
+  // A teammate without the takeover permission, or a server without the route, has no failures to see.
+  const deliveryFailureErrorStatus = getHitlApiErrorStatus(attentionQueries.deliveryFailures.error)
+  const deliveryFailureError = attentionQueries.deliveryFailures.error
+    && deliveryFailureErrorStatus !== 403
+    && deliveryFailureErrorStatus !== 404
+    ? getApiErrorMessage(attentionQueries.deliveryFailures.error, 'Failed to load delivery failures.')
     : null
 
   const typeCounts = useMemo(() => countInboxItemsByType(items), [items])
@@ -288,8 +309,26 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
       // ownership so a teammate's queue reflects the claim without waiting on
       // the next poll cycle.
       invalidateDashboardQueries(['conversation.ownership_changed'])
+    } else if (result.kind === 'delivery_failure_cleared') {
+      // No workspace event reports a cleared failure, so this view drops the row itself and
+      // re-reads the failures and the recently-closed strip.
+      const deliveryFailuresKey = dashboardQueryKeys.attention.deliveryFailures(workspaceId, { limit: NEEDS_ATTENTION_PAGE_SIZE })
+      queryClient.setQueryData<DeliveryFailurePage>(deliveryFailuresKey, (page) => page
+        ? { ...page, items: page.items.filter((failure) => failure.id !== result.failureId) }
+        : page)
+      void queryClient.invalidateQueries({ queryKey: deliveryFailuresKey })
+      void queryClient.invalidateQueries({
+        queryKey: dashboardQueryKeys.attention.recentlyClosed(workspaceId, { limit: RECENTLY_CLOSED_LIMIT }),
+      })
+      // An acknowledgement closes the item; a resolution keeps it open so its panel can say what
+      // happened and keep focus (it announces that itself).
+      if (result.resolution === 'acknowledged') {
+        setSelectedInboxItem((current) =>
+          current?.type === 'delivery_failed' && current.deliveryFailure?.id === result.failureId ? null : current)
+        setStatusAnnouncement('Delivery failure acknowledged.')
+      }
     }
-  }, [invalidateDashboardQueries])
+  }, [invalidateDashboardQueries, queryClient, workspaceId])
 
   const requestCloseReview = useCallback((item: InboxItem, anchor: HTMLElement) => {
     setTriageError(null)
@@ -356,7 +395,7 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
   // lens toggle lives in the left pane) — only the row list swaps for the
   // confidence message, so the operator can always reach the All lens even
   // when nothing needs them (spec 1116 unification, fix for issue #6).
-  const isQueueEmpty = !isLoading && !approvalError && !conversationError && items.length === 0
+  const isQueueEmpty = !isLoading && !approvalError && !conversationError && !deliveryFailureError && items.length === 0
   const showNoFilterMatches = !isQueueEmpty
     && filteredItems.length === 0
     && !selectedInboxItem
@@ -433,6 +472,11 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
         {conversationError ? (
           <div className="m-3 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
             {conversationError}
+          </div>
+        ) : null}
+        {deliveryFailureError ? (
+          <div className="m-3 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+            {deliveryFailureError}
           </div>
         ) : null}
 

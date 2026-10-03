@@ -25,6 +25,12 @@ locals {
     var.resend_mail_api_key != null ? {
       "resend-mail-api-key" = var.resend_mail_api_key
     } : {},
+    var.resend_channel_api_key != null ? {
+      "resend-channel-api-key" = var.resend_channel_api_key
+    } : {},
+    var.email_channel_webhook_secret != null ? {
+      "email-channel-webhook-secret" = var.email_channel_webhook_secret
+    } : {},
     nonsensitive(var.metrics_auth_token) == null ? {} : {
       "metrics-auth-token" = var.metrics_auth_token
     },
@@ -70,6 +76,12 @@ locals {
     },
     var.resend_mail_api_key != null ? {
       "resend-mail-api-key" = true
+    } : {},
+    var.resend_channel_api_key != null ? {
+      "resend-channel-api-key" = true
+    } : {},
+    var.email_channel_webhook_secret != null ? {
+      "email-channel-webhook-secret" = true
     } : {},
     nonsensitive(var.metrics_auth_token) == null ? {} : {
       "metrics-auth-token" = true

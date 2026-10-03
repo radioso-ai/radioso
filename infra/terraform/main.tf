@@ -48,6 +48,12 @@ locals {
     var.slack_inbound_event_retention_schedule,
     "45 4 * * *",
   )
+  # Recovery only (lease recovery, domain refresh, send reconciliation claims, event-log
+  # retention) — scheduled drains carry the normal-path work (research B7, B12).
+  email_channel_sweep_schedule = coalesce(
+    var.email_channel_sweep_schedule,
+    "*/5 * * * *",
+  )
   public_chat_base_url = (
     var.public_chat_base_url_override != null
     ? var.public_chat_base_url_override

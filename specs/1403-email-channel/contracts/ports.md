@@ -215,10 +215,11 @@ export interface ConnectorChatPort {
 export type TurnExecutionMode = "live" | "safe_test" | "review";
 export interface TurnExecutionCapabilities {
   routines: "activate" | "skip";                         // covers activation AND the suspended-routine short-circuit
-  completion: "persist_reply" | "return_draft";
-  ownershipHandoff: "apply" | "report" | "skip";
+  completion: "persist_reply" | "return_draft";          // R1 ships "persist_reply" only; S3 adds "return_draft"
+  ownershipHandoff: "apply" | "report" | "skip";         // R1 ships "apply" | "skip"; S3 adds "report"
   turnActions: "enqueue" | "drop";
   humanOwnedWaitingMessage: "generate" | "skip";
+  turnBookkeeping: "record" | "skip";                    // product analytics, conversation summary refresh, caller audit event; safe_test and review skip
 }
 export const turnExecutionCapabilities: (mode: TurnExecutionMode | undefined) => TurnExecutionCapabilities;
 export const resolveSkillEffectPolicy: (mode: TurnExecutionMode | undefined, requested?: SkillEffectPolicy) => SkillEffectPolicy;

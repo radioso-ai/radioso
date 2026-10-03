@@ -67,7 +67,7 @@ import type { CapturedClarificationTransition } from "./clarification/deferredCl
 import type { ConversationSummaryUpdater } from "./summary/conversationSummaryService.js";
 import type { ModelCallTraceCollector } from "../../../shared/observability/tracing/modelCallTraceContext.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
-import type { TurnExecutionMode } from "../../../shared/domain/turnExecutionMode.js";
+import { turnExecutionCapabilities, type TurnExecutionMode } from "../../../shared/domain/turnExecutionMode.js";
 import { CONTACT_SEND_ACTION_TYPE } from "./routines/contactRoutine.js";
 import type {
   PageReadCandidateSource,
@@ -149,11 +149,22 @@ const getChatTurnRoute = (session: PreparedSession, engineTrace?: ConversationTr
   };
 };
 
-interface CompletedAssistantTurn {
+/** How a turn ended once completed. `live` and `safe_test` turns always persist the reply. */
+type CompletedAssistantTurn = {
+  kind: "persisted";
   response: ChatResponse;
   assistantMessageId: string;
   postCommitReceipt: PostCommitInvalidationReceipt;
-}
+};
+
+/** Labels a non-live turn's audit records with its execution mode and the surface that ran it. */
+const executionModeAuditMetadata = (
+  executionMode: TurnExecutionMode | undefined,
+  surface: string | null | undefined,
+): Record<string, unknown> | null =>
+  executionMode === undefined || executionMode === "live"
+    ? null
+    : { executionMode, ...(surface ? { surface } : {}) };
 
 export interface AssistantTurnCommittedFacts {
   insertedActionTypes: readonly string[];
@@ -666,7 +677,14 @@ export class ChatTurnLifecycle {
     commitClarificationState?: () => Promise<void>;
     clarificationTransition?: CapturedClarificationTransition | null;
   }): Promise<CompletedAssistantTurn> {
-    const safeTestTurn = input.executionMode === "safe_test";
+    const capabilities = turnExecutionCapabilities(input.executionMode);
+    // Safe-test turns retain conversation-local state (routine, decision and
+    // clarification transitions) so follow-up turns remain representative; the
+    // capabilities below drop only customer- and operator-facing effects.
+    const actions = capabilities.turnActions === "enqueue" ? input.actions : undefined;
+    const ownershipHandoff = capabilities.ownershipHandoff === "apply" ? input.ownershipHandoff : undefined;
+    const recordsBookkeeping = capabilities.turnBookkeeping === "record";
+    const additionalAuditEvent = recordsBookkeeping ? input.additionalAuditEvent : undefined;
     const routineTurnState = describeRoutineTurn(input);
     const invocationReport = input.session.routineInvocationReport ?? null;
     if (invocationReport) {
@@ -693,21 +711,16 @@ export class ChatTurnLifecycle {
     const baseAuditEvent = suspended
       ? this.buildAssistantTurnSuspendedAuditEvent(presentation.successInput)
       : this.buildAssistantTurnSuccessAuditEvent(presentation.successInput);
-    const auditEvent = safeTestTurn
-      ? {
-          ...baseAuditEvent,
-          metadata: {
-            ...baseAuditEvent.metadata,
-            executionMode: "safe_test",
-            ...(input.session.conversation.sourceChannel
-              ? { surface: input.session.conversation.sourceChannel }
-              : {}),
-          },
-        }
+    const modeAuditMetadata = executionModeAuditMetadata(
+      input.executionMode,
+      input.session.conversation.sourceChannel,
+    );
+    const auditEvent = modeAuditMetadata
+      ? { ...baseAuditEvent, metadata: { ...baseAuditEvent.metadata, ...modeAuditMetadata } }
       : baseAuditEvent;
-    const ownershipAuditEvent = !safeTestTurn && input.ownershipHandoff
+    const ownershipAuditEvent = ownershipHandoff
       ? this.buildOwnershipHandoffAuditEvent({
-          ...input.ownershipHandoff,
+          ...ownershipHandoff,
           workspaceId: input.workspaceId,
           accountId: input.accountId,
           conversationId: input.session.conversation.id,
@@ -724,18 +737,16 @@ export class ChatTurnLifecycle {
         workspaceId: input.workspaceId,
         accountId: input.accountId,
         conversationId: input.session.conversation.id,
-        actions: safeTestTurn ? undefined : input.actions,
-        // Safe-test turns retain conversation-local state so follow-up turns remain
-        // representative. Customer-facing effects remain suppressed below.
+        actions,
         routineStateTransition: input.routineStateTransition,
         pendingDecisionTransition: input.pendingDecisionTransition,
         clarificationTransition: input.clarificationTransition,
         answerCoverageRequestMessageId: input.session.userMessage.id,
         assistantMessage: presentation.assistantMessage,
         auditEvent,
-        ownershipHandoff: safeTestTurn ? undefined : input.ownershipHandoff,
+        ownershipHandoff,
         ownershipAuditEvent,
-        additionalAuditEvent: safeTestTurn ? undefined : input.additionalAuditEvent,
+        additionalAuditEvent,
         transaction: input.transaction,
       });
       assistantMessage = persisted.message;
@@ -744,14 +755,14 @@ export class ChatTurnLifecycle {
         flushPostCommitInvalidationReceipt(this.workspaceInvalidationPublisher, postCommitReceipt);
       }
       this.auditService.logRecorded?.(auditEvent);
-      if (!suspended && !safeTestTurn) {
+      if (!suspended && recordsBookkeeping) {
         await this.trackAssistantTurnCompleted(presentation.successInput);
       }
     } else {
       // Fallback for tests and non-DB hosts. Production wires a transaction port so
       // outbox enqueue, routine state, assistant message, touch, and audit commit together.
       const insertedActionTypes = await this.enqueueTurnActions({
-        actions: safeTestTurn ? undefined : input.actions,
+        actions,
         workspaceId: input.workspaceId,
         accountId: input.accountId,
         conversationId: input.session.conversation.id,
@@ -770,11 +781,11 @@ export class ChatTurnLifecycle {
       // Records no `handoff_requested` activity: that event commits in the handoff's own transaction
       // (PostgresAssistantTurnPersistence), and this path holds none. Production composition always
       // wires that persistence — the runtime-startup test pins it — so a live handoff never lands here.
-      const ownershipResult = !safeTestTurn && input.ownershipHandoff && this.conversationOwnershipRepository
+      const ownershipResult = ownershipHandoff && this.conversationOwnershipRepository
         ? await this.conversationOwnershipRepository.requestHandoff({
           conversationId: input.session.conversation.id,
           workspaceId: input.workspaceId,
-          reason: input.ownershipHandoff.reason,
+          reason: ownershipHandoff.reason,
         })
         : null;
       await input.commitClarificationState?.();
@@ -788,14 +799,14 @@ export class ChatTurnLifecycle {
         flushPostCommitInvalidationReceipt(this.workspaceInvalidationPublisher, postCommitReceipt);
       }
       await this.auditService.record(auditEvent);
-      if (!safeTestTurn && !suspended) {
+      if (recordsBookkeeping && !suspended) {
         await this.trackAssistantTurnCompleted(presentation.successInput);
       }
       if (ownershipAuditEvent) {
         await this.auditService.record(ownershipAuditEvent);
       }
-      if (!safeTestTurn && input.additionalAuditEvent) {
-        await this.auditService.record(input.additionalAuditEvent);
+      if (additionalAuditEvent) {
+        await this.auditService.record(additionalAuditEvent);
       }
     }
 
@@ -831,7 +842,7 @@ export class ChatTurnLifecycle {
     // Unawaited and error-swallowed: an LLM call is too slow to await, and a lost
     // update self-heals on the next turn (each regeneration derives from current
     // state). The updater swallows its own failures; this .catch is a backstop.
-    if (this.conversationSummaryUpdater && !safeTestTurn) {
+    if (this.conversationSummaryUpdater && recordsBookkeeping) {
       void this.conversationSummaryUpdater
         .refresh({
           workspaceId: input.workspaceId,
@@ -853,6 +864,7 @@ export class ChatTurnLifecycle {
     }
 
     return {
+      kind: "persisted",
       assistantMessageId: assistantMessage.id,
       postCommitReceipt,
       response: {
@@ -876,7 +888,7 @@ export class ChatTurnLifecycle {
           : {}),
         // A handoff this turn leaves the conversation human-owned; the reply itself
         // was still generated, so it is not suppressed. Safe-test turns never hand off.
-        ...(input.ownershipHandoff && !safeTestTurn ? { ownership: { state: "human_owned", suppressed: false } } : {}),
+        ...(ownershipHandoff ? { ownership: { state: "human_owned", suppressed: false } } : {}),
         ...(routineTurnState ? { routine: routineTurnState } : {}),
         ...(invocationReport ? { invocation: invocationReport } : {}),
       },
@@ -944,17 +956,10 @@ export class ChatTurnLifecycle {
             })
           : undefined,
         errorMessage: error instanceof Error ? error.message : "Unknown error",
-        ...(input.executionMode === "safe_test"
-          ? {
-              executionMode: "safe_test",
-              ...(session?.conversation.sourceChannel
-                ? { surface: session.conversation.sourceChannel }
-                : {}),
-            }
-          : {}),
+        ...executionModeAuditMetadata(input.executionMode, session?.conversation.sourceChannel),
       },
     });
-    if (input.executionMode === "safe_test") {
+    if (turnExecutionCapabilities(input.executionMode).turnBookkeeping === "skip") {
       return;
     }
     try {
@@ -1018,14 +1023,7 @@ export class ChatTurnLifecycle {
         assistantMessageId: existingAssistantMessageId,
         stream: input.stream,
         supersededStage: supersededBy.stage,
-        ...(input.executionMode === "safe_test"
-          ? {
-              executionMode: "safe_test",
-              ...(session?.conversation.sourceChannel
-                ? { surface: session.conversation.sourceChannel }
-                : {}),
-            }
-          : {}),
+        ...executionModeAuditMetadata(input.executionMode, session?.conversation.sourceChannel),
       },
     });
   }

@@ -236,6 +236,19 @@ export class EmailThreadRepository {
     return rows.map((row) => ({ rfcMessageId: row.rfc_message_id, conversationId: row.conversation_id }));
   }
 
+  /** Which of `rfcMessageIds` the mailbox sent: outbound index entries, for bounce classification. */
+  async findOutboundMessageIds(mailboxId: string, rfcMessageIds: readonly string[]): Promise<Set<string>> {
+    if (rfcMessageIds.length === 0) return new Set();
+    const rows = await this.db
+      .selectFrom("email_thread_messages")
+      .select("rfc_message_id")
+      .where("mailbox_id", "=", mailboxId)
+      .where("direction", "=", "outbound")
+      .where("rfc_message_id", "in", [...rfcMessageIds])
+      .execute();
+    return new Set(rows.map((row) => row.rfc_message_id));
+  }
+
   /** A conversation's indexed messages, oldest first. */
   async listIndexedMessages(conversationId: string): Promise<ThreadIndexRecord[]> {
     const rows = await this.db

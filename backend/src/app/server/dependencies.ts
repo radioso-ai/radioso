@@ -1,14 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { scopeTag } from "@radioso/conversation-defaults";
-import { getEnv, type Env } from "../config/env.js";
+import { getEnv, parseEmailChannelConfig, type Env } from "../config/env.js";
 import { AgentRevisionRuntimeRepository } from "../../db/repositories/agentRevisionRuntimeRepository.js";
 import { createAgentPublicProfileComposition } from "../composition/agentDiscovery.js";
 import { createAgentToolCatalogComposition } from "../composition/agentToolCatalog.js";
+import { createEmailChannelComposition } from "../composition/emailChannel.js";
 import { apiPrincipalRouteInventory } from "../http/apiPrincipalRoutePolicy.js";
 import { requestSourceDigestPort } from "../http/middleware/requestSource.js";
 import {
   createDefaultAgentSkillSettingsRegistry,
   createDefaultApplicationComposition,
+  createDefaultEmailChannelDrainDispatcher,
   createDefaultFacetExtractionDrainDispatcher,
   createLiveAgentConfigReader,
   createRealtimePublisherComposition,
@@ -378,7 +380,21 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     logger,
     repositories,
   });
-  const connectorRegistry = buildConnectorRegistry({ composition, env, logger });
+  const emailChannelConfig = parseEmailChannelConfig(env);
+  const emailChannel = createEmailChannelComposition({
+    config: emailChannelConfig,
+    db: infrastructure.database.kysely,
+    drains: createDefaultEmailChannelDrainDispatcher(env, emailChannelConfig),
+    activity: conversationActivity.recorder,
+    // Reached only while the worker drains, after this build returns; the channel's reply
+    // deliverer is needed sooner, by the operator reply service, so the channel is built here.
+    conversationIngest: { ingest: (input) => conversationIngestService.ingest(input) },
+    agents: repositories.agentRepository,
+    audit: infrastructure.auditService,
+    metrics: infrastructure.metricsRegistry,
+    logger,
+  });
+  const connectorRegistry = buildConnectorRegistry({ composition, env, logger, emailPlugin: emailChannel?.plugin });
   const connectorManagementService = new ConnectorManagementService({
     database: infrastructure.database,
     registry: connectorRegistry,
@@ -469,6 +485,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     skillSettingsResolver,
     workspaceInvalidationPublisher: realtimePublisherComposition.publisher,
     revisionEvalRunRetentionDays: env.AGENT_REVISION_EVAL_RUN_RETENTION_DAYS,
+    emailCustomerReplyDeliverer: emailChannel?.customerReplyDeliverer,
   });
   const {
     evalCaseService,
@@ -1162,6 +1179,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     retrievalAnswerService: chat.retrievalAnswerService,
     retrievalDefaultsProvider,
     actionDispatchWorker: chat.actionDispatchWorker,
+    emailChannel: emailChannel ?? undefined,
+    emailChannelWorker: emailChannel?.worker,
     evalSnapshotService,
     evalMessageCaseService,
     evalCaseService,

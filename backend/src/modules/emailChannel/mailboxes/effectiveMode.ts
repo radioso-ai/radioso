@@ -16,3 +16,14 @@ export const effectiveEngagementMode = (accepted: EngagementPolicy, current: Eng
   mode: AUTONOMY[accepted.mode] <= AUTONOMY[current.mode] ? accepted.mode : current.mode,
   enabled: accepted.enabled && current.enabled,
 });
+
+/**
+ * The most autonomous mode the deployment supports that is no more autonomous than `mode` (plan,
+ * Questions settled, item 4). `operator_only` is the floor every deployment supports, so mail on
+ * a mailbox whose mode a slice does not run yet is never given more autonomy than it can take.
+ */
+export const capToSupportedMode = (mode: EngagementMode, supportedModes: readonly EngagementMode[]): EngagementMode =>
+  (Object.keys(AUTONOMY) as EngagementMode[])
+    .filter((candidate) => candidate === "operator_only" || supportedModes.includes(candidate))
+    .filter((candidate) => AUTONOMY[candidate] <= AUTONOMY[mode])
+    .reduce((best, candidate) => (AUTONOMY[candidate] > AUTONOMY[best] ? candidate : best), "operator_only");

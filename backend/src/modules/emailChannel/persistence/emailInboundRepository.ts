@@ -55,7 +55,7 @@ const THREAD_MATCHES: readonly ThreadMatch[] = ["in_reply_to", "references", "re
 /** Deliveries whose thread decision is persisted: the reservation log of research B15. */
 const RESERVED_STATES: readonly DeliveryState[] = ["resolved", "ingested", "done"];
 
-interface InboundEventRecord {
+export interface InboundEventRecord {
   id: string;
   provider: string;
   providerEventId: string;
@@ -74,7 +74,7 @@ interface InboundEventRecord {
   processedAt: Date | null;
 }
 
-interface InboundDeliveryRecord {
+export interface InboundDeliveryRecord {
   id: string;
   inboundEventId: string;
   workspaceId: string | null;
@@ -160,6 +160,21 @@ interface ReservationMatch {
   deliveryId: string;
   conversationId: string;
   state: DeliveryState;
+}
+
+/** The identity an in-flight reservation gave its conversation: what ingest and the link will carry. */
+interface ReservedThread {
+  threadKey: string;
+  /** Secret plus token. Never logged. */
+  threadToken: string;
+  participantAddress: string;
+}
+
+/** A drop decided at thread resolution (research B15 step 1); it reserves nothing. */
+interface DroppedDelivery {
+  threadMatch: ThreadMatch | null;
+  threadConflict: boolean;
+  dispositionReason: DispositionReason;
 }
 
 export interface EventLogEntry {
@@ -348,6 +363,31 @@ export class EmailInboundRepository {
     return rows.map(mapEvent);
   }
 
+  /**
+   * Lease recovery for the sweep: returns `processing` events whose lease ran out to `pending`, due
+   * now, so a worker that died mid-event leaves nothing stranded. The dead worker's late writes are
+   * fenced out, because its settle requires `processing`.
+   */
+  async releaseExpiredLeases(limit: number): Promise<number> {
+    const rows = await this.db
+      .updateTable("email_inbound_events")
+      .set({ state: "pending", lease_until: null, next_attempt_at: currentTimestamp() })
+      .where("id", "in", (eb) =>
+        eb
+          .selectFrom("email_inbound_events")
+          .select("id")
+          .where("state", "=", "processing")
+          .where("lease_until", "<", currentTimestamp())
+          .orderBy("lease_until", "asc")
+          .limit(limit)
+          .forUpdate()
+          .skipLocked(),
+      )
+      .returning("id")
+      .execute();
+    return rows.length;
+  }
+
   /** Settles this claim only: a worker whose lease was reclaimed (higher `attempts`) writes nothing. */
   async settleEvent(
     eventId: string,
@@ -521,6 +561,58 @@ export class EmailInboundRepository {
         ? [{ deliveryId: row.id, conversationId, state: readEnum(row.state, DELIVERY_STATES, "email_inbound_deliveries.state") }]
         : [];
     });
+  }
+
+  /**
+   * The identity each of `conversationIds` was reserved with by the mailbox's earliest in-flight or
+   * done delivery, for a thread whose link may not exist yet. Run under the thread-resolution lock.
+   */
+  async findReservedThreads(mailboxId: string, conversationIds: readonly string[]): Promise<Map<string, ReservedThread>> {
+    if (conversationIds.length === 0) return new Map();
+    const ids = [...conversationIds];
+    const rows = await this.db
+      .selectFrom("email_inbound_deliveries")
+      .select(["conversation_id", "planned_conversation_id", "planned_thread_key", "planned_thread_token", "sender_address"])
+      .where("mailbox_id", "=", mailboxId)
+      .where("state", "in", RESERVED_STATES)
+      .where("planned_thread_key", "is not", null)
+      .where("planned_thread_token", "is not", null)
+      .where((eb) => eb.or([eb("conversation_id", "in", ids), eb("planned_conversation_id", "in", ids)]))
+      .orderBy("created_at", "asc")
+      .orderBy("id", "asc")
+      .execute();
+    const threads = new Map<string, ReservedThread>();
+    for (const row of rows) {
+      const conversationId = row.conversation_id ?? row.planned_conversation_id;
+      if (!conversationId || threads.has(conversationId) || !row.planned_thread_key || !row.planned_thread_token) continue;
+      threads.set(conversationId, {
+        threadKey: row.planned_thread_key,
+        threadToken: row.planned_thread_token,
+        participantAddress: row.sender_address ?? "",
+      });
+    }
+    return threads;
+  }
+
+  /**
+   * `fetched` → `done` for a dropped delivery, with the thread it reached if any. A drop reserves
+   * nothing, so a later message referencing this one never joins a thread through it.
+   */
+  async settleDropped(deliveryId: string, drop: DroppedDelivery): Promise<boolean> {
+    const result = await this.db
+      .updateTable("email_inbound_deliveries")
+      .set({
+        state: "done",
+        disposition: "drop",
+        disposition_reason: drop.dispositionReason,
+        thread_match: drop.threadMatch,
+        thread_conflict: drop.threadConflict,
+        processed_at: currentTimestamp(),
+      })
+      .where("id", "=", deliveryId)
+      .where("state", "=", "fetched")
+      .execute();
+    return changed(result);
   }
 
   /** `resolved` → `ingested`, once host ingest has committed the conversation and message. */

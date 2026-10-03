@@ -64,7 +64,7 @@ export const startApiRuntime = async (options: StartApiRuntimeOptions): Promise<
   await dependencies.connectorRegistry.initializeAll({
     db: dependencies.connectorDb,
     logger: dependencies.logger,
-    chat: createConnectorChatPort(dependencies.chatService),
+    chat: createConnectorChatPort(dependencies.chatService, dependencies.conversationIngestService),
     ingestion: dependencies.connectorIngestionPort,
     approvalDecisionService: dependencies.approvalDecisionService,
     conversationOwnershipService: dependencies.conversationOwnershipService,

@@ -4057,9 +4057,17 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
     }), created: true };
   }
 
-  async create(input: CreateConversationInput): Promise<ConversationRecord> {
+  async createIfAbsent(input: CreateConversationInput & { id: string }): Promise<boolean> {
+    if (this.items.has(input.id)) {
+      return false;
+    }
+    await this.create(input);
+    return true;
+  }
+
+  async create(input: CreateConversationInput & { id?: string }): Promise<ConversationRecord> {
     const record: ConversationRecord = {
-      id: randomUUID(),
+      id: input.id ?? randomUUID(),
       workspaceId: input.workspaceId,
       agentId: input.agentId ?? null,
       agentRevisionId: input.agentRevisionId ?? null,

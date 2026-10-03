@@ -529,4 +529,86 @@ describe("ConversationOwnershipService", () => {
         .rejects.toMatchObject({ statusCode: 404, code: "not_found" });
     });
   });
+
+  describe("requestHumanOwnership", () => {
+    // The caller's unit of work: its own transaction-bound ownership and activity writers.
+    const createScope = (ownership: InMemoryConversationOwnershipRepository) => {
+      const recorded: ConversationActivityEvent[] = [];
+      return {
+        recorded,
+        scope: {
+          ownership: { requestHandoff: vi.fn((input: Parameters<typeof ownership.requestHandoff>[0]) => ownership.requestHandoff(input)) },
+          activity: { record: vi.fn(async (event: ConversationActivityEvent) => { recorded.push(event); }) },
+        },
+      };
+    };
+
+    it("writes human_owned with the reason and a handoff_requested activity in the caller's scope", async () => {
+      const { service, ownership, activity, publisher, audit } = createService();
+      const { scope, recorded } = createScope(ownership);
+
+      const result = await service.requestHumanOwnership(scope, {
+        conversationId,
+        workspaceId,
+        reason: "operator_only_mailbox",
+      });
+
+      expect(result).toMatchObject({
+        changed: true,
+        record: { state: "human_owned", reason: "operator_only_mailbox", ownerUserId: null, version: 1 },
+      });
+      expect(scope.ownership.requestHandoff).toHaveBeenCalledWith({ conversationId, workspaceId, reason: "operator_only_mailbox" });
+      expect(recorded).toEqual([{
+        kind: "handoff_requested",
+        conversationId,
+        workspaceId,
+        actorUserId: null,
+        detail: { reason: "operator_only_mailbox" },
+      }]);
+      // Inside the caller's transaction: the service opens no unit of work of its own, and tells
+      // nobody before the caller has committed.
+      expect(activity.record).not.toHaveBeenCalled();
+      expect(publisher.enqueue).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
+    });
+
+    it("hands a conversation the AI owns again back to a person", async () => {
+      const { service, ownership } = createService();
+      const claim = await service.takeOver(dana, { conversationId });
+      await service.handBack(dana, { conversationId, expectedVersion: claim.record!.version });
+      const { scope, recorded } = createScope(ownership);
+
+      const result = await service.requestHumanOwnership(scope, { conversationId, workspaceId, reason: "generation_budget" });
+
+      expect(result).toMatchObject({
+        changed: true,
+        record: { state: "human_owned", reason: "generation_budget", ownerUserId: null, version: 3 },
+      });
+      expect(recorded.map((event) => event.kind)).toEqual(["handoff_requested"]);
+    });
+
+    it("changes nothing and records nothing when a person already owns the conversation", async () => {
+      const { service, ownership } = createService();
+      await service.takeOver(dana, { conversationId });
+      const { scope, recorded } = createScope(ownership);
+
+      const result = await service.requestHumanOwnership(scope, { conversationId, workspaceId, reason: "review_unavailable" });
+
+      expect(result).toMatchObject({
+        changed: false,
+        record: { state: "human_owned", ownerUserId: "user-dana", version: 1 },
+      });
+      expect(result.record.reason).not.toBe("review_unavailable");
+      expect(recorded).toEqual([]);
+    });
+
+    it("fails, so the caller's transaction rolls back, when the activity cannot be written", async () => {
+      const { service, ownership } = createService();
+      const { scope } = createScope(ownership);
+      scope.activity.record.mockRejectedValueOnce(new Error("activity unavailable"));
+
+      await expect(service.requestHumanOwnership(scope, { conversationId, workspaceId, reason: "operator_only_mailbox" }))
+        .rejects.toThrow("activity unavailable");
+    });
+  });
 });

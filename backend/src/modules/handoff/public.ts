@@ -16,6 +16,7 @@ export {
 } from "./transferNotice.js";
 export {
   ConversationOwnershipService,
+  type HumanOwnershipRequestScope,
   type OwnershipActor,
   type OwnershipChangeUnitOfWork,
   type OwnershipReplyUnitOfWork,

@@ -14,6 +14,8 @@ export type {
   PublicChatActionAdvertiserPort,
 } from "../services/publicChatActionAdvertiser.js";
 export type { ChatGateway } from "./chatGateway.js";
+// Recording a customer message without a turn, for channels that decide later whether one runs.
+export type { ConversationIngestInput, ConversationIngestPort } from "./conversationIngest.js";
 // Read-only conversation starters (greeting chips) for channels that show them outside a
 // conversation, such as Slack's agent pane; the connector registry carries this port.
 export type { AgentStarterPromptReader } from "./agentStarterPrompts.js";

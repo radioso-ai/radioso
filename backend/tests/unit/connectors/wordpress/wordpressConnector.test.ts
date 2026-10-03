@@ -135,7 +135,7 @@ describe("WordpressConnector.onEnable", () => {
     const context: ConnectorContext = {
       db: { query: async () => [] },
       logger: { info: () => {}, warn: () => {}, error: () => {} },
-      chat: { answer: async () => ({ conversationId: "c-1", answer: "", outcome: "answered" }) },
+      chat: { answer: async () => ({ conversationId: "c-1", answer: "", outcome: "answered" }), ingest: vi.fn() },
       state,
       http: { mount: () => {} },
       ingestion,

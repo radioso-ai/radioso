@@ -272,7 +272,11 @@ import {
   NoopPublicChatActionAdvertiser,
   type PublicChatActionAdvertiserPort,
 } from "../../src/modules/chat/services/publicChatActionAdvertiser.js";
-import { InMemoryPublicConversationEventBus, ProbeConversationReader } from "../../src/modules/chat/composition.js";
+import {
+  ConversationIngestService,
+  InMemoryPublicConversationEventBus,
+  ProbeConversationReader,
+} from "../../src/modules/chat/composition.js";
 import { NoopContactHistoryProvider, type ContactHistoryProviderPort } from "../../src/modules/chat/services/contactHistoryProvider.js";
 import type { AnswerFeedbackHistoryProviderPort } from "../../src/modules/chat/services/answerFeedbackHistoryProvider.js";
 import {
@@ -2061,6 +2065,24 @@ export const createTestDependencies = (overrides: {
     publisher: workspaceInvalidationPublisher,
     logger,
   });
+  const conversationIngestService = new ConversationIngestService({
+    // The in-memory stores have no transactions; atomicity is covered against Postgres.
+    unitOfWork: {
+      run: (work) => work({
+        conversations: {
+          createIfAbsent: (input) => conversationRepository.createIfAbsent(input),
+          lockForUpdate: async (conversationId, workspaceId) =>
+            (await conversationRepository.findByIdAndWorkspaceId(conversationId, workspaceId)) !== null,
+          touch: (conversationId, workspaceId) => conversationRepository.touch(conversationId, workspaceId),
+        },
+        messages: messageRepository,
+        ownership: conversationOwnershipRepository,
+        activity: conversationActivity.writer(),
+      }),
+    },
+    ownership: conversationOwnershipService,
+    publisher: workspaceInvalidationPublisher,
+  });
   const agentRetrievalScope = createAgentRetrievalScopeResolver({ agentRepository });
   const retrievalSearchService = new RetrievalSearchService(retrievalPipeline, agentRetrievalScope);
   const retrievalAnswerService = new RetrievalAnswerService({
@@ -2624,6 +2646,7 @@ export const createTestDependencies = (overrides: {
     chatService,
     approvalDecisionService,
     conversationOwnershipService,
+    conversationIngestService,
     conversationOperatorDirectory,
     conversationActivityReads,
     workbenchReplayRunner: workbenchReplayRunner as any,
@@ -2720,7 +2743,7 @@ export const createTestDependencies = (overrides: {
   void connectorRegistry.initializeAll({
     db: connectorDb,
     logger: dependencies.logger,
-    chat: createConnectorChatPort(dependencies.chatService),
+    chat: createConnectorChatPort(dependencies.chatService, dependencies.conversationIngestService),
     ingestion: dependencies.connectorIngestionPort,
     agentStarterPrompts: dependencies.agentStarterPromptReader,
     conversationLinks: dependencies.conversationLinks,

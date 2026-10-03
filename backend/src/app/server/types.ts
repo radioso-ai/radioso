@@ -76,7 +76,11 @@ import type { OrganizationCreationGuard } from "../../shared/domain/organization
 import type { UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
 import type { UsageEventRecorder } from "../../shared/domain/usageEventRecorder.js";
 import type { ApplicationModuleCoordinator, ApplicationRouteMount } from "../composition/applicationModule.js";
-import type { PublicChatActionAdvertiserPort, ContactHistoryProviderPort } from "../../modules/chat/contracts/index.js";
+import type {
+  ContactHistoryProviderPort,
+  ConversationIngestPort,
+  PublicChatActionAdvertiserPort,
+} from "../../modules/chat/contracts/index.js";
 import type { UserRepositoryPort } from "../../db/repositories/userRepository.js";
 import type { SkillAuthoringCatalog, SkillCatalogService } from "../../modules/skills/public.js";
 import type { AgentSkillsService } from "../../modules/agentSkills/public.js";
@@ -242,6 +246,8 @@ export interface AppDependencies {
   approvalDecisionService: ApprovalDecisionService;
   /** Who handles a human-owned conversation: take over, reply, transfer, hand back. */
   conversationOwnershipService: ConversationOwnershipService;
+  /** Records a customer message without running a turn; connectors reach it through their chat port. */
+  conversationIngestService: ConversationIngestPort;
   /** The teammates a conversation can be handed to in a workspace. */
   conversationOperatorDirectory: ConversationOperatorDirectory;
   /** Operator reads of conversation activity: a conversation's timeline, the Inbox's recently closed items. */

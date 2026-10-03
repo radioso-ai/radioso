@@ -278,6 +278,24 @@ const mapConversation = (row: ConversationRow): ConversationRecord => ({
   updatedAt: new Date(row.updated_at),
 });
 
+const conversationInsertValues = (id: string, input: CreateConversationInput) => ({
+  id,
+  workspace_id: input.workspaceId,
+  agent_id: input.agentId ?? null,
+  agent_revision_id: input.agentRevisionId ?? null,
+  purpose: input.purpose ?? "production",
+  source_channel: input.sourceChannel ?? null,
+  caller_kind: callerKindForSourceChannel(input.sourceChannel),
+  source_origin: input.sourceOrigin ?? null,
+  channel_context: input.channelContext ? toJsonb(input.channelContext) : null,
+  anonymous_session_id: input.anonymousSessionId ?? null,
+  verified_customer_id: input.verifiedCustomerId ?? null,
+  entry_page_url: input.entryPageUrl ?? null,
+  entry_referrer: input.entryReferrer ?? null,
+  visitor_id: input.visitorId ?? null,
+  request_context: input.requestContext ? toJsonb(input.requestContext) : null,
+});
+
 export class ConversationRepository implements ConversationRepositoryPort {
   constructor(private readonly db: Db) {}
 
@@ -333,27 +351,26 @@ export class ConversationRepository implements ConversationRepositoryPort {
   async create(input: CreateConversationInput): Promise<ConversationRecord> {
     const row = await this.db
       .insertInto("conversations")
-      .values({
-        id: randomUUID(),
-        workspace_id: input.workspaceId,
-        agent_id: input.agentId ?? null,
-        agent_revision_id: input.agentRevisionId ?? null,
-        purpose: input.purpose ?? "production",
-        source_channel: input.sourceChannel ?? null,
-        caller_kind: callerKindForSourceChannel(input.sourceChannel),
-        source_origin: input.sourceOrigin ?? null,
-        channel_context: input.channelContext ? toJsonb(input.channelContext) : null,
-        anonymous_session_id: input.anonymousSessionId ?? null,
-        verified_customer_id: input.verifiedCustomerId ?? null,
-        entry_page_url: input.entryPageUrl ?? null,
-        entry_referrer: input.entryReferrer ?? null,
-        visitor_id: input.visitorId ?? null,
-        request_context: input.requestContext ? toJsonb(input.requestContext) : null,
-      })
+      .values(conversationInsertValues(randomUUID(), input))
       .returning(conversationColumns)
       .executeTakeFirstOrThrow();
 
     return mapConversation(row as ConversationRow);
+  }
+
+  /**
+   * Creates the conversation under the caller's id unless one with that id already exists, which
+   * is left exactly as it is. True when this call created it. A concurrent creator of the same id
+   * waits for the first to commit and then creates nothing.
+   */
+  async createIfAbsent(input: CreateConversationInput & { id: string }): Promise<boolean> {
+    const row = await this.db
+      .insertInto("conversations")
+      .values(conversationInsertValues(input.id, input))
+      .onConflict((conflict) => conflict.column("id").doNothing())
+      .returning("id")
+      .executeTakeFirst();
+    return row !== undefined;
   }
 
   async bindAgentRevision(input: {

@@ -1,4 +1,4 @@
-import { SKILL_TURN_OUTCOME, type ChatAnswerPort } from "../../chat/contracts/index.js";
+import { SKILL_TURN_OUTCOME, type ChatAnswerPort, type ConversationIngestPort } from "../../chat/contracts/index.js";
 import type { ConnectorChatPort } from "@radioso/connector-api";
 
 type ConnectorChatOutcome = Awaited<ReturnType<ConnectorChatPort["answer"]>>["outcome"];
@@ -21,7 +21,11 @@ const toConnectorOutcome = (skillOutcome: string | undefined): ConnectorChatOutc
   return "answered";
 };
 
-export const createConnectorChatPort = (chatService: ChatAnswerPort): ConnectorChatPort => ({
+export const createConnectorChatPort = (
+  chatService: ChatAnswerPort,
+  conversationIngest: ConversationIngestPort,
+): ConnectorChatPort => ({
+  ingest: (input) => conversationIngest.ingest(input),
   answer: async (input) => {
     const response = await chatService.answer({
       workspaceId: input.workspaceId,

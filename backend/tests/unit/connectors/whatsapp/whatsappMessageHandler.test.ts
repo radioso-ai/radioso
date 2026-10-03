@@ -182,7 +182,7 @@ describe("WhatsAppMessageHandler", () => {
 
   const createHandler = (input?: {
     persistence?: InMemoryWhatsAppPersistence;
-    chat?: ConnectorChatPort;
+    chat?: Pick<ConnectorChatPort, "answer">;
     client?: Pick<WhatsAppClient, "sendTextMessage">;
     enabled?: boolean;
     setErrorStatus?: ConnectorStatePort["setErrorStatus"];

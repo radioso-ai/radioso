@@ -47,7 +47,11 @@ operator sent (`agent_test_execution_turns`), never from side histories; a
 greeting is not a turn. The store returns the opening message cut to
 `TEST_EXECUTION_LABEL_CHARS + 1` characters, and `summaries` finishes it with
 `testExecutionLabel`, clipped on a character boundary with an ellipsis, so every
-surface shows the same label.
+surface shows the same label. A detail (`TestExecutionService.detail`, the
+`GET /agents/:agentId/test-executions/:executionId` read) carries the same
+`seeded_turn_count` as `seededTurnCount`, read straight off `TestExecution`
+rather than re-derived: Test Chat uses it to decide whether a reopened test is
+a copy of a real conversation.
 These reads leave out continuations, conversation ids, and frozen sample values.
 
 `start` without `revisionIds` runs a single test on the agent's default

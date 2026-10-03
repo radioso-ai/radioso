@@ -357,36 +357,6 @@ describe('dashboard route state', () => {
     expect(isValidTestExecutionId('11111111-1111-4111-8111-111111111111')).toBe(true)
   })
 
-  it('marks a test execution opened as a copy of a real conversation', () => {
-    const agentId = '67acb0c8-caad-4a1b-9fef-70cbca3f7d12'
-    const executionId = '11111111-1111-4111-8111-111111111111'
-
-    expect(buildDashboardHref('account-1', {
-      section: 'agents',
-      workspacePublicRouteKey: 'support-abc123',
-      agentId,
-      agentTestExecutionId: executionId,
-      agentTestExecutionFromConversation: true,
-    })).toBe(`/w/support-abc123/agents/${agentId}?testExecution=${executionId}&fromConversation=1`)
-
-    expect(parseDashboardRoute(['agents', agentId], new URLSearchParams({
-      testExecution: executionId,
-      fromConversation: '1',
-    }))).toEqual({
-      section: 'agents',
-      agentId,
-      agentTestExecutionId: executionId,
-      agentTestExecutionFromConversation: true,
-    })
-
-    expect(buildDashboardHref('account-1', {
-      section: 'agents',
-      workspacePublicRouteKey: 'support-abc123',
-      agentId,
-      agentTestExecutionFromConversation: true,
-    })).toBe(`/w/support-abc123/agents/${agentId}`)
-  })
-
   it('round-trips the Test Chat conversation history view (view=history)', () => {
     const agentId = '67acb0c8-caad-4a1b-9fef-70cbca3f7d12'
 
@@ -443,7 +413,6 @@ describe('dashboard route state', () => {
       workspacePublicRouteKey: 'support-abc123',
       agentId,
       agentTestExecutionId: '11111111-1111-4111-8111-111111111111',
-      agentTestExecutionFromConversation: true,
     }
 
     expect(buildAgentSectionHref('account-1', onHistory, agentId, { agentTab: 'chat' }))

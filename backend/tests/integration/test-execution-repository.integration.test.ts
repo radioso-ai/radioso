@@ -148,6 +148,10 @@ describeDb("test execution repository", () => {
     expect(summaries.get(longId)).toEqual({ turnCount: 1, firstMessage: "y".repeat(201) });
     expect(summaries.get(emptyId)).toEqual({ turnCount: 0, firstMessage: null });
     await expect(repository.summarizeTurns({ workspaceId: randomUUID(), agentId, executionIds: [executionId], firstMessageChars: 201 })).resolves.toEqual(new Map());
+
+    // The seeded count on `find` is the same column `summarizeTurns` reads, so the two never disagree.
+    await expect(repository.find({ workspaceId, agentId, executionId: seededId })).resolves.toMatchObject({ seededTurnCount: 2 });
+    await expect(repository.find({ workspaceId, agentId, executionId })).resolves.toMatchObject({ seededTurnCount: 0 });
   });
 
   it("claims all comparison sides atomically and serializes simultaneous completions", async () => {

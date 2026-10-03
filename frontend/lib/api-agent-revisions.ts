@@ -100,7 +100,8 @@ export interface TestExecutionHistoryItem extends Omit<TestExecution, 'sides'> {
 export type TestExecutionHistoryListItem = TestExecutionHistoryItem &
   Pick<components['schemas']['TestExecutionHistoryListItem'], 'turnCount' | 'firstMessage' | 'firstMessageClipped'>
 
-export interface TestExecutionHistoryDetail extends Omit<TestExecutionHistoryItem, 'sides'> {
+export type TestExecutionHistoryDetail = Omit<TestExecutionHistoryItem, 'sides'> &
+  Pick<components['schemas']['TestExecutionHistoryDetail'], 'seededTurnCount'> & {
   testValues: Array<{ contextVariableId: string; value: unknown }>
   sides: Array<Omit<TestExecution['sides'][number], 'state' | 'history'> & {
     /** `ready` is persisted before the first message; it is not a completed turn. */

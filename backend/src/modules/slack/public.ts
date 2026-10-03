@@ -57,6 +57,7 @@ export {
   buildOwnershipMessage,
   buildReplyModal,
   buildResolvedDecisionMessage,
+  escapeMrkdwn,
 } from "./operator/slackBlockKitBuilder.js";
 export { FetchSlackResponseUrlClient } from "./operator/slackResponseUrlClient.js";
 export {

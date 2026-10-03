@@ -156,6 +156,7 @@ describe("slackBlockKitBuilder", () => {
     });
 
     expect(JSON.stringify(message.blocks)).toContain("Customer needs help with billing.");
+    expect(message.blocks[0].block_id).toBe("ownership_context");
     expect(JSON.stringify(message.blocks)).toContain(`<${permalink.replaceAll("&", "&amp;")}|Open in dashboard>`);
     const actions = message.blocks.find((block) => block.type === "actions") as { elements: Array<Record<string, unknown>> };
     expect(actions.elements.map((element) => element.action_id)).toEqual(["ownership_takeover"]);
@@ -191,6 +192,7 @@ describe("slackBlockKitBuilder", () => {
 
     const rendered = JSON.stringify(message.blocks);
     expect(rendered).toContain("Handled by Dana");
+    expect(message.blocks[0].block_id).toBe("ownership_context");
     const actions = message.blocks.find((block) => block.type === "actions") as { elements: Array<Record<string, unknown>> };
     expect(actions.elements.map((element) => element.action_id)).toEqual(["ownership_talk", "ownership_handback"]);
     expect(actions.elements.map((element) => JSON.parse(element.value as string))).toEqual([

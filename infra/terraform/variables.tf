@@ -280,6 +280,54 @@ variable "action_dispatch_recovery_max_jobs" {
   }
 }
 
+# --- Email channel (inbound email conversations) ---
+# Cloud Tasks queue for scheduled inbound/review/reconcile drains, plus a Cloud
+# Scheduler sweep for lease recovery, domain refresh, send reconciliation claims
+# and event-log retention (research B7, B12). The queue and scheduler job are
+# created whenever deploy_services is true; email_channel_provider below is the
+# separate runtime switch that turns the channel on.
+
+variable "email_channel_task_queue_name" {
+  description = "Cloud Tasks queue name used to push email-channel drain requests (inbound, review, reconcile)."
+  type        = string
+  default     = "radioso-email-channel"
+}
+
+variable "email_channel_task_max_dispatches_per_second" {
+  description = "Cloud Tasks dispatch rate for email-channel drain pushes. Kept low: the receiving provider's rate limits are undocumented."
+  type        = number
+  default     = 5
+}
+
+variable "email_channel_task_max_concurrent_dispatches" {
+  description = "Maximum concurrent Cloud Tasks dispatches for email-channel drain pushes."
+  type        = number
+  default     = 5
+}
+
+variable "email_channel_sweep_schedule" {
+  description = "Optional cron schedule for the email-channel sweep: lease recovery, domain refresh, send reconciliation claims and event-log retention."
+  type        = string
+  default     = null
+}
+
+variable "email_channel_sweep_max_jobs" {
+  description = "Maximum items each scheduled email-channel sweep request may process."
+  type        = number
+  default     = 20
+
+  validation {
+    condition     = var.email_channel_sweep_max_jobs >= 1 && var.email_channel_sweep_max_jobs <= 50
+    error_message = "email_channel_sweep_max_jobs must be between 1 and 50."
+  }
+}
+
+variable "email_channel_workers_enabled" {
+  description = "Whether the email-channel worker (interval loop, drain and sweep routes) runs (EMAIL_CHANNEL_WORKERS_ENABLED). Defaults to false so Terraform can provision the queue, scheduler job, domain and secrets ahead of a rollout."
+  type        = bool
+  default     = false
+}
+
 variable "copilot_probe_budget_per_turn" {
   description = "Replayed turns one Ray turn may spend across its verification tools. A suite run is charged one per case, so this is a ceiling on model-backed work per turn rather than on tool calls."
   type        = number
@@ -399,6 +447,43 @@ variable "mail_from_name" {
   description = "Sender display name for transactional auth mail."
   type        = string
   default     = "Radioso"
+}
+
+variable "email_channel_provider" {
+  description = "Email channel provider (EMAIL_CHANNEL_PROVIDER). Unset leaves the email plugin, routes and workers unregistered. The only supported deployed value is \"resend\"; \"local\" is development-only."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.email_channel_provider == null || var.email_channel_provider == "resend"
+    error_message = "email_channel_provider must be unset or \"resend\"."
+  }
+}
+
+variable "email_channel_inbound_domain" {
+  description = "DNS hostname that receives inbound email-channel relay addresses (EMAIL_CHANNEL_INBOUND_DOMAIN). No default: an operator must provision and verify the domain before setting it."
+  type        = string
+  default     = null
+}
+
+variable "email_channel_webhook_secret" {
+  description = "Signing secret the email provider uses to sign inbound webhook deliveries (EMAIL_CHANNEL_WEBHOOK_SECRET)."
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "resend_channel_api_key" {
+  description = "Resend API key used by the email channel to receive and send channel mail (RESEND_CHANNEL_API_KEY). Separate from resend_mail_api_key, which is transactional auth mail."
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "resend_channel_region" {
+  description = "Resend region for the email channel (RESEND_CHANNEL_REGION). Use eu-west-1 for the EU stack."
+  type        = string
+  default     = "us-east-1"
 }
 
 variable "metrics_auth_token" {

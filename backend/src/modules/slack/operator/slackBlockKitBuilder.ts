@@ -7,6 +7,7 @@ interface SlackBlockKitMessage {
 
 export const OWNERSHIP_REPLY_BLOCK_ID = "ownership_reply_message";
 export const OWNERSHIP_REPLY_ACTION_ID = "ownership_reply_text";
+export const OWNERSHIP_CONTEXT_BLOCK_ID = "ownership_context";
 
 const SECTION_TEXT_LIMIT = 3_000;
 const BUTTON_LABEL_LIMIT = 75;
@@ -36,8 +37,9 @@ const plainText = (text: string): Record<string, unknown> => ({
   emoji: true,
 });
 
-const mrkdwnSection = (text: string): Record<string, unknown> => ({
+const mrkdwnSection = (text: string, blockId?: string): Record<string, unknown> => ({
   type: "section",
+  ...(blockId ? { block_id: blockId } : {}),
   text: {
     type: "mrkdwn",
     text: clampSectionText(text),
@@ -169,7 +171,7 @@ export const buildOwnershipMessage = (input: {
     return {
       text: status,
       blocks: [
-        mrkdwnSection(contextText),
+        mrkdwnSection(contextText, OWNERSHIP_CONTEXT_BLOCK_ID),
         mrkdwnSection(status),
         {
           type: "actions",
@@ -203,7 +205,7 @@ export const buildOwnershipMessage = (input: {
   return {
     text: clampSectionText(contextText),
     blocks: [
-      mrkdwnSection(contextText),
+      mrkdwnSection(contextText, OWNERSHIP_CONTEXT_BLOCK_ID),
       ...(dashboardLink ? [mrkdwnContext(dashboardLink)] : []),
       {
         type: "actions",

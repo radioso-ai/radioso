@@ -134,10 +134,10 @@ the notice after **Take over** links to the conversation in the dashboard, where
 conversation refuses to send with "This conversation changed. Take over again
 before replying."
 
-Once taken over, the card reads "Handled by Dana Scully". The name is the
-teammate's Radioso display name, else their Slack profile name, else "a
-teammate" — never an email address. It is escaped, so it cannot mention the
-channel or add a link.
+Once taken over, the card shows "Handled by Dana Scully" and keeps the notice
+subject and collected values. The name is the teammate's Radioso display name,
+else their Slack profile name, else "a teammate" — never an email address. It
+is escaped, so it cannot mention the channel or add a link.
 
 Only Radioso workspace members can act. Radioso matches the Slack user's email
 to an active teammate whose user is not disabled, so the Slack user's email must

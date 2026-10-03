@@ -1,0 +1,31 @@
+{
+  "object": "domain",
+  "id": "9c539a5d-e048-4fb5-8490-d2a02dbe2850",
+  "name": "s0-email-channel.radioso.ai",
+  "created_at": "2026-10-03 13:29:18.978423+00",
+  "status": "not_started",
+  "capabilities": {
+    "sending": "disabled",
+    "receiving": "enabled"
+  },
+  "records": [
+    {
+      "record": "DKIM",
+      "name": "resend._domainkey.s0-email-channel",
+      "value": "p=MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQC5wK2jfZMWTX5QvtBq9j4FoOOgRDdv9v3scVDd8ybynWvGNTeF664RT5eo9bOgrUp/Oc+7jwncf+ZjLVrFCgj47VSgtptikYzMWMQ68vSt1+/EqbOOHQkRLRUrFoDQPMzGBRZiCk67Gtu4KrMSkyXvWzZpDjWf//olntlt1WtnLQIDAQAB",
+      "type": "TXT",
+      "status": "not_started",
+      "ttl": "Auto"
+    },
+    {
+      "record": "Receiving",
+      "name": "s0-email-channel",
+      "value": "inbound-smtp.eu-west-1.amazonaws.com",
+      "type": "MX",
+      "priority": 10,
+      "status": "not_started",
+      "ttl": "Auto"
+    }
+  ],
+  "region": "eu-west-1"
+}

@@ -1,0 +1,227 @@
+import { CursorPaginationError, decodeCursorWithKeys, encodeCursor } from "../../shared/domain/cursorPagination.js";
+import type {
+  ConversationActivityEvent,
+  ConversationActivityWriter,
+} from "../conversationActivity/contracts/index.js";
+
+/**
+ * How a reply failed to reach the customer: bounced or suppressed, refused or failed, of an outcome
+ * nobody knows and nothing will retry, or halted before it was sent because the authority to send
+ * it was gone.
+ */
+type DeliveryFailureKind = "bounced" | "failed" | "uncertain" | "halted";
+
+/**
+ * Why the delivering channel clears a failure: a later send on the conversation was delivered,
+ * provider evidence settled it, or a teammate resolved it through the channel's audited resolution.
+ * A teammate's acknowledgement clears one too, but it is not the channel's to report.
+ */
+type DeliveryFailureClearReason = "later_delivery" | "provider_evidence" | "operator_resolved";
+
+export interface DeliveryFailureRecord {
+  id: string;
+  workspaceId: string;
+  conversationId: string;
+  /** Null for a failure that names no message. */
+  messageId: string | null;
+  provider: string;
+  kind: DeliveryFailureKind;
+  /** The provider's code, sanitized; never its bounce message. */
+  detailCode: string | null;
+  openedAt: Date;
+  clearedAt: Date | null;
+  clearedByUserId: string | null;
+  clearReason: DeliveryFailureClearReason | "acknowledged" | null;
+}
+
+interface DeliveryFailureOpenInput {
+  workspaceId: string;
+  conversationId: string;
+  messageId: string | null;
+  provider: string;
+  kind: DeliveryFailureKind;
+  detailCode: string | null;
+}
+
+interface DeliveryFailureRetargetInput {
+  conversationId: string;
+  messageId: string;
+  kind: DeliveryFailureKind;
+  detailCode: string | null;
+}
+
+/** A teammate's resolution names the teammate; the channel's own clears name nobody. */
+type DeliveryFailureClearInput = { conversationId: string; messageId: string | null } & (
+  | { reason: "later_delivery" | "provider_evidence" }
+  | { reason: "operator_resolved"; userId: string }
+);
+
+/** How a delivering channel raises, settles and clears the failures of the replies it carries. */
+interface DeliveryFailureRecorderPort {
+  /** Raises a failure on the message; a no-op while one is already open on it. */
+  open(input: DeliveryFailureOpenInput): Promise<void>;
+  /**
+   * Moves the message's open failure to `kind`, as late provider evidence settles an uncertain
+   * send; a no-op when none is open, or it already is of `kind`.
+   */
+  retarget(input: DeliveryFailureRetargetInput): Promise<void>;
+  /**
+   * Clears the message's open failure, or with `messageId: null` every open failure on the
+   * conversation; returns how many it cleared.
+   */
+  clear(input: DeliveryFailureClearInput): Promise<number>;
+}
+
+interface DeliveryFailurePage {
+  items: DeliveryFailureRecord[];
+  /** Pass back to read the next page; null on the last one. */
+  nextCursor: string | null;
+}
+
+/** Operator surfaces' read of the failures waiting for attention. */
+interface DeliveryFailureReaderPort {
+  /** A workspace's open failures, newest first; with `agentId`, only on that agent's conversations. */
+  listOpen(workspaceId: string, query: { agentId?: string; cursor?: string; limit: number }): Promise<DeliveryFailurePage>;
+}
+
+/** Where a page of open failures ends: newest first, so the next page holds the ones before it. */
+interface DeliveryFailurePosition {
+  openedAt: Date;
+  id: string;
+}
+
+/** The failures' rows, bound to the transaction of the unit of work that writes them. */
+export interface DeliveryFailureWriteStore {
+  /** The failure raised; null when the message already has an open one. */
+  insertOpen(input: DeliveryFailureOpenInput): Promise<DeliveryFailureRecord | null>;
+  /** The message's open failure, now of `kind`; null when none is open, or it already was. */
+  retargetOpen(input: DeliveryFailureRetargetInput): Promise<DeliveryFailureRecord | null>;
+  /** The open failures cleared: the message's, or with `messageId: null` the conversation's. */
+  clearOpen(input: {
+    conversationId: string;
+    messageId: string | null;
+    reason: DeliveryFailureClearReason;
+    clearedByUserId: string | null;
+  }): Promise<DeliveryFailureRecord[]>;
+}
+
+export interface DeliveryFailureReadStore {
+  /** Up to `limit` open failures, newest first, after `after`; with `agentId`, on that agent's conversations. */
+  listOpen(
+    workspaceId: string,
+    query: { agentId: string | undefined; after: DeliveryFailurePosition | null; limit: number },
+  ): Promise<DeliveryFailureRecord[]>;
+}
+
+/** One failure change and the activity it records, bound to one transaction. */
+export interface DeliveryFailureWriteScope {
+  failures: DeliveryFailureWriteStore;
+  activity: ConversationActivityWriter;
+}
+
+/** Runs a failure change with the activity it records as one unit: both commit, or neither does. */
+export interface DeliveryFailureUnitOfWork {
+  run<T>(work: (scope: DeliveryFailureWriteScope) => Promise<T>): Promise<T>;
+}
+
+const failedActivity = (failure: DeliveryFailureRecord): ConversationActivityEvent => ({
+  kind: "delivery_failed",
+  conversationId: failure.conversationId,
+  workspaceId: failure.workspaceId,
+  actorUserId: null,
+  detail: { failureId: failure.id, messageId: failure.messageId, failureKind: failure.kind },
+});
+
+const clearedActivity = (
+  failure: DeliveryFailureRecord,
+  reason: DeliveryFailureClearReason,
+  actorUserId: string | null,
+): ConversationActivityEvent => ({
+  kind: "delivery_failure_cleared",
+  conversationId: failure.conversationId,
+  workspaceId: failure.workspaceId,
+  actorUserId,
+  detail: { failureId: failure.id, messageId: failure.messageId, reason },
+});
+
+/**
+ * The recorder bound to a transaction its caller holds, such as the send path's fenced transition,
+ * so a failure is raised, settled or cleared with the change that caused it, or not at all.
+ */
+export const bindDeliveryFailureRecorder = (scope: DeliveryFailureWriteScope): DeliveryFailureRecorderPort => ({
+  async open(input) {
+    const opened = await scope.failures.insertOpen(input);
+    if (opened) {
+      await scope.activity.record(failedActivity(opened));
+    }
+  },
+  async retarget(input) {
+    const retargeted = await scope.failures.retargetOpen(input);
+    if (retargeted) {
+      await scope.activity.record(failedActivity(retargeted));
+    }
+  },
+  async clear(input) {
+    const clearedByUserId = input.reason === "operator_resolved" ? input.userId : null;
+    const cleared = await scope.failures.clearOpen({
+      conversationId: input.conversationId,
+      messageId: input.messageId,
+      reason: input.reason,
+      clearedByUserId,
+    });
+    for (const failure of cleared) {
+      await scope.activity.record(clearedActivity(failure, input.reason, clearedByUserId));
+    }
+    return cleared.length;
+  },
+});
+
+const CURSOR_KEYS = ["openedAt", "id"] as const;
+
+const encodePosition = (failure: DeliveryFailureRecord): string =>
+  encodeCursor({ openedAt: failure.openedAt.toISOString(), id: failure.id });
+
+const decodePosition = (cursor: string): DeliveryFailurePosition => {
+  const { keys } = decodeCursorWithKeys(cursor, CURSOR_KEYS);
+  const openedAt = new Date(keys.openedAt);
+  if (Number.isNaN(openedAt.getTime())) {
+    throw new CursorPaginationError("Invalid cursor");
+  }
+  return { openedAt, id: keys.id };
+};
+
+/**
+ * Replies that may not have reached the customer, channel-neutral: a delivering channel raises,
+ * settles and clears them, each change in its own unit of work with the activity it records, and
+ * operator surfaces read the ones still open.
+ */
+export class DeliveryFailures implements DeliveryFailureRecorderPort, DeliveryFailureReaderPort {
+  constructor(private readonly deps: { writes: DeliveryFailureUnitOfWork; reads: DeliveryFailureReadStore }) {}
+
+  open(input: DeliveryFailureOpenInput): Promise<void> {
+    return this.deps.writes.run((scope) => bindDeliveryFailureRecorder(scope).open(input));
+  }
+
+  retarget(input: DeliveryFailureRetargetInput): Promise<void> {
+    return this.deps.writes.run((scope) => bindDeliveryFailureRecorder(scope).retarget(input));
+  }
+
+  clear(input: DeliveryFailureClearInput): Promise<number> {
+    return this.deps.writes.run((scope) => bindDeliveryFailureRecorder(scope).clear(input));
+  }
+
+  async listOpen(
+    workspaceId: string,
+    query: { agentId?: string; cursor?: string; limit: number },
+  ): Promise<DeliveryFailurePage> {
+    const after = query.cursor === undefined ? null : decodePosition(query.cursor);
+    // One past the page tells whether another follows.
+    const rows = await this.deps.reads.listOpen(workspaceId, { agentId: query.agentId, after, limit: query.limit + 1 });
+    const items = rows.slice(0, query.limit);
+    const last = items.at(-1);
+    return {
+      items,
+      nextCursor: rows.length > query.limit && last ? encodePosition(last) : null,
+    };
+  }
+}

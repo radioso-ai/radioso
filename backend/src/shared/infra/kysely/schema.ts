@@ -586,6 +586,20 @@ export interface ConversationActivity {
   workspace_id: string;
 }
 
+export interface ConversationDeliveryFailures {
+  clear_reason: string | null;
+  cleared_at: Timestamp | null;
+  cleared_by_user_id: string | null;
+  conversation_id: string;
+  detail_code: string | null;
+  failure_kind: string;
+  id: Generated<string>;
+  message_id: string | null;
+  opened_at: Generated<Timestamp>;
+  provider: string;
+  workspace_id: string;
+}
+
 export interface ConversationOwnership {
   conversation_id: string;
   created_at: Generated<Timestamp>;
@@ -894,6 +908,39 @@ export interface EmailMailboxPolicies {
   engagement_mode: string;
   mailbox_id: string;
   version: number;
+}
+
+export interface EmailSendIntents {
+  accepted_at: Timestamp | null;
+  author_kind: string;
+  authority_snapshot: Json;
+  complained_at: Timestamp | null;
+  conversation_id: string;
+  created_at: Generated<Timestamp>;
+  delivered_rfc_message_id: string | null;
+  failure_code: string | null;
+  first_attempt_at: Timestamp | null;
+  halt_reason: string | null;
+  held_reply_id: string | null;
+  id: Generated<string>;
+  idempotency_key: string;
+  mailbox_id: string;
+  message_id: string;
+  next_reconcile_at: Timestamp | null;
+  outcome_unknown_since: Timestamp | null;
+  provider: string;
+  provider_message_id: string | null;
+  reconcile_lease_until: Timestamp | null;
+  request_snapshot: Json | null;
+  settled_at: Timestamp | null;
+  state: Generated<string>;
+  supplied_rfc_message_id: string;
+  trigger: string;
+  uncertain_resolution: string | null;
+  uncertain_resolved_by_user_id: string | null;
+  updated_at: Generated<Timestamp>;
+  version: Generated<number>;
+  workspace_id: string;
 }
 
 export interface EmailSkillActivity {
@@ -1931,6 +1978,7 @@ export interface DB {
   context_variable_values: ContextVariableValues;
   context_variables: ContextVariables;
   conversation_activity: ConversationActivity;
+  conversation_delivery_failures: ConversationDeliveryFailures;
   conversation_ownership: ConversationOwnership;
   conversation_summaries: ConversationSummaries;
   conversations: Conversations;
@@ -1948,6 +1996,7 @@ export interface DB {
   email_inbound_events: EmailInboundEvents;
   email_mailbox_policies: EmailMailboxPolicies;
   email_mailboxes: EmailMailboxes;
+  email_send_intents: EmailSendIntents;
   email_skill_activity: EmailSkillActivity;
   email_thread_links: EmailThreadLinks;
   email_thread_messages: EmailThreadMessages;

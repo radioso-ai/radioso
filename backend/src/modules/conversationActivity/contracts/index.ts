@@ -133,6 +133,23 @@ export type ConversationActivityEvent = ConversationActivityScope & (
        */
       detail: { code: string; deliveryId: string };
     }
+  | {
+      kind: "delivery_failed";
+      actorUserId: null;
+      /**
+       * A reply the customer may not have received: the delivery failure raised on it, or the kind
+       * an open one settled to, as the delivering channel's enum code (`bounced`, `uncertain`, ...).
+       * `messageId` is null for a failure that names no message.
+       */
+      detail: { failureId: string; messageId: string | null; failureKind: string };
+    }
+  | {
+      kind: "delivery_failure_cleared";
+      /** The teammate who resolved the failure; null when the channel cleared it. */
+      actorUserId: string | null;
+      /** The failure cleared, and why, as an enum code (`later_delivery`, `operator_resolved`, ...). */
+      detail: { failureId: string; messageId: string | null; reason: string };
+    }
 );
 
 /**

@@ -2041,6 +2041,28 @@ CREATE TABLE public.conversation_activity (
 
 
 --
+-- Name: conversation_delivery_failures; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.conversation_delivery_failures (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    workspace_id uuid NOT NULL,
+    conversation_id uuid NOT NULL,
+    message_id uuid,
+    provider text NOT NULL,
+    failure_kind text NOT NULL,
+    detail_code text,
+    opened_at timestamp with time zone DEFAULT date_trunc('milliseconds'::text, now()) NOT NULL,
+    cleared_at timestamp with time zone,
+    cleared_by_user_id uuid,
+    clear_reason text,
+    CONSTRAINT conversation_delivery_failures_clear_reason_check CHECK ((clear_reason = ANY (ARRAY['acknowledged'::text, 'later_delivery'::text, 'provider_evidence'::text, 'operator_resolved'::text]))),
+    CONSTRAINT conversation_delivery_failures_cleared_check CHECK ((((cleared_at IS NULL) AND (clear_reason IS NULL) AND (cleared_by_user_id IS NULL)) OR ((cleared_at IS NOT NULL) AND (clear_reason IS NOT NULL)))),
+    CONSTRAINT conversation_delivery_failures_failure_kind_check CHECK ((failure_kind = ANY (ARRAY['bounced'::text, 'failed'::text, 'uncertain'::text, 'halted'::text])))
+);
+
+
+--
 -- Name: conversation_ownership; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2472,6 +2494,54 @@ CREATE TABLE public.email_mailboxes (
     CONSTRAINT email_mailboxes_silence_threshold_hours_check CHECK (((silence_threshold_hours >= 1) AND (silence_threshold_hours <= 2160))),
     CONSTRAINT email_mailboxes_thread_context_messages_check CHECK (((thread_context_messages >= 1) AND (thread_context_messages <= 50))),
     CONSTRAINT email_mailboxes_thread_send_budget_check CHECK (((thread_send_budget >= 1) AND (thread_send_budget <= 20)))
+);
+
+
+--
+-- Name: email_send_intents; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.email_send_intents (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    workspace_id uuid NOT NULL,
+    mailbox_id uuid NOT NULL,
+    conversation_id uuid NOT NULL,
+    message_id uuid NOT NULL,
+    held_reply_id uuid,
+    idempotency_key text NOT NULL,
+    author_kind text NOT NULL,
+    trigger text NOT NULL,
+    state text DEFAULT 'queued'::text NOT NULL,
+    version integer DEFAULT 0 NOT NULL,
+    halt_reason text,
+    authority_snapshot jsonb NOT NULL,
+    request_snapshot jsonb,
+    provider text NOT NULL,
+    provider_message_id text,
+    supplied_rfc_message_id text NOT NULL,
+    delivered_rfc_message_id text,
+    first_attempt_at timestamp with time zone,
+    outcome_unknown_since timestamp with time zone,
+    next_reconcile_at timestamp with time zone,
+    reconcile_lease_until timestamp with time zone,
+    accepted_at timestamp with time zone,
+    settled_at timestamp with time zone,
+    complained_at timestamp with time zone,
+    failure_code text,
+    uncertain_resolution text,
+    uncertain_resolved_by_user_id uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT email_send_intents_accepted_check CHECK (((state <> 'accepted'::text) OR (provider_message_id IS NOT NULL))),
+    CONSTRAINT email_send_intents_author_kind_check CHECK ((author_kind = ANY (ARRAY['agent'::text, 'operator'::text]))),
+    CONSTRAINT email_send_intents_halt_reason_check CHECK ((halt_reason = ANY (ARRAY['sending_not_verified'::text, 'domain_removed'::text, 'mailbox_removed'::text]))),
+    CONSTRAINT email_send_intents_halted_check CHECK (((state = 'halted'::text) = (halt_reason IS NOT NULL))),
+    CONSTRAINT email_send_intents_idempotency_key_check CHECK (((char_length(idempotency_key) >= 1) AND (char_length(idempotency_key) <= 256))),
+    CONSTRAINT email_send_intents_resolution_check CHECK ((((uncertain_resolution IS NULL) OR (state <> ALL (ARRAY['queued'::text, 'accepted'::text]))) AND ((uncertain_resolved_by_user_id IS NULL) OR (uncertain_resolution IS NOT NULL)))),
+    CONSTRAINT email_send_intents_state_check CHECK ((state = ANY (ARRAY['queued'::text, 'accepted'::text, 'delivered'::text, 'bounced'::text, 'failed'::text, 'uncertain'::text, 'halted'::text]))),
+    CONSTRAINT email_send_intents_trigger_check CHECK ((trigger = ANY (ARRAY['operator_reply'::text, 'held_release'::text, 'auto_reply'::text, 'audited_resend'::text]))),
+    CONSTRAINT email_send_intents_uncertain_resolution_check CHECK ((uncertain_resolution = ANY (ARRAY['provider_evidence'::text, 'marked_sent'::text, 'resend_authorized'::text]))),
+    CONSTRAINT email_send_intents_version_check CHECK ((version >= 0))
 );
 
 
@@ -5107,6 +5177,14 @@ ALTER TABLE ONLY public.conversation_activity
 
 
 --
+-- Name: conversation_delivery_failures conversation_delivery_failures_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conversation_delivery_failures
+    ADD CONSTRAINT conversation_delivery_failures_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: conversation_ownership conversation_ownership_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5240,6 +5318,14 @@ ALTER TABLE ONLY public.email_mailbox_policies
 
 ALTER TABLE ONLY public.email_mailboxes
     ADD CONSTRAINT email_mailboxes_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: email_send_intents email_send_intents_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_send_intents
+    ADD CONSTRAINT email_send_intents_pkey PRIMARY KEY (id);
 
 
 --
@@ -7002,6 +7088,20 @@ CREATE INDEX conversation_activity_workspace_closed_v2_idx ON public.conversatio
 
 
 --
+-- Name: conversation_delivery_failures_open_message_uniq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX conversation_delivery_failures_open_message_uniq ON public.conversation_delivery_failures USING btree (conversation_id, message_id) NULLS NOT DISTINCT WHERE (cleared_at IS NULL);
+
+
+--
+-- Name: conversation_delivery_failures_workspace_open_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX conversation_delivery_failures_workspace_open_idx ON public.conversation_delivery_failures USING btree (workspace_id, opened_at) WHERE (cleared_at IS NULL);
+
+
+--
 -- Name: conversation_ownership_workspace_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7244,6 +7344,41 @@ CREATE UNIQUE INDEX email_mailboxes_relay_token_uniq ON public.email_mailboxes U
 --
 
 CREATE UNIQUE INDEX email_mailboxes_workspace_address_active_uniq ON public.email_mailboxes USING btree (workspace_id, address) WHERE (removed_at IS NULL);
+
+
+--
+-- Name: email_send_intents_idempotency_key_uniq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX email_send_intents_idempotency_key_uniq ON public.email_send_intents USING btree (idempotency_key);
+
+
+--
+-- Name: email_send_intents_mailbox_state_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX email_send_intents_mailbox_state_idx ON public.email_send_intents USING btree (mailbox_id, state);
+
+
+--
+-- Name: email_send_intents_message_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX email_send_intents_message_idx ON public.email_send_intents USING btree (message_id);
+
+
+--
+-- Name: email_send_intents_provider_message_uniq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX email_send_intents_provider_message_uniq ON public.email_send_intents USING btree (provider, provider_message_id) WHERE (provider_message_id IS NOT NULL);
+
+
+--
+-- Name: email_send_intents_reconcile_due_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX email_send_intents_reconcile_due_idx ON public.email_send_intents USING btree (next_reconcile_at) WHERE ((state = ANY (ARRAY['queued'::text, 'accepted'::text, 'uncertain'::text])) AND (next_reconcile_at IS NOT NULL));
 
 
 --
@@ -10360,6 +10495,22 @@ ALTER TABLE ONLY public.conversation_activity
 
 
 --
+-- Name: conversation_delivery_failures conversation_delivery_failures_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conversation_delivery_failures
+    ADD CONSTRAINT conversation_delivery_failures_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.conversations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: conversation_delivery_failures conversation_delivery_failures_message_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conversation_delivery_failures
+    ADD CONSTRAINT conversation_delivery_failures_message_id_fkey FOREIGN KEY (message_id) REFERENCES public.messages(id) ON DELETE CASCADE;
+
+
+--
 -- Name: conversation_ownership conversation_ownership_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -10688,6 +10839,30 @@ ALTER TABLE ONLY public.email_mailboxes
 
 
 --
+-- Name: email_send_intents email_send_intents_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_send_intents
+    ADD CONSTRAINT email_send_intents_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.conversations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: email_send_intents email_send_intents_mailbox_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_send_intents
+    ADD CONSTRAINT email_send_intents_mailbox_id_fkey FOREIGN KEY (mailbox_id) REFERENCES public.email_mailboxes(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: email_send_intents email_send_intents_message_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_send_intents
+    ADD CONSTRAINT email_send_intents_message_id_fkey FOREIGN KEY (message_id) REFERENCES public.messages(id) ON DELETE CASCADE;
+
+
+--
 -- Name: email_skill_activity email_skill_activity_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -10765,6 +10940,14 @@ ALTER TABLE ONLY public.email_thread_messages
 
 ALTER TABLE ONLY public.email_thread_messages
     ADD CONSTRAINT email_thread_messages_message_id_fkey FOREIGN KEY (message_id) REFERENCES public.messages(id) ON DELETE CASCADE;
+
+
+--
+-- Name: email_thread_messages email_thread_messages_send_intent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_thread_messages
+    ADD CONSTRAINT email_thread_messages_send_intent_id_fkey FOREIGN KEY (send_intent_id) REFERENCES public.email_send_intents(id) ON DELETE SET NULL;
 
 
 --

@@ -9,6 +9,14 @@ const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
 
 const keystone = "209_email_channel_keystone.sql";
 const inbound = "210_email_inbound_events.sql";
+const activityWidening = [
+  "211_conversation_activity_kind_v2_add.sql",
+  "212_conversation_activity_kind_v2_validate.sql",
+  "213_conversation_activity_kind_drop_v1.sql",
+  "214_conversation_activity_closed_idx_v2.sql",
+];
+const deliveryFailures = "215_conversation_delivery_failures.sql";
+const sendIntents = "216_email_send_intents.sql";
 
 const CHECK_VIOLATION = "23514";
 const UNIQUE_VIOLATION = "23505";
@@ -44,7 +52,7 @@ const errorCode = async (work: Promise<unknown>): Promise<string | undefined> =>
 
 const describeIfDatabase = await canReach(integrationDatabaseUrl) ? describe : describe.skip;
 
-describeIfDatabase("email channel schema (209–210)", () => {
+describeIfDatabase("email channel schema (209–216)", () => {
   const databaseName = `mig209_${randomUUID().replaceAll("-", "")}`;
   let admin: Database;
   let database: Database;
@@ -489,5 +497,218 @@ describeIfDatabase("email channel schema (209–210)", () => {
       .toBe(FOREIGN_KEY_VIOLATION);
     expect(await errorCode(database.execute("DELETE FROM email_domains WHERE id = $1", [domainId])))
       .toBe(FOREIGN_KEY_VIOLATION);
+  });
+  const insertFailure = (
+    workspaceId: string,
+    conversationId: string,
+    messageId: string | null,
+    kind = "bounced",
+  ) =>
+    database.queryOne<{ id: string; opened_to_the_millisecond: boolean }>(
+      `INSERT INTO conversation_delivery_failures (workspace_id, conversation_id, message_id, provider, failure_kind)
+       VALUES ($1, $2, $3, 'resend', $4)
+       RETURNING id, opened_at = date_trunc('milliseconds', opened_at) AS opened_to_the_millisecond`,
+      [workspaceId, conversationId, messageId, kind],
+    );
+
+  const insertIntent = (
+    input: { workspaceId: string; mailboxId: string; conversationId: string; messageId: string },
+    overrides: Record<string, string | null> = {},
+  ) => {
+    const values: Record<string, string | null> = {
+      workspace_id: input.workspaceId,
+      mailbox_id: input.mailboxId,
+      conversation_id: input.conversationId,
+      message_id: input.messageId,
+      idempotency_key: `email:send:msg:${input.messageId}`,
+      author_kind: "operator",
+      trigger: "operator_reply",
+      authority_snapshot: "{}",
+      provider: "resend",
+      supplied_rfc_message_id: `<${randomUUID()}@radioso.example>`,
+      ...overrides,
+    };
+    const columns = Object.keys(values);
+    return database.queryOne<{ id: string; state: string; version: number }>(
+      `INSERT INTO email_send_intents (${columns.join(", ")})
+       VALUES (${columns.map((_, index) => `$${index + 1}`).join(", ")}) RETURNING id, state, version`,
+      Object.values(values),
+    );
+  };
+
+  it("215 creates delivery failures on conversations and messages, after the activity widening", async () => {
+    for (const file of activityWidening) {
+      await applyTestMigration(database, file);
+    }
+    await applyTestMigration(database, deliveryFailures);
+
+    expect(await foreignKeys("conversation_delivery_failures")).toEqual([
+      { column: "conversation_id", target: "conversations", on_delete: "c" },
+      { column: "message_id", target: "messages", on_delete: "c" },
+    ]);
+  });
+
+  it("keeps one open delivery failure per message, with the documented kinds and clear reasons", async () => {
+    const { workspaceId } = await seedWorkspace();
+    const { conversationId, messageId } = await insertConversation(workspaceId);
+    const failure = await insertFailure(workspaceId, conversationId, messageId);
+
+    expect(failure.opened_to_the_millisecond).toBe(true);
+    expect(await errorCode(insertFailure(workspaceId, conversationId, messageId, "failed"))).toBe(UNIQUE_VIOLATION);
+    // A failure that names no message counts as one message.
+    await insertFailure(workspaceId, conversationId, null);
+    expect(await errorCode(insertFailure(workspaceId, conversationId, null))).toBe(UNIQUE_VIOLATION);
+    // The writers' idempotent insert names the documented arbiter.
+    await database.execute(
+      `INSERT INTO conversation_delivery_failures (workspace_id, conversation_id, message_id, provider, failure_kind)
+       VALUES ($1, $2, $3, 'resend', 'failed')
+       ON CONFLICT (conversation_id, message_id) WHERE cleared_at IS NULL DO NOTHING`,
+      [workspaceId, conversationId, messageId],
+    );
+
+    expect(await errorCode(insertFailure(workspaceId, conversationId, randomUUID()))).toBe(FOREIGN_KEY_VIOLATION);
+    expect(await errorCode(insertFailure(workspaceId, conversationId, messageId, "rejected"))).toBe(CHECK_VIOLATION);
+    for (const assignment of [
+      "cleared_at = now()",
+      "clear_reason = 'later_delivery'",
+      "cleared_by_user_id = gen_random_uuid()",
+      "cleared_at = now(), clear_reason = 'dismissed'",
+    ]) {
+      expect(
+        await errorCode(database.execute(
+          `UPDATE conversation_delivery_failures SET ${assignment} WHERE id = $1`, [failure.id],
+        )),
+        assignment,
+      ).toBe(CHECK_VIOLATION);
+    }
+
+    await database.execute(
+      "UPDATE conversation_delivery_failures SET cleared_at = now(), clear_reason = 'acknowledged', cleared_by_user_id = gen_random_uuid() WHERE id = $1",
+      [failure.id],
+    );
+    await insertFailure(workspaceId, conversationId, messageId, "failed");
+
+    await database.execute("DELETE FROM messages WHERE id = $1", [messageId]);
+    const left = await database.queryOne<{ count: string }>(
+      "SELECT count(*)::text AS count FROM conversation_delivery_failures WHERE conversation_id = $1",
+      [conversationId],
+    );
+    expect(left.count).toBe("1");
+  });
+
+  it("216 creates send intents and links the thread index to them", async () => {
+    await applyTestMigration(database, sendIntents);
+
+    expect(await foreignKeys("email_send_intents")).toEqual([
+      { column: "conversation_id", target: "conversations", on_delete: "c" },
+      { column: "mailbox_id", target: "email_mailboxes", on_delete: "r" },
+      { column: "message_id", target: "messages", on_delete: "c" },
+    ]);
+    expect(await foreignKeys("email_thread_messages")).toContainEqual(
+      { column: "send_intent_id", target: "email_send_intents", on_delete: "n" },
+    );
+  });
+
+  it("keys send intents once by outbox key and provider id, and holds the send-intent states to the machine", async () => {
+    const { workspaceId } = await seedWorkspace();
+    const domainId = await insertDomain(workspaceId, "sends.example");
+    const mailboxId = await insertMailbox(workspaceId, domainId, "support@sends.example");
+    const { conversationId, messageId } = await insertConversation(workspaceId);
+    const scope = { workspaceId, mailboxId, conversationId, messageId };
+
+    const intent = await insertIntent(scope);
+    expect(intent).toMatchObject({ state: "queued", version: 0 });
+    expect(await errorCode(insertIntent(scope))).toBe(UNIQUE_VIOLATION);
+    await database.execute(
+      `INSERT INTO email_send_intents (workspace_id, mailbox_id, conversation_id, message_id, idempotency_key,
+                                       author_kind, trigger, authority_snapshot, provider, supplied_rfc_message_id)
+       VALUES ($1, $2, $3, $4, $5, 'operator', 'operator_reply', '{}'::jsonb, 'resend', '<again@radioso.example>')
+       ON CONFLICT (idempotency_key) DO NOTHING`,
+      [workspaceId, mailboxId, conversationId, messageId, `email:send:msg:${messageId}`],
+    );
+
+    const outsideTheMachine: Record<string, string>[] = [
+      { idempotency_key: "" },
+      { idempotency_key: "k".repeat(257) },
+      { author_kind: "visitor" },
+      { trigger: "auto_send" },
+      { state: "sent" },
+      { state: "halted" },
+      { halt_reason: "sending_not_verified" },
+      { state: "accepted" },
+      { uncertain_resolution: "marked_sent" },
+      { state: "uncertain", uncertain_resolution: "forgotten" },
+      { state: "uncertain", uncertain_resolved_by_user_id: randomUUID() },
+      { version: "-1" },
+    ];
+    for (const overrides of outsideTheMachine) {
+      expect(
+        await errorCode(insertIntent(scope, { idempotency_key: `k-${randomUUID()}`, ...overrides })),
+        JSON.stringify(overrides),
+      ).toBe(CHECK_VIOLATION);
+    }
+    await insertIntent(scope, { idempotency_key: `k-${randomUUID()}`, state: "halted", halt_reason: "domain_removed" });
+    await insertIntent(scope, {
+      idempotency_key: `k-${randomUUID()}`,
+      state: "uncertain",
+      uncertain_resolution: "marked_sent",
+      uncertain_resolved_by_user_id: randomUUID(),
+    });
+
+    await database.execute(
+      "UPDATE email_send_intents SET state = 'accepted', provider_message_id = 'p-1', version = version + 1 WHERE id = $1",
+      [intent.id],
+    );
+    expect(await errorCode(insertIntent(scope, {
+      idempotency_key: `k-${randomUUID()}`, state: "accepted", provider_message_id: "p-1",
+    }))).toBe(UNIQUE_VIOLATION);
+    // Another provider's id space is its own.
+    await insertIntent(scope, {
+      idempotency_key: `k-${randomUUID()}`, state: "accepted", provider: "local", provider_message_id: "p-1",
+    });
+
+    expect(await errorCode(insertIntent({ ...scope, mailboxId: randomUUID() }, { idempotency_key: `k-${randomUUID()}` })))
+      .toBe(FOREIGN_KEY_VIOLATION);
+    expect(await errorCode(database.execute("DELETE FROM email_mailboxes WHERE id = $1", [mailboxId])))
+      .toBe(FOREIGN_KEY_VIOLATION);
+
+    const indexRow = await database.queryOne<{ id: string }>(
+      `INSERT INTO email_thread_messages
+         (workspace_id, mailbox_id, conversation_id, message_id, direction, origin, rfc_message_id, send_intent_id)
+       VALUES ($1, $2, $3, $4, 'outbound', 'radioso_generated', '<sent@radioso.example>', $5) RETURNING id`,
+      [workspaceId, mailboxId, conversationId, messageId, intent.id],
+    );
+    expect(await errorCode(database.execute(
+      "UPDATE email_thread_messages SET send_intent_id = $2 WHERE id = $1", [indexRow.id, randomUUID()],
+    ))).toBe(FOREIGN_KEY_VIOLATION);
+  });
+
+  it("claims due reconciliations from their partial index", async () => {
+    const { workspaceId } = await seedWorkspace();
+    const domainId = await insertDomain(workspaceId, "reconcile.example");
+    const mailboxId = await insertMailbox(workspaceId, domainId, "support@reconcile.example");
+    const { conversationId, messageId } = await insertConversation(workspaceId);
+    await database.execute(
+      `INSERT INTO email_send_intents (workspace_id, mailbox_id, conversation_id, message_id, idempotency_key, author_kind,
+                                       trigger, state, authority_snapshot, provider, provider_message_id,
+                                       supplied_rfc_message_id, next_reconcile_at)
+       SELECT $1, $2, $3, $4, 'reconcile-' || n, 'operator', 'operator_reply',
+              CASE WHEN n % 10 = 0 THEN 'accepted' ELSE 'delivered' END, '{}'::jsonb, 'resend', 'reconcile-p-' || n,
+              '<reconcile-' || n || '@radioso.example>', CASE WHEN n % 10 = 0 THEN now() + (n || ' seconds')::interval END
+         FROM generate_series(1, 3000) AS n`,
+      [workspaceId, mailboxId, conversationId, messageId],
+    );
+    await database.execute("ANALYZE email_send_intents");
+    const plan = await database.withTransaction(async (client) => {
+      await client.query("SET LOCAL enable_seqscan = off");
+      const result = await client.query<{ "QUERY PLAN": string }>(
+        `EXPLAIN SELECT id FROM email_send_intents
+          WHERE state IN ('queued', 'accepted', 'uncertain') AND next_reconcile_at IS NOT NULL
+            AND next_reconcile_at <= now() AND (reconcile_lease_until IS NULL OR reconcile_lease_until < now())
+          ORDER BY next_reconcile_at LIMIT 20 FOR UPDATE SKIP LOCKED`,
+      );
+      return result.rows.map((row) => row["QUERY PLAN"]).join("\n");
+    });
+    expect(plan).toContain("email_send_intents_reconcile_due_idx");
   });
 });

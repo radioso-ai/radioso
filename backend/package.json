@@ -46,6 +46,7 @@
     "db:schema": "bash ./scripts/dump-schema.sh",
     "db:schema:check": "bash ./scripts/dump-schema.sh --check",
     "operator-mcp:rotate-credential-state": "tsx ./scripts/rotateOperatorMcpCredentialState.ts",
+    "email:dev": "tsx ./scripts/emailChannelDev.ts",
     "db:types": "bash ./scripts/generate-kysely-types.sh",
     "db:types:check": "bash ./scripts/generate-kysely-types.sh --check",
     "lint": "pnpm run lint:boundaries && pnpm run lint:no-raw-sql && pnpm run lint:legacy-chunk-vectors && pnpm run lint:unbound-methods",

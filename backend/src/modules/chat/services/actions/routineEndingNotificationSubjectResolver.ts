@@ -25,6 +25,8 @@ interface RoutineEndingNotificationConversationLookup {
   ): Promise<{ agentId: string | null; entryPageUrl: string | null } | null>;
 }
 
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
+
 /**
  * Looks the conversation up by the queued row's ids and takes the agent from it, never from the
  * payload; the routine is looked up under that agent. The compiled routine id the runtime reports
@@ -53,12 +55,17 @@ export class RepositoryRoutineEndingNotificationSubjectResolver implements Routi
         ...(conversation ? { conversation: { entryPageUrl: conversation.entryPageUrl } } : {}),
       };
     }
-    const [agent, routine] = await Promise.all([
+    // The routine id is payload data: one that is not a uuid names no routine, and querying it
+    // would fail the delivery on every retry.
+    const routineId = input.routineId && uuidPattern.test(input.routineId) ? input.routineId : null;
+    const [agent, agentRoutine] = await Promise.all([
       this.agents.findByIdAndWorkspaceId(conversation.agentId, input.workspaceId),
-      input.routineId ? this.routines.findById(conversation.agentId, input.routineId) : Promise.resolve(null),
+      routineId ? this.routines.findById(conversation.agentId, routineId) : Promise.resolve(null),
     ]);
+    // The routine lookup is keyed by agent, so it counts only when that agent is in this workspace.
+    const routine = agent ? agentRoutine : null;
     return {
-      agentId: conversation.agentId,
+      agentId: agent ? conversation.agentId : null,
       agentName: agent?.name ?? null,
       routineName: routine?.name ?? null,
       ...(routine ? { routineSlotKeys: routine.slots.map((slot) => slot.key) } : {}),

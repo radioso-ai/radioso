@@ -88,6 +88,7 @@ describeIntegration("email inbound end to end (Postgres, local receiver)", () =>
       conversationIngest: createHostIngest(database),
       agents: { findByIdAndWorkspaceId: async (agentId) => ({ id: agentId }) },
       audit: { record: async () => undefined },
+      actionDrain: { requestDrain: async () => undefined },
       metrics: null,
       logger: createLogger("silent"),
     });

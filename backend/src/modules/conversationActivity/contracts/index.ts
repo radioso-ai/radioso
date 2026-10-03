@@ -13,16 +13,27 @@ export const CONVERSATION_ACTIVITY_KINDS = [
   "approval_decided",
   "feedback_resolved",
   "feedback_dismissed",
+  "channel_exception",
+  "delivery_failed",
+  "delivery_failure_cleared",
+  "held_reply_released",
+  "held_reply_discarded",
 ] as const;
 
 export type ConversationActivityKind = typeof CONVERSATION_ACTIVITY_KINDS[number];
 
-/** The kinds that close an Inbox item: a handoff, an approval, or negative feedback. */
+/**
+ * The kinds that close an Inbox item: a handoff, an approval (a routine's decision, or a held reply
+ * released), negative feedback, or a delivery failure. Held to the predicate of the recently-closed
+ * index, `conversation_activity_workspace_closed_v2_idx`.
+ */
 export const CLOSING_ACTIVITY_KINDS = [
   "handed_back",
   "approval_decided",
   "feedback_resolved",
   "feedback_dismissed",
+  "held_reply_released",
+  "delivery_failure_cleared",
 ] as const satisfies readonly ConversationActivityKind[];
 
 export type ClosingActivityKind = typeof CLOSING_ACTIVITY_KINDS[number];
@@ -177,7 +188,7 @@ export interface ConversationActivityEntry {
 }
 
 /** The Inbox item a closing event closed. */
-export const CLOSED_INBOX_ITEM_KINDS = ["handoff", "approval", "negative_feedback"] as const;
+export const CLOSED_INBOX_ITEM_KINDS = ["handoff", "approval", "negative_feedback", "delivery_failed"] as const;
 
 export type ClosedInboxItemKind = typeof CLOSED_INBOX_ITEM_KINDS[number];
 

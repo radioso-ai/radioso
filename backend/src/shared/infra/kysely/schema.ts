@@ -779,6 +779,123 @@ export interface DocumentTypeCatalogs {
   workspace_id: string;
 }
 
+export interface EmailDomains {
+  created_at: Generated<Timestamp>;
+  created_by_user_id: string | null;
+  dns_records: Generated<Json>;
+  domain: string;
+  id: Generated<string>;
+  last_checked_at: Timestamp | null;
+  next_check_at: Timestamp | null;
+  provider: string;
+  provider_cleanup_status: string | null;
+  provider_domain_id: string | null;
+  provider_region: string | null;
+  receiving_confirmed_at: Timestamp | null;
+  receiving_confirmed_by_user_id: string | null;
+  receiving_status: Generated<string>;
+  removed_at: Timestamp | null;
+  sending_status: Generated<string>;
+  status_changed_at: Timestamp | null;
+  updated_at: Generated<Timestamp>;
+  workspace_id: string;
+}
+
+export interface EmailInboundDeliveries {
+  accepted_policy_version: number | null;
+  attachments: Generated<Json>;
+  auth_results: Generated<Json>;
+  body_text: string | null;
+  cc_addresses: Generated<string[]>;
+  classification: string | null;
+  conversation_id: string | null;
+  created_at: Generated<Timestamp>;
+  disposition: string | null;
+  disposition_reason: string | null;
+  id: Generated<string>;
+  inbound_event_id: string;
+  last_error_code: string | null;
+  mailbox_id: string | null;
+  message_id: string | null;
+  planned_conversation_id: string | null;
+  planned_message_id: string | null;
+  planned_thread_key: string | null;
+  planned_thread_token: string | null;
+  processed_at: Timestamp | null;
+  raw_mime: Buffer | null;
+  raw_size_bytes: number | null;
+  raw_truncated: Generated<boolean>;
+  received_for: Generated<string[]>;
+  reference_ids: Generated<string[]>;
+  rfc_message_id: string | null;
+  route_rule: string | null;
+  sender_address: string | null;
+  sender_display_name: string | null;
+  spam_verdict: Generated<string>;
+  state: Generated<string>;
+  strip_confidence: string | null;
+  subject: string | null;
+  thread_conflict: Generated<boolean>;
+  thread_match: string | null;
+  workspace_id: string | null;
+}
+
+export interface EmailInboundEvents {
+  attempts: Generated<number>;
+  envelope: Json;
+  event_kind: string;
+  id: Generated<string>;
+  last_error_code: string | null;
+  lease_until: Timestamp | null;
+  next_attempt_at: Generated<Timestamp>;
+  processed_at: Timestamp | null;
+  provider: string;
+  provider_event_id: string;
+  provider_object_id: string | null;
+  received_at: Generated<Timestamp>;
+  state: Generated<string>;
+}
+
+export interface EmailMailboxes {
+  address: string;
+  agent_id: string | null;
+  created_at: Generated<Timestamp>;
+  created_by_user_id: string | null;
+  display_name: string;
+  domain_id: string;
+  enabled: Generated<boolean>;
+  engagement_mode: string;
+  generation_window_count: Generated<number>;
+  generation_window_started_at: Timestamp | null;
+  hourly_generation_budget: Generated<number>;
+  id: Generated<string>;
+  last_received_at: Timestamp | null;
+  plus_address_verified_at: Timestamp | null;
+  policy_version: Generated<number>;
+  previous_relay_token: string | null;
+  previous_relay_token_expires_at: Timestamp | null;
+  relay_token: string;
+  removed_at: Timestamp | null;
+  setup_check_started_at: Timestamp | null;
+  setup_check_step: string | null;
+  silence_threshold_hours: Generated<number>;
+  spam_opt_in: Generated<boolean>;
+  thread_context_messages: Generated<number>;
+  thread_send_budget: Generated<number>;
+  updated_at: Generated<Timestamp>;
+  workspace_id: string;
+}
+
+export interface EmailMailboxPolicies {
+  agent_id: string | null;
+  changed_by_user_id: string | null;
+  effective_at: Generated<Timestamp>;
+  enabled: boolean;
+  engagement_mode: string;
+  mailbox_id: string;
+  version: number;
+}
+
 export interface EmailSkillActivity {
   agent_id: string;
   connection_id: string;
@@ -793,6 +910,48 @@ export interface EmailSkillActivity {
   routine_id: string | null;
   skill_definition_id: string;
   skill_name: string;
+  workspace_id: string;
+}
+
+export interface EmailThreadLinks {
+  auto_sends_since_renewal: Generated<number>;
+  budget_renewed_at: Timestamp | null;
+  conversation_id: string;
+  created_at: Generated<Timestamp>;
+  generation_reserved_revision: number | null;
+  latest_cc_addresses: Generated<string[]>;
+  latest_inbound_at: Timestamp | null;
+  latest_participant_display_name: string | null;
+  latest_subject: string | null;
+  mailbox_id: string;
+  participant_address: string;
+  review_attempts: Generated<number>;
+  review_completed_revision: Generated<number>;
+  review_due_at: Timestamp | null;
+  review_last_error_code: string | null;
+  review_lease_until: Timestamp | null;
+  review_policy_version: number | null;
+  review_revision: Generated<number>;
+  thread_key: string;
+  thread_token: string;
+  updated_at: Generated<Timestamp>;
+  workspace_id: string;
+}
+
+export interface EmailThreadMessages {
+  attachments: Generated<Json>;
+  cc_addresses: Generated<string[]>;
+  conversation_id: string;
+  created_at: Generated<Timestamp>;
+  direction: string;
+  id: Generated<string>;
+  inbound_delivery_id: string | null;
+  mailbox_id: string;
+  message_id: string | null;
+  origin: string;
+  rfc_message_id: string;
+  send_intent_id: string | null;
+  subject: string | null;
   workspace_id: string;
 }
 
@@ -1784,7 +1943,14 @@ export interface DB {
   document_sources: DocumentSources;
   document_type_catalogs: DocumentTypeCatalogs;
   documents: Documents;
+  email_domains: EmailDomains;
+  email_inbound_deliveries: EmailInboundDeliveries;
+  email_inbound_events: EmailInboundEvents;
+  email_mailbox_policies: EmailMailboxPolicies;
+  email_mailboxes: EmailMailboxes;
   email_skill_activity: EmailSkillActivity;
+  email_thread_links: EmailThreadLinks;
+  email_thread_messages: EmailThreadMessages;
   email_verification_tokens: EmailVerificationTokens;
   embedding_spaces: EmbeddingSpaces;
   embedding_usage_items: EmbeddingUsageItems;

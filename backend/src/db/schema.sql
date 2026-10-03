@@ -2036,7 +2036,7 @@ CREATE TABLE public.conversation_activity (
     detail jsonb DEFAULT '{}'::jsonb NOT NULL,
     created_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
     CONSTRAINT conversation_activity_detail_check CHECK ((jsonb_typeof(detail) = 'object'::text)),
-    CONSTRAINT conversation_activity_kind_check CHECK ((kind = ANY (ARRAY['handoff_requested'::text, 'claimed'::text, 'reassigned'::text, 'handed_back'::text, 'approval_decided'::text, 'feedback_resolved'::text, 'feedback_dismissed'::text])))
+    CONSTRAINT conversation_activity_kind_v2_check CHECK ((kind = ANY (ARRAY['handoff_requested'::text, 'claimed'::text, 'reassigned'::text, 'handed_back'::text, 'approval_decided'::text, 'feedback_resolved'::text, 'feedback_dismissed'::text, 'channel_exception'::text, 'delivery_failed'::text, 'delivery_failure_cleared'::text, 'held_reply_released'::text, 'held_reply_discarded'::text])))
 );
 
 
@@ -2311,6 +2311,171 @@ CREATE TABLE public.documents (
 
 
 --
+-- Name: email_domains; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.email_domains (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    workspace_id uuid NOT NULL,
+    domain text NOT NULL,
+    provider text NOT NULL,
+    provider_domain_id text,
+    provider_region text,
+    dns_records jsonb DEFAULT '[]'::jsonb NOT NULL,
+    sending_status text DEFAULT 'pending'::text NOT NULL,
+    receiving_status text DEFAULT 'not_requested'::text NOT NULL,
+    receiving_confirmed_by_user_id uuid,
+    receiving_confirmed_at timestamp with time zone,
+    last_checked_at timestamp with time zone,
+    next_check_at timestamp with time zone,
+    status_changed_at timestamp with time zone,
+    removed_at timestamp with time zone,
+    provider_cleanup_status text,
+    created_by_user_id uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT email_domains_domain_check CHECK ((domain = lower(domain))),
+    CONSTRAINT email_domains_provider_check CHECK ((provider = ANY (ARRAY['resend'::text, 'local'::text]))),
+    CONSTRAINT email_domains_provider_cleanup_status_check CHECK ((provider_cleanup_status = ANY (ARRAY['pending'::text, 'done'::text, 'failed'::text]))),
+    CONSTRAINT email_domains_receiving_status_check CHECK ((receiving_status = ANY (ARRAY['not_requested'::text, 'pending'::text, 'verified'::text, 'failed'::text]))),
+    CONSTRAINT email_domains_sending_status_check CHECK ((sending_status = ANY (ARRAY['pending'::text, 'verified'::text, 'failed'::text])))
+);
+
+
+--
+-- Name: email_inbound_deliveries; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.email_inbound_deliveries (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    inbound_event_id uuid NOT NULL,
+    workspace_id uuid,
+    mailbox_id uuid,
+    route_rule text,
+    accepted_policy_version integer,
+    state text DEFAULT 'pending'::text NOT NULL,
+    classification text,
+    disposition text,
+    disposition_reason text,
+    sender_address text,
+    sender_display_name text,
+    subject text,
+    rfc_message_id text,
+    reference_ids text[] DEFAULT '{}'::text[] NOT NULL,
+    cc_addresses text[] DEFAULT '{}'::text[] NOT NULL,
+    received_for text[] DEFAULT '{}'::text[] NOT NULL,
+    auth_results jsonb DEFAULT '{}'::jsonb NOT NULL,
+    spam_verdict text DEFAULT 'unknown'::text NOT NULL,
+    attachments jsonb DEFAULT '[]'::jsonb NOT NULL,
+    body_text text,
+    strip_confidence text,
+    raw_mime bytea,
+    raw_size_bytes integer,
+    raw_truncated boolean DEFAULT false NOT NULL,
+    thread_match text,
+    thread_conflict boolean DEFAULT false NOT NULL,
+    planned_conversation_id uuid,
+    planned_message_id uuid,
+    planned_thread_key uuid,
+    planned_thread_token text,
+    conversation_id uuid,
+    message_id uuid,
+    last_error_code text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    processed_at timestamp with time zone,
+    CONSTRAINT email_inbound_deliveries_classification_check CHECK ((classification = ANY (ARRAY['person'::text, 'automated_sender'::text, 'bounce'::text, 'self_sender'::text, 'spam'::text]))),
+    CONSTRAINT email_inbound_deliveries_disposition_check CHECK ((disposition = ANY (ARRAY['ingest_only'::text, 'run_review_turn'::text, 'drop'::text]))),
+    CONSTRAINT email_inbound_deliveries_disposition_reason_check CHECK ((disposition_reason = ANY (ARRAY['no_mailbox'::text, 'mailbox_disabled'::text, 'automated_sender'::text, 'self_sender'::text, 'bounce'::text, 'spam'::text, 'participant_mismatch'::text, 'operator_only_mailbox'::text, 'human_owned'::text, 'generation_budget'::text, 'spam_opt_in'::text, 'no_agent'::text, 'accepted'::text]))),
+    CONSTRAINT email_inbound_deliveries_route_rule_check CHECK ((route_rule = ANY (ARRAY['relay'::text, 'direct'::text]))),
+    CONSTRAINT email_inbound_deliveries_spam_verdict_check CHECK ((spam_verdict = ANY (ARRAY['spam'::text, 'not_spam'::text, 'unknown'::text]))),
+    CONSTRAINT email_inbound_deliveries_state_check CHECK ((state = ANY (ARRAY['pending'::text, 'fetched'::text, 'resolved'::text, 'ingested'::text, 'done'::text, 'failed'::text]))),
+    CONSTRAINT email_inbound_deliveries_strip_confidence_check CHECK ((strip_confidence = ANY (ARRAY['confident'::text, 'full_text'::text]))),
+    CONSTRAINT email_inbound_deliveries_thread_match_check CHECK ((thread_match = ANY (ARRAY['in_reply_to'::text, 'references'::text, 'reverse_reference'::text, 'thread_token'::text, 'new_thread'::text])))
+);
+
+
+--
+-- Name: email_inbound_events; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.email_inbound_events (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    provider text NOT NULL,
+    provider_event_id text NOT NULL,
+    event_kind text NOT NULL,
+    provider_object_id text,
+    envelope jsonb NOT NULL,
+    state text DEFAULT 'pending'::text NOT NULL,
+    attempts integer DEFAULT 0 NOT NULL,
+    next_attempt_at timestamp with time zone DEFAULT now() NOT NULL,
+    lease_until timestamp with time zone,
+    last_error_code text,
+    received_at timestamp with time zone DEFAULT now() NOT NULL,
+    processed_at timestamp with time zone,
+    CONSTRAINT email_inbound_events_event_kind_check CHECK ((event_kind = ANY (ARRAY['message_received'::text, 'delivery_status'::text, 'domain_status'::text, 'unsupported'::text]))),
+    CONSTRAINT email_inbound_events_state_check CHECK ((state = ANY (ARRAY['pending'::text, 'processing'::text, 'processed'::text, 'failed'::text, 'ignored'::text])))
+);
+
+
+--
+-- Name: email_mailbox_policies; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.email_mailbox_policies (
+    mailbox_id uuid NOT NULL,
+    version integer NOT NULL,
+    engagement_mode text NOT NULL,
+    enabled boolean NOT NULL,
+    agent_id uuid,
+    effective_at timestamp with time zone DEFAULT now() NOT NULL,
+    changed_by_user_id uuid,
+    CONSTRAINT email_mailbox_policies_engagement_mode_check CHECK ((engagement_mode = ANY (ARRAY['operator_only'::text, 'draft'::text, 'auto'::text])))
+);
+
+
+--
+-- Name: email_mailboxes; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.email_mailboxes (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    workspace_id uuid NOT NULL,
+    domain_id uuid NOT NULL,
+    agent_id uuid,
+    address text NOT NULL,
+    display_name text NOT NULL,
+    relay_token text NOT NULL,
+    previous_relay_token text,
+    previous_relay_token_expires_at timestamp with time zone,
+    engagement_mode text NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    policy_version integer DEFAULT 1 NOT NULL,
+    thread_send_budget integer DEFAULT 3 NOT NULL,
+    hourly_generation_budget integer DEFAULT 30 NOT NULL,
+    generation_window_started_at timestamp with time zone,
+    generation_window_count integer DEFAULT 0 NOT NULL,
+    thread_context_messages integer DEFAULT 10 NOT NULL,
+    spam_opt_in boolean DEFAULT false NOT NULL,
+    silence_threshold_hours integer DEFAULT 72 NOT NULL,
+    plus_address_verified_at timestamp with time zone,
+    setup_check_step text,
+    setup_check_started_at timestamp with time zone,
+    last_received_at timestamp with time zone,
+    removed_at timestamp with time zone,
+    created_by_user_id uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT email_mailboxes_address_check CHECK ((address = lower(address))),
+    CONSTRAINT email_mailboxes_engagement_mode_check CHECK ((engagement_mode = ANY (ARRAY['operator_only'::text, 'draft'::text, 'auto'::text]))),
+    CONSTRAINT email_mailboxes_hourly_generation_budget_check CHECK (((hourly_generation_budget >= 1) AND (hourly_generation_budget <= 1000))),
+    CONSTRAINT email_mailboxes_setup_check_step_check CHECK ((setup_check_step = ANY (ARRAY['base'::text, 'plus_address'::text]))),
+    CONSTRAINT email_mailboxes_silence_threshold_hours_check CHECK (((silence_threshold_hours >= 1) AND (silence_threshold_hours <= 2160))),
+    CONSTRAINT email_mailboxes_thread_context_messages_check CHECK (((thread_context_messages >= 1) AND (thread_context_messages <= 50))),
+    CONSTRAINT email_mailboxes_thread_send_budget_check CHECK (((thread_send_budget >= 1) AND (thread_send_budget <= 20)))
+);
+
+
+--
 -- Name: email_skill_activity; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2331,6 +2496,62 @@ CREATE TABLE public.email_skill_activity (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT email_skill_activity_mode_check CHECK ((mode = ANY (ARRAY['draft'::text, 'send'::text]))),
     CONSTRAINT email_skill_activity_outcome_check CHECK ((outcome = ANY (ARRAY['drafted'::text, 'sent'::text, 'missing_input'::text, 'disabled_connection'::text, 'needs_reauth'::text, 'provider_rejected'::text, 'failed'::text])))
+);
+
+
+--
+-- Name: email_thread_links; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.email_thread_links (
+    conversation_id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    mailbox_id uuid NOT NULL,
+    thread_key uuid NOT NULL,
+    thread_token text NOT NULL,
+    participant_address text NOT NULL,
+    latest_subject text,
+    latest_participant_display_name text,
+    latest_cc_addresses text[] DEFAULT '{}'::text[] NOT NULL,
+    latest_inbound_at timestamp with time zone,
+    auto_sends_since_renewal integer DEFAULT 0 NOT NULL,
+    budget_renewed_at timestamp with time zone,
+    review_revision integer DEFAULT 0 NOT NULL,
+    review_completed_revision integer DEFAULT 0 NOT NULL,
+    review_due_at timestamp with time zone,
+    review_lease_until timestamp with time zone,
+    review_attempts integer DEFAULT 0 NOT NULL,
+    review_policy_version integer,
+    generation_reserved_revision integer,
+    review_last_error_code text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT email_thread_links_participant_address_check CHECK ((participant_address = lower(participant_address)))
+);
+
+
+--
+-- Name: email_thread_messages; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.email_thread_messages (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    workspace_id uuid NOT NULL,
+    mailbox_id uuid NOT NULL,
+    conversation_id uuid NOT NULL,
+    message_id uuid,
+    direction text NOT NULL,
+    origin text NOT NULL,
+    rfc_message_id text NOT NULL,
+    subject text,
+    cc_addresses text[] DEFAULT '{}'::text[] NOT NULL,
+    attachments jsonb DEFAULT '[]'::jsonb NOT NULL,
+    inbound_delivery_id uuid,
+    send_intent_id uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT email_thread_messages_direction_check CHECK ((direction = ANY (ARRAY['inbound'::text, 'outbound'::text, 'referenced'::text]))),
+    CONSTRAINT email_thread_messages_direction_origin_check CHECK ((((direction = 'inbound'::text) AND (origin = 'inbound'::text)) OR ((direction = 'referenced'::text) AND (origin = 'referenced'::text)) OR ((direction = 'outbound'::text) AND (origin = ANY (ARRAY['radioso_generated'::text, 'provider_delivered'::text]))))),
+    CONSTRAINT email_thread_messages_origin_check CHECK ((origin = ANY (ARRAY['inbound'::text, 'referenced'::text, 'radioso_generated'::text, 'provider_delivered'::text])))
 );
 
 
@@ -4982,11 +5203,67 @@ ALTER TABLE ONLY public.documents
 
 
 --
+-- Name: email_domains email_domains_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_domains
+    ADD CONSTRAINT email_domains_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: email_inbound_deliveries email_inbound_deliveries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_inbound_deliveries
+    ADD CONSTRAINT email_inbound_deliveries_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: email_inbound_events email_inbound_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_inbound_events
+    ADD CONSTRAINT email_inbound_events_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: email_mailbox_policies email_mailbox_policies_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_mailbox_policies
+    ADD CONSTRAINT email_mailbox_policies_pkey PRIMARY KEY (mailbox_id, version);
+
+
+--
+-- Name: email_mailboxes email_mailboxes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_mailboxes
+    ADD CONSTRAINT email_mailboxes_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: email_skill_activity email_skill_activity_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.email_skill_activity
     ADD CONSTRAINT email_skill_activity_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: email_thread_links email_thread_links_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_thread_links
+    ADD CONSTRAINT email_thread_links_pkey PRIMARY KEY (conversation_id);
+
+
+--
+-- Name: email_thread_messages email_thread_messages_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_thread_messages
+    ADD CONSTRAINT email_thread_messages_pkey PRIMARY KEY (id);
 
 
 --
@@ -6718,6 +6995,13 @@ CREATE INDEX conversation_activity_workspace_closed_idx ON public.conversation_a
 
 
 --
+-- Name: conversation_activity_workspace_closed_v2_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX conversation_activity_workspace_closed_v2_idx ON public.conversation_activity USING btree (workspace_id, created_at DESC) WHERE (kind = ANY (ARRAY['handed_back'::text, 'approval_decided'::text, 'feedback_resolved'::text, 'feedback_dismissed'::text, 'held_reply_released'::text, 'delivery_failure_cleared'::text]));
+
+
+--
 -- Name: conversation_ownership_workspace_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6827,6 +7111,181 @@ CREATE INDEX copilot_replay_evidence_operator_mcp_invocation_idx ON public.copil
 --
 
 CREATE INDEX documents_workspace_created_id_idx ON public.documents USING btree (workspace_id, created_at DESC, id DESC);
+
+
+--
+-- Name: email_domains_active_domain_uniq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX email_domains_active_domain_uniq ON public.email_domains USING btree (domain) WHERE (removed_at IS NULL);
+
+
+--
+-- Name: email_domains_next_check_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX email_domains_next_check_idx ON public.email_domains USING btree (next_check_at) WHERE (removed_at IS NULL);
+
+
+--
+-- Name: email_domains_receiving_verified_domain_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX email_domains_receiving_verified_domain_idx ON public.email_domains USING btree (domain) WHERE ((receiving_status = 'verified'::text) AND (removed_at IS NULL));
+
+
+--
+-- Name: email_domains_workspace_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX email_domains_workspace_idx ON public.email_domains USING btree (workspace_id);
+
+
+--
+-- Name: email_inbound_deliveries_event_mailbox_uniq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX email_inbound_deliveries_event_mailbox_uniq ON public.email_inbound_deliveries USING btree (inbound_event_id, mailbox_id);
+
+
+--
+-- Name: email_inbound_deliveries_event_unrouted_uniq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX email_inbound_deliveries_event_unrouted_uniq ON public.email_inbound_deliveries USING btree (inbound_event_id) WHERE (mailbox_id IS NULL);
+
+
+--
+-- Name: email_inbound_deliveries_mailbox_created_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX email_inbound_deliveries_mailbox_created_idx ON public.email_inbound_deliveries USING btree (mailbox_id, created_at DESC);
+
+
+--
+-- Name: email_inbound_deliveries_reference_ids_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX email_inbound_deliveries_reference_ids_idx ON public.email_inbound_deliveries USING gin (reference_ids);
+
+
+--
+-- Name: email_inbound_deliveries_reservation_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX email_inbound_deliveries_reservation_idx ON public.email_inbound_deliveries USING btree (mailbox_id, rfc_message_id) WHERE (state = ANY (ARRAY['resolved'::text, 'ingested'::text, 'done'::text]));
+
+
+--
+-- Name: email_inbound_deliveries_unattached_created_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX email_inbound_deliveries_unattached_created_idx ON public.email_inbound_deliveries USING btree (created_at) WHERE (conversation_id IS NULL);
+
+
+--
+-- Name: email_inbound_deliveries_workspace_created_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX email_inbound_deliveries_workspace_created_idx ON public.email_inbound_deliveries USING btree (workspace_id, created_at DESC);
+
+
+--
+-- Name: email_inbound_events_due_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX email_inbound_events_due_idx ON public.email_inbound_events USING btree (next_attempt_at) WHERE (state = ANY (ARRAY['pending'::text, 'processing'::text]));
+
+
+--
+-- Name: email_inbound_events_provider_event_uniq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX email_inbound_events_provider_event_uniq ON public.email_inbound_events USING btree (provider, provider_event_id);
+
+
+--
+-- Name: email_inbound_events_received_object_uniq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX email_inbound_events_received_object_uniq ON public.email_inbound_events USING btree (provider, provider_object_id) WHERE (event_kind = 'message_received'::text);
+
+
+--
+-- Name: email_mailbox_policies_effective_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX email_mailbox_policies_effective_idx ON public.email_mailbox_policies USING btree (mailbox_id, effective_at DESC);
+
+
+--
+-- Name: email_mailboxes_address_active_uniq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX email_mailboxes_address_active_uniq ON public.email_mailboxes USING btree (address) WHERE (removed_at IS NULL);
+
+
+--
+-- Name: email_mailboxes_previous_relay_token_uniq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX email_mailboxes_previous_relay_token_uniq ON public.email_mailboxes USING btree (previous_relay_token) WHERE (previous_relay_token IS NOT NULL);
+
+
+--
+-- Name: email_mailboxes_relay_token_uniq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX email_mailboxes_relay_token_uniq ON public.email_mailboxes USING btree (relay_token);
+
+
+--
+-- Name: email_mailboxes_workspace_address_active_uniq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX email_mailboxes_workspace_address_active_uniq ON public.email_mailboxes USING btree (workspace_id, address) WHERE (removed_at IS NULL);
+
+
+--
+-- Name: email_thread_links_mailbox_participant_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX email_thread_links_mailbox_participant_idx ON public.email_thread_links USING btree (mailbox_id, participant_address);
+
+
+--
+-- Name: email_thread_links_review_due_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX email_thread_links_review_due_idx ON public.email_thread_links USING btree (review_due_at) WHERE (review_due_at IS NOT NULL);
+
+
+--
+-- Name: email_thread_links_thread_key_uniq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX email_thread_links_thread_key_uniq ON public.email_thread_links USING btree (thread_key);
+
+
+--
+-- Name: email_thread_links_thread_token_uniq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX email_thread_links_thread_token_uniq ON public.email_thread_links USING btree (thread_token);
+
+
+--
+-- Name: email_thread_messages_conversation_created_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX email_thread_messages_conversation_created_idx ON public.email_thread_messages USING btree (conversation_id, created_at);
+
+
+--
+-- Name: email_thread_messages_mailbox_rfc_message_id_uniq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX email_thread_messages_mailbox_rfc_message_id_uniq ON public.email_thread_messages USING btree (mailbox_id, rfc_message_id);
 
 
 --
@@ -10149,6 +10608,86 @@ ALTER TABLE ONLY public.documents
 
 
 --
+-- Name: email_domains email_domains_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_domains
+    ADD CONSTRAINT email_domains_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: email_inbound_deliveries email_inbound_deliveries_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_inbound_deliveries
+    ADD CONSTRAINT email_inbound_deliveries_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.conversations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: email_inbound_deliveries email_inbound_deliveries_inbound_event_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_inbound_deliveries
+    ADD CONSTRAINT email_inbound_deliveries_inbound_event_id_fkey FOREIGN KEY (inbound_event_id) REFERENCES public.email_inbound_events(id) ON DELETE CASCADE;
+
+
+--
+-- Name: email_inbound_deliveries email_inbound_deliveries_mailbox_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_inbound_deliveries
+    ADD CONSTRAINT email_inbound_deliveries_mailbox_id_fkey FOREIGN KEY (mailbox_id) REFERENCES public.email_mailboxes(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: email_inbound_deliveries email_inbound_deliveries_message_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_inbound_deliveries
+    ADD CONSTRAINT email_inbound_deliveries_message_id_fkey FOREIGN KEY (message_id) REFERENCES public.messages(id) ON DELETE SET NULL;
+
+
+--
+-- Name: email_inbound_deliveries email_inbound_deliveries_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_inbound_deliveries
+    ADD CONSTRAINT email_inbound_deliveries_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: email_mailbox_policies email_mailbox_policies_mailbox_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_mailbox_policies
+    ADD CONSTRAINT email_mailbox_policies_mailbox_id_fkey FOREIGN KEY (mailbox_id) REFERENCES public.email_mailboxes(id) ON DELETE CASCADE;
+
+
+--
+-- Name: email_mailboxes email_mailboxes_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_mailboxes
+    ADD CONSTRAINT email_mailboxes_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES public.agents(id) ON DELETE SET NULL;
+
+
+--
+-- Name: email_mailboxes email_mailboxes_domain_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_mailboxes
+    ADD CONSTRAINT email_mailboxes_domain_id_fkey FOREIGN KEY (domain_id) REFERENCES public.email_domains(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: email_mailboxes email_mailboxes_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_mailboxes
+    ADD CONSTRAINT email_mailboxes_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
 -- Name: email_skill_activity email_skill_activity_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -10178,6 +10717,54 @@ ALTER TABLE ONLY public.email_skill_activity
 
 ALTER TABLE ONLY public.email_skill_activity
     ADD CONSTRAINT email_skill_activity_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: email_thread_links email_thread_links_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_thread_links
+    ADD CONSTRAINT email_thread_links_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.conversations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: email_thread_links email_thread_links_mailbox_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_thread_links
+    ADD CONSTRAINT email_thread_links_mailbox_id_fkey FOREIGN KEY (mailbox_id) REFERENCES public.email_mailboxes(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: email_thread_messages email_thread_messages_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_thread_messages
+    ADD CONSTRAINT email_thread_messages_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.conversations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: email_thread_messages email_thread_messages_inbound_delivery_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_thread_messages
+    ADD CONSTRAINT email_thread_messages_inbound_delivery_id_fkey FOREIGN KEY (inbound_delivery_id) REFERENCES public.email_inbound_deliveries(id) ON DELETE SET NULL;
+
+
+--
+-- Name: email_thread_messages email_thread_messages_mailbox_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_thread_messages
+    ADD CONSTRAINT email_thread_messages_mailbox_id_fkey FOREIGN KEY (mailbox_id) REFERENCES public.email_mailboxes(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: email_thread_messages email_thread_messages_message_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_thread_messages
+    ADD CONSTRAINT email_thread_messages_message_id_fkey FOREIGN KEY (message_id) REFERENCES public.messages(id) ON DELETE CASCADE;
 
 
 --

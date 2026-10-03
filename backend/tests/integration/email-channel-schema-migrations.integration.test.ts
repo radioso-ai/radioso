@@ -1,0 +1,493 @@
+import { randomUUID } from "node:crypto";
+
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+
+import { Database } from "../../src/shared/infra/database.js";
+import { applyTestMigration, runTestMigrationsBefore } from "../support/databaseMigrations.js";
+
+const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
+
+const keystone = "209_email_channel_keystone.sql";
+const inbound = "210_email_inbound_events.sql";
+
+const CHECK_VIOLATION = "23514";
+const UNIQUE_VIOLATION = "23505";
+const FOREIGN_KEY_VIOLATION = "23503";
+
+const canReach = async (url?: string) => {
+  if (!url) return false;
+  const database = new Database(url);
+  try {
+    await database.query("SELECT 1");
+    return true;
+  } catch {
+    return false;
+  } finally {
+    await database.close().catch(() => undefined);
+  }
+};
+
+const isolatedUrl = (base: string, name: string) => {
+  const url = new URL(base);
+  url.pathname = `/${name}`;
+  return url.toString();
+};
+
+const errorCode = async (work: Promise<unknown>): Promise<string | undefined> => {
+  try {
+    await work;
+  } catch (error) {
+    return (error as { code?: string }).code;
+  }
+  return undefined;
+};
+
+const describeIfDatabase = await canReach(integrationDatabaseUrl) ? describe : describe.skip;
+
+describeIfDatabase("email channel schema (209–210)", () => {
+  const databaseName = `mig209_${randomUUID().replaceAll("-", "")}`;
+  let admin: Database;
+  let database: Database;
+
+  const foreignKeys = (table: string) =>
+    database.query<{ column: string; target: string; on_delete: string }>(
+      `SELECT a.attname AS column,
+              c.confrelid::regclass::text AS target,
+              c.confdeltype::text AS on_delete
+         FROM pg_constraint c
+         JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
+        WHERE c.contype = 'f' AND c.conrelid = $1::regclass
+        ORDER BY a.attname`,
+      [table],
+    );
+
+  const seedWorkspace = async () => {
+    const accountId = randomUUID();
+    const workspaceId = randomUUID();
+    const agentId = randomUUID();
+    await database.execute(
+      "INSERT INTO accounts (id, name, email, password_hash) VALUES ($1, 'Acct', $2, 'hash')",
+      [accountId, `mig209-${accountId}@example.com`],
+    );
+    await database.execute(
+      "INSERT INTO workspaces (id, account_id, name, public_route_key) VALUES ($1, $2, 'WS', $3)",
+      [workspaceId, accountId, `rk-${workspaceId}`],
+    );
+    await database.execute("INSERT INTO agents (id, workspace_id, name) VALUES ($1, $2, 'Agent')", [agentId, workspaceId]);
+    return { accountId, workspaceId, agentId };
+  };
+
+  const insertDomain = async (workspaceId: string, domain: string) => {
+    const id = randomUUID();
+    await database.execute(
+      "INSERT INTO email_domains (id, workspace_id, domain, provider) VALUES ($1, $2, $3, 'resend')",
+      [id, workspaceId, domain],
+    );
+    return id;
+  };
+
+  const insertMailbox = async (
+    workspaceId: string,
+    domainId: string,
+    address: string,
+    overrides: { agentId?: string | null; relayToken?: string } = {},
+  ) => {
+    const id = randomUUID();
+    await database.execute(
+      `INSERT INTO email_mailboxes (id, workspace_id, domain_id, agent_id, address, display_name, relay_token, engagement_mode)
+       VALUES ($1, $2, $3, $4, $5, 'Support', $6, 'operator_only')`,
+      [id, workspaceId, domainId, overrides.agentId ?? null, address, overrides.relayToken ?? randomUUID().slice(0, 26)],
+    );
+    return id;
+  };
+
+  const insertConversation = async (workspaceId: string) => {
+    const conversationId = randomUUID();
+    const messageId = randomUUID();
+    await database.execute(
+      "INSERT INTO conversations (id, workspace_id, source_channel) VALUES ($1, $2, 'email')",
+      [conversationId, workspaceId],
+    );
+    await database.execute(
+      "INSERT INTO messages (id, conversation_id, workspace_id, role, content) VALUES ($1, $2, $3, 'user', 'Hello')",
+      [messageId, conversationId, workspaceId],
+    );
+    return { conversationId, messageId };
+  };
+
+  const insertEvent = async (providerEventId = randomUUID()) => {
+    const id = randomUUID();
+    await database.execute(
+      `INSERT INTO email_inbound_events (id, provider, provider_event_id, event_kind, provider_object_id, envelope)
+       VALUES ($1, 'resend', $2, 'message_received', $3, '{}'::jsonb)`,
+      [id, providerEventId, randomUUID()],
+    );
+    return id;
+  };
+
+  beforeAll(async () => {
+    admin = new Database(integrationDatabaseUrl!);
+    await admin.execute(`CREATE DATABASE "${databaseName}"`);
+    database = new Database(isolatedUrl(integrationDatabaseUrl!, databaseName));
+    await runTestMigrationsBefore(database, keystone);
+  }, 120_000);
+
+  afterAll(async () => {
+    await database?.close().catch(() => undefined);
+    await admin?.execute(`DROP DATABASE IF EXISTS "${databaseName}" WITH (FORCE)`).catch(() => undefined);
+    await admin?.close().catch(() => undefined);
+  });
+
+  it("209 applies on its own, every FK pointing at a table that already exists, the index links left for later", async () => {
+    await applyTestMigration(database, keystone);
+
+    expect(await foreignKeys("email_thread_messages")).toEqual([
+      { column: "conversation_id", target: "conversations", on_delete: "c" },
+      { column: "mailbox_id", target: "email_mailboxes", on_delete: "r" },
+      { column: "message_id", target: "messages", on_delete: "c" },
+    ]);
+    expect(await foreignKeys("email_mailboxes")).toEqual([
+      { column: "agent_id", target: "agents", on_delete: "n" },
+      { column: "domain_id", target: "email_domains", on_delete: "r" },
+      { column: "workspace_id", target: "workspaces", on_delete: "c" },
+    ]);
+    expect(await foreignKeys("email_thread_links")).toEqual([
+      { column: "conversation_id", target: "conversations", on_delete: "c" },
+      { column: "mailbox_id", target: "email_mailboxes", on_delete: "r" },
+    ]);
+    expect(await foreignKeys("email_mailbox_policies")).toEqual([
+      { column: "mailbox_id", target: "email_mailboxes", on_delete: "c" },
+    ]);
+  });
+
+  it("210 creates the inbound tables and links the thread index to its delivery; the send-intent link waits for 216", async () => {
+    await applyTestMigration(database, inbound);
+
+    expect(await foreignKeys("email_thread_messages")).toContainEqual(
+      { column: "inbound_delivery_id", target: "email_inbound_deliveries", on_delete: "n" },
+    );
+    expect((await foreignKeys("email_thread_messages")).map((fk) => fk.column)).not.toContain("send_intent_id");
+    expect(await foreignKeys("email_inbound_deliveries")).toEqual([
+      { column: "conversation_id", target: "conversations", on_delete: "c" },
+      { column: "inbound_event_id", target: "email_inbound_events", on_delete: "c" },
+      { column: "mailbox_id", target: "email_mailboxes", on_delete: "r" },
+      { column: "message_id", target: "messages", on_delete: "n" },
+      { column: "workspace_id", target: "workspaces", on_delete: "c" },
+    ]);
+  });
+
+  it("keeps one active registration per domain, lowercase, with the documented statuses", async () => {
+    const { workspaceId } = await seedWorkspace();
+    const other = await seedWorkspace();
+    const domainId = await insertDomain(workspaceId, "acme.example");
+
+    expect(await errorCode(insertDomain(other.workspaceId, "acme.example"))).toBe(UNIQUE_VIOLATION);
+    expect(await errorCode(insertDomain(workspaceId, "Upper.Example"))).toBe(CHECK_VIOLATION);
+    expect(await errorCode(database.execute(
+      "UPDATE email_domains SET sending_status = 'verifying' WHERE id = $1", [domainId],
+    ))).toBe(CHECK_VIOLATION);
+    expect(await errorCode(database.execute(
+      "UPDATE email_domains SET provider_cleanup_status = 'later' WHERE id = $1", [domainId],
+    ))).toBe(CHECK_VIOLATION);
+
+    const defaults = await database.queryOne<{ sending_status: string; receiving_status: string; dns_records: unknown }>(
+      "SELECT sending_status, receiving_status, dns_records FROM email_domains WHERE id = $1",
+      [domainId],
+    );
+    expect(defaults).toEqual({ sending_status: "pending", receiving_status: "not_requested", dns_records: [] });
+
+    await database.execute("UPDATE email_domains SET removed_at = now() WHERE id = $1", [domainId]);
+    await insertDomain(other.workspaceId, "acme.example");
+  });
+
+  it("holds mailbox addresses and relay tokens unique, and its budgets inside their bounds", async () => {
+    const { workspaceId } = await seedWorkspace();
+    const other = await seedWorkspace();
+    const domainId = await insertDomain(workspaceId, "mailboxes.example");
+    const otherDomainId = await insertDomain(other.workspaceId, "other-mailboxes.example");
+    const mailboxId = await insertMailbox(workspaceId, domainId, "support@mailboxes.example", { relayToken: "a".repeat(26) });
+
+    expect(await errorCode(insertMailbox(other.workspaceId, otherDomainId, "support@mailboxes.example"))).toBe(UNIQUE_VIOLATION);
+    expect(await errorCode(insertMailbox(workspaceId, domainId, "sales@mailboxes.example", { relayToken: "a".repeat(26) })))
+      .toBe(UNIQUE_VIOLATION);
+    expect(await errorCode(insertMailbox(workspaceId, domainId, "Sales@mailboxes.example"))).toBe(CHECK_VIOLATION);
+    expect(await errorCode(insertMailbox(workspaceId, randomUUID(), "x@mailboxes.example"))).toBe(FOREIGN_KEY_VIOLATION);
+
+    for (const [column, value] of [
+      ["engagement_mode", "'autopilot'"],
+      ["thread_send_budget", "0"],
+      ["thread_send_budget", "21"],
+      ["hourly_generation_budget", "1001"],
+      ["thread_context_messages", "51"],
+      ["silence_threshold_hours", "2161"],
+      ["setup_check_step", "'dns'"],
+    ] as const) {
+      expect(
+        await errorCode(database.execute(`UPDATE email_mailboxes SET ${column} = ${value} WHERE id = $1`, [mailboxId])),
+        `${column} = ${value}`,
+      ).toBe(CHECK_VIOLATION);
+    }
+
+    await database.execute("UPDATE email_mailboxes SET previous_relay_token = $2 WHERE id = $1", [mailboxId, "b".repeat(26)]);
+    const sibling = await insertMailbox(workspaceId, domainId, "sales@mailboxes.example");
+    expect(await errorCode(database.execute(
+      "UPDATE email_mailboxes SET previous_relay_token = $2 WHERE id = $1", [sibling, "b".repeat(26)],
+    ))).toBe(UNIQUE_VIOLATION);
+
+    await database.execute("UPDATE email_mailboxes SET removed_at = now() WHERE id = $1", [mailboxId]);
+    await insertMailbox(workspaceId, domainId, "support@mailboxes.example");
+
+    const defaults = await database.queryOne<Record<string, unknown>>(
+      `SELECT enabled, policy_version, thread_send_budget, hourly_generation_budget, generation_window_count,
+              thread_context_messages, spam_opt_in, silence_threshold_hours
+         FROM email_mailboxes WHERE id = $1`,
+      [sibling],
+    );
+    expect(defaults).toEqual({
+      enabled: true,
+      policy_version: 1,
+      thread_send_budget: 3,
+      hourly_generation_budget: 30,
+      generation_window_count: 0,
+      thread_context_messages: 10,
+      spam_opt_in: false,
+      silence_threshold_hours: 72,
+    });
+  });
+
+  it("keeps policy history append-only by version", async () => {
+    const { workspaceId } = await seedWorkspace();
+    const domainId = await insertDomain(workspaceId, "policies.example");
+    const mailboxId = await insertMailbox(workspaceId, domainId, "support@policies.example");
+    const insertPolicy = (version: number, mode: string) =>
+      database.execute(
+        "INSERT INTO email_mailbox_policies (mailbox_id, version, engagement_mode, enabled) VALUES ($1, $2, $3, true)",
+        [mailboxId, version, mode],
+      );
+
+    await insertPolicy(1, "operator_only");
+    await insertPolicy(2, "draft");
+    expect(await errorCode(insertPolicy(2, "auto"))).toBe(UNIQUE_VIOLATION);
+    expect(await errorCode(insertPolicy(3, "unsupervised"))).toBe(CHECK_VIOLATION);
+  });
+
+  it("indexes each RFC Message-Id once per mailbox, with only the documented direction and origin pairs", async () => {
+    const { workspaceId } = await seedWorkspace();
+    const domainId = await insertDomain(workspaceId, "threads.example");
+    const mailboxId = await insertMailbox(workspaceId, domainId, "support@threads.example");
+    const otherMailboxId = await insertMailbox(workspaceId, domainId, "sales@threads.example");
+    const { conversationId, messageId } = await insertConversation(workspaceId);
+    const insertIndexRow = (mailbox: string, rfcMessageId: string, direction: string, origin: string) =>
+      database.execute(
+        `INSERT INTO email_thread_messages (workspace_id, mailbox_id, conversation_id, message_id, direction, origin, rfc_message_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [workspaceId, mailbox, conversationId, direction === "referenced" ? null : messageId, direction, origin, rfcMessageId],
+      );
+
+    await insertIndexRow(mailboxId, "<m1@customer.example>", "inbound", "inbound");
+    await insertIndexRow(mailboxId, "<m2@customer.example>", "referenced", "referenced");
+    await insertIndexRow(mailboxId, "<m3@radioso.example>", "outbound", "radioso_generated");
+    await insertIndexRow(mailboxId, "<m4@provider.example>", "outbound", "provider_delivered");
+    // The same Message-Id in a second mailbox is independent (B15 vii).
+    await insertIndexRow(otherMailboxId, "<m1@customer.example>", "inbound", "inbound");
+
+    expect(await errorCode(insertIndexRow(mailboxId, "<m1@customer.example>", "inbound", "inbound"))).toBe(UNIQUE_VIOLATION);
+    for (const [direction, origin] of [
+      ["inbound", "radioso_generated"],
+      ["outbound", "inbound"],
+      ["referenced", "provider_delivered"],
+      ["inbound", "referenced"],
+    ] as const) {
+      expect(
+        await errorCode(insertIndexRow(mailboxId, `<${randomUUID()}@x.example>`, direction, origin)),
+        `${direction}/${origin}`,
+      ).toBe(CHECK_VIOLATION);
+    }
+
+    const linkToken = randomUUID();
+    const insertLink = (conversation: string, threadKey: string, threadToken: string) =>
+      database.execute(
+        `INSERT INTO email_thread_links (conversation_id, workspace_id, mailbox_id, thread_key, thread_token, participant_address)
+         VALUES ($1, $2, $3, $4, $5, 'ana@customer.example')`,
+        [conversation, workspaceId, mailboxId, threadKey, threadToken],
+      );
+    const threadKey = randomUUID();
+    await insertLink(conversationId, threadKey, linkToken);
+    const second = await insertConversation(workspaceId);
+    expect(await errorCode(insertLink(second.conversationId, threadKey, randomUUID()))).toBe(UNIQUE_VIOLATION);
+    expect(await errorCode(insertLink(second.conversationId, randomUUID(), linkToken))).toBe(UNIQUE_VIOLATION);
+  });
+
+  it("dedupes provider events and keeps one delivery per event and mailbox", async () => {
+    const { workspaceId } = await seedWorkspace();
+    const domainId = await insertDomain(workspaceId, "deliveries.example");
+    const mailboxId = await insertMailbox(workspaceId, domainId, "support@deliveries.example");
+    const providerEventId = randomUUID();
+    const eventId = await insertEvent(providerEventId);
+
+    expect(await errorCode(insertEvent(providerEventId))).toBe(UNIQUE_VIOLATION);
+    const objectId = await database.queryOne<{ provider_object_id: string }>(
+      "SELECT provider_object_id FROM email_inbound_events WHERE id = $1", [eventId],
+    );
+    expect(await errorCode(database.execute(
+      `INSERT INTO email_inbound_events (provider, provider_event_id, event_kind, provider_object_id, envelope)
+       VALUES ('resend', $1, 'message_received', $2, '{}'::jsonb)`,
+      [randomUUID(), objectId.provider_object_id],
+    ))).toBe(UNIQUE_VIOLATION);
+    // A delivery-status event about the same object is a separate obligation.
+    await database.execute(
+      `INSERT INTO email_inbound_events (provider, provider_event_id, event_kind, provider_object_id, envelope)
+       VALUES ('resend', $1, 'delivery_status', $2, '{}'::jsonb)`,
+      [randomUUID(), objectId.provider_object_id],
+    );
+
+    const insertDelivery = (mailbox: string | null) =>
+      database.execute(
+        "INSERT INTO email_inbound_deliveries (inbound_event_id, workspace_id, mailbox_id) VALUES ($1, $2, $3)",
+        [eventId, mailbox === null ? null : workspaceId, mailbox],
+      );
+    await insertDelivery(mailboxId);
+    await insertDelivery(null);
+    expect(await errorCode(insertDelivery(mailboxId))).toBe(UNIQUE_VIOLATION);
+    expect(await errorCode(insertDelivery(null))).toBe(UNIQUE_VIOLATION);
+
+    // The writers' idempotent insert names the documented arbiters.
+    await database.execute(
+      `INSERT INTO email_inbound_deliveries (inbound_event_id, workspace_id, mailbox_id) VALUES ($1, $2, $3)
+       ON CONFLICT (inbound_event_id, mailbox_id) WHERE mailbox_id IS NOT NULL DO NOTHING`,
+      [eventId, workspaceId, mailboxId],
+    );
+    await database.execute(
+      `INSERT INTO email_inbound_deliveries (inbound_event_id) VALUES ($1)
+       ON CONFLICT (inbound_event_id) WHERE mailbox_id IS NULL DO NOTHING`,
+      [eventId],
+    );
+
+    for (const [column, value] of [
+      ["state", "'queued'"],
+      ["route_rule", "'header'"],
+      ["classification", "'newsletter'"],
+      ["disposition", "'reply'"],
+      ["disposition_reason", "'unknown'"],
+      ["spam_verdict", "'maybe'"],
+      ["strip_confidence", "'partial'"],
+      ["thread_match", "'subject'"],
+    ] as const) {
+      expect(
+        await errorCode(database.execute(
+          `UPDATE email_inbound_deliveries SET ${column} = ${value} WHERE inbound_event_id = $1`, [eventId],
+        )),
+        `${column} = ${value}`,
+      ).toBe(CHECK_VIOLATION);
+    }
+    expect(await errorCode(database.execute(
+      "UPDATE email_inbound_events SET state = 'queued' WHERE id = $1", [eventId],
+    ))).toBe(CHECK_VIOLATION);
+  });
+
+  it("finds reservations forward and in reverse, and an event's deliveries, from their indexes", async () => {
+    // A mailbox with a few thousand deliveries, so the plan reflects a mailbox's event log in use.
+    const { workspaceId } = await seedWorkspace();
+    const domainId = await insertDomain(workspaceId, "lookup.example");
+    const mailboxId = await insertMailbox(workspaceId, domainId, "support@lookup.example");
+    await database.execute(
+      `WITH events AS (
+         INSERT INTO email_inbound_events (provider, provider_event_id, event_kind, provider_object_id, envelope)
+         SELECT 'resend', 'lookup-' || n, 'message_received', 'lookup-object-' || n, '{}'::jsonb
+           FROM generate_series(1, 3000) AS n
+         RETURNING id, provider_event_id
+       )
+       INSERT INTO email_inbound_deliveries (inbound_event_id, workspace_id, mailbox_id, state, rfc_message_id, reference_ids)
+       SELECT id, $1, $2, 'done',
+              '<' || provider_event_id || '@customer.example>',
+              ARRAY['<parent-' || provider_event_id || '@customer.example>']
+         FROM events`,
+      [workspaceId, mailboxId],
+    );
+    await database.execute("ANALYZE email_inbound_deliveries");
+    const explain = (query: string) =>
+      database.withTransaction(async (client) => {
+        await client.query("SET LOCAL enable_seqscan = off");
+        const result = await client.query<{ "QUERY PLAN": string }>(`EXPLAIN ${query}`);
+        return result.rows.map((row) => row["QUERY PLAN"]).join("\n");
+      });
+
+    expect(await explain(
+      `SELECT planned_conversation_id FROM email_inbound_deliveries
+        WHERE mailbox_id = '${mailboxId}' AND reference_ids @> ARRAY['<lookup-7@customer.example>']`,
+    )).toContain("email_inbound_deliveries_reference_ids_idx");
+    expect(await explain(
+      `SELECT planned_conversation_id FROM email_inbound_deliveries
+        WHERE mailbox_id = '${mailboxId}' AND rfc_message_id IN ('<lookup-7@customer.example>')
+          AND state IN ('resolved', 'ingested')`,
+    )).toContain("email_inbound_deliveries_reservation_idx");
+    expect(await explain(
+      `SELECT state FROM email_inbound_deliveries WHERE inbound_event_id = '${randomUUID()}'`,
+    )).toContain("email_inbound_deliveries_event_mailbox_uniq");
+  });
+
+  it("deleting a workspace removes its email channel, including mail that never reached a conversation", async () => {
+    const { workspaceId, agentId } = await seedWorkspace();
+    const domainId = await insertDomain(workspaceId, "deletion.example");
+    const mailboxId = await insertMailbox(workspaceId, domainId, "support@deletion.example", { agentId });
+    await database.execute(
+      "INSERT INTO email_mailbox_policies (mailbox_id, version, engagement_mode, enabled, agent_id) VALUES ($1, 1, 'operator_only', true, $2)",
+      [mailboxId, agentId],
+    );
+    const { conversationId, messageId } = await insertConversation(workspaceId);
+    await database.execute(
+      `INSERT INTO email_thread_links (conversation_id, workspace_id, mailbox_id, thread_key, thread_token, participant_address)
+       VALUES ($1, $2, $3, $4, $5, 'ana@customer.example')`,
+      [conversationId, workspaceId, mailboxId, randomUUID(), randomUUID()],
+    );
+    const ingested = await database.queryOne<{ id: string }>(
+      `INSERT INTO email_inbound_deliveries (inbound_event_id, workspace_id, mailbox_id, state, conversation_id, message_id)
+       VALUES ($1, $2, $3, 'done', $4, $5) RETURNING id`,
+      [await insertEvent(), workspaceId, mailboxId, conversationId, messageId],
+    );
+    await database.execute(
+      `INSERT INTO email_thread_messages
+         (workspace_id, mailbox_id, conversation_id, message_id, direction, origin, rfc_message_id, inbound_delivery_id)
+       VALUES ($1, $2, $3, $4, 'inbound', 'inbound', '<ingested@customer.example>', $5)`,
+      [workspaceId, mailboxId, conversationId, messageId, ingested.id],
+    );
+    // Dropped mail (an automated sender) and mail to an unknown address on a direct domain keep no
+    // conversation, so only the mailbox and the workspace reach them.
+    await database.execute(
+      "INSERT INTO email_inbound_deliveries (inbound_event_id, workspace_id, mailbox_id, state, disposition) VALUES ($1, $2, $3, 'done', 'drop')",
+      [await insertEvent(), workspaceId, mailboxId],
+    );
+    await database.execute(
+      "INSERT INTO email_inbound_deliveries (inbound_event_id, workspace_id, disposition_reason) VALUES ($1, $2, 'no_mailbox')",
+      [await insertEvent(), workspaceId],
+    );
+
+    await database.execute("DELETE FROM workspaces WHERE id = $1", [workspaceId]);
+
+    const left = await database.queryOne<Record<string, string>>(
+      `SELECT (SELECT count(*) FROM email_domains WHERE workspace_id = $1)::text AS domains,
+              (SELECT count(*) FROM email_mailboxes WHERE workspace_id = $1)::text AS mailboxes,
+              (SELECT count(*) FROM email_mailbox_policies WHERE mailbox_id = $2)::text AS policies,
+              (SELECT count(*) FROM email_thread_links WHERE workspace_id = $1)::text AS links,
+              (SELECT count(*) FROM email_thread_messages WHERE workspace_id = $1)::text AS index_rows,
+              (SELECT count(*) FROM email_inbound_deliveries WHERE workspace_id = $1)::text AS deliveries`,
+      [workspaceId, mailboxId],
+    );
+    expect(left).toEqual({ domains: "0", mailboxes: "0", policies: "0", links: "0", index_rows: "0", deliveries: "0" });
+  });
+
+  it("a hard delete of a mailbox with history is refused; removal is a soft delete", async () => {
+    const { workspaceId } = await seedWorkspace();
+    const domainId = await insertDomain(workspaceId, "restrict.example");
+    const mailboxId = await insertMailbox(workspaceId, domainId, "support@restrict.example");
+    await database.execute(
+      "INSERT INTO email_inbound_deliveries (inbound_event_id, workspace_id, mailbox_id) VALUES ($1, $2, $3)",
+      [await insertEvent(), workspaceId, mailboxId],
+    );
+
+    expect(await errorCode(database.execute("DELETE FROM email_mailboxes WHERE id = $1", [mailboxId])))
+      .toBe(FOREIGN_KEY_VIOLATION);
+    expect(await errorCode(database.execute("DELETE FROM email_domains WHERE id = $1", [domainId])))
+      .toBe(FOREIGN_KEY_VIOLATION);
+  });
+});

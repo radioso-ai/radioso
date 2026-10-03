@@ -184,7 +184,7 @@ R3 blocks T088 (S1 drain wiring). R1 and R2 block S3 and can run in parallel wit
   - `backend/src/db/migrations/211_conversation_activity_kind_v2_add.sql`: `SET LOCAL lock_timeout='3s'`, `ADD CONSTRAINT conversation_activity_kind_v2_check … NOT VALID` with all five new kinds;
   - `212_conversation_activity_kind_v2_validate.sql`: `VALIDATE CONSTRAINT`;
   - `213_conversation_activity_kind_drop_v1.sql`: `SET LOCAL lock_timeout='3s'`, `DROP CONSTRAINT conversation_activity_kind_check`.
-- [ ] T028 [US2] Create `backend/src/db/migrations/214_conversation_activity_closed_idx_v2.sql` (`SET LOCAL lock_timeout='3s'`; `CREATE INDEX IF NOT EXISTS … WHERE kind IN (…, 'held_reply_released', 'delivery_failure_cleared')`). Extend `CONVERSATION_ACTIVITY_KINDS` and `CLOSING_ACTIVITY_KINDS` in `backend/src/modules/conversationActivity/contracts/index.ts:8-26`, the presentation in `backend/src/modules/conversationActivity/presentation.ts`, and the recently-closed query in `backend/src/modules/conversationActivity/readService.ts` to match the v2 predicate (after T024).
+- [x] T028 [US2] Create `backend/src/db/migrations/214_conversation_activity_closed_idx_v2.sql` (`SET LOCAL lock_timeout='3s'`; `CREATE INDEX IF NOT EXISTS … WHERE kind IN (…, 'held_reply_released', 'delivery_failure_cleared')`). Extend `CONVERSATION_ACTIVITY_KINDS` and `CLOSING_ACTIVITY_KINDS` in `backend/src/modules/conversationActivity/contracts/index.ts:8-26`, the presentation in `backend/src/modules/conversationActivity/presentation.ts`, and the recently-closed query in `backend/src/modules/conversationActivity/readService.ts` to match the v2 predicate (after T024).
 - [x] T029 Regenerate `backend/src/shared/infra/kysely/schema.ts` (`db:types`) and `backend/src/db/schema.sql` (`db:schema`), then run `db:schema:check` (after T025–T028).
 
 ### Tests first: pure decisions and content
@@ -250,7 +250,7 @@ R3 blocks T088 (S1 drain wiring). R1 and R2 block S3 and can run in parallel wit
 
 ### Tests first: persistence, services, protocol, worker, HTTP, Ray
 
-- [ ] T060 [P] [US1] Write `backend/tests/integration/email-channel-persistence.integration.test.ts`:
+- [x] T060 [P] [US1] Write `backend/tests/integration/email-channel-persistence.integration.test.ts`:
   - active domain unique across workspaces; mailbox address unique;
   - relay and previous-token resolution with grace;
   - policy history append and effective-at lookup;
@@ -259,28 +259,28 @@ R3 blocks T088 (S1 drain wiring). R1 and R2 block S3 and can run in parallel wit
   - forward-reservation and reverse (`reference_ids` GIN) lookups scoped by mailbox;
   - event-log paging;
   - retention purge of conversation-less deliveries only.
-- [ ] T061 [P] [US1] Write `backend/tests/unit/email-channel/sending-domain-service.test.ts`:
+- [x] T061 [P] [US1] Write `backend/tests/unit/email-channel/sending-domain-service.test.ts`:
   - registration on the first mailbox;
   - a single `claimed_elsewhere` refusal from a database or provider conflict, naming no workspace;
   - refresh cadence;
   - readiness audit;
   - receiving requires typed confirmation;
   - removal revokes first and cleans up asynchronously.
-- [ ] T062 [P] [US1] Write `backend/tests/unit/email-channel/mailbox-service.test.ts` (after T009 for real tenant behaviour):
+- [x] T062 [P] [US1] Write `backend/tests/unit/email-channel/mailbox-service.test.ts` (after T009 for real tenant behaviour):
   - create registers the domain, issues a token, writes policy version 1 and applies defaults;
   - `supportedModes` gating returns `409 engagement_mode_unavailable`, and the default is `operator_only` while `draft` is unsupported;
   - mode, enabled and agent changes go through the policy-change port (new version plus history row), and a stale `expectedPolicyVersion` gives 409;
   - rotation grace;
   - setup check `base` and `plus_address` (sets `plus_address_verified_at`);
   - audit events.
-- [ ] T063 [P] [US2] Write `backend/tests/unit/chat/conversation-ingest-service.test.ts`:
+- [x] T063 [P] [US2] Write `backend/tests/unit/chat/conversation-ingest-service.test.ts`:
   - caller ids, one unit of work, idempotent retry (`messageCreated: false`);
   - `humanOwnership` goes through `requestHumanOwnership` in scope, and only hands off when `ai_owned`;
   - an existing conversation with `kind: "new"` and the same id is a no-op;
   - no usage reservation; invalidation after commit;
   - `visitor_id` and `verified_customer_id` stay null.
-- [ ] T064 [P] [US2] Extend `backend/tests/unit/handoff/conversation-ownership-service.test.ts`: `requestHumanOwnership(scope, …)` writes `human_owned` with the reason and a `handoff_requested` activity in the scope, and is a no-op when already human-owned.
-- [ ] T065 [P] [US2] Extend `backend/tests/unit/connectors/connectorChatPort.test.ts`: `ingest` delegates, and `answer` is unchanged.
+- [x] T064 [P] [US2] Extend `backend/tests/unit/handoff/conversation-ownership-service.test.ts`: `requestHumanOwnership(scope, …)` writes `human_owned` with the reason and a `handoff_requested` activity in the scope, and is a no-op when already human-owned.
+- [x] T065 [P] [US2] Extend `backend/tests/unit/connectors/connectorChatPort.test.ts`: `ingest` delegates, and `answer` is unchanged.
 - [ ] T066 [P] [US2] Write `backend/tests/unit/email-channel/inbound-processor.test.ts` with fakes (after T007):
   - routing through `mailboxRouting` only (relay or direct);
   - `accepted_policy_version` taken from the event's `received_at`;
@@ -310,7 +310,7 @@ R3 blocks T088 (S1 drain wiring). R1 and R2 block S3 and can run in parallel wit
   - no fetch, ingest or turn inline;
   - `unsupported` persisted;
   - local ack under 1 s.
-- [ ] T071 [P] [US2] Extend `backend/tests/contract/history-channel-context.contract.test.ts`: the `email` context round-trips, with no thread token.
+- [x] T071 [P] [US2] Extend `backend/tests/contract/history-channel-context.contract.test.ts`: the `email` context round-trips, with no thread token.
 - [ ] T072 [P] [US2] Write `backend/tests/unit/email-channel/email-channel-worker.test.ts`: interval start and stop; `drain({ maxJobs, stage })` claims due work only; the disabled flag; sweep lease recovery, refresh and retention.
 - [ ] T073 [P] [US2] Write `backend/tests/unit/email-channel-worker-task-routes.test.ts`: drain and sweep sit behind the worker token. Mirror `action-dispatch-worker-task-routes.test.ts`.
 - [ ] T074 [P] [US2] Extend `backend/tests/unit/runtime-startup.test.ts`: both runtimes wire `EmailChannelWorker` when configured and enabled, and neither does otherwise.
@@ -329,7 +329,7 @@ R3 blocks T088 (S1 drain wiring). R1 and R2 block S3 and can run in parallel wit
   - raw view audit.
 
   `backend/tests/contract/api-principal-route-policy.contract.test.ts` fails until T090.
-- [ ] T077 [P] [US1] Write `backend/tests/unit/email-channel/conversation-email-facts.test.ts`: the latest projection and per-message subject, CC, attachments and `rawDeliveryId`; delivery is `null` in S1.
+- [x] T077 [P] [US1] Write `backend/tests/unit/email-channel/conversation-email-facts.test.ts`: the latest projection and per-message subject, CC, attachments and `rawDeliveryId`; delivery is `null` in S1.
 - [ ] T078 [P] [US1] Write `backend/tests/unit/operatorCopilot/email-channel-tools.test.ts` for `email_channel_configuration`, `email_channel_events` and `email_conversation_facts`:
   - built on `EmailChannelCopilotView` (ports §8);
   - no `relayAddress`, setup-check recipient, thread token or raw content;
@@ -338,14 +338,14 @@ R3 blocks T088 (S1 drain wiring). R1 and R2 block S3 and can run in parallel wit
 
 ### Implementation: persistence, services, protocol, worker
 
-- [ ] T079 [P] [US1] Implement `backend/src/modules/emailChannel/persistence/emailDomainRepository.ts`, `emailMailboxRepository.ts` (with policy history and effective-at lookup), `emailInboundRepository.ts` (claims, reservation and reverse lookups, event log) and `emailThreadRepository.ts` (link upsert, index insert, review fields), plus the advisory-lock helper (after T029, T060).
-- [ ] T080 [US1] Implement `backend/src/modules/emailChannel/domains/sendingDomainService.ts`, `mailboxes/mailboxService.ts`, `eventLog/eventLogReader.ts`, `facts/conversationEmailFacts.ts`, `copilot/emailChannelCopilotView.ts` and `public.ts`. Create the S1 form of `backend/src/app/composition/mailboxPolicyChange.ts` (mailbox row lock, version bump, history row; S3 adds supersede) (after T061, T062, T077, T079).
-- [ ] T081 [US2] Contracts:
+- [x] T079 [P] [US1] Implement `backend/src/modules/emailChannel/persistence/emailDomainRepository.ts`, `emailMailboxRepository.ts` (with policy history and effective-at lookup), `emailInboundRepository.ts` (claims, reservation and reverse lookups, event log) and `emailThreadRepository.ts` (link upsert, index insert, review fields), plus the advisory-lock helper (after T029, T060).
+- [x] T080 [US1] Implement `backend/src/modules/emailChannel/domains/sendingDomainService.ts`, `mailboxes/mailboxService.ts`, `eventLog/eventLogReader.ts`, `facts/conversationEmailFacts.ts`, `copilot/emailChannelCopilotView.ts` and `public.ts`. Create the S1 form of `backend/src/app/composition/mailboxPolicyChange.ts` (mailbox row lock, version bump, history row; S3 adds supersede) (after T061, T062, T077, T079).
+- [x] T081 [US2] Contracts:
   - add `ConnectorIngestInput`, `ConnectorIngestResult` and `ingest` to `packages/connector-api/connectorPlugin.d.ts`;
   - add the `email` variant to `packages/conversation-contract/index.d.ts:95-105` and to `ConversationChannelContextSchema` (`backend/src/app/http/openapi/schemas/assistantHistorySchemas.ts:319-340`).
 
   Then run `pnpm run test:unit` once (after T065, T071).
-- [ ] T082 [US2] Implement ownership and ingest (after T063, T064, T081):
+- [x] T082 [US2] Implement ownership and ingest (after T063, T064, T081):
   - reasons `operator_only_mailbox`, `generation_budget` and `review_unavailable` in `backend/src/modules/handoff/ownershipState.ts:5-9`;
   - `requestHumanOwnership` in `conversationOwnershipService.ts`;
   - `backend/src/modules/chat/services/conversationIngestService.ts`;

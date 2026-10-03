@@ -16,6 +16,8 @@ const CLOSED_ITEM_KIND: Record<ClosingActivityKind, ClosedInboxItemKind> = {
   approval_decided: "approval",
   feedback_resolved: "negative_feedback",
   feedback_dismissed: "negative_feedback",
+  held_reply_released: "approval",
+  delivery_failure_cleared: "delivery_failed",
 };
 
 export const closedItemKind = (kind: ClosingActivityKind): ClosedInboxItemKind => CLOSED_ITEM_KIND[kind];
@@ -63,19 +65,25 @@ export const activityUserIds = (records: readonly ConversationActivityRecord[]):
 const person = (userId: string | null, labels: ReadonlyMap<string, string>): ConversationActivityPerson | null =>
   userId === null ? null : { userId, label: labels.get(userId) ?? null };
 
-/** A stored event as operator surfaces present it, each teammate labelled as they are now. */
+/**
+ * A stored event as operator surfaces present it, each teammate labelled as they are now. A
+ * kind-specific field is read only on its kinds, so another kind's `detail` never fills it.
+ */
 export const presentActivity = (
   record: ConversationActivityRecord,
   labels: ReadonlyMap<string, string>,
-): ConversationActivityEntry => ({
-  id: record.id,
-  kind: record.kind,
-  createdAt: record.createdAt.toISOString(),
-  actor: person(record.actorUserId, labels),
-  subject: person(record.subjectUserId, labels),
-  from: person(stringField(record.detail, "fromUserId"), labels),
-  handoffReason: record.kind === "handoff_requested" ? stringField(record.detail, "reason") : null,
-  decision: record.kind === "approval_decided" ? decisionField(record.detail) : null,
-  resolution: stringField(record.detail, "resolution"),
-  assistantMessageId: stringField(record.detail, "assistantMessageId"),
-});
+): ConversationActivityEntry => {
+  const isFeedback = FEEDBACK_KINDS.has(record.kind);
+  return {
+    id: record.id,
+    kind: record.kind,
+    createdAt: record.createdAt.toISOString(),
+    actor: person(record.actorUserId, labels),
+    subject: person(record.subjectUserId, labels),
+    from: person(stringField(record.detail, "fromUserId"), labels),
+    handoffReason: record.kind === "handoff_requested" ? stringField(record.detail, "reason") : null,
+    decision: record.kind === "approval_decided" ? decisionField(record.detail) : null,
+    resolution: isFeedback ? stringField(record.detail, "resolution") : null,
+    assistantMessageId: isFeedback ? stringField(record.detail, "assistantMessageId") : null,
+  };
+};

@@ -1,7 +1,7 @@
 ---
 title: "Conversational Routines"
 description: "The engine-level design of multi-turn flows with slots, steps, guards, terminals, activation ranking, and runtime slot extraction mechanics."
-last_updated: 2026-10-01
+last_updated: 2026-10-04
 ---
 
 # Conversational Routines
@@ -258,6 +258,15 @@ on. Values a tool step
 assigns to variables are the tool's output and keep whatever shape the tool
 returned.
 
+A key that names no slot the routine declares is dropped the same way, reported
+as `undeclared`. This runs everywhere a value could enter routine state: the
+selector's values on every step it judges, and the activator's or ranked
+activation's values on the routine's first turn — so a free-form field name
+from any of them never reaches routine state, an action step's payload, or an
+unbound tool-step input. A routine with no declared slot schema has no list to
+check a key against, so every key it is given reaches state untouched — the
+built-in contact routine, authored with no typed slots, keeps capture this way.
+
 ### When a step keeps being asked
 
 A step the visitor keeps answering without giving what it needs is asked again at
@@ -444,16 +453,22 @@ timeline: which step the turn resumed on, whether it advanced, re-asked,
 fast-forwarded, dispatched a tool, or rendered, plus which slot *keys* were
 captured this turn and which are now filled. A step read for the opening message,
 described above, carries `readOpeningMessage: true`, whether it moved on or was
-rendered. A step whose returned value did not fit its slot lists it under
-`rejectedSlots` (key and reason, `type_mismatch` or `not_scalar`), and a step
-asked past the re-ask limit adds a `reask_limit_reached`
-entry with its `reaskCount`. A step the selector judged also
-records the selector's `selection`: its `outcome` (`transition`, `stay`,
-`off_topic`, `unreadable` when the model's output could not be parsed or lacked
-`claimsAuthority`, or `authority_claim` when the message posed as a system
-notice and the step was held), the
-`returnedSlotKeys` the model gave a value for, and `undeclaredKeyCount` for keys
-it returned that the routine does not declare. The trace carries slot names only —
+rendered. A step whose returned value did not fit its slot, or whose returned
+key names no slot the routine declares, lists it under `rejectedSlots` (key and
+reason: `type_mismatch`, `not_scalar`, or `undeclared`), and a step asked past
+the re-ask limit adds a `reask_limit_reached` entry with its `reaskCount`. A
+step the selector judged also records the selector's `selection`: its
+`outcome` (`transition`, `stay`, `off_topic`, `unreadable` when the model's
+output could not be parsed or lacked `claimsAuthority`, or `authority_claim`
+when the message posed as a system notice and the step was held), the
+`returnedSlotKeys` the model gave a value for, and `undeclaredKeyCount` for
+keys it returned that the routine does not declare. The two signals answer
+different questions: `undeclaredKeyCount` is what the next-step selector
+already filtered out of its own response before returning it, while an
+`undeclared` entry in `rejectedSlots` is what the runner itself dropped —
+from that selector or from the values activation read from the opening
+message — so it also catches a free-form key from a selector that does no
+filtering of its own. The trace carries slot names only —
 never captured values, which may be personal data — so it is safe to show in the
 debug surface. This is the first place to look when a routine "isn't filling
 slots": a step with an empty `returnedSlotKeys` means the model extracted nothing
@@ -533,8 +548,12 @@ matches: that routine stays eligible after it completes. The default mode keeps
 the historical behavior of running once per conversation.
 
 The activation result is a per-routine confidence score and any activation
-variables that can already be extracted from the original message. The decision
-order is:
+variables that can already be extracted from the original message. Those
+variables go through the same check as the selector's (see "What a slot
+keeps" above) before they enter the started routine's state: on a routine
+with a declared slot schema, a value that does not fit its slot's type or
+names no declared slot is dropped; a routine with no slot schema keeps
+every key. The decision order is:
 
 1. Drop candidates below the confidence floor.
 2. If the top routine clears the margin over the runner-up, start it silently.

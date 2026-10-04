@@ -3694,6 +3694,82 @@ describe("DefaultRoutineRunner slot values checked against their declared type (
     expect(result.trace?.steps[0]).toMatchObject({ rejectedSlots: [{ key: "email", reason: "type_mismatch" }] });
   });
 
+  describe("drops keys the routine does not declare, on a routine with a declared slot schema (#1388)", () => {
+    it("drops a key the activator extracted on the activation turn", async () => {
+      const render = renderer();
+      const runner = new DefaultRoutineRunner([booking], choosing("ask_email", {}), render);
+
+      const result = await runner.resume({
+        turn,
+        state: state([], { email: "giulia@example.com", scratch_notes: "not a declared slot" }),
+        activationTurn: true,
+      });
+
+      expect(result.nextState?.variables).toEqual({ email: "giulia@example.com" });
+      expect(result.trace?.steps[0]).toMatchObject({
+        stepId: "ask_email",
+        rejectedSlots: [{ key: "scratch_notes", reason: "undeclared" }],
+      });
+    });
+
+    it("drops a key a selector decision returns mid-routine, not only on activation", async () => {
+      const runner = new DefaultRoutineRunner(
+        [booking],
+        choosing("ask_adults", { email: "giulia@example.com", scratch_notes: "leaked" }),
+        renderer(),
+      );
+
+      const result = await runner.resume({ turn, state: state(["ask_email"]) });
+
+      expect(result.nextState?.path).toEqual(["ask_email", "ask_adults"]);
+      expect(result.nextState?.variables).toEqual({ email: "giulia@example.com" });
+      expect(result.trace?.steps[0]).toMatchObject({
+        stepId: "ask_email",
+        event: "advanced",
+        capturedSlotKeys: ["email"],
+        rejectedSlots: [{ key: "scratch_notes", reason: "undeclared" }],
+      });
+    });
+
+    it("excludes an undeclared activator-extracted key from an action step's payload", async () => {
+      const actionBooking: Routine = {
+        id: "booking_action",
+        rootStepId: "submit",
+        slots: [{ id: "slot_email", key: "email", type: "email", required: true }],
+        steps: [
+          { id: "submit", kind: "action", actionType: "booking.send" },
+          { id: "done", kind: "terminal", action: "Confirm the request was sent." },
+        ],
+        transitions: [{ from: "submit", to: "done", condition: "after emitting" }],
+      };
+      const runner = new DefaultRoutineRunner([actionBooking], { select: vi.fn() }, renderer());
+
+      const result = await runner.resume({
+        turn,
+        state: { sessionId: "session_1", routineId: "booking_action", path: [], variables: { email: "a@b.c", scratch: "leaked" }, status: "active" },
+        activationTurn: true,
+      });
+
+      expect(result.actions).toEqual([{ type: "booking.send", payload: { email: "a@b.c" } }]);
+    });
+
+    it("keeps every activator-extracted key on a routine with no declared slot schema", async () => {
+      const noSchema: Routine = { ...booking, slots: [] };
+      const runner = new DefaultRoutineRunner([noSchema], choosing("ask_email", {}), renderer());
+
+      const result = await runner.resume({
+        turn,
+        state: state([], { email: "giulia@example.com", scratch_notes: "kept, no schema to check against" }),
+        activationTurn: true,
+      });
+
+      expect(result.nextState?.variables).toEqual({
+        email: "giulia@example.com",
+        scratch_notes: "kept, no schema to check against",
+      });
+    });
+  });
+
   describe("holds the answered step whatever kind of exit would fire", () => {
     const withEmailExits = (transitions: Routine["transitions"]): Routine => ({
       ...booking,

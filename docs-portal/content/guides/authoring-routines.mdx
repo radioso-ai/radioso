@@ -144,7 +144,9 @@ a date has to be a real day on the calendar, and a number has to be a number.
 When a visitor's answer does not fit — "giulia at example" for an email, "the
 31st of February" for a date — the routine keeps nothing for that value and asks
 the step again. The turn trace lists the value under `rejectedSlots`, by name
-only.
+only. The same list can name a value the routine never defined — the model read
+more from the visitor's message than any step asked for; it is dropped before
+it reaches a step, a skill, or an action.
 
 The `@` menu also lists what the agent already knows about the visitor under
 **Visitor context**. Choose **Current page** to place it in a step, and the

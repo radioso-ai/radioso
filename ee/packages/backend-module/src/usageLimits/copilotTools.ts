@@ -30,7 +30,14 @@ const fractionalUsageWindowSchema = z.object({
 
 const outputSchema = z.object({
   planName: z.string().max(planNameMaxLength).nullable(),
-  monthlyAnswers: usageWindowSchema,
+  /**
+   * Null when the plan meters conversations rather than answers. A conversation-metered
+   * profile leaves `monthlyAnswerLimit` unenforced (EnterpriseUsageLimitService.getAccountUsage),
+   * so a raw `{ limit: null }` here would read as "unlimited answers" rather than "see
+   * monthlyConversations instead" — the bug #1301 reported. Omitting the field makes the
+   * dormancy explicit instead of indistinguishable from a true no-cap answer plan.
+   */
+  monthlyAnswers: usageWindowSchema.nullable(),
   storedDocuments: usageWindowSchema,
   storedIndexedBytes: usageWindowSchema,
   monthlyIndexedBytes: usageWindowSchema,
@@ -55,13 +62,24 @@ const formatResetAt = (value: string | undefined): string | null => {
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 };
 
+// Shared verbatim between the descriptor (what the operator-MCP catalog lists, mcpCatalog.ts)
+// and the created tool (what the dashboard model reads, defaultAgentRuntime.ts) — see the
+// convention every other descriptor in this module follows. #1301 found the two surfaces
+// quoting different, divergent copy for this tool.
+const usageToolDescription =
+  "Read the plan and current-period usage for this workspace's organization: conversations or "
+  + "answers (a plan meters exactly one), stored documents, and indexed content, each with its "
+  + "limit and what remains. The dimension a plan does not meter reports null rather than "
+  + "unlimited, because that cap is dormant — read whichever of monthlyConversations or "
+  + "monthlyAnswers is non-null. Use it before advising on ingestion or before proposing "
+  + "configuration whose cost depends on volume.";
+
 const usageDescriptor = (deps: { usage: CopilotAccountUsagePort }): CopilotToolDescriptor => ({
   name: "workspace_usage_limits",
   shape: "read",
   verificationCost: () => 0,
   uiLabel: "Reading plan usage and limits",
-  description:
-    "Read the plan and current-period usage for this workspace's organization: answers, stored documents, and indexed content, each with its limit and what remains. Use it before advising on ingestion or before proposing configuration whose cost depends on volume.",
+  description: usageToolDescription,
   inputSchema: z.object({}).strict(),
   outputSchema,
   // Strictly stricter than the tenant-facing route this mirrors, which is gated on an account
@@ -81,14 +99,19 @@ const usageDescriptor = (deps: { usage: CopilotAccountUsagePort }): CopilotToolD
   dashboardSubject: { type: "workspace_settings" },
   createTool: (context) => ({
     name: "workspace_usage_limits",
-    description: "Read plan usage and limits.",
+    description: usageToolDescription,
     inputSchema: z.object({}).strict(),
     outputSchema,
     invoke: async () => {
       const usage = await deps.usage.getAccountUsage(context.accountId);
+      // monthlyConversations is non-null exactly when the profile meters conversations
+      // (EnterpriseUsageLimitService.readConversationUsage), which is also when it leaves
+      // monthlyAnswers.limit null without enforcing it. Reporting that dormant window here
+      // would read as "answers are unlimited" instead of "see monthlyConversations".
+      const conversationMetered = usage.monthlyConversations !== null;
       return {
         planName: usage.profile?.displayName.slice(0, planNameMaxLength) ?? null,
-        monthlyAnswers: window(usage.monthlyAnswers),
+        monthlyAnswers: conversationMetered ? null : window(usage.monthlyAnswers),
         storedDocuments: window(usage.storedDocuments),
         storedIndexedBytes: window(usage.storedIndexedBytes),
         monthlyIndexedBytes: window(usage.monthlyIndexedBytes),

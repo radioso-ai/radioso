@@ -98,6 +98,79 @@ describe("usage limit copilot contribution", () => {
     expect(tool.outputSchema.safeParse(await tool.invoke({}, invocation)).success).toBe(true);
   });
 
+  it("masks the dormant answer cap on a catalog plan, rather than reporting it as unlimited", async () => {
+    const getAccountUsage = vi.fn(async () => summary({
+      profile: {
+        key: "comet",
+        displayName: "Comet",
+        monthlyAnswerLimit: null,
+        storedDocumentLimit: 50,
+        storedIndexedByteLimit: null,
+        monthlyIndexedByteLimit: null,
+        monthlyConversationLimit: 50,
+        repliesPerConversation: 10,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+      // The service nulls the answer limit for a conversation-metered profile
+      // (EnterpriseUsageLimitService.getAccountUsage), the same shape it hands this tool.
+      monthlyAnswers: { periodStart: "2026-08-01", resetAt: "2026-09-01", used: 0, limit: null },
+      monthlyConversations: {
+        periodStart: "2026-08-01",
+        resetAt: "2026-09-01",
+        used: 12.5,
+        limit: 50,
+        credits: 0,
+        byKind: { conversation: 0, copilot: 12.5, test_run: 0, pulse_report: 0 },
+      },
+    }));
+    const [descriptor] = createUsageLimitCopilotToolContribution({ usage: { getAccountUsage } }).descriptors;
+
+    const result = await descriptor.createTool(toolContext).invoke({}, invocation) as {
+      monthlyAnswers: unknown;
+      monthlyConversations: unknown;
+    };
+
+    expect(result.monthlyAnswers).toBeNull();
+    expect(result.monthlyConversations).toEqual({ used: 12.5, limit: 50, remaining: 37.5, resetAt: "2026-09-01T00:00:00.000Z" });
+  });
+
+  it("still reports a genuinely unlimited answer cap for a plan that meters answers, not conversations", async () => {
+    const getAccountUsage = vi.fn(async () => summary({
+      profile: {
+        key: "enterprise_uncapped",
+        displayName: "Enterprise",
+        monthlyAnswerLimit: null,
+        storedDocumentLimit: null,
+        storedIndexedByteLimit: null,
+        monthlyIndexedByteLimit: null,
+        monthlyConversationLimit: null,
+        repliesPerConversation: 10,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+      monthlyAnswers: { periodStart: "2026-08-01", resetAt: "2026-09-01", used: 400, limit: null },
+      monthlyConversations: null,
+    }));
+    const [descriptor] = createUsageLimitCopilotToolContribution({ usage: { getAccountUsage } }).descriptors;
+
+    const result = await descriptor.createTool(toolContext).invoke({}, invocation) as {
+      monthlyAnswers: unknown;
+    };
+
+    expect(result.monthlyAnswers).toEqual({ used: 400, limit: null, remaining: null, resetAt: "2026-09-01T00:00:00.000Z" });
+  });
+
+  it("names conversations in its copy, and keeps the dashboard and operator-MCP surfaces reading the same text", () => {
+    const [descriptor] = createUsageLimitCopilotToolContribution({ usage: { getAccountUsage: vi.fn() } }).descriptors;
+
+    expect(descriptor.description.toLowerCase()).toContain("conversation");
+    // mcpCatalog.ts lists descriptor.description on the operator MCP surface; defaultAgentRuntime.ts
+    // sends createTool(...).description to the model on the dashboard surface. One written sentence,
+    // not two, so the two surfaces cannot drift the way #1301 found them.
+    expect(descriptor.createTool(toolContext).description).toBe(descriptor.description);
+  });
+
   it("accepts fractional monthly-conversation metering, since ten test runs make one conversation", async () => {
     const getAccountUsage = vi.fn(async () => summary({
       monthlyConversations: {

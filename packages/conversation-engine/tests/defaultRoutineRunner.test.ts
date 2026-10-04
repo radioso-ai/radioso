@@ -3731,7 +3731,7 @@ describe("DefaultRoutineRunner slot values checked against their declared type (
       });
     });
 
-    it("excludes an undeclared activator-extracted key from an action step's payload", async () => {
+    it("excludes an undeclared activator-extracted key from an action step's payload, and traces the drop", async () => {
       const actionBooking: Routine = {
         id: "booking_action",
         rootStepId: "submit",
@@ -3751,6 +3751,39 @@ describe("DefaultRoutineRunner slot values checked against their declared type (
       });
 
       expect(result.actions).toEqual([{ type: "booking.send", payload: { email: "a@b.c" } }]);
+      expect(result.trace?.steps[0]).toMatchObject({
+        stepId: "submit",
+        event: "action_emitted",
+        rejectedSlots: [{ key: "scratch", reason: "undeclared" }],
+      });
+    });
+
+    it("traces the activator's undeclared-key drop on a skill-root activation turn", async () => {
+      const skillBooking: Routine = {
+        id: "booking_skill",
+        rootStepId: "lookup",
+        slots: [{ id: "slot_email", key: "email", type: "email", required: true }],
+        steps: [
+          { id: "lookup", kind: "skill", skillName: "lookup_order" },
+          { id: "done", kind: "terminal", action: "Confirm." },
+        ],
+        transitions: [{ from: "lookup", to: "done", condition: "after dispatch" }],
+      };
+      const dispatch = vi.fn(async () => ({ status: "completed" as const }));
+      const runner = new DefaultRoutineRunner([skillBooking], { select: vi.fn() }, renderer(), { dispatch });
+
+      const result = await runner.resume({
+        turn,
+        state: { sessionId: "session_1", routineId: "booking_skill", path: [], variables: { email: "a@b.c", scratch: "leaked" }, status: "active" },
+        activationTurn: true,
+      });
+
+      expect(dispatch).toHaveBeenCalledTimes(1);
+      expect(result.trace?.steps[0]).toMatchObject({
+        stepId: "lookup",
+        event: "skill_dispatched",
+        rejectedSlots: [{ key: "scratch", reason: "undeclared" }],
+      });
     });
 
     it("keeps every activator-extracted key on a routine with no declared slot schema", async () => {

@@ -150,6 +150,19 @@ export type ConversationActivityEvent = ConversationActivityScope & (
       /** The failure cleared, and why, as an enum code (`later_delivery`, `operator_resolved`, ...). */
       detail: { failureId: string; messageId: string | null; reason: string };
     }
+  | {
+      kind: "held_reply_released";
+      /** The teammate who released the draft. */
+      actorUserId: string;
+      /** The held reply, the message it became, and whether the teammate edited it first. */
+      detail: { heldReplyId: string; messageId: string; edited: boolean };
+    }
+  | {
+      kind: "held_reply_discarded";
+      /** The teammate who discarded the draft; the conversation waits for them until someone replies or takes over. */
+      actorUserId: string;
+      detail: { heldReplyId: string };
+    }
 );
 
 /**

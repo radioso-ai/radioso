@@ -1114,6 +1114,36 @@ export interface FacetExtractionJobs {
   workspace_id: string;
 }
 
+export interface HeldReplies {
+  agent_id: string | null;
+  answers_message_id: string;
+  attention_cleared_at: Timestamp | null;
+  attention_cleared_reason: string | null;
+  conversation_id: string;
+  created_at: Generated<Timestamp>;
+  decided_at: Timestamp | null;
+  discarded_by_user_id: string | null;
+  draft_presentation: Json;
+  draft_text: string;
+  edited_text: string | null;
+  editor_user_id: string | null;
+  hold_reason: string;
+  id: Generated<string>;
+  ownership_version: number;
+  policy_ref: string | null;
+  policy_version: number | null;
+  release_kind: string | null;
+  released_message_id: string | null;
+  releaser_user_id: string | null;
+  review_ref: string | null;
+  state: Generated<string>;
+  superseded_reason: string | null;
+  suppressed_effects: Generated<Json>;
+  turn_facts: Json;
+  updated_at: Generated<Timestamp>;
+  workspace_id: string;
+}
+
 export interface IngestionSettings {
   chunking_strategy: Generated<string>;
   created_at: Generated<Timestamp>;
@@ -2008,6 +2038,7 @@ export interface DB {
   eval_runs: EvalRuns;
   eval_snapshots: EvalSnapshots;
   facet_extraction_jobs: FacetExtractionJobs;
+  held_replies: HeldReplies;
   ingestion_settings: IngestionSettings;
   integration_connections: IntegrationConnections;
   integration_oauth_connections: IntegrationOauthConnections;

@@ -17,6 +17,7 @@ const activityWidening = [
 ];
 const deliveryFailures = "215_conversation_delivery_failures.sql";
 const sendIntents = "216_email_send_intents.sql";
+const heldReplies = "218_held_replies.sql";
 
 const CHECK_VIOLATION = "23514";
 const UNIQUE_VIOLATION = "23505";
@@ -52,7 +53,7 @@ const errorCode = async (work: Promise<unknown>): Promise<string | undefined> =>
 
 const describeIfDatabase = await canReach(integrationDatabaseUrl) ? describe : describe.skip;
 
-describeIfDatabase("email channel schema (209–216)", () => {
+describeIfDatabase("email channel schema (209–218)", () => {
   const databaseName = `mig209_${randomUUID().replaceAll("-", "")}`;
   let admin: Database;
   let database: Database;
@@ -710,5 +711,148 @@ describeIfDatabase("email channel schema (209–216)", () => {
       return result.rows.map((row) => row["QUERY PLAN"]).join("\n");
     });
     expect(plan).toContain("email_send_intents_reconcile_due_idx");
+  });
+  const insertHeldReply = (
+    input: { workspaceId: string; conversationId: string; messageId: string },
+    overrides: Record<string, string | number | null> = {},
+  ) => {
+    const values: Record<string, string | number | null> = {
+      workspace_id: input.workspaceId,
+      conversation_id: input.conversationId,
+      answers_message_id: input.messageId,
+      ownership_version: 0,
+      hold_reason: "draft_mode",
+      turn_facts: "{}",
+      draft_text: "Draft",
+      draft_presentation: "{}",
+      ...overrides,
+    };
+    const columns = Object.keys(values);
+    return database.queryOne<{ id: string; state: string; suppressed_effects: unknown }>(
+      `INSERT INTO held_replies (${columns.join(", ")}) VALUES (${columns.map((_, index) => `$${index + 1}`).join(", ")})
+       RETURNING id, state, suppressed_effects`,
+      columns.map((column) => values[column]),
+    );
+  };
+
+  it("218 creates held replies on conversations and messages, and links send intents to them", async () => {
+    expect((await database.query<{ id: string }>("SELECT to_regclass('held_replies') AS id"))[0]?.id).toBeNull();
+    await applyTestMigration(database, heldReplies);
+
+    expect(await foreignKeys("held_replies")).toEqual([
+      { column: "answers_message_id", target: "messages", on_delete: "c" },
+      { column: "conversation_id", target: "conversations", on_delete: "c" },
+      { column: "released_message_id", target: "messages", on_delete: "n" },
+    ]);
+    expect(await foreignKeys("email_send_intents")).toContainEqual(
+      { column: "held_reply_id", target: "held_replies", on_delete: "n" },
+    );
+  });
+
+  it("keeps one live draft per conversation and one held reply per review, inside the held-reply machine", async () => {
+    const { workspaceId } = await seedWorkspace();
+    const { conversationId, messageId } = await insertConversation(workspaceId);
+    const scope = { workspaceId, conversationId, messageId };
+
+    const pending = await insertHeldReply(scope, { review_ref: "email:r1" });
+    expect(pending).toMatchObject({ state: "pending", suppressed_effects: [] });
+    expect(await errorCode(insertHeldReply(scope))).toBe(UNIQUE_VIOLATION);
+    expect(await errorCode(insertHeldReply(scope, { state: "queued_auto" }))).toBe(UNIQUE_VIOLATION);
+    const decided = { decided_at: new Date().toISOString(), attention_cleared_at: new Date().toISOString() };
+    expect(await errorCode(insertHeldReply(scope, {
+      state: "superseded", superseded_reason: "newer_inbound", attention_cleared_reason: "superseded", review_ref: "email:r1", ...decided,
+    }))).toBe(UNIQUE_VIOLATION);
+    await insertHeldReply(scope, {
+      state: "superseded", superseded_reason: "newer_inbound", attention_cleared_reason: "superseded", review_ref: "email:r2", ...decided,
+    });
+    // Another conversation's review refs are its own.
+    const other = await insertConversation(workspaceId);
+    await insertHeldReply({ workspaceId, ...other }, { review_ref: "email:r1" });
+
+    const outsideTheMachine: Record<string, string | number | null>[] = [
+      { state: "sent" },
+      { release_kind: "manual" },
+      { superseded_reason: "expired" },
+      { attention_cleared_reason: "forgotten" },
+      { ownership_version: -1 },
+      { policy_ref: "email_mailbox:x" },
+      { policy_version: 1 },
+      { state: "released", ...decided, attention_cleared_reason: "released" },
+      { state: "released", release_kind: "operator", ...decided, attention_cleared_reason: "released" },
+      { state: "edited", release_kind: "operator", releaser_user_id: randomUUID(), ...decided, attention_cleared_reason: "released" },
+      { state: "discarded", decided_at: new Date().toISOString() },
+      { state: "superseded", ...decided, attention_cleared_reason: "superseded" },
+      { state: "pending", decided_at: new Date().toISOString() },
+      { state: "pending", attention_cleared_at: new Date().toISOString(), attention_cleared_reason: "released" },
+      { state: "released", release_kind: "auto", decided_at: new Date().toISOString() },
+      { attention_cleared_at: new Date().toISOString() },
+    ];
+    for (const overrides of outsideTheMachine) {
+      const conversation = await insertConversation(workspaceId);
+      expect(
+        await errorCode(insertHeldReply({ workspaceId, ...conversation }, overrides)),
+        JSON.stringify(overrides),
+      ).toBe(CHECK_VIOLATION);
+    }
+    const releasedConversation = await insertConversation(workspaceId);
+    await insertHeldReply({ workspaceId, ...releasedConversation }, {
+      state: "edited", release_kind: "operator", edited_text: "Edit", editor_user_id: randomUUID(),
+      releaser_user_id: randomUUID(), ...decided, attention_cleared_reason: "released",
+    });
+    await insertHeldReply({ workspaceId, ...releasedConversation }, {
+      state: "released", release_kind: "auto", ...decided, attention_cleared_reason: "released",
+    });
+    await insertHeldReply({ workspaceId, ...releasedConversation }, {
+      state: "discarded", discarded_by_user_id: randomUUID(), decided_at: new Date().toISOString(),
+    });
+  });
+
+  it("links a send intent to the held reply it delivers, and clears the link when the held reply goes", async () => {
+    const { workspaceId } = await seedWorkspace();
+    const domainId = await insertDomain(workspaceId, "held.example");
+    const mailboxId = await insertMailbox(workspaceId, domainId, "support@held.example");
+    const { conversationId, messageId } = await insertConversation(workspaceId);
+    const held = await insertHeldReply({ workspaceId, conversationId, messageId });
+
+    const intent = await insertIntent({ workspaceId, mailboxId, conversationId, messageId }, { held_reply_id: held.id });
+    expect(await errorCode(insertIntent(
+      { workspaceId, mailboxId, conversationId, messageId },
+      { idempotency_key: `k-${randomUUID()}`, held_reply_id: randomUUID() },
+    ))).toBe(FOREIGN_KEY_VIOLATION);
+
+    await database.execute("DELETE FROM held_replies WHERE id = $1", [held.id]);
+    expect((await database.queryOne<{ held_reply_id: string | null }>(
+      "SELECT held_reply_id FROM email_send_intents WHERE id = $1", [intent.id],
+    )).held_reply_id).toBeNull();
+  });
+
+  it("finds the attention list and a policy's live drafts from their partial indexes", async () => {
+    const { workspaceId } = await seedWorkspace();
+    const { conversationId, messageId } = await insertConversation(workspaceId);
+    await database.execute(
+      `INSERT INTO held_replies (workspace_id, conversation_id, answers_message_id, ownership_version, hold_reason, turn_facts,
+                                 draft_text, draft_presentation, state, superseded_reason, attention_cleared_at,
+                                 attention_cleared_reason, decided_at, policy_ref, policy_version)
+       SELECT $1, $2, $3, 0, 'draft_mode', '{}'::jsonb, 'Draft', '{}'::jsonb, 'superseded', 'newer_inbound', now(), 'superseded', now(),
+              'email_mailbox:' || (n % 50), 1
+         FROM generate_series(1, 3000) AS n`,
+      [workspaceId, conversationId, messageId],
+    );
+    await database.execute("ANALYZE held_replies");
+    const plan = (query: string, params: unknown[]) => database.withTransaction(async (client) => {
+      await client.query("SET LOCAL enable_seqscan = off");
+      const result = await client.query<{ "QUERY PLAN": string }>(`EXPLAIN ${query}`, params);
+      return result.rows.map((row) => row["QUERY PLAN"]).join("\n");
+    });
+
+    expect(await plan(
+      `SELECT id FROM held_replies WHERE workspace_id = $1 AND attention_cleared_at IS NULL AND state <> 'queued_auto'
+        ORDER BY created_at DESC, id DESC LIMIT 20`,
+      [workspaceId],
+    )).toContain("held_replies_workspace_attention_idx");
+    expect(await plan(
+      "UPDATE held_replies SET state = 'superseded' WHERE policy_ref = $1 AND state IN ('pending', 'queued_auto')",
+      ["email_mailbox:1"],
+    )).toContain("held_replies_live_policy_idx");
   });
 });

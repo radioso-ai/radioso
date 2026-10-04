@@ -25,6 +25,35 @@ export type {
   ConversationOwnershipRecord,
   ConversationOwnershipScope,
 } from "./ownershipState.js";
+export {
+  autoSendBirth,
+  heldBirth,
+  HELD_REPLY_STATES,
+  heldReplyEventSources,
+  heldReplyEventTarget,
+  heldReplyTransition,
+  isHeldReplyAttentionOpen,
+  releaseRefusal,
+  type HeldReplyBindingCheck,
+  type HeldReplyEvent,
+  type HeldReplyRecord,
+  type HeldReplyState,
+} from "./heldReplies/heldReplyState.js";
+export {
+  HeldReplyService,
+  type HeldReplyAuthorityView,
+  type HeldReplyChannelScope,
+  type HeldReplyDraftMessageWriter,
+  type HeldReplyInsert,
+  type HeldReplyPage,
+  type HeldReplyReadStore,
+  type HeldReplySupersedeScope,
+  type HeldReplyUnitOfWork,
+  type HeldReplyView,
+  type HeldReplyWriteScope,
+  type HeldReplyWriteStore,
+  type HoldReplyInput,
+} from "./heldReplies/heldReplyService.js";
 
 export interface ConversationOwnershipReader {
   load(conversationId: string): Promise<ConversationOwnershipRecord | null>;

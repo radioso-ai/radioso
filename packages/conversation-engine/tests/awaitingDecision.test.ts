@@ -139,7 +139,7 @@ describe("resumeAwaitingDecision", () => {
       decision: { handle: "decision_1", optionId: "reject" },
     });
 
-    expect(result.handoff).toEqual({ routineId: "refund_flow", stepId: "declined", collected: {} });
+    expect(result.handoff).toEqual({ routineId: "refund_flow", stepId: "declined", terminalKind: "handoff", collected: {} });
     expect(result.operatorNotice).toBeUndefined();
   });
 

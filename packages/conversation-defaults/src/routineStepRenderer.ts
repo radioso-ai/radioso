@@ -15,6 +15,7 @@ import type {
 import {
   DEFAULT_ROUTINE_STEP_REASK_EXHAUSTED_PROMPT,
   DEFAULT_ROUTINE_STEP_REPLY_PROMPT,
+  DEFAULT_ROUTINE_STEP_STUCK_HANDOFF_PROMPT,
   DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_DEFAULT_PROMPT,
   DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_WITH_MESSAGE_PROMPT,
 } from "./generated/defaultPrompts.js";
@@ -25,6 +26,7 @@ import { renderRoutineStepInstructions, renderSteeringRules, routineStepSteering
 export {
   DEFAULT_ROUTINE_STEP_REASK_EXHAUSTED_PROMPT,
   DEFAULT_ROUTINE_STEP_REPLY_PROMPT,
+  DEFAULT_ROUTINE_STEP_STUCK_HANDOFF_PROMPT,
   DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_DEFAULT_PROMPT,
   DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_WITH_MESSAGE_PROMPT,
 } from "./generated/defaultPrompts.js";
@@ -268,6 +270,7 @@ export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
   private readonly terminalHandoffWithMessagePromptTemplate: string;
   private readonly terminalHandoffDefaultPromptTemplate: string;
   private readonly reaskExhaustedPromptTemplate: string;
+  private readonly stuckHandoffPromptTemplate: string;
 
   constructor(
     private readonly modelGateway: ConversationModelGateway,
@@ -277,6 +280,8 @@ export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
       terminalHandoffDefaultPromptTemplate?: string;
       /** What a step asked again past the re-ask limit is told (#1376). */
       reaskExhaustedPromptTemplate?: string;
+      /** The message for a routine that ends stuck past the re-ask limit and goes to a person (#1384). */
+      stuckHandoffPromptTemplate?: string;
       responseLanguage?: string | Promise<string | undefined>;
       groundedAnswerRenderer?: RoutineGroundedAnswerRenderer;
       /** Frames directive guidance as subordinate to the step instruction. */
@@ -291,6 +296,7 @@ export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
       options.terminalHandoffDefaultPromptTemplate ?? DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_DEFAULT_PROMPT;
     this.reaskExhaustedPromptTemplate =
       options.reaskExhaustedPromptTemplate ?? DEFAULT_ROUTINE_STEP_REASK_EXHAUSTED_PROMPT;
+    this.stuckHandoffPromptTemplate = options.stuckHandoffPromptTemplate ?? DEFAULT_ROUTINE_STEP_STUCK_HANDOFF_PROMPT;
   }
 
   async render(input: {
@@ -298,23 +304,34 @@ export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
     steering: SteeringRule[];
     turn: TurnContext;
     reask?: RoutineStepReask;
+    stuckHandoff?: boolean;
   }): Promise<RenderableTurn> {
     const responseLanguage = await this.options.responseLanguage;
+    // The routine ended on a step the visitor stayed stuck on, and a person continues (#1384).
+    // The message carries none of the step: its question is exactly what to stop asking.
+    if (input.stuckHandoff) {
+      return this.handoffMessage(
+        input.turn,
+        responseLanguage,
+        renderPromptTemplate("chat/routine-step-stuck-handoff.md", this.stuckHandoffPromptTemplate, {
+          language: terminalPromptLanguage(responseLanguage),
+        }),
+      );
+    }
     if (isHandoffTerminal(input.step)) {
       const message = terminalMessage(input.step, input.steering);
-      const systemPrompt = renderPromptTemplate(
-        message ? "chat/routine-step-terminal-handoff-with-message.md" : "chat/routine-step-terminal-handoff-default.md",
-        message ? this.terminalHandoffWithMessagePromptTemplate : this.terminalHandoffDefaultPromptTemplate,
-        {
-          language: terminalPromptLanguage(responseLanguage),
-          ...(message ? { message } : {}),
-        },
+      return this.handoffMessage(
+        input.turn,
+        responseLanguage,
+        renderPromptTemplate(
+          message ? "chat/routine-step-terminal-handoff-with-message.md" : "chat/routine-step-terminal-handoff-default.md",
+          message ? this.terminalHandoffWithMessagePromptTemplate : this.terminalHandoffDefaultPromptTemplate,
+          {
+            language: terminalPromptLanguage(responseLanguage),
+            ...(message ? { message } : {}),
+          },
+        ),
       );
-      const { text } = await this.modelGateway.complete({
-        messages: handoffTerminalMessages(input.turn, responseLanguage),
-        systemPrompt,
-      });
-      return { answer: text.trim() };
     }
 
     const grounded = await this.options.groundedAnswerRenderer?.render(input);
@@ -341,5 +358,18 @@ export class RoutineStepRenderer implements ConversationRoutineStepRenderer {
     });
     const citations = citationsFromStagedContext(input.turn);
     return { answer: text.trim(), ...(citations.length > 0 ? { citations } : {}) };
+  }
+
+  /** A message handing the visitor to a person, with only their latest message as a language hint. */
+  private async handoffMessage(
+    turn: TurnContext,
+    responseLanguage: string | undefined,
+    systemPrompt: string,
+  ): Promise<RenderableTurn> {
+    const { text } = await this.modelGateway.complete({
+      messages: handoffTerminalMessages(turn, responseLanguage),
+      systemPrompt,
+    });
+    return { answer: text.trim() };
   }
 }

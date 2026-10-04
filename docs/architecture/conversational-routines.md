@@ -294,6 +294,18 @@ hand-off included: a step's exit to a hand-off end is often its confirmation edg
 ("the visitor confirmed the booking" → hand off the request), and taking it would
 submit a request the visitor never confirmed.
 
+On a routine with a hand-off end — some exit anywhere in the routine leads to a
+`handoff` terminal — a step still unanswered on the turn after it asked
+differently (the fifth re-ask with the default limit) ends the run instead of
+asking again. The run ends `stuck` on that step: `nextState` clears, `terminal`
+reports `{ kind: "stuck", stepId, collected }`, and the reply hands the visitor to
+a person without entering the hand-off terminal or running its completion export
+— the visitor never confirmed whatever that terminal would submit. The trace
+records a `reask_limit_handoff` entry with the `reaskCount`. A routine with no
+hand-off end, or none an exit leads to, keeps asking differently forever. See
+[Human Takeover](../human-takeover.md#how-handoff-is-requested) for the
+`routine_stuck` ownership reason this ending requests.
+
 The limit is three for every routine the backend runs; the engine's
 `DefaultRoutineRunner` takes a `reaskLimit` option for hosts that embed it. A
 `counter` exit counts entries into a step, which is a separate number: it bounds
@@ -441,7 +453,9 @@ moves ownership for a `handoff` and queues the notice as a `handoff.notify` or
 `completion.notify` action in the same transaction as the turn, and the action
 worker delivers it by email, webhook, and Slack. A `handoff` reported without an
 `operatorNotice` still queues the default `handoff.notify`, so every hand-off
-notifies whichever runner reported it. At delivery the handler loads the routine
+notifies whichever runner reported it — including a visitor [stuck past the
+re-ask limit](#when-a-step-keeps-being-asked), which reports `handoff` the same
+way without reaching an authored terminal at all. At delivery the handler loads the routine
 again for its name and declared slot order, because the queued payload is jsonb
 and keeps no key order. The notice text is rendered at
 delivery and never logged; it holds visitor data.

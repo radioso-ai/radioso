@@ -1,7 +1,7 @@
 import type { RoutineActionRequest, RoutineOperatorNoticeEffect } from "@radioso/conversation-contract";
 
 import { routineHandoffOwnership, type RoutineHandoffEffect } from "./handoffOwnership.js";
-import { operatorNoticeActionPayload, ROUTINE_ENDING_NOTICE_ACTIONS } from "./operatorNoticeAction.js";
+import { operatorNoticeActionPayload, routineEndingNoticeAction } from "./operatorNoticeAction.js";
 import type { PreparedSession } from "./chatSessionPreparer.js";
 
 /** The routine-ending effects a turn reports, whichever path (routine, coverage, rendered) ran it. */
@@ -22,7 +22,7 @@ export const buildRoutineEndingNotifyAction = (input: {
   userMessageId: string;
   notice: RoutineOperatorNoticeEffect;
 }): RoutineActionRequest => {
-  const action = ROUTINE_ENDING_NOTICE_ACTIONS[input.notice.terminalKind];
+  const action = routineEndingNoticeAction(input.notice.terminalKind);
   return {
     type: action.type,
     payload: operatorNoticeActionPayload({
@@ -41,9 +41,10 @@ export const buildRoutineEndingNotifyAction = (input: {
 
 /**
  * The notice a turn's routine ending sends operators. Every hand-off notifies, so a hand-off
- * whose runner reported no `operatorNotice` (one that predates notices) still sends the default
- * one, carrying what the hand-off collected; otherwise the reported notice stands. Exported so
- * a Test Chat preview applies the same rule.
+ * whose runner reported no `operatorNotice` (one that predates notices, or a visitor stuck past
+ * the re-ask limit (#1384), which is never authored and so never carries one) still sends the
+ * default one, carrying the hand-off's own terminal kind and what it collected; otherwise the
+ * reported notice stands. Exported so a Test Chat preview applies the same rule.
  */
 export const operatorNoticeForTurn = (
   turn: Pick<RoutineEndingTurnEffects, "handoff" | "operatorNotice">,
@@ -54,7 +55,7 @@ export const operatorNoticeForTurn = (
   return {
     routineId: turn.handoff.routineId,
     stepId: turn.handoff.stepId,
-    terminalKind: "handoff",
+    terminalKind: turn.handoff.terminalKind,
     ...(turn.handoff.collected ? { collected: turn.handoff.collected } : {}),
   };
 };

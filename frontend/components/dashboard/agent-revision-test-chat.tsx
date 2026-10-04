@@ -1991,19 +1991,10 @@ export function AgentRevisionTestChat({
                       variant="outline"
                       size="sm"
                       onClick={() => void runEvals()}
-                      disabled={
-                        !availableSelectedCaseIds.length ||
-                        Boolean(blockingContextError) ||
-                        isRunningEvals ||
-                        evalRun?.state === "running"
-                      }
+                      disabled={!availableSelectedCaseIds.length || Boolean(blockingContextError)}
+                      loading={isRunningEvals || evalRun?.state === "running"}
                     >
-                      {isRunningEvals || evalRun?.state === "running" ? (
-                        <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-                      ) : null}
-                      {isRunningEvals || evalRun?.state === "running"
-                        ? "Running…"
-                        : "Run evals"}
+                      {isRunningEvals || evalRun?.state === "running" ? "Running…" : "Run evals"}
                     </Button>
                   </div>
                   {agentCases.length ? (
@@ -2136,10 +2127,8 @@ export function AgentRevisionTestChat({
                                           onClick={() =>
                                             void retryEvalCase(revisionId, id)
                                           }
+                                          loading={retryingEvalCase === retryKey}
                                         >
-                                          {retryingEvalCase === retryKey ? (
-                                            <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                                          ) : null}
                                           Retry case
                                         </Button>
                                       ) : null}

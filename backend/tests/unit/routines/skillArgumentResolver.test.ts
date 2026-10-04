@@ -4,7 +4,7 @@ import { resolveSkillArguments } from "../../../src/modules/routines/skillArgume
 
 describe("resolveSkillArguments", () => {
   it("resolves literal and variableRef input bindings by skill input key", () => {
-    const collected = resolveSkillArguments(
+    const { values: collected } = resolveSkillArguments(
       {
         message: { kind: "variableRef", ref: "userMessage" },
         urgent: { kind: "literal", value: true },
@@ -17,7 +17,7 @@ describe("resolveSkillArguments", () => {
   });
 
   it("omits variableRef bindings whose variable is absent or undefined", () => {
-    const collected = resolveSkillArguments(
+    const { values: collected } = resolveSkillArguments(
       {
         present: { kind: "variableRef", ref: "present" },
         missing: { kind: "variableRef", ref: "missing" },
@@ -30,7 +30,7 @@ describe("resolveSkillArguments", () => {
   });
 
   it("resolves contextVariableRef input bindings from context values", () => {
-    const collected = resolveSkillArguments(
+    const { values: collected } = resolveSkillArguments(
       {
         cart: { kind: "contextVariableRef", contextVariable: "cart" },
         page: { kind: "contextVariableRef", contextVariable: "page_context" },
@@ -50,7 +50,7 @@ describe("resolveSkillArguments", () => {
   });
 
   it("omits contextVariableRef bindings whose context value is absent or undefined", () => {
-    const collected = resolveSkillArguments(
+    const { values: collected } = resolveSkillArguments(
       {
         present: { kind: "contextVariableRef", contextVariable: "present" },
         missing: { kind: "contextVariableRef", contextVariable: "missing" },
@@ -64,6 +64,6 @@ describe("resolveSkillArguments", () => {
   });
 
   it("returns an empty collected map when there are no input bindings", () => {
-    expect(resolveSkillArguments(undefined, { message: "hello" })).toEqual({});
+    expect(resolveSkillArguments(undefined, { message: "hello" }).values).toEqual({});
   });
 });

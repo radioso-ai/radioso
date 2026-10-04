@@ -568,13 +568,13 @@ R3 blocks T088 (S1 drain wiring). R1 and R2 block S3 and can run in parallel wit
 
 ### Schema
 
-- [ ] T154 [US4] Create `backend/src/db/migrations/218_held_replies.sql` (states including `queued_auto`, unique live draft, unique `review_ref`), plus `ALTER TABLE email_send_intents ADD CONSTRAINT … FOREIGN KEY (held_reply_id)`.
-- [ ] T155 [US4] Regenerate and check both snapshots (after T154).
+- [x] T154 [US4] Create `backend/src/db/migrations/218_held_replies.sql` (states including `queued_auto`, unique live draft, unique `review_ref`), plus `ALTER TABLE email_send_intents ADD CONSTRAINT … FOREIGN KEY (held_reply_id)`.
+- [x] T155 [US4] Regenerate and check both snapshots (after T154).
 
 ### Tests first: review mode
 
-- [ ] T156 [P] [US4] Extend `backend/tests/unit/chat/turn-execution-capabilities.test.ts` with the `review` row, and `backend/tests/unit/skill-effect-policy.test.ts` with review → `suppressed` even when `allowed` is requested. The `live` and `safe_test` rows are unchanged.
-- [ ] T157 [P] [US4] Write `backend/tests/unit/chat/review-turn.test.ts` for `ChatService.review()`:
+- [x] T156 [P] [US4] Extend `backend/tests/unit/chat/turn-execution-capabilities.test.ts` with the `review` row, and `backend/tests/unit/skill-effect-policy.test.ts` with review → `suppressed` even when `allowed` is requested. The `live` and `safe_test` rows are unchanged.
+- [x] T157 [P] [US4] Write `backend/tests/unit/chat/review-turn.test.ts` for `ChatService.review()`:
   - reuses `existingUserMessageId` and creates no message;
   - neither routine activation nor suspended-routine resume runs;
   - no assistant row on either persistence path, and completion returns `kind: "draft"` with correlation `{ requestMessageId, turnId }`;
@@ -586,15 +586,15 @@ R3 blocks T088 (S1 drain wiring). R1 and R2 block S3 and can run in parallel wit
   - the history window is bounded;
   - usage is reserved as `conversation_reply` / `email`;
   - a type test that `answer()` never returns a draft.
-- [ ] T158 [P] [US4] Write `backend/tests/unit/chat-session-preparer-existing-message.test.ts`: an existing user message is loaded scoped to its conversation and workspace, and a foreign message is rejected.
-- [ ] T159 [P] [US4] Write `backend/tests/unit/connectors/connectorTurnFacts.test.ts`: every `AssistantTurnOutcome` and every `AnswerCoverageAvailability` (narrowing on `assessed`) mapped per research B3, using real `ChatReviewResult` fixtures produced by the lifecycle in T157 as well as table rows.
-- [ ] T160 [P] [US4] Extend `backend/tests/unit/connectors/connectorChatPort.test.ts`: `respond` maps `ChatReviewResult` to `draft`, `no_draft` and `human_owned`.
-- [ ] T161 [P] [US4] Write `backend/tests/contract/connectors/connector-chat-port.contract.test.ts`: `answer` unchanged for Slack and WhatsApp; `ingest` and `respond` shapes.
+- [x] T158 [P] [US4] Write `backend/tests/unit/chat-session-preparer-existing-message.test.ts`: an existing user message is loaded scoped to its conversation and workspace, and a foreign message is rejected.
+- [x] T159 [P] [US4] Write `backend/tests/unit/connectors/connectorTurnFacts.test.ts`: every `AssistantTurnOutcome` and every `AnswerCoverageAvailability` (narrowing on `assessed`) mapped per research B3, using real `ChatReviewResult` fixtures produced by the lifecycle in T157 as well as table rows.
+- [x] T160 [P] [US4] Extend `backend/tests/unit/connectors/connectorChatPort.test.ts`: `respond` maps `ChatReviewResult` to `draft`, `no_draft` and `human_owned`.
+- [x] T161 [P] [US4] Write `backend/tests/contract/connectors/connector-chat-port.contract.test.ts`: `answer` unchanged for Slack and WhatsApp; `ingest` and `respond` shapes.
 
 ### Tests first: held replies
 
-- [ ] T162 [P] [US4] Write `backend/tests/unit/handoff/held-reply-state.test.ts` covering every row of the data-model held-reply machine.
-- [ ] T163 [P] [US4] Write `backend/tests/unit/handoff/held-reply-service.test.ts` with a fake `HeldReplyChannelScope`:
+- [x] T162 [P] [US4] Write `backend/tests/unit/handoff/held-reply-state.test.ts` covering every row of the data-model held-reply machine.
+- [x] T163 [P] [US4] Write `backend/tests/unit/handoff/held-reply-service.test.ts` with a fake `HeldReplyChannelScope`:
   - `hold` is idempotent on `reviewRef`, and is born `superseded` when the bound policy or ownership is stale or the answer is not the latest message;
   - release: unchanged → agent message from the draft presentation; edited → operator message, original retained;
   - ownership is unchanged on release;
@@ -647,8 +647,8 @@ R3 blocks T088 (S1 drain wiring). R1 and R2 block S3 and can run in parallel wit
 
 ### Implementation: review mode
 
-- [ ] T178 [US4] Add `review` to `backend/src/shared/domain/turnExecutionMode.ts`, covering both the capabilities and the `resolveSkillEffectPolicy` arm (after T156, T020).
-- [ ] T179 [US4] Implement review in chat (after T157, T158, T178, T022):
+- [x] T178 [US4] Add `review` to `backend/src/shared/domain/turnExecutionMode.ts`, covering both the capabilities and the `resolveSkillEffectPolicy` arm (after T156, T020).
+- [x] T179 [US4] Implement review in chat (after T157, T158, T178, T022):
   - create `backend/src/modules/chat/types/chatReview.ts` and `backend/src/modules/chat/services/reviewDraft.ts`;
   - add `ChatService.review()` to `chatService.ts` (guards at `:896-911` and `:913-942`);
   - add the existing-message branch in `chatSessionPreparer.ts`;
@@ -656,13 +656,13 @@ R3 blocks T088 (S1 drain wiring). R1 and R2 block S3 and can run in parallel wit
   - wire the R2 collector into the result and add `agent_skill_effect_suppressed_total{mode,site}`.
 
   `chatResponses.ts` is not modified.
-- [ ] T180 [US4] Add `ConnectorTurnFacts`, `ConnectorTurnResult`, `ConnectorReplyDraft`, `ConnectorRespondInput` and `respond` to `packages/connector-api/connectorPlugin.d.ts`. Create `backend/src/modules/connectors/services/connectorTurnFacts.ts` and implement `respond` in `connectorChatPort.ts` (after T159–T161, T179).
+- [x] T180 [US4] Add `ConnectorTurnFacts`, `ConnectorTurnResult`, `ConnectorReplyDraft`, `ConnectorRespondInput` and `respond` to `packages/connector-api/connectorPlugin.d.ts`. Create `backend/src/modules/connectors/services/connectorTurnFacts.ts` and implement `respond` in `connectorChatPort.ts` (after T159–T161, T179).
 
 ### Implementation: held replies
 
-- [ ] T181 [US4] Implement `backend/src/modules/handoff/heldReplies/heldReplyState.ts` (after T162).
-- [ ] T182 [US4] Implement `backend/src/db/repositories/heldReplyRepository.ts`, including the supersede scope methods (after T155).
-- [ ] T183 [US4] Implement `backend/src/modules/handoff/heldReplies/heldReplyService.ts` (the `hold`, `findByReviewRef` and operator ports) and the exports in `handoff/public.ts` (after T163, T181, T182).
+- [x] T181 [US4] Implement `backend/src/modules/handoff/heldReplies/heldReplyState.ts` (after T162).
+- [x] T182 [US4] Implement `backend/src/db/repositories/heldReplyRepository.ts`, including the supersede scope methods (after T155).
+- [x] T183 [US4] Implement `backend/src/modules/handoff/heldReplies/heldReplyService.ts` (the `hold`, `findByReviewRef` and operator ports) and the exports in `handoff/public.ts` (after T163, T181, T182).
 - [ ] T184 [US4] Add `heldReplies: HeldReplySupersedeScope` to `OwnershipChangeUnitOfWork` and `OwnershipReplyUnitOfWork` (`conversationOwnershipService.ts:50-72`), add the supersede calls in `takeOver`, `transfer` and `reply`, and bind `HeldReplyRepository(trx)` in `backend/src/app/composition/conversationOwnershipReplies.ts` and the change unit of work (after T164, T182).
 - [ ] T185 [US4] Create `backend/src/app/composition/heldReplyUnitOfWork.ts` with the channel-scope registry keyed by `policyRef` prefix (after T165, T183).
 - [ ] T186 [US4] Complete `backend/src/app/composition/mailboxPolicyChange.ts` (add supersede), and create `backend/src/modules/emailChannel/heldReplyChannelScope.ts` with `lockPolicy`, registered under `email_mailbox:` (after T166, T185).

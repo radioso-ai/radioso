@@ -47,6 +47,7 @@ import { useSkillCatalog } from '@/lib/skill-catalog'
 import { cn } from '@/lib/utils'
 import { DeliveryFailurePanel } from './delivery-failure-panel'
 import { EmailConversationHeader, emailSendUnavailableReason, useConversationEmailFacts } from './email-conversation-header'
+import { HeldReplyPanel } from './held-reply-panel'
 import { InboxReadOnlyFooter } from './inbox-readonly-footer'
 import { InboxSituationCard } from './inbox-situation-card'
 import { useConversationOperators } from './use-conversation-operators'
@@ -284,6 +285,7 @@ export function InboxResponseView({
       : emailFacts.facts
         ? emailSendUnavailableReason(emailFacts.facts)
         : 'Checking whether this mailbox can send.'
+  const sendUnavailableReason = isEmailConversation ? emailSendUnavailableReason(emailFacts.facts) : null
   const replyPreviews = useMemo(
     () => new Map(isEmailConversation ? effectiveConversationMessages.map((message) => [message.id, message.content]) : []),
     [effectiveConversationMessages, isEmailConversation],
@@ -374,6 +376,17 @@ export function InboxResponseView({
           />
         </div>
       ) : null}
+      {effectiveItem?.type === 'approval' && effectiveItem.heldReplyId ? (
+        <div className="shrink-0 px-6 pt-4">
+          <HeldReplyPanel
+            key={effectiveItem.conversationId}
+            workspaceId={workspaceId}
+            conversationId={effectiveItem.conversationId}
+            sendUnavailableReason={sendUnavailableReason}
+            onChanged={handleChanged}
+          />
+        </div>
+      ) : null}
 
       <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
         {isDetailLoading && !conversationDetail ? (
@@ -400,7 +413,7 @@ export function InboxResponseView({
                 firstVisitorMessage={findFirstVisitorMessage(effectiveConversationMessages)}
               />
             ) : null}
-            {effectiveItem?.type === 'approval' ? (
+            {effectiveItem?.type === 'approval' && !effectiveItem.heldReplyId ? (
               approvalDecision ? (
                 <ApprovalDecisionPanel
                   conversationId={effectiveItem.conversationId}
@@ -438,7 +451,7 @@ export function InboxResponseView({
           onTeammatesStale={teammates.refresh}
           onChanged={handleChanged}
           externalError={handBackRunner.error}
-          sendUnavailableReason={isEmailConversation ? emailSendUnavailableReason(emailFacts.facts) : null}
+          sendUnavailableReason={sendUnavailableReason}
           trailingActions={showDoneControl ? (
             <Tooltip>
               <TooltipTrigger asChild>

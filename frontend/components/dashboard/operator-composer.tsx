@@ -33,6 +33,13 @@ export type OperatorActionResult =
     failureId: string
     resolution: 'acknowledged' | 'marked_sent' | 'resend'
   }
+  | {
+    kind: 'held_reply_settled'
+    conversationId: string
+    heldReplyId: string
+    /** `stale` when the server refused because the reply was already settled or replaced. */
+    outcome: 'released' | 'edited' | 'discarded' | 'stale'
+  }
   | { kind: 'refresh'; conversationId: string; reason: 'conflict' | 'invalid_option' }
 
 const genericError = 'Something went wrong. Try again.'

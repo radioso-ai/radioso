@@ -104,6 +104,10 @@ export const dashboardQueryKeys = {
     // acknowledgement re-reads it by invalidating this key.
     deliveryFailures: (workspaceId: string, input: { limit: number }) =>
       workspaceKey(workspaceId, 'attention', 'delivery-failures', input.limit),
+    // Held replies poll for the same reason, and an operator's own release, discard or reply
+    // re-reads them by invalidating this key.
+    heldReplies: (workspaceId: string, input: { limit: number }) =>
+      workspaceKey(workspaceId, 'attention', 'held-replies', input.limit),
   },
   conversations: {
     // Not a live-invalidation family: no workspace event reports a teammate change, so
@@ -112,6 +116,9 @@ export const dashboardQueryKeys = {
     // Polled while the conversation is open, and re-read after an operator's own action on it.
     emailFacts: (workspaceId: string, conversationId: string) =>
       workspaceKey(workspaceId, 'conversations', 'email-facts', conversationId),
+    // Polled while the conversation is open, so a newer draft or a teammate's release shows.
+    heldReply: (workspaceId: string, conversationId: string) =>
+      workspaceKey(workspaceId, 'conversations', 'held-reply', conversationId),
   },
 } as const
 
@@ -127,6 +134,7 @@ type DashboardQueryFamily =
   | 'attention/human-owned'
   | 'attention/recently-closed'
   | 'attention/delivery-failures'
+  | 'attention/held-replies'
 
 const knownFamilies = new Set<DashboardQueryFamily>([
   'documents/list',
@@ -140,6 +148,7 @@ const knownFamilies = new Set<DashboardQueryFamily>([
   'attention/human-owned',
   'attention/recently-closed',
   'attention/delivery-failures',
+  'attention/held-replies',
 ])
 
 export const isDashboardQueryFamily = (

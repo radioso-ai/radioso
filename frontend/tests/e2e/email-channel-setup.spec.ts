@@ -80,8 +80,17 @@ const json = (route: Route, body: unknown, status = 200) =>
 const refuse = (route: Route, status: number, code: string, message: string) =>
   json(route, { error: { code, message } }, status);
 
-/** In-memory email channel backend; `deliver` stands in for mail arriving through the relay. */
-const installEmailChannelBackend = async (page: Page) => {
+type EngagementMode = "operator_only" | "draft" | "auto";
+
+/**
+ * In-memory email channel backend; `deliver` stands in for mail arriving through the relay, and
+ * `changePolicyElsewhere` for a teammate saving this mailbox's settings in another tab.
+ */
+const installEmailChannelBackend = async (
+  page: Page,
+  options: { supportedModes?: EngagementMode[]; existingMailbox?: { engagementMode: EngagementMode } } = {},
+) => {
+  const supportedModes = options.supportedModes ?? ["operator_only"];
   const requests: Array<{ method: string; path: string; body?: unknown }> = [];
   const domains: Array<{
     id: string;
@@ -118,11 +127,48 @@ const installEmailChannelBackend = async (page: Page) => {
   ];
   let verifyCount = 0;
 
+  const newMailbox = (input: { address: string; displayName: unknown; agentId: unknown; engagementMode: unknown }) => ({
+    id: mailboxId,
+    address: input.address,
+    displayName: input.displayName,
+    agentId: input.agentId ?? null,
+    domainId,
+    relayAddress,
+    engagementMode: input.engagementMode ?? "operator_only",
+    enabled: true,
+    policyVersion: 1,
+    threadSendBudget: 3,
+    hourlyGenerationBudget: 30,
+    threadContextMessages: 10,
+    spamOptIn: false,
+    silenceThresholdHours: 72,
+    receiving: { state: "waiting_for_first_message", lastReceivedAt: null },
+    sending: { state: "not_verified" },
+    plusAddressVerified: false,
+    setupCheck: null,
+  });
+
+  if (options.existingMailbox) {
+    domains.push({
+      id: domainId,
+      domain: "customer.test",
+      sending: { status: "pending", checkedAt: null },
+      receiving: { status: "not_requested", checkedAt: null },
+      records: sendingRecords(),
+    });
+    mailboxes.push(newMailbox({
+      address: "support@customer.test",
+      displayName: "Support",
+      agentId: defaultAgentId,
+      engagementMode: options.existingMailbox.engagementMode,
+    }));
+  }
+
   const overview = () => ({
     configured: true,
     inboundDomain: "in.radioso.test",
-    supportedModes: ["operator_only"],
-    defaultMode: "operator_only",
+    supportedModes,
+    defaultMode: supportedModes.includes("draft") ? "draft" : "operator_only",
     domains,
     mailboxes,
   });
@@ -159,31 +205,32 @@ const installEmailChannelBackend = async (page: Page) => {
           records: sendingRecords(),
         });
       }
-      const mailbox = {
-        id: mailboxId,
+      const mailbox = newMailbox({
         address,
         displayName: body?.displayName,
-        agentId: body?.agentId ?? null,
-        domainId,
-        relayAddress,
-        engagementMode: body?.engagementMode ?? "operator_only",
-        enabled: true,
-        policyVersion: 1,
-        threadSendBudget: 3,
-        hourlyGenerationBudget: 30,
-        threadContextMessages: 10,
-        spamOptIn: false,
-        silenceThresholdHours: 72,
-        receiving: { state: "waiting_for_first_message", lastReceivedAt: null },
-        sending: { state: "not_verified" },
-        plusAddressVerified: false,
-        setupCheck: null,
-      };
+        agentId: body?.agentId,
+        engagementMode: body?.engagementMode,
+      });
       mailboxes.push(mailbox);
       return json(route, mailbox, 201);
     }
 
     if (method === "GET" && path === `/mailboxes/${mailboxId}`) return json(route, mailboxes[0]);
+
+    if (method === "PATCH" && path === `/mailboxes/${mailboxId}`) {
+      const mailbox = mailboxes[0];
+      if (body?.expectedPolicyVersion !== undefined && body.expectedPolicyVersion !== mailbox.policyVersion) {
+        return refuse(route, 409, "stale_policy_version", "The mailbox's settings changed since they were read");
+      }
+      if (typeof body?.engagementMode === "string" && !supportedModes.includes(body.engagementMode as EngagementMode)) {
+        return refuse(route, 409, "engagement_mode_unavailable", "That mode is not available");
+      }
+      Object.assign(mailbox, {
+        engagementMode: body?.engagementMode ?? mailbox.engagementMode,
+        policyVersion: (mailbox.policyVersion as number) + 1,
+      });
+      return json(route, mailbox);
+    }
 
     if (method === "POST" && path === `/mailboxes/${mailboxId}/setup-check`) {
       const step = body?.step as SetupCheck["step"];
@@ -249,7 +296,12 @@ const installEmailChannelBackend = async (page: Page) => {
     return refuse(route, 404, "not_found", `Unhandled email channel route: ${method} ${path}`);
   });
 
-  return { requests, deliver };
+  const changePolicyElsewhere = () => {
+    const mailbox = mailboxes[0];
+    mailbox.policyVersion = (mailbox.policyVersion as number) + 1;
+  };
+
+  return { requests, deliver, changePolicyElsewhere };
 };
 
 const openEmailChannel = async (page: Page) => {
@@ -324,6 +376,94 @@ test("operator adds a mailbox, forwards to its relay address, and passes the set
 
   await expect(mailbox.getByText("Forwarding works.")).toBeVisible();
   await expect(announcer(page)).toHaveText("Setup check passed.");
+});
+
+test("an existing mailbox moves from Operator only to Draft for review, keeping focus and saying it applies to new mail", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page);
+  const backend = await installEmailChannelBackend(page, {
+    supportedModes: ["operator_only", "draft"],
+    existingMailbox: { engagementMode: "operator_only" },
+  });
+
+  await openEmailChannel(page);
+  const mailbox = page.locator("#email-channel").getByRole("region", { name: "support@customer.test" });
+  const mode = mailbox.getByRole("group", { name: "Mailbox mode" });
+  await expect(mode.getByRole("button")).toHaveText(["Operator only", "Draft for review"]);
+  await expect(mode.getByRole("button", { name: "Operator only" })).toHaveAttribute("aria-pressed", "true");
+
+  await mode.getByRole("button", { name: "Draft for review" }).click();
+
+  await expect(announcer(page)).toHaveText("Mode changed to Draft for review. It applies to new mail.");
+  await expect(mode.getByRole("button", { name: "Draft for review" })).toHaveAttribute("aria-pressed", "true");
+  await expect(mode.getByRole("button", { name: "Draft for review" })).toBeFocused();
+  await expect(mailbox.getByText("Support · Mode: Draft for review")).toBeVisible();
+  expect(backend.requests.filter((request) => request.method === "PATCH")).toEqual([
+    { method: "PATCH", path: `/mailboxes/${mailboxId}`, body: { engagementMode: "draft", expectedPolicyVersion: 1 } },
+  ]);
+});
+
+test("downgrading a draft mailbox asks once, says pending drafts are discarded, then keeps focus on the mode", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page);
+  const backend = await installEmailChannelBackend(page, {
+    supportedModes: ["operator_only", "draft"],
+    existingMailbox: { engagementMode: "draft" },
+  });
+
+  await openEmailChannel(page);
+  const mailbox = page.locator("#email-channel").getByRole("region", { name: "support@customer.test" });
+  const mode = mailbox.getByRole("group", { name: "Mailbox mode" });
+  await mode.getByRole("button", { name: "Operator only" }).click();
+
+  const confirmation = mailbox.getByRole("group", { name: "Confirm mode change" });
+  await expect(confirmation.getByText("Change to Operator only? Pending drafts are discarded.")).toBeVisible();
+  await expect(confirmation.getByRole("button", { name: "Confirm" })).toBeFocused();
+  expect(backend.requests.filter((request) => request.method === "PATCH")).toEqual([]);
+
+  // Cancelling changes nothing and returns focus to the mode.
+  await confirmation.getByRole("button", { name: "Cancel" }).click();
+  await expect(confirmation).toHaveCount(0);
+  await expect(mode.getByRole("button", { name: "Draft for review" })).toBeFocused();
+
+  await mode.getByRole("button", { name: "Operator only" }).click();
+  await mailbox.getByRole("group", { name: "Confirm mode change" }).getByRole("button", { name: "Confirm" }).click();
+
+  await expect(announcer(page)).toHaveText("Mode changed to Operator only.");
+  await expect(mode.getByRole("button", { name: "Operator only" })).toHaveAttribute("aria-pressed", "true");
+  await expect(mode.getByRole("button", { name: "Operator only" })).toBeFocused();
+  expect(backend.requests.filter((request) => request.method === "PATCH")).toEqual([
+    { method: "PATCH", path: `/mailboxes/${mailboxId}`, body: { engagementMode: "operator_only", expectedPolicyVersion: 1 } },
+  ]);
+});
+
+test("a mode change against settings saved elsewhere is refused, reloads the mailbox, and then goes through", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page);
+  const backend = await installEmailChannelBackend(page, {
+    supportedModes: ["operator_only", "draft"],
+    existingMailbox: { engagementMode: "operator_only" },
+  });
+
+  await openEmailChannel(page);
+  const mailbox = page.locator("#email-channel").getByRole("region", { name: "support@customer.test" });
+  const mode = mailbox.getByRole("group", { name: "Mailbox mode" });
+  await expect(mode).toBeVisible();
+  backend.changePolicyElsewhere();
+
+  await mode.getByRole("button", { name: "Draft for review" }).click();
+
+  await expect(mailbox.getByRole("alert")).toHaveText("Settings changed elsewhere, reloaded.");
+  await expect(mode.getByRole("button", { name: "Operator only" })).toHaveAttribute("aria-pressed", "true");
+  await expect(mode.getByRole("button", { name: "Operator only" })).toBeFocused();
+
+  await mode.getByRole("button", { name: "Draft for review" }).click();
+  await expect(announcer(page)).toHaveText("Mode changed to Draft for review. It applies to new mail.");
+  await expect(mailbox.getByRole("alert")).toHaveCount(0);
+  expect(backend.requests.filter((request) => request.method === "PATCH").map((request) => request.body)).toEqual([
+    { engagementMode: "draft", expectedPolicyVersion: 1 },
+    { engagementMode: "draft", expectedPolicyVersion: 2 },
+  ]);
 });
 
 test("operator copies DNS records, checks them, and enables direct receiving with a typed confirmation", async ({ page, context }) => {

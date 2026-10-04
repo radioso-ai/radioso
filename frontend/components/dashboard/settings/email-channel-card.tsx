@@ -5,6 +5,7 @@ import { CheckCircle2, Loader2, Mail, MailCheck } from 'lucide-react'
 
 import { EmailDomainRecords, emailChannelErrorMessage } from '@/components/dashboard/settings/email-domain-records'
 import { EmailMailboxEvents } from '@/components/dashboard/settings/email-mailbox-events'
+import { EmailMailboxMode, MODE_LABELS } from '@/components/dashboard/settings/email-mailbox-mode'
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -43,12 +44,6 @@ type CardLoad =
   | { status: 'error'; message: string }
   | { status: 'ready'; overview: EmailChannelOverview }
 
-const MODE_LABELS: Record<EmailEngagementMode, string> = {
-  operator_only: 'Operator only',
-  draft: 'Draft for review',
-  auto: 'Automatic',
-}
-
 const STATUS_BADGES: Record<AgentChannelCatalogStatus | 'off', string> = {
   active: 'On',
   available: 'Not set up',
@@ -73,8 +68,8 @@ const replaceById = <T extends { id: string }>(items: T[], next: T) =>
 
 /**
  * The email channel for one agent: its mailboxes with relay address, forwarding
- * steps, setup check and event log, and the workspace's sending domains. Modes
- * come from what the server supports, never from a list kept here.
+ * steps, mode, setup check and event log, and the workspace's sending domains.
+ * Modes come from what the server supports, never from a list kept here.
  */
 export function EmailChannelCard({ workspaceId, agentId }: EmailChannelCardProps) {
   const [load, setLoad] = useState<CardLoad>({ status: 'loading' })
@@ -215,6 +210,7 @@ export function EmailChannelCard({ workspaceId, agentId }: EmailChannelCardProps
                   key={mailbox.id}
                   workspaceId={workspaceId}
                   mailbox={mailbox}
+                  supportedModes={supportedModes}
                   headingRef={(element) => {
                     if (element) mailboxHeadings.current.set(mailbox.id, element)
                     else mailboxHeadings.current.delete(mailbox.id)
@@ -283,12 +279,13 @@ export function EmailChannelCard({ workspaceId, agentId }: EmailChannelCardProps
 type EmailMailboxPanelProps = {
   workspaceId: string
   mailbox: EmailMailbox
+  supportedModes: readonly EmailEngagementMode[]
   headingRef: (element: HTMLHeadingElement | null) => void
   onMailboxChanged: (mailbox: EmailMailbox) => void
   announce: (message: string) => void
 }
 
-function EmailMailboxPanel({ workspaceId, mailbox, headingRef, onMailboxChanged, announce }: EmailMailboxPanelProps) {
+function EmailMailboxPanel({ workspaceId, mailbox, supportedModes, headingRef, onMailboxChanged, announce }: EmailMailboxPanelProps) {
   const headingId = useId()
   const silentSince = mailbox.receiving.state === 'silent' && mailbox.receiving.lastReceivedAt
     ? relativeTimestamp(mailbox.receiving.lastReceivedAt)
@@ -312,6 +309,14 @@ function EmailMailboxPanel({ workspaceId, mailbox, headingRef, onMailboxChanged,
           <p className="text-xs text-destructive">No mail since {silentSince}. Forwarding may have stopped.</p>
         ) : null}
       </div>
+
+      <EmailMailboxMode
+        workspaceId={workspaceId}
+        mailbox={mailbox}
+        supportedModes={supportedModes}
+        onMailboxChanged={onMailboxChanged}
+        announce={announce}
+      />
 
       <CopyValueField label="Relay address" value={mailbox.relayAddress} ariaLabel="Copy relay address" />
 

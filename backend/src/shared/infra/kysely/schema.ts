@@ -1118,6 +1118,7 @@ export interface OperatorMcpGrants {
 
 export interface OperatorMcpInvocations {
   account_id: string;
+  attempt_invocation_id: string | null;
   budget_kind: Generated<string>;
   budget_reserved_at: Timestamp | null;
   client_id: string;

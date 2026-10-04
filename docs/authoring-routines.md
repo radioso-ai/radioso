@@ -283,6 +283,14 @@ write, the notice lists every collected value below the intro, so a short
 subject never hides what the guest said. See [Operator notices](#operator-notices)
 for what the team receives.
 
+A step the visitor keeps answering without giving what it needs is asked again
+up to three times, then asks differently once. When some branch row leads to a
+**Hand off** ending, a visitor who still gives the step nothing goes to a
+person: the routine ends on that step, tells the visitor someone will continue,
+and notifies your team without running the **Hand off** ending's own message or
+completion export — the visitor never confirmed whatever that ending would
+submit. A routine with no **Hand off** ending keeps asking differently instead.
+
 ### Read validation notes
 
 The editor validates while you work. A note appears next to the row or field that
@@ -383,13 +391,16 @@ conversation next: a hand-off moves it to a person, a finish leaves it with the
 agent. Its notice decides whether your team hears about it: every hand-off sends
 one, and a finish sends one when **Notify the team** is on.
 
-When a routine reaches a hand-off, the chat turn sends the routine's reply,
-requests human ownership of the conversation, and queues a `handoff.notify`
-action. When it reaches a finish that notifies, the turn sends the reply and
-queues a `completion.notify` action; the agent goes on answering the visitor,
-and nothing appears in the Inbox. Both notices go to the agent's contact
-recipients by email, to the contact webhook when one is configured, and to the
-Slack escalation channel when the workspace has one.
+When a routine reaches a hand-off, or a routine with one ends stuck on a step
+its visitor did not answer (see [Finish or hand off](#finish-or-hand-off)), the
+chat turn sends the reply, requests human ownership of the conversation, and
+queues a `handoff.notify` action. The reason is `routine_handoff` for the
+terminal and `routine_stuck` for a stuck routine. When the turn reaches a finish
+that notifies, it sends the reply and queues a `completion.notify` action; the
+agent goes on answering the visitor, and nothing appears in the Inbox. Every
+notice goes to the agent's contact recipients by email, to the contact webhook
+when one is configured, and to the Slack escalation channel when the workspace
+has one.
 
 The email reads as plain prose for whoever picks it up, not a log: it carries
 

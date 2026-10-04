@@ -930,7 +930,9 @@ export interface RoutineState {
    * Consecutive times the current step was asked again without the visitor filling any of the
    * step's empty slots (#1376); replacing a value the step already held does not count. Back to
    * 0 (or absent) when the routine enters a step or a turn fills one of the step's empty slots;
-   * a turn yielded to normal answering leaves it unchanged.
+   * a turn yielded to normal answering leaves it unchanged. Past the limit the step asks
+   * differently, and a routine with a hand-off end that is still stuck one turn later ends
+   * `stuck` (#1384).
    */
   reaskCount?: number;
   status: "active" | "suspended" | "completed" | "expired";
@@ -1006,6 +1008,21 @@ export interface RoutineActionRequest {
   type: string;
   payload: Record<string, unknown>;
 }
+
+/** The kinds an authored `terminal` step declares in `metadata.terminalKind`. */
+export type RoutineAuthoredTerminalKind = "complete" | "handoff" | "action";
+
+/**
+ * How a routine run ended. An authored kind means the run reached a `terminal` step of that
+ * kind. `stuck` is the runner's own ending, never authored: the visitor stayed stuck on one
+ * chat step past the re-ask limit, the routine has a hand-off end, and so the run ended on
+ * that step and the conversation goes to a person (#1384). A `stuck` ending runs no terminal
+ * step and no completion export.
+ */
+export type RoutineTerminalKind = RoutineAuthoredTerminalKind | "stuck";
+
+/** The endings that hand the conversation to a person. */
+export type RoutineHandoffTerminalKind = Extract<RoutineTerminalKind, "handoff" | "stuck">;
 
 export interface RoutineCompletionExport {
   enabled: boolean;
@@ -1236,6 +1253,13 @@ export interface ConversationRoutineStepRenderer {
     steering: SteeringRule[];
     turn: TurnContext;
     reask?: RoutineStepReask;
+    /**
+     * True when the runner ends the routine on `step` because the visitor stayed stuck on it
+     * past the re-ask limit, and a person takes the conversation over (#1384). The reply tells
+     * the visitor a person continues from here; it neither asks the step's question nor
+     * follows its instruction, so `steering` is empty and `reask` absent.
+     */
+    stuckHandoff?: boolean;
   }): Promise<RenderableTurn>;
 }
 
@@ -1377,6 +1401,9 @@ export interface RoutineTraceStepEntry {
    * - `rendered`: the step whose reply the turn rendered.
    * - `reask_limit_reached`: the step was asked again more times in a row than the re-ask
    *   limit allows, so its reply was told to ask differently. The routine stays on the step.
+   * - `reask_limit_handoff`: the step was still not answered on the turn after it asked
+   *   differently, and the routine has a hand-off end, so the run ended `stuck` on this step
+   *   and the conversation goes to a person (#1384).
    */
   event:
     | "resumed"
@@ -1389,12 +1416,13 @@ export interface RoutineTraceStepEntry {
     | "suspended"
     | "decision_notified"
     | "decision_applied"
-    | "reask_limit_reached";
+    | "reask_limit_reached"
+    | "reask_limit_handoff";
   /** Declared slot keys captured at this step this turn (names only — never values). */
   capturedSlotKeys?: string[];
   /** Declared slots whose returned value was not stored because it does not fit the slot's type (keys only). */
   rejectedSlots?: RoutineTraceRejectedSlot[];
-  /** On `reask_limit_reached`: how many times in a row the step has now been asked again. */
+  /** On `reask_limit_reached` and `reask_limit_handoff`: how many times in a row the step has now been asked again. */
   reaskCount?: number;
   /** Whether the LLM next-step selector ran for this step's edges. */
   viaSelector?: boolean;
@@ -1448,9 +1476,9 @@ export interface RoutineRunTrace {
   routineId: string;
   /** Step the turn resumed on. */
   startStepId: string;
-  /** Step the turn ultimately rendered. */
+  /** Step the turn ultimately rendered; on a `stuck` ending, the step the routine was stuck on. */
   landedStepId: string;
-  terminalKind?: "complete" | "handoff" | "action";
+  terminalKind?: RoutineTerminalKind;
   /** Declared slot keys newly captured this turn (names only). */
   capturedSlotKeys: string[];
   /** Declared slot keys filled after this turn (names only). */
@@ -1470,14 +1498,15 @@ export interface ConversationRoutineResumeResult {
   /** The next state to persist; `null` clears it (the routine reached a terminal step). */
   nextState: RoutineState | null;
   /**
-   * Distinguishes terminal exits such as handoff from normal completion. `collected`
-   * is the routine's declared slot values keyed by slot key — the same projection a
-   * completion export sends — so a handoff can carry what the routine gathered.
-   * `operatorNotice` is the template the landed terminal step carries, present exactly
-   * when the ending notifies operators.
+   * How the routine ended, when it did: at an authored terminal step of that kind, or `stuck`
+   * on the chat step `stepId` (see {@link RoutineTerminalKind}). `collected` is the routine's
+   * declared slot values keyed by slot key — the same projection a completion export sends —
+   * so a handoff can carry what the routine gathered. `operatorNotice` is the template the
+   * landed terminal step carries, present exactly when an authored ending notifies operators —
+   * a `stuck` ending never carries one, since it lands on no authored terminal step.
    */
   terminal?: {
-    kind: "complete" | "handoff" | "action";
+    kind: RoutineTerminalKind;
     stepId: string;
     collected?: Record<string, unknown>;
     operatorNotice?: RoutineOperatorNoticeTemplate;
@@ -1771,10 +1800,18 @@ export interface ProcessTurnResult {
   /** Required fields that prevented selected skills from dispatching this turn. */
   awaitingSkillInput?: AwaitingSkillInput[];
   /**
-   * Present when a routine ended in a human handoff terminal: the conversation now belongs to
-   * a person. Ownership only — whether operators are told is `operatorNotice`.
+   * Present when a routine ended by handing the conversation to a person: at an authored
+   * hand-off terminal (`terminalKind: "handoff"`, `stepId` names it), or stuck past its re-ask
+   * limit (`terminalKind: "stuck"`, `stepId` names the step it was stuck on). Ownership only —
+   * whether operators are told is `operatorNotice`. `collected` carries the routine's declared
+   * slot values keyed by slot key, for the host's operator notice.
    */
-  handoff?: { routineId: string; stepId: string; collected?: Record<string, unknown> };
+  handoff?: {
+    routineId: string;
+    stepId: string;
+    terminalKind: RoutineHandoffTerminalKind;
+    collected?: Record<string, unknown>;
+  };
   /**
    * Present when a routine ended on a terminal that notifies operators: every hand-off, and a
    * completion that carries an operator notice. `collected` is the routine's declared slot
@@ -1787,12 +1824,15 @@ export interface ProcessTurnResult {
 /**
  * What a routine ending tells operators, as the engine reports it; see
  * {@link ProcessTurnResult.operatorNotice}. The notice an author stores on a terminal is
- * `RoutineOperatorNotice` in `@radioso/routine-definition`.
+ * `RoutineOperatorNotice` in `@radioso/routine-definition`. `terminalKind: "stuck"` only ever
+ * comes from a host's own default notice for a visitor stuck past the re-ask limit (#1384) —
+ * the engine itself never reports one, since a stuck ending lands on no authored terminal step
+ * to carry one.
  */
 export interface RoutineOperatorNoticeEffect extends RoutineOperatorNoticeTemplate {
   routineId: string;
   stepId: string;
-  terminalKind: "complete" | "handoff";
+  terminalKind: "complete" | "handoff" | "stuck";
   collected?: Record<string, unknown>;
 }
 

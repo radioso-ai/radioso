@@ -57,8 +57,15 @@ export const suppressedHumanOwnedResponse = (
   };
 };
 
-/** What the engine reports when a routine ends on a handoff terminal. */
+/** What the engine reports when a routine ends by handing the conversation to a person. */
 export type RoutineHandoffEffect = NonNullable<ProcessTurnResult["handoff"]>;
+
+/** Why a routine requested a person: it reached an authored hand-off end, or its visitor got stuck (#1384). */
+type RoutineHandoffReason = "routine_handoff" | "routine_stuck";
+
+/** The ownership reason for a routine's hand-off, by the ending that raised it. */
+const routineHandoffReason = (handoff: RoutineHandoffEffect): RoutineHandoffReason =>
+  handoff.terminalKind === "stuck" ? "routine_stuck" : "routine_handoff";
 
 /** Builds the `handoff.notify` action a retrieval-miss handoff emits. */
 export const buildHandoffNotifyAction = (input: Parameters<typeof operatorNoticeActionPayload>[0] & {
@@ -74,8 +81,8 @@ export const buildHandoffNotifyAction = (input: Parameters<typeof operatorNotice
  */
 export const routineHandoffOwnership = (
   handoff: RoutineHandoffEffect,
-): { reason: "routine_handoff"; routineId: string; stepId: string } => ({
-  reason: "routine_handoff",
+): { reason: RoutineHandoffReason; routineId: string; stepId: string } => ({
+  reason: routineHandoffReason(handoff),
   routineId: handoff.routineId,
   stepId: handoff.stepId,
 });

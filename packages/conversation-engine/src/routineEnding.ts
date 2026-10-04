@@ -13,11 +13,12 @@ export const routineEndingEffects = (
   routineId: string,
   terminal: ConversationRoutineResumeResult["terminal"],
 ): Pick<ProcessTurnResult, "handoff" | "operatorNotice"> => ({
-  ...(terminal?.kind === "handoff"
+  ...(terminal?.kind === "handoff" || terminal?.kind === "stuck"
     ? {
         handoff: {
           routineId,
           stepId: terminal.stepId,
+          terminalKind: terminal.kind,
           ...(terminal.collected ? { collected: terminal.collected } : {}),
         },
       }

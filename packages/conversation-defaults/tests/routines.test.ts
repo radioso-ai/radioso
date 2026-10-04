@@ -22,6 +22,7 @@ import {
   DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_WITH_MESSAGE_PROMPT,
   DEFAULT_ROUTINE_STEP_REPLY_PROMPT,
   DEFAULT_ROUTINE_STEP_STEERING_PROMPT,
+  DEFAULT_ROUTINE_STEP_STUCK_HANDOFF_PROMPT,
   InMemoryConversationRoutineStore,
   RoutineNextStepSelector,
   RoutineRegistry,
@@ -66,6 +67,7 @@ describe("routine defaults", () => {
       .toBe(backendPrompt("chat/routine-step-terminal-handoff-default.md"));
     expect(DEFAULT_ROUTINE_STEP_STEERING_PROMPT).toBe(backendPrompt("chat/routine-step-steering.md"));
     expect(DEFAULT_ROUTINE_STEP_REASK_EXHAUSTED_PROMPT).toBe(backendPrompt("chat/routine-step-reask-exhausted.md"));
+    expect(DEFAULT_ROUTINE_STEP_STUCK_HANDOFF_PROMPT).toBe(backendPrompt("chat/routine-step-stuck-handoff.md"));
   });
 
   it("keeps generated fallback prompt artifacts current", () => {
@@ -327,6 +329,51 @@ describe("routine defaults", () => {
     }]);
     expect(call.messages.map((message) => message.content).join("\n")).not.toContain("car festival");
     expect(call.messages.map((message) => message.content).join("\n")).not.toContain("Festival details");
+  });
+
+  describe("a routine stuck past its re-ask limit (#1384)", () => {
+    const stagedTurn: TurnContext = {
+      ...turn,
+      stagedContext: [{
+        kind: "skill_result",
+        source: "retrieval.context",
+        data: { contexts: [{ title: "Contact", content: "Call reception." }] },
+      }],
+    };
+
+    it("tells the visitor a person continues, through the stuck hand-off prompt", async () => {
+      const gw = gateway("Una persona continuerà la conversazione.");
+      const groundedAnswerRenderer = { render: vi.fn(async () => ({ answer: "Grounded reply." })) };
+
+      const result = await new RoutineStepRenderer(gw, { groundedAnswerRenderer, responseLanguage: "Italian" }).render({
+        step: currentStep,
+        steering: [],
+        turn: stagedTurn,
+        stuckHandoff: true,
+      });
+
+      expect(result).toEqual({ answer: "Una persona continuerà la conversazione." });
+      const call = vi.mocked(gw.complete).mock.calls[0][0];
+      expect(call.systemPrompt).toBe(DEFAULT_ROUTINE_STEP_STUCK_HANDOFF_PROMPT.replace("{{language}}", "Italian"));
+      expect(call.messages).toEqual([{ role: "user", content: "Write the handoff message." }]);
+      expect(groundedAnswerRenderer.render).not.toHaveBeenCalled();
+    });
+
+    it("never asks the step's question", async () => {
+      const gw = gateway("A person will take it from here.");
+
+      await new RoutineStepRenderer(gw, { stuckHandoffPromptTemplate: "STUCK in {{language}}" }).render({
+        step: currentStep,
+        steering: [],
+        turn,
+        stuckHandoff: true,
+      });
+
+      const call = vi.mocked(gw.complete).mock.calls[0][0];
+      expect(call.systemPrompt).toBe("STUCK in the user's language");
+      expect(JSON.stringify(call)).not.toContain(currentStep.action);
+      expect(JSON.stringify(call)).not.toContain("What is your email?");
+    });
   });
 
   it("does not add handoff terminal rules to ordinary routine replies", async () => {

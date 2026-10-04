@@ -826,6 +826,27 @@ describe("US3 copilot proposals", () => {
     expect(next).toMatchObject({ status: "claimed", claim: { previousAttemptStartedAt: interruptedAt } });
   });
 
+  it("hands a retry's denied reclaim back to the receipt attempt it replaced", async () => {
+    const repository = new MemoryProposalRepository();
+    const proposal = await repository.createProposal({ workspaceId, operatorUserId, conversationId: "conversation-1", targetType: "directive", targetRef: { agentId, directiveId }, payload: { name: "Updated" }, versionToken: "current", evidence: null });
+    const claimInput = { proposalId: proposal.id, reviewDigest: "a".repeat(43), executionInvocationId: "execution-1", workspaceId, operatorUserId, grantId: "grant-1", clientId: "client-1", now: new Date(), claimTtlSeconds: 300 };
+    const claimed = await repository.claimMcpReviewedProposalApply(claimInput);
+    if (claimed.status !== "claimed") throw new Error(`expected claim, got ${claimed.status}`);
+    const receiptAttempt = { executionInvocationId: "execution-1", attemptInvocationId: "retry-1", previousAttemptInvocationId: "execution-1" };
+    const release = vi.spyOn(repository, "releaseProposalApplyClaim");
+    const service = new OperatorCopilotService({
+      repository, capabilityRunner: { runStreaming: vi.fn() }, usageLimitPolicy: noLimitPolicy(), auditService: auditService(), prompt: "system", workspaceRouteKeyResolver, tools: [],
+      currentAuthorization: { hasAllPermissions: vi.fn(async () => false) },
+      proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn() }],
+    });
+
+    await expect(service.executeClaimedProposal({
+      input: { surface: "mcp", workspaceId, accountId, operatorUserId, proposalId: proposal.id }, claim: { ...claimed.claim, receiptAttempt }, executionInvocationId: "execution-1",
+    })).rejects.toBeInstanceOf(CopilotAuthorizationError);
+
+    expect(release).toHaveBeenCalledWith(expect.objectContaining({ claimedAt: claimed.claim.claimedAt, receiptAttempt }));
+  });
+
   it("allows cancellation for a proposal that has not reserved an MCP receipt", async () => {
     const repository = new MemoryProposalRepository();
     const proposal = await repository.createProposal({ workspaceId, operatorUserId, conversationId: "conversation-1", targetType: "directive", targetRef: { agentId, directiveId }, payload: { name: "Updated" }, versionToken: "current", evidence: null });

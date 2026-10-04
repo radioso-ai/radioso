@@ -105,9 +105,16 @@ export const resumeRoutine = async (input: {
   if (result.nextState) {
     await request.routineStore!.save(result.nextState);
   } else {
+    // A normal terminal ending lands by moving onto a terminal step the path never
+    // held; a stuck ending (#1384) lands on the chat step already last in `path` — the
+    // walk never advanced off it — so appending it again would duplicate that entry.
+    const landedStepId = result.trace?.landedStepId;
+    const path = landedStepId && landedStepId !== state.path.at(-1)
+      ? [...state.path, landedStepId]
+      : state.path;
     await request.routineStore!.save({
       ...state,
-      path: result.trace?.landedStepId ? [...state.path, result.trace.landedStepId] : state.path,
+      path,
       status: "completed",
       metadata: {
         ...(state.metadata ?? {}),

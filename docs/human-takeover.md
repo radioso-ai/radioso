@@ -39,21 +39,28 @@ The AI stays suppressed until an operator explicitly hands the conversation back
 Handoff is request-driven. The AI does not silently decide to transfer a
 conversation to a human owner.
 
-There are two request triggers:
+There are three request triggers:
 
 - A routine reaches a `handoff` terminal. The terminal is authored in the
   routine, including cases where an LLM-selected transition chooses that branch,
-  such as an authored branch for an annoyed user.
+  such as an authored branch for an annoyed user. The reason is
+  `routine_handoff`.
+- A routine with a `handoff` terminal gets a visitor stuck: a step's question is
+  re-asked three times in a row, asked once more in different words, and the
+  visitor's reply still gives it nothing. The routine ends on that step without
+  running its terminal or completion export, and the reason is `routine_stuck`.
+  See [Conversational Routines](./architecture/conversational-routines.md#when-a-step-keeps-being-asked).
 - An agent has `handoffOnRetrievalMiss` enabled and a turn produces a
   no-context grounded miss. This behavior is opt-in per agent and is off by
-  default.
+  default. The reason is `retrieval_miss`.
 
 In the agent's **Profile → Answers** settings, turn on **Hand off on retrieval
 miss** to enable this trigger.
 
-Both triggers request human ownership and notify an operator through the existing
-contact-delivery transport with a `handoff.notify` action. They also record
-`hitl.ownership` audit events. A routine hand-off's notice defaults its subject
+Every trigger requests human ownership and notifies an operator through the
+contact-delivery transport with a `handoff.notify` action. Each also records a
+`hitl.ownership` audit event carrying the reason. A routine hand-off's notice,
+whether from an authored ending or a stuck routine, defaults its subject
 to the routine's name and lists every value the routine collected; a
 retrieval-miss hand-off has no routine to name and nothing collected, so its
 notice uses the generic default subject and lists no values. Both carry the

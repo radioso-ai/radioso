@@ -76,7 +76,7 @@ import type { RetrievalTurnPort } from "./retrievalTurnDispatch.js";
 import type { GroundingSummary } from "./groundingAssertions.js";
 import type { OperatorNoticePreview, TurnTraceEnvelope } from "./turnTraceEnvelope.js";
 import type { ChatRoutineTurnReporter } from "../contracts/routineTurnState.js";
-import { ROUTINE_ENDING_NOTICE_ACTIONS } from "./operatorNoticeAction.js";
+import { routineEndingNoticeAction } from "./operatorNoticeAction.js";
 import { buildRoutineEndingNotifyAction, operatorNoticeForTurn } from "./routineEndingEffects.js";
 import {
   formatRoutineEndingNotification,
@@ -554,7 +554,7 @@ export class WorkbenchReplayRunner {
     if (!notice) {
       return undefined;
     }
-    const ending = ROUTINE_ENDING_NOTICE_ACTIONS[notice.terminalKind];
+    const ending = routineEndingNoticeAction(notice.terminalKind);
     const action = buildRoutineEndingNotifyAction({
       conversationId: input.session.conversation.id,
       workspaceId: input.input.workspaceId,

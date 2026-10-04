@@ -1659,7 +1659,7 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
       operatorNotice: {},
     })));
 
-    expect(result.handoff).toEqual({ routineId: "contact", stepId: "human", collected: { name: "Ada" } });
+    expect(result.handoff).toEqual({ routineId: "contact", stepId: "human", terminalKind: "handoff", collected: { name: "Ada" } });
     expect(result.operatorNotice).toEqual({ routineId: "contact", stepId: "human", terminalKind: "handoff", collected: { name: "Ada" } });
     expect(routineStageOutputs(result)).toMatchObject({ handoff: true, notifiesOperators: true });
   });

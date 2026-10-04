@@ -975,6 +975,7 @@ const ROUTINE_EVENT_LABELS: Record<string, string> = {
   action_emitted: 'Action sent',
   rendered: 'Replied here',
   reask_limit_reached: 'Re-ask limit',
+  reask_limit_handoff: 'Stuck, handed off',
 }
 
 // Plain-language one-liners so the timeline reads without knowing the engine's terms.
@@ -987,6 +988,7 @@ const ROUTINE_EVENT_DESCRIPTIONS: Record<string, string> = {
   action_emitted: 'Emitted a fire-and-forget action.',
   rendered: 'The reply you saw was generated from this step.',
   reask_limit_reached: 'Asked too many times in a row, so the reply asked differently.',
+  reask_limit_handoff: 'Still unanswered after asking differently, so the routine ended and a person takes over.',
 }
 
 // A step the first turn read the opening message for (#1370), flagged explicitly rather
@@ -1018,6 +1020,7 @@ const ROUTINE_EVENT_TONE: Record<string, string> = {
   action_emitted: 'bg-primary/10 text-primary',
   rendered: 'bg-muted text-muted-foreground',
   reask_limit_reached: 'bg-amber-500/10 text-amber-600',
+  reask_limit_handoff: 'bg-amber-500/10 text-amber-600',
 }
 
 function SlotKeyChips({ keys, tone }: { keys: string[]; tone: string }) {

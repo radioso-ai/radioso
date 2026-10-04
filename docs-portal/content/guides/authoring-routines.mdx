@@ -144,7 +144,9 @@ a date has to be a real day on the calendar, and a number has to be a number.
 When a visitor's answer does not fit — "giulia at example" for an email, "the
 31st of February" for a date — the routine keeps nothing for that value and asks
 the step again. The turn trace lists the value under `rejectedSlots`, by name
-only.
+only. The same list can name a value the routine never defined — the model read
+more from the visitor's message than any step asked for; it is dropped before
+it reaches a step, a skill, or an action.
 
 The `@` menu also lists what the agent already knows about the visitor under
 **Visitor context**. Choose **Current page** to place it in a step, and the
@@ -207,12 +209,20 @@ shows as `—`. The webhook body is documented under
 
 A step is asked the same way at most three times in a row when the visitor's
 replies give it nothing new. From then on it asks in different words, saying
-plainly what it needs and giving an example of an answer that works. The routine
-stays on the step until the visitor answers it: it takes only the rows you set,
-and a **Hand off** row may be the step's confirmation, so the limit never fires
-one. To give a visitor a way out of a step that collects something hard to get
-right — a booking reference, an exact date — add a row for it, such as **AI
-decides** "the visitor wants to talk to a person" → **Hand off**.
+plainly what it needs and giving an example of an answer that works. The limit
+never fires a row you set: a **Hand off** row may be the step's confirmation, and
+taking it would send a request the visitor never confirmed.
+
+What comes next depends on whether the routine hands off at all. When some row
+leads to a **Hand off** ending, a visitor who still gives the step nothing after it
+asked differently goes to a person. The routine ends on that step, tells the
+visitor someone will continue the conversation, and notifies your operators with
+the reason `routine_stuck` and every value collected so far. The **Hand off**
+ending's message and the completion export stay for visitors who reach that
+ending. A routine with no **Hand off** ending stays on the step until the visitor
+answers it. To give a visitor an earlier way out of a step that collects something
+hard to get right — a booking reference, an exact date — add a row for it, such as
+**AI decides** "the visitor wants to talk to a person" → **Hand off**.
 
 ## Validation and publishing
 

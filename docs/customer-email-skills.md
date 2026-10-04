@@ -1,7 +1,7 @@
 ---
 title: "Customer Email Connections"
 description: "Setup of workspace-owned outbound email connections and unified agent email skills for draft and send modes."
-last_updated: 2026-06-23
+last_updated: 2026-10-04
 ---
 
 # Customer Email Connections
@@ -103,6 +103,13 @@ Optional first-slice inputs are:
 Bound and exposed inputs must be separate. For example, `subject` cannot be both
 fixed by the author and filled by a routine slot. `draft` is the safer default.
 Switching to `send` is explicit.
+
+A `bodyHtml` you write, either fixed on the skill or as a literal in the routine
+step's input binding, is sent as HTML. When a routine fills `bodyHtml` from a
+routine variable or a context variable, the value is HTML-escaped first, so
+markup a visitor types, such as a link or a `<script>` tag, arrives in the email
+as the characters they typed. That includes a routine variable a tool step's
+output fills.
 
 The unified skill endpoints are:
 

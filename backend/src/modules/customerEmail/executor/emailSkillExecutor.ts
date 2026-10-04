@@ -1,3 +1,5 @@
+import type { SkillArgumentOrigin } from "@radioso/conversation-contract";
+
 import type {
   SkillDispatchResult,
   SkillExecutorPort,
@@ -13,6 +15,7 @@ import { customerEmailSkillInputKeys } from "../domain.js";
 import type { EmailSkillDefinitionRepositoryPort } from "../../../db/repositories/emailSkillDefinitionRepository.js";
 import type { CustomerEmailDeliveryService } from "../services/customerEmailDeliveryService.js";
 import { setTraceAttributes, traceOperation } from "../../../shared/observability/tracing/operations.js";
+import { escapeHtml } from "../../../shared/domain/escapeHtml.js";
 import {
   buildEmailSkillActivityRecordInput,
 } from "../services/emailSkillActivityPresenter.js";
@@ -20,11 +23,11 @@ import type { CreateEmailSkillActivityInput } from "../../../db/repositories/ema
 
 export const CUSTOMER_EMAIL_SKILLS_ADAPTER = "customer-email-skills";
 
-export interface EmailSkillActivitySinkPort {
+interface EmailSkillActivitySinkPort {
   record(input: CreateEmailSkillActivityInput): Promise<unknown>;
 }
 
-export interface EmailSkillExecutorOptions {
+interface EmailSkillExecutorOptions {
   skills: Pick<EmailSkillDefinitionRepositoryPort, "findEnabledByName">;
   delivery: Pick<CustomerEmailDeliveryService, "deliver">;
   activity?: EmailSkillActivitySinkPort;
@@ -73,7 +76,8 @@ export class EmailSkillExecutor implements SkillExecutorPort {
       "customer_email.mode": definition.mode,
     });
 
-    const input = buildRuntimeInput(definition, invocation.collected ?? {});
+    const { input, htmlEscaped } = buildRuntimeInput(definition, invocation.collected ?? {}, invocation.collectedOrigins ?? {});
+    setTraceAttributes({ "customer_email.html_escaped": htmlEscaped });
     const missing = missingInputs(input);
     if (missing.length > 0) {
       await this.recordActivity(invocation, definition, "missing_input", input, null);
@@ -142,11 +146,24 @@ export class EmailSkillExecutor implements SkillExecutorPort {
   }
 }
 
+// A routine slot holds what the visitor typed, and a context variable what the host page or
+// visitor sent; either one in `bodyHtml` would otherwise ship as live markup in the email.
+const isVisitorSupplied = (origin: SkillArgumentOrigin | undefined): boolean =>
+  origin === "slot" || origin === "context";
+
+/**
+ * The message inputs: what the skill definition binds, as the author wrote it, then what the
+ * dispatch collected for each exposed input. A `bodyHtml` a visitor supplied is escaped, so it
+ * renders as the text they typed. One the author wrote, or one with no recorded origin (the
+ * model filled it), is sent as written.
+ */
 const buildRuntimeInput = (
   definition: Pick<CustomerEmailSkillDefinitionSummary, "boundInputs" | "exposedInputs">,
   collected: Record<string, unknown>,
-): Partial<Record<CustomerEmailSkillInputKey, unknown>> => {
+  collectedOrigins: Record<string, SkillArgumentOrigin>,
+): { input: Partial<Record<CustomerEmailSkillInputKey, unknown>>; htmlEscaped: boolean } => {
   const input: Partial<Record<CustomerEmailSkillInputKey, unknown>> = {};
+  let htmlEscaped = false;
   for (const key of customerEmailSkillInputKeys) {
     if (Object.prototype.hasOwnProperty.call(definition.boundInputs, key)) {
       input[key] = definition.boundInputs[key];
@@ -155,11 +172,16 @@ const buildRuntimeInput = (
     const exposed = definition.exposedInputs[key];
     if (!exposed) continue;
     const collectedKey = exposed.slotBinding ?? key;
-    if (Object.prototype.hasOwnProperty.call(collected, collectedKey)) {
-      input[key] = collected[collectedKey];
+    if (!Object.prototype.hasOwnProperty.call(collected, collectedKey)) continue;
+    const value = collected[collectedKey];
+    if (key === "bodyHtml" && typeof value === "string" && isVisitorSupplied(collectedOrigins[collectedKey])) {
+      input[key] = escapeHtml(value);
+      htmlEscaped = true;
+      continue;
     }
+    input[key] = value;
   }
-  return input;
+  return { input, htmlEscaped };
 };
 
 const missingInputs = (input: Partial<Record<CustomerEmailSkillInputKey, unknown>>): CustomerEmailSkillInputKey[] => {

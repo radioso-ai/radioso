@@ -10,6 +10,7 @@ import type {
   RenderableTurn,
   RoutineSkillResult,
   SelectionDecision,
+  SkillArgumentOrigin,
   SkillDefinition,
   SkillDispatchResult,
   SkillExecutorPort,
@@ -24,6 +25,7 @@ import {
   createDirectiveBoundSkillSelector,
   noopSkillEmitPort,
   resolveSkillArguments,
+  resolveUntypedSkillArguments,
   type DirectiveBoundSkillSelectorOptions,
   type DirectiveTextGenerationClient,
 } from "@radioso/conversation-defaults";
@@ -131,6 +133,11 @@ export const createDefaultConversationSkillSelector = (
 export interface LocalSkillHandlerInput {
   skill: SkillDefinition;
   input: Record<string, unknown>;
+  /**
+   * Where each `input` value came from, keyed like `input`. A routine skill step sets it;
+   * a skill the turn selected leaves it absent.
+   */
+  inputOrigins?: Record<string, SkillArgumentOrigin>;
   sessionId: string;
   message: string;
 }
@@ -147,6 +154,7 @@ const dispatchLocalSkill = async (
     return handler.dispatch({
       skill: input.skill,
       collected: input.input,
+      ...(input.inputOrigins ? { collectedOrigins: input.inputOrigins } : {}),
       context: { sessionId: input.sessionId },
       emit: noopSkillEmitPort,
     });
@@ -288,15 +296,16 @@ export const createDefaultRoutineSkillDispatcher = (
     // split the Radioso host makes, so a routine dispatches identically either side
     // of the kit boundary.
     const variables = state.variables ?? {};
-    const collected = inputBindings && Object.keys(inputBindings).length > 0
+    const { values: collected, origins: inputOrigins } = inputBindings && Object.keys(inputBindings).length > 0
       ? resolveSkillArguments(inputBindings, variables, contextValuesFromStagedContext(turn.stagedContext))
-      : variables;
+      : resolveUntypedSkillArguments(variables);
 
     let result: SkillDispatchResult;
     try {
       result = await dispatchLocalSkill(handler, {
         skill,
         input: collected,
+        inputOrigins,
         sessionId: turn.sessionId,
         message: turn.inputEvent.content,
       });

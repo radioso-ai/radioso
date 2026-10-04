@@ -424,6 +424,7 @@ describe("RoutineSkillExecutorDispatcher", () => {
 
     expect(captured?.skill.name).toBe("book_meeting");
     expect(captured?.collected).toEqual({ email: "a@b.com", duration: 30 });
+    expect(captured?.collectedOrigins).toEqual({ email: "slot", duration: "slot" });
   });
 
   it("passes workspace and account context to skill executors", async () => {
@@ -474,6 +475,7 @@ describe("RoutineSkillExecutorDispatcher", () => {
     });
 
     expect(captured?.collected).toEqual({ email: "a@b.com", duration: 30 });
+    expect(captured?.collectedOrigins).toEqual({ email: "slot", duration: "literal" });
   });
 
   it("resolves context-variable input bindings from the turn staged context", async () => {
@@ -522,6 +524,7 @@ describe("RoutineSkillExecutorDispatcher", () => {
       cart: { items: 2 },
       plan: "enterprise",
     });
+    expect(captured?.collectedOrigins).toEqual({ page: "context", cart: "context", plan: "context" });
   });
 
   it("threads the turn and agent id into the executor context", async () => {

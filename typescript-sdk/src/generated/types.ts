@@ -7847,7 +7847,7 @@ export interface components {
                 /** @description The teammate label as it is now: display name, else email. Null once the user is deleted. */
                 label: string | null;
             } | null;
-            /** @description The handoff reason code on `handoff_requested`, for example `routine_handoff` or `retrieval_miss`. */
+            /** @description The handoff reason code on `handoff_requested`, for example `routine_handoff`, `routine_stuck`, or `retrieval_miss`. */
             handoffReason: string | null;
             /** @description The option chosen on `approval_decided`. */
             decision: {

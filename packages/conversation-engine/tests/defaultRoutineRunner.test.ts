@@ -3255,9 +3255,9 @@ describe("DefaultRoutineRunner a chat step a tool step lands on (#1390)", () => 
     expect(partyEntry).toMatchObject({ event: "rendered", readOpeningMessage: true });
   });
 
-  it("asks a satisfied step whose AI-decides judgement yields, keeping the turn the tool ran in", async () => {
-    // A yield would leave the saved state where it was, so the tool would run again on a
-    // later turn; after a tool step the step is asked instead.
+  it("asks a satisfied step whose way on is an AI-decides judgement, with no model call", async () => {
+    // The message answered a step before the tool ran; judging this step's exits against it
+    // asks a question the visitor never saw, and a yield would run the tool again later.
     const judged: Routine = {
       ...retreat,
       transitions: [
@@ -3274,7 +3274,7 @@ describe("DefaultRoutineRunner a chat step a tool step lands on (#1390)", () => 
 
     const result = await runner.resume({ turn, state: atProgram({ adults: 2 }) });
 
-    expect(select).toHaveBeenCalledTimes(2);
+    expect(select).toHaveBeenCalledTimes(1);
     expect(result.yielded).toBeFalsy();
     expect(result.response.answer).toBe("[party]");
     expect(result.nextState).toMatchObject({
@@ -3283,6 +3283,130 @@ describe("DefaultRoutineRunner a chat step a tool step lands on (#1390)", () => 
     });
     expect(events(result)).toEqual(["program:advanced", "availability:skill_dispatched", "party:rendered"]);
     expect(dispatch).toHaveBeenCalledTimes(1);
+  });
+
+  describe("a confirmation between a tool step and an action", () => {
+    // topic -> eligibility (tool) -> confirm_email (email; its one exit is the visitor's
+    // confirmation) -> send (contact.send) -> done.
+    const confirmBeforeSend: Routine = {
+      id: "contact_send",
+      rootStepId: "topic",
+      slots: [
+        { id: "slot_topic", key: "topic", type: "text", required: true },
+        { id: "slot_email", key: "email", type: "email", required: true },
+      ],
+      steps: [
+        { id: "topic", kind: "chat", action: "Ask what it is about.", metadata: { collectsSlots: ["topic"] } },
+        { id: "eligibility", kind: "skill", skillName: "check_eligibility" },
+        { id: "confirm_email", kind: "chat", action: "Ask them to confirm {{slot.email}}.", metadata: { collectsSlots: ["email"] } },
+        { id: "send", kind: "action", actionType: "contact.send" },
+        { id: "done", kind: "terminal", action: "Say the message was sent." },
+      ],
+      transitions: [
+        { from: "topic", to: "eligibility", condition: "", guard: { kind: "slot_filled", slots: ["topic"] } },
+        { from: "eligibility", to: "confirm_email", condition: "The check ran." },
+        { from: "confirm_email", to: "send", condition: "The visitor confirmed the email address." },
+        { from: "send", to: "done", condition: "Sent." },
+      ],
+    };
+    const atTopic = (variables: Record<string, unknown> = {}): RoutineState => ({
+      ...state(["topic"], variables),
+      routineId: "contact_send",
+    });
+
+    it("asks for the confirmation instead of sending when the address is already held", async () => {
+      const select = vi.fn<ConversationRoutineNextStepSelector["select"]>(async () => ({
+        nextStepId: "topic",
+        variables: { topic: "Invoice" },
+      }));
+      const dispatch = completed();
+      const runner = new DefaultRoutineRunner([confirmBeforeSend], { select }, renderer(), { dispatch });
+
+      const result = await runner.resume({ turn, state: atTopic({ email: "giulia@example.com" }) });
+
+      expect(result.response.answer).toBe("[confirm_email]");
+      expect(result.actions).toBeUndefined();
+      expect(result.nextState).toMatchObject({ path: ["topic", "eligibility", "confirm_email"] });
+      expect(events(result)).toEqual(["topic:advanced", "eligibility:skill_dispatched", "confirm_email:rendered"]);
+      expect(select).toHaveBeenCalledTimes(1);
+      expect(dispatch).toHaveBeenCalledTimes(1);
+    });
+
+    it("on the first turn, asks for the confirmation when the opening-message read fills the address without confirming it", async () => {
+      const select = vi.fn<ConversationRoutineNextStepSelector["select"]>()
+        .mockResolvedValueOnce({ nextStepId: "topic", variables: { topic: "Invoice" } })
+        .mockResolvedValueOnce({ nextStepId: "confirm_email", variables: { email: "giulia@example.com" } });
+      const runner = new DefaultRoutineRunner([confirmBeforeSend], { select }, renderer(), { dispatch: completed() });
+
+      const result = await runner.resume({ turn, state: atTopic(), activationTurn: true });
+
+      expect(select).toHaveBeenCalledTimes(2);
+      expect(result.response.answer).toBe("[confirm_email]");
+      expect(result.actions).toBeUndefined();
+      const confirmEntry = result.trace?.steps.find((entry) => entry.stepId === "confirm_email");
+      expect(confirmEntry).toMatchObject({ event: "rendered", readOpeningMessage: true, capturedSlotKeys: ["email"] });
+    });
+
+    it("on the first turn, sends when the opening-message read finds the confirmation", async () => {
+      const select = vi.fn<ConversationRoutineNextStepSelector["select"]>()
+        .mockResolvedValueOnce({ nextStepId: "topic", variables: { topic: "Invoice" } })
+        .mockResolvedValueOnce({ nextStepId: "send", variables: { email: "giulia@example.com" } });
+      const runner = new DefaultRoutineRunner([confirmBeforeSend], { select }, renderer(), { dispatch: completed() });
+
+      const result = await runner.resume({ turn, state: atTopic(), activationTurn: true });
+
+      expect(result.response.answer).toBe("[done]");
+      expect(result.actions?.map((action) => action.type)).toEqual(["contact.send"]);
+    });
+  });
+
+  describe("a chat step an action step lands on", () => {
+    // date -> log (action) -> room (room) -> done, or room -> log again on a loop.
+    const logged = (roomExitTo: string): Routine => ({
+      id: "logged",
+      rootStepId: "date",
+      slots: [
+        { id: "slot_date", key: "date", type: "date", required: true },
+        { id: "slot_room", key: "room", type: "text", required: true },
+      ],
+      steps: [
+        { id: "date", kind: "chat", action: "Ask for a date.", metadata: { collectsSlots: ["date"] } },
+        { id: "log", kind: "action", actionType: "audit.log" },
+        { id: "room", kind: "chat", action: "Ask for a room.", metadata: { collectsSlots: ["room"] } },
+        { id: "done", kind: "terminal", action: "Confirm." },
+      ],
+      transitions: [
+        { from: "date", to: "log", condition: "", guard: { kind: "slot_filled", slots: ["date"] } },
+        { from: "log", to: "room", condition: "Logged." },
+        { from: "room", to: roomExitTo, condition: "", guard: { kind: "slot_filled", slots: ["room"] } },
+      ],
+    });
+    const atDate = (): RoutineState => ({ ...state(["date"], { room: "double" }), routineId: "logged" });
+    const answeringDate = () =>
+      vi.fn<ConversationRoutineNextStepSelector["select"]>(async () => ({ nextStepId: "date", variables: { date: "2026-11-11" } }));
+
+    it("skips the step when it already holds its values, emitting the action once", async () => {
+      const select = answeringDate();
+      const runner = new DefaultRoutineRunner([logged("done")], { select }, renderer());
+
+      const result = await runner.resume({ turn, state: atDate() });
+
+      expect(result.response.answer).toBe("[done]");
+      expect(result.actions?.map((action) => action.type)).toEqual(["audit.log"]);
+      expect(events(result)).toEqual(["date:advanced", "log:action_emitted", "room:fast_forwarded", "done:rendered"]);
+      expect(select).toHaveBeenCalledTimes(1);
+    });
+
+    it("asks the step whose exit would emit the action again", async () => {
+      const runner = new DefaultRoutineRunner([logged("log")], { select: answeringDate() }, renderer());
+
+      const result = await runner.resume({ turn, state: atDate() });
+
+      expect(result.response.answer).toBe("[room]");
+      expect(result.actions?.map((action) => action.type)).toEqual(["audit.log"]);
+      expect(events(result)).toEqual(["date:advanced", "log:action_emitted", "room:rendered"]);
+      expect(result.nextState).toMatchObject({ path: ["date", "log", "room"] });
+    });
   });
 
   it("runs each tool once when satisfied steps would carry the turn back to a tool that already ran", async () => {

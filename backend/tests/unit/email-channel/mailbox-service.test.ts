@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { AuditEventInput } from "../../../src/modules/audit/contracts/index.js";
-import { MailboxService, type EngagementMode } from "../../../src/modules/emailChannel/public.js";
+import { emailMailboxPolicyRef, MailboxService, type EngagementMode } from "../../../src/modules/emailChannel/public.js";
 import { AppError } from "../../../src/shared/domain/errors.js";
 import { InMemoryEmailDomains, InMemoryEmailMailboxes, inMemoryPolicyChanges } from "../../support/inMemoryEmailChannel.js";
 
@@ -182,6 +182,68 @@ describe("MailboxService", () => {
       await expectAppError(service.update(actor, workspaceId, created.id, { engagementMode: "auto" }), 409, "engagement_mode_unavailable");
       expect(mailboxes.records.get(created.id)?.policyVersion).toBe(1);
       expect(mailboxes.history).toHaveLength(1);
+    });
+  });
+
+  describe("draft mode (S3)", () => {
+    const DRAFTING: readonly EngagementMode[] = ["operator_only", "draft"];
+
+    it("offers draft once the deployment supports it, and makes it the default for new mailboxes", async () => {
+      const { service } = harness(DRAFTING);
+
+      expect(service.modes()).toEqual({ supportedModes: ["operator_only", "draft"], defaultMode: "draft" });
+      expect(await createSupport(service)).toMatchObject({ engagementMode: "draft", policyVersion: 1 });
+      expect(await createSupport(service, { address: "sales@customer.test", engagementMode: "operator_only" }))
+        .toMatchObject({ engagementMode: "operator_only" });
+    });
+
+    it("does not upgrade a mailbox created before draft was supported", async () => {
+      const before = harness(["operator_only"]);
+      const created = await createSupport(before.service);
+      const after = new MailboxService({
+        mailboxes: before.mailboxes,
+        domainRecords: before.domains,
+        sendingDomains: before.sendingDomains,
+        policyChanges: before.policyChanges,
+        agents: { findByIdAndWorkspaceId: vi.fn(async () => null) },
+        audit: { record: vi.fn(async () => undefined) },
+        logger: { warn: vi.fn() },
+        randomBytes: (size) => new Uint8Array(size),
+        clock: before.now,
+        config: { inboundDomain: "in.radioso.test", supportedModes: DRAFTING },
+      });
+
+      expect(await after.get(workspaceId, created.id)).toMatchObject({ engagementMode: "operator_only", policyVersion: 1 });
+      expect(await after.update(actor, workspaceId, created.id, { displayName: "Help desk" })).toMatchObject({ engagementMode: "operator_only" });
+      expect(before.mailboxes.history.map((policy) => policy.engagementMode)).toEqual(["operator_only"]);
+    });
+
+    it("supersedes the drafts bound to the mailbox's policy when a downgrade bumps it, in the same unit, and audits the count", async () => {
+      const { service, policyChanges, mailboxes, audits } = harness(DRAFTING);
+      const created = await createSupport(service);
+      vi.spyOn(policyChanges.heldReplies, "supersedePendingForPolicy").mockImplementation(async (policyRef) => {
+        policyChanges.heldReplies.superseded.push(policyRef);
+        // Inside the policy change: the new version is already written.
+        expect(mailboxes.records.get(created.id)?.policyVersion).toBe(2);
+        return 2;
+      });
+
+      const downgraded = await service.update(actor, workspaceId, created.id, { engagementMode: "operator_only", expectedPolicyVersion: 1 });
+
+      expect(downgraded).toMatchObject({ engagementMode: "operator_only", policyVersion: 2 });
+      expect(policyChanges.runs).toBe(1);
+      expect(policyChanges.heldReplies.superseded).toEqual([emailMailboxPolicyRef(created.id)]);
+      expect(audits().filter((event) => event.metadata.action === "mode_changed").at(-1)?.metadata)
+        .toMatchObject({ fromMode: "draft", toMode: "operator_only", policyVersion: 2, supersededHeldReplies: 2 });
+    });
+
+    it("supersedes nothing when only settings change", async () => {
+      const { service, policyChanges } = harness(DRAFTING);
+      const created = await createSupport(service);
+
+      await service.update(actor, workspaceId, created.id, { threadContextMessages: 5 });
+
+      expect(policyChanges.heldReplies.superseded).toEqual([]);
     });
   });
 

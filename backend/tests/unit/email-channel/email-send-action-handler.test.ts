@@ -84,6 +84,54 @@ describe("EmailSendActionHandler", () => {
     });
   });
 
+  describe("held_release", () => {
+    const release = { payload: { trigger: "held_release" as const, heldReplyId: SEND_IDS.heldReply } };
+
+    it("sends an unchanged release as the agent's message, with Auto-Submitted: auto-generated (FR-034)", async () => {
+      const h = createSendPathHarness();
+      h.messages.set(SEND_IDS.message, { ...h.messages.get(SEND_IDS.message)!, source: "ai_agent" });
+
+      await h.deliver(release);
+
+      expect(h.onlyIntent()).toMatchObject({ trigger: "held_release", heldReplyId: SEND_IDS.heldReply, authorKind: "agent" });
+      expect(h.sentMessages[0]?.threading?.autoSubmitted).toBe("auto-generated");
+    });
+
+    it("sends an edited release as the teammate's own message, without the header", async () => {
+      const h = createSendPathHarness();
+      h.messages.set(SEND_IDS.message, { ...h.messages.get(SEND_IDS.message)!, source: "human_agent" });
+
+      await h.deliver(release);
+
+      expect(h.onlyIntent()).toMatchObject({ trigger: "held_release", authorKind: "operator" });
+      expect(h.sentMessages[0]?.threading?.autoSubmitted).toBeNull();
+    });
+
+    it("renews the thread's automatic-send budget when the release's send materializes, once (research B8)", async () => {
+      const h = createSendPathHarness();
+      h.messages.set(SEND_IDS.message, { ...h.messages.get(SEND_IDS.message)!, source: "ai_agent" });
+      const link = h.threads.links.get(SEND_IDS.conversation)!;
+      h.threads.links.set(SEND_IDS.conversation, { ...link, autoSendsSinceRenewal: 3, budgetRenewedAt: null });
+
+      await h.deliver(release);
+      expect(h.threads.links.get(SEND_IDS.conversation)).toMatchObject({ autoSendsSinceRenewal: 0, budgetRenewedAt: h.clock() });
+
+      h.threads.links.set(SEND_IDS.conversation, { ...h.threads.links.get(SEND_IDS.conversation)!, autoSendsSinceRenewal: 1 });
+      await h.deliver({ ...release, context: { attempt: 2 } });
+      expect(h.threads.links.get(SEND_IDS.conversation)?.autoSendsSinceRenewal).toBe(1);
+    });
+
+    it("halts a release whose mailbox can no longer send as its address, before any provider call", async () => {
+      const h = createSendPathHarness();
+      h.domains.seed({ ...h.domain, sendingStatus: "pending" });
+
+      await h.deliver(release);
+
+      expect(h.onlyIntent()).toMatchObject({ trigger: "held_release", state: "halted", haltReason: "sending_not_verified" });
+      expect(h.driver.send).not.toHaveBeenCalled();
+    });
+  });
+
   describe("revalidation", () => {
     it.each([
       ["an unverified domain", (h: ReturnType<typeof createSendPathHarness>) => h.domains.seed({ ...h.domain, sendingStatus: "pending" }), "sending_not_verified"],

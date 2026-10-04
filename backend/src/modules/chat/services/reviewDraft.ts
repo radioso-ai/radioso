@@ -1,4 +1,5 @@
 import type { MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
+import { GROUNDING_VERDICTS, type GroundingDiagnosticSnapshot } from "../../../shared/domain/groundingDiagnostic.js";
 import type { SuppressedSkillEffect } from "../../../shared/domain/suppressedSkillEffect.js";
 import type { AuditEventInput } from "../../audit/contracts/index.js";
 import type { ChatAnswerCoverageAssessment } from "../contracts/answerCoverage.js";
@@ -29,6 +30,55 @@ export const reviewedTurnDraft = (reply: UnpersistedReply): ReviewedTurnDraft =>
     metadata: reply.metadata,
   }).filter(([, value]) => value !== undefined)),
 });
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === "object" && !Array.isArray(value);
+
+const stringField = (value: unknown): string | undefined => (typeof value === "string" ? value : undefined);
+
+const numberField = (value: unknown): number | undefined => (typeof value === "number" && Number.isFinite(value) ? value : undefined);
+
+const groundingField = (value: unknown): GroundingDiagnosticSnapshot | undefined => {
+  if (!isRecord(value)) return undefined;
+  const verdict = GROUNDING_VERDICTS.find((known) => known === value.verdict);
+  const claimCount = numberField(value.claimCount);
+  const sourcedClaimCount = numberField(value.sourcedClaimCount);
+  const unsourcedClaimCount = numberField(value.unsourcedClaimCount);
+  const invalidSourceCount = numberField(value.invalidSourceCount);
+  return verdict !== undefined
+    && claimCount !== undefined
+    && sourcedClaimCount !== undefined
+    && unsourcedClaimCount !== undefined
+    && invalidSourceCount !== undefined
+    ? { verdict, claimCount, sourcedClaimCount, unsourcedClaimCount, invalidSourceCount }
+    : undefined;
+};
+
+/**
+ * The agent's reply row a published draft becomes: the row its review turn would have written,
+ * rebuilt from the draft's text and the presentation {@link reviewedTurnDraft} kept of it. The
+ * presentation has been stored since, so each field is narrowed back, and one that no longer reads
+ * as its column is left unset rather than written wrong.
+ */
+export const publishedDraftReply = (input: {
+  workspaceId: string;
+  conversationId: string;
+  draft: ReviewedTurnDraft;
+}): UnpersistedReply => {
+  const { presentation } = input.draft;
+  return {
+    conversationId: input.conversationId,
+    workspaceId: input.workspaceId,
+    role: "assistant",
+    content: input.draft.text,
+    skillName: stringField(presentation.skillName),
+    skillOutcome: stringField(presentation.skillOutcome),
+    skillStatus: stringField(presentation.skillStatus),
+    totalLatencyMs: numberField(presentation.totalLatencyMs),
+    grounding: groundingField(presentation.grounding),
+    metadata: isRecord(presentation.metadata) ? presentation.metadata : undefined,
+  };
+};
 
 export const reviewTurnFacts = (input: {
   answerOutcome: AssistantTurnOutcome | undefined;

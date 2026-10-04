@@ -44,6 +44,7 @@ const setup = (overrides: {
     reviewCompletedRevision: 0,
     reviewDueAt: null,
     reviewPolicyVersion: null,
+    reviewAttempts: 0,
     ...overrides.link,
   };
   const entry = (patch: Partial<ThreadIndexRecord> & Pick<ThreadIndexRecord, "id" | "rfcMessageId">): ThreadIndexRecord => ({

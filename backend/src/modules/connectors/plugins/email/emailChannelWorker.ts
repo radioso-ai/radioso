@@ -1,17 +1,21 @@
 import type { EmailChannelDrainStage, EmailInboundRepository, EmailChannelSweep } from "../../../emailChannel/public.js";
 import type { EmailInboundProcessor, InboundEventOutcome } from "./emailInboundProcessor.js";
+import type { EmailReviewRunner } from "./emailReviewRunner.js";
 
 const DEFAULT_LEASE_SECONDS = 300;
 const DEFAULT_POLL_INTERVAL_MS = 5_000;
 const DEFAULT_SWEEP_INTERVAL_MS = 5 * 60_000;
 /** Events one interval tick claims. */
 const POLL_BATCH = 10;
-/** The stages with work in this slice; the review stage arrives with its runner. */
 const INBOUND_STAGES: ReadonlySet<EmailChannelDrainStage> = new Set(["inbound", "all"]);
+const REVIEW_STAGES: ReadonlySet<EmailChannelDrainStage> = new Set(["review", "all"]);
 const RECONCILE_STAGES: ReadonlySet<EmailChannelDrainStage> = new Set(["reconcile", "all"]);
 
-/** `claimed` counts inbound events; `reconciled` the send intents claimed for reconciliation. */
-type EmailChannelDrainResult = { claimed: number; errored: number; reconciled: number } & Record<InboundEventOutcome, number>;
+/**
+ * `claimed` counts inbound events; `reviewed` the thread reviews claimed (stage 2); `reconciled`
+ * the send intents claimed for reconciliation.
+ */
+type EmailChannelDrainResult = { claimed: number; errored: number; reviewed: number; reconciled: number } & Record<InboundEventOutcome, number>;
 
 type EmailChannelSweepRun = Awaited<ReturnType<EmailChannelSweep["run"]>> & { drained: number };
 
@@ -20,6 +24,8 @@ interface EmailChannelWorkerOptions {
   enabled: boolean;
   events: Pick<EmailInboundRepository, "claimDueEvents">;
   processor: Pick<EmailInboundProcessor, "process">;
+  /** Stage 2: the coalesced review of each thread whose review is due. */
+  reviews: Pick<EmailReviewRunner, "runDue">;
   sweep: Pick<EmailChannelSweep, "run" | "reconcileSends">;
   logger: {
     warn(fields: Record<string, unknown>, message: string): void;
@@ -33,6 +39,7 @@ interface EmailChannelWorkerOptions {
 const emptyResult = (): EmailChannelDrainResult => ({
   claimed: 0,
   errored: 0,
+  reviewed: 0,
   reconciled: 0,
   processed: 0,
   ignored: 0,
@@ -82,8 +89,9 @@ export class EmailChannelWorker {
   }
 
   /**
-   * Claims up to `maxJobs` due events of `stage` and runs each through stage 1, and up to
-   * `maxJobs` sends due reconciliation for the `reconcile` stage.
+   * For `stage`, claims up to `maxJobs` each of: sends due reconciliation, inbound events to run
+   * through stage 1, and thread reviews due to run through stage 2. Inbound goes first, so a
+   * review it makes due joins the same drain.
    */
   async drain(request: { maxJobs: number; stage: EmailChannelDrainStage }): Promise<EmailChannelDrainResult> {
     const result = emptyResult();
@@ -93,11 +101,18 @@ export class EmailChannelWorker {
     if (RECONCILE_STAGES.has(request.stage)) {
       result.reconciled = await this.options.sweep.reconcileSends({ maxJobs: request.maxJobs });
     }
-    if (!INBOUND_STAGES.has(request.stage)) {
-      return result;
+    if (INBOUND_STAGES.has(request.stage)) {
+      await this.drainInbound(request.maxJobs, result);
     }
+    if (REVIEW_STAGES.has(request.stage)) {
+      result.reviewed = (await this.options.reviews.runDue({ maxJobs: request.maxJobs })).claimed;
+    }
+    return result;
+  }
+
+  private async drainInbound(maxJobs: number, result: EmailChannelDrainResult): Promise<void> {
     const events = await this.options.events.claimDueEvents({
-      limit: request.maxJobs,
+      limit: maxJobs,
       leaseSeconds: this.options.leaseSeconds ?? DEFAULT_LEASE_SECONDS,
     });
     for (const event of events) {
@@ -110,7 +125,6 @@ export class EmailChannelWorker {
         this.options.logger.error({ eventId: event.id, attempt: event.attempts, errorName: errorName(error) }, "email_inbound_event_errored");
       }
     }
-    return result;
   }
 
   /** The scheduled recovery: the sweep, then a drain of whatever it and any lost push left due. */

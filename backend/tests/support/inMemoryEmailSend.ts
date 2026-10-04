@@ -374,6 +374,7 @@ export const createSendPathHarness = (options: { now?: Date; sendingStatus?: "pe
     reviewCompletedRevision: 0,
     reviewDueAt: null,
     reviewPolicyVersion: null,
+    reviewAttempts: 0,
   });
   threads.index.push({
     workspaceId: SEND_IDS.workspace,

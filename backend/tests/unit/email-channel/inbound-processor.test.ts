@@ -24,6 +24,7 @@ const workspaceId = "11111111-1111-4111-8111-111111111111";
 const agentId = "44444444-4444-4444-8444-444444444444";
 const CUSTOMER = "alice@example.test";
 const MINUTE_MS = 60_000;
+const COALESCE_SECONDS = 60;
 
 const token = () => generateOpaqueToken((size) => randomBytes(size));
 
@@ -34,7 +35,7 @@ const harness = (options: { supportedModes?: readonly EngagementMode[] } = {}) =
   const domains = new InMemoryEmailDomains(clock);
   const mailboxes = new InMemoryEmailMailboxes(clock);
   const inbound = new InMemoryEmailInbound(clock, log);
-  const threads = new InMemoryEmailThreads(log);
+  const threads = new InMemoryEmailThreads(log, clock);
   const conversations = new Map<string, { input: ConnectorIngestInput; ownership: "ai_owned" | "human_owned"; messageIds: string[] }>();
   const activity: ConversationActivityEvent[] = [];
   const messages = new Map<string, InboundEmailMessage>();
@@ -116,7 +117,12 @@ const harness = (options: { supportedModes?: readonly EngagementMode[] } = {}) =
     clock,
     createId: randomUUID,
     randomBytes: (size) => randomBytes(size),
-    config: { inboundDomain: INBOUND_DOMAIN, rawMaxBytes: 64, supportedModes: options.supportedModes ?? ["operator_only"] },
+    config: {
+      inboundDomain: INBOUND_DOMAIN,
+      rawMaxBytes: 64,
+      supportedModes: options.supportedModes ?? ["operator_only"],
+      coalesceSeconds: COALESCE_SECONDS,
+    },
   });
 
   const domain = domains.seed({ workspaceId, domain: "customer.test" });
@@ -717,5 +723,93 @@ describe("EmailInboundProcessor: thread protocol", () => {
       kind: "channel_exception",
       detail: { code: "participant_mismatch", deliveryId: stranger.deliveries[0].id },
     })]);
+  });
+});
+
+describe("EmailInboundProcessor: review scheduling (stage 2)", () => {
+  const DRAFTING: readonly EngagementMode[] = ["operator_only", "draft"];
+
+  it("schedules a coalesced review for run_review_turn, bound to the accepted policy, and asks for a drain at its due time", async () => {
+    const h = harness({ supportedModes: DRAFTING });
+    const mailbox = h.seedMailbox({ engagementMode: "draft", agentId });
+
+    const { deliveries } = await h.receive(h.message({ deliveredTo: [h.relayAddressOf(mailbox)] }));
+
+    expect(deliveries[0]).toMatchObject({ disposition: "run_review_turn", dispositionReason: "accepted", state: "done" });
+    expect(h.ingest.mock.calls[0][0]).toMatchObject({ agentId, humanOwnership: null });
+    const dueAt = new Date(h.now().getTime() + COALESCE_SECONDS * 1000);
+    expect(h.threads.links.get(deliveries[0].conversationId!)).toMatchObject({
+      reviewRevision: 1,
+      reviewDueAt: dueAt,
+      reviewPolicyVersion: deliveries[0].acceptedPolicyVersion,
+    });
+    expect(h.requestDrain).toHaveBeenCalledWith({ maxJobs: expect.any(Number), stage: "review", scheduleAt: dueAt });
+    // Scheduled with the thread's link and index, in the same protocol step that settles the delivery.
+    const order = ["upsertLink", "insertIndexEntries", "scheduleReview", "settleDelivery:done"];
+    expect(h.log.filter((entry) => order.includes(entry))).toEqual(order);
+  });
+
+  it("keeps the earlier due time when more mail arrives inside the window, and bumps the revision", async () => {
+    const h = harness({ supportedModes: DRAFTING });
+    const mailbox = h.seedMailbox({ engagementMode: "draft", agentId });
+    const opening = h.message({ deliveredTo: [h.relayAddressOf(mailbox)] });
+    const first = await h.receive(opening);
+    const conversationId = first.deliveries[0].conversationId!;
+    const firstDue = h.threads.links.get(conversationId)?.reviewDueAt;
+
+    h.advance(20_000);
+    await h.receive(h.message({ deliveredTo: [h.relayAddressOf(mailbox)], inReplyTo: opening.rfcMessageId, references: [opening.rfcMessageId!] }));
+
+    expect(h.threads.links.get(conversationId)).toMatchObject({ reviewRevision: 2, reviewDueAt: firstDue });
+    expect(h.requestDrain).toHaveBeenLastCalledWith({ maxJobs: expect.any(Number), stage: "review", scheduleAt: firstDue });
+  });
+
+  it("binds the newest delivery's accepted policy version, not the one in force when it is processed", async () => {
+    const h = harness({ supportedModes: DRAFTING });
+    const mailbox = h.seedMailbox({ engagementMode: "draft", agentId });
+    const providerObjectId = randomUUID();
+    h.messages.set(providerObjectId, h.message({ deliveredTo: [h.relayAddressOf(mailbox)] }));
+    const event = h.inbound.seedEvent({ providerObjectId });
+    h.advance(MINUTE_MS);
+    await h.mailboxes.appendPolicyVersion({
+      mailboxId: mailbox.id,
+      expectedVersion: 1,
+      engagementMode: "draft",
+      enabled: true,
+      agentId,
+      changedByUserId: null,
+    });
+
+    await h.runEvent(event.id);
+
+    const [delivery] = await h.inbound.listEventDeliveries(event.id);
+    expect(h.threads.links.get(delivery.conversationId!)?.reviewPolicyVersion).toBe(1);
+  });
+
+  it("schedules nothing for an ingest-only delivery", async () => {
+    const h = harness({ supportedModes: DRAFTING });
+    const mailbox = h.seedMailbox({ engagementMode: "operator_only", agentId });
+
+    const { deliveries } = await h.receive(h.message({ deliveredTo: [h.relayAddressOf(mailbox)] }));
+
+    expect(h.threads.links.get(deliveries[0].conversationId!)).toMatchObject({ reviewRevision: 0, reviewDueAt: null });
+    expect(h.requestDrain).not.toHaveBeenCalledWith(expect.objectContaining({ stage: "review" }));
+  });
+
+  it("ingests newer mail on a thread as a new message of its conversation, which supersedes the pending draft (newer_inbound)", async () => {
+    const h = harness({ supportedModes: DRAFTING });
+    const mailbox = h.seedMailbox({ engagementMode: "draft", agentId });
+    const opening = h.message({ deliveredTo: [h.relayAddressOf(mailbox)] });
+    const first = await h.receive(opening);
+
+    h.conversations.get(first.deliveries[0].conversationId!)!.ownership = "human_owned";
+    await h.receive(h.message({ deliveredTo: [h.relayAddressOf(mailbox)], inReplyTo: opening.rfcMessageId }));
+
+    // The host's ingest supersedes the conversation's pending draft in its own transaction when it
+    // records a new message on an existing conversation (ConversationIngestService), whatever the
+    // disposition: here a person owns the thread, so no review is scheduled.
+    expect(h.ingest.mock.calls[1][0].conversation.conversationId).toBe(first.deliveries[0].conversationId);
+    expect(await h.ingest.mock.results[1].value).toMatchObject({ conversationCreated: false, messageCreated: true });
+    expect(h.threads.links.get(first.deliveries[0].conversationId!)?.reviewRevision).toBe(1);
   });
 });

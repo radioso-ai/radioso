@@ -143,5 +143,7 @@ export const buildEvalServices = (input: {
     evalSnapshotService,
     evalSuiteService,
     operatorReplyService,
+    /** Where a reply on a conversation goes outside the web; a held reply's release routes through it too. */
+    customerReplyDelivery,
   };
 };

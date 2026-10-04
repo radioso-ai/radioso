@@ -38,6 +38,7 @@ describe("operator MCP descriptor disposition", () => {
       "email_conversation_facts",
       "eval_results",
       "execute_reviewed_proposal",
+      "held_replies",
       "list_documents",
       "prepare_agent_publication",
       "prepare_agent_settings",

@@ -45,8 +45,9 @@ import { resolveThread, type ThreadCandidates, type ThreadResolution } from "./e
  * 4. index the thread and its Message-Ids (`done`).
  *
  * Every step resumes from the state the last attempt persisted, so a crash anywhere repeats no
- * write and splits no thread. Review turns (stage 2) are not composed in this slice: the
- * deployment's `supportedModes` caps every mailbox, so no disposition here asks for one.
+ * write and splits no thread. The host's ingest supersedes the thread's pending draft, which a
+ * newer message makes stale; step 3 schedules the thread's coalesced review for a
+ * `run_review_turn` disposition (stage 2, `EmailReviewRunner`).
  */
 
 /** Waits before attempts 2 to 5 of an event (FR-008's bounded retry); a fifth failure is terminal. */
@@ -57,22 +58,20 @@ const SOURCE_CHANNEL = "email";
 const PROCESSING_FAILED = "processing_failed";
 const RECEIPT_TO_INBOX_BUCKETS = [1, 2, 5, 10, 30, 60, 120, 300, 900];
 
-type DispositionReason = IngestOnlyReason | "accepted";
 type ConversationOwnership = "ai_owned" | "human_owned";
 type FetchedDeliveryContent = Parameters<EmailInboundRepository["recordFetched"]>[1];
 type CustomerText = ReturnType<typeof extractCustomerText>;
 
 /**
  * The human ownership each ingest-only reason asks for, read from the persisted reason so a
- * resumed delivery hands off exactly as its first attempt decided. A run that asked for a review
- * goes to a person: this slice runs none (research B7's terminal outcome).
+ * resumed delivery hands off exactly as its first attempt decided. A delivery accepted for review
+ * asks for none: its review decides.
  */
-const HUMAN_OWNERSHIP_BY_REASON: ReadonlyMap<string, string> = new Map<DispositionReason, string>([
+const HUMAN_OWNERSHIP_BY_REASON: ReadonlyMap<string, string> = new Map<IngestOnlyReason, string>([
   ["operator_only_mailbox", "operator_only_mailbox"],
   ["no_agent", "operator_only_mailbox"],
   ["spam_opt_in", "operator_only_mailbox"],
   ["generation_budget", "generation_budget"],
-  ["accepted", "review_unavailable"],
 ]);
 
 export type InboundEventOutcome = "processed" | "ignored" | "retrying" | "failed" | "superseded";
@@ -95,7 +94,13 @@ export interface EmailThreadProtocolScope {
   >;
   threads: Pick<
     EmailThreadRepository,
-    "findIndexedConversations" | "findLinkByThreadToken" | "findLink" | "upsertLink" | "recordLatestInbound" | "insertIndexEntries"
+    | "findIndexedConversations"
+    | "findLinkByThreadToken"
+    | "findLink"
+    | "upsertLink"
+    | "recordLatestInbound"
+    | "insertIndexEntries"
+    | "scheduleReview"
   >;
   /** Null while the conversation is only reserved, not yet ingested. */
   conversations: { ownershipOf(input: { conversationId: string; workspaceId: string }): Promise<ConversationOwnership | null> };
@@ -135,6 +140,8 @@ export interface EmailInboundProcessorDependencies {
     rawMaxBytes: number;
     /** The modes this deployment runs (plan, Questions settled, item 4). */
     supportedModes: readonly EngagementMode[];
+    /** `EMAIL_CHANNEL_COALESCE_SECONDS`: mail on one thread inside it gets one review (FR-024). */
+    coalesceSeconds: number;
   };
 }
 
@@ -454,12 +461,16 @@ export class EmailInboundProcessor {
     return { ...delivery, state: "ingested", conversationId: result.conversationId, messageId: result.messageId };
   }
 
-  /** Step 3 (one transaction): the thread link, the header projection and the Message-Id index. */
+  /**
+   * Step 3 (one transaction): the thread link, the header projection and the Message-Id index, and
+   * the thread's review scheduled when the delivery was accepted for one (research B7); a drain is
+   * asked for at its due time once that commits.
+   */
   private async index(context: DeliveryContext, delivery: InboundDeliveryRecord): Promise<void> {
     const identity = reservedIdentityOf(delivery);
     const conversationId = delivery.conversationId ?? identity.conversationId;
     const { mailbox, event } = context;
-    await this.deps.threadProtocol.run(async (scope) => {
+    const review = await this.deps.threadProtocol.run(async (scope) => {
       await scope.threads.upsertLink({
         conversationId,
         workspaceId: mailbox.workspaceId,
@@ -475,11 +486,21 @@ export class EmailInboundProcessor {
         inboundAt: event.receivedAt,
       });
       await scope.threads.insertIndexEntries(indexEntriesOf(context, delivery, conversationId));
+      const scheduled = delivery.disposition === "run_review_turn"
+        ? await scope.threads.scheduleReview(conversationId, {
+            dueAt: new Date(this.deps.clock().getTime() + this.deps.config.coalesceSeconds * 1000),
+            policyVersion: delivery.acceptedPolicyVersion ?? mailbox.policyVersion,
+          })
+        : null;
       if (delivery.threadConflict) {
         await scope.activity.record(channelException(conversationId, mailbox.workspaceId, "thread_conflict", delivery.id));
       }
       await scope.inbound.settleDelivery(delivery.id, { state: "done", errorCode: null });
+      return scheduled;
     });
+    if (review) {
+      await requestDrainBestEffort(this.deps, { maxJobs: DRAIN_BATCH, stage: "review", scheduleAt: review.dueAt });
+    }
   }
 
   // ── Rules and lookups ──────────────────────────────────────────────
@@ -505,8 +526,7 @@ export class EmailInboundProcessor {
         thread: resolution.kind === "existing"
           ? { kind: "existing", ownership: ownership ?? "ai_owned" }
           : { kind: resolution.kind },
-        // A generation is reserved only by a review turn (research B8), which the capped modes
-        // never reach; the budget cannot have been spent.
+        // The mailbox's generation budget (research B8) is reserved and checked from S4 (T206).
         generationBudgetExhausted: false,
       }),
       resultAttributes: (decided) => ({ disposition: decided.kind, reason: dispositionReasonOf(decided) }),

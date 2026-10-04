@@ -21,6 +21,7 @@ import {
   type AnswerTurnExecutionMode,
 } from "../../../src/shared/domain/turnExecutionMode.js";
 import { resolveContextForTurn } from "../../../src/modules/context-variables/public.js";
+import { publishedDraftReply, reviewedTurnDraft } from "../../../src/modules/chat/services/reviewDraft.js";
 import {
   humanOwnedRecord,
   REVIEW_WORKSPACE_ID,
@@ -371,6 +372,54 @@ describe("review completion in the turn lifecycle", () => {
 
     expect(result.facts.ownershipHandoffSignal).toEqual({ reason: "retrieval_miss" });
     expect(result.draft.text).toBe("Let me get a teammate.");
+  });
+});
+
+describe("publishing a review draft", () => {
+  const reply = {
+    id: "reply-unwritten",
+    conversationId: "conversation-review",
+    workspaceId: REVIEW_WORKSPACE_ID,
+    role: "assistant" as const,
+    content: "Your order ships tomorrow.",
+    skillName: "retrieval.answer",
+    skillOutcome: "grounded",
+    skillStatus: "completed",
+    totalLatencyMs: 812,
+    grounding: { verdict: "grounded" as const, claimCount: 2, sourcedClaimCount: 2, unsourcedClaimCount: 0, invalidSourceCount: 0 },
+    metadata: { skillTurn: { outcome: "grounded" }, citations: [{ chunkId: "chunk-1", documentId: "doc-1" }] },
+  };
+
+  it("writes the reply row the turn would have written, from a draft that was stored in between", () => {
+    const stored = JSON.parse(JSON.stringify(reviewedTurnDraft(reply))) as ReturnType<typeof reviewedTurnDraft>;
+
+    const { id: _unwritten, ...expected } = reply;
+    expect(publishedDraftReply({ workspaceId: REVIEW_WORKSPACE_ID, conversationId: "conversation-review", draft: stored }))
+      .toEqual(expected);
+  });
+
+  it("leaves unset what no longer reads as its column", () => {
+    const published = publishedDraftReply({
+      workspaceId: REVIEW_WORKSPACE_ID,
+      conversationId: "conversation-review",
+      draft: {
+        text: "Hello",
+        presentation: { skillName: 7, totalLatencyMs: "fast", grounding: { verdict: "certain", claimCount: 1 }, metadata: ["not", "a", "map"] },
+      },
+    });
+
+    expect(published).toEqual({
+      conversationId: "conversation-review",
+      workspaceId: REVIEW_WORKSPACE_ID,
+      role: "assistant",
+      content: "Hello",
+      skillName: undefined,
+      skillOutcome: undefined,
+      skillStatus: undefined,
+      totalLatencyMs: undefined,
+      grounding: undefined,
+      metadata: undefined,
+    });
   });
 });
 

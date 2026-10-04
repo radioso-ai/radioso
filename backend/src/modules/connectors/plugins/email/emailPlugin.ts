@@ -1,5 +1,6 @@
 import type {
   ConfigFieldDefinition,
+  ConnectorChatPort,
   ConnectorContext,
   ConnectorPlugin,
   ConnectorValidationIssue,
@@ -9,11 +10,20 @@ import type { EmailChannelSweep, EmailInboundRepository } from "../../../emailCh
 import type { InboundEmailReceiver } from "../../../mail/public.js";
 import { EmailChannelWorker } from "./emailChannelWorker.js";
 import { EmailInboundProcessor, type EmailInboundProcessorDependencies } from "./emailInboundProcessor.js";
+import { EmailReviewRunner, type EmailReviewRunnerDependencies } from "./emailReviewRunner.js";
 import { createEmailWebhookRouter, type EmailWebhookRouterOptions } from "./emailWebhook.js";
 
-interface EmailChannelConnectorDependencies extends Omit<EmailInboundProcessorDependencies, "receiver" | "inbound" | "logger"> {
+interface EmailChannelConnectorDependencies
+  extends Omit<EmailInboundProcessorDependencies, "receiver" | "inbound" | "mailboxes" | "domains" | "threads" | "chat" | "logger"> {
   receiver: Pick<InboundEmailReceiver, "provider" | "verify" | "fetchMessage">;
   inbound: EmailInboundProcessorDependencies["inbound"] & Pick<EmailInboundRepository, "insertEvent" | "claimDueEvents">;
+  mailboxes: EmailInboundProcessorDependencies["mailboxes"] & EmailReviewRunnerDependencies["mailboxes"];
+  domains: EmailInboundProcessorDependencies["domains"] & EmailReviewRunnerDependencies["domains"];
+  threads: EmailInboundProcessorDependencies["threads"] & EmailReviewRunnerDependencies["links"];
+  /** The host port: `ingest` records inbound mail (stage 1), `respond` runs its review (stage 2). */
+  chat: Pick<ConnectorChatPort, "ingest" | "respond">;
+  /** Stage 2's own ports, and `EMAIL_CHANNEL_REVIEW_MAX_ATTEMPTS`. */
+  review: Pick<EmailReviewRunnerDependencies, "conversations" | "heldReplies" | "handoffs"> & { maxAttempts: number };
   logger: {
     warn(fields: Record<string, unknown>, message: string): void;
     error(fields: Record<string, unknown>, message: string): void;
@@ -25,7 +35,8 @@ interface EmailChannelConnectorDependencies extends Omit<EmailInboundProcessorDe
 
 /**
  * The email channel's connector side: the webhook plugin and the worker that drains what the
- * webhook persists, both over the same inbound repository and drain dispatcher.
+ * webhook persists — stage 1 over the inbound repository, stage 2 over the threads it schedules
+ * reviews on — through the same drain dispatcher.
  */
 export const createEmailChannelConnector = (
   deps: EmailChannelConnectorDependencies,
@@ -35,6 +46,20 @@ export const createEmailChannelConnector = (
     enabled: deps.workersEnabled,
     events: deps.inbound,
     processor: new EmailInboundProcessor(deps),
+    reviews: new EmailReviewRunner({
+      links: deps.threads,
+      mailboxes: deps.mailboxes,
+      domains: deps.domains,
+      conversations: deps.review.conversations,
+      chat: deps.chat,
+      heldReplies: deps.review.heldReplies,
+      handoffs: deps.review.handoffs,
+      drains: deps.drains,
+      metrics: deps.metrics,
+      logger: deps.logger,
+      clock: deps.clock,
+      config: { supportedModes: deps.config.supportedModes, maxAttempts: deps.review.maxAttempts },
+    }),
     sweep: deps.sweep,
     logger: deps.logger,
   }),

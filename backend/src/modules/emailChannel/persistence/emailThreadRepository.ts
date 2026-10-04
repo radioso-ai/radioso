@@ -1,6 +1,6 @@
 import type { Selectable } from "kysely";
 
-import { currentTimestamp, toJsonb } from "../../../shared/infra/kysely/sqlHelpers.js";
+import { currentTimestamp, nowPlusSeconds, toJsonb } from "../../../shared/infra/kysely/sqlHelpers.js";
 import type { DB, Db } from "../../../shared/infra/kysely/types.js";
 import { readEnum } from "./columnValues.js";
 
@@ -34,6 +34,8 @@ export interface EmailThreadLinkRecord {
   reviewCompletedRevision: number;
   reviewDueAt: Date | null;
   reviewPolicyVersion: number | null;
+  /** Claims of the due review so far; a claim's count fences its retry and release. */
+  reviewAttempts: number;
 }
 
 interface ThreadIndexEntry {
@@ -91,6 +93,7 @@ const mapLink = (row: LinkRow): EmailThreadLinkRecord => ({
   reviewCompletedRevision: row.review_completed_revision,
   reviewDueAt: row.review_due_at,
   reviewPolicyVersion: row.review_policy_version,
+  reviewAttempts: row.review_attempts,
 });
 
 const mapIndex = (row: IndexRow): ThreadIndexRecord => ({
@@ -319,6 +322,34 @@ export class EmailThreadRepository {
   }
 
   /**
+   * Claims up to `limit` threads whose review is due and not leased, oldest due first, each under a
+   * lease and with its claim counted. The returned link carries the revision the claim reviews.
+   */
+  async claimDueReviews(input: { limit: number; leaseSeconds: number }): Promise<EmailThreadLinkRecord[]> {
+    const rows = await this.db
+      .updateTable("email_thread_links")
+      .set((eb) => ({
+        review_lease_until: nowPlusSeconds(input.leaseSeconds),
+        review_attempts: eb("review_attempts", "+", 1),
+        updated_at: currentTimestamp(),
+      }))
+      .where("conversation_id", "in", (eb) =>
+        eb
+          .selectFrom("email_thread_links")
+          .select("conversation_id")
+          .where("review_due_at", "<=", currentTimestamp())
+          .where((due) => due.or([due("review_lease_until", "is", null), due("review_lease_until", "<", currentTimestamp())]))
+          .orderBy("review_due_at", "asc")
+          .limit(input.limit)
+          .forUpdate()
+          .skipLocked(),
+      )
+      .returningAll()
+      .execute();
+    return rows.map(mapLink);
+  }
+
+  /**
    * Completes revision `revision` only: a worker overtaken by newer mail never clears the newer
    * due time (research B17).
    */
@@ -328,11 +359,48 @@ export class EmailThreadRepository {
       .set({
         review_due_at: null,
         review_lease_until: null,
+        review_attempts: 0,
+        review_last_error_code: null,
         review_completed_revision: revision,
         updated_at: currentTimestamp(),
       })
       .where("conversation_id", "=", conversationId)
       .where("review_revision", "=", revision)
+      .execute();
+    return changed(result);
+  }
+
+  /**
+   * Gives up the claim `attempt` of a review a newer revision overtook, leaving its due time, so
+   * the newer revision is claimable at once. A claim that lost its lease to another changes nothing.
+   */
+  async releaseReview(conversationId: string, attempt: number): Promise<boolean> {
+    const result = await this.db
+      .updateTable("email_thread_links")
+      .set({ review_lease_until: null, review_attempts: 0, updated_at: currentTimestamp() })
+      .where("conversation_id", "=", conversationId)
+      .where("review_attempts", "=", attempt)
+      .where("review_lease_until", "is not", null)
+      .execute();
+    return changed(result);
+  }
+
+  /** Puts the claim `attempt` of a failed review back, due at `nextAttemptAt`, with its error code. */
+  async retryReviewLater(
+    conversationId: string,
+    input: { attempt: number; nextAttemptAt: Date; errorCode: string },
+  ): Promise<boolean> {
+    const result = await this.db
+      .updateTable("email_thread_links")
+      .set({
+        review_due_at: input.nextAttemptAt,
+        review_lease_until: null,
+        review_last_error_code: input.errorCode,
+        updated_at: currentTimestamp(),
+      })
+      .where("conversation_id", "=", conversationId)
+      .where("review_attempts", "=", input.attempt)
+      .where("review_lease_until", "is not", null)
       .execute();
     return changed(result);
   }

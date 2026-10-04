@@ -178,6 +178,7 @@ export class InMemoryEmailMailboxes implements Pick<
   | "resolveRelayToken"
   | "findActiveByAddress"
   | "policyEffectiveAt"
+  | "findPolicyVersion"
   | "updateSettings"
   | "rotateRelayToken"
   | "startSetupCheck"
@@ -282,6 +283,10 @@ export class InMemoryEmailMailboxes implements Pick<
       .sort((a, b) => b.effectiveAt.getTime() - a.effectiveAt.getTime() || b.version - a.version)[0] ?? null;
   }
 
+  async findPolicyVersion(mailboxId: string, version: number) {
+    return this.history.find((policy) => policy.mailboxId === mailboxId && policy.version === version) ?? null;
+  }
+
   async updateSettings(workspaceId: string, mailboxId: string, settings: Args<EmailMailboxRepository["updateSettings"]>[2]) {
     this.calls.push("updateSettings");
     const record = await this.findActive(workspaceId, mailboxId);
@@ -356,11 +361,20 @@ export class InMemoryEmailMailboxes implements Pick<
 
 /** Runs the work against the in-memory mailboxes; counts the units it ran. */
 export const inMemoryPolicyChanges = (mailboxes: InMemoryEmailMailboxes) => {
+  const heldReplies = {
+    /** The policy refs whose drafts a change superseded, in order. */
+    superseded: [] as string[],
+    supersedePendingForPolicy: async (policyRef: string) => {
+      heldReplies.superseded.push(policyRef);
+      return 0;
+    },
+  };
   const unit = {
     runs: 0,
-    run<T>(work: (scope: { mailboxes: InMemoryEmailMailboxes }) => Promise<T>): Promise<T> {
+    heldReplies,
+    run<T>(work: (scope: { mailboxes: InMemoryEmailMailboxes; heldReplies: typeof heldReplies }) => Promise<T>): Promise<T> {
       unit.runs += 1;
-      return work({ mailboxes });
+      return work({ mailboxes, heldReplies });
     },
   };
   return unit;
@@ -754,8 +768,16 @@ export class InMemoryEmailThreads implements Pick<
   | "listIndexedMessages"
   | "renewSendBudget"
   | "findLatestInboundThreading"
+  | "scheduleReview"
+  | "claimDueReviews"
+  | "completeReview"
+  | "releaseReview"
+  | "retryReviewLater"
 > {
   readonly links = new Map<string, EmailThreadLinkRecord>();
+  /** `review_lease_until` and `review_last_error_code`, which the link record does not carry. */
+  readonly reviewLeases = new Map<string, Date>();
+  readonly reviewErrors = new Map<string, string>();
   readonly index: ThreadIndexEntry[] = [];
   /** The `References` each inbound delivery carried (`email_inbound_deliveries.reference_ids`). */
   readonly referencesByDelivery = new Map<string, string[]>();
@@ -791,6 +813,7 @@ export class InMemoryEmailThreads implements Pick<
         reviewCompletedRevision: 0,
         reviewDueAt: null,
         reviewPolicyVersion: null,
+        reviewAttempts: 0,
       });
     }
     this.log.push("upsertLink");
@@ -851,6 +874,68 @@ export class InMemoryEmailThreads implements Pick<
     return new Set(this.index
       .filter((entry) => entry.mailboxId === mailboxId && entry.direction === "outbound" && rfcMessageIds.includes(entry.rfcMessageId))
       .map((entry) => entry.rfcMessageId));
+  }
+
+  async scheduleReview(conversationId: string, input: Args<EmailThreadRepository["scheduleReview"]>[1]) {
+    const link = this.links.get(conversationId);
+    if (!link) return null;
+    const scheduled = {
+      ...link,
+      reviewRevision: link.reviewRevision + 1,
+      reviewDueAt: link.reviewDueAt ?? input.dueAt,
+      reviewPolicyVersion: input.policyVersion,
+    };
+    this.links.set(conversationId, scheduled);
+    this.log.push("scheduleReview");
+    return { revision: scheduled.reviewRevision, dueAt: scheduled.reviewDueAt };
+  }
+
+  async claimDueReviews(input: { limit: number; leaseSeconds: number }) {
+    const now = this.clock().getTime();
+    const due = [...this.links.values()]
+      .filter((link) => link.reviewDueAt !== null && link.reviewDueAt.getTime() <= now)
+      .filter((link) => {
+        const lease = this.reviewLeases.get(link.conversationId);
+        return lease === undefined || lease.getTime() < now;
+      })
+      .sort((a, b) => a.reviewDueAt!.getTime() - b.reviewDueAt!.getTime())
+      .slice(0, input.limit);
+    return due.map((link) => {
+      const claimed = { ...link, reviewAttempts: link.reviewAttempts + 1 };
+      this.links.set(link.conversationId, claimed);
+      this.reviewLeases.set(link.conversationId, new Date(now + input.leaseSeconds * 1000));
+      this.log.push("claimDueReviews");
+      return { ...claimed };
+    });
+  }
+
+  async completeReview(conversationId: string, revision: number) {
+    const link = this.links.get(conversationId);
+    if (!link || link.reviewRevision !== revision) return false;
+    this.links.set(conversationId, { ...link, reviewDueAt: null, reviewAttempts: 0, reviewCompletedRevision: revision });
+    this.reviewLeases.delete(conversationId);
+    this.reviewErrors.delete(conversationId);
+    this.log.push("completeReview");
+    return true;
+  }
+
+  async releaseReview(conversationId: string, attempt: number) {
+    const link = this.links.get(conversationId);
+    if (!link || link.reviewAttempts !== attempt || !this.reviewLeases.has(conversationId)) return false;
+    this.links.set(conversationId, { ...link, reviewAttempts: 0 });
+    this.reviewLeases.delete(conversationId);
+    this.log.push("releaseReview");
+    return true;
+  }
+
+  async retryReviewLater(conversationId: string, input: Args<EmailThreadRepository["retryReviewLater"]>[1]) {
+    const link = this.links.get(conversationId);
+    if (!link || link.reviewAttempts !== input.attempt || !this.reviewLeases.has(conversationId)) return false;
+    this.links.set(conversationId, { ...link, reviewDueAt: input.nextAttemptAt });
+    this.reviewLeases.delete(conversationId);
+    this.reviewErrors.set(conversationId, input.errorCode);
+    this.log.push("retryReviewLater");
+    return true;
   }
 }
 

@@ -44,6 +44,14 @@ const createHarness = () => {
   const activity = new InMemoryConversationActivityStore();
   // Every step in order, so a test can assert what happens inside the unit of work and what after.
   const steps: string[] = [];
+  // How many live drafts the conversation's next supersede replaces.
+  const liveDrafts = { count: 0 };
+  const supersedePendingForConversation = vi.fn(async (_conversationId: string, reason: string) => {
+    steps.push(`held_replies:supersede:${reason}`);
+    const superseded = liveDrafts.count;
+    liveDrafts.count = 0;
+    return superseded;
+  });
   const scope: ConversationIngestScope = {
     conversations: {
       createIfAbsent: async (input) => {
@@ -82,6 +90,7 @@ const createHarness = () => {
         await activity.record(undefined, event);
       }),
     },
+    heldReplies: { supersedePendingForConversation },
   };
   const unitOfWork: ConversationIngestUnitOfWork = {
     async run(work) {
@@ -101,7 +110,10 @@ const createHarness = () => {
     }),
   };
   const service = new ConversationIngestService({ unitOfWork, ownership: ownershipService, publisher });
-  return { service, conversations, messages, ownership, activity, steps, scope, requestHumanOwnership, publisher };
+  return {
+    service, conversations, messages, ownership, activity, steps, scope, requestHumanOwnership, publisher, liveDrafts,
+    supersedePendingForConversation,
+  };
 };
 
 describe("ConversationIngestService", () => {
@@ -291,6 +303,85 @@ describe("ConversationIngestService", () => {
     expect(result.ownership).toEqual({ state: "human_owned", version: 1 });
     expect(requestHumanOwnership).toHaveBeenCalledTimes(1);
     await expect(ownership.load(conversationId)).resolves.toMatchObject({ reason: "operator_only_mailbox" });
+  });
+
+  describe("held replies", () => {
+    const continued = (overrides: Partial<ConversationIngestInput> = {}) => newConversation({
+      conversation: { kind: "existing", conversationId },
+      message: { id: secondMessageId, text: "Any news?", receivedAt },
+      ...overrides,
+    });
+
+    it("supersedes the conversation's live draft when a newer customer message arrives, inside the unit of work", async () => {
+      const { service, steps, liveDrafts, supersedePendingForConversation, publisher } = createHarness();
+      await service.ingest(newConversation());
+      liveDrafts.count = 1;
+      steps.length = 0;
+
+      await service.ingest(continued());
+
+      expect(supersedePendingForConversation).toHaveBeenCalledWith(conversationId, "newer_inbound");
+      expect(steps).toEqual([
+        "begin",
+        "lock_conversation",
+        "create_message",
+        "touch_conversation",
+        "held_replies:supersede:newer_inbound",
+        "lock_ownership",
+        "commit",
+        "publish:conversation.turn_committed,hitl.decision_resolved",
+      ]);
+      expect(publisher.enqueue).toHaveBeenLastCalledWith(workspaceId, ["conversation.turn_committed", "hitl.decision_resolved"]);
+    });
+
+    it("supersedes before a handoff it asks for, and also when the caller asked to create a conversation that exists", async () => {
+      const { service, steps, supersedePendingForConversation } = createHarness();
+      await service.ingest(newConversation());
+      steps.length = 0;
+
+      await service.ingest(newConversation({
+        message: { id: secondMessageId, text: "Any news?", receivedAt },
+        humanOwnership: { reason: "operator_only_mailbox" },
+      }));
+
+      expect(supersedePendingForConversation).toHaveBeenCalledTimes(1);
+      expect(steps.slice(steps.indexOf("touch_conversation"), steps.indexOf("commit"))).toEqual([
+        "touch_conversation",
+        "held_replies:supersede:newer_inbound",
+        "request_handoff",
+        "activity:handoff_requested",
+      ]);
+    });
+
+    it("tells the dashboard of no decision when there was no draft to supersede", async () => {
+      const { service, publisher } = createHarness();
+      await service.ingest(newConversation());
+
+      await service.ingest(continued());
+
+      expect(publisher.enqueue).toHaveBeenLastCalledWith(workspaceId, ["conversation.turn_committed"]);
+    });
+
+    it("supersedes nothing for a new conversation, or for a message a retry already recorded", async () => {
+      const { service, supersedePendingForConversation } = createHarness();
+
+      await service.ingest(newConversation());
+      await service.ingest(newConversation());
+      await service.ingest(continued());
+      await service.ingest(continued());
+
+      expect(supersedePendingForConversation).toHaveBeenCalledTimes(1);
+    });
+
+    it("fails the ingest, telling nobody, when the draft cannot be superseded", async () => {
+      const { service, supersedePendingForConversation, publisher } = createHarness();
+      await service.ingest(newConversation());
+      publisher.enqueue.mockClear();
+      supersedePendingForConversation.mockRejectedValueOnce(new Error("held replies unavailable"));
+
+      await expect(service.ingest(continued())).rejects.toThrow("held replies unavailable");
+      expect(publisher.enqueue).not.toHaveBeenCalled();
+    });
   });
 
   it("tells nobody when the unit of work fails", async () => {

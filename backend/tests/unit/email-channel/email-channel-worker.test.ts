@@ -16,10 +16,16 @@ const harness = (options: { enabled?: boolean } = {}) => {
   const logger = { warn: vi.fn(), error: vi.fn() };
   const sends = { run: vi.fn(async (_request: { maxJobs: number }) => ({ claimed: 0, reposted: 0, settled: 0, uncertain: 0, deferred: 0, skipped: 0, errored: 0 })) };
   const sweep = new EmailChannelSweep({ inbound, domains, sends, clock, logger, config: { eventRetentionDays: 30 } });
+  const reviews = {
+    runDue: vi.fn(async (_request: { maxJobs: number }) => ({
+      claimed: 0, held: 0, already_held: 0, no_draft: 0, human_owned: 0, not_runnable: 0, retrying: 0, failed: 0, errored: 0,
+    })),
+  };
   const worker = new EmailChannelWorker({
     enabled: options.enabled ?? true,
     events: inbound,
     processor: { process },
+    reviews,
     sweep,
     logger,
     leaseSeconds: 300,
@@ -29,6 +35,7 @@ const harness = (options: { enabled?: boolean } = {}) => {
   return {
     inbound,
     process,
+    reviews,
     domains,
     sends,
     logger,
@@ -106,6 +113,29 @@ describe("EmailChannelWorker", () => {
     expect(await h.worker.drain({ maxJobs: 4, stage: "review" })).toMatchObject({ reconciled: 0 });
     expect(h.sends.run).toHaveBeenCalledTimes(2);
     expect(h.sends.run).toHaveBeenCalledWith({ maxJobs: 4 });
+  });
+
+  it("runs due reviews (stage 2) for the review and all stages only, after inbound work", async () => {
+    const h = harness();
+    h.inbound.seedEvent();
+    const order: string[] = [];
+    h.process.mockImplementation(async () => {
+      order.push("inbound");
+      return "processed";
+    });
+    h.reviews.runDue.mockImplementation(async () => {
+      order.push("review");
+      return { claimed: 2, held: 2, already_held: 0, no_draft: 0, human_owned: 0, not_runnable: 0, retrying: 0, failed: 0, errored: 0 };
+    });
+
+    expect(await h.worker.drain({ maxJobs: 3, stage: "review" })).toMatchObject({ reviewed: 2, claimed: 0 });
+    expect(await h.worker.drain({ maxJobs: 3, stage: "inbound" })).toMatchObject({ reviewed: 0, claimed: 1 });
+    h.inbound.seedEvent();
+    expect(await h.worker.drain({ maxJobs: 3, stage: "all" })).toMatchObject({ reviewed: 2, claimed: 1 });
+    expect(await h.worker.drain({ maxJobs: 3, stage: "reconcile" })).toMatchObject({ reviewed: 0 });
+    expect(h.reviews.runDue).toHaveBeenCalledTimes(2);
+    expect(h.reviews.runDue).toHaveBeenCalledWith({ maxJobs: 3 });
+    expect(order).toEqual(["review", "inbound", "inbound", "review"]);
   });
 
   it("keeps draining when one event throws, and leaves that event to its lease", async () => {

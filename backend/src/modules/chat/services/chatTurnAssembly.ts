@@ -24,6 +24,8 @@ import type {
 
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import { CHAT_TURN_ROUTE } from "../../../shared/domain/chatTurnRoute.js";
+import type { SuppressedSkillEffect } from "../../../shared/domain/suppressedSkillEffect.js";
+import { turnExecutionCapabilities } from "../../../shared/domain/turnExecutionMode.js";
 import { buildPendingDecisionTransition } from "../../approvals/public.js";
 import type { ChatGateway } from "../contracts/chatGateway.js";
 import type { ChatStatusStage } from "../contracts/streamEvents.js";
@@ -683,7 +685,13 @@ export class ChatTurnAssembly {
         ? () => deferredReactionRecorder.commit()
         : undefined,
     });
-    if (!this.options.routineStore || !this.options.routineProvider) {
+    // A coverage reaction that starts a routine is routine activation, which a turn whose
+    // execution mode skips routines never does.
+    if (
+      !this.options.routineStore
+      || !this.options.routineProvider
+      || turnExecutionCapabilities(session.executionMode).routines === "skip"
+    ) {
       return {
         coverageReactionRecorder: deferredReactionRecorder,
         coverageVerdictWrapper,
@@ -792,6 +800,7 @@ export class ChatTurnAssembly {
     presentation: ChatPresentedAnswer;
     engineTrace?: ConversationTrace;
     actions?: RoutineActionRequest[];
+    suppressedEffects: readonly SuppressedSkillEffect[];
   } & CoverageRoutineEffects> {
     const coverageTurnRuntime = await this.coverageTurnRuntime(session, {
       accountId: input.accountId,
@@ -800,7 +809,7 @@ export class ChatTurnAssembly {
       getSession: () => session,
       clarification: input.clarification,
     });
-    const { turnSkills, turnSkillSelector } = await this.turnSelectionRuntime(session, {
+    const { turnSkills, turnSkillSelector, agentSkillRuntime } = await this.turnSelectionRuntime(session, {
       coordination: input.coordination,
     });
     const { presentation, result } = await runPreparedChatTurnWithConversationEngine({
@@ -820,6 +829,7 @@ export class ChatTurnAssembly {
     return {
       presentation,
       engineTrace: result.trace,
+      suppressedEffects: agentSkillRuntime?.suppressedEffects?.() ?? [],
       ...(coverageTurnRuntime.effects?.(result) ?? { actions: result.actions }),
     };
   }
@@ -845,6 +855,7 @@ export class ChatTurnAssembly {
     presentation: ChatPresentedAnswer;
     engineTrace?: ConversationTrace;
     actions?: RoutineActionRequest[];
+    suppressedEffects: readonly SuppressedSkillEffect[];
   } & CoverageRoutineEffects> {
     const sessionRef = { current: { ...session, effectiveQuery: input.retrievalInput.query } };
     const clarificationState: { current: RetrievalSenseClarificationTurn | null } = { current: null };
@@ -909,6 +920,7 @@ export class ChatTurnAssembly {
       session: sessionRef.current,
       presentation,
       engineTrace,
+      suppressedEffects: agentSkillRuntime?.suppressedEffects?.() ?? [],
       ...(coverageTurnRuntime.effects?.(result) ?? { actions: result.actions }),
     };
   }

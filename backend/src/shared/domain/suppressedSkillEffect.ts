@@ -1,3 +1,5 @@
+import type { TurnExecutionMode } from "./turnExecutionMode.js";
+
 /**
  * Where a turn's skill-effect policy stopped a skill: a directive-bound turn
  * skill dispatch, or a directive-staged agentic retrieval tool invocation.
@@ -14,3 +16,14 @@ export interface SuppressedSkillEffect {
 export interface SuppressedSkillEffectsSource {
   suppressedEffects(): readonly SuppressedSkillEffect[];
 }
+
+/**
+ * The reason a suppressed skill run settles with. It is persisted on the run's outcome
+ * and read by traces and the dashboard, so each mode keeps its own stable value.
+ */
+export type SkillEffectSuppressionReason = "suppressed_for_safe_test" | "suppressed_for_review";
+
+/** A `live` turn never suppresses, so every mode but `review` reports the safe-test reason. */
+export const skillEffectSuppressionReason = (
+  executionMode: TurnExecutionMode | undefined,
+): SkillEffectSuppressionReason => (executionMode === "review" ? "suppressed_for_review" : "suppressed_for_safe_test");

@@ -10,6 +10,7 @@ import { MissingFallbackReplyComposer } from "../../../src/modules/chat/services
 import { RetrievalTurnController } from "../../../src/modules/chat/services/retrievalTurnDispatch.js";
 import {
   turnExecutionCapabilities,
+  type AnswerTurnExecutionMode,
   type TurnExecutionCapabilities,
   type TurnExecutionMode,
 } from "../../../src/shared/domain/turnExecutionMode.js";
@@ -39,9 +40,21 @@ const EXPECTED_CAPABILITIES: Record<TurnExecutionMode, TurnExecutionCapabilities
     humanOwnedWaitingMessage: "generate",
     turnBookkeeping: "skip",
   },
+  review: {
+    routines: "skip",
+    completion: "return_draft",
+    ownershipHandoff: "report",
+    turnActions: "drop",
+    humanOwnedWaitingMessage: "skip",
+    turnBookkeeping: "skip",
+  },
 };
 
 const MODES = Object.keys(EXPECTED_CAPABILITIES) as TurnExecutionMode[];
+// `answer()` runs only the modes that persist a reply; a review turn runs through `review()`.
+const ANSWER_MODES = MODES.filter(
+  (mode): mode is AnswerTurnExecutionMode => EXPECTED_CAPABILITIES[mode].completion === "persist_reply",
+);
 
 describe("turnExecutionCapabilities", () => {
   it.each(MODES)("pins every %s capability", (mode) => {
@@ -62,6 +75,16 @@ describe("CompletedAssistantTurn", () => {
     expectTypeOf<PersistedAssistantTurn["assistantMessageId"]>().toEqualTypeOf<string>();
     expectTypeOf<PersistedAssistantTurn>().toHaveProperty("response");
     expectTypeOf<PersistedAssistantTurn>().toHaveProperty("postCommitReceipt");
+  });
+
+  it("has a draft arm correlated on the request message and the turn, with no assistant message id", () => {
+    type DraftAssistantTurn = Extract<CompletedAssistantTurn, { kind: "draft" }>;
+    expectTypeOf<DraftAssistantTurn>().not.toBeNever();
+    expectTypeOf<DraftAssistantTurn["correlation"]>().toEqualTypeOf<{ requestMessageId: string; turnId: string }>();
+    expectTypeOf<DraftAssistantTurn>().toHaveProperty("draft");
+    expectTypeOf<DraftAssistantTurn>().toHaveProperty("facts");
+    expectTypeOf<DraftAssistantTurn>().toHaveProperty("postCommitReceipt");
+    expectTypeOf<DraftAssistantTurn>().not.toHaveProperty("assistantMessageId");
   });
 });
 
@@ -160,7 +183,7 @@ const routineTurnHarness = async (suspended: boolean) => {
 };
 
 describe("routine capabilities in ChatService.answer", () => {
-  it.each(MODES)("attempts routine activation in %s mode when no routine is suspended", async (executionMode) => {
+  it.each(ANSWER_MODES)("attempts routine activation in %s mode when no routine is suspended", async (executionMode) => {
     const { service, conversationId, routineProvider, suspendedRoutineReader } = await routineTurnHarness(false);
 
     const response = await service.answer({
@@ -176,7 +199,7 @@ describe("routine capabilities in ChatService.answer", () => {
     expect(routineProvider.forTurn).toHaveBeenCalledOnce();
   });
 
-  it.each(MODES)("short-circuits a suspended routine in %s mode without attempting activation", async (executionMode) => {
+  it.each(ANSWER_MODES)("short-circuits a suspended routine in %s mode without attempting activation", async (executionMode) => {
     const { service, conversationId, routineProvider, suspendedRoutineReader } = await routineTurnHarness(true);
 
     const response = await service.answer({

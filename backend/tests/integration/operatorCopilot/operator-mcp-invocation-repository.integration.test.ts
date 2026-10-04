@@ -282,6 +282,43 @@ describeIntegration("OperatorMcpInvocationRepository", () => {
     )).rejects.toThrow();
   });
 
+  it("records an outcome only while the writer still holds the receipt's attempt", async () => {
+    await clearInvocations();
+    const original = baseInput({ descriptorName: "execute_reviewed_proposal", shape: "act", operationId: "attempt-fenced-outcome" });
+    await repository.admit(original);
+    await expect(repository.claimRunning({ invocationId: original.id, now: original.now }))
+      .resolves.toMatchObject({ status: "running", attemptInvocationId: original.id });
+
+    // An identical retry took the receipt over to reconcile it, as a reviewed claim's reopen does.
+    const retryId = randomUUID();
+    await database.query("UPDATE operator_mcp_invocations SET attempt_invocation_id = $1 WHERE id = $2", [retryId, original.id]);
+    await expect(repository.recordOutcome({ invocationId: original.id, status: "refused", safeOutcomeCode: "abandoned_before_effect", now: original.now }))
+      .resolves.toMatchObject({ status: "running", safeOutcomeCode: null, attemptInvocationId: retryId });
+    await expect(repository.findByOperation({ grantId, operationId: "attempt-fenced-outcome" })).resolves.toMatchObject({ id: original.id });
+    // A third request that saw the original attempt before the takeover cannot close it either.
+    await expect(repository.recordOutcome({
+      invocationId: original.id, recoveredBy: { invocationId: randomUUID(), observedAttemptInvocationId: original.id },
+      status: "completed", safeOutcomeCode: "completed", now: original.now,
+    })).resolves.toMatchObject({ status: "running", attemptInvocationId: retryId });
+
+    await expect(repository.recordOutcome({
+      invocationId: original.id, recoveredBy: { invocationId: retryId, observedAttemptInvocationId: original.id },
+      status: "completed", safeOutcomeCode: "completed", resultReference: "settled-by-retry", now: original.now,
+    })).resolves.toMatchObject({ status: "completed", resultReference: "settled-by-retry", attemptInvocationId: retryId });
+  });
+
+  it("lets a later request close an earlier receipt whose attempt is still the one it saw at replay", async () => {
+    await clearInvocations();
+    const original = baseInput({ descriptorName: "propose_ingestion_settings", shape: "propose", operationId: "observed-attempt-close" });
+    await repository.admit(original);
+    await repository.claimRunning({ invocationId: original.id, now: original.now });
+
+    await expect(repository.recordOutcome({
+      invocationId: original.id, recoveredBy: { invocationId: randomUUID(), observedAttemptInvocationId: original.id },
+      status: "completed", safeOutcomeCode: "completed", resultReference: "recovered-proposal", now: original.now,
+    })).resolves.toMatchObject({ status: "completed", resultReference: "recovered-proposal", attemptInvocationId: original.id });
+  });
+
   it("reclaims a stale proposal operation when no proposal was committed", async () => {
     await clearInvocations();
     const operationId = "proposal-before-effect-crash";

@@ -41,6 +41,12 @@ export interface OperatorMcpInvocationRecord {
   readonly proofNonceDigest: string;
   readonly proofConsumedAt: Date | null;
   readonly status: OperatorMcpInvocationStatus;
+  /**
+   * The request running under this receipt: its own request once `claimRunning` starts it, or a
+   * retry that took the receipt over to reconcile it. Null until a request starts running, which
+   * counts as held by the receipt's own request.
+   */
+  readonly attemptInvocationId: string | null;
   readonly safeOutcomeCode: string | null;
   readonly safeRejectionDetails: readonly OperatorMcpRejectionDetail[];
   readonly resultReference: string | null;
@@ -87,9 +93,21 @@ export interface OperatorMcpInvocationRepositoryPort {
   findById(invocationId: string): Promise<OperatorMcpInvocationRecord | null>;
   findByOperation(input: { grantId: string; operationId: string }): Promise<OperatorMcpInvocationRecord | null>;
   consumeProof(proofNonceDigest: string, now?: Date): Promise<"consumed" | "replay" | "missing">;
+  /** Starts the receipt's own request running under it, as its attempt. */
   claimRunning(input: { invocationId: string; now: Date }): Promise<OperatorMcpInvocationRecord | null>;
+  /**
+   * Lands only while the writer still holds the receipt's attempt, so a request whose receipt a
+   * retry took over never overwrites that retry's outcome. Returns the receipt as written, or as it
+   * stands when the write did not land.
+   */
   recordOutcome(input: {
     invocationId: string;
+    /**
+     * Set when a later request records the outcome it recovered for this earlier receipt: its own
+     * invocation id, and the attempt the receipt showed before that request reconciled it. The write
+     * lands while either still holds the receipt. Without it, the writer is the receipt's own request.
+     */
+    recoveredBy?: { readonly invocationId: string; readonly observedAttemptInvocationId: string | null };
     status: "completed" | "refused" | "failed";
     safeOutcomeCode: string;
     safeRejectionDetails?: readonly OperatorMcpRejectionDetail[];

@@ -32,6 +32,7 @@ interface OperatorMcpInvocationRow {
   proof_nonce_digest: string;
   proof_consumed_at: Date | null;
   status: "admitted" | "running" | "completed" | "refused" | "failed";
+  attempt_invocation_id: string | null;
   safe_outcome_code: string | null;
   safe_rejection_details: unknown;
   result_reference: string | null;
@@ -44,7 +45,7 @@ const invocationColumns = sql<string>`
   id, credential_id, grant_id, grant_version::text AS grant_version,
   account_id, workspace_id, user_id, client_id, method, descriptor_name, shape,
   operation_id, input_digest, verification_cost, budget_kind, budget_reserved_at,
-  proof_nonce_digest, proof_consumed_at, status, safe_outcome_code, safe_rejection_details, result_reference,
+  proof_nonce_digest, proof_consumed_at, status, attempt_invocation_id, safe_outcome_code, safe_rejection_details, result_reference,
   created_at, completed_at, retained_until
 `;
 
@@ -82,6 +83,7 @@ const mapInvocation = (row: OperatorMcpInvocationRow): OperatorMcpInvocationReco
   proofNonceDigest: row.proof_nonce_digest,
   proofConsumedAt: row.proof_consumed_at ? new Date(row.proof_consumed_at) : null,
   status: row.status,
+  attemptInvocationId: row.attempt_invocation_id,
   safeOutcomeCode: row.safe_outcome_code,
   safeRejectionDetails: boundRejectionDetails(row.safe_rejection_details),
   resultReference: row.result_reference,
@@ -287,7 +289,7 @@ export class OperatorMcpInvocationRepository implements OperatorMcpInvocationRep
   async claimRunning(input: { invocationId: string; now: Date }): Promise<OperatorMcpInvocationRecord | null> {
     const claimed = await sql<OperatorMcpInvocationRow>`
       UPDATE operator_mcp_invocations
-      SET status = 'running'
+      SET status = 'running', attempt_invocation_id = id
       WHERE id = ${input.invocationId} AND status = 'admitted'
       RETURNING ${invocationColumns}
     `.execute(this.db);
@@ -296,6 +298,7 @@ export class OperatorMcpInvocationRepository implements OperatorMcpInvocationRep
 
   async recordOutcome(input: {
     invocationId: string;
+    recoveredBy?: { readonly invocationId: string; readonly observedAttemptInvocationId: string | null };
     status: "completed" | "refused" | "failed";
     safeOutcomeCode: string;
     safeRejectionDetails?: readonly import("../../modules/operatorCopilot/invalidArgumentDetails.js").OperatorMcpRejectionDetail[];
@@ -306,6 +309,11 @@ export class OperatorMcpInvocationRepository implements OperatorMcpInvocationRep
     if (!safeOutcomeCode) throw new Error("safe outcome code is required");
     const resultReference = boundedString(input.resultReference, "result reference", 512);
     const safeRejectionDetails = boundRejectionDetails(input.safeRejectionDetails);
+    // The receipt's own request writes as itself and also while no attempt has started (NULL). A
+    // later request writes as itself, or while the attempt it saw before reconciling still holds the
+    // receipt. Either way, a request a retry took the receipt over from matches neither.
+    const writerInvocationId = input.recoveredBy?.invocationId ?? input.invocationId;
+    const observedAttemptInvocationId = input.recoveredBy ? input.recoveredBy.observedAttemptInvocationId : null;
     const updated = await sql<OperatorMcpInvocationRow>`
       UPDATE operator_mcp_invocations
       SET status = ${input.status}, safe_outcome_code = ${safeOutcomeCode}, safe_rejection_details = ${JSON.stringify(safeRejectionDetails)}::jsonb,
@@ -314,6 +322,10 @@ export class OperatorMcpInvocationRepository implements OperatorMcpInvocationRep
         AND (
           status IN ('admitted', 'running')
           OR (status = 'failed' AND ${input.status} = 'completed' AND ${safeOutcomeCode} = 'completed')
+        )
+        AND (
+          attempt_invocation_id = ${writerInvocationId}::uuid
+          OR attempt_invocation_id IS NOT DISTINCT FROM ${observedAttemptInvocationId}::uuid
         )
       RETURNING ${invocationColumns}
     `.execute(this.db);

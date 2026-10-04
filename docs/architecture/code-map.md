@@ -1,7 +1,7 @@
 ---
 title: "Code Map"
 description: "Navigation map from product areas to public surfaces, owners, tests, and related docs for focused feature work."
-last_updated: 2026-09-25
+last_updated: 2026-10-03
 ---
 
 # Code Map
@@ -1741,7 +1741,8 @@ Primary paths:
 - relevant `backend/src/modules/*/composition.ts` files
 - `ee/packages/plan-catalog/` — the source of truth for Radioso Cloud plan numbers
   (prices, quotas, default plan, self-serve ceiling, usage-counting weights,
-  top-up, managed service, the managed-plan model set). Entry point `src/index.ts`
+  top-up, managed service, the managed-plan model set, whether prices include
+  VAT). Entry point `src/index.ts`
   (`PLAN_CATALOG`, `findPlan`, `formatPrice`); data in `src/plans.json`; focused
   test `tests/planCatalog.test.ts`.
 - `ee/packages/backend-module/src/billing/` — publishes the plan catalog over
@@ -1751,9 +1752,10 @@ Primary paths:
   `plansRoutes.ts` (`createPlansRoutes`, public `GET /api/v1/plans`) and
   `billingRoutes.ts` (`createBillingRoutes`, `GET/POST /api/v1/ee/billing/*`
   — `me`, `checkout`, `portal`, `webhook`; account-session gated except the
-  webhook). `stripeGateway.ts` is the narrow Stripe port every other file and
-  every test sees; `stripeSdkGateway.ts` is the only file that imports the
-  `stripe` SDK. `planPricing.ts` maps catalog plan ↔ Stripe lookup key /
+  webhook). `stripeGateway.ts` is the narrow Stripe port the runtime and its
+  tests see, and exports `STRIPE_WEBHOOK_EVENT_TYPES`, the event types billing
+  acts on; `stripeSdkGateway.ts` adapts it to the `stripe` SDK.
+  `planPricing.ts` maps catalog plan ↔ Stripe lookup key /
   product metadata (pure, no Stripe or DB import). `billingCustomerRepository.ts`
   owns `ee_billing_customers` and the `ee_billing_processed_events` webhook
   idempotency table via `db/eeSchema.ts`'s Kysely surface; migrator
@@ -1765,8 +1767,18 @@ Primary paths:
   `configured: false` rather than failing at boot — self-hosted installs run
   this way by default. Checkout and portal are user-initiated payment flows,
   not Ray actions, and are permanently excluded from the copilot coverage
-  map. Focused tests: `planPricing.test.ts`, `billingWebhookHandler.test.ts`,
+  map. The operator CLI `stripeCatalogSyncCli.ts` (package script
+  `stripe:sync`) makes a Stripe account match the catalog: products, lookup-keyed
+  prices, tax defaults, the customer portal, and the webhook endpoint.
+  `stripeCatalogSync.ts` is the pure planner (`desiredStripeCatalog`,
+  `planStripeCatalogSync`), `stripeCatalogSyncCommand.ts` runs it (flags,
+  live-mode guard, output, apply), `stripeCatalogAdmin.ts` is its narrow port, and
+  `stripeSdkCatalogAdmin.ts` adapts that port to the `stripe` SDK. The two SDK
+  adapters are the only files that import `stripe`. The sync is a deploy-time
+  CLI with no HTTP route, so it sits outside the copilot coverage map. Focused
+  tests: `planPricing.test.ts`, `billingWebhookHandler.test.ts`,
   `billingRoutes.test.ts`, `plansRoutes.test.ts`, `applicationModule.test.ts`,
+  `stripeCatalogSync.test.ts`, `stripeCatalogSyncCommand.test.ts`,
   `billingCustomerRepository.integration.test.ts` (also exercises the
   migrator). Operator setup doc:
   `docs-portal/content/operators/billing-setup.mdx`.

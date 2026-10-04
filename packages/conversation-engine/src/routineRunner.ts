@@ -295,9 +295,13 @@ const DEFAULT_REASK_LIMIT = 3;
 
 /**
  * Keeps the values that fit their declared slot type, in that type's canonical form (#1374).
- * A value for an undeclared key, or on a routine with no slot schema, passes through as it
- * always has. A blank one is "not given" and dropped; one that does not fit is dropped and
- * reported by key and reason — never by value.
+ * On a routine with no slot schema there is nothing to check a key against, so every key
+ * passes through as it always has. On a routine that declares one, a key the schema does
+ * not list is dropped and reported as "undeclared" (#1388) — the turn planner, ranked
+ * activation, and a selector return free-form field names, and only a declared slot's
+ * value may reach routine state, an action payload, or an unbound tool-step input. A blank
+ * value is "not given" and dropped silently; one that does not fit its declared type is
+ * dropped and reported by key and reason — never by value.
  */
 const checkDeclaredSlotValues = (
   routine: Routine,
@@ -309,7 +313,11 @@ const checkDeclaredSlotValues = (
   for (const [key, value] of Object.entries(values)) {
     const type = slotTypes.get(key);
     if (!type) {
-      kept[key] = value;
+      if (slotTypes.size > 0) {
+        rejected.push({ key, reason: "undeclared" });
+      } else {
+        kept[key] = value;
+      }
       continue;
     }
     const checked = checkSlotValue(type, value);

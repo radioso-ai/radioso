@@ -1409,15 +1409,17 @@ export interface RoutineTraceStepEntry {
 }
 
 /**
- * A value the runner did not store for a declared slot (#1374). Key and reason only — never
- * the value, which may be personal data or an injection attempt.
+ * A value the runner did not store (#1374, #1388). Key and reason only — never the value,
+ * which may be personal data or an injection attempt.
  * - `not_scalar`: an object or array, which fits no slot type.
  * - `type_mismatch`: a scalar that does not fit the slot's declared type (an email that is
  *   not shaped like one, a date that is not a `YYYY-MM-DD` calendar date).
+ * - `undeclared`: the key names no slot the routine declares. Reported only on a routine
+ *   that declares a slot schema — one with none keeps every key, as it always has.
  */
 export interface RoutineTraceRejectedSlot {
   key: string;
-  reason: "not_scalar" | "type_mismatch";
+  reason: "not_scalar" | "type_mismatch" | "undeclared";
 }
 
 /**

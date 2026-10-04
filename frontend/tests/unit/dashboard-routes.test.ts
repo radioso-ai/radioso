@@ -109,6 +109,25 @@ describe('dashboard route state', () => {
     })
   })
 
+  // Issue #1225: a permalink to a deleted or retention-expired conversation
+  // must not leave the dead id reachable through the URL. The not-found
+  // handler clears it by rebuilding the href with the item fields undefined —
+  // this locks in that the builder actually drops them instead of
+  // round-tripping a stale id back in.
+  it('drops itemKind/itemId/itemMessageId when clearing a not-found selection', () => {
+    const href = buildDashboardHref('account-1', {
+      section: 'activity',
+      workspacePublicRouteKey: 'support-abc123',
+      activityTab: 'all',
+      historyFilter: 'chat',
+      historyItemKind: undefined,
+      historyItemId: undefined,
+      historyMessageId: undefined,
+    })
+
+    expect(href).toBe('/w/support-abc123/activity?tab=all&filter=chat')
+  })
+
   it('parses contact activity filter and selected request state', () => {
     const params = new URLSearchParams({
       filter: 'contact',

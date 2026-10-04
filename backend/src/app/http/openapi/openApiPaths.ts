@@ -29,6 +29,7 @@ import { registerHistoryPaths } from "./paths/historyPaths.js";
 import { registerConversationActivityPaths } from "./paths/conversationActivityPaths.js";
 import { registerConversationOwnershipPaths } from "./paths/conversationOwnershipPaths.js";
 import { registerDeliveryFailurePaths } from "./paths/deliveryFailurePaths.js";
+import { registerHeldReplyPaths } from "./paths/heldReplyPaths.js";
 import { registerDecisionPaths } from "./paths/decisionPaths.js";
 import { registerConnectorsPaths } from "./paths/connectorsPaths.js";
 import { registerQualityPaths } from "./paths/qualityPaths.js";
@@ -78,6 +79,7 @@ export const registerOpenApiPaths = (
   registerConversationActivityPaths(registry, schemas, security);
   registerConversationOwnershipPaths(registry, schemas, security);
   registerDeliveryFailurePaths(registry, schemas, security);
+  registerHeldReplyPaths(registry, schemas, security);
   registerDecisionPaths(registry, schemas, security);
   registerConnectorsPaths(registry, schemas, security);
   registerQualityPaths(registry, schemas, security);

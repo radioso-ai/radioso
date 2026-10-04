@@ -57,6 +57,7 @@ export const operatorMcpDispositions: Readonly<Record<string, CopilotMcpDisposit
   email_channel_configuration: eligibleRead,
   email_channel_events: eligibleRead,
   email_conversation_facts: eligibleRead,
+  held_replies: eligibleRead,
   eval_results: eligibleRead,
   needs_attention: contextDependent,
   product_doc_page: deferredRead,

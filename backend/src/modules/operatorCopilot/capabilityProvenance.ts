@@ -20,7 +20,7 @@ type ProductionDescriptorName =
   | "proposal_detail"
   | "prepare_document_import" | "prepare_document_removal" | "prepare_document_reprocess"
   | "test_chat_sessions" | "test_chat_transcript" | "test_chat_turn_trace" | "send_test_chat_message"
-  | "email_channel_configuration" | "email_channel_events" | "email_conversation_facts";
+  | "email_channel_configuration" | "email_channel_events" | "email_conversation_facts" | "held_replies";
 
 const rayOnly = (reason: string) => ({ rayOnly: { reason } }) as const;
 
@@ -50,6 +50,7 @@ export const copilotCapabilityProvenance: Readonly<Record<ProductionDescriptorNa
   email_channel_configuration: { backingOperationIds: ["getEmailChannel", "getEmailMailbox"] },
   email_channel_events: { backingOperationIds: ["listEmailMailboxEvents"] },
   email_conversation_facts: { backingOperationIds: ["getConversationEmailFacts"] },
+  held_replies: { backingOperationIds: ["listHeldReplies", "getCurrentHeldReply"] },
   eval_results: { backingOperationIds: ["listEvalCases"] },
   needs_attention: { applicationPrimitiveIds: ["operatorCopilot.needs-attention"], ...rayOnly("Ray composes the authorized escalation sources into one operator working list carrying the handles its follow-up acts consume.") },
   product_docs: { applicationPrimitiveIds: ["productDocs.corpus.read"] },

@@ -5,6 +5,7 @@ import { AgentRevisionRuntimeRepository } from "../../db/repositories/agentRevis
 import { createAgentPublicProfileComposition } from "../composition/agentDiscovery.js";
 import { createAgentToolCatalogComposition } from "../composition/agentToolCatalog.js";
 import { createEmailChannelComposition, createPostgresDeliveryFailures } from "../composition/emailChannel.js";
+import { createConnectorChatPort } from "../../modules/connectors/services/connectorChatPort.js";
 import { apiPrincipalRouteInventory } from "../http/apiPrincipalRoutePolicy.js";
 import { requestSourceDigestPort } from "../http/middleware/requestSource.js";
 import {
@@ -122,8 +123,10 @@ import { createTeammateLabelReader } from "../composition/teammateLabelReader.js
 import { createPostgresOwnershipReplyUnitOfWork } from "../composition/conversationOwnershipReplies.js";
 import { createConversationActivityComposition } from "../composition/conversationActivity.js";
 import { createPostgresOwnershipChangeUnitOfWork } from "../composition/conversationOwnershipChanges.js";
+import { createPostgresHeldReplyUnitOfWork, emailHeldReplyChannelRegistration } from "../composition/heldReplyUnitOfWork.js";
 import { createPostgresConversationIngestUnitOfWork } from "../composition/conversationIngest.js";
-import { ConversationOwnershipService, OperatorIdentityResolver } from "../../modules/handoff/public.js";
+import { ConversationOwnershipService, HeldReplyService, OperatorIdentityResolver } from "../../modules/handoff/public.js";
+import { HeldReplyRepository } from "../../db/repositories/heldReplyRepository.js";
 import { DeliveryFailureDecisions } from "../../modules/customerReplyDelivery/public.js";
 import { buildConversationLinkResolver } from "../composition/conversationLinkResolver.js";
 import { resolveWorkspaceManagedLlmModels } from "../../shared/infra/llm/workspaceManagedModels.js";
@@ -389,7 +392,13 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     activity: conversationActivity.recorder,
     // Reached only while the worker drains, after this build returns; the channel's reply
     // deliverer is needed sooner, by the operator reply service, so the channel is built here.
-    conversationIngest: { ingest: (input) => conversationIngestService.ingest(input) },
+    chat: createConnectorChatPort(chat.chatService, { ingest: (input) => conversationIngestService.ingest(input) }),
+    heldReplies: {
+      hold: (input) => heldReplies.hold(input),
+      findByReviewRef: (conversationId, reviewRef) => heldReplies.findByReviewRef(conversationId, reviewRef),
+    },
+    ownership: { requestHumanOwnership: (scope, input) => conversationOwnershipService.requestHumanOwnership(scope, input) },
+    publisher: realtimePublisherComposition.publisher,
     agents: repositories.agentRepository,
     audit: infrastructure.auditService,
     actionDrain: chat.actionDrainDispatcher,
@@ -499,6 +508,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     evalSnapshotService,
     evalSuiteService,
     operatorReplyService,
+    customerReplyDelivery,
   } = evalServices;
   const conversationOperatorDirectory = createConversationOperatorDirectory({ accountAccess: access.accountAccessService });
   const conversationOwnershipService = new ConversationOwnershipService({
@@ -537,6 +547,26 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     resolver: emailChannel?.deliveryFailureResolver ?? null,
     audit: infrastructure.auditService,
     logger,
+  });
+  const heldReplies = new HeldReplyService({
+    conversations: repositories.conversationRepository,
+    writes: createPostgresHeldReplyUnitOfWork({
+      db: infrastructure.database.kysely,
+      channels: [emailHeldReplyChannelRegistration],
+      activity: conversationActivity.recorder,
+      actionDrain: chat.actionDrainDispatcher,
+      logger,
+      errorReporter: infrastructure.errorReportingService,
+    }),
+    reads: new HeldReplyRepository(infrastructure.database.kysely),
+    operatorIdentities: operatorIdentityResolver,
+    customerReplyDelivery,
+    replies: operatorReplyService,
+    audit: infrastructure.auditService,
+    publisher: realtimePublisherComposition.publisher,
+    metrics: infrastructure.metricsRegistry,
+    logger,
+    errorReporter: infrastructure.errorReportingService,
   });
   const conversationIngestService = new ConversationIngestService({
     unitOfWork: createPostgresConversationIngestUnitOfWork({
@@ -1179,6 +1209,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     conversationOperatorDirectory,
     conversationActivityReads: conversationActivity.reads,
     deliveryFailures,
+    heldReplies,
     workbenchReplayRunner: chat.workbenchReplayRunner,
     testExecutionService,
     chatBootstrapService: chat.chatBootstrapService,

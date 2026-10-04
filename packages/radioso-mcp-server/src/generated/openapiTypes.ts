@@ -3352,6 +3352,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/held-replies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List held replies
+         * @description Replies an agent wrote in review that wait for a teammate, newest first. With `attention=all`, the decided, replaced and automatically queued ones too.
+         */
+        get: operations["listHeldReplies"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/conversations/{conversationId}/held-reply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a conversation's current held reply
+         * @description The conversation's newest held reply, whatever its state, under a `heldReply` root; null when it has none.
+         */
+        get: operations["getCurrentHeldReply"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/conversations/{conversationId}/held-replies/{heldReplyId}/release": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Release a held reply
+         * @description Sends a pending draft to the customer. Without `editedText` it goes out as the agent wrote it, as the agent's message; with `editedText` the teammate's edit goes out as their own message and the draft is kept. Who owns the conversation does not change. Each refusal carries the held reply as it is now in `details.heldReply`.
+         */
+        post: operations["releaseHeldReply"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/conversations/{conversationId}/held-replies/{heldReplyId}/discard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Discard a held reply
+         * @description Sets a pending draft aside. The customer hears nothing, and the conversation keeps waiting for a teammate until one replies or takes it over.
+         */
+        post: operations["discardHeldReply"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/decisions": {
         parameters: {
             query?: never;
@@ -9608,6 +9688,74 @@ export interface components {
         ResolveDeliveryFailureRequest: {
             /** @enum {string} */
             decision: "marked_sent" | "resend";
+        };
+        HeldReply: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            conversationId: string;
+            /**
+             * Format: uuid
+             * @description The agent whose review wrote the draft.
+             */
+            agentId: string | null;
+            /**
+             * @description `pending`: waiting for a teammate. `queued_auto`: queued to send automatically. `released`: sent as the agent wrote it. `edited`: sent as a teammate edited it. `discarded`: set aside by a teammate. `superseded`: replaced by a newer message, a takeover, an operator reply or a policy change.
+             * @enum {string}
+             */
+            state: "pending" | "queued_auto" | "released" | "edited" | "discarded" | "superseded";
+            /** @description The producing channel's code for why the reply was held. */
+            holdReason: string;
+            /** @description What the review turn found, as the producing channel's codes. */
+            facts: {
+                grounding: string;
+                coverage: string;
+                handoff: {
+                    requested: boolean;
+                    reason: string | null;
+                };
+                outcome: string;
+            };
+            /** @description The draft relies on an action the review turn was not allowed to run. */
+            dependsOnSuppressedAction: boolean;
+            suppressedEffects: {
+                skillName: string;
+            }[];
+            /** @description The agent's draft, kept as written after an edited release. */
+            draftText: string;
+            /** @description The teammate's text an edited release sent; null otherwise. */
+            editedText: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            decidedAt: string | null;
+            releaserUserId: string | null;
+            editorUserId: string | null;
+            /** @description Whether the conversation still waits for a teammate because of this reply. A discarded draft keeps it open until a teammate replies or takes over. */
+            attentionOpen: boolean;
+            trace: components["schemas"]["TurnTraceEnvelope"] | null;
+        };
+        HeldReplyPage: {
+            items: components["schemas"]["HeldReply"][];
+            /** @description Pass back as `cursor` for the next page; null on the last one. */
+            nextCursor: string | null;
+        };
+        CurrentHeldReplyResponse: {
+            /** @description The conversation's newest held reply, whatever its state; null when it has none. */
+            heldReply: components["schemas"]["HeldReply"] | null;
+        };
+        HeldReplyReleaseResult: {
+            heldReply: components["schemas"]["HeldReply"];
+            /**
+             * Format: uuid
+             * @description The message the release wrote: the agent's draft, or the teammate's edit.
+             */
+            messageId: string;
+            /** @enum {string} */
+            delivery: "queued";
+        };
+        ReleaseHeldReplyRequest: {
+            editedText?: string;
         };
         PendingApprovalDecisionOption: {
             id: string;
@@ -24873,6 +25021,256 @@ export interface operations {
                 };
             };
             /** @description `not_resolvable`: the failure is cleared or its kind does not admit the decision; `email_sending_not_verified`: the channel cannot send yet */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listHeldReplies: {
+        parameters: {
+            query?: {
+                attention?: "open" | "all";
+                agentId?: string;
+                cursor?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Held replies */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HeldReplyPage"];
+                };
+            };
+            /** @description An invalid query or cursor */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace conversation takeover permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getCurrentHeldReply: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The current held reply */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CurrentHeldReplyResponse"];
+                };
+            };
+            /** @description Invalid conversation id */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace conversation takeover permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not a conversation of this workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    releaseHeldReply: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversationId: string;
+                heldReplyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ReleaseHeldReplyRequest"];
+            };
+        };
+        responses: {
+            /** @description Held reply released and its delivery queued */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HeldReplyReleaseResult"];
+                };
+            };
+            /** @description Invalid ids or edit */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace conversation takeover permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not a conversation or held reply of this workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `held_reply_not_pending`: the held reply was already decided or replaced; `details.heldReply` carries it as it is now; `ownership_changed`: the conversation changed hands since the draft was held; `policy_changed`: the channel's settings changed since the draft was held; `channel_not_ready`: the conversation's channel cannot send it; `email_sending_not_verified`: the sending domain is not verified */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    discardHeldReply: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversationId: string;
+                heldReplyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Held reply discarded */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HeldReply"];
+                };
+            };
+            /** @description Invalid ids */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace conversation takeover permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not a conversation or held reply of this workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `held_reply_not_pending`: the held reply was already decided or replaced; `details.heldReply` carries it as it is now */
             409: {
                 headers: {
                     [name: string]: unknown;

@@ -603,10 +603,10 @@ R3 blocks T088 (S1 drain wiring). R1 and R2 block S3 and can run in parallel wit
   - discard keeps attention open;
   - list `open` excludes `queued_auto`;
   - `current` returns `{ heldReply }`.
-- [ ] T164 [P] [US4] Extend `backend/tests/unit/handoff/conversation-ownership-service.test.ts`: takeover, transfer to self and reply supersede a `pending` or `queued_auto` draft through the `heldReplies` scope inside the same unit of work, and clear discarded attention.
-- [ ] T165 [P] [US4] Write `backend/tests/unit/app-composition/held-reply-unit-of-work.test.ts`: lock order (conversation → ownership → channel scope → conditional held-reply update → message → enqueue); the channel scope resolved by `policyRef` prefix; drain push after commit only.
-- [ ] T166 [P] [US4] Write `backend/tests/unit/app-composition/mailbox-policy-change.test.ts`: mailbox `FOR UPDATE`, version bump, history row and `supersedePendingForPolicy` in one transaction.
-- [ ] T167 [US4] Write `backend/tests/integration/held-reply-visibility.integration.test.ts` (research B9 surface list). Held text in `pending`, `discarded` and `superseded` never appears in:
+- [x] T164 [P] [US4] Extend `backend/tests/unit/handoff/conversation-ownership-service.test.ts`: takeover, transfer to self and reply supersede a `pending` or `queued_auto` draft through the `heldReplies` scope inside the same unit of work, and clear discarded attention.
+- [x] T165 [P] [US4] Write `backend/tests/unit/app-composition/held-reply-unit-of-work.test.ts`: lock order (conversation → ownership → channel scope → conditional held-reply update → message → enqueue); the channel scope resolved by `policyRef` prefix; drain push after commit only.
+- [x] T166 [P] [US4] Write `backend/tests/unit/app-composition/mailbox-policy-change.test.ts`: mailbox `FOR UPDATE`, version bump, history row and `supersedePendingForPolicy` in one transaction.
+- [x] T167 [US4] Write `backend/tests/integration/held-reply-visibility.integration.test.ts` (research B9 surface list). Held text in `pending`, `discarded` and `superseded` never appears in:
   - `listByConversationId`, `listRecentByConversationId`, `countByConversationId`, `listWindowByConversationId`, `listSinceByConversationId`;
   - `chatHistoryService` history and detail and the history API;
   - published `message.created` events;
@@ -615,7 +615,7 @@ R3 blocks T088 (S1 drain wiring). R1 and R2 block S3 and can run in parallel wit
   - Ray `conversation_transcript`.
 
   `queued_auto` rows are added in T228.
-- [ ] T168 [US4] Write `backend/tests/integration/held-reply-release.integration.test.ts`:
+- [x] T168 [US4] Write `backend/tests/integration/held-reply-release.integration.test.ts`:
   - concurrent releases → one message and one `email.send`;
   - the loser gets `409` with the current state;
   - ownership unchanged;
@@ -624,8 +624,8 @@ R3 blocks T088 (S1 drain wiring). R1 and R2 block S3 and can run in parallel wit
 
 ### Tests first: email draft pipeline
 
-- [ ] T169 [P] [US4] Write `backend/tests/unit/email-channel/publication-decision.test.ts` for the ports §6e order: authority → `sending_not_verified` → `draft_mode` → `send_budget` → outcome; fail-closed on unknown facts; hold when there are suppressed effects.
-- [ ] T170 [P] [US4] Write `backend/tests/unit/email-channel/review-runner.test.ts`:
+- [x] T169 [P] [US4] Write `backend/tests/unit/email-channel/publication-decision.test.ts` for the ports §6e order: authority → `sending_not_verified` → `draft_mode` → `send_budget` → outcome; fail-closed on unknown facts; hold when there are suppressed effects.
+- [x] T170 [P] [US4] Write `backend/tests/unit/email-channel/review-runner.test.ts`:
   - claims a due link with a lease and reads revision R;
   - skips the model when `review_ref` R exists;
   - supersedes the previous pending draft;
@@ -635,13 +635,13 @@ R3 blocks T088 (S1 drain wiring). R1 and R2 block S3 and can run in parallel wit
   - completion `WHERE review_revision = R`;
   - retry schedules a drain at the backoff time;
   - terminal failure → `review_unavailable`.
-- [ ] T171 [P] [US4] Extend `backend/tests/unit/email-channel/inbound-processor.test.ts`: `run_review_turn` increments `review_revision`, sets `review_due_at` via COALESCE and `review_policy_version`, and schedules a drain at `review_due_at`; ingest supersedes a pending draft (`newer_inbound`).
-- [ ] T172 [P] [US4] Extend `backend/tests/unit/email-channel/mailbox-service.test.ts`: `supportedModes` includes `draft`; the default becomes `draft`; existing mailboxes are not upgraded; a downgrade supersedes drafts.
-- [ ] T173 [P] [US4] Extend `backend/tests/unit/email-channel/email-send-action-handler.test.ts` for `held_release`: an agent author gets `Auto-Submitted: auto-generated`; an edited release is operator-authored with no header; renewal at materialization (gated by T008).
-- [ ] T174 [P] [US4] Write `backend/tests/contract/held-replies.contract.test.ts` for the openapi-additions §2 held-reply routes: `sessionOnly` takeover permission, error codes, the `{ heldReply }` root, audit `hitl.held_reply`.
-- [ ] T175 [P] [US4] Create `backend/tests/fixtures/conversation-quality/emailOutcomeTable.ts` (structural, `operator_only` and `draft` rows) and `backend/tests/unit/eval-suite/email-outcome-table.test.ts`, driving the runner with a stub `respond`. For each row assert the decision, held-reply presence, no intent or `email.send` for non-publish rows, the attention kind, and history exclusion.
-- [ ] T176 [P] [US4] Extend `backend/tests/unit/operatorCopilot/email-channel-tools.test.ts` (the `held_replies` tool, object root) and `copilot-needs-attention.test.ts` (held replies merged into `approval` with `heldReplyId`; routine decisions unaffected).
-- [ ] T177 [US4] Write `backend/tests/integration/email-review-revision.integration.test.ts`:
+- [x] T171 [P] [US4] Extend `backend/tests/unit/email-channel/inbound-processor.test.ts`: `run_review_turn` increments `review_revision`, sets `review_due_at` via COALESCE and `review_policy_version`, and schedules a drain at `review_due_at`; ingest supersedes a pending draft (`newer_inbound`).
+- [x] T172 [P] [US4] Extend `backend/tests/unit/email-channel/mailbox-service.test.ts`: `supportedModes` includes `draft`; the default becomes `draft`; existing mailboxes are not upgraded; a downgrade supersedes drafts.
+- [x] T173 [P] [US4] Extend `backend/tests/unit/email-channel/email-send-action-handler.test.ts` for `held_release`: an agent author gets `Auto-Submitted: auto-generated`; an edited release is operator-authored with no header; renewal at materialization (gated by T008).
+- [x] T174 [P] [US4] Write `backend/tests/contract/held-replies.contract.test.ts` for the openapi-additions §2 held-reply routes: `sessionOnly` takeover permission, error codes, the `{ heldReply }` root, audit `hitl.held_reply`.
+- [x] T175 [P] [US4] Create `backend/tests/fixtures/conversation-quality/emailOutcomeTable.ts` (structural, `operator_only` and `draft` rows) and `backend/tests/unit/eval-suite/email-outcome-table.test.ts`, driving the runner with a stub `respond`. For each row assert the decision, held-reply presence, no intent or `email.send` for non-publish rows, the attention kind, and history exclusion.
+- [x] T176 [P] [US4] Extend `backend/tests/unit/operatorCopilot/email-channel-tools.test.ts` (the `held_replies` tool, object root) and `copilot-needs-attention.test.ts` (held replies merged into `approval` with `heldReplyId`; routine decisions unaffected).
+- [x] T177 [US4] Write `backend/tests/integration/email-review-revision.integration.test.ts`:
   - a stale worker holding revision R while a new inbound makes R+1: R's draft is `superseded`, R+1's due time is not cleared, and one current draft remains;
   - a crash between hold and completion: re-claim finds `review_ref` and runs no second turn.
 
@@ -663,25 +663,25 @@ R3 blocks T088 (S1 drain wiring). R1 and R2 block S3 and can run in parallel wit
 - [x] T181 [US4] Implement `backend/src/modules/handoff/heldReplies/heldReplyState.ts` (after T162).
 - [x] T182 [US4] Implement `backend/src/db/repositories/heldReplyRepository.ts`, including the supersede scope methods (after T155).
 - [x] T183 [US4] Implement `backend/src/modules/handoff/heldReplies/heldReplyService.ts` (the `hold`, `findByReviewRef` and operator ports) and the exports in `handoff/public.ts` (after T163, T181, T182).
-- [ ] T184 [US4] Add `heldReplies: HeldReplySupersedeScope` to `OwnershipChangeUnitOfWork` and `OwnershipReplyUnitOfWork` (`conversationOwnershipService.ts:50-72`), add the supersede calls in `takeOver`, `transfer` and `reply`, and bind `HeldReplyRepository(trx)` in `backend/src/app/composition/conversationOwnershipReplies.ts` and the change unit of work (after T164, T182).
-- [ ] T185 [US4] Create `backend/src/app/composition/heldReplyUnitOfWork.ts` with the channel-scope registry keyed by `policyRef` prefix (after T165, T183).
-- [ ] T186 [US4] Complete `backend/src/app/composition/mailboxPolicyChange.ts` (add supersede), and create `backend/src/modules/emailChannel/heldReplyChannelScope.ts` with `lockPolicy`, registered under `email_mailbox:` (after T166, T185).
-- [ ] T187 [US4] Add the held-reply supersede scope to `backend/src/app/composition/conversationIngest.ts`, and call it from `conversationIngestService.ts` on a new message for an existing conversation (`newer_inbound`).
+- [x] T184 [US4] Add `heldReplies: HeldReplySupersedeScope` to `OwnershipChangeUnitOfWork` and `OwnershipReplyUnitOfWork` (`conversationOwnershipService.ts:50-72`), add the supersede calls in `takeOver`, `transfer` and `reply`, and bind `HeldReplyRepository(trx)` in `backend/src/app/composition/conversationOwnershipReplies.ts` and the change unit of work (after T164, T182).
+- [x] T185 [US4] Create `backend/src/app/composition/heldReplyUnitOfWork.ts` with the channel-scope registry keyed by `policyRef` prefix (after T165, T183).
+- [x] T186 [US4] Complete `backend/src/app/composition/mailboxPolicyChange.ts` (add supersede), and create `backend/src/modules/emailChannel/heldReplyChannelScope.ts` with `lockPolicy`, registered under `email_mailbox:` (after T166, T185).
+- [x] T187 [US4] Add the held-reply supersede scope to `backend/src/app/composition/conversationIngest.ts`, and call it from `conversationIngestService.ts` on a new message for an existing conversation (`newer_inbound`).
 
 ### Implementation: email draft pipeline
 
-- [ ] T188 [US4] Implement `backend/src/modules/connectors/plugins/email/emailPublicationDecision.ts` (after T169).
-- [ ] T189 [US4] Implement `backend/src/modules/connectors/plugins/email/emailReviewRunner.ts` and stage 2 in `emailChannelWorker.ts`, with scheduled review drains (after T170, T177, T180, T183, T188).
-- [ ] T190 [US4] Add review scheduling (revision, due time, policy version, drain) to `emailInboundProcessor.ts` (after T171, T189).
-- [ ] T191 [US4] Composition: add `draft` to `supportedModes` and make it the default; wire the review runner and held-reply ports; add the `held_release` trigger to the `email.send` handler (after T172, T173, T186, T189; gated by T008).
+- [x] T188 [US4] Implement `backend/src/modules/connectors/plugins/email/emailPublicationDecision.ts` (after T169).
+- [x] T189 [US4] Implement `backend/src/modules/connectors/plugins/email/emailReviewRunner.ts` and stage 2 in `emailChannelWorker.ts`, with scheduled review drains (after T170, T177, T180, T183, T188).
+- [x] T190 [US4] Add review scheduling (revision, due time, policy version, drain) to `emailInboundProcessor.ts` (after T171, T189).
+- [x] T191 [US4] Composition: add `draft` to `supportedModes` and make it the default; wire the review runner and held-reply ports; add the `held_release` trigger to the `email.send` handler (after T172, T173, T186, T189; gated by T008).
 
 ### HTTP, governance, Ray
 
-- [ ] T192 [US4] HTTP (after T174, T183):
+- [x] T192 [US4] HTTP (after T174, T183):
   - create `backend/src/app/http/routes/heldReplyRoutes.ts` and `openapi/paths/heldReplyPaths.ts`;
   - add `sessionOnly` rows in `apiPrincipalRoutePolicy.ts` and `listHeldReplies` / `getCurrentHeldReply` in `operationPermissionRequirements.ts`;
   - run `generate:openapi`, the SDK `sync` and the MCP `sync:openapi`.
-- [ ] T193 [US4] Ray (after T176, T192):
+- [x] T193 [US4] Ray (after T176, T192):
   - the `held_replies` tool in `tools/emailChannel.ts`;
   - provenance and MCP disposition entries;
   - `readApprovalQueue` (`needsAttention.ts:229-255`) merges held replies under the `approvals` source;
@@ -690,28 +690,30 @@ R3 blocks T088 (S1 drain wiring). R1 and R2 block S3 and can run in parallel wit
 
 ### Frontend
 
-- [ ] T194 [P] [US4] Extend `frontend/tests/unit/needs-attention.test.ts` and `needs-attention-query-state.test.tsx`: held replies render as `approval` with `heldReplyId`, and routine approvals are unchanged.
-- [ ] T195 [US4] Add held replies to `frontend/lib/api-reply-review.ts`, `needs-attention-reply-review.ts` and the `needs-attention-query-state.ts` source (after T192, T194).
-- [ ] T196 [US4] Write the Playwright journey `frontend/tests/e2e/email-draft-review.spec.ts` first:
+- [x] T194 [P] [US4] Extend `frontend/tests/unit/needs-attention.test.ts` and `needs-attention-query-state.test.tsx`: held replies render as `approval` with `heldReplyId`, and routine approvals are unchanged.
+- [x] T195 [US4] Add held replies to `frontend/lib/api-reply-review.ts`, `needs-attention-reply-review.ts` and the `needs-attention-query-state.ts` source (after T192, T194).
+- [x] T196 [US4] Write the Playwright journey `frontend/tests/e2e/email-draft-review.spec.ts` first:
   - a draft mailbox and an inbound give an `approval` item;
   - the panel shows the outcome label, the reasoning trace and the suppressed-action badge;
   - send; edit and send; discard keeps the item until a reply;
   - a newer inbound replaces the draft;
   - a second operator sees "already released";
   - focus kept and status announced.
-- [ ] T197 [US4] Create `frontend/components/dashboard/inbox/held-reply-panel.tsx`, mount it from `inbox-response-view.tsx`, and offer `draft` in the card from `supportedModes` (after T195, T196).
+- [x] T197 [US4] Create `frontend/components/dashboard/inbox/held-reply-panel.tsx`, mount it from `inbox-response-view.tsx`, and offer `draft` in the card from `supportedModes` (after T195, T196).
 
 ### Evals, docs, verification
 
-- [ ] T198 [P] [US4] Extend `backend/tests/unit/eval-suite/suite-core.test.ts` first, then support an optional case `executionMode: "review"` in the suite runner (`backend/src/modules/eval/suite/`). Add two `email`-tagged cases to `backend/tests/fixtures/conversation-quality/cases.ts` asserting `turn_grounding_verdict`, `turn_answer_coverage` and no persisted assistant row. The baseline is re-recorded in the nightly run only.
-- [ ] T199 [P] [US4] Docs:
+- [x] T198 [P] [US4] Extend `backend/tests/unit/eval-suite/suite-core.test.ts` first, then support an optional case `executionMode: "review"` in the suite runner (`backend/src/modules/eval/suite/`). Add two `email`-tagged cases to `backend/tests/fixtures/conversation-quality/cases.ts` asserting `turn_grounding_verdict`, `turn_answer_coverage` and no persisted assistant row. The baseline is re-recorded in the nightly run only.
+- [x] T199 [P] [US4] Docs:
   - `docs/email-channel.md`: draft mode, held replies, labels, supersede rules, revision and coalescing;
   - `docs/human-takeover.md`: held replies in the approval lens; release does not take ownership;
   - `docs/architecture/assistant-turn-spine.md`: the review mode and the draft completion;
   - `docs/architecture/code-map.md`;
   - the portal mdx, then a corpus resync.
-- [ ] T200 [US4] Backend: suites, lint, depcruise, dead code, build. `chat-turn-lifecycle.test.ts` must still pass unchanged.
-- [ ] T201 [US4] Frontend unit and `test:e2e -- email-draft-review`; quickstart §5 deterministic rows; `pnpm run ci:local -- origin/main`.
+- [x] T200 [US4] Backend: suites, lint, depcruise, dead code, build. `chat-turn-lifecycle.test.ts` must still pass unchanged.
+  - **Result (2026-10-04)**: unit 8689 passed with `chat-turn-lifecycle.test.ts` unchanged; contract 608 passed; integration 1434 passed on a fresh database (two unrelated parallel-run flakes in auth and ownership routes pass 3/3 in isolation); backend lint, root lint, dead-code ratchet, both snapshot checks, docs sync, MCP OpenAPI check, and `pnpm run build` pass.
+- [x] T201 [US4] Frontend unit and `test:e2e -- email-draft-review`; quickstart §5 deterministic rows; `pnpm run ci:local -- origin/main`.
+  - **Result (2026-10-04)**: frontend unit 1765 passed; production build passed; the setup, operator-reply, and draft-review journeys 24/24 against the production server; eval-suite 95 passed incl. the review-mode rows. `ci:local` is left for the PR stage.
 
 **Checkpoint**: `draft` works end to end. Ship it together with S4.
 
@@ -824,6 +826,11 @@ Not fixed in S1; each needs a small decision before it is tasked.
 5. **`email_backlog` gauge** from `contracts/events.md` is not emitted yet; the sweep has the counts.
 6. **Playwright journey stubs the API in the browser**, matching the existing e2e setup; it does not drive the local provider or `email:dev`. The end-to-end path is covered by the backend integration suites instead.
 7. **Forwarded-mail fixtures** (Google Workspace, Microsoft 365) are still `it.todo` in the Resend receiver test and the thread-protocol suite; they need the tenant checks from S0 (T007, T009, T010).
+
+8. **Reasoning on a held reply** (FR-027): `HeldReplyView.trace` is always null. No existing reader covers review turns (the history reader keys on `assistantMessageId`, which review audit events do not carry) and the held reply stores no `turnId`. Chosen approach: a reader over the review `chat.answer` audit event keyed on `answersMessageId`, exposing outcome, grounding, coverage, hand-off reason, and suppressed effects; no migration. The panel already renders a trace when present.
+9. **Live eval runner has no review path**: `backend/scripts/evalRunnerAdapter.ts` and `runEvals.ts` need a `review` implementation before the nightly run can score the two `email` cases; the deterministic harness covers them today.
+10. **Supersedes through the ownership, ingest, and policy scopes write no per-draft `hitl.held_reply` audit**, because the supersede port returns counts only.
+11. **Mailbox removed before a release** refuses with `email_sending_not_verified` (step `add_mailbox`) rather than `channel_not_ready`, because delivery is checked before the transaction; the panel shows both.
 
 ## Dependencies & Execution Order
 

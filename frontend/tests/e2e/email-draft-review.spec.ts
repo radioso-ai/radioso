@@ -96,7 +96,10 @@ const heldReply = (overrides: Partial<HeldReply> = {}): HeldReply => ({
 
 const installDraftReviewBackend = async (
   page: Page,
-  options: { teammateReleasesFirst?: boolean; refuseRelease?: "policy_changed" | "channel_not_ready" } = {},
+  options: {
+    teammateReleasesFirst?: boolean;
+    refuseRelease?: "policy_changed" | "channel_not_ready" | "email_sending_not_verified";
+  } = {},
 ) => {
   let ownership = {
     conversationId,
@@ -216,6 +219,10 @@ const installDraftReviewBackend = async (
       }
       if (target.state !== "pending") {
         return refuse(route, 409, "held_reply_not_pending", "This held reply is no longer pending.", { heldReply: target });
+      }
+      if (options.refuseRelease === "email_sending_not_verified") {
+        // The channel's own refusal, as the operator reply gets it: it names the missing step.
+        return refuse(route, 409, options.refuseRelease, "Refused.", { step: "verify_sending_domain", domain: "customer.test" });
       }
       if (options.refuseRelease) {
         return refuse(route, 409, options.refuseRelease, "Refused.", { heldReply: target });
@@ -427,6 +434,36 @@ test("a release refused because the mailbox settings changed keeps the draft, sa
   await panel.getByRole("button", { name: "Send draft" }).click();
 
   await expect(panel.getByRole("status").filter({ hasText: "The mailbox settings changed. Nothing was sent." })).toBeVisible();
+  await expect(panel).toBeFocused();
+  await expect(panel.getByRole("textbox", { name: "Draft reply text" })).toHaveValue(draftText);
+  await expect(row).toBeVisible();
+  expect(backend.releases).toEqual([]);
+});
+
+test("a release refused because sending is not verified keeps the draft and names the step that fixes it", async ({ page }) => {
+  await seedDashboardStorage(page);
+  const backend = await installDraftReviewBackend(page, { refuseRelease: "email_sending_not_verified" });
+
+  const { row, panel } = await openDraft(page);
+  await panel.getByRole("button", { name: "Send draft" }).click();
+
+  await expect(panel.getByRole("status").filter({
+    hasText: "Sending is not verified for this mailbox. Verify customer.test in Settings, then send again.",
+  })).toBeVisible();
+  await expect(panel).toBeFocused();
+  await expect(panel.getByRole("textbox", { name: "Draft reply text" })).toHaveValue(draftText);
+  await expect(row).toBeVisible();
+  expect(backend.releases).toEqual([]);
+});
+
+test("a release refused because the mailbox can no longer send keeps the draft and says so", async ({ page }) => {
+  await seedDashboardStorage(page);
+  const backend = await installDraftReviewBackend(page, { refuseRelease: "channel_not_ready" });
+
+  const { row, panel } = await openDraft(page);
+  await panel.getByRole("button", { name: "Send draft" }).click();
+
+  await expect(panel.getByRole("status").filter({ hasText: "This mailbox can no longer send. Nothing was sent." })).toBeVisible();
   await expect(panel).toBeFocused();
   await expect(panel.getByRole("textbox", { name: "Draft reply text" })).toHaveValue(draftText);
   await expect(row).toBeVisible();

@@ -39,7 +39,14 @@ const SETTLED_ELSEWHERE: Record<Exclude<HeldReply['state'], 'pending'>, string> 
 const REFUSAL: Record<string, string> = {
   ownership_changed: 'This conversation changed hands. Nothing was sent.',
   policy_changed: 'The mailbox settings changed. Nothing was sent.',
-  channel_not_ready: 'This mailbox cannot send yet. Nothing was sent.',
+  channel_not_ready: 'This mailbox can no longer send. Nothing was sent.',
+}
+
+// What restores sending, by the step an `email_sending_not_verified` refusal names.
+const SENDING_STEP: Record<string, (domain: string | null) => string> = {
+  verify_sending_domain: (domain) => `Verify ${domain ?? 'the sending domain'} in Settings, then send again.`,
+  add_sending_domain: () => 'Add a sending domain in Settings, then send again.',
+  add_mailbox: () => 'Add this mailbox again in Settings, then send again.',
 }
 
 const STAGE_STATUS: Record<ConversationTraceStage['status'], string | null> = {
@@ -62,14 +69,34 @@ const SETTLED_POLL_MS = 30_000
 const retryCurrentHeldReply = (attempt: number, error: unknown) =>
   attempt < 2 && isDashboardQueryRetryable(error) && getHitlApiErrorStatus(error) !== 404
 
+/** The `error.details` of an API error body, when it carries them. */
+const refusalDetails = (caught: unknown): unknown =>
+  caught && typeof caught === 'object' && 'error' in caught
+    ? (caught.error as { details?: unknown } | null)?.details
+    : undefined
+
+const stringDetail = (details: unknown, key: string): string | null => {
+  const value = details && typeof details === 'object' && key in details ? (details as Record<string, unknown>)[key] : null
+  return typeof value === 'string' ? value : null
+}
+
 /** The held reply the server sent back with a `held_reply_not_pending` refusal, when it did. */
 const heldReplyFromRefusal = (caught: unknown): HeldReply | null => {
-  if (!caught || typeof caught !== 'object' || !('error' in caught)) return null
-  const details = (caught.error as { details?: unknown } | null)?.details
+  const details = refusalDetails(caught)
   const candidate = details && typeof details === 'object' && 'heldReply' in details ? details.heldReply : null
   return candidate && typeof candidate === 'object' && 'id' in candidate && 'state' in candidate
     ? candidate as HeldReply
     : null
+}
+
+/** Why a release left the draft pending, by the server's error code; null for any other error. */
+const refusalMessage = (code: string | undefined, details: unknown): string | null => {
+  if (code === 'email_sending_not_verified') {
+    const step = stringDetail(details, 'step')
+    const next = step && Object.hasOwn(SENDING_STEP, step) ? SENDING_STEP[step](stringDetail(details, 'domain')) : null
+    return `Sending is not verified for this mailbox. ${next ?? 'Nothing was sent.'}`
+  }
+  return code && Object.hasOwn(REFUSAL, code) ? REFUSAL[code] : null
 }
 
 /**
@@ -178,9 +205,10 @@ export function HeldReplyPanel({
         },
       }
     }
-    if (status === 409 && code && REFUSAL[code]) {
+    const refusal = status === 409 ? refusalMessage(code, refusalDetails(caught)) : null
+    if (refusal) {
       return {
-        message: REFUSAL[code],
+        message: refusal,
         followUp: () => {
           setConfirmingDiscard(null)
           focusAfterRender.current = 'panel'

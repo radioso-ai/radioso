@@ -278,7 +278,8 @@ describe("createPostgresHeldReplyUnitOfWork", () => {
     const unclaimed = harness({ heldReply: { policy_ref: `other_channel:${mailboxId}` } });
 
     expect(await release(unclaimed.service)).toMatchObject({ ok: false, refusal: "channel_not_ready" });
-    expect(unclaimed.sent()).toEqual(["BEGIN", "lock_conversation", "lock_ownership", "read_held_reply", "COMMIT"]);
+    // A refusal re-reads the held reply inside the transaction so the 409 body carries its current state.
+    expect(unclaimed.sent()).toEqual(["BEGIN", "lock_conversation", "lock_ownership", "read_held_reply", "read_held_reply", "COMMIT"]);
 
     const unregistered = harness({ channels: [] });
     expect(await release(unregistered.service)).toMatchObject({ ok: false, refusal: "channel_not_ready" });
@@ -305,7 +306,7 @@ describe("createPostgresHeldReplyUnitOfWork", () => {
     const { service, sent, actionDrain } = harness({ mailbox: { policy_version: 5 } });
 
     expect(await release(service)).toMatchObject({ ok: false, refusal: "policy_changed", current: { state: "pending" } });
-    expect(sent()).toEqual(["BEGIN", "lock_conversation", "lock_ownership", "read_held_reply", "lock_policy", "COMMIT"]);
+    expect(sent()).toEqual(["BEGIN", "lock_conversation", "lock_ownership", "read_held_reply", "lock_policy", "read_held_reply", "COMMIT"]);
     expect(actionDrain.requestDrain).not.toHaveBeenCalled();
   });
 

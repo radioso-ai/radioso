@@ -514,3 +514,82 @@ describe("workspace_triage delivery failures", () => {
     expect(result.sources).toContainEqual({ source: "delivery_failures", status: "ok", total: 12, included: 10 });
   });
 });
+
+const heldReply = (overrides: Record<string, unknown> = {}) => ({
+  id: "44444444-4444-4444-8444-444444444444",
+  conversationId: "conversation-held",
+  agentId: "agent-1",
+  state: "pending" as const,
+  holdReason: "draft_mode",
+  facts: { outcome: "answered", grounding: "grounded", coverage: "answered", handoff: { requested: false, reason: null } },
+  dependsOnSuppressedAction: false,
+  suppressedEffects: [],
+  draftText: "Your refund was issued on Monday.",
+  editedText: null,
+  answersMessageId: "55555555-5555-4555-8555-555555555555",
+  releasedMessageId: null,
+  trace: null,
+  createdAt: new Date("2026-08-26T05:45:00.000Z"),
+  decidedAt: null,
+  releaserUserId: null,
+  editorUserId: null,
+  discardedByUserId: null,
+  supersededReason: null,
+  attentionOpen: true,
+  ...overrides,
+});
+
+const heldReplyPort = (items: Array<ReturnType<typeof heldReply>>) => ({
+  list: vi.fn(async () => ({ items, nextCursor: null })),
+  current: vi.fn(async () => ({ heldReply: null })),
+});
+
+describe("workspace_triage held replies", () => {
+  it("counts a reply held for review as an approval, ranked with the routine decisions by wait", async () => {
+    const heldReplies = heldReplyPort([heldReply()]);
+    const result = await digest(dependencies({
+      pendingApprovals: {
+        listPending: vi.fn(async () => [
+          { handle: "decision-handle-1", conversationId: "conversation-approval", agentId: "agent-1", reason: "Refund over limit", createdAt: new Date("2026-08-26T06:00:00.000Z") },
+        ]),
+      },
+      heldReplies,
+    }));
+
+    expect(result.items.filter((item) => item.kind === "approval").map((item) => item.conversationId))
+      .toEqual(["conversation-held", "conversation-approval"]);
+    expect(result.items[0]).toMatchObject({
+      urgency: "blocking",
+      title: "Your refund was issued on Monday.",
+      detail: "draft_mode",
+      since: "2026-08-26T05:45:00.000Z",
+      agentId: "agent-1",
+      dashboardUrl: "/w/acme/activity?itemKind=chat&itemId=conversation-held",
+    });
+    expect(result.sources).toContainEqual({ source: "approvals", status: "ok", total: 2, included: 2 });
+    // Read as the signed-in teammate, so the held-reply port applies its own access rules.
+    expect(heldReplies.list).toHaveBeenCalledWith(
+      expect.objectContaining({ workspaceId: "workspace-1", userId: "operator-1" }),
+      expect.objectContaining({ attention: "open" }),
+    );
+  });
+
+  it("narrows the held replies to the requested agent", async () => {
+    const heldReplies = heldReplyPort([]);
+    const [descriptor] = createWorkspaceTriageCopilotTools(dependencies({ heldReplies }));
+
+    await descriptor.createTool(context()).invoke({ agentId: "agent-1" }, {} as never);
+
+    expect(heldReplies.list).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ agentId: "agent-1" }));
+  });
+
+  it("reads the held replies only under the approvals permission", async () => {
+    const heldReplies = heldReplyPort([heldReply()]);
+    const permissions = new Set([...ALL_PERMISSIONS].filter((permission) => permission !== "workspace.conversation.takeover"));
+
+    const result = await digest(dependencies({ heldReplies }), context(permissions));
+
+    expect(heldReplies.list).not.toHaveBeenCalled();
+    expect(result.sources).toContainEqual({ source: "approvals", status: "unauthorized", total: null, included: 0 });
+  });
+});

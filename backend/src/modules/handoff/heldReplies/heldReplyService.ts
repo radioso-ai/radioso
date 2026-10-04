@@ -105,7 +105,7 @@ export interface HeldReplyChannelScope {
  * Writes a released draft as the agent's message, from the presentation its review produced. The
  * presentation is the host's, so handoff hands it over unread.
  */
-export interface HeldReplyDraftMessageWriter {
+interface HeldReplyDraftMessageWriter {
   writeAgentMessage(input: {
     workspaceId: string;
     conversationId: string;
@@ -212,7 +212,7 @@ export interface HeldReplyView {
   attentionOpen: boolean;
 }
 
-export interface HeldReplyPage {
+interface HeldReplyPage {
   items: HeldReplyView[];
   /** Pass back to read the next page; null on the last one. */
   nextCursor: string | null;
@@ -434,7 +434,9 @@ export class HeldReplyService implements HeldReplyProducerPort, HeldReplyOperato
         routed: channel !== null,
       });
       if (refusal) {
-        return { ok: false, refusal, current: heldReply };
+        // Read again: the policy lock can wait out a change that superseded the draft meanwhile.
+        const current = await scope.heldReplies.findInConversation(conversation.id, heldReply.id);
+        return { ok: false, refusal, current: current ?? heldReply };
       }
       const released = await scope.heldReplies.release({
         id: heldReply.id,

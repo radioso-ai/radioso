@@ -7,138 +7,14 @@ import type { ConversationRecord } from "../../src/db/repositories/conversationR
 import { EmailReviewRunner } from "../../src/modules/connectors/plugins/email/emailReviewRunner.js";
 import { emailMailboxPolicyRef, type EngagementMode } from "../../src/modules/emailChannel/public.js";
 import type { EmailMailboxRecord } from "../../src/modules/emailChannel/persistence/emailMailboxRepository.js";
-import {
-  heldReplyEventSources,
-  heldReplyEventTarget,
-  HeldReplyService,
-  isHeldReplyAttentionOpen,
-  type HeldReplyInsert,
-  type HeldReplyReadStore,
-  type HeldReplyRecord,
-  type HeldReplySupersedeScope,
-  type HeldReplyWriteStore,
-} from "../../src/modules/handoff/public.js";
+import { HeldReplyService } from "../../src/modules/handoff/public.js";
 import { InMemoryConversationOwnershipRepository } from "./fakes.js";
 import { InMemoryEmailDomains, InMemoryEmailMailboxes, InMemoryEmailThreads } from "./inMemoryEmailChannel.js";
-
-type Clock = () => Date;
-type ListQuery = Parameters<HeldReplyReadStore["listOpen"]>[1];
+import { InMemoryHeldReplyRows } from "./inMemoryHeldReplies.js";
 
 const notOnTheReviewPath = (): never => {
   throw new Error("Not on the review path");
 };
-
-/**
- * In-memory `held_replies`, with the table's two unique indexes: one live draft per conversation and
- * one held reply per review ref, so a runner that holds without superseding the last draft fails here
- * as it would against Postgres. Only the producer and supersede paths are implemented.
- */
-export class InMemoryHeldReplyRows
-implements HeldReplyWriteStore, HeldReplyReadStore, Pick<HeldReplySupersedeScope, "supersedePendingForConversation"> {
-  readonly rows: HeldReplyRecord[] = [];
-
-  constructor(private readonly customerMessages: Map<string, string[]>, private readonly clock: Clock) {}
-
-  async insert(input: HeldReplyInsert): Promise<{ record: HeldReplyRecord; created: boolean }> {
-    const held = input.reviewRef === null
-      ? undefined
-      : this.rows.find((row) => row.conversationId === input.conversationId && row.reviewRef === input.reviewRef);
-    if (held) return { record: held, created: false };
-    if (input.born.state === "pending" && this.rows.some((row) => row.conversationId === input.conversationId && isLive(row))) {
-      throw new Error("duplicate key value violates unique constraint \"held_replies_live_conversation_uniq\"");
-    }
-    const born = input.born.state === "superseded"
-      ? { ...this.decided(heldReplyEventTarget({ kind: "supersede", reason: input.born.reason })), supersededReason: input.born.reason }
-      : { state: "pending" as const, releaseKind: null, attentionClearedAt: null, attentionClearedReason: null, decidedAt: null, supersededReason: null };
-    const record: HeldReplyRecord = {
-      id: randomUUID(),
-      workspaceId: input.workspaceId,
-      conversationId: input.conversationId,
-      agentId: input.agentId,
-      reviewRef: input.reviewRef,
-      answersMessageId: input.answersMessageId,
-      ownershipVersion: input.ownershipVersion,
-      policy: input.policy,
-      holdReason: input.holdReason,
-      facts: input.facts,
-      draft: input.draft,
-      editedText: null,
-      editorUserId: null,
-      releaserUserId: null,
-      discardedByUserId: null,
-      releasedMessageId: null,
-      createdAt: this.clock(),
-      ...born,
-    };
-    this.rows.push(record);
-    return { record, created: true };
-  }
-
-  async findInConversation(conversationId: string, heldReplyId: string): Promise<HeldReplyRecord | null> {
-    return this.rows.find((row) => row.conversationId === conversationId && row.id === heldReplyId) ?? null;
-  }
-
-  async latestCustomerMessageId(conversationId: string): Promise<string | null> {
-    return this.customerMessages.get(conversationId)?.at(-1) ?? null;
-  }
-
-  release = notOnTheReviewPath;
-  attachReleasedMessage = notOnTheReviewPath;
-  discard = notOnTheReviewPath;
-
-  async findByReviewRef(conversationId: string, reviewRef: string): Promise<HeldReplyRecord | null> {
-    return this.rows.find((row) => row.conversationId === conversationId && row.reviewRef === reviewRef) ?? null;
-  }
-
-  async current(workspaceId: string, conversationId: string): Promise<HeldReplyRecord | null> {
-    return this.rows.filter((row) => row.workspaceId === workspaceId && row.conversationId === conversationId).at(-1) ?? null;
-  }
-
-  async listOpen(workspaceId: string, query: ListQuery): Promise<HeldReplyRecord[]> {
-    return this.list(workspaceId, query).filter(isHeldReplyAttentionOpen);
-  }
-
-  async listAll(workspaceId: string, query: ListQuery): Promise<HeldReplyRecord[]> {
-    return this.list(workspaceId, query);
-  }
-
-  async supersedePendingForConversation(
-    conversationId: string,
-    reason: Parameters<HeldReplySupersedeScope["supersedePendingForConversation"]>[1],
-  ): Promise<number> {
-    let changed = 0;
-    for (const [index, row] of this.rows.entries()) {
-      if (row.conversationId !== conversationId || !heldReplyEventSources("supersede").includes(row.state)) continue;
-      this.rows[index] = { ...row, ...this.decided(heldReplyEventTarget({ kind: "supersede", reason })), supersededReason: reason };
-      changed += 1;
-    }
-    return changed;
-  }
-
-  /** The live and decided rows of one conversation, oldest first. */
-  of(conversationId: string): HeldReplyRecord[] {
-    return this.rows.filter((row) => row.conversationId === conversationId);
-  }
-
-  private list(workspaceId: string, query: ListQuery): HeldReplyRecord[] {
-    return this.rows
-      .filter((row) => row.workspaceId === workspaceId && (query.agentId === undefined || row.agentId === query.agentId))
-      .reverse()
-      .slice(0, query.limit);
-  }
-
-  private decided(target: ReturnType<typeof heldReplyEventTarget>) {
-    return {
-      state: target.state,
-      releaseKind: target.releaseKind,
-      attentionClearedAt: target.attentionCleared === null ? null : this.clock(),
-      attentionClearedReason: target.attentionCleared,
-      decidedAt: this.clock(),
-    };
-  }
-}
-
-const isLive = (row: HeldReplyRecord): boolean => row.state === "pending" || row.state === "queued_auto";
 
 const WORKSPACE_ID = "11111111-1111-4111-8111-111111111111";
 const AGENT_ID = "44444444-4444-4444-8444-444444444444";
@@ -172,7 +48,7 @@ export const createEmailReviewHarness = (options: {
   const customerMessages = new Map<string, string[]>();
   /** Every message row, as customer-visible history reads it. */
   const history: { conversationId: string; id: string; role: "user" | "assistant"; content: string }[] = [];
-  const heldRows = new InMemoryHeldReplyRows(customerMessages, clock);
+  const heldRows = new InMemoryHeldReplyRows({ clock, customerMessages });
   /** Outbox rows any write on the review path enqueued; a draft must never add one. */
   const outbox: { type: string; idempotencyKey: string | null }[] = [];
   const conversations = new Map<string, ConversationRecord>();

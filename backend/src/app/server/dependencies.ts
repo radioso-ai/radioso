@@ -896,6 +896,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     toolContributions: copilotToolContributions,
     emailChannel: emailChannel?.copilotView ?? null,
     deliveryFailures: deliveryFailureRecords,
+    heldReplies,
     agentService: {
       get: agentService.get.bind(agentService),
       listExisting: agentService.listExisting.bind(agentService),

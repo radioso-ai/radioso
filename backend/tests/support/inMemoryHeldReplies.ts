@@ -17,6 +17,7 @@ import {
   type HeldReplyInsert,
   type HeldReplyReadStore,
   type HeldReplyRecord,
+  type HeldReplySupersedeScope,
   type HeldReplyWriteStore,
 } from "../../src/modules/handoff/public.js";
 import { AppError } from "../../src/shared/domain/errors.js";
@@ -26,18 +27,44 @@ type ListQuery = Parameters<HeldReplyReadStore["listAll"]>[1];
 const newestFirst = (left: HeldReplyRecord, right: HeldReplyRecord): number =>
   right.createdAt.getTime() - left.createdAt.getTime() || (right.id < left.id ? -1 : right.id > left.id ? 1 : 0);
 
+const isLive = (row: HeldReplyRecord): boolean => row.state === "pending" || row.state === "queued_auto";
+
+/** A clock a second further on at every reading, so rows recorded in turn sort in turn. */
+const steppingClock = (): (() => Date) => {
+  let at = Date.parse("2026-10-04T10:00:00.000Z");
+  return () => {
+    at += 1000;
+    return new Date(at);
+  };
+};
+
 /**
- * `held_replies` in memory, with the rules the Postgres repository keeps: a release or a discard
- * applies only from the states the held-reply machine allows (a release only at the bound
- * ownership version), the current held reply is the conversation's newest, and pages run newest
+ * `held_replies` in memory, with the rules the Postgres repository keeps: the table's two unique
+ * indexes (one live draft per conversation, one held reply per review ref), so a producer that
+ * holds without superseding the last draft fails here as it would against Postgres; a release or a
+ * discard applies only from the states the held-reply machine allows (a release only at the bound
+ * ownership version); the current held reply is the conversation's newest, and pages run newest
  * first with the agent filter over the held reply's author.
  */
-class InMemoryHeldReplyRows implements HeldReplyWriteStore, HeldReplyReadStore {
+export class InMemoryHeldReplyRows
+implements HeldReplyWriteStore, HeldReplyReadStore, Pick<HeldReplySupersedeScope, "supersedePendingForConversation"> {
+  /** Every row by id, in the order it was recorded. */
   readonly rows = new Map<string, HeldReplyRecord>();
-  private clock = Date.parse("2026-10-04T10:00:00.000Z");
+  private readonly clock: () => Date;
+  private readonly customerMessages: ReadonlyMap<string, readonly string[]>;
 
+  constructor(options: {
+    /** Stamps creation and decisions; by default a clock that moves a second at every reading. */
+    clock?: () => Date;
+    /** Customer message ids per conversation, oldest first, read as the latest customer message. */
+    customerMessages?: ReadonlyMap<string, readonly string[]>;
+  } = {}) {
+    this.clock = options.clock ?? steppingClock();
+    this.customerMessages = options.customerMessages ?? new Map();
+  }
+
+  /** Places a row as it is, bypassing the unique indexes, for a test that needs a held reply in a given state. */
   seed(input: Partial<HeldReplyRecord> & Pick<HeldReplyRecord, "workspaceId" | "conversationId">): HeldReplyRecord {
-    this.clock += 1000;
     const record: HeldReplyRecord = {
       id: randomUUID(),
       agentId: randomUUID(),
@@ -66,7 +93,7 @@ class InMemoryHeldReplyRows implements HeldReplyWriteStore, HeldReplyReadStore {
       attentionClearedAt: null,
       attentionClearedReason: null,
       decidedAt: null,
-      createdAt: new Date(this.clock),
+      createdAt: this.clock(),
       ...input,
     };
     this.rows.set(record.id, record);
@@ -74,8 +101,36 @@ class InMemoryHeldReplyRows implements HeldReplyWriteStore, HeldReplyReadStore {
   }
 
   async insert(input: HeldReplyInsert): Promise<{ record: HeldReplyRecord; created: boolean }> {
-    const { born: _born, ...held } = input;
-    return { record: this.seed(held), created: true };
+    const held = input.reviewRef === null ? null : await this.findByReviewRef(input.conversationId, input.reviewRef);
+    if (held) return { record: held, created: false };
+    if (input.born.state === "pending" && this.of(input.conversationId).some(isLive)) {
+      throw new Error("duplicate key value violates unique constraint \"held_replies_live_conversation_uniq\"");
+    }
+    const born = input.born.state === "superseded"
+      ? { ...this.decided(heldReplyEventTarget({ kind: "supersede", reason: input.born.reason })), supersededReason: input.born.reason }
+      : { state: "pending" as const, releaseKind: null, attentionClearedAt: null, attentionClearedReason: null, decidedAt: null, supersededReason: null };
+    const record: HeldReplyRecord = {
+      id: randomUUID(),
+      workspaceId: input.workspaceId,
+      conversationId: input.conversationId,
+      agentId: input.agentId,
+      reviewRef: input.reviewRef,
+      answersMessageId: input.answersMessageId,
+      ownershipVersion: input.ownershipVersion,
+      policy: input.policy,
+      holdReason: input.holdReason,
+      facts: input.facts,
+      draft: input.draft,
+      editedText: null,
+      editorUserId: null,
+      releaserUserId: null,
+      discardedByUserId: null,
+      releasedMessageId: null,
+      createdAt: this.clock(),
+      ...born,
+    };
+    this.rows.set(record.id, record);
+    return { record, created: true };
   }
 
   async findInConversation(conversationId: string, id: string): Promise<HeldReplyRecord | null> {
@@ -83,8 +138,8 @@ class InMemoryHeldReplyRows implements HeldReplyWriteStore, HeldReplyReadStore {
     return row?.conversationId === conversationId ? row : null;
   }
 
-  async latestCustomerMessageId(): Promise<string | null> {
-    return null;
+  async latestCustomerMessageId(conversationId: string): Promise<string | null> {
+    return this.customerMessages.get(conversationId)?.at(-1) ?? null;
   }
 
   async release(input: Parameters<HeldReplyWriteStore["release"]>[0]): Promise<HeldReplyRecord | null> {
@@ -94,15 +149,16 @@ class InMemoryHeldReplyRows implements HeldReplyWriteStore, HeldReplyReadStore {
     }
     const edited = input.editedText !== null;
     const target = heldReplyEventTarget({ kind: "release", edited });
+    const at = this.clock();
     return this.update(row, {
       state: target.state,
       releaseKind: target.releaseKind,
       editedText: input.editedText,
       editorUserId: edited ? input.userId : null,
       releaserUserId: input.userId,
-      attentionClearedAt: new Date(this.clock),
+      attentionClearedAt: at,
       attentionClearedReason: target.attentionCleared,
-      decidedAt: new Date(this.clock),
+      decidedAt: at,
     });
   }
 
@@ -115,7 +171,7 @@ class InMemoryHeldReplyRows implements HeldReplyWriteStore, HeldReplyReadStore {
     if (!row || !heldReplyEventSources("discard").includes(row.state)) {
       return null;
     }
-    return this.update(row, { state: "discarded", discardedByUserId: input.userId, decidedAt: new Date(this.clock) });
+    return this.update(row, { state: "discarded", discardedByUserId: input.userId, decidedAt: this.clock() });
   }
 
   async findByReviewRef(conversationId: string, reviewRef: string): Promise<HeldReplyRecord | null> {
@@ -135,11 +191,38 @@ class InMemoryHeldReplyRows implements HeldReplyWriteStore, HeldReplyReadStore {
     return this.page(workspaceId, query).slice(0, query.limit);
   }
 
+  async supersedePendingForConversation(
+    conversationId: string,
+    reason: Parameters<HeldReplySupersedeScope["supersedePendingForConversation"]>[1],
+  ): Promise<number> {
+    const live = this.of(conversationId).filter((row) => heldReplyEventSources("supersede").includes(row.state));
+    for (const row of live) {
+      this.update(row, { ...this.decided(heldReplyEventTarget({ kind: "supersede", reason })), supersededReason: reason });
+    }
+    return live.length;
+  }
+
+  /** The live and decided rows of one conversation, oldest first. */
+  of(conversationId: string): HeldReplyRecord[] {
+    return [...this.rows.values()].filter((row) => row.conversationId === conversationId);
+  }
+
   private page(workspaceId: string, query: ListQuery): HeldReplyRecord[] {
     const { after } = query;
     return [...this.rows.values()].sort(newestFirst).filter((row) => row.workspaceId === workspaceId
       && (query.agentId === undefined || row.agentId === query.agentId)
       && (!after || row.createdAt < after.createdAt || (row.createdAt.getTime() === after.createdAt.getTime() && row.id < after.id)));
+  }
+
+  private decided(target: ReturnType<typeof heldReplyEventTarget>) {
+    const at = this.clock();
+    return {
+      state: target.state,
+      releaseKind: target.releaseKind,
+      attentionClearedAt: target.attentionCleared === null ? null : at,
+      attentionClearedReason: target.attentionCleared,
+      decidedAt: at,
+    };
   }
 
   private update(row: HeldReplyRecord, change: Partial<HeldReplyRecord>): HeldReplyRecord {
@@ -164,6 +247,11 @@ export const createInMemoryHeldReplyService = (options: {
   route?: ChannelRoute;
   /** The policy version the channel locks now; null when the channel cannot vouch for the policy. */
   lockedPolicyVersion?: number | null;
+  /** A real channel's scope and reply delivery, in place of the fakes `route` and `lockedPolicyVersion` describe. */
+  channel?: {
+    scope: HeldReplyChannelScope;
+    delivery: { route(conversation: ConversationRecord): Promise<CustomerReplyRoute | null> };
+  };
 }) => {
   const heldReplies = new InMemoryHeldReplyRows();
   const conversations = new Map<string, ConversationRecord>();
@@ -178,7 +266,7 @@ export const createInMemoryHeldReplyService = (options: {
     messages.push(message);
     return message;
   };
-  const channelScope: HeldReplyChannelScope = {
+  const channelScope: HeldReplyChannelScope = options.channel?.scope ?? {
     lockPolicy: async () => (lockedPolicyVersion === null ? null : { version: lockedPolicyVersion }),
     enqueueRelease: async (heldReply, messageId, onOutbox) => {
       await onOutbox.enqueue({
@@ -194,7 +282,8 @@ export const createInMemoryHeldReplyService = (options: {
     },
   };
   const customerReplyDelivery = {
-    route: vi.fn(async () => {
+    route: vi.fn(async (conversation: ConversationRecord) => {
+      if (options.channel) return options.channel.delivery.route(conversation);
       if (options.route === "not_verified") {
         throw new AppError(409, "email_sending_not_verified", "The sending domain is not verified.");
       }
@@ -253,10 +342,13 @@ export const createInMemoryHeldReplyService = (options: {
     audit,
   });
 
-  /** Records an email conversation of the workspace, with its ownership at `ownershipVersion` when given. */
-  const seedConversation = (workspaceId: string, ownershipVersion?: number): string => {
+  /**
+   * Records an email conversation of the workspace, with its ownership at `ownershipVersion` when
+   * given, and the channel context a real channel's delivery reads.
+   */
+  const seedConversation = (workspaceId: string, ownershipVersion?: number, channelContext: ConversationRecord["channelContext"] = null): string => {
     const id = randomUUID();
-    conversations.set(id, { id, workspaceId, sourceChannel: "email", channelContext: null } as unknown as ConversationRecord);
+    conversations.set(id, { id, workspaceId, sourceChannel: "email", channelContext } as unknown as ConversationRecord);
     if (ownershipVersion !== undefined) ownershipVersions.set(id, ownershipVersion);
     return id;
   };

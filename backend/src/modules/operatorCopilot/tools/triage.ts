@@ -5,15 +5,18 @@ import type { CopilotEvalResultsPort } from "../contracts/evalCases.js";
 import { buildCopilotDashboardLink } from "../dashboardLinks.js";
 import {
   clip,
+  copilotOperatorActor,
   escalatedAt,
   latestDownComment,
   readAuthorizedSource,
   readOpenDeliveryFailures,
+  readOpenHeldReplies,
   HANDOFF_RANKING_WINDOW,
   MAX_DETAIL_CHARS,
   MAX_TITLE_CHARS,
   type AuthorizedSourceRead,
   type CopilotDeliveryFailuresPort,
+  type CopilotHeldRepliesPort,
   type CopilotPendingApprovalsPort,
   type CopilotTriageLogPort,
 } from "./escalationSources.js";
@@ -48,6 +51,8 @@ const SUCCESSFUL_SYNC_STATUS = "success";
 export interface WorkspaceTriageCopilotToolDependencies {
   readonly agentLookup?: CopilotAgentLookupPort;
   readonly pendingApprovals: CopilotPendingApprovalsPort;
+  /** Absent where no channel's held replies are composed into Ray; approvals are then the routine decisions alone. */
+  readonly heldReplies?: CopilotHeldRepliesPort;
   /** Absent where no delivering channel's failures are composed into Ray, and then not a source. */
   readonly deliveryFailures?: CopilotDeliveryFailuresPort;
   readonly chatHistoryService: CopilotConversationHistoryPort;
@@ -143,7 +148,7 @@ const buildDigest = async (
   // Resolving the key here is what lets every line carry its own handoff.
   const [workspaceKey, ...sources] = await Promise.all([
     deps.workspaceRouteKeyResolver.resolveWorkspaceKey(context.workspaceId),
-    readAuthorizedSource(deps, context, "approvals", () => readApprovals(deps, context.workspaceId, agentId)),
+    readAuthorizedSource(deps, context, "approvals", () => readApprovals(deps, context, agentId)),
     readAuthorizedSource(deps, context, "handoffs", () => readHandoffs(deps, context.workspaceId, agentId)),
     readAuthorizedSource(deps, context, "quality", () => readQuality(deps, context.workspaceId, agentId)),
     readAuthorizedSource(deps, context, "documents", () => readDocuments(deps, context.workspaceId)),
@@ -179,30 +184,48 @@ const buildDigest = async (
   };
 };
 
+/**
+ * Two kinds of approval wait on a person: a routine's decision, and a reply an agent wrote in review.
+ * Both count toward the approvals source and are ranked together by how long they have waited.
+ */
 const readApprovals = async (
   deps: WorkspaceTriageCopilotToolDependencies,
-  workspaceId: string,
+  context: CopilotToolInvocationContext,
   agentId: string | null,
 ): Promise<SourceResult> => {
-  const pending = (await deps.pendingApprovals.listPending(workspaceId))
-    .filter((decision) => agentId === null || decision.agentId === agentId);
+  const { heldReplies } = deps;
+  const [decisions, held] = await Promise.all([
+    deps.pendingApprovals.listPending(context.workspaceId),
+    heldReplies ? readOpenHeldReplies(heldReplies, copilotOperatorActor(context), agentId) : { total: 0, items: [] },
+  ]);
+  const pending = decisions.filter((decision) => agentId === null || decision.agentId === agentId);
+  const decisionItems = pending.map((decision): CopilotTriageItem => ({
+    kind: "approval",
+    urgency: "blocking",
+    title: decision.reason,
+    detail: null,
+    since: decision.createdAt.toISOString(),
+    count: 1,
+    agentId: decision.agentId,
+    conversationId: decision.conversationId,
+    subject: { type: "conversation", id: decision.conversationId },
+  }));
+  const heldReplyItems = held.items.map((heldReply): CopilotTriageItem => ({
+    kind: "approval",
+    urgency: "blocking",
+    title: heldReply.draftText,
+    detail: heldReply.holdReason,
+    since: heldReply.createdAt.toISOString(),
+    count: 1,
+    agentId: heldReply.agentId,
+    conversationId: heldReply.conversationId,
+    subject: { type: "conversation", id: heldReply.conversationId },
+  }));
   return {
-    total: pending.length,
-    items: pending
-      .slice()
-      .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime())
-      .slice(0, MAX_ITEMS_PER_SOURCE)
-      .map((decision) => ({
-        kind: "approval" as const,
-        urgency: "blocking" as const,
-        title: decision.reason,
-        detail: null,
-        since: decision.createdAt.toISOString(),
-        count: 1,
-        agentId: decision.agentId,
-        conversationId: decision.conversationId,
-        subject: { type: "conversation", id: decision.conversationId },
-      })),
+    total: pending.length + held.total,
+    items: [...decisionItems, ...heldReplyItems]
+      .sort((left, right) => (left.since ?? "").localeCompare(right.since ?? ""))
+      .slice(0, MAX_ITEMS_PER_SOURCE),
   };
 };
 

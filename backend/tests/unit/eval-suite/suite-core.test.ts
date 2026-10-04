@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { compileRoutineDefinition } from "../../../src/modules/routines/compiler.js";
 import type { AssertionVerdict, EvalRunObservedOutput } from "../../../src/modules/eval/domain/types.js";
@@ -20,6 +20,7 @@ import {
   summarizeRun,
   type CaseReport,
   type ConversationQualityCase,
+  type ConversationQualityObservedOutput,
   type ConversationQualityRunnerPort,
 } from "../../../src/modules/eval/suite/index.js";
 import type { EvalLlmJudgePort } from "../../../src/modules/eval/services/evalJudge.js";
@@ -32,8 +33,12 @@ import {
   conversationQualityRoutines,
 } from "../../fixtures/conversation-quality/index.js";
 import { conversationQualityCorpus } from "../../fixtures/conversation-quality/corpus.js";
+import {
+  canonicalAnswerEnvelope,
+  conversationQualityChatHarness,
+} from "../../support/conversationQualityChatHarness.js";
 
-const observed = (overrides: Partial<EvalRunObservedOutput> = {}): EvalRunObservedOutput => ({
+const observed = (overrides: Partial<ConversationQualityObservedOutput> = {}): ConversationQualityObservedOutput => ({
   retrievedChunks: [],
   ...overrides,
 });
@@ -236,6 +241,25 @@ describe("trace assertions", () => {
 
     const noStage = observed({ turnTrace: trace([]) });
     expect(evaluateTraceAssertion({ type: "turn_answer_coverage", coverage: "unanswered" }, noStage).status).toBe("fail");
+  });
+
+  it("reads a review turn's coverage verdict from its review facts, which carry no trace", () => {
+    const reviewed = (answerCoverage: { availability: "assessed" | "not_recorded"; coverage?: "answered" | "unanswered" } | null) =>
+      observed({ reviewTurn: { answerCoverage, persistedAssistantMessageCount: 0 } });
+
+    expect(evaluateTraceAssertion({ type: "turn_answer_coverage", coverage: "unanswered" }, reviewed({ availability: "assessed", coverage: "unanswered" })).status).toBe("pass");
+    expect(evaluateTraceAssertion({ type: "turn_answer_coverage", coverage: "answered" }, reviewed({ availability: "assessed", coverage: "unanswered" })).status).toBe("fail");
+    expect(evaluateTraceAssertion({ type: "turn_answer_coverage", coverage: "answered" }, reviewed({ availability: "not_recorded" })).status).toBe("fail");
+    expect(evaluateTraceAssertion({ type: "turn_answer_coverage", coverage: "answered" }, reviewed(null)).status).toBe("fail");
+  });
+
+  it("passes turn_persists_no_reply only when a review turn wrote no assistant row", () => {
+    const wrote = (count: number) => observed({ reviewTurn: { answerCoverage: null, persistedAssistantMessageCount: count } });
+
+    expect(evaluateTraceAssertion({ type: "turn_persists_no_reply" }, wrote(0)).status).toBe("pass");
+    expect(evaluateTraceAssertion({ type: "turn_persists_no_reply" }, wrote(1)).status).toBe("fail");
+    // A live turn is not observed for persisted replies, so the assertion cannot be scored on it.
+    expect(evaluateTraceAssertion({ type: "turn_persists_no_reply" }, observed({ turnTrace: trace([]) })).status).toBe("error");
   });
 });
 
@@ -513,6 +537,129 @@ describe("runConversationQualitySuite", () => {
   });
 });
 
+const coveredRefundReply = canonicalAnswerEnvelope({
+  coverage: "answered_sufficient_evidence",
+  requestFocus: "the refund window",
+  outcome: "answer",
+  answer: "Yes. You can request a full refund within 30 days of purchase[[1]].",
+  claims: [[1]],
+  grounding: "grounded",
+});
+
+const uncoveredDiscountReply = canonicalAnswerEnvelope({
+  coverage: "unanswered_insufficient_evidence",
+  requestFocus: "a nonprofit discount",
+  outcome: "no_support",
+  answer: "I don't have information about a nonprofit discount.",
+  claims: [],
+  grounding: "degraded",
+});
+
+describe("review execution mode", () => {
+  const reviewCase: ConversationQualityCase = {
+    id: "review-refund",
+    name: "review refund",
+    executionMode: "review",
+    history: [
+      { role: "user", content: "Hello, I have a question about my order." },
+      { role: "assistant", content: "Happy to help. What would you like to know?" },
+    ],
+    query: "Can I still get a full refund two weeks after buying?",
+    assertions: [
+      { type: "turn_grounding_verdict", verdict: "grounded" },
+      { type: "turn_answer_coverage", coverage: "answered" },
+      { type: "turn_persists_no_reply" },
+    ],
+  };
+
+  const passed = (report: CaseReport | undefined): void => {
+    if (report?.status !== "pass") {
+      throw new Error(`expected pass, got ${report?.status}: ${JSON.stringify(report?.verdicts, null, 2)}`);
+    }
+  };
+
+  it("drives a review case through ChatService.review(), never answer(), and scores the review facts", async () => {
+    const harness = conversationQualityChatHarness({ reply: coveredRefundReply });
+    const answer = vi.spyOn(harness.service, "answer");
+    const review = vi.spyOn(harness.service, "review");
+
+    const { reports } = await runConversationQualitySuite([reviewCase], harness.port, { workspaceId: "ws" });
+
+    passed(reports[0]);
+    expect(review).toHaveBeenCalledOnce();
+    expect(answer).not.toHaveBeenCalled();
+    expect(harness.routineProvider.forTurn).not.toHaveBeenCalled();
+    expect(harness.routineStore.loadActive).not.toHaveBeenCalled();
+  });
+
+  it("drives a case without executionMode through ChatService.answer() exactly as before", async () => {
+    const harness = conversationQualityChatHarness({ reply: coveredRefundReply });
+    const answer = vi.spyOn(harness.service, "answer");
+    const review = vi.spyOn(harness.service, "review");
+    const liveCase: ConversationQualityCase = {
+      id: "live-refund",
+      name: "live refund",
+      query: "Can I still get a full refund two weeks after buying?",
+      assertions: [
+        { type: "answer_contains", pattern: "30 days", matchMode: "substring" },
+        { type: "turn_answer_coverage", coverage: "answered" },
+      ],
+    };
+
+    const { reports } = await runConversationQualitySuite([liveCase], harness.port, { workspaceId: "ws" });
+
+    passed(reports[0]);
+    expect(answer).toHaveBeenCalledOnce();
+    expect(review).not.toHaveBeenCalled();
+  });
+
+  it("routes each sample of a review case to review() in the sampled runner", async () => {
+    const run = vi.fn(async () => observed());
+    const review = vi.fn(async () => observed({ reviewTurn: { answerCoverage: null, persistedAssistantMessageCount: 0 } }));
+    const noReplyCase: ConversationQualityCase = { ...reviewCase, assertions: [{ type: "turn_persists_no_reply" }] };
+
+    const { outcomes } = await runConversationQualitySuiteSampled([noReplyCase], { run, review }, {
+      workspaceId: "ws",
+      samples: 3,
+      passThreshold: 1,
+    });
+
+    expect(outcomes[0]?.status).toBe("pass");
+    expect(review).toHaveBeenCalledTimes(3);
+    expect(review).toHaveBeenCalledWith(noReplyCase);
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it("errors a review case on a runner that cannot drive review turns instead of running it live", async () => {
+    const run = vi.fn(async () => observed());
+
+    const { reports } = await runConversationQualitySuite([reviewCase], { run }, { workspaceId: "ws" });
+
+    expect(reports[0]?.status).toBe("error");
+    expect(reports[0]?.reason).toContain("review");
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it("passes the email-tagged seed cases through ChatService.review()", async () => {
+    const scriptedReplies: Record<string, string> = {
+      "email-review-covered-refund": coveredRefundReply,
+      "email-review-uncovered-nonprofit-discount": uncoveredDiscountReply,
+    };
+    const emailCases = conversationQualityCases.filter((evalCase) => evalCase.tags?.includes("email"));
+    expect(emailCases.map((evalCase) => evalCase.id).sort()).toEqual(Object.keys(scriptedReplies).sort());
+
+    for (const evalCase of emailCases) {
+      const harness = conversationQualityChatHarness({ reply: scriptedReplies[evalCase.id] });
+      const answer = vi.spyOn(harness.service, "answer");
+
+      const { reports } = await runConversationQualitySuite([evalCase], harness.port, { workspaceId: "ws" });
+
+      passed(reports[0]);
+      expect(answer).not.toHaveBeenCalled();
+    }
+  });
+});
+
 describe("reduceSamples", () => {
   const score = (status: "pass" | "fail" | "error" | "recorded", reason = status) => ({ status, reason, verdicts: [] });
 
@@ -755,6 +902,43 @@ describe("seed fixtures", () => {
         }
       }
     }
+  });
+
+  it("accepts a review case and rejects one carrying an input a review turn cannot take", () => {
+    const review = { id: "review", name: "review", executionMode: "review", query: "Can I get a refund?", assertions: [] };
+    const [parsed] = parseConversationQualityCases([review]);
+    expect(parsed?.executionMode).toBe("review");
+
+    expect(() => parseConversationQualityCases([{ ...review, executionMode: "safe_test" }])).toThrow();
+    expect(() => parseConversationQualityCases([
+      { ...review, query: undefined, routineInvocation: { toolName: "start_return", input: {} } },
+    ])).toThrow();
+    expect(() => parseConversationQualityCases([
+      { ...review, routineStartState: { routineId: "r", path: ["s1"], variables: {}, status: "active" } },
+    ])).toThrow();
+    expect(() => parseConversationQualityCases([{ ...review, pageContext: { content: "page" } }])).toThrow();
+    expect(() => parseConversationQualityCases([
+      { ...review, clientContextCapabilities: { "page.read": { available: false, mode: null, supportedOperations: [] } } },
+    ])).toThrow();
+    expect(() => parseConversationQualityCases([{ ...review, agentConfigOverride: {} }])).toThrow();
+  });
+
+  it("ships two email review cases asserting grounding, coverage, and no persisted reply", () => {
+    const emailCases = conversationQualityCases.filter((evalCase) => evalCase.tags?.includes("email"));
+    expect(emailCases).toHaveLength(2);
+    for (const evalCase of emailCases) {
+      expect(evalCase.executionMode).toBe("review");
+      expect(evalCase.assertions.map((assertion) => assertion.type).sort()).toEqual([
+        "turn_answer_coverage",
+        "turn_grounding_verdict",
+        "turn_persists_no_reply",
+      ]);
+    }
+    expect(emailCases.map((evalCase) => evalCase.assertions.find((assertion) => assertion.type === "turn_answer_coverage")))
+      .toEqual([
+        { type: "turn_answer_coverage", coverage: "answered" },
+        { type: "turn_answer_coverage", coverage: "unanswered" },
+      ]);
   });
 
   it("rejects a dataset with duplicate case ids", () => {

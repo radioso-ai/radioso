@@ -122,7 +122,8 @@ On the routine's first turn the selector always reads the message, even when the
 activator already filled the first step's slot, so the rest of an opening message
 ("the Kriya retreat, 11 to 14 November") is kept. When fast-forwarding stops at a
 step that still lacks values, that step also reads the opening message once
-before it is asked, whatever it asks for. It moves on only if that read fully
+before it is asked, whatever it asks for and whether the routine reached it
+directly or through a tool step. It moves on only if that read fully
 satisfies the step, so one opening message can carry the routine past several
 steps; a step it fills only in part keeps what it read and is asked as usual,
 with the values it holds filled into its instruction. This happens at most once
@@ -171,8 +172,9 @@ never hold a step: a contact step that asks for a name, an email and, if the
 visitor offers one, a phone number is satisfied by the name and email. A step that
 collects only optional slots waits until one of them is given.
 
-A satisfied step moves on by its structure: the first rule exit that matches,
-otherwise its `default` exit. That applies in two places.
+A satisfied step moves on by its structure: the first rule exit whose guard
+passes, otherwise its `default` exit. A step whose only exit is an AI-decides
+exit takes that exit. That applies in two places.
 
 - **The step the visitor answered.** When the selector finds that no AI-decides
   exit holds (the visitor did not cancel), yet the reply filled what the step
@@ -187,12 +189,24 @@ otherwise its `default` exit. That applies in two places.
   soggiorno personale dal 11 al 14 novembre. Sono Giulia Verdi,
   giulia.verdi@example.com" fills the program, dates and contact steps at once.
   The routine asks how many adults are coming, and the answer to that goes
-  straight to the recap.
+  straight to the recap. The step a tool step's follow-up lands on gets the same
+  check: when an availability check runs between the program and the party
+  size, a visitor who gave the party size up front goes from the check straight
+  to the recap. The walk enters each step at most once a turn, so a satisfied
+  step whose exit leads back to a step already passed, a tool step that already
+  ran included, is asked instead, and skipping never runs a tool twice in one
+  turn.
 
-A satisfied step whose only ways on are AI-decides exits still asks the selector,
-because only the author's condition text says which exit goes forward. For
-collection steps, write the forward exit as a `slot_filled` rule or a `default`
-exit and keep AI-decides exits for branches such as cancelling.
+A rule exit leaves only when its guard passes, even when it is the step's only
+exit. A `nights` step whose one exit requires at least two nights stays on a
+one-night answer and is asked again. The step keeps the value it holds, and the
+visitor's next reply is read for a new one.
+
+When no rule exit passes and there is no `default` exit, a satisfied step with
+an AI-decides exit among several still asks the selector, because only the
+author's condition text says which exit goes forward. For collection steps,
+write the forward exit as a `slot_filled` rule or a `default` exit and keep
+AI-decides exits for branches such as cancelling.
 
 ### What a slot keeps
 

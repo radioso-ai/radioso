@@ -59,7 +59,11 @@ export {
   UNBOUND_CANDIDATE_REASON,
   type DirectiveBoundSkillSelectorOptions,
 } from "./directiveBoundSkillSelector.js";
-export { resolveSkillArguments } from "./skillArgumentResolver.js";
+export {
+  resolveSkillArguments,
+  resolveUntypedSkillArguments,
+  type ResolvedSkillArguments,
+} from "./skillArgumentResolver.js";
 export {
   createConversationSkillInputResolver,
   type CreateConversationSkillInputResolverOptions,
@@ -133,6 +137,7 @@ export {
 export {
   DEFAULT_ROUTINE_STEP_REASK_EXHAUSTED_PROMPT,
   DEFAULT_ROUTINE_STEP_REPLY_PROMPT,
+  DEFAULT_ROUTINE_STEP_STUCK_HANDOFF_PROMPT,
   DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_DEFAULT_PROMPT,
   DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_WITH_MESSAGE_PROMPT,
   RoutineStepRenderer,

@@ -200,6 +200,7 @@ describeIntegration("the reviewed approval gate, proven against Postgres's row l
       invocations: invocationsRepo,
       catalog,
       currentAuthorization,
+      audit: { record: (event) => auditService.record({ eventType: event.eventType, eventStatus: event.eventStatus, metadata: { ...event.metadata } }) },
       secret: mcpSecret,
     });
     return { service, principal, auditEvents };
@@ -536,6 +537,157 @@ describeIntegration("the reviewed approval gate, proven against Postgres's row l
 
     const directives = await authoredDirectiveService.list(fixture.workspace.id, fixture.agent.id);
     expect(directives.find((directive) => directive.id === existing.id)).toMatchObject({ action: payload.action });
+  });
+
+  /** Holds a request at a chosen point until the test lets it continue. */
+  const gate = () => {
+    let open!: () => void;
+    const opened = new Promise<void>((resolve) => { open = resolve; });
+    return { open, opened };
+  };
+
+  /** Every `execute_reviewed_proposal` receipt in the fixture's workspace, oldest first. */
+  const executionReceipts = (fixture: Awaited<ReturnType<typeof createFixture>>) => database.query<{
+    id: string; status: string; safe_outcome_code: string | null; result_reference: string | null;
+  }>(
+    "SELECT id, status, safe_outcome_code, result_reference FROM operator_mcp_invocations WHERE workspace_id = $1 AND descriptor_name = 'execute_reviewed_proposal' ORDER BY created_at ASC",
+    [fixture.workspace.id],
+  );
+
+  /** The first request has stalled for longer than the recovery lease, so an identical retry reconciles under its receipt. */
+  const ageExecutionProofs = (fixture: Awaited<ReturnType<typeof createFixture>>) => database.query(
+    "UPDATE operator_mcp_invocations SET proof_consumed_at = NOW() - INTERVAL '3 minutes' WHERE workspace_id = $1 AND descriptor_name = 'execute_reviewed_proposal'",
+    [fixture.workspace.id],
+  );
+
+  const createConversationTierProposal = async (fixture: Awaited<ReturnType<typeof createFixture>>, name: string) => {
+    const existing = await agentRepository.createDirective(fixture.agent.id, fixture.workspace.id, createDirectiveInput(name));
+    const payload = { name, condition: { kind: "always" }, action: `Applied by the retry that took over (${name}).` };
+    const proposal = await proposals.createProposal({
+      workspaceId: fixture.workspace.id, operatorUserId: fixture.operatorUserId,
+      origin: { type: "operator_mcp_invocation", invocationId: fixture.invocationId },
+      targetType: "directive", targetRef: { agentId: fixture.agent.id, directiveId: existing.id }, payload,
+      versionToken: existing.updatedAt.toISOString(), evidence: null, reviewDigest: REVIEW_DIGEST, reviewSnapshot: {},
+      expiresAt: new Date(Date.now() + 60_000), confirmationRequirement: "conversation",
+      changeEffect: { exposure: "draft", reversibility: "reversible", metered: false },
+    });
+    return { existing, payload, proposal };
+  };
+
+  /**
+   * Issue #1347: request A wins `claimRunning` on its receipt, then stalls past the recovery lease
+   * before its pre-claim permission check. An identical retry B takes the receipt over, claims the
+   * proposal, and is about to apply when A resumes and is denied. A's refusal must not land on the
+   * receipt B is running under; otherwise B's owner transaction fails its receipt fence, and the
+   * freed key leaves every later retry answering `not_prepared` until the proposal expires.
+   */
+  it("keeps a stalled request's refusal off the receipt an identical retry took over, so the retry applies", async () => {
+    const fixture = await createFixture();
+    const { existing, payload, proposal } = await createConversationTierProposal(fixture, "stalled-refusal-after-takeover");
+    let authorized = true;
+    const { service, auditEvents } = buildRealMcpService(fixture, { isAuthorized: () => authorized });
+    const args = { proposalId: proposal.id, reviewDigest: REVIEW_DIGEST };
+    const find = proposals.findMcpReviewedProposal.bind(proposals);
+    const claim = proposals.claimMcpReviewedProposalApply.bind(proposals);
+    const firstStalled = gate();
+    const resumeFirst = gate();
+    const retryClaimed = gate();
+    const resumeRetry = gate();
+    const stallFirst = vi.spyOn(proposals, "findMcpReviewedProposal").mockImplementationOnce(async (input) => {
+      firstStalled.open();
+      await resumeFirst.opened;
+      return find(input);
+    });
+    const pauseRetry = vi.spyOn(proposals, "claimMcpReviewedProposalApply").mockImplementationOnce(async (input) => {
+      const claimed = await claim(input);
+      retryClaimed.open();
+      await resumeRetry.opened;
+      return claimed;
+    });
+
+    try {
+      const first = callTool(service, { name: "execute_reviewed_proposal", arguments: args });
+      await firstStalled.opened;
+      await ageExecutionProofs(fixture);
+      const retry = callTool(service, { name: "execute_reviewed_proposal", arguments: args });
+      await retryClaimed.opened;
+
+      authorized = false;
+      resumeFirst.open();
+      await expect(first).rejects.toMatchObject({ code: "invalid_arguments" });
+      authorized = true;
+      resumeRetry.open();
+
+      await expect(retry).resolves.toMatchObject({
+        structuredContent: { proposalId: proposal.id, status: "applied", appliedRef: { directiveId: existing.id } },
+        safeOutcomeCode: "completed",
+      });
+    } finally {
+      stallFirst.mockRestore();
+      pauseRetry.mockRestore();
+    }
+
+    const directives = await authoredDirectiveService.list(fixture.workspace.id, fixture.agent.id);
+    expect(directives.find((directive) => directive.id === existing.id)).toMatchObject({ action: payload.action });
+    const [firstReceipt] = await executionReceipts(fixture);
+    expect(firstReceipt).toMatchObject({ status: "completed", safe_outcome_code: "completed", result_reference: proposal.id });
+    expect(auditEvents.find((event) => event.eventType === "operator_mcp.invocation" && event.metadata.invocationId === firstReceipt?.id))
+      .toMatchObject({ eventStatus: "failure", metadata: { outcome: "refused", reason: "operation_taken_over" } });
+  });
+
+  /**
+   * Issue #1347, the recoverable variant: the stalled request A resumes into its claim while the
+   * retry B holds a fresh lease, so A answers `uncertain`. A's `completed` must not close the receipt
+   * B is about to settle in its owner transaction.
+   */
+  it("keeps a stalled request's uncertain answer off the receipt an identical retry took over, so the retry applies", async () => {
+    const fixture = await createFixture();
+    const { existing, payload, proposal } = await createConversationTierProposal(fixture, "stalled-uncertain-after-takeover");
+    const { service, auditEvents } = buildRealMcpService(fixture);
+    const args = { proposalId: proposal.id, reviewDigest: REVIEW_DIGEST };
+    const claim = proposals.claimMcpReviewedProposalApply.bind(proposals);
+    const firstStalled = gate();
+    const resumeFirst = gate();
+    const retryClaimed = gate();
+    const resumeRetry = gate();
+    const claims = vi.spyOn(proposals, "claimMcpReviewedProposalApply")
+      .mockImplementationOnce(async (input) => {
+        firstStalled.open();
+        await resumeFirst.opened;
+        return claim(input);
+      })
+      .mockImplementationOnce(async (input) => {
+        const claimed = await claim(input);
+        retryClaimed.open();
+        await resumeRetry.opened;
+        return claimed;
+      });
+
+    try {
+      const first = callTool(service, { name: "execute_reviewed_proposal", arguments: args });
+      await firstStalled.opened;
+      await ageExecutionProofs(fixture);
+      const retry = callTool(service, { name: "execute_reviewed_proposal", arguments: args });
+      await retryClaimed.opened;
+
+      resumeFirst.open();
+      await expect(first).resolves.toMatchObject({ structuredContent: { proposalId: proposal.id, status: "uncertain" } });
+      resumeRetry.open();
+
+      await expect(retry).resolves.toMatchObject({
+        structuredContent: { proposalId: proposal.id, status: "applied", appliedRef: { directiveId: existing.id } },
+        safeOutcomeCode: "completed",
+      });
+    } finally {
+      claims.mockRestore();
+    }
+
+    const directives = await authoredDirectiveService.list(fixture.workspace.id, fixture.agent.id);
+    expect(directives.find((directive) => directive.id === existing.id)).toMatchObject({ action: payload.action });
+    const [firstReceipt] = await executionReceipts(fixture);
+    expect(firstReceipt).toMatchObject({ status: "completed", safe_outcome_code: "completed", result_reference: proposal.id });
+    expect(auditEvents.find((event) => event.eventType === "operator_mcp.invocation" && event.metadata.invocationId === firstReceipt?.id))
+      .toMatchObject({ metadata: { reason: "operation_taken_over" } });
   });
 
   it("reports stale once the target changed after approval, so approving never bypasses the version fence", async () => {

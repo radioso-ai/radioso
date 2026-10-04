@@ -67,7 +67,7 @@ describe("routineEndingEffectsForTurn", () => {
       session,
       workspaceId: "ws_1",
       turn: {
-        handoff: { routineId: "routine_1", stepId: "human", collected: { name: "Ada" } },
+        handoff: { routineId: "routine_1", stepId: "human", terminalKind: "handoff", collected: { name: "Ada" } },
         operatorNotice: { routineId: "routine_1", stepId: "human", terminalKind: "handoff", collected: { name: "Ada" } },
       },
     });
@@ -94,7 +94,7 @@ describe("routineEndingEffectsForTurn", () => {
       workspaceId: "ws_1",
       turn: {
         actions: [existingAction],
-        handoff: { routineId: "routine_1", stepId: "human", collected: { name: "Ada" } },
+        handoff: { routineId: "routine_1", stepId: "human", terminalKind: "handoff", collected: { name: "Ada" } },
       },
     });
 
@@ -117,6 +117,31 @@ describe("routineEndingEffectsForTurn", () => {
     ]);
   });
 
+  it("hands off and notifies with reason routine_stuck for a visitor stuck past the re-ask limit (#1384), through the same handoff.notify action", () => {
+    const effects = routineEndingEffectsForTurn({
+      session,
+      workspaceId: "ws_1",
+      turn: {
+        handoff: { routineId: "routine_1", stepId: "ask_contact", terminalKind: "stuck", collected: { name: "Ada" } },
+      },
+    });
+
+    expect(effects.ownershipHandoff).toEqual({ reason: "routine_stuck", routineId: "routine_1", stepId: "ask_contact" });
+    expect(effects.actions).toEqual([{
+      type: HANDOFF_NOTIFY_ACTION_TYPE,
+      payload: {
+        conversationId: "conv_1",
+        workspaceId: "ws_1",
+        agentId: "agent_1",
+        userMessageId: "message_1",
+        reason: "routine_stuck",
+        routineId: "routine_1",
+        stepId: "ask_contact",
+        collected: { name: "Ada" },
+      },
+    }]);
+  });
+
   // The outbox idempotency key hashes the serialized payload, so a hand-off without authored
   // notice text must queue exactly the bytes it queued before endings could carry a notice:
   // same keys, same order, no `notice` key.
@@ -135,8 +160,8 @@ describe("routineEndingEffectsForTurn", () => {
       JSON.stringify(routineEndingEffectsForTurn({ session, workspaceId: "ws_1", turn }).actions?.at(-1)?.payload);
 
     it.each([
-      ["reported with an empty notice", { handoff: { routineId: "routine_1", stepId: "human", collected: { name: "Ada", nights: 3 } }, operatorNotice: { routineId: "routine_1", stepId: "human", terminalKind: "handoff" as const, collected: { name: "Ada", nights: 3 } } }],
-      ["reported without a notice", { handoff: { routineId: "routine_1", stepId: "human", collected: { name: "Ada", nights: 3 } } }],
+      ["reported with an empty notice", { handoff: { routineId: "routine_1", stepId: "human", terminalKind: "handoff" as const, collected: { name: "Ada", nights: 3 } }, operatorNotice: { routineId: "routine_1", stepId: "human", terminalKind: "handoff" as const, collected: { name: "Ada", nights: 3 } } }],
+      ["reported without a notice", { handoff: { routineId: "routine_1", stepId: "human", terminalKind: "handoff" as const, collected: { name: "Ada", nights: 3 } } }],
     ])("%s", (_label, turn) => {
       expect(queuedPayload(turn)).toBe(
         '{"conversationId":"conv_1","workspaceId":"ws_1","agentId":"agent_1","userMessageId":"message_1","reason":"routine_handoff","routineId":"routine_1","stepId":"human","collected":{"name":"Ada","nights":3}}',
@@ -145,9 +170,9 @@ describe("routineEndingEffectsForTurn", () => {
     });
 
     it("with nothing collected", () => {
-      expect(queuedPayload({ handoff: { routineId: "routine_1", stepId: "human" } })).toBe(preNoticePayload());
+      expect(queuedPayload({ handoff: { routineId: "routine_1", stepId: "human", terminalKind: "handoff" } })).toBe(preNoticePayload());
       expect(queuedPayload({
-        handoff: { routineId: "routine_1", stepId: "human" },
+        handoff: { routineId: "routine_1", stepId: "human", terminalKind: "handoff" },
         operatorNotice: { routineId: "routine_1", stepId: "human", terminalKind: "handoff" },
       })).toBe(preNoticePayload());
     });

@@ -14,15 +14,31 @@ export interface RoutineEndingNoticeAction {
 }
 
 /**
- * One row per kind of routine ending that notifies operators: the producer queues the row's
- * action, composition registers one dispatch handler per row, and a Test Chat preview renders
- * the row's notification kind. A hand-off keeps `handoff.notify`, so outbox rows queued before
- * completions could notify keep dispatching.
+ * One row per *authored* routine ending kind that notifies operators, each queued as its own
+ * action type: composition registers exactly one dispatch handler per row (by `type`), and a
+ * Test Chat preview renders the row's notification kind. A hand-off keeps `handoff.notify`, so
+ * outbox rows queued before completions could notify keep dispatching.
  */
-export const ROUTINE_ENDING_NOTICE_ACTIONS: Readonly<Record<RoutineOperatorNoticeEffect["terminalKind"], RoutineEndingNoticeAction>> = {
+export const ROUTINE_ENDING_NOTICE_ACTIONS: Readonly<Record<"complete" | "handoff", RoutineEndingNoticeAction>> = {
   handoff: { type: HANDOFF_NOTIFY_ACTION_TYPE, reason: "routine_handoff", notificationKind: "handoff" },
   complete: { type: COMPLETION_NOTIFY_ACTION_TYPE, reason: "routine_completed", notificationKind: "completion" },
 };
+
+/**
+ * The row an ending's notice queues as and is delivered through, for any terminal kind — unlike
+ * {@link ROUTINE_ENDING_NOTICE_ACTIONS}, which only the two authored kinds index directly. A
+ * visitor stuck past the re-ask limit (#1384) is never authored and so shares the hand-off row's
+ * action type and notification kind — ownership moves the same way — but keeps its own reason,
+ * so the notice stays distinguishable from an authored hand-off's. It must never get its own
+ * registered action type: `handoff.notify` already has exactly one dispatch handler, and a
+ * second row sharing that type would collide with it at registration.
+ */
+export const routineEndingNoticeAction = (
+  terminalKind: RoutineOperatorNoticeEffect["terminalKind"],
+): RoutineEndingNoticeAction =>
+  terminalKind === "stuck"
+    ? { ...ROUTINE_ENDING_NOTICE_ACTIONS.handoff, reason: "routine_stuck" }
+    : ROUTINE_ENDING_NOTICE_ACTIONS[terminalKind];
 
 /**
  * The payload every operator-notice action carries (`handoff.notify`, `completion.notify`): ids,

@@ -32,6 +32,10 @@ const manifest = [
     exportName: "DEFAULT_ROUTINE_STEP_REASK_EXHAUSTED_PROMPT",
   },
   {
+    source: "routine-step-stuck-handoff.md",
+    exportName: "DEFAULT_ROUTINE_STEP_STUCK_HANDOFF_PROMPT",
+  },
+  {
     source: "routine-next-step.md",
     exportName: "DEFAULT_ROUTINE_NEXT_STEP_PROMPT",
   },

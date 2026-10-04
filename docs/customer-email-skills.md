@@ -1,7 +1,7 @@
 ---
 title: "Customer Email Connections"
 description: "Setup of workspace-owned outbound email connections and unified agent email skills for draft and send modes."
-last_updated: 2026-10-01
+last_updated: 2026-10-04
 ---
 
 # Customer Email Connections

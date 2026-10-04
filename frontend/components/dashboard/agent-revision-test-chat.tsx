@@ -401,15 +401,28 @@ export function AgentRevisionTestChat({
     writeAgentRevisionTestChatSession(sessionKey, { isRunningEvals: next });
     setIsRunningEvals(next);
   }, [sessionKey]);
+  // `execution`, `evalRun`, `isSending`, `isStarting`, and `isRunningEvals` each already have
+  // their own setter (`setExecutionState`, `setEvalRunState`, `setSendingState`,
+  // `setStartingState`, `setRunningEvalsState`) that writes the shared session synchronously the
+  // instant the value changes. This effect is scheduled per commit, not per write: when several
+  // commits land in a tight burst (reopening a saved test right after a reload resolves all of
+  // `load()`, the route-driven open, and the detail fetch within the same microtask flush), an
+  // older commit's still-queued run can fire after a newer commit's setter already wrote the
+  // current value, and re-broadcasting this render's own closure for those five fields would
+  // clobber that newer write with a stale one. Deferring to the session's own latest value for
+  // them — read fresh at flush time, not render time — makes a stale run a no-op for those fields
+  // instead of a regression. The remaining fields have no other synchronous writer, so this
+  // effect stays their one source of truth and still mirrors them from its own closure.
   useEffect(() => {
+    const latest = readAgentRevisionTestChatSession(sessionKey);
     startAgentRevisionTestChatSession(sessionKey, {
       state,
       revisions,
       mode,
       selected,
       message,
-      execution,
-      evalRun,
+      execution: latest?.execution ?? execution,
+      evalRun: latest?.evalRun ?? evalRun,
       error,
       degradedNotice,
       cases,
@@ -421,23 +434,19 @@ export function AgentRevisionTestChat({
       skillEffects,
       valueError,
       revisionValueError,
-      isSending,
-      isStarting,
-      isRunningEvals,
+      isSending: latest?.isSending ?? isSending,
+      isStarting: latest?.isStarting ?? isStarting,
+      isRunningEvals: latest?.isRunningEvals ?? isRunningEvals,
       retryingEvalCase,
       proactiveStartKey: proactiveStartKey.current,
-      executionEpoch: readAgentRevisionTestChatSession(sessionKey)?.executionEpoch ?? 0,
+      executionEpoch: latest?.executionEpoch ?? 0,
     } satisfies AgentRevisionTestChatSession);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `execution`/`evalRun`/`isSending`/`isStarting`/`isRunningEvals` are read from the session fresh at flush time, not from this closure; listing them would reintroduce the stale-overwrite race the comment above describes.
   }, [
     cases,
     contextVariables,
     degradedNotice,
     error,
-    evalRun,
-    execution,
-    isRunningEvals,
-    isSending,
-    isStarting,
     message,
     mode,
     restartNotice,

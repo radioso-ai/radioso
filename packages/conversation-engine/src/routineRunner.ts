@@ -677,18 +677,27 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
           return false;
       }
     };
-    // Where a satisfied slot step goes when its structure decides: its only exit, else the
-    // first rule exit that matches, else its default exit. `undefined` when only an
-    // AI-decides exit could move it.
+    // Where a satisfied slot step goes by its rules alone: the first rule exit whose guard
+    // passes, else its default exit. A rule exit leaves only when its guard passes, even as
+    // the only exit (#1391). `undefined` when no rule or default exit moves it.
+    const ruleExit = (
+      step: RoutineStep,
+      exits: readonly RoutineTransition[],
+      variables: Record<string, unknown>,
+    ): string | undefined =>
+      (exits.find((exit) => !isDefaultTransition(exit) && !isLlmTransition(exit) && guardMatches(exit, step.id, variables))
+        ?? exits.find(isDefaultTransition))?.to;
+    // Where a satisfied slot step goes when its structure decides: its only exit when that is
+    // an AI-decides exit — the compiler's gate on a plain collection step's single edge —
+    // else its rule exit.
     const satisfiedStepExit = (
       step: RoutineStep,
       exits: readonly RoutineTransition[],
       variables: Record<string, unknown>,
     ): string | undefined =>
-      exits.length === 1
+      exits.length === 1 && isLlmTransition(exits[0])
         ? exits[0].to
-        : (exits.find((exit) => !isDefaultTransition(exit) && !isLlmTransition(exit) && guardMatches(exit, step.id, variables))
-          ?? exits.find(isDefaultTransition))?.to;
+        : ruleExit(step, exits, variables);
     type SelectNextInput = {
       step: RoutineStep;
       transitions: RoutineTransition[];
@@ -700,6 +709,8 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       alwaysExtract?: boolean;
       /** The step the visitor answered: a rejected value for one of its own slots holds it this turn. */
       answeredStep?: boolean;
+      /** An AI-decides exit leaves only when the selector chose it: a step reached after a transit step. */
+      judgedAiExitsOnly?: boolean;
     };
     const selectNextRaw = async (input: SelectNextInput): Promise<RoutineNextStepDecision> => {
       lastSelectorRan = false;
@@ -790,7 +801,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         // done, so its rule or default exit moves on instead of asking again (#1372).
         const withDecision = { ...variables, ...(decision.variables ?? {}) };
         const exit = isSatisfiedSlotCollectionStep(routine, input.step, withDecision)
-          ? satisfiedStepExit(input.step, input.transitions, withDecision)
+          ? (input.judgedAiExitsOnly ? ruleExit : satisfiedStepExit)(input.step, input.transitions, withDecision)
           : undefined;
         if (exit !== undefined) {
           return { ...decision, nextStepId: exit };
@@ -848,13 +859,17 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       // Select the step this turn lands on from the current step's outgoing edges.
       // On the activation turn the activator may already have filled this step's slot
       // from the message; the rest of the message (dates given with a program) still has
-      // to be read, or it is lost (#1370).
+      // to be read, or it is lost (#1370). A step that holds its slots yet has no exit its
+      // rules or default take stayed on a value its rule exit rejected, so the reply is the
+      // visitor's new answer and is read too (#1391).
+      const awaitsNewAnswer = isSatisfiedSlotCollectionStep(routine, currentStep, state.variables) &&
+        satisfiedStepExit(currentStep, outgoing(currentStepId), state.variables) === undefined;
       const decision = await selectNext({
         step: currentStep,
         transitions: outgoing(currentStepId),
         variables: state.variables,
         state: { ...state, attempts },
-        ...(input.activationTurn ? { alwaysExtract: true } : {}),
+        ...(input.activationTurn || awaitsNewAnswer ? { alwaysExtract: true } : {}),
         answeredStep: true,
       });
       // The user's message is off-topic for the routine → decline this turn and let
@@ -900,10 +915,10 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     // answered an earlier step and has already been read (#1372). Only a step whose way on
     // is an AI-decides exit asks the selector.
     // A bounded loop (a `counter` back-edge into a satisfied step) would otherwise
-    // fast-forward forever — track the steps visited this traversal and, on a revisit, stop
-    // and render the current step instead of throwing. This keeps the runner on the
-    // degrade-don't-throw path: a loop that can't fast-forward to progress settles on a
-    // chat step the user can act on.
+    // fast-forward forever — track the steps visited this traversal, the transit steps it
+    // runs through included, and on a revisit, stop and render the current step instead of
+    // throwing. This keeps the runner on the degrade-don't-throw path: a loop that can't
+    // fast-forward to progress settles on a chat step the user can act on.
     const fastForwarded = new Set<string>([step.id]);
     // Trace entry for a step whose edges the selector just judged this call: what it ran
     // with and what changed. Shared by the fast-forward and landing-read branches below so
@@ -930,110 +945,138 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       }
       return entry;
     };
-    // A held step is asked again even when the values it kept, or an earlier value, would
-    // satisfy it: nothing is fast-forwarded past it this turn.
-    while (!held) {
-      if (!isSatisfiedSlotCollectionStep(routine, step, variables)) {
-        // Activation turn only (#1370): the message that starts the routine can state
-        // values for a step further down the graph than the one it answers directly.
-        // Read it once for the step the walk stops on here; a later reply answers the
-        // step shown on screen, so this never runs past the first turn. The walk never
-        // revisits a step (every advance below lands outside `fastForwarded`), so nothing
-        // needs to track which steps already had this read.
-        if (
-          !input.activationTurn ||
-          step.kind !== "chat" ||
-          step.id === currentStepId ||
-          collectedSlotsForStep(step).length === 0
-        ) {
+    // Walks on from `step` until a step holds the turn. Returns true when a selector found the
+    // message off-topic and the turn yields. A held step is asked again even when the values
+    // it kept, or an earlier value, would satisfy it: nothing is fast-forwarded past it this turn.
+    // After a transit step, a step moves on only by a rule or default exit, or by an exit the
+    // opening-message read chose: an AI-decides exit judges a reply to this step, and the
+    // visitor has given none. Taking one could carry the turn past a confirmation into an
+    // action; judging it against the message that answered an earlier step could yield the
+    // turn and run the tool again later. Such a step is asked.
+    const fastForward = async ({ afterTransit }: { afterTransit: boolean }): Promise<boolean> => {
+      const structuralExit = afterTransit ? ruleExit : satisfiedStepExit;
+      while (!held) {
+        if (!isSatisfiedSlotCollectionStep(routine, step, variables)) {
+          // Activation turn only (#1370): the message that starts the routine can state
+          // values for a step further down the graph than the one it answers directly.
+          // Read it once for the step the walk stops on here; a later reply answers the
+          // step shown on screen, so this never runs past the first turn. The walk never
+          // revisits a step (every advance below lands outside `fastForwarded`, and a step a
+          // transit step lands on is walked only on its first entry), so nothing needs to
+          // track which steps already had this read.
+          if (
+            !input.activationTurn ||
+            step.kind !== "chat" ||
+            step.id === currentStepId ||
+            collectedSlotsForStep(step).length === 0
+          ) {
+            break;
+          }
+
+          const landingEdges = outgoing(step.id);
+          const beforeLanding = variables;
+          const landingDecision = await selectNext({
+            step,
+            transitions: landingEdges,
+            variables,
+            state: { ...state, path, variables, attempts, status: "active" },
+            ...(afterTransit ? { judgedAiExitsOnly: true } : {}),
+          });
+          const landingEntry = selectorEntry(step, beforeLanding, landingDecision);
+          landingEntry.readOpeningMessage = true;
+          variables = { ...variables, ...(landingDecision.variables ?? {}) };
+
+          // Moving on requires the step to be satisfied after this merge, checked before
+          // `nextStepId`: a lone default edge resolves on its own regardless of what was
+          // extracted, right once a step has been asked, wrong for one never shown to the
+          // visitor. A hold (#1375) renders the step even when the merge would satisfy it.
+          if (landingDecision.hold || !isSatisfiedSlotCollectionStep(routine, step, variables)) {
+            traceSteps.push({ ...landingEntry, event: "rendered" });
+            break;
+          }
+
+          // Satisfied and moved on: take that exit. Satisfied but stayed: the step's own
+          // structure decides — never ask the selector twice about the same step.
+          const landingNextId = landingDecision.nextStepId === step.id
+            ? structuralExit(step, landingEdges, variables)
+            : landingStepId(step.id, landingDecision);
+          if (landingNextId === undefined || fastForwarded.has(landingNextId)) {
+            traceSteps.push({ ...landingEntry, event: "rendered" });
+            break;
+          }
+          traceSteps.push(landingEntry);
+          step = stepById(landingNextId);
+          fastForwarded.add(step.id);
+          enterStep(step, path);
+          continue;
+        }
+
+        const stepEdges = outgoing(step.id);
+        if (stepEdges.length === 0) {
           break;
         }
 
-        const landingEdges = outgoing(step.id);
-        const beforeLanding = variables;
-        const landingDecision = await selectNext({
-          step,
-          transitions: landingEdges,
-          variables,
-          state: { ...state, path, variables, attempts, status: "active" },
-        });
-        const landingEntry = selectorEntry(step, beforeLanding, landingDecision);
-        landingEntry.readOpeningMessage = true;
-        variables = { ...variables, ...(landingDecision.variables ?? {}) };
-
-        // Moving on requires the step to be satisfied after this merge, checked before
-        // `nextStepId`: a lone default edge resolves on its own regardless of what was
-        // extracted, right once a step has been asked, wrong for one never shown to the
-        // visitor. A hold (#1375) renders the step even when the merge would satisfy it.
-        if (landingDecision.hold || !isSatisfiedSlotCollectionStep(routine, step, variables)) {
-          traceSteps.push({ ...landingEntry, event: "rendered" });
+        let fastForwardEntry: RoutineTraceStepEntry = { stepId: step.id, kind: step.kind, event: "fast_forwarded" };
+        const decidedExit = structuralExit(step, stepEdges, variables);
+        let nextStepId: string;
+        if (decidedExit !== undefined) {
+          nextStepId = decidedExit;
+        } else if (afterTransit || !stepEdges.some(isLlmTransition)) {
+          // Rule exits that don't match and no default, or only an AI-decides exit after a
+          // transit step: nothing moves this step on.
           break;
+        } else {
+          const fastForwardState: RoutineState = { ...state, path, variables, attempts, status: "active" };
+          const beforeFastForward = variables;
+          const fastForwardDecision = await selectNext({
+            step,
+            transitions: stepEdges,
+            variables,
+            state: fastForwardState,
+          });
+          if (fastForwardDecision.yieldTurn) {
+            return true;
+          }
+          fastForwardEntry = selectorEntry(step, beforeFastForward, fastForwardDecision);
+          variables = { ...variables, ...(fastForwardDecision.variables ?? {}) };
+          nextStepId = landingStepId(step.id, fastForwardDecision);
+          if (nextStepId === step.id) {
+            // The step stays — held, or nothing chosen — so it is the one this turn renders;
+            // record it with what its selector returned.
+            traceSteps.push({ ...fastForwardEntry, event: "rendered" });
+            break;
+          }
         }
 
-        // Satisfied and moved on: take that exit. Satisfied but stayed: the step's own
-        // structure decides — never ask the selector twice about the same step.
-        const landingNextId = landingDecision.nextStepId === step.id
-          ? satisfiedStepExit(step, landingEdges, variables)
-          : landingStepId(step.id, landingDecision);
-        if (landingNextId === undefined || fastForwarded.has(landingNextId)) {
-          traceSteps.push({ ...landingEntry, event: "rendered" });
+        // Would re-enter a step already visited this traversal (a loop). Render the step
+        // we're on rather than chasing the cycle. Break BEFORE recording the skip: this
+        // step is about to be rendered, not skipped, so labelling it `fast_forwarded`
+        // would make the debug panel show the step the user replied from as "Skipped".
+        if (fastForwarded.has(nextStepId)) {
           break;
         }
-        traceSteps.push(landingEntry);
-        step = stepById(landingNextId);
+        traceSteps.push(fastForwardEntry);
+        step = stepById(nextStepId);
         fastForwarded.add(step.id);
         enterStep(step, path);
-        continue;
       }
-
-      const stepEdges = outgoing(step.id);
-      if (stepEdges.length === 0) {
-        break;
-      }
-
-      let fastForwardEntry: RoutineTraceStepEntry = { stepId: step.id, kind: step.kind, event: "fast_forwarded" };
-      const decidedExit = satisfiedStepExit(step, stepEdges, variables);
-      let nextStepId: string;
-      if (decidedExit !== undefined) {
-        nextStepId = decidedExit;
-      } else if (!stepEdges.some(isLlmTransition)) {
-        // Rule exits that don't match and no default: nothing moves this step on.
-        break;
-      } else {
-        const fastForwardState: RoutineState = { ...state, path, variables, attempts, status: "active" };
-        const beforeFastForward = variables;
-        const fastForwardDecision = await selectNext({
-          step,
-          transitions: stepEdges,
-          variables,
-          state: fastForwardState,
-        });
-        if (fastForwardDecision.yieldTurn) {
-          return yieldTurn();
-        }
-        fastForwardEntry = selectorEntry(step, beforeFastForward, fastForwardDecision);
-        variables = { ...variables, ...(fastForwardDecision.variables ?? {}) };
-        nextStepId = landingStepId(step.id, fastForwardDecision);
-        if (nextStepId === step.id) {
-          // The step stays — held, or nothing chosen — so it is the one this turn renders;
-          // record it with what its selector returned.
-          traceSteps.push({ ...fastForwardEntry, event: "rendered" });
-          break;
-        }
-      }
-
-      // Would re-enter a step already visited this traversal (a loop). Render the step
-      // we're on rather than chasing the cycle. Break BEFORE recording the skip: this
-      // step is about to be rendered, not skipped, so labelling it `fast_forwarded`
-      // would make the debug panel show the step the user replied from as "Skipped".
-      if (fastForwarded.has(nextStepId)) {
-        break;
-      }
-      traceSteps.push(fastForwardEntry);
-      step = stepById(nextStepId);
-      fastForwarded.add(step.id);
-      enterStep(step, path);
+      return false;
+    };
+    if (await fastForward({ afterTransit: false })) {
+      return yieldTurn();
     }
+    // A step a transit step lands on is walked too (#1390): skipped when it already holds its
+    // values and a rule or default exit moves it, and on the activation turn read for the
+    // opening message. Only on its first entry this turn, so the walk never re-enters a step it
+    // passed or a tool step that already ran. This walk asks the selector only for the
+    // activation-turn read, which lands rather than yields, so it never yields the turn.
+    const fastForwardTransitLanding = async (): Promise<void> => {
+      if (fastForwarded.has(step.id)) {
+        return;
+      }
+      fastForwarded.add(step.id);
+      await fastForward({ afterTransit: true });
+    };
 
     // Bound how often one step is asked again with nothing new captured (#1376). Past the
     // limit the reply is told to ask differently; the routine never leaves the step by itself.
@@ -1077,6 +1120,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         traceSteps.push({ stepId: step.id, kind: step.kind, event: "action_emitted" });
         step = stepById(actionEdges[0].to);
         enterStep(step, path);
+        await fastForwardTransitLanding();
         continue;
       }
 
@@ -1165,6 +1209,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       }
       step = stepById(nextStepId);
       enterStep(step, path);
+      await fastForwardTransitLanding();
     }
 
     if (step.kind === "await") {

@@ -1,14 +1,14 @@
 ---
 title: "MCP server"
 description: "Connect an MCP client to one Radioso agent or to Ray through delegated Operator MCP access."
-last_updated: 2026-09-13
+last_updated: 2026-09-28
 ---
 
 import { Callout, Steps } from 'nextra/components'
 
 # MCP server
 
-Radioso's standalone MCP server lets a client talk to one agent through `ask_agent`, and read Radioso's own documentation through `radioso_docs` and `radioso_doc_page`. The credential has no workspace role: it is bound to that agent and to the MCP audience.
+Radioso's standalone MCP server lets a client talk to one agent through `ask_agent`, start any routine the operator has exposed through a typed tool of its own, and read Radioso's own documentation through `radioso_docs` and `radioso_doc_page`. The credential has no workspace role: it is bound to that agent and to the MCP audience.
 
 ## Two surfaces, two boundaries
 
@@ -25,7 +25,7 @@ The dashboard session is the management boundary. It issues, rotates, and revoke
 
 Run `packages/radioso-mcp-server` as a standalone process.
 
-Standalone mode needs `RADIOSO_BASE_URL` pointed at the backend and its bind settings. Hosted Terraform shares a generated `RADIOSO_MCP_SIGNING_SECRET` with the backend and sets `RADIOSO_TRUSTED_PROXY_HOPS=2` for Google's appended client/load-balancer suffix. In a manual deployment, use the same signing secret in both processes and leave the hop count at `0` unless you control the exact rightmost proxy chain. Each process can keep short-lived backend session tokens in memory. Set `RADIOSO_MCP_REDIS_URL` when you want that cache shared across MCP instances; the signing secret also encrypts those cached tokens.
+Standalone mode needs `RADIOSO_BASE_URL` pointed at the backend and its bind settings. Hosted Terraform shares a generated `RADIOSO_MCP_SIGNING_SECRET` with the backend and sets `RADIOSO_TRUSTED_PROXY_HOPS=1`, because Cloud Run appends exactly the address of the client that connected. In a manual deployment, use the same signing secret in both processes and leave the hop count at `0` unless you control the exact rightmost proxy chain. Each process can keep short-lived backend session tokens in memory. Set `RADIOSO_MCP_REDIS_URL` when you want that cache shared across MCP instances; the signing secret also encrypts those cached tokens.
 
 ### Confirm the backend connection
 
@@ -46,9 +46,15 @@ Once the value points at a reachable MCP origin, the agent's **Channels → MCP*
 
 Open **Settings → API access → Radioso MCP**. Choose Codex, Claude Code, ChatGPT, or **another MCP client**. The chooser shows a versioned setup artifact when that client build has exact-build evidence; otherwise the named client is marked unavailable and the generic route is labeled unverified. Every setup uses the canonical resource URL and starts browser OAuth, so the dashboard selection never counts as a connection by itself.
 
-Operator MCP has five scoped capabilities. `operator:read` reads bounded workspace and agent state; `operator:probe` runs bounded diagnostics such as retrieval probes; and `operator:propose` prepares reviewable routine, retrieval, publication, and document changes — drafting a new knowledge document or changing an existing document's retrieval eligibility, auto-exclude expiry, and metadata. `operator:write` lets the client apply one exact reviewed change after it has shown that review and received conversational confirmation; it also reads or cancels that bound reviewed operation. `operator:act` currently covers the version-fenced triage-state action.
+Operator MCP has five scoped capabilities. `operator:read` reads bounded workspace and agent state; `operator:probe` runs bounded diagnostics such as retrieval probes; and `operator:propose` prepares reviewable routine, retrieval, publication, and document changes — drafting a new knowledge document or changing an existing document's retrieval eligibility, auto-exclude expiry, and metadata. `operator:write` applies one exact reviewed change and reads or cancels that bound reviewed operation. Draft, reversible changes use conversational confirmation. Changes that go live, cannot be undone, or use quota require the grant owner to approve the exact digest in the signed-in Radioso review page; approval records consent and `execute_reviewed_proposal` remains the apply path. A client that declares URL-mode elicitation on protocol `2026-07-28` opens that review page for the person as part of the call, then retries the call once the person responds. Responding means only that they agreed to open the page, not that they approved the change, so that retry waits briefly — up to about 25 seconds — for the approval to land before answering, applying directly if it arrives or answering `approval_required` again if it does not, in which case the client retries once more. Every other client gets the same review link in the result text to open and approve before asking the agent to retry. These tools reach only an operation a `prepare_*` tool created; a person approves or dismisses a `propose_*` proposal in the dashboard. `operator:act` covers the version-fenced triage-state action.
 
-Publication stays a separate reviewed operation: prepare an immutable candidate, inspect its changes, then confirm and apply that candidate. The trusted MCP client asks for confirmation; the server binds the resulting execution to the grant, client, review digest, target fence, and expiry. A successful consent decision creates a grant tied to one user, workspace, client, and resource; the grant appears in the same API access card and can be revoked there.
+`propose_directive` accepts exact `name`, `condition`, `action`, `priority`, and `excludes` fields. The supplied text remains verbatim. A new directive needs `name`, `condition`, and `action` when it omits `intent`; with `intent`, the coach fills only missing fields. An edit replaces only supplied fields. `priority` ranges from 0 through 100, and every `excludes` entry must name a built-in or authored directive on the agent, such as `represent-organization`.
+
+`list_documents` lets an `operator:read` client confirm an import with a cursor-paginated document inventory. It filters by source, status, exact external ids or metadata, case-insensitive title text, and retrieval eligibility; each response has at most 25 rows, and `nextCursor` continues the inventory. Each row carries identifiers, metadata, content length, and timestamps but never the document body. Enterprise workspaces also expose `workspace_usage_limits`, which reports the organization plan and each answer, document, and indexing window's used, limit, remaining, and reset values.
+
+Proposal fences compare only the settings a proposal changes. An unrelated update stays out of its way; a stale result names the changed field, or reports `Target deleted` when its target disappeared.
+
+Publication stays a separate reviewed operation: prepare an immutable candidate, inspect its changes, then confirm and apply that candidate. Publication goes live, so execution requires the grant's own user to approve the exact digest on the signed-in Radioso review page; `execute_reviewed_proposal` applies the candidate only after that approval. The server binds the resulting execution to the grant, client, review digest, target fence, and expiry. A successful consent decision creates a grant tied to one user, workspace, client, and resource; the grant appears in the same API access card and can be revoked there.
 
 The browser consent page lets you choose a workspace and the capabilities the client receives. If a client requests refresh access, approving the connection keeps it connected until that access expires or you revoke the grant.
 
@@ -59,6 +65,8 @@ For a self-hosted deployment, the frontend reads `RADIOSO_OPERATOR_MCP_PUBLIC_UR
 Sign in to the dashboard, open the agent's **Channels → MCP** card, and choose **Connect a client**. Pick the client, name the connection, set an expiry, and Radioso issues a credential bound to that agent and to the MCP audience. The dialog then shows the finished configuration with the secret already in place. Radioso stores only the hash, so copy it before you close the dialog; the **Discard** exit revokes the credential you just created.
 
 Each client gets its own credential, so rotating or revoking one connection leaves the others working. The examples below use `https://mcp.example.com/mcp` as the server URL and `radioso_mcp_v1_example` as the secret.
+
+The card lists the credentials that can reach this agent right now, so revoking one takes its row off the list. To let this agent call tools or other agents, open **Skills → Manage MCP connections** and add a connection in the side panel.
 
 ### Claude Desktop
 
@@ -113,14 +121,6 @@ The create request sets `audience` to `mcp` and includes `label` and `expiresAt`
   Personal and service-account credentials authorize role-aware workspace APIs. They do not authorize MCP or agent chat.
 </Callout>
 
-## Agent converse setup
-
-The dashboard credential is bound to one agent and the MCP audience. Send its original secret to standalone `/mcp`; the server exchanges it for a short-lived session token. If a process restarts or its cache expires, it exchanges the original credential again and the backend resumes the conversation mapped to that credential version in PostgreSQL. A session token returned by the internal converse endpoint is for direct calls to that endpoint, not for `/mcp`. Revoke the credential from the dashboard when the client should lose access; the server re-checks credential state for every request.
-
-The converse surface provides **`ask_agent`**, which sends a message through the agent's full turn loop and continues its conversation. Retrieval can participate in that turn when the agent's configuration calls for it. Direct document search and grounded-answer generation remain REST API workflows.
-
-The converse session does not grant access to other agents, workspace administration, account management, API-access settings, Ray, the skill catalogue, connector secrets, or provider keys.
-
 ## Radioso documentation tools
 
 A client wired to this server is usually being used to build something against Radioso, so the questions it gets asked are as often "how does this work" as "what does my agent say". Two tools answer the first kind from Radioso's own manual:
@@ -154,9 +154,13 @@ An existing document's body, its upload, its reprocessing, and its removal stay 
 - **The MCP endpoint returns `401`.** Confirm that the bearer is an active, unexpired MCP-audience credential for this agent. A personal token, service-account credential, or REST-audience agent credential is rejected.
 - **The converse client cannot connect.** Confirm the MCP URL is reachable over HTTPS for hosted clients, and check `RADIOSO_BASE_URL` and the standalone bind settings. When Redis is configured, check `RADIOSO_MCP_SIGNING_SECRET` too.
 - **A converse session is rejected.** Its credential may be revoked, expired, or issued for a different agent. Create or revoke credentials from the agent's MCP card with a current dashboard session.
+- **A routine call returns `404 routine_tool_unknown`.** The routine is not exposed, is switched off, or is only in the agent's draft. Switch exposure on in the routine editor and publish the agent; the tool appears in the next session's catalog.
+- **An exposed routine is missing from `tools/list`.** The session opened before the routine was exposed and published. The standalone server pins the catalog at session exchange, so let the session expire or exchange the credential again and the tool is listed.
 
 ## Read next
 
+- [Connect a calling agent](/guides/agent-converse) — `ask_agent`, the reply envelope, and calling an exposed routine as a typed tool.
+- [Publish and open an agent](/guides/publish-an-agent) — the agent's public id, its discovery documents, and credential-free access.
 - [Authentication](/guides/authentication) — sessions, personal tokens, service credentials, and public launch flows.
 - [Personal tokens and service accounts](/api/workspaces-and-tokens) — issue REST credentials and store their one-time secrets.
 - [Agents and skills](/api/agents-and-skills) — configure the agent and its external MCP skills.

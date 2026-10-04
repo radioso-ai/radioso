@@ -38,6 +38,11 @@ export class OperatorBackendAdapterError extends Error {
     readonly status: number,
     readonly code: OperatorBackendAdapterErrorCode,
     readonly requiredScope?: string,
+    /** Backend-reported argument paths for a rejected call, so the caller can correct it. */
+    readonly details?: readonly OperatorBackendErrorDetail[],
+    /** Set only when the backend reported one alongside a `budget_exhausted` refusal. */
+    readonly retryAfterSeconds?: number,
+    readonly resetAt?: string,
   ) {
     super(message);
     this.name = "OperatorBackendAdapterError";
@@ -52,7 +57,6 @@ type OperatorBackendAdapterErrorCode =
   | "request_failed"
   | "invalid_arguments"
   | "unknown_tool"
-  | "operation_required"
   | "operation_conflict"
   | "budget_exhausted"
   | "rate_limit_exceeded";
@@ -83,21 +87,81 @@ const isAbort = (error: unknown): boolean => error instanceof Error && error.nam
 const SAFE_BACKEND_ERROR_CODES = new Set<OperatorBackendAdapterErrorCode>([
   "invalid_arguments",
   "unknown_tool",
-  "operation_required",
   "operation_conflict",
   "budget_exhausted",
   "rate_limit_exceeded",
 ]);
 
-const readSafeBackendErrorCode = async (response: Response): Promise<OperatorBackendAdapterErrorCode | null> => {
+const MAX_FORWARDED_DETAILS = 12;
+const MAX_FORWARDED_DETAIL_LENGTH = 300;
+
+type OperatorBackendDiagnostic = {
+  readonly routineId: string | null;
+  readonly routineName?: string;
+  readonly code: string;
+  readonly location: string;
+  readonly message: string;
+};
+type OperatorBackendErrorDetail = string | OperatorBackendDiagnostic;
+
+/** Only bounded strings travel: the backend states what was rejected, this relays it verbatim. */
+const safeBackendErrorDetails = (payload: object): readonly OperatorBackendErrorDetail[] | undefined => {
+  const details = "details" in payload ? payload.details : undefined;
+  if (!Array.isArray(details)) return undefined;
+  const bounded = details
+    .flatMap((entry): OperatorBackendErrorDetail[] => {
+      if (typeof entry === "string") return [entry.slice(0, MAX_FORWARDED_DETAIL_LENGTH)];
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
+      const diagnostic = entry as Record<string, unknown>;
+      if (typeof diagnostic.code !== "string" || typeof diagnostic.location !== "string" || typeof diagnostic.message !== "string") return [];
+      return [{
+        routineId: typeof diagnostic.routineId === "string" ? diagnostic.routineId.slice(0, MAX_FORWARDED_DETAIL_LENGTH) : null,
+        ...(typeof diagnostic.routineName === "string" ? { routineName: diagnostic.routineName.slice(0, MAX_FORWARDED_DETAIL_LENGTH) } : {}),
+        code: diagnostic.code.slice(0, MAX_FORWARDED_DETAIL_LENGTH),
+        location: diagnostic.location.slice(0, MAX_FORWARDED_DETAIL_LENGTH),
+        message: diagnostic.message.slice(0, MAX_FORWARDED_DETAIL_LENGTH),
+      }];
+    })
+    .slice(0, MAX_FORWARDED_DETAILS)
+  return bounded.length > 0 ? bounded : undefined;
+};
+
+const MAX_RETRY_AFTER_SECONDS = 3_600;
+const MAX_RESET_AT_LENGTH = 64;
+
+/** Only a positive, boundedly-sized wait travels: an absent or unusable value leaves the caller with no retry hint rather than a fabricated one. */
+const safeRetryAfterSeconds = (payload: object): number | undefined => {
+  const value = "retryAfterSeconds" in payload ? payload.retryAfterSeconds : undefined;
+  return typeof value === "number" && Number.isFinite(value) && value > 0 && value <= MAX_RETRY_AFTER_SECONDS ? Math.ceil(value) : undefined;
+};
+
+/** Relayed as the opaque string the backend sent -- this adapter never parses or recomputes it. */
+const safeResetAt = (payload: object): string | undefined => {
+  const value = "resetAt" in payload ? payload.resetAt : undefined;
+  if (typeof value !== "string" || value.length === 0 || value.length > MAX_RESET_AT_LENGTH) return undefined;
+  return Number.isFinite(Date.parse(value)) ? value : undefined;
+};
+
+interface SafeBackendError {
+  readonly code: OperatorBackendAdapterErrorCode | null;
+  readonly details?: readonly OperatorBackendErrorDetail[];
+  readonly retryAfterSeconds?: number;
+  readonly resetAt?: string;
+}
+
+const readSafeBackendError = async (response: Response): Promise<SafeBackendError> => {
   try {
     const payload = await response.json() as unknown;
-    if (!payload || typeof payload !== "object" || !("code" in payload) || typeof payload.code !== "string") return null;
-    return SAFE_BACKEND_ERROR_CODES.has(payload.code as OperatorBackendAdapterErrorCode)
-      ? payload.code as OperatorBackendAdapterErrorCode
-      : null;
+    if (!payload || typeof payload !== "object" || !("code" in payload) || typeof payload.code !== "string") return { code: null };
+    if (!SAFE_BACKEND_ERROR_CODES.has(payload.code as OperatorBackendAdapterErrorCode)) return { code: null };
+    return {
+      code: payload.code as OperatorBackendAdapterErrorCode,
+      details: safeBackendErrorDetails(payload),
+      retryAfterSeconds: safeRetryAfterSeconds(payload),
+      resetAt: safeResetAt(payload),
+    };
   } catch {
-    return null;
+    return { code: null };
   }
 };
 
@@ -152,12 +216,15 @@ export const createOperatorBackendAdapter = ({
       clearTimeout(timer);
     }
     if (!response.ok) {
-      const code = await readSafeBackendErrorCode(response);
+      const safe = await readSafeBackendError(response);
       throw new OperatorBackendAdapterError(
         response.status === 403 ? "Operator capability scope is insufficient." : response.status >= 500 ? "Operator backend is unavailable." : "Operator authorization failed.",
         response.status,
-        responseErrorCode(response.status, code),
+        responseErrorCode(response.status, safe.code),
         response.headers.get("x-radioso-required-scope") ?? undefined,
+        safe.details,
+        safe.retryAfterSeconds,
+        safe.resetAt,
       );
     }
     try {

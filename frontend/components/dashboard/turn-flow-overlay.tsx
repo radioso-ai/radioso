@@ -6,7 +6,8 @@ import { Minimize2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import type { ActivityTrace, ConversationTraceStage, TurnTraceEnvelope } from '@/lib/api'
-import { envelopeToFlowGraph, type TurnFlowNode } from '@/lib/turn-flow'
+import { formatStageDuration } from '@/lib/activity-stage-presentation'
+import { envelopeToFlowGraph, leafTraceFor, type TurnFlowNode, type TurnFlowTotals } from '@/lib/turn-flow'
 import { ActivityTraceDetail } from './activity-trace-detail'
 import {
   readDirectiveAdherence,
@@ -52,8 +53,9 @@ function NodeDetail({
       <p className="text-sm text-muted-foreground">No recorded detail for this stage.</p>
     )
   }
-  if (node.detail.kind === 'leaf' && leafTrace) {
-    return <ActivityTraceDetail activityTrace={leafTrace} selectedStageId={node.detail.leafStageId} />
+  const nodeLeafTrace = node.detail.kind === 'leaf' ? leafTraceFor(node.detail, spineStages, leafTrace) : undefined
+  if (node.detail.kind === 'leaf' && nodeLeafTrace) {
+    return <ActivityTraceDetail activityTrace={nodeLeafTrace} selectedStageId={node.detail.leafStageId} />
   }
   return (
     <div className="space-y-1">
@@ -64,11 +66,54 @@ function NodeDetail({
   )
 }
 
+/** The turn's model-call collection has no step of its own; its totals open it. */
+export const modelCallsDetailNode = (totals: TurnFlowTotals | undefined): TurnFlowNode | null =>
+  totals?.modelCallsStageId
+    ? {
+        id: 'totals:model_calls',
+        nodeKind: 'stage',
+        label: 'Model calls',
+        tone: 'neutral',
+        detail: { kind: 'spine', spineStageId: totals.modelCallsStageId },
+      }
+    : null
+
+export function TurnFlowTotalsSummary({
+  totals,
+  selected,
+  onSelectModelCalls,
+}: {
+  totals?: TurnFlowTotals
+  selected: boolean
+  onSelectModelCalls?: () => void
+}) {
+  if (!totals) return null
+  const calls = totals.modelCallCount
+  const recorded = totals.recordedModelCallCount
+  return (
+    <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+      {totals.totalMs !== undefined ? <span className="font-mono tabular-nums">{formatStageDuration(totals.totalMs)}</span> : null}
+      {calls !== undefined ? (
+        <button
+          type="button"
+          className={`rounded px-1.5 py-0.5 hover:bg-muted hover:text-foreground ${selected ? 'bg-muted text-foreground' : ''}`}
+          disabled={!onSelectModelCalls}
+          onClick={onSelectModelCalls}
+        >
+          {calls} model call{calls === 1 ? '' : 's'}
+          {recorded !== undefined && recorded !== calls ? ` (${recorded} recorded)` : ''}
+          {totals.modelTimeMs !== undefined ? ` · ${formatStageDuration(totals.modelTimeMs)}` : ''}
+        </button>
+      ) : null}
+    </div>
+  )
+}
+
 /**
- * Full-screen turn flow: the whole turn as a left-to-right graph (inputs → engine
- * → skill path → outcome) with a side detail pane. Opened from the drawer header
- * rather than crammed into the inline diagnostics column, so a deep retrieval
- * path has room to be examined.
+ * Full-screen turn flow: the whole turn as a top-to-bottom progression
+ * (understand → the skill or routine that acted → answer → verdict) with a side
+ * detail pane. Opened from the drawer header rather than crammed into the
+ * inline diagnostics column, so a deep retrieval path has room to be examined.
  *
  * Rendered as its own modal Radix layer so the sheet or drawer that opened it
  * keeps treating clicks on the graph as inside interaction: while the flow is on
@@ -97,18 +142,14 @@ export function TurnFlowOverlay({
   /** The assistant message this turn produced, used to resolve the compose answer. */
   assistantMessageId?: string
 }) {
-  const graph = useMemo(() => envelopeToFlowGraph(envelope), [envelope])
-  // The canvas opens centered on the first node (Message), so default the
-  // detail pane to that node too — the user lands looking at the message
-  // they typed, with the rest of the turn flowing beneath it.
+  const graph = useMemo(() => envelopeToFlowGraph(envelope, { messages }), [envelope, messages])
+  // The detail pane opens on the message the visitor sent, at the top of the
+  // progression.
   const initialNode = useMemo(
-    () =>
-      graph.nodes.find((node) => node.id === 'input:message') ??
-      graph.nodes.find((node) => node.nodeKind === 'input') ??
-      graph.nodes.find((node) => node.nodeKind === 'engine') ??
-      null,
+    () => graph.nodes.find((node) => node.id === 'input:message') ?? graph.nodes[0] ?? null,
     [graph.nodes],
   )
+  const modelCallsNode = useMemo(() => modelCallsDetailNode(graph.totals), [graph.totals])
   const [selectedNode, setSelectedNode] = useState<TurnFlowNode | null>(null)
 
   if (!open) {
@@ -126,7 +167,14 @@ export function TurnFlowOverlay({
         className="inset-0 top-0 left-0 z-[60] flex h-full w-full max-w-none translate-x-0 translate-y-0 flex-col gap-0 rounded-none border-0 p-0 shadow-none sm:max-w-none"
       >
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
-          <DialogTitle className="text-sm font-medium text-foreground">Turn flow</DialogTitle>
+          <div className="flex min-w-0 items-center gap-3">
+            <DialogTitle className="text-sm font-medium text-foreground">Turn flow</DialogTitle>
+            <TurnFlowTotalsSummary
+              totals={graph.totals}
+              selected={activeNode?.id === modelCallsNode?.id}
+              onSelectModelCalls={modelCallsNode ? () => setSelectedNode(modelCallsNode) : undefined}
+            />
+          </div>
           <DialogDescription className="sr-only">
             The turn as a graph with a detail pane for the selected node.
           </DialogDescription>
@@ -148,7 +196,6 @@ export function TurnFlowOverlay({
               graph={graph}
               selectedNodeId={activeNode?.id}
               onSelectNode={setSelectedNode}
-              showMiniMap
             />
           </div>
           <div data-testid="turn-flow-stage-detail" className="min-h-0 overflow-y-auto border-l border-border p-4">

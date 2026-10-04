@@ -18,6 +18,9 @@ export interface AccountMembershipRecord {
 
 export interface AccountMembershipUserRecord extends AccountMembershipRecord {
   email: string;
+  displayName: string | null;
+  /** Set when the user is disabled; a disabled user cannot sign in or be handed work. */
+  disabledAt: Date | null;
 }
 
 interface AccountMembershipRow {
@@ -32,6 +35,8 @@ interface AccountMembershipRow {
 
 interface AccountMembershipUserRow extends AccountMembershipRow {
   email: string;
+  display_name: string | null;
+  disabled_at: Date | null;
 }
 
 const accountMembershipColumns = [
@@ -42,6 +47,20 @@ const accountMembershipColumns = [
   "status",
   "created_at",
   "updated_at",
+] as const;
+
+/** A membership joined to its user as `m` and `u`. */
+const membershipUserColumns = [
+  "m.id",
+  "m.account_id",
+  "m.user_id",
+  "m.role",
+  "m.status",
+  "m.created_at",
+  "m.updated_at",
+  "u.email",
+  "u.display_name",
+  "u.disabled_at",
 ] as const;
 
 const mapMembership = (row: AccountMembershipRow): AccountMembershipRecord => ({
@@ -57,6 +76,8 @@ const mapMembership = (row: AccountMembershipRow): AccountMembershipRecord => ({
 const mapMembershipUser = (row: AccountMembershipUserRow): AccountMembershipUserRecord => ({
   ...mapMembership(row),
   email: row.email,
+  displayName: row.display_name,
+  disabledAt: row.disabled_at ? new Date(row.disabled_at) : null,
 });
 
 export interface AccountMembershipRepositoryPort {
@@ -67,10 +88,12 @@ export interface AccountMembershipRepositoryPort {
     status?: AccountMembershipStatus;
   }): Promise<AccountMembershipRecord>;
   findActiveByAccountAndUser(accountId: string, userId: string): Promise<AccountMembershipRecord | null>;
+  findActiveUserByAccountAndUser(accountId: string, userId: string): Promise<AccountMembershipUserRecord | null>;
   findById(id: string): Promise<AccountMembershipRecord | null>;
   listActiveByAccount(accountId: string): Promise<AccountMembershipUserRecord[]>;
   listActiveByUser(userId: string): Promise<AccountMembershipRecord[]>;
-  updateRole(id: string, role: AccountMembershipRole): Promise<AccountMembershipRecord>;
+  /** Answers with the member as a listing describes them, so a caller can show who changed. */
+  updateRole(id: string, role: AccountMembershipRole): Promise<AccountMembershipUserRecord>;
   deleteById(id: string): Promise<boolean>;
 }
 
@@ -125,26 +148,29 @@ export class AccountMembershipRepository implements AccountMembershipRepositoryP
     return row ? mapMembership(row as AccountMembershipRow) : null;
   }
 
+  async findActiveUserByAccountAndUser(accountId: string, userId: string): Promise<AccountMembershipUserRecord | null> {
+    const row = await this.selectActiveMembershipUsers(accountId)
+      .where("m.user_id", "=", userId)
+      .executeTakeFirst();
+
+    return row ? mapMembershipUser(row as AccountMembershipUserRow) : null;
+  }
+
   async listActiveByAccount(accountId: string): Promise<AccountMembershipUserRecord[]> {
-    const rows = await this.db
-      .selectFrom("account_memberships as m")
-      .innerJoin("users as u", "u.id", "m.user_id")
-      .select([
-        "m.id",
-        "m.account_id",
-        "m.user_id",
-        "m.role",
-        "m.status",
-        "m.created_at",
-        "m.updated_at",
-        "u.email",
-      ])
-      .where("m.account_id", "=", accountId)
-      .where("m.status", "=", "active")
+    const rows = await this.selectActiveMembershipUsers(accountId)
       .orderBy("m.created_at", "asc")
       .execute();
 
     return rows.map((row) => mapMembershipUser(row as AccountMembershipUserRow));
+  }
+
+  private selectActiveMembershipUsers(accountId: string) {
+    return this.db
+      .selectFrom("account_memberships as m")
+      .innerJoin("users as u", "u.id", "m.user_id")
+      .select(membershipUserColumns)
+      .where("m.account_id", "=", accountId)
+      .where("m.status", "=", "active");
   }
 
   async listActiveByUser(userId: string): Promise<AccountMembershipRecord[]> {
@@ -159,15 +185,17 @@ export class AccountMembershipRepository implements AccountMembershipRepositoryP
     return rows.map((row) => mapMembership(row as AccountMembershipRow));
   }
 
-  async updateRole(id: string, role: AccountMembershipRole): Promise<AccountMembershipRecord> {
+  async updateRole(id: string, role: AccountMembershipRole): Promise<AccountMembershipUserRecord> {
     const row = await this.db
-      .updateTable("account_memberships")
+      .updateTable("account_memberships as m")
+      .from("users as u")
       .set({ role, updated_at: currentTimestamp() })
-      .where("id", "=", id)
-      .returning(accountMembershipColumns)
+      .whereRef("u.id", "=", "m.user_id")
+      .where("m.id", "=", id)
+      .returning(membershipUserColumns)
       .executeTakeFirstOrThrow();
 
-    return mapMembership(row as AccountMembershipRow);
+    return mapMembershipUser(row as AccountMembershipUserRow);
   }
 
   async deleteById(id: string): Promise<boolean> {

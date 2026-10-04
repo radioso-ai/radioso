@@ -657,10 +657,10 @@ export function ConnectorSetupDialog({
                 type="button"
                 variant={detail.enabled ? 'outline' : 'secondary'}
                 onClick={() => void handleToggleEnabled()}
-                disabled={isSaving || isTogglingEnabled || isSyncing}
+                disabled={isSaving || isSyncing}
+                loading={isTogglingEnabled}
               >
-                {isTogglingEnabled ? <Spinner className="mr-2" /> : null}
-                <span>{detail.enabled ? 'Disable' : 'Enable'}</span>
+                {detail.enabled ? 'Disable' : 'Enable'}
               </Button>
               <div className="flex justify-end gap-2">
                 {detail.supportsManualSync ? (
@@ -693,9 +693,8 @@ export function ConnectorSetupDialog({
                 >
                   Close
                 </Button>
-                <Button type="submit" disabled={isSaving || isTogglingEnabled || isSyncing}>
-                  {isSaving ? <Spinner className="mr-2" /> : null}
-                  <span>Save</span>
+                <Button type="submit" disabled={isTogglingEnabled || isSyncing} loading={isSaving}>
+                  Save
                 </Button>
               </div>
             </div>

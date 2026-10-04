@@ -1,6 +1,20 @@
+import { EDGE_FACTS_HEADERS, verifyEdgeFactsProof } from '@radioso/edge-proof'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const BACKEND_URL = 'https://backend.example.com'
+const EDGE_PROOF_SECRET = 'e'.repeat(32)
+
+const CLIENT_SUPPLIED_EDGE_HEADERS = {
+  [EDGE_FACTS_HEADERS.marker]: 'spoofed',
+  [EDGE_FACTS_HEADERS.facts]: 'forged-facts',
+  [EDGE_FACTS_HEADERS.signature]: 'forged-signature',
+  [EDGE_FACTS_HEADERS.timestamp]: '1',
+}
+
+const upstreamHeadersOf = (fetchMock: ReturnType<typeof vi.fn>): Record<string, string> => {
+  const upstreamInit = fetchMock.mock.calls[0][1] as RequestInit & { headers: Headers }
+  return Object.fromEntries(upstreamInit.headers.entries())
+}
 
 describe('backend proxy route', () => {
   afterEach(() => {
@@ -87,6 +101,62 @@ describe('backend proxy route', () => {
       workspaceName: 'Default',
       workspacePublicRouteKey: 'default-abc123',
     })
+  })
+
+  it('signs the exact upstream method and pathname, replacing any client-supplied edge headers', async () => {
+    vi.stubEnv('BACKEND_INTERNAL_URL', BACKEND_URL)
+    vi.stubEnv('RADIOSO_EDGE_PROOF_SECRET', EDGE_PROOF_SECRET)
+    const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { POST } = await import('@/app/backend/[...path]/route')
+
+    await POST(new Request('https://frontend.example.com/backend/api/v1/public/chat/launch%20token/sessions?resume=1', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Forwarded-For': '203.0.113.9, 35.191.0.1',
+        ...CLIENT_SUPPLIED_EDGE_HEADERS,
+      },
+      body: JSON.stringify({ channel: 'anonymous_link' }),
+    }), {
+      params: Promise.resolve({ path: ['api', 'v1', 'public', 'chat', 'launch token', 'sessions'] }),
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${BACKEND_URL}/api/v1/public/chat/launch%20token/sessions?resume=1`,
+      expect.anything(),
+    )
+    const headers = upstreamHeadersOf(fetchMock)
+    expect(headers[EDGE_FACTS_HEADERS.marker]).toBe('frontend')
+    const verification = verifyEdgeFactsProof({
+      headers,
+      method: 'POST',
+      path: '/api/v1/public/chat/launch%20token/sessions',
+      secret: EDGE_PROOF_SECRET,
+    })
+    expect(verification).toMatchObject({ ok: true, facts: { forwardedFor: '203.0.113.9, 35.191.0.1' } })
+  })
+
+  it('drops client-supplied edge proof headers and sends only the marker when no secret is configured', async () => {
+    vi.stubEnv('BACKEND_INTERNAL_URL', BACKEND_URL)
+    vi.stubEnv('RADIOSO_EDGE_PROOF_SECRET', '')
+    const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { GET } = await import('@/app/backend/[...path]/route')
+
+    await GET(new Request('https://frontend.example.com/backend/api/v1/auth/session', {
+      headers: CLIENT_SUPPLIED_EDGE_HEADERS,
+    }), {
+      params: Promise.resolve({ path: ['api', 'v1', 'auth', 'session'] }),
+    })
+
+    const headers = upstreamHeadersOf(fetchMock)
+    expect(headers[EDGE_FACTS_HEADERS.marker]).toBe('frontend')
+    expect(headers).not.toHaveProperty(EDGE_FACTS_HEADERS.facts)
+    expect(headers).not.toHaveProperty(EDGE_FACTS_HEADERS.signature)
+    expect(headers).not.toHaveProperty(EDGE_FACTS_HEADERS.timestamp)
   })
 
   it('returns a 503 JSON error when the backend is unavailable', async () => {

@@ -9,6 +9,7 @@ const apiMocks = vi.hoisted(() => ({
   createConnection: vi.fn(),
   deleteConnection: vi.fn(),
   startOauth: vi.fn(),
+  discoverTools: vi.fn(),
 }))
 
 vi.mock('@/lib/api-external-skills', async (importOriginal) => ({
@@ -89,5 +90,25 @@ describe('McpConnectionsSection', () => {
 
     expect(container.textContent).toContain('Second connection')
     expect(container.textContent).not.toContain('First connection')
+  })
+
+  it('discards a connection test result when the active agent changes', async () => {
+    const testResult = deferred<{ tools: { name: string }[] }>()
+    apiMocks.listConnections.mockImplementation((agentId: string) => Promise.resolve({
+      connections: [connection('shared-id', agentId)],
+    }))
+    apiMocks.discoverTools.mockReturnValue(testResult.promise)
+    await act(async () => { root.render(<McpConnectionsSection agentId="agent-1" />) })
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[aria-label="Test connection to agent-1"]')!.click()
+    })
+    expect(apiMocks.discoverTools).toHaveBeenCalledWith('agent-1', 'shared-id')
+    await act(async () => { root.render(<McpConnectionsSection agentId="agent-2" />) })
+    await act(async () => {
+      testResult.resolve({ tools: [{ name: 'old-agent-tool' }] })
+      await testResult.promise
+    })
+    expect(container.textContent).not.toContain('1 tool found')
+    expect(container.textContent).not.toContain('Testing…')
   })
 })

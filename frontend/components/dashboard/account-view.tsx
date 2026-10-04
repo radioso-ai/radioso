@@ -1,13 +1,18 @@
 'use client'
 
 import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
+import { ProfileView } from '@/components/dashboard/profile-view'
 import { UsageView } from '@/components/dashboard/usage-view'
 import { UsersPanel } from '@/components/dashboard/users-view'
 import { type DashboardRouteState } from '@/lib/dashboard-routes'
 
-/** Content for the Account area: Members (team management) or Usage. */
+/** Content for the Account area: the signed-in person's Profile, Members (team management), or Usage. */
 export function AccountView({ accountId, routeState }: { accountId: string; routeState: DashboardRouteState }) {
   const tab = routeState.accountTab ?? 'members'
+
+  if (tab === 'profile') {
+    return <ProfileView />
+  }
 
   if (tab === 'usage') {
     return <UsageView accountId={accountId} />

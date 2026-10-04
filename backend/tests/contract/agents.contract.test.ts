@@ -118,7 +118,7 @@ describe("agents contract", () => {
       .expect(201);
     const requirePermission = vi.spyOn(dependencies.accountAccessService, "requirePermission")
       .mockImplementation(async ({ permission }) => {
-        if (permission === "workspace.agents.read") return;
+        if (permission === "workspace.agents.read") return null;
         throw forbidden("You do not have permission to perform this action");
       });
 
@@ -1656,6 +1656,54 @@ describe("agents contract", () => {
         },
       })
       .expect(200);
+  });
+
+  it("links the embedded launcher to the agent card only once the agent publishes one (FR-023)", async () => {
+    const { app } = createTestApp({ envOverrides: { CONNECTOR_PUBLIC_BASE_URL: "https://api.radioso.test" } });
+    const { cookie, token, workspaceId } = await issueTestToken(app, "agents-embed-card-link@example.com");
+    const authorization = `Bearer ${token}`;
+
+    const list = await request(app)
+      .get("/api/v1/agents")
+      .set("Authorization", authorization)
+      .expect(200);
+    const agentId = list.body.agents[0].id as string;
+
+    await request(app)
+      .put(`/api/v1/agents/${agentId}`)
+      .set(adminSessionHeaders({ cookie, workspaceId }))
+      .send({
+        surfaceSettings: {
+          websiteEmbed: { enabled: true, allowedOrigins: ["https://host.example.com"] },
+        },
+      })
+      .expect(200);
+    const tokenResponse = await request(app)
+      .post(`/api/v1/agents/${agentId}/website-embed-token/rotate`)
+      .set("Cookie", cookie)
+      .set("X-Workspace-Id", workspaceId)
+      .expect(200);
+    const embedToken = tokenResponse.body.surfaceSettings.websiteEmbed.token as string;
+
+    const withoutCard = await request(app)
+      .get(`/api/v1/public/chat/${embedToken}/embed-config`)
+      .set("Origin", "https://host.example.com")
+      .expect(200);
+    expect(withoutCard.body).not.toHaveProperty("agentCardUrl");
+
+    const published = await request(app)
+      .put(`/api/v1/agents/${agentId}`)
+      .set(adminSessionHeaders({ cookie, workspaceId }))
+      .send({ agentCardEnabled: true })
+      .expect(200);
+
+    const withCard = await request(app)
+      .get(`/api/v1/public/chat/${embedToken}/embed-config`)
+      .set("Origin", "https://host.example.com")
+      .expect(200);
+    expect(withCard.body.agentCardUrl).toBe(
+      `https://api.radioso.test/.well-known/agent-card/${published.body.publicId}.json`,
+    );
   });
 
   it("preserves an explicitly empty website embed launcher label in public config", async () => {

@@ -15,6 +15,14 @@ import type { SkillAuthoringCatalog, SkillAuthoringDescriptor } from "../../src/
 import type { AgentContextVariableEnablement, ContextVariable } from "../../src/modules/context-variables/public.js";
 import { capabilityNames, type CapabilityPolicy } from "../../src/shared/domain/capabilityPolicy.js";
 import type { ActionCapabilityMap } from "../../src/shared/domain/actionCapabilities.js";
+import { createDefaultApplicationComposition } from "../../src/app/composition/defaultComposition.js";
+import { chatTurnQueuedActionTypes } from "../../src/app/composition/applicationModule.js";
+import { CONVERSATION_TRANSFER_NOTICE_ACTION_TYPE } from "../../src/modules/handoff/public.js";
+import {
+  APPROVAL_REQUEST_ACTION_TYPE,
+  COMPLETION_NOTIFY_ACTION_TYPE,
+  HANDOFF_NOTIFY_ACTION_TYPE,
+} from "../../src/modules/chat/composition.js";
 import { InMemoryRoutineDefinitionRepository } from "../support/fakes.js";
 
 const workspaceId = "11111111-1111-4111-8111-111111111111";
@@ -338,6 +346,7 @@ const contextVariableEnablement = (
 
 const createService = (options: {
   actionCapabilities?: ActionCapabilityMap;
+  hostQueuedActionTypes?: ReadonlySet<string>;
   capabilityPolicy?: CapabilityPolicy;
   knownWebhookDestinations?: Set<string>;
   skillAuthoringCatalog?: SkillAuthoringCatalog;
@@ -585,6 +594,26 @@ describe("RoutineDefinitionService", () => {
     expect(JSON.stringify(reEnabled.routine.steps)).toBe(JSON.stringify(created.routine.steps));
   });
 
+  it("parks an invalid authored draft when disabled but refuses the same draft when enabled", async () => {
+    const { service } = createService();
+    const invalid = { ...validDraft(), transitions: [] };
+
+    await expect(service.validateForDraftMutation(workspaceId, agentId, { ...invalid, enabled: false }))
+      .resolves.toEqual({ ok: true, diagnostics: [] });
+    await expect(service.validateForDraftMutation(workspaceId, agentId, { ...invalid, enabled: true }))
+      .resolves.toMatchObject({ ok: false });
+  });
+
+  it("keeps the copilot enable mutation at the routines owner boundary", async () => {
+    const { service } = createService();
+    const invalid = { ...validDraft(), enabled: false, transitions: [] };
+    const parked = await service.createDraft(workspaceId, agentId, invalid);
+
+    await expect(service.updateDraftForCopilotProposal(workspaceId, agentId, parked.routine.id, { ...invalid, enabled: true }))
+      .rejects.toMatchObject({ statusCode: 400, code: "bad_request", message: "The enabled routine cannot be served. Use validate_routine to correct it before enabling it." });
+    expect((await service.get(workspaceId, agentId, parked.routine.id)).enabled).toBe(false);
+  });
+
   it("keeps a disabled routine disabled through an unrelated content edit that omits enabled", async () => {
     // The plain update payload (form/document tab save) is a full draft shape that never
     // mentions `enabled` at all. Zod would otherwise default the omitted field back to
@@ -685,6 +714,43 @@ describe("RoutineDefinitionService", () => {
         enabled: true,
       }),
     }));
+  });
+
+  it("persists tool exposure through create and a full-body edit, and carries it forward when the edit omits it", async () => {
+    const { auditService, service } = createService();
+    const exposure = { enabled: true, toolName: "start_return", description: "Start a return for an order." };
+    const created = await service.createDraft(workspaceId, agentId, { ...validDraft(), exposure });
+    expect(created.routine.exposure).toEqual(exposure);
+    expect(created.validation.ok).toBe(true);
+
+    const disabled = { ...exposure, enabled: false };
+    const updated = await service.updateDraft(workspaceId, agentId, created.routine.id, { ...validDraft(), exposure: disabled });
+    expect(updated.routine.exposure).toEqual(disabled);
+
+    // A plain update payload that never mentions exposure leaves the stored block alone, the
+    // same omission-preserving merge `enabled` and `completionExport` get.
+    const renamed = await service.updateDraft(workspaceId, agentId, created.routine.id, { ...validDraft(), name: "support-intake-v2" });
+    expect(renamed.routine.exposure).toEqual(disabled);
+
+    // The audit trail names the tool but never carries the operator-authored description.
+    expect(auditService.record).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: "routine_definition.create",
+      metadata: expect.objectContaining({ exposureEnabled: true, exposureToolName: "start_return" }),
+    }));
+    const calls = (auditService.record as ReturnType<typeof vi.fn>).mock.calls as Array<[{ metadata: Record<string, unknown> }]>;
+    expect(calls.every(([event]) => !("exposureDescription" in event.metadata))).toBe(true);
+    expect(calls.at(-1)?.[0].metadata).toMatchObject({ exposureEnabled: false, exposureToolName: "start_return" });
+  });
+
+  it("reports an invalid tool name as a diagnostic on a saved draft rather than refusing the save", async () => {
+    const { service } = createService();
+    const created = await service.createDraft(workspaceId, agentId, {
+      ...validDraft(),
+      exposure: { enabled: true, toolName: "Start return", description: "" },
+    });
+    expect(created.validation.diagnostics).toEqual([expect.objectContaining({ code: "exposure_tool_name_invalid", location: "exposure.toolName" })]);
+    const validation = await service.validate(workspaceId, agentId, { id: created.routine.id });
+    expect(validation.diagnostics.map((diagnostic) => diagnostic.code)).toEqual(["exposure_tool_name_invalid"]);
   });
 
   it("reports a save as successful even when audit recording fails, logging it instead", async () => {
@@ -998,6 +1064,34 @@ describe("RoutineDefinitionService", () => {
       ],
     });
     expect(validation.diagnostics[0]?.message).toContain("unknown.send");
+  });
+
+  it.each([
+    [HANDOFF_NOTIFY_ACTION_TYPE, true],
+    [COMPLETION_NOTIFY_ACTION_TYPE, true],
+    [APPROVAL_REQUEST_ACTION_TYPE, true],
+    [CONVERSATION_TRANSFER_NOTICE_ACTION_TYPE, false],
+  ])("reports an action step for the host-queued %s action", async (actionType, queuesWithTurn) => {
+    const composition = createDefaultApplicationComposition({ logger: { error: () => undefined } });
+    const { service } = createService({
+      actionCapabilities: composition.routineActionCapabilityMap,
+      hostQueuedActionTypes: chatTurnQueuedActionTypes(composition.actionHandlerRegistrations),
+      capabilityPolicy: new FakeCapabilityPolicy(),
+    });
+    const draft = await service.createDraft(workspaceId, agentId, actionDraft(actionType));
+
+    const validation = await service.validate(workspaceId, agentId, { id: draft.routine.id });
+
+    expect(validation).toMatchObject({
+      ok: false,
+      diagnostics: [expect.objectContaining({ code: "unregistered_action_type", location: "step:step_send" })],
+    });
+    if (queuesWithTurn) {
+      expect(validation.diagnostics[0]?.message).toContain("routine's endings and approval steps");
+      expect(validation.diagnostics[0]?.message).toContain("ending");
+    } else {
+      expect(validation.diagnostics[0]?.message).toContain("no action an author may write as an action step");
+    }
   });
 
   it("clears an action step when the workspace has the required capability", async () => {

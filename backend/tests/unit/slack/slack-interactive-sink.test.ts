@@ -55,6 +55,7 @@ const decision = (overrides: Partial<PendingDecisionRecord> = {}): PendingDecisi
   status: "pending",
   decision: null,
   decidedBy: null,
+  decidedByUserId: null,
   decidedAt: null,
   deadline: null,
   createdAt: new Date("2026-01-01T00:00:00Z"),
@@ -237,7 +238,9 @@ describe("SlackOperatorNotificationSink", () => {
         channelId: "COPS",
         kind: "operator_notification",
         conversationRef: "conv_1",
-        text: "Customer asked for a human",
+        // No routine, collected values, or entry page are known, so the post is just the
+        // generic default subject and headline.
+        text: "Conversation needs a human\nA conversation needs a human operator.",
       },
     });
     const payload = enqueued[0].payload as { blocks: Array<Record<string, unknown>> };
@@ -251,6 +254,105 @@ describe("SlackOperatorNotificationSink", () => {
       conversationId: "conv_1",
       workspaceId: "ws_1",
     });
+  });
+
+  it("shows the routine and collected values in the handoff post", async () => {
+    const { sink, enqueued } = createSink();
+
+    await sink.deliver({
+      ...handoffNotification,
+      reason: "routine_handoff",
+      agentName: "Retreat desk",
+      routine: { id: "routine_1", name: "Book accommodation" },
+      collected: { program: "Yoga retreat", arrival_date: "2026-10-12", needs_transfer: true },
+    }, { requestId: "request_1", idempotencyKey: "routine-action:conv_1:handoff.notify" });
+
+    expect(enqueued).toHaveLength(1);
+    const expectedText = [
+      "Book accommodation: needs a human",
+      "A conversation needs a human operator.",
+      "",
+      "Collected:",
+      "  Program: Yoga retreat",
+      "  Arrival date: 2026-10-12",
+      "  Needs transfer: yes",
+    ].join("\n");
+    expect(enqueued[0].payload).toMatchObject({ text: expectedText });
+    const payload = enqueued[0].payload as { blocks: Array<{ type: string; text?: { text?: string } }> };
+    expect(payload.blocks[0]).toMatchObject({ type: "section", text: { text: expectedText } });
+  });
+
+  it("posts a completion notice to the operator channel, led by the authored subject, then the headline and intro", async () => {
+    const { sink, enqueued } = createSink();
+
+    await sink.deliver({
+      ...handoffNotification,
+      kind: "completion",
+      reason: "routine_completed",
+      routine: { id: "routine_1", name: "Book accommodation" },
+      collected: { name: "Ada Lovelace" },
+      notice: { subject: "New booking: {{slot.name}}", intro: "Confirm the room today." },
+    }, { requestId: "request_1", idempotencyKey: "routine-action:conv_1:completion.notify" });
+
+    expect(enqueued).toHaveLength(1);
+    expect(enqueued[0]).toMatchObject({
+      idempotencyKey: "slack:operator_notification:completion:conv_1:routine-action:conv_1:completion.notify",
+      payload: {
+        text: [
+          "New booking: Ada Lovelace",
+          "A visitor completed a request in chat.",
+          "Confirm the room today.",
+          "",
+          "Collected:",
+          "  Name: Ada Lovelace",
+        ].join("\n"),
+      },
+    });
+  });
+
+  it("makes a hand-off and a completion post for the same routine distinguishable by subject and headline", async () => {
+    const { sink, enqueued } = createSink();
+    const shared = {
+      workspaceId: "ws_1",
+      conversationId: "conv_1",
+      agentId: "agent_1",
+      routine: { id: "routine_1", name: "Book accommodation" },
+    } as const;
+
+    await sink.deliver({ ...shared, kind: "handoff" as const, reason: "routine_handoff" }, { requestId: "request_1" });
+    await sink.deliver({ ...shared, kind: "completion" as const, reason: "routine_completed" }, { requestId: "request_2" });
+
+    expect(enqueued).toHaveLength(2);
+    const [handoffPost, completionPost] = enqueued.map((entry) => (entry.payload as { text: string }).text);
+    expect(handoffPost).toBe("Book accommodation: needs a human\nA conversation needs a human operator.");
+    expect(completionPost).toBe("Book accommodation: completed\nA visitor completed a request in chat.");
+    expect(handoffPost).not.toBe(completionPost);
+  });
+
+  it("posts a notice's visitor-given values and authored text as literal text, never as a mention or a link", async () => {
+    const { sink, enqueued } = createSink({ conversationLinks: { resolve: async () => permalink } });
+
+    await sink.deliver({
+      ...handoffNotification,
+      kind: "completion",
+      reason: "routine_completed",
+      routine: { id: "routine_1", name: "Book accommodation" },
+      collected: { guest_name: "<!channel>", note: "<https://x|Open> & more" },
+      notice: { subject: "New booking: {{slot.guest_name}}", intro: "Read {{slot.note}} <!here>" },
+      conversation: { entryPageUrl: "https://example.com/book?room=1&ref=<x|y>" },
+    }, { requestId: "request_1" });
+
+    const payload = enqueued[0].payload as { text: string; blocks: Array<{ type: string; text?: { text?: string } }> };
+    const section = payload.blocks[0].text?.text ?? "";
+    for (const text of [payload.text, section]) {
+      expect(text).not.toMatch(/<[!h]/u);
+      expect(text).toContain("New booking: &lt;!channel&gt;");
+      expect(text).toContain("Read &lt;https://x|Open&gt; &amp; more &lt;!here&gt;");
+      expect(text).toContain("Entry page: https://example.com/book?room=1&amp;ref=&lt;x|y&gt;");
+      expect(text).toContain("  Guest name: &lt;!channel&gt;");
+    }
+    // The dashboard link is the post's own markup, so it still renders as a link.
+    expect(linkTexts(enqueued)).toEqual([`<${permalink.replaceAll("&", "&amp;")}|Open in dashboard>`]);
   });
 
   it("skips handoff Slack delivery when the workspace has no installation or operator channel", async () => {

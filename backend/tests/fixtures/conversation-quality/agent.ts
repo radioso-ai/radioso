@@ -1,7 +1,9 @@
+import type { AuthoredDirective } from "../../../src/modules/agents/authoredDirectives.js";
 import type { ConversationAgent } from "../../../src/modules/agents/domain.js";
-import { projectInternalAgentConfig } from "../../../src/modules/agents/agentConfig.js";
+import { projectInternalAgentConfig, type InternalAgentConfig } from "../../../src/modules/agents/agentConfig.js";
 import { conversationQualityDirectives } from "./directives.js";
 import { CQ_AGENT_ID } from "./routines.js";
+import { unpublishedAgentPublicIdentity } from "../../../src/modules/agents/public.js";
 
 export const CQ_WORKSPACE_ID = "cq-workspace";
 
@@ -12,6 +14,7 @@ export const CQ_WORKSPACE_ID = "cq-workspace";
  * which is what the cases are measuring.
  */
 export const conversationQualityAgent: ConversationAgent = {
+  ...unpublishedAgentPublicIdentity(),
   id: CQ_AGENT_ID,
   workspaceId: CQ_WORKSPACE_ID,
   name: "Acme Support",
@@ -53,3 +56,15 @@ export const conversationQualityAgent: ConversationAgent = {
 };
 
 export const conversationQualityAgentConfig = projectInternalAgentConfig(conversationQualityAgent);
+
+/**
+ * The seed directives plus `extra`, as an `agentConfigOverride.authoredDirectives` value: a
+ * case probes one more standing rule without seeding it onto the agent for every case.
+ */
+export const seedDirectiveConfigWith = (
+  ...extra: AuthoredDirective[]
+): InternalAgentConfig["authoredDirectives"] =>
+  projectInternalAgentConfig({
+    ...conversationQualityAgent,
+    authoredDirectives: [...conversationQualityDirectives, ...extra],
+  }).authoredDirectives;

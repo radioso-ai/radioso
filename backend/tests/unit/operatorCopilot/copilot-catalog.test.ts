@@ -216,6 +216,28 @@ describe("copilot capability governance", () => {
     })).toThrow("weakens permission parity");
   });
 
+  it("rejects a descriptor with no required permissions and no target-aware authorization", () => {
+    const unguarded = {
+      ...descriptor(),
+      capabilityProvenance: { rayOnly: { reason: "A descriptor with no required permissions." } },
+    } satisfies CopilotToolDescriptor;
+
+    expect(() => assertCopilotCapabilityProvenance([unguarded], { publicOperationIds: new Set() }))
+      .toThrow("has no required permissions and no target-aware authorization");
+  });
+
+  it("allows an empty-permissions descriptor that declares target-aware authorization explicitly", () => {
+    const targetAware = {
+      ...descriptor(),
+      capabilityProvenance: {
+        rayOnly: { reason: "A descriptor with no required permissions." },
+        targetAwareAuthorization: true as const,
+      },
+    } satisfies CopilotToolDescriptor;
+
+    expect(() => assertCopilotCapabilityProvenance([targetAware], { publicOperationIds: new Set() })).not.toThrow();
+  });
+
   it("keeps one-to-one parity when a descriptor adds a primitive or Ray-only safety", () => {
     const composed = {
       ...descriptor("workspace.agents.read"),

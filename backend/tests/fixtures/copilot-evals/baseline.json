@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-03T11:04:59.465Z",
+  "generatedAt": "2026-09-22T10:56:58.222Z",
   "passThreshold": 1,
   "cases": {
     "agent-configuration-read": {
@@ -112,6 +112,11 @@
       "passRate": 1,
       "samples": 3
     },
+    "product-docs-explanation": {
+      "status": "fail",
+      "passRate": 0,
+      "samples": 3
+    },
     "retrieval-probe-agent-scoped": {
       "status": "pass",
       "passRate": 1,
@@ -122,14 +127,14 @@
       "passRate": 1,
       "samples": 3
     },
-    "routine-publish-proposal": {
-      "status": "fail",
-      "passRate": 0,
+    "routine-exposure-proposal": {
+      "status": "pass",
+      "passRate": 1,
       "samples": 3
     },
     "routine-structural-change-handoff": {
       "status": "fail",
-      "passRate": 0,
+      "passRate": 0.33,
       "samples": 3
     },
     "serving-queue-then-triage": {
@@ -143,6 +148,11 @@
       "samples": 3
     },
     "triage-entry": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 3
+    },
+    "workspace-knowledge-not-product-docs": {
       "status": "pass",
       "passRate": 1,
       "samples": 3

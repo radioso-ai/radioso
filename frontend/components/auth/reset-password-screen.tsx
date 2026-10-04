@@ -7,15 +7,16 @@ import { useState, type FormEvent } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Spinner } from '@/components/ui/spinner'
 import { authApi, seedWorkspaceSession } from '@/lib/api'
 import { useAuth } from '@/lib/auth-context'
 import { buildDashboardHref } from '@/lib/dashboard-routes'
+import { AuthShell, useAuthSunrise } from './auth-shell'
 import { getErrorMessage } from './auth-errors'
 
 export function ResetPasswordScreen({ token, email: initialEmail }: { token?: string; email?: string }) {
   const router = useRouter()
   const { login } = useAuth()
+  const riseSun = useAuthSunrise()
   // Prefilled when the visitor arrives from a flow that already knows the
   // address, such as an invitation for a login they cannot sign in to.
   const [email, setEmail] = useState(initialEmail ?? '')
@@ -53,7 +54,8 @@ export function ResetPasswordScreen({ token, email: initialEmail }: { token?: st
     try {
       const response = await authApi.confirmPasswordReset({ token: token ?? '', password })
       seedWorkspaceSession(response.workspaceId, response.workspacePublicRouteKey)
-      await login(response.email, response.userId, response.accountId, response.organizationName)
+      riseSun()
+      await login(response)
       // Resetting a password only happens for an account that already
       // exists — never a genuinely first-run workspace — so the Inbox is
       // the normal landing surface here, same as any other authenticated
@@ -73,81 +75,70 @@ export function ResetPasswordScreen({ token, email: initialEmail }: { token?: st
   const isConfirmMode = Boolean(token)
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <div className="w-full max-w-sm rounded-lg border border-border bg-card p-6 shadow-sm">
-        <h1 className="mb-2 text-xl font-semibold text-card-foreground">
-          {isConfirmMode ? 'Choose a new password' : 'Reset your password'}
-        </h1>
-        <p className="mb-6 text-sm text-muted-foreground">
-          {isConfirmMode
-            ? 'Enter your new password to restore access.'
-            : 'Enter your email and we will send a reset link if the account exists.'}
+    <AuthShell
+      title={isConfirmMode ? 'A fresh start' : 'Find your way back'}
+      subtitle={isConfirmMode ? 'Choose a new password to sign back in.' : 'We’ll email you a link to reset your password.'}
+      footer={
+        <Link href="/" className="font-medium text-primary hover:underline">
+          Back to sign in
+        </Link>
+      }
+    >
+      {isConfirmMode ? (
+        <form onSubmit={handleConfirmSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="password">New Password</Label>
+            <Input
+              id="password"
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              placeholder="At least 8 characters"
+              required
+              disabled={isLoading}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="confirmPassword">Confirm New Password</Label>
+            <Input
+              id="confirmPassword"
+              type="password"
+              value={confirmPassword}
+              onChange={(event) => setConfirmPassword(event.target.value)}
+              placeholder="Confirm your password"
+              required
+              disabled={isLoading}
+            />
+          </div>
+          {error ? <p className="text-sm text-destructive">{error}</p> : null}
+          <Button type="submit" className="w-full" loading={isLoading}>
+            Reset Password
+          </Button>
+        </form>
+      ) : requestAccepted ? (
+        <p className="text-sm text-muted-foreground">
+          If that email exists, a reset link is on its way.
         </p>
-
-        {isConfirmMode ? (
-          <form onSubmit={handleConfirmSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="password">New Password</Label>
-              <Input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                placeholder="At least 8 characters"
-                required
-                disabled={isLoading}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="confirmPassword">Confirm New Password</Label>
-              <Input
-                id="confirmPassword"
-                type="password"
-                value={confirmPassword}
-                onChange={(event) => setConfirmPassword(event.target.value)}
-                placeholder="Confirm your password"
-                required
-                disabled={isLoading}
-              />
-            </div>
-            {error ? <p className="text-sm text-destructive">{error}</p> : null}
-            <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading ? <Spinner className="mr-2" /> : null}
-              <span>Reset Password</span>
-            </Button>
-          </form>
-        ) : requestAccepted ? (
-          <p className="text-sm text-muted-foreground">
-            If that email exists, a reset link is on its way.
-          </p>
-        ) : (
-          <form onSubmit={handleRequestSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="reset-email">Email</Label>
-              <Input
-                id="reset-email"
-                type="email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                placeholder="you@example.com"
-                required
-                disabled={isLoading}
-              />
-            </div>
-            {error ? <p className="text-sm text-destructive">{error}</p> : null}
-            <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading ? <Spinner className="mr-2" /> : null}
-              <span>Send Reset Link</span>
-            </Button>
-          </form>
-        )}
-
-        <div className="mt-4 text-center text-sm text-muted-foreground">
-          <Link href="/" className="text-primary hover:underline">
-            Back to sign in
-          </Link>
-        </div>
-      </div>
-    </div>
+      ) : (
+        <form onSubmit={handleRequestSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="reset-email">Email</Label>
+            <Input
+              id="reset-email"
+              type="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              placeholder="you@example.com"
+              required
+              disabled={isLoading}
+            />
+          </div>
+          {error ? <p className="text-sm text-destructive">{error}</p> : null}
+          <Button type="submit" className="w-full" loading={isLoading}>
+            Send Reset Link
+          </Button>
+        </form>
+      )}
+    </AuthShell>
   )
 }

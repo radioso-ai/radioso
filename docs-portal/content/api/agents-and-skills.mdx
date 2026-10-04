@@ -1,7 +1,7 @@
 ---
 title: "Agents and skills"
 description: "Configure workspace agents, directives, named agent skills, revisions, and inspect the read-only skills catalog exposed by the API."
-last_updated: 2026-09-21
+last_updated: 2026-10-03
 ---
 
 # Agents and skills
@@ -45,11 +45,24 @@ and inputs it used; changing the draft does not relabel earlier evidence.
 Selected eval cases can be run from Test Chat, and a failed side or case can be
 retried without replacing successful comparison evidence.
 
+A test turn that fails settles like any other: the next message starts a new turn,
+and the failed side stays retryable until it does. A message sent while another
+turn is still running is refused with `409` and the error code
+`test_turn_in_progress`; send it again once that turn settles.
+
 Use `GET /api/v1/agents/{agentId}/test-executions?limit=50` to page through
-private Test Chat history, then `GET /api/v1/agents/{agentId}/test-executions/{executionId}`
+private Test Chat history. Each row carries `turnCount`, the number of user
+messages in the test, counting both those copied from a real conversation it
+continues and those the operator sent, and `firstMessage`, the first of them
+with text, as a label of at most 200 characters ending in `…` when it is longer;
+`firstMessageClipped` says whether it was cut, so a message that really ends in
+`…` reads as whole. A greeting is
+not counted, and `firstMessage` is `null` until there is a user message with text. Then use `GET /api/v1/agents/{agentId}/test-executions/{executionId}`
 to reopen one execution with its frozen values, side transcripts, and retry
-evidence. These endpoints require `workspace.agents.manage` and never add test
-conversations to public or visitor history.
+evidence. The detail also carries `seededTurnCount`, the user messages a seed
+conversation copied in; it is `0` for a test that started fresh. These
+endpoints require `workspace.agents.manage` and never add test conversations
+to public or visitor history.
 
 To continue a real conversation as a private test, start a `single` execution with
 `seedConversationId` set to a conversation in the same workspace and agent. The
@@ -318,24 +331,38 @@ Each request carries an `Idempotency-Key` header. Delivery is at-least-once, so 
 
 Radioso sends the request with `POST`, follows redirects only to publicly routable hosts, and applies a short delivery timeout. Point the webhook at a stable public endpoint.
 
-### Handoff and approval notifications
+### Operator notifications
 
-Radioso also tells a person when a conversation needs one: a routine reaches a handoff, the agent hands off on a retrieval miss, or a routine step pauses for an approval decision. These notices resolve their destination the same way an unnamed contact request does — through the `contact_human` skill when one is configured, then the agent's own delivery setting, then the workspace owner. A notify skill with another name, such as `contact_sales`, is not consulted, and turning `contact_human` off silences these notices along with contact requests.
+Radioso also tells a person when a conversation needs one, or when a routine finished something they act on: a routine reaches a handoff, the agent hands off on a retrieval miss, a routine finishes on an ending with **Notify the team** on, or a routine step pauses for an approval decision. These notices resolve their destination the same way an unnamed contact request does — through the `contact_human` skill when one is configured, then the agent's own delivery setting, then the workspace owner. A notify skill with another name, such as `contact_sales`, is not consulted, and turning `contact_human` off silences these notices along with contact requests.
 
-Each notice is emailed to the resolved recipients and, when a webhook is configured, posted to it as JSON:
+Each notice is emailed to the resolved recipients as plain text and, when a webhook is configured, posted to it as JSON. Here is the notice a "Book accommodation" routine sends when it finishes with a notice of its own:
 
 ```json
 {
   "workspaceId": "...",
   "agentId": "...",
   "conversationId": "...",
-  "reason": "routine_handoff",
+  "reason": "routine_completed",
+  "routine": { "id": "...", "name": "Book accommodation" },
+  "collected": {
+    "program": "Yoga retreat",
+    "arrival": "2026-10-12",
+    "departure": "2026-10-16",
+    "guest_name": "Alex Rivera",
+    "guest_email": "alex@example.com"
+  },
+  "subject": "New booking: Alex Rivera, 2026-10-12",
+  "intro": "Please confirm the room with Alex Rivera.",
   "dashboardUrl": "https://app.radioso.ai/w/support-abc/activity?tab=all&filter=chat&itemKind=chat&itemId=...",
   "requestId": "..."
 }
 ```
 
-A handoff carries `reason`, either `routine_handoff` or `retrieval_miss`. An approval carries `handle` instead — the value you pass to `POST /api/v1/agents/{agentId}/decisions/{handle}/resolve`, described in [Human takeover](/operators/human-takeover). That is how a receiver tells the two apart. `dashboardUrl` opens the conversation in the dashboard; it is `null` when the link cannot be resolved, for example because the workspace has since been deleted, so a receiver that needs a link should fall back to `conversationId`. The same `Idempotency-Key` and delivery rules as contact requests apply.
+`reason` says what raised the notice: `routine_handoff` or `retrieval_miss` for a handoff, `routine_completed` for a routine that finished and kept the conversation with the agent. `routine` names the routine whose ending raised the notice, with `name` set to `null` when the routine has since been deleted; it is `null` for a retrieval-miss handoff. `collected` holds the routine's declared values keyed by slot key, in the order the routine declares them (in storage order once the routine has been deleted), and is empty for a retrieval-miss handoff. Text, number, and boolean values are included; a slot holding a structured value is left out. The email version of the notice reads as plain prose: it lists the same values under a `Collected:` heading and, when the conversation has one, the page it started on. The JSON body carries `collected` as structured data instead of that heading, and has no field for the entry page.
+
+`subject` and `intro` are the text the routine's author wrote for that ending, with each `{{slot.<key>}}` replaced by the collected value, or `—` when the routine did not collect it. Each is `null` when the author wrote none; the email then uses the default subject (`Book accommodation: completed`, or `Book accommodation: needs a human` for a handoff) and no intro.
+
+An approval carries `handle` instead — the value you pass to `POST /api/v1/agents/{agentId}/decisions/{handle}/resolve`, described in [Human takeover](/operators/human-takeover). That is how a receiver tells an approval from a routine or retrieval-miss notice. `dashboardUrl` opens the conversation in the dashboard; it is `null` when the link cannot be resolved, for example because the workspace has since been deleted, so a receiver that needs a link should fall back to `conversationId`. The same `Idempotency-Key` and delivery rules as contact requests apply.
 
 ## Move an agent between workspaces
 

@@ -19,17 +19,25 @@ import { createAgentTurnProbeCopilotTools } from "./agentTurnProbe.js";
 import type { AgentTurnProbeCopilotToolDependencies } from "./agentTurnProbe.js";
 import { createDirectiveProposalCopilotTools } from "./directives.js";
 import type { DirectiveProposalCopilotToolDependencies } from "./directives.js";
-import { createDocumentKnowledgeCopilotTools, createDocumentSearchCopilotTools, createDocumentStatusCopilotTools } from "./documents.js";
-import type { DocumentKnowledgeCopilotToolDependencies, DocumentSearchCopilotToolDependencies, DocumentStatusCopilotToolDependencies } from "./documents.js";
+import { createDocumentInventoryCopilotTools, createDocumentKnowledgeCopilotTools, createDocumentSearchCopilotTools, createDocumentStatusCopilotTools } from "./documents.js";
+import type { DocumentInventoryCopilotToolDependencies, DocumentKnowledgeCopilotToolDependencies, DocumentSearchCopilotToolDependencies, DocumentStatusCopilotToolDependencies } from "./documents.js";
 import { createDocumentProposalCopilotTools } from "./documentProposals.js";
 import { createWebsiteCrawlProposalCopilotTools } from "./websiteCrawlProposals.js";
 import { createIngestionSettingsProposalCopilotTools } from "./ingestionSettingsProposals.js";
 import type { IngestionSettingsProposalCopilotToolDependencies } from "./ingestionSettingsProposals.js";
+import { createIngestionSettingsReviewedPreparationTool } from "./ingestionSettingsReviewedPreparation.js";
+import type { IngestionSettingsReviewedPreparationDependencies } from "./ingestionSettingsReviewedPreparation.js";
+import { createAgentSettingsReviewedPreparationTool } from "./agentSettingsReviewedPreparation.js";
+import type { AgentSettingsReviewedPreparationDependencies } from "./agentSettingsReviewedPreparation.js";
+import { createDirectiveReviewedPreparationTool } from "./directiveReviewedPreparation.js";
+import type { DirectiveReviewedPreparationDependencies } from "./directiveReviewedPreparation.js";
 import { createWorkspaceSettingProposalCopilotTools } from "./workspaceSettingProposals.js";
 import { createEvalCopilotTools, createEvalVerificationCopilotTools } from "./eval.js";
 import type { EvalCopilotToolDependencies, EvalVerificationCopilotToolDependencies } from "./eval.js";
 import { createRetrievalProbeCopilotTools } from "./retrievalProbe.js";
 import type { RetrievalProbeCopilotToolDependencies } from "./retrievalProbe.js";
+import { createTestChatCopilotTools } from "./testChat.js";
+import type { TestChatCopilotToolDependencies } from "./testChat.js";
 import { createQualityCopilotTools, createQualityTriageCopilotTools } from "./quality.js";
 import type { QualityCopilotToolDependencies, QualityTriageCopilotToolDependencies } from "./quality.js";
 import { createRoutineDefinitionCopilotTools, createRoutineProposalCopilotTools } from "./routines.js";
@@ -53,6 +61,10 @@ import { createAgentPublicationCopilotTools } from "./agentPublication.js";
 import type { AgentPublicationCopilotToolDependencies } from "./agentPublication.js";
 import { createRetrievalAuthoringCopilotTools } from "./retrievalAuthoring.js";
 import type { RetrievalAuthoringCopilotToolDependencies } from "./retrievalAuthoring.js";
+import { createProposalDetailTool } from "./proposalDetail.js";
+import type { CopilotProposalDetailReadPort } from "../service.js";
+import { createDocumentReviewedOperationTools } from "./documentReviewedOperations.js";
+import type { DocumentReviewedOperationToolDependencies } from "./documentReviewedOperations.js";
 
 export type CopilotAgentPort = CopilotAgentConfigurationPort & CopilotAgentSkillsAgentPort & CopilotContextVariablesAgentPort;
 
@@ -61,11 +73,13 @@ type CopilotToolCatalogDependencies = AgentConfigurationCopilotToolDependencies
   & ReplyDraftCopilotToolDependencies
   & Omit<AgentTurnProbeCopilotToolDependencies, "agentLookup">
   & DocumentSearchCopilotToolDependencies
+  & DocumentInventoryCopilotToolDependencies
   & DocumentStatusCopilotToolDependencies
   & DocumentKnowledgeCopilotToolDependencies
   & EvalCopilotToolDependencies
   & EvalVerificationCopilotToolDependencies
   & Omit<RetrievalProbeCopilotToolDependencies, "agentLookup">
+  & Omit<TestChatCopilotToolDependencies, "agentLookup">
   & QualityCopilotToolDependencies
   & QualityTriageCopilotToolDependencies
   & AudiencePulseCopilotToolDependencies
@@ -83,11 +97,15 @@ type CopilotToolCatalogDependencies = AgentConfigurationCopilotToolDependencies
   & AgentProposalCopilotToolDependencies
   & WebsiteAnalysisProbeCopilotToolDependencies
   & IngestionSettingsProposalCopilotToolDependencies
+  & Omit<IngestionSettingsReviewedPreparationDependencies, keyof IngestionSettingsProposalCopilotToolDependencies>
+  & Omit<AgentSettingsReviewedPreparationDependencies, keyof IngestionSettingsProposalCopilotToolDependencies>
+  & Omit<DirectiveReviewedPreparationDependencies, keyof IngestionSettingsProposalCopilotToolDependencies>
   & ProductDocsCopilotToolDependencies
   & RoutineStructuralPreparationDependencies
   & AgentPublicationCopilotToolDependencies
   & RetrievalAuthoringCopilotToolDependencies
-  & { readonly reviewedProposalExecution: ReviewedProposalExecutionPort; readonly reviewedProposalOutcome: ReviewedProposalOutcomePort; readonly cancelReviewedProposal: CancelReviewedProposalPort };
+  & DocumentReviewedOperationToolDependencies
+  & { readonly reviewedProposalExecution: ReviewedProposalExecutionPort; readonly reviewedProposalOutcome: ReviewedProposalOutcomePort; readonly cancelReviewedProposal: CancelReviewedProposalPort; readonly proposalDetail: CopilotProposalDetailReadPort };
 
 /** Composition-only barrel; each descriptor remains published from its owner module. */
 export const createCopilotToolDescriptors = (
@@ -99,9 +117,11 @@ export const createCopilotToolDescriptors = (
   ...createReplyDraftCopilotTools(deps),
   ...createAgentTurnProbeCopilotTools({ ...deps, agentLookup: deps.agentService }),
   ...createDocumentSearchCopilotTools(deps),
+  ...createDocumentInventoryCopilotTools(deps),
   ...createEvalCopilotTools({ ...deps, agentLookup: deps.agentService }),
   ...createEvalVerificationCopilotTools(deps),
   ...createRetrievalProbeCopilotTools({ ...deps, agentLookup: deps.agentService }),
+  ...createTestChatCopilotTools({ ...deps, agentLookup: deps.agentService }),
   ...createQualityCopilotTools({ ...deps, agentLookup: deps.agentService }),
   ...createQualityTriageCopilotTools(deps),
   ...createAudiencePulseCopilotTools(deps),
@@ -122,12 +142,17 @@ export const createCopilotToolDescriptors = (
   ...createWebsiteAnalysisProbeCopilotTools(deps),
   ...createAgentProposalCopilotTools(deps),
   ...createDocumentProposalCopilotTools(deps),
+  ...createDocumentReviewedOperationTools(deps),
   ...createIngestionSettingsProposalCopilotTools(deps),
+  createIngestionSettingsReviewedPreparationTool(deps),
+  createAgentSettingsReviewedPreparationTool(deps),
+  createDirectiveReviewedPreparationTool(deps),
   ...createWorkspaceSettingProposalCopilotTools(deps),
   ...createWebsiteCrawlProposalCopilotTools(deps),
   createRoutineStructuralPreparationTool(deps),
   ...createAgentPublicationCopilotTools(deps),
   ...createRetrievalAuthoringCopilotTools(deps),
+  createProposalDetailTool(deps.proposalDetail),
   createReviewedProposalExecutionTool(deps.reviewedProposalExecution),
   createReviewedProposalOutcomeTool(deps.reviewedProposalOutcome),
   createCancelReviewedProposalTool(deps.cancelReviewedProposal),
@@ -143,6 +168,7 @@ export type { CopilotDocumentChunksPort, CopilotDocumentMaintenancePort, Copilot
 export type { CopilotEvalResultsPort } from "./eval.js";
 export type { CopilotQualitySignalsPort, CopilotQualityTriagePort } from "./quality.js";
 export type { CopilotRetrievalProbePort } from "./retrievalProbe.js";
+export type { CopilotTestChatPort } from "./testChat.js";
 export type { CopilotRoutineDefinitionPort } from "./routines.js";
 export type { CopilotProductDocsPort } from "./productDocs.js";
 export type { CopilotWorkspaceSettingsPort } from "./settings.js";

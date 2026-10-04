@@ -5,6 +5,7 @@ import type {
   QualityVerificationSourcePort,
 } from "../../src/modules/quality/contracts/index.js";
 import { QualityTurnsService } from "../../src/modules/quality/service.js";
+import { unrecordedConversationActivity } from "../support/fakes.js";
 import { stubOutcomeCatalog } from "../support/qualityOutcomeCatalog.js";
 
 class SequencedDb {
@@ -76,7 +77,7 @@ describe("Quality verification enrichment", () => {
     const source = new CapturingVerificationSource(new Map([[linkedId, verification]]));
     const service = new QualityTurnsService(
       db as never,
-      stubOutcomeCatalog(),
+      stubOutcomeCatalog(), unrecordedConversationActivity,
       undefined,
       source,
     );

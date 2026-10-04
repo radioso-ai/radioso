@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 
 import { hitlApi } from '@/lib/api-hitl'
-import type { ChatConversationMessage, ConversationOwnership } from '@/lib/api-types'
+import type { ChatConversationMessage, ConversationActivityEntry, ConversationOwnership } from '@/lib/api-types'
 import { mergeTailMessages } from '@/lib/conversation-tail'
 
 interface UseConversationTailInput {
@@ -15,7 +15,21 @@ interface UseConversationTailInput {
 
 interface ConversationTailState {
   messages: ChatConversationMessage[]
+  /**
+   * The conversation's ownership record as of the latest poll, passed through
+   * as the tail reports it: present whenever the conversation has a record,
+   * whatever its state — including AI-owned after a hand-back — and absent
+   * only when it never had one. The Inbox pane weighs it against the detail
+   * fetch's record by `version` (`freshestOwnership`) rather than trusting
+   * either read alone.
+   */
   ownership: ConversationOwnership | undefined
+  /**
+   * The activity the latest poll read, oldest first; undefined until a poll has read it. The first
+   * poll reads the whole timeline, each later one a recent window, which repeats events already
+   * read. `useConversationActivity` folds each read into the timeline with the detail fetch's.
+   */
+  activity: ConversationActivityEntry[] | undefined
   cursor: string | null
   error: unknown
   isPolling: boolean
@@ -30,6 +44,7 @@ export const useConversationTail = ({
 }: UseConversationTailInput): ConversationTailState => {
   const [messages, setMessages] = useState<ChatConversationMessage[]>([])
   const [ownership, setOwnership] = useState<ConversationOwnership | undefined>()
+  const [activity, setActivity] = useState<ConversationActivityEntry[] | undefined>()
   const [cursor, setCursor] = useState<string | null>(initialCursor ?? null)
   const [error, setError] = useState<unknown>(null)
   const [hasPolled, setHasPolled] = useState(false)
@@ -38,6 +53,7 @@ export const useConversationTail = ({
     let cancelled = false
     let timeoutId: ReturnType<typeof setTimeout> | undefined
     let currentCursor: string | undefined = initialCursor
+    let currentActivityCursor: string | undefined
 
     queueMicrotask(() => {
       if (cancelled) {
@@ -46,6 +62,7 @@ export const useConversationTail = ({
 
       setMessages([])
       setOwnership(undefined)
+      setActivity(undefined)
       setCursor(initialCursor ?? null)
       setError(null)
       setHasPolled(false)
@@ -65,17 +82,24 @@ export const useConversationTail = ({
 
     const poll = async () => {
       try {
-        const tail = await hitlApi.tailConversation(conversationId, { cursor: currentCursor })
+        const tail = await hitlApi.tailConversation(conversationId, {
+          cursor: currentCursor,
+          activityCursor: currentActivityCursor,
+        })
         if (cancelled) {
           return
         }
 
         setMessages((existing) => mergeTailMessages(existing, tail.messages))
         setOwnership(tail.ownership)
+        if (tail.activity) {
+          setActivity(tail.activity)
+        }
         setCursor(tail.cursor)
         setError(null)
         setHasPolled(true)
         currentCursor = tail.cursor ?? undefined
+        currentActivityCursor = tail.activityCursor ?? undefined
       } catch (caught) {
         if (cancelled) {
           return
@@ -102,6 +126,7 @@ export const useConversationTail = ({
   return {
     messages: enabled ? messages : [],
     ownership: enabled ? ownership : undefined,
+    activity: enabled ? activity : undefined,
     cursor,
     error,
     isPolling: enabled,

@@ -8,8 +8,8 @@ const context = { workspaceId: "workspace-1", accountId: "account-1", operatorUs
 describe("agent publication MCP tools", () => {
   it("recovers the original publication review without creating another candidate", async () => {
     const createCandidate = vi.fn(); const createProposal = vi.fn();
-    const snapshot = { candidateRevisionId: "11111111-1111-4111-8111-111111111111", draftGeneration: 4, publishedRevisionId: null, validation: { status: "valid" as const } };
-    const tools = createAgentPublicationCopilotTools({ revisions: { state: vi.fn(), createCandidate, detail: vi.fn(), describeCandidateRelease: vi.fn(), readCandidateReleaseChange: vi.fn(), publish: vi.fn() }, proposalRepository: { createProposal }, proposalRecovery: { recoverOperatorMcpProposal: vi.fn(async () => ({ status: "recovered", proposal: { id: "proposal-1", targetType: "agent_publication", reviewDigest: "d".repeat(43), expiresAt: new Date("2026-09-13T00:15:00Z"), reviewSnapshot: snapshot } })) }, proposalAdapters: [], auditService: { record: vi.fn() } });
+    const snapshot = { candidateRevisionId: "11111111-1111-4111-8111-111111111111", draftGeneration: 4, publishedRevisionId: null, validation: { status: "valid" as const }, changesSummary: { changeCount: 1, changes: [{ field: "customInstruction", id: "agent", before: "Old", after: "New", truncated: false }], truncated: false }, contentHash: "hash-1" };
+    const tools = createAgentPublicationCopilotTools({ revisions: { state: vi.fn(), createCandidate, detail: vi.fn(), describeCandidateRelease: vi.fn(), describeCandidatePublicationReview: vi.fn(), readCandidateReleaseChange: vi.fn(), publish: vi.fn() }, proposalRepository: { createProposal }, proposalRecovery: { recoverOperatorMcpProposal: vi.fn(async () => ({ status: "recovered" as const, proposal: { id: "proposal-1", targetType: "agent_publication" as const, reviewDigest: "d".repeat(43), expiresAt: new Date("2026-09-13T00:15:00Z"), reviewSnapshot: snapshot, confirmationRequirement: "signed_in_approval" as const, changeEffect: { exposure: "live" as const, reversibility: "reversible" as const, metered: false } } as never })) }, proposalAdapters: [], auditService: { record: vi.fn() } });
     const prepare = tools.find((tool) => tool.name === "prepare_agent_publication")!;
     await expect(prepare.reconcileMcpInvocation!({ invocation: { id: "invocation-1", grantId: "grant-1", operationId: "op-1", inputDigest: "digest" }, context, staleBefore: new Date(0), now: new Date() } as never)).resolves.toMatchObject({ status: "recovered", output: { proposalId: "proposal-1", reviewDigest: "d".repeat(43), ...snapshot } });
     expect(createCandidate).not.toHaveBeenCalled(); expect(createProposal).not.toHaveBeenCalled();
@@ -19,13 +19,23 @@ describe("agent publication MCP tools", () => {
     const createCandidate = vi.fn().mockResolvedValue({ id: "candidate-1" });
     const createProposal = vi.fn().mockResolvedValue({ id: "proposal-1" });
     const readCandidateReleaseChange = vi.fn().mockResolvedValue({ text: "b".repeat(200), nextOffset: 200, totalLength: 300 });
-    const tools = createAgentPublicationCopilotTools({ revisions: { state, createCandidate, detail: vi.fn(), describeCandidateRelease: vi.fn(), readCandidateReleaseChange, publish: vi.fn() }, proposalRepository: { createProposal }, proposalRecovery: { recoverOperatorMcpProposal: vi.fn() }, proposalAdapters: [], auditService: { record: vi.fn() }, now: () => new Date("2026-09-13T00:00:00Z") });
+    const describeCandidatePublicationReview = vi.fn().mockResolvedValue({ changeCount: 1, changes: [{ field: "customInstruction", id: "agent", before: "Old", after: "New", truncated: false }], changesTruncated: false, contentHash: "hash-1" });
+    const tools = createAgentPublicationCopilotTools({ revisions: { state, createCandidate, detail: vi.fn(), describeCandidateRelease: vi.fn(), describeCandidatePublicationReview, readCandidateReleaseChange, publish: vi.fn() }, proposalRepository: { createProposal }, proposalRecovery: { recoverOperatorMcpProposal: vi.fn() }, proposalAdapters: [], auditService: { record: vi.fn() }, now: () => new Date("2026-09-13T00:00:00Z"), appBaseUrl: "https://app.radioso.ai" });
     const read = tools.find((tool) => tool.name === "agent_publication_state")!;
     const prepare = tools.find((tool) => tool.name === "prepare_agent_publication")!;
     await expect(read.createTool(context).invoke({}, {} as never)).resolves.toMatchObject({ draftGeneration: 4, publishedRevisionId: null });
-    const output = await prepare.createTool(context).invoke({}, {} as never) as { reviewDigest: string; expiresAt: string };
+    const output = await prepare.createTool(context).invoke({}, {} as never) as { reviewDigest: string; expiresAt: string; confirmation: { requirement: string; approvalUrl?: string }; changesSummary: { changeCount: number }; contentHash: string };
     expect(createProposal).toHaveBeenCalledWith(expect.objectContaining({ targetType: "agent_publication", targetRef: { agentId: "agent-1", candidateRevisionId: "candidate-1" }, payload: { expectedDraftGeneration: 4, expectedPublishedRevisionId: "published-3" }, reviewDigest: expect.any(String), expiresAt: expect.any(Date), origin: { type: "operator_mcp_invocation", invocationId: "invocation-1" } }));
     expect(output.reviewDigest).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(describeCandidatePublicationReview).toHaveBeenCalledWith("workspace-1", "agent-1", "candidate-1");
+    // The approver's consent binds to this exact summary and hash: they travel with the review,
+    // not only inside the payload the reviewed executor later replays.
+    expect(output.changesSummary).toEqual({ changeCount: 1, changes: [{ field: "customInstruction", id: "agent", before: "Old", after: "New", truncated: false }], truncated: false });
+    expect(output.contentHash).toBe("hash-1");
+    // Publishing always goes live at execution: the requirement is signed-in approval with an
+    // absolute link, unconditionally, not something the copilot layer decides per-call.
+    expect(output.confirmation).toMatchObject({ requirement: "signed_in_approval" });
+    expect(output.confirmation.approvalUrl).toMatch(/^https:\/\/app\.radioso\.ai\/oauth\/operator-mcp\/proposal\//);
     expect(createReviewedProposalExecutionTool({ executeMcpReviewedProposal: vi.fn() }).inputSchema.safeParse({ proposalId: "11111111-1111-4111-8111-111111111111", reviewDigest: output.reviewDigest }).success).toBe(true);
     expect(output.expiresAt).toBe("2026-09-13T00:15:00.000Z");
     const detail = tools.find((tool) => tool.name === "agent_publication_candidate_change")!;
@@ -34,7 +44,7 @@ describe("agent publication MCP tools", () => {
   it("does not create a candidate or proposal when permission is revoked while reading state", async () => {
     const authorization = { hasAllPermissions: vi.fn().mockResolvedValueOnce(true).mockResolvedValueOnce(false) };
     const createCandidate = vi.fn(); const createProposal = vi.fn();
-    const tools = createAgentPublicationCopilotTools({ revisions: { state: vi.fn(async () => ({ draft: { generation: 1, basePublishedRevisionId: null } })), createCandidate, detail: vi.fn(), describeCandidateRelease: vi.fn(), readCandidateReleaseChange: vi.fn(), publish: vi.fn() }, proposalRepository: { createProposal }, proposalRecovery: { recoverOperatorMcpProposal: vi.fn() }, proposalAdapters: [], auditService: { record: vi.fn() } });
+    const tools = createAgentPublicationCopilotTools({ revisions: { state: vi.fn(async () => ({ draft: { generation: 1, basePublishedRevisionId: null } })), createCandidate, detail: vi.fn(), describeCandidateRelease: vi.fn(), describeCandidatePublicationReview: vi.fn(), readCandidateReleaseChange: vi.fn(), publish: vi.fn() }, proposalRepository: { createProposal }, proposalRecovery: { recoverOperatorMcpProposal: vi.fn() }, proposalAdapters: [], auditService: { record: vi.fn() } });
     const prepare = tools.find((tool) => tool.name === "prepare_agent_publication")!;
     await expect(prepare.createTool({ ...context, currentAuthorization: authorization }).invoke({}, {} as never)).rejects.toThrow();
     expect(createCandidate).not.toHaveBeenCalled(); expect(createProposal).not.toHaveBeenCalled();
@@ -43,9 +53,25 @@ describe("agent publication MCP tools", () => {
   it("does not persist a proposal when permission is revoked after candidate creation", async () => {
     const authorization = { hasAllPermissions: vi.fn().mockResolvedValueOnce(true).mockResolvedValueOnce(true).mockResolvedValueOnce(false) };
     const createCandidate = vi.fn(async () => ({ id: "candidate-1" })); const createProposal = vi.fn();
-    const tools = createAgentPublicationCopilotTools({ revisions: { state: vi.fn(async () => ({ draft: { generation: 1, basePublishedRevisionId: null } })), createCandidate, detail: vi.fn(), describeCandidateRelease: vi.fn(), readCandidateReleaseChange: vi.fn(), publish: vi.fn() }, proposalRepository: { createProposal }, proposalRecovery: { recoverOperatorMcpProposal: vi.fn() }, proposalAdapters: [], auditService: { record: vi.fn() } });
+    const tools = createAgentPublicationCopilotTools({ revisions: { state: vi.fn(async () => ({ draft: { generation: 1, basePublishedRevisionId: null } })), createCandidate, detail: vi.fn(), describeCandidateRelease: vi.fn(), describeCandidatePublicationReview: vi.fn(), readCandidateReleaseChange: vi.fn(), publish: vi.fn() }, proposalRepository: { createProposal }, proposalRecovery: { recoverOperatorMcpProposal: vi.fn() }, proposalAdapters: [], auditService: { record: vi.fn() } });
     const prepare = tools.find((tool) => tool.name === "prepare_agent_publication")!;
     await expect(prepare.createTool({ ...context, currentAuthorization: authorization }).invoke({}, {} as never)).rejects.toThrow();
     expect(createCandidate).toHaveBeenCalledOnce(); expect(createProposal).not.toHaveBeenCalled();
+  });
+
+  it("tells an agentId-only caller to pass agentId, not agentName, when no agent is selected", async () => {
+    // agent_publication_state and prepare_agent_publication accept only agentId (see `readInput` /
+    // `prepareInput` above) -- the shared "no agent" message must not send this caller after a field
+    // its own schema would then reject.
+    const tools = createAgentPublicationCopilotTools({ revisions: { state: vi.fn(), createCandidate: vi.fn(), detail: vi.fn(), describeCandidateRelease: vi.fn(), describeCandidatePublicationReview: vi.fn(), readCandidateReleaseChange: vi.fn(), publish: vi.fn() }, proposalRepository: { createProposal: vi.fn() }, proposalRecovery: { recoverOperatorMcpProposal: vi.fn() }, proposalAdapters: [], auditService: { record: vi.fn() } });
+    const noAgentContext = { ...context, pageContext: { ...context.pageContext, agentId: null } };
+    const read = tools.find((tool) => tool.name === "agent_publication_state")!;
+    const prepare = tools.find((tool) => tool.name === "prepare_agent_publication")!;
+
+    const readRejection = await read.createTool(noAgentContext).invoke({}, {} as never).catch((error: Error) => error);
+    const prepareRejection = await prepare.createTool(noAgentContext).invoke({}, {} as never).catch((error: Error) => error);
+
+    expect(readRejection).toMatchObject({ code: "bad_request", message: "No agent is selected. Pass agentId." });
+    expect(prepareRejection).toMatchObject({ code: "bad_request", message: "No agent is selected. Pass agentId." });
   });
 });

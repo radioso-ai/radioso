@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 
 import { PLAN_CATALOG } from "@radioso/plan-catalog";
 
@@ -11,7 +11,11 @@ import type {
   ProcessedEventClaim,
 } from "./billingCustomerRepository.js";
 import { handleBillingWebhookEvent, type BillingWebhookHandlerDeps } from "./billingWebhookHandler.js";
-import type { StripeWebhookEvent } from "./stripeGateway.js";
+import {
+  STRIPE_WEBHOOK_EVENT_TYPES,
+  type StripeHandledWebhookEventType,
+  type StripeWebhookEvent,
+} from "./stripeGateway.js";
 
 /** In-memory fake. `withTransaction` runs the callback against the same fake (no real rollback --
  *  transactional atomicity is covered by `billingCustomerRepository.integration.test.ts`). */
@@ -449,6 +453,53 @@ describe("handleBillingWebhookEvent", () => {
     expect(second.outcome).toBe("duplicate");
     expect(addCredits).toHaveBeenCalledTimes(1);
     expect(auditRecord).toHaveBeenCalledTimes(1);
+  });
+
+  it("acts on every event type the webhook endpoint subscribes to", async () => {
+    // The typed payload union and the subscribed list name the same event types...
+    type TypedEventType<E> = E extends { type: infer K extends string } ? (string extends K ? never : K) : never;
+    expectTypeOf<TypedEventType<StripeWebhookEvent>>().toEqualTypeOf<StripeHandledWebhookEventType>();
+
+    // ...and the handler acts on each of them. Keyed by the list, so a type added there without a
+    // payload here fails to compile.
+    const customerId = "cus_unknown";
+    const subscription = {
+      id: "sub_1",
+      customerId,
+      status: "active",
+      priceId: null,
+      productId: null,
+      interval: null,
+      currentPeriodEnd: null,
+    };
+    const events: { [K in StripeHandledWebhookEventType]: Extract<StripeWebhookEvent, { type: K }> } = {
+      "checkout.session.completed": {
+        id: "evt_sub_1",
+        type: "checkout.session.completed",
+        session: {
+          id: "cs_1",
+          mode: "subscription",
+          customerId,
+          clientReferenceId: null,
+          subscriptionId: null,
+          priceId: null,
+          priceLookupKey: null,
+          productId: null,
+          interval: null,
+          currentPeriodEnd: null,
+        },
+      },
+      "customer.subscription.updated": { id: "evt_sub_2", type: "customer.subscription.updated", subscription },
+      "customer.subscription.deleted": { id: "evt_sub_3", type: "customer.subscription.deleted", subscription },
+      "invoice.paid": { id: "evt_sub_4", type: "invoice.paid", invoice: { id: "in_1", customerId } },
+      "invoice.payment_failed": { id: "evt_sub_5", type: "invoice.payment_failed", invoice: { id: "in_2", customerId } },
+    };
+
+    for (const type of STRIPE_WEBHOOK_EVENT_TYPES) {
+      const { deps } = createDeps();
+      const result = await handleBillingWebhookEvent(events[type], deps);
+      expect(result.outcome, type).not.toBe("ignored");
+    }
   });
 
   it("ignores event types outside the billing table without touching the repository", async () => {

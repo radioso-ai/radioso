@@ -41,15 +41,11 @@ const statusBadgeLabel = (status: AgentChannelCredential['status']) =>
   `${status.charAt(0).toUpperCase()}${status.slice(1)}`
 
 /** Quiet row meta: identity, when it stops working, and whether anything ever used it. */
-const credentialMeta = (credential: AgentChannelCredential): string => {
-  const facts = [
-    credential.prefix,
-    `Expires ${formatCredentialDate(credential.expiresAt)}`,
-    `Last used ${formatCredentialDate(credential.lastUsedAt)}`,
-  ]
-  if (credential.revokedAt) facts.push(`Revoked ${formatCredentialDate(credential.revokedAt)}`)
-  return facts.join(' · ')
-}
+const credentialMeta = (credential: AgentChannelCredential): string => [
+  credential.prefix,
+  `Expires ${formatCredentialDate(credential.expiresAt)}`,
+  `Last used ${formatCredentialDate(credential.lastUsedAt)}`,
+].join(' · ')
 
 type RowAction = { type: 'details' | 'revoke' | 'rotate'; credential: AgentChannelCredential }
 
@@ -90,6 +86,50 @@ export function AgentChannelCredentialList({
     if (!open && !busyCredentialId) setAction(null)
   }
 
+  const renderCredential = (credential: AgentChannelCredential) => {
+    const active = credential.status === 'active'
+    const busy = busyCredentialId === credential.id
+    return (
+      <div key={credential.id} className="flex items-center justify-between gap-3 rounded-md border border-border bg-background p-3">
+        <div className="min-w-0 space-y-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="truncate text-sm font-medium text-foreground">{credential.label}</p>
+            {active ? null : <Badge variant="secondary">{statusBadgeLabel(credential.status)}</Badge>}
+          </div>
+          <p className="truncate text-xs text-muted-foreground">{credentialMeta(credential)}</p>
+        </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="shrink-0"
+              disabled={busy}
+              aria-label={`Actions for ${credential.label}`}
+            >
+              {busy ? <Spinner className="h-4 w-4" /> : <MoreHorizontal className="h-4 w-4" />}
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onSelect={() => setAction({ type: 'details', credential })}>
+              <Info className="mr-2 h-4 w-4" />
+              Details
+            </DropdownMenuItem>
+            <DropdownMenuItem disabled={!active} onSelect={() => setAction({ type: 'rotate', credential })}>
+              <RefreshCw className="mr-2 h-4 w-4" />
+              Rotate
+            </DropdownMenuItem>
+            <DropdownMenuItem variant="destructive" disabled={!active} onSelect={() => setAction({ type: 'revoke', credential })}>
+              <Trash2 className="mr-2 h-4 w-4" />
+              Revoke
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-3">
       {heading || isLoading ? (
@@ -108,54 +148,12 @@ export function AgentChannelCredentialList({
       ) : null}
 
       <div className="space-y-2">
-        {credentials.map((credential) => {
-          const active = credential.status === 'active'
-          const busy = busyCredentialId === credential.id
-          return (
-            <div key={credential.id} className="flex items-center justify-between gap-3 rounded-md border border-border bg-background p-3">
-              <div className="min-w-0 space-y-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="truncate text-sm font-medium text-foreground">{credential.label}</p>
-                  {active ? null : <Badge variant="secondary">{statusBadgeLabel(credential.status)}</Badge>}
-                </div>
-                <p className="truncate text-xs text-muted-foreground">{credentialMeta(credential)}</p>
-              </div>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="shrink-0"
-                    disabled={busy}
-                    aria-label={`Actions for ${credential.label}`}
-                  >
-                    {busy ? <Spinner className="h-4 w-4" /> : <MoreHorizontal className="h-4 w-4" />}
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onSelect={() => setAction({ type: 'details', credential })}>
-                    <Info className="mr-2 h-4 w-4" />
-                    Details
-                  </DropdownMenuItem>
-                  <DropdownMenuItem disabled={!active} onSelect={() => setAction({ type: 'rotate', credential })}>
-                    <RefreshCw className="mr-2 h-4 w-4" />
-                    Rotate
-                  </DropdownMenuItem>
-                  <DropdownMenuItem variant="destructive" disabled={!active} onSelect={() => setAction({ type: 'revoke', credential })}>
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    Revoke
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-          )
-        })}
+        {credentials.map(renderCredential)}
       </div>
 
       {hasMore ? (
-        <Button type="button" variant="outline" size="sm" onClick={onLoadMore} disabled={isLoadingMore}>
-          {isLoadingMore ? <Spinner className="mr-2 h-4 w-4" /> : null}<span>Load more</span>
+        <Button type="button" variant="outline" size="sm" onClick={onLoadMore} loading={isLoadingMore}>
+          Load more
         </Button>
       ) : null}
 
@@ -193,7 +191,7 @@ export function AgentChannelCredentialList({
               }}
             >
               {busyCredentialId ? <Spinner className="mr-2 h-4 w-4" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-              Rotate credential
+              <span>Rotate credential</span>
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -246,13 +244,13 @@ function IssueCredentialForm({
       <Button
         type="button"
         className="mt-2 justify-self-start md:col-start-3 md:row-start-2 md:mt-0"
-        disabled={isCreating || !label.trim() || !expiresAt}
+        disabled={!label.trim() || !expiresAt}
+        loading={isCreating} icon={<KeyRound />}
         onClick={() => {
           if (!expiresAt) return
           onIssue({ label: label.trim(), expiresAt })
         }}
       >
-        {isCreating ? <Spinner className="mr-2 h-4 w-4" /> : <KeyRound className="mr-2 h-4 w-4" />}
         Create credential
       </Button>
     </div>

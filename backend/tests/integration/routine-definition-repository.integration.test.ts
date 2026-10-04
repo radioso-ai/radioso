@@ -243,6 +243,81 @@ describeIntegration("RoutineDefinitionRepository (Postgres)", () => {
     expect(cleared.activation.coverageCriteria).toBeUndefined();
   });
 
+  it("round-trips tool exposure through its three columns, keeping an empty name and a disabled block distinct from absence", async () => {
+    const exposure = { enabled: true, toolName: "start_return", description: "Start a return for an order." };
+    const created = await repository.createDraft(agentId, baseDraft({ exposure }));
+    expect(created.exposure).toEqual(exposure);
+
+    const withdrawn = await repository.updateDraft(agentId, created.id, baseDraft({ exposure: { ...exposure, enabled: false } }));
+    expect(withdrawn.exposure).toEqual({ ...exposure, enabled: false });
+
+    const unnamed = await repository.updateDraft(agentId, created.id, baseDraft({ exposure: { enabled: true, toolName: "", description: "" } }));
+    expect(unnamed.exposure).toEqual({ enabled: true, toolName: "", description: "" });
+
+    const cleared = await repository.updateDraft(agentId, created.id, baseDraft());
+    expect(cleared).not.toHaveProperty("exposure");
+  });
+
+  it("round-trips an ending's operator notice on both kinds, and reads an ending without one as absent", async () => {
+    const created = await repository.createDraft(agentId, baseDraft({
+      terminals: [
+        { stableStepId: "term_complete", kind: "complete", instruction: "All done", operatorNotice: { subject: "Refund: {{slot.order_id}}", intro: null }, ordinal: 0 },
+        { stableStepId: "term_handoff", kind: "handoff", instruction: null, operatorNotice: { subject: null, intro: null }, ordinal: 1 },
+        { stableStepId: "term_quiet", kind: "complete", instruction: null, ordinal: 2 },
+      ],
+    }));
+
+    expect(created.terminals[0].operatorNotice).toEqual({ subject: "Refund: {{slot.order_id}}", intro: null });
+    expect(created.terminals[1].operatorNotice).toEqual({ subject: null, intro: null });
+    expect(created.terminals[2]).not.toHaveProperty("operatorNotice");
+
+    const cleared = await repository.updateDraft(agentId, created.id, baseDraft());
+    expect(cleared.terminals[0]).not.toHaveProperty("operatorNotice");
+  });
+
+  it("reads a terminal row written before operator notices existed back with no notice", async () => {
+    const created = await repository.createDraft(agentId, baseDraft());
+    await database.query(
+      `INSERT INTO routine_terminal (definition_id, stable_step_id, kind, instruction, ordinal)
+       VALUES ($1, 'term_legacy_handoff', 'handoff', 'Legacy hand-off', 1)`,
+      [created.id],
+    );
+
+    const read = await repository.findById(agentId, created.id);
+
+    expect(read?.terminals.find((terminal) => terminal.stableStepId === "term_legacy_handoff")).toEqual({
+      stableStepId: "term_legacy_handoff",
+      kind: "handoff",
+      instruction: "Legacy hand-off",
+      ordinal: 1,
+    });
+  });
+
+  it("refuses notice text on a terminal row whose notice is off", async () => {
+    const created = await repository.createDraft(agentId, baseDraft());
+
+    await expect(database.query(
+      `INSERT INTO routine_terminal (definition_id, stable_step_id, kind, instruction, ordinal, operator_notice_subject)
+       VALUES ($1, 'term_orphan_text', 'complete', NULL, 1, 'Subject without a notice')`,
+      [created.id],
+    )).rejects.toThrow();
+  });
+
+  it("carries an operator notice into the agent draft snapshot and the published revision", async () => {
+    await initAgentDraft(agentId);
+    const notice = { subject: "New booking", intro: "Please confirm with the guest." };
+    await repository.createDraftWithAgentDraft(workspaceId, agentId, runnableDraft({
+      terminals: [{ stableStepId: "term_complete", kind: "complete", instruction: "Done", operatorNotice: notice, ordinal: 0 }],
+    }));
+
+    const draft = await revisions.readDraft(workspaceId, agentId);
+    expect(draft?.snapshot.routines[0]?.terminals[0]?.operatorNotice).toEqual(notice);
+
+    await publishAgentRevision(agentId);
+    const state = await revisions.readState(workspaceId, agentId);
+    expect(state?.publishedRevision?.snapshot.routines[0]?.terminals[0]?.operatorNotice).toEqual(notice);
+  });
+
   it("updateDraft replaces children in place without branching the lineage", async () => {
     const created = await repository.createDraft(agentId, baseDraft());
 

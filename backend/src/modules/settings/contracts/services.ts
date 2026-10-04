@@ -9,6 +9,13 @@ import type {
   WorkspaceLlmCapabilityPreferenceInput,
 } from "./llmCapability.js";
 import type { DeclaredMetadataField, MetadataFieldSuggestion } from "./retrieval.js";
+import type { PlatformSettingsResource } from "../domain/platformSettings.js";
+import type { OwnerCommitHook } from "../../../shared/infra/kysely/types.js";
+
+export type FieldScopedCasOutcome =
+  | { readonly outcome: "applied" }
+  | { readonly outcome: "changed"; readonly fields: readonly string[] }
+  | { readonly outcome: "targetDeleted" };
 
 export interface IngestionSettingsRepositoryPort {
   findByWorkspaceId(workspaceId: string): Promise<IngestionSettingsRecord | null>;
@@ -24,8 +31,22 @@ export interface IngestionSettingsRepositoryPort {
   upsert(
     workspaceId: string,
     input: ValidatedIngestionSettingsInput,
-    options?: { expectedUpdatedAt?: Date },
+    options?: {
+      expectedUpdatedAt?: Date;
+    },
   ): Promise<IngestionSettingsRecord>;
+  /** Field-scoped proposal CAS: locks the row, compares `expected`/`expectedUpdatedAt`,
+   * re-validates the merged state, and writes — all in one transaction. */
+  applyProposalPatch(input: {
+    readonly workspaceId: string;
+    readonly patch: Partial<ValidatedIngestionSettingsInput>;
+    /** Runs under the row lock so coupled-field validation sees the current merged state. */
+    readonly validateMerged: (current: IngestionSettingsRecord) => ValidatedIngestionSettingsInput;
+    readonly onCommitted?: OwnerCommitHook<{ readonly workspaceId: string }>;
+  } & (
+    | { readonly expected: Partial<ValidatedIngestionSettingsInput> }
+    | { readonly expectedUpdatedAt: Date }
+  )): Promise<FieldScopedCasOutcome>;
   clearPendingEmbeddingModel?(
     workspaceId: string,
     expectedPendingEmbeddingModel: NonNullable<
@@ -35,6 +56,63 @@ export interface IngestionSettingsRepositoryPort {
   ): Promise<IngestionSettingsRecord | null>;
   promotePendingEmbeddingModelIfReady?(workspaceId: string): Promise<IngestionSettingsRecord | null>;
 }
+
+/** The ingestion owner's field-scoped proposal contract: what a copilot draft names and carries. */
+export type IngestionSettingsProposalPatch = Partial<Pick<ValidatedIngestionSettingsInput,
+  "chunkingStrategy" | "fixedWindowChunkSize" | "fixedWindowChunkOverlap" | "structuredMinChunkSize" | "structuredMaxChunkSize" | "documentEnrichmentEnabled" | "manualDocumentEnrichmentOverride"
+>>;
+export interface IngestionSettingsFieldProposalPreparation {
+  /** Complete, normalized card surface; new proposals write only keys named by `expected`. */
+  readonly normalizedPatch: IngestionSettingsProposalPatch;
+  readonly expected: IngestionSettingsProposalPatch;
+  readonly display: { readonly current: Record<string, unknown>; readonly proposed: Record<string, unknown> };
+}
+export type IngestionSettingsFieldProposalApplyInput = { readonly normalizedPatch: IngestionSettingsProposalPatch } & (
+  | { readonly expected: IngestionSettingsProposalPatch }
+  | { readonly expectedUpdatedAt: Date }
+);
+export type IngestionSettingsFieldProposalApplyOutcome =
+  | { readonly status: "applied" }
+  | { readonly status: "changed"; readonly fields: readonly string[] }
+  | { readonly status: "target_changed" }
+  | { readonly status: "target_deleted" };
+
+/** Narrow owner port for proposal adapters and reviewed MCP preparation. */
+export interface IngestionSettingsProposalPort {
+  prepareFieldProposal(workspaceId: string, patch: IngestionSettingsProposalPatch): Promise<IngestionSettingsFieldProposalPreparation>;
+  readFieldProposalVersion(workspaceId: string, expected?: IngestionSettingsProposalPatch): Promise<string>;
+  readFieldProposalDisplay(workspaceId: string): Promise<Record<string, unknown>>;
+  applyFieldProposal(workspaceId: string, prepared: IngestionSettingsFieldProposalApplyInput, options?: { readonly onCommitted?: OwnerCommitHook<{ readonly workspaceId: string }> }): Promise<IngestionSettingsFieldProposalApplyOutcome>;
+}
+
+/** The workspace-settings owner's field-scoped proposal contract: what a copilot draft names and carries. */
+export type PlatformSettingsProposalPatch = Partial<Pick<PlatformSettingsResource["assistant"],
+  "assistantName" | "greetingInstruction" | "assistantDefaultLocale" | "proactiveGreetingEnabled" | "suggestedQuestionsEnabled" | "customInstruction"
+> & Pick<PlatformSettingsResource["channels"],
+  "anonymousChatEnabled" | "websiteEmbedEnabled" | "websiteEmbedAllowedOrigins" | "websiteEmbedLauncherLabel" | "websiteEmbedLauncherPosition"
+>>;
+export interface PlatformSettingsFieldProposalPreparation {
+  /** Complete, normalized card surface; only keys in `expected` are written by new proposals. */
+  readonly normalizedPatch: PlatformSettingsProposalPatch;
+  /** Draft-time values for exactly the fields the proposal changes. */
+  readonly expected: PlatformSettingsProposalPatch;
+  readonly display: {
+    readonly current: Record<string, unknown>;
+    readonly proposed: Record<string, unknown>;
+    readonly changesReach: boolean;
+  };
+}
+export type PlatformSettingsFieldProposalApplyInput = {
+  readonly normalizedPatch: PlatformSettingsProposalPatch;
+} & (
+  | { readonly expected: PlatformSettingsProposalPatch }
+  | { readonly expectedUpdatedAt: Date }
+);
+export type PlatformSettingsFieldProposalApplyOutcome =
+  | { readonly status: "applied"; readonly reason?: string }
+  | { readonly status: "changed"; readonly fields: readonly string[] }
+  | { readonly status: "target_changed" }
+  | { readonly status: "target_deleted" };
 
 export type EmbeddingModelTransitionStatus =
   | "idle"
@@ -109,4 +187,3 @@ export interface RetrievalMetadataFieldSourcePort {
 export interface DeclaredMetadataFieldSourcePort {
   listDeclaredMetadataFields(workspaceId: string): Promise<readonly DeclaredMetadataField[]>;
 }
-

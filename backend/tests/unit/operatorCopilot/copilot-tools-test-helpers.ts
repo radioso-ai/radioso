@@ -90,7 +90,10 @@ export const authoredDirective = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-export const resolvedAgent = (directives = [authoredDirective()]) => ({
+export const resolvedAgent = (
+  directives = [authoredDirective()],
+  agentOverrides: Record<string, unknown> = {},
+) => ({
   id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
   workspaceId: "workspace-1",
   ...validateAgentInput({
@@ -104,6 +107,7 @@ export const resolvedAgent = (directives = [authoredDirective()]) => ({
         allowedOrigins: ["https://private.example.com"],
       },
     },
+    ...agentOverrides,
   }),
   authoredDirectives: directives,
   createdAt: new Date("2026-08-01T10:00:00.000Z"),

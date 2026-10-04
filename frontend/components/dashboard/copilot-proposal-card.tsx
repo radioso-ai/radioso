@@ -69,7 +69,12 @@ interface CopilotProposalDiffRow {
   kind: 'added' | 'changed' | 'removed'
 }
 
-const displayPath = (path: string) => path === '$' ? 'Value' : path.replace(/^\$\./, '')
+const displayPath = (path: string) => {
+  if (path === '$') return 'Value'
+  if (path === '$.excludes') return 'Replaces'
+  if (path === '$.priority') return 'Priority'
+  return path.replace(/^\$\./, '')
+}
 
 const valuesEqual = (left: unknown, right: unknown) => {
   if (Object.is(left, right)) return true
@@ -208,7 +213,7 @@ const statusMessage = (
   detail: CopilotProposalDetail | null,
   proposalReason?: string | null,
 ) => {
-  if (state.status === 'stale') return 'The target changed since this proposal was drafted. Ask Ray to draft it again.'
+  if (state.status === 'stale') return state.reason ?? detail?.reason ?? proposalReason ?? 'The target changed since this proposal was drafted. Ask Ray to draft it again.'
   if (state.status === 'failed') return state.reason ?? detail?.reason ?? detail?.failureReason ?? proposalReason ?? 'The proposal could not be applied.'
   // An apply can succeed at the thing the proposal is named for and still leave a step for the
   // operator - creating an agent whose website did not queue is applied, and is not finished.

@@ -1,14 +1,18 @@
 import { GENERATION_SURFACE, type GenerationSurface } from "../../domain/generationSurface.js";
 import {
   appendSteeringRules,
+  partitionRoutineStepSteering,
+  renderRoutineStepInstructions,
   renderSteeringRules,
+  routineStepSteeringOptions,
   steeringForSurface,
   type RenderSteeringRulesOptions,
+  type RoutinePendingStep,
   type SteeringRule,
 } from "../../domain/steeringRule.js";
-import { loadPromptTemplate } from "./promptLoader.js";
+import { loadPromptTemplate, renderPromptTemplate } from "./promptLoader.js";
 
-export interface SteeringBlockRenderOptions extends Pick<RenderSteeringRulesOptions, "includeRuleIds"> {
+interface SteeringBlockRenderOptions extends Pick<RenderSteeringRulesOptions, "includeRuleIds"> {
   /** Generator these rules are being rendered for. Defaults to the answering voice. */
   surface?: GenerationSurface;
 }
@@ -35,22 +39,99 @@ const surfaceOptions = (options: SteeringBlockRenderOptions): RenderSteeringRule
   };
 };
 
+const surfaceRules = (steering: SteeringRule[], options: SteeringBlockRenderOptions): SteeringRule[] =>
+  steeringForSurface(steering, options.surface ?? GENERATION_SURFACE.ANSWER);
+
+/**
+ * A routine chat step fed by a retrieval step composes its reply through the answer
+ * generators, which render the step's steering here (#1351). When a routine step's
+ * rule is present it controls the reply, as it does in the step renderer, and
+ * directives render through the same subordinate framing
+ * (`chat/routine-step-steering.md`) inside `chat/routine-step-answer-steering.md`.
+ * That layout opens with the step instruction and closes with a reminder to finish
+ * it: with the instruction after the rules, a grounded answer followed it literally
+ * and dropped the rules' tone and openings; without the reminder, it often answered
+ * and stopped before the step's question. Undefined without a routine rule, so every
+ * other answer renders exactly the generic block.
+ */
+const renderRoutineStepBlock = (rules: SteeringRule[], options: SteeringBlockRenderOptions): string | undefined => {
+  const { instructions, guidance } = partitionRoutineStepSteering(rules);
+  if (instructions.length === 0) {
+    return undefined;
+  }
+  const guidanceBlock = renderSteeringRules(guidance, {
+    ...routineStepSteeringOptions(loadPromptTemplate("chat/routine-step-steering.md")),
+    includeRuleIds: options.includeRuleIds,
+  });
+  return renderPromptTemplate("chat/routine-step-answer-steering.md", {
+    instructions: renderRoutineStepInstructions(instructions.map((rule) => rule.action)),
+    subordinate_guidance: guidanceBlock ? `${guidanceBlock}\n\n` : "",
+  });
+};
+
 export const renderSteeringBlock = (
   steering: SteeringRule[] = [],
   options: SteeringBlockRenderOptions = {},
-): string =>
-  renderSteeringRules(
-    steeringForSurface(steering, options.surface ?? GENERATION_SURFACE.ANSWER),
-    surfaceOptions(options),
-  );
+): string => {
+  const rules = surfaceRules(steering, options);
+  return renderRoutineStepBlock(rules, options) ?? renderSteeringRules(rules, surfaceOptions(options));
+};
+
+interface RoutineLeadBackOptions {
+  /**
+   * The agent hands a `no_support` decline to a person, so a reply that commits that
+   * outcome itself (a grounded answer) is told to leave the lead-back out of it. The model
+   * follows the instruction; nothing in code removes the sentence.
+   */
+  noSupportHandsOff?: boolean;
+}
+
+const renderRoutineLeadBack = (pendingStep: RoutinePendingStep, options: RoutineLeadBackOptions): string =>
+  renderPromptTemplate("chat/routine-lead-back.md", {
+    pending_step: `- ${pendingStep.instruction}`,
+    missing_slots: pendingStep.missingSlotKeys.length > 0
+      ? `\n${renderPromptTemplate("chat/routine-lead-back-missing-slots.md", {
+        slot_keys: pendingStep.missingSlotKeys.join(", "),
+      })}`
+      : "",
+    no_support_handoff: options.noSupportHandsOff
+      ? `\n\n${loadPromptTemplate("chat/routine-lead-back-decline-handoff.md")}`
+      : "",
+  });
+
+/**
+ * A routine that yielded the turn stays parked on a step, and the reply to the visitor's
+ * digression closes by pointing back to it (#1377). The roles are the reverse of a
+ * routine step's reply: the reply comes first and the pending step only shapes its closing
+ * sentence (`chat/routine-lead-back.md`). Callers append it last: placed before a grounded
+ * answer's coverage and envelope rules, the model left the closing sentence out. Nothing
+ * is appended when a routine step's rule steers the reply, since that routine is handling
+ * the turn itself. The pending step carries slot keys, never captured values, so no
+ * visitor text reaches the system prompt through it.
+ */
+export const appendRoutineLeadBack = (
+  prompt: string,
+  steering: SteeringRule[] = [],
+  pendingStep?: RoutinePendingStep,
+  options: RoutineLeadBackOptions = {},
+): string => {
+  if (!pendingStep || (!pendingStep.instruction && pendingStep.missingSlotKeys.length === 0)) {
+    return prompt;
+  }
+  if (partitionRoutineStepSteering(surfaceRules(steering, {})).instructions.length > 0) {
+    return prompt;
+  }
+  return `${prompt}\n\n${renderRoutineLeadBack(pendingStep, options)}`;
+};
 
 export const appendSteeringBlock = (
   prompt: string,
   steering: SteeringRule[] = [],
   options: SteeringBlockRenderOptions = {},
-): string =>
-  appendSteeringRules(
-    prompt,
-    steeringForSurface(steering, options.surface ?? GENERATION_SURFACE.ANSWER),
-    surfaceOptions(options),
-  );
+): string => {
+  const rules = surfaceRules(steering, options);
+  const routineStepBlock = renderRoutineStepBlock(rules, options);
+  return routineStepBlock === undefined
+    ? appendSteeringRules(prompt, rules, surfaceOptions(options))
+    : `${prompt}\n\n${routineStepBlock}`;
+};

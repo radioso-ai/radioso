@@ -1,7 +1,7 @@
 ---
 title: "Code Map"
 description: "Navigation map from product areas to public surfaces, owners, tests, and related docs for focused feature work."
-last_updated: 2026-09-16
+last_updated: 2026-10-03
 ---
 
 # Code Map
@@ -426,7 +426,8 @@ Public and tool surfaces:
 - `backend/src/modules/operatorCopilot/contracts.ts`, `catalog.ts`, `service.ts`, and `routes.ts`
 - `backend/src/modules/operatorCopilot/tools/index.ts` (catalog contributions)
 - `backend/src/modules/operatorCopilot/tools/agentTurnProbe.ts` (`test_agent_turn` contract and projection)
-- `backend/src/modules/operatorCopilot/tools/routines.ts` (`routine_definition`, `validate_routine`, `propose_routine`, `propose_routine_edit`)
+- `backend/src/modules/operatorCopilot/tools/testChat.ts`, `contracts/testChat.ts`, and `services/testChatService.ts` (`test_chat_sessions`, `test_chat_transcript`, `test_chat_turn_trace`, `send_test_chat_message`), which add spend, bounds, and surface policy over test-execution's own turn reads, list summaries, and default-revision start in `backend/src/modules/test-execution/`; the turn trace reuses `turn_trace`'s envelope schema and bound from `tools/chatPayloadBounds.ts`
+- `backend/src/modules/operatorCopilot/tools/routines.ts` (`routine_definition`, `validate_routine`, `propose_routine`, `propose_routine_edit`, `propose_routine_exposure`)
 - `backend/src/app/composition/copilotProposalAdapters.ts` (proposal adapters: directive, agent setting, and the routine edit apply rules)
 - `backend/src/app/composition/copilotToolCatalog.ts` (default wiring and contributed-tool assembly)
 - `backend/src/modules/operatorCopilot/contribution.ts` (what a contributing module declares)
@@ -535,11 +536,13 @@ history through public channels.
 Public surfaces and key files:
 
 - `backend/src/modules/test-execution/README.md`
-- `backend/src/modules/test-execution/service.ts`
+- `backend/src/modules/test-execution/testExecution.ts`
+- `backend/src/modules/test-execution/testExecutionTurns.ts` (turn read model: turns per side with state and failure code)
 - `backend/src/app/http/routes/testExecutionRoutes.ts`
 - `backend/src/app/http/openapi/paths/testExecutionPaths.ts`
 - `backend/src/modules/chat/services/trustedTestExecutionRunnerAdapter.ts`
 - `backend/tests/unit/test-execution-service.test.ts`
+- `backend/tests/integration/test-execution-repository.integration.test.ts`
 - `backend/tests/integration/test-execution-routes.integration.test.ts`
 
 ## Revision Eval Runs
@@ -644,7 +647,140 @@ Public surfaces and key files:
 - `backend/tests/integration/agent-revision-publication.integration.test.ts`
 
 Private Test Chat and revision evals consume the agents module's narrow
-revision-reader ports. They do not read mutable authoring rows directly.
+revision-reader ports. They do not read mutable authoring rows directly. The
+revision a test runs when none is named comes from
+`AgentRevisionService.resolveDefaultTestRevision`, which test execution reaches
+through its own `TestExecutionDefaultRevisionPort`.
+
+## Agent Public Identity
+
+Owns how an agent is named and reached from outside the workspace: the minted
+`publicId`, the operator-authored `publicDescription`, the two switches that
+publish the agent card and open credential-free access, and the per-agent walk-in
+budget. Minting is lazy and idempotent — the id appears on the write that first
+makes the agent reachable — and rotation is a revocation rather than a settings
+save, which is why it has its own route and its own audit event.
+
+The invariant that credential-free access requires a published card lives in
+`validateAgentInput`, so every writer carries it. `publicId` is deliberately
+absent from `agentInputFieldSchemas`, which is the allowed-field list for both
+the PUT body and Ray's `propose_agent_setting`: the id is minted, never authored.
+
+Public surfaces and key files:
+
+- `backend/src/modules/agents/domain.ts` (`AgentPublicIdentity`, the invariant, `unpublishedAgentPublicIdentity`)
+- `backend/src/modules/agents/services/agentPublicIdentity.ts` (`mintPublicId`, `ensurePublicIdMintedForInput`, `describePublicAccessChange`)
+- `backend/src/app/http/routes/agentPublicIdentityRoutes.ts` (`POST /api/v1/agents/:agentId/public-id/rotate`)
+- `backend/src/db/repositories/agentRepository.ts` (`findByPublicId`, the `agents.public_id` partial unique index)
+- `frontend/components/dashboard/settings/walk-in-access-section.tsx` (Channels -> MCP, Open access)
+- `backend/tests/unit/agents/agentPublicIdentity.test.ts`
+- `backend/tests/integration/agent-public-identity.integration.test.ts`
+- `frontend/tests/e2e/mcp-converse-channel.spec.ts`
+
+Related docs:
+
+- [MCP Client Setup](../mcp-client-setup.md)
+
+## Agent Discovery Documents
+
+Owns the three public documents a visiting agent reads before it connects: an
+A2A Agent Card, an MCP server card, and a catalog entry. Each renderer is a pure
+function of one `AgentPublicProfile` and carries the Zod schema that types it;
+the OpenAPI layer registers those schemas rather than restating them, so the
+published contract and the served document cannot drift. Tool descriptors arrive
+through the routines module's published port as a type, so the module renders
+what a descriptor says while routines, slots, and exposure rules stay behind it.
+
+`AgentPublicProfilePort.load` answers null for every reason a caller is not
+entitled to a document — unknown id, card switched off, agent unpublished, agent
+deleted — which is how all four end in the same 404. It throws when
+`PUBLIC_MCP_CONVERSE_URL` is unset, so a misconfigured deployment refuses to
+publish a card instead of naming an endpoint that does not answer. An agent's
+endpoint is that value plus `/a/{publicId}`, and the standalone MCP server
+proxies the server card one segment past it.
+
+Public surfaces and key files:
+
+- `backend/src/modules/agentDiscovery/routes.ts` (`GET /.well-known/agent-card/{publicId}.json`, `/mcp/server-card/`, `/ai-catalog/`)
+- `backend/src/modules/agentDiscovery/contracts/agentPublicProfile.ts` (`AgentPublicProfile`, `AgentPublicProfilePort`)
+- `backend/src/modules/agentDiscovery/domain/` (`renderA2aAgentCard`, `renderMcpServerCard`, `renderAiCatalog`, `discoveryDocumentUrls`)
+- `backend/src/app/composition/agentDiscovery.ts` (profile from the agent row, its published release, and `AgentToolCatalogPort`)
+- `packages/radioso-mcp-server/src/http/resolveMcpRoute.ts` and `agentServerCard.ts` (`GET /mcp/a/{publicId}/server-card`)
+- `packages/wordpress-companion/radioso-agent-card.php` (the site-level `.well-known` redirects)
+- `frontend/lib/radioso-embed-launcher.js` (`<link rel="agent-card">` during bootstrap)
+- `backend/tests/unit/agentDiscovery/`, `backend/tests/contract/agent-discovery.contract.test.ts`, `backend/tests/integration/agent-discovery.integration.test.ts`
+
+Related docs:
+
+- [MCP Client Setup](../mcp-client-setup.md)
+- `docs-portal/content/guides/agent-converse.mdx`
+
+## MCP Converse Sessions
+
+Owns who is allowed to hold a converse session and for how long. A session names
+its **origin** — a minted credential, or an agent's public id — and every request
+re-checks that origin through one `AgentConverseOriginVerifier`. The HTTP
+middleware and `AgentConverseSessionService.validate` never branch on which kind
+it is; the two adapters in composition do, and each owns its own refusal codes
+and its own audit trail.
+
+Comparing the session's public id against the agent's current one is the whole
+walk-in invalidation mechanism: rotating the id or closing the door refuses the
+next request, with no session table to sweep. A credential-bound session resolves
+its conversation through `agent_converse_session_mappings`, which keeps one
+conversation across exchanges; a walk-in session mints a public session id and
+persists nothing, because each walk-in exchange opens a fresh conversation.
+
+Walk-in exchanges spend a per-source and a per-agent budget before the exchange
+resolves anything about the agent, so a throttled caller and an agent that does
+not exist are indistinguishable. Turns inside an open session spend the shared
+agent-channel budgets, keyed by grant for a credential and by session for a
+walk-in caller.
+
+Public surfaces and key files:
+
+- `backend/src/modules/settings/contracts/agentConverseSession.ts` (`AgentConverseOrigin`, `AgentConversePrincipal`, `AgentConverseOriginVerifier`, `AgentConverseWalkInIssuerPort`)
+- `backend/src/modules/settings/services/agentConverseSessionService.ts` and `converseExchangeOrigins.ts` (the two issue paths)
+- `backend/src/modules/settings/domain/publicChatSession.ts` (`issueConverseChatSession`, `verifyConverseChatSession`) and `converseGrantVersion.ts`
+- `backend/src/app/composition/agentConverseOrigins.ts` (both verifier adapters, the walk-in issuer, the outcome observer)
+- `backend/src/app/composition/converseVisitorIdentity.ts` (`signedIdentity` bound to the session rather than an origin)
+- `backend/src/app/http/middleware/mcpConverseWalkInRateLimiter.ts` and `requireMcpConverseSession.ts`
+- `backend/src/app/http/routes/mcpConverseRoutes.ts` (`POST /api/v1/mcp/converse/session` takes `launchToken` or `publicId`)
+- `packages/radioso-mcp-server/src/http/walkInRoutes.ts` and `auth/authService.ts` (`/mcp/a/{publicId}`)
+- `backend/tests/unit/settings/agentConverseOriginVerifier.test.ts`, `converseSessionPayload.test.ts`
+- `backend/tests/integration/walk-in-converse.integration.test.ts`, `mcp-converse-session-revalidation.integration.test.ts`
+
+Related docs:
+
+- [MCP Client Setup](../mcp-client-setup.md)
+- `docs-portal/content/guides/publish-an-agent.mdx`
+
+## Conversation Updates (agent resumption)
+
+Owns how a caller that cannot sit in a chat reads a conversation forward after a
+handoff. Two narrow ports: a **reader** that adapts the existing conversation tail
+into `{ id, author, createdAt, text }` — `author` comes from the message's `source`,
+because an operator's reply is stored with `role: "assistant"` — and a **waiter**
+that resolves when there is a reason to re-query. The waiter is a race, not a
+subscription: the conversation event bus is per-process, so it is raced against a
+jittered re-poll and the deadline, which is what makes a reply handled by another
+API instance reach a parked caller. The wait holds no database connection.
+
+Public entry points:
+
+- `backend/src/modules/chat/contracts/conversationUpdates.ts` (both ports)
+- `backend/src/modules/chat/services/conversationUpdateReader.ts` (adapts `chatHistoryService.tailConversation`)
+- `backend/src/modules/chat/services/conversationUpdateWaiter.ts`
+- `backend/src/app/composition/conversationUpdates.ts` (default wiring over `publicConversationEventBus`)
+- `backend/src/app/http/routes/mcpConverseMessagesRoute.ts` (`GET /api/v1/mcp/converse/messages`)
+- `packages/radioso-mcp-server/src/tools/conversationUpdatesTools.ts` (`get_conversation_updates`)
+- `backend/tests/unit/chat/conversationUpdateReader.test.ts`, `conversationUpdateWaiter.test.ts`
+- `backend/tests/integration/converse-messages.integration.test.ts`
+
+Related docs:
+
+- [Human Takeover](../human-takeover.md)
+- [MCP Client Setup](../mcp-client-setup.md)
 
 ## Conversation Engine Contracts
 
@@ -894,11 +1030,43 @@ Primary internals:
   and answer prompts; state in `conversation_summaries`. The same regeneration call
   also produces a short conversation title #1114, written to `conversations.title`
   — a separate, non-expiring column — via `ConversationRepositoryPort.setTitle`)
+- `backend/src/modules/chat/services/agentReplyEnvelope.ts` (the agent reply
+  envelope core — `conversationId`, `answerCoverage`, `ownership`, `routine?`,
+  `traceId?` — built from a `ChatResponse` or the stream's `done` event; the MCP
+  converse `ask` route, the REST agent chat route, and its SSE `done` frame all
+  return it, #1290)
+- `backend/src/modules/routines/turnReport.ts` (`RoutineTurnState` and the
+  `RoutineTurnReporter` port, implemented by `routines/routineTurnReporter.ts`;
+  `chat/contracts/routineTurnState.ts` re-exports them under chat-side names, and
+  `chat/contracts/routineProvider.ts` is the `ChatRoutineProvider` port)
+- `backend/src/app/http/routes/agentChannelChatRoute.ts` (`POST /agents/:agentId/chat`)
+  and `backend/src/app/http/openapi/schemas/agentReplyEnvelopeSchemas.ts` (the
+  envelope's OpenAPI components, shared by both operations)
+- `backend/src/modules/chat/services/agentTurnInput.ts` (`resolveAgentTurnInput`: the
+  one place both agent-facing doors — MCP converse `ask` via `agentConverseService.ts`,
+  after it binds the session's conversation, and the REST agent chat route — turn a
+  body into a message or a validated routine invocation against the release the
+  conversation is pinned to, before any turn state exists;
+  `chat/contracts/routineInvocation.ts` re-exports the routines module's
+  `RoutineInvocation`, `AgentToolDescriptor`, and `AgentToolCatalogPort`.
+  The invocation rides `AssistantChatRequest` → `ChatService` → `PrepareChatSessionInput`
+  → `PreparedSession.routineInvocation` → `ChatRoutineProvider.forTurn`; the preparer
+  records the user message as `toolName {json}` with
+  `inputMetadata.method = "routine_invocation"`; the reporter's `describeInvocation()`
+  lands on `PreparedSession.routineInvocationReport` (`invocation` in the envelope),
+  a declined invocation on `PreparedSession.declinedRoutine`, and a turn a suspended
+  routine keeps on `PreparedSession.suspendedRoutine` via the provider's `reporterFor`
+  (`chatTurnAssembly.describeSuspendedRoutineTurn`), #1290)
+- `backend/src/app/composition/agentToolCatalog.ts` (wires the routines module's
+  catalog over the live agent row and the immutable release store: the pinned
+  revision when a conversation names one, otherwise the current published one)
 - `backend/prompts/`
 
 Useful searches:
 
 - `rg "AssistantChat|chatService|chatTurn" backend/src backend/tests`
+- `rg "AgentReplyEnvelope|ChatRoutineTurnState|routineTurnReporter" backend/src backend/tests packages/radioso-mcp-server/src`
+- `rg "resolveAgentTurnInput|routineInvocation|routine_invocation" backend/src backend/tests frontend`
 - `rg "clarification|pending clarification|clarification_decisions_total" backend/src backend/tests`
 - `rg "citation|suggestion|skill intake|stream" backend/src/modules/chat frontend`
 - `rg "backend/prompts|prompt" backend/src/modules/chat backend/src/modules/retrieval`
@@ -907,6 +1075,8 @@ Focused checks:
 
 - `cd backend && pnpm test -- tests/unit/chat-service-streaming.test.ts tests/unit/chat-history-service.test.ts tests/unit/chat-presenter.test.ts`
 - `cd backend && pnpm exec vitest run tests/unit/grounded-answer-head-reader.test.ts tests/unit/retrieval-answer-coverage-verdict.test.ts tests/unit/chat/answerCoverageHeadRecorder.test.ts tests/unit/chat/answerCoverageShadowAssessor.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/chat/agentReplyEnvelope.test.ts tests/unit/routines/routineTurnReporter.test.ts tests/contract/agent-reply-envelope.contract.test.ts tests/integration/agent-reply-envelope.integration.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/chat/agentTurnInput.test.ts tests/contract/mcp-converse.contract.test.ts tests/integration/routine-invocation.integration.test.ts` (tool catalog route and routine invocation turns on both doors)
 - `cd frontend && pnpm test -- tests/unit/chat-message-thread.test.tsx tests/unit/chat-citations.test.tsx`
 - `cd frontend && pnpm run test:e2e -- assistant-history.spec.ts assistant-retrieval-settings.spec.ts`
 
@@ -921,6 +1091,7 @@ Related docs and specs:
 - `specs/050-social-turn-intent/`
 - `specs/1149-answer-coverage-signals/`
 - `specs/1260-coverage-verdict-in-answer-head/`
+- `specs/1290-agent-consumable-service-surface/`
 
 ## Directives
 
@@ -985,7 +1156,8 @@ Public surfaces and contracts:
 
 - `backend/src/modules/routines/public.ts` (definition types, compiler, validator)
 - `backend/src/modules/routines/authoringEdit.ts` (stable-id field patch and the keyed projection an external authoring surface reviews a routine through)
-- `packages/routine-definition` (shared definition schemas and types)
+- `backend/src/modules/routines/exposure/` (how a routine is offered to a calling agent as a named tool: `reservedToolNames.ts` holds the names the agent surface keeps for itself; `exposureSnapshotRules.ts` is the cross-routine publish gate — duplicate names among serving routines, and a tool name frozen for its lineage from the revision that first published it — called from `agents/agentRevision.ts` with the currently published snapshot; per-routine rules — name grammar, reserved name, gated activation — live in `validator.ts`. `agentToolDescriptor.ts` derives the `AgentToolDescriptor` — JSON Schema from declared slots — a caller lists; `agentToolCatalog.ts` is the `AgentToolCatalogPort` over a narrow `PublishedRoutineReader` composition implements; `routineInvocationValidator.ts` checks a call's input against the descriptor with field-level errors; `renderRoutineInvocation.ts` is the recorded text of a call; `directInvocationActivator.ts` admits the named routine with the input as variables, deciding reentry without a model call; `directInvocationTurn.ts` pairs it with silenced reentry/slot-correction gates and a reporter whose `describeInvocation()` reports the activator's outcome (`not_started` when the activator never ran) and can still describe a declined completed routine — `turnProvider.ts` substitutes this pairing for the ranked match on an invocation turn, and its `reporterFor` serves the same reporter for a turn the attempt is bypassed on)
+- `packages/routine-definition` (shared definition schemas and types, including `routineExposureSchema` and `routineExposureToolNamePattern`)
 - `packages/routine-document` (routine block-document projection and shared guard/condition labeling, including `branchDecisionLabel` — the one place a branch's decision is named for the Document editor and the map)
 - `packages/routine-definition` also owns the shared slot-collection rule (`collectedSlotsByStep`, `SLOT_REFERENCE_PATTERN`) so the compiler, the population analysis, and the authoring surfaces agree on which step captures a slot
 - `backend/src/app/http/routes/agentRoutes.ts` (`/api/v1/agents/:agentId/routines` CRUD and validate)
@@ -997,10 +1169,11 @@ Public surfaces and contracts:
 Primary internals:
 
 - `backend/src/modules/routines/compiler.ts`, `validator.ts`, `domain.ts`, `service.ts`
-- `backend/src/db/repositories/routineDefinitionRepository.ts`, migrations `084`–`090`
+- `backend/src/db/repositories/routineDefinitionRepository.ts`, migrations `084`–`090` and `194` (exposure columns)
 - `backend/src/app/composition/routineDefinitionSource.ts` (loads + compiles the agent's enabled routines for activation and pinned routines for resume)
-- `packages/conversation-engine/src/routineRunner.ts` (runtime: activation, resume, guards, fast-forward)
-- `backend/prompts/chat/routine-next-step.md`, `routine-step-reply.md`, `routine-ranked-activation.md`
+- `packages/conversation-engine/src/routineRunner.ts` (runtime: activation, resume, guards, fast-forward, re-ask limit)
+- `packages/conversation-engine/src/slotValue.ts` (the one per-type check every stored slot value passes)
+- `backend/prompts/chat/routine-next-step.md`, `routine-step-reply.md`, `routine-step-reask-exhausted.md` (a step asked past the re-ask limit), `routine-step-steering.md` (directives as guidance subordinate to the step instruction), `routine-step-answer-steering.md` (the same roles when a retrieval-fed step composes a grounded answer), `routine-ranked-activation.md`. Before editing `routine-next-step.md` or `routine-step-reply.md` (or the fragments built in `packages/conversation-defaults/src/routineNextStepSelector.ts` and `routineStepRenderer.ts`), read *Changing the routine prompts* in [Conversational Routines](conversational-routines.md): it lists the layout rules each prompt depends on and how to A/B a change live
 - `frontend/components/dashboard/settings/assistant-routines-section.tsx` (authoring UI)
 - `frontend/lib/routine-flow.ts` (block document → canvas graph, guard provenance, slot collection)
 - `frontend/components/dashboard/settings/routine-canvas.tsx` (read-only map over that graph)
@@ -1009,9 +1182,12 @@ Primary internals:
 Focused checks:
 
 - `cd backend && pnpm test -- tests/unit/routine-definition-domain.test.ts tests/unit/routine-definition-service.test.ts tests/integration/chat.integration.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/routines/exposureSnapshotRules.test.ts tests/unit/agent-revision-snapshot-schema.test.ts tests/integration/agent-revision-publication.integration.test.ts` (tool exposure rules and the publish gate)
+- `cd backend && pnpm exec vitest run tests/unit/routines/agentToolDescriptor.test.ts tests/unit/routines/routineInvocationValidator.test.ts tests/unit/routines/agentToolCatalog.test.ts tests/unit/routines/directInvocationActivator.test.ts tests/unit/routines/turnProviderDirectInvocation.test.ts tests/unit/eval-suite/suite-runner.test.ts` (descriptor, catalog, direct invocation, and the SC-002 parity cases)
 - `cd frontend && pnpm exec vitest run tests/unit/routine-flow.test.ts`
 - `cd frontend && pnpm exec playwright test tests/e2e/routine-canvas.spec.ts`
 - `cd packages/conversation-engine && pnpm test`
+- `cd packages/conversation-defaults && pnpm exec vitest run tests/routines.test.ts` and `cd backend && pnpm exec vitest run tests/unit/routine-next-step-selector.test.ts tests/unit/routine-chat-model-gateway.test.ts` (selector prompt layout, slot coercion, re-ask context, blank retry)
 
 Related docs and specs:
 
@@ -1100,7 +1276,9 @@ metadata rather than outcome-name matching.
 Should not own anything that influences a turn. Nothing here feeds retrieval,
 routing, or answer composition. Current triage and its append-only transition
 history are its only writes. Eval verification enters through a narrow batch
-port; Quality does not read Eval tables or snapshots itself.
+port; Quality does not read Eval tables or snapshots itself. Closing feedback
+also records a `feedback_resolved` or `feedback_dismissed` conversation activity
+event in the transition's transaction, through the conversation activity port.
 
 `GET /quality/turns` and `GET /quality/stats` select from one shared turn
 population, defined in `turnPopulationSql.ts`. It excludes operator-test channels
@@ -1132,6 +1310,49 @@ Related docs:
 
 - `docs/human-takeover.md` (the Inbox and the operator console)
 - `docs/quality-eval-learning-loop.md` (structured closure and Eval verification)
+
+## Conversation Activity
+
+Owns the vocabulary and operator reads of a conversation's activity: handoffs
+requested, claims, reassignments, hand-backs, approvals decided, and negative
+feedback resolved or dismissed. Each event is written by the module that makes the
+change, in that change's transaction, through one narrow port,
+`ConversationActivityRecorder.record(db, event)`: handoff (claim, transfer,
+hand-back, and a reply's claim, through its units of work), chat turn persistence
+(`handoff_requested`), approvals (`resolve`), and quality (`QualityTriageStore`).
+Reads label every teammate live (display name, else email) through the auth
+module's `TeammateLabelReaderPort`, so activity is operator-only; the public chat
+presenters strip it. Every read takes a `ConversationActivityReadScope` that each
+edge (history routes, the recently-closed route, Ray's transcript tool) resolves
+through `resolveActivityReadScope`, the one place that names its permission:
+feedback outcomes are Quality data, so they reach only a caller holding
+`workspace.quality.read`. The timeline
+read returns unlabelled events plus the teammates they name, so chat history labels
+them together with the transcript's repliers in one lookup; the operator tail
+passes an `activityCursor` to re-read a five-minute window behind the previous
+tail, which takes in an event whose transaction committed after a newer one's.
+
+Should not own the changes it records, audit events, or message content — events
+carry ids and codes only.
+
+Public surfaces and contracts:
+
+- `backend/src/modules/conversationActivity/contracts/index.ts` (kinds, event, recorder port, presented entry)
+- `backend/src/modules/conversationActivity/readService.ts` (timeline, recently closed)
+- `backend/src/db/repositories/conversationActivityRepository.ts` (Postgres recorder and reads)
+- `backend/src/app/composition/conversationActivity.ts` (default wiring)
+- `GET /api/v1/conversations/recently-closed` (`backend/src/app/http/routes/conversationActivityRoutes.ts`); `activity` on the operator history detail and tail
+- `frontend/lib/conversation-activity.ts` (thread lines, placement, day breaks, the recently-closed strip's labels)
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/handoff tests/unit/approval-decision-service.test.ts tests/unit/quality-triage-service.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/handoff tests/integration/approvals tests/integration/quality-triage.integration.test.ts tests/integration/conversation-activity-backfill-migration.integration.test.ts`
+- `cd frontend && pnpm exec vitest run tests/unit/conversation-activity.test.ts`
+
+Related docs:
+
+- `docs/human-takeover.md#conversation-activity`
 
 ## Audience Pulse
 
@@ -1356,6 +1577,18 @@ Agent settings and channels entry points:
   — owns the website widget placement and persistence of every `websiteEmbed*`
   settings key
 
+Turn debug view entry points:
+
+- `frontend/components/dashboard/turn-inspector/turn-diagnostics-panel.tsx` — the
+  inline Debug panel shared by Activity and Test Chat
+- `frontend/lib/turn-flow.ts` — turn envelope → **Flow** progression: phases, steps
+  in execution order, tone, measured durations, folded capability steps
+- `frontend/lib/activity-stage-presentation.ts` — activity-stage labels, summaries,
+  and attention flags shared by the Flow and the stage list
+- `frontend/components/dashboard/turn-flow-graph.tsx` and `turn-flow-overlay.tsx` —
+  the draw layer and its full-screen host
+- `cd frontend && pnpm exec vitest run tests/unit/turn-flow.test.ts`
+
 Useful searches:
 
 - `rg "api[A-Z]|fetchJson|workspace" frontend/lib frontend/components`
@@ -1406,6 +1639,7 @@ Primary paths:
 - `packages/radioso-mcp-server/testing/`
 - `packages/radioso-mcp-server/tests/`
 - `packages/radioso-mcp-server/src/tools/productDocsTools.ts` (`radioso_docs`, `radioso_doc_page`)
+- `packages/radioso-mcp-server/src/tools/routineTools.ts` (one tool per exposed routine descriptor; `routineToolSchema.ts` hands the descriptor's JSON Schema to the SDK) and `src/http/sessionServerManager.ts` (servers cached per session catalog key, read once at exchange in `src/auth/authService.ts`)
 - `packages/product-docs/` (the documentation corpus both surfaces read; `scripts/buildCorpus.ts` compiles `docs-portal/content` into the committed `src/generated/corpus.json` through `@radioso/docs-importer`'s MDX converter, and `pnpm --filter @radioso/product-docs run sync` refreshes it — the CI docs job and `backend`'s contract suite both fail on drift)
 - `packages/mcp-source-proof/src/index.ts`
 - `packages/mcp-source-proof/tests/`
@@ -1507,7 +1741,8 @@ Primary paths:
 - relevant `backend/src/modules/*/composition.ts` files
 - `ee/packages/plan-catalog/` — the source of truth for Radioso Cloud plan numbers
   (prices, quotas, default plan, self-serve ceiling, usage-counting weights,
-  top-up, managed service, the managed-plan model set). Entry point `src/index.ts`
+  top-up, managed service, the managed-plan model set, whether prices include
+  VAT). Entry point `src/index.ts`
   (`PLAN_CATALOG`, `findPlan`, `formatPrice`); data in `src/plans.json`; focused
   test `tests/planCatalog.test.ts`.
 - `ee/packages/backend-module/src/billing/` — publishes the plan catalog over
@@ -1517,9 +1752,10 @@ Primary paths:
   `plansRoutes.ts` (`createPlansRoutes`, public `GET /api/v1/plans`) and
   `billingRoutes.ts` (`createBillingRoutes`, `GET/POST /api/v1/ee/billing/*`
   — `me`, `checkout`, `portal`, `webhook`; account-session gated except the
-  webhook). `stripeGateway.ts` is the narrow Stripe port every other file and
-  every test sees; `stripeSdkGateway.ts` is the only file that imports the
-  `stripe` SDK. `planPricing.ts` maps catalog plan ↔ Stripe lookup key /
+  webhook). `stripeGateway.ts` is the narrow Stripe port the runtime and its
+  tests see, and exports `STRIPE_WEBHOOK_EVENT_TYPES`, the event types billing
+  acts on; `stripeSdkGateway.ts` adapts it to the `stripe` SDK.
+  `planPricing.ts` maps catalog plan ↔ Stripe lookup key /
   product metadata (pure, no Stripe or DB import). `billingCustomerRepository.ts`
   owns `ee_billing_customers` and the `ee_billing_processed_events` webhook
   idempotency table via `db/eeSchema.ts`'s Kysely surface; migrator
@@ -1531,8 +1767,18 @@ Primary paths:
   `configured: false` rather than failing at boot — self-hosted installs run
   this way by default. Checkout and portal are user-initiated payment flows,
   not Ray actions, and are permanently excluded from the copilot coverage
-  map. Focused tests: `planPricing.test.ts`, `billingWebhookHandler.test.ts`,
+  map. The operator CLI `stripeCatalogSyncCli.ts` (package script
+  `stripe:sync`) makes a Stripe account match the catalog: products, lookup-keyed
+  prices, tax defaults, the customer portal, and the webhook endpoint.
+  `stripeCatalogSync.ts` is the pure planner (`desiredStripeCatalog`,
+  `planStripeCatalogSync`), `stripeCatalogSyncCommand.ts` runs it (flags,
+  live-mode guard, output, apply), `stripeCatalogAdmin.ts` is its narrow port, and
+  `stripeSdkCatalogAdmin.ts` adapts that port to the `stripe` SDK. The two SDK
+  adapters are the only files that import `stripe`. The sync is a deploy-time
+  CLI with no HTTP route, so it sits outside the copilot coverage map. Focused
+  tests: `planPricing.test.ts`, `billingWebhookHandler.test.ts`,
   `billingRoutes.test.ts`, `plansRoutes.test.ts`, `applicationModule.test.ts`,
+  `stripeCatalogSync.test.ts`, `stripeCatalogSyncCommand.test.ts`,
   `billingCustomerRepository.integration.test.ts` (also exercises the
   migrator). Operator setup doc:
   `docs-portal/content/operators/billing-setup.mdx`.

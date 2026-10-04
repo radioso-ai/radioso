@@ -7,6 +7,8 @@ import { routineDefinitionDraftInputSchema, type RoutineDefinitionDraftAuthoring
 import {
   draftFromBlockDoc,
   routineToBlockDoc,
+  blockSegmentsToInstruction,
+  instructionToBlockSegments,
 } from '../src/index.js'
 
 type CompleteAuthoringDraft = RoutineDefinitionDraftAuthoringInput & {
@@ -174,6 +176,40 @@ describe('routine block document', () => {
     expect(restored).toEqual(withDocumentOrdinals(input))
   })
 
+  it('carries tool exposure through the document and back, and leaves an absent block absent', () => {
+    const exposure = { enabled: true, toolName: 'escalate_account', description: 'Escalate an account to a person.' }
+    const exposed = roundTrip(draft({ exposure }))
+    expect(exposed.projected.doc.exposure).toEqual(exposure)
+    expect(exposed.restored.exposure).toEqual(exposure)
+
+    const unexposed = roundTrip(draft())
+    expect(unexposed.projected.doc).not.toHaveProperty('exposure')
+    expect(unexposed.restored).not.toHaveProperty('exposure')
+  })
+
+  it('carries each ending\'s operator notice through the document and back, on referenced and unreferenced endings', () => {
+    const finishedNotice = { subject: 'Account {{slot.account_id}} reviewed', intro: null }
+    const humanNotice = { subject: null, intro: 'Call the customer back.' }
+    const { projected, restored } = roundTrip(draft({
+      terminals: [
+        { stableStepId: 'finished', kind: 'complete', instruction: 'All done.', operatorNotice: finishedNotice, ordinal: 5 },
+        { stableStepId: 'human', kind: 'handoff', instruction: 'A person will take over.', operatorNotice: humanNotice, ordinal: 6 },
+      ],
+    }))
+
+    const branchEnding = projected.doc.steps[0]?.branches[0]?.target
+    expect(branchEnding?.kind === 'ending' ? branchEnding.ending?.operatorNotice : undefined).toEqual(finishedNotice)
+    expect(projected.doc.unreferencedEndings[0]?.operatorNotice).toEqual(humanNotice)
+    expect(restored.terminals.find((terminal) => terminal.stableStepId === 'finished')?.operatorNotice).toEqual(finishedNotice)
+    expect(restored.terminals.find((terminal) => terminal.stableStepId === 'human')?.operatorNotice).toEqual(humanNotice)
+    expect(roundTrip(draft()).restored.terminals.every((terminal) => !('operatorNotice' in terminal))).toBe(true)
+  })
+
+  it('holds a half-typed tool name mid-edit', () => {
+    const projected = routineToBlockDoc(draft({ exposure: { enabled: true, toolName: 'Escalate Account', description: '' } }))
+    expect(projected).toMatchObject({ ok: true, doc: { exposure: { toolName: 'Escalate Account' } } })
+  })
+
   it.each(['chat', 'tool', 'action', 'approval'] as const)('round-trips %s steps and approval choices', (kind) => {
     const step = kind === 'approval'
       ? { stableStepId: 'decide', kind, instruction: 'Choose.', toolRef: null, actionType: null, captureKey: 'decision', options: [{ id: 'yes', label: 'Yes', description: 'Proceed' }, { id: 'no', label: 'No', description: null }], ordinal: 0, metadata: {} }
@@ -339,5 +375,24 @@ describe('a routine with an edge that points nowhere', () => {
     // The branch genuinely cannot say which of the two it means, so it resolves to neither
     // and the reader shows it as pointing nowhere.
     expect(projected.doc.steps[0]?.branches[0]?.target).toEqual({ kind: 'unresolved', toRef: 'collect' })
+  })
+})
+
+describe('step instruction segments', () => {
+  it('splits slot and context references into their own segments, in text order', () => {
+    expect(instructionToBlockSegments(
+      '{{context.page_context}} If it is a program page, confirm it; else ask for {{slot.program}}. {{ context.cart }}',
+    )).toEqual([
+      { kind: 'contextReference', key: 'page_context', source: '{{context.page_context}}' },
+      { kind: 'text', text: ' If it is a program page, confirm it; else ask for ' },
+      { kind: 'slotReference', key: 'program', source: '{{slot.program}}' },
+      { kind: 'text', text: '. ' },
+      { kind: 'contextReference', key: 'cart', source: '{{ context.cart }}' },
+    ])
+  })
+
+  it('writes every segment back from its source text so the stored instruction round-trips', () => {
+    const instruction = 'Confirm {{context.page_context}} then thank {{slot.name}}.'
+    expect(blockSegmentsToInstruction(instructionToBlockSegments(instruction))).toBe(instruction)
   })
 })

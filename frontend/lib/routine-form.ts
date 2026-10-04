@@ -2,9 +2,11 @@ import type {
   RoutineDefinition,
   RoutineDefinitionDraft,
   RoutineCompletionExport,
+  RoutineExposure,
   RoutineFieldGuardOp,
   RoutineFieldGuardUnit,
   RoutineGuardKind,
+  RoutineOperatorNotice,
   RoutineReentryMode,
   RoutineSlotType,
   RoutineStepKind,
@@ -65,6 +67,8 @@ export type RoutineTerminalForm = {
   stableStepId: string
   kind: RoutineTerminalKind
   instruction: string
+  // Carried untouched: the form has no notice fields of its own, and a save must not drop one.
+  operatorNotice?: RoutineOperatorNotice
 }
 
 export type RoutineFormState = {
@@ -87,6 +91,9 @@ export type RoutineFormState = {
     triggerKinds: RoutineTerminalKind[]
     destinationRef: string
   }
+  // Carried as authored: the Form has no exposure controls (they live in the Document
+  // header), so the form only has to keep the block a document edit wrote.
+  exposure?: RoutineExposure
 }
 
 export type RoutineDraftHeader = Pick<RoutineFormState, 'name' | 'enabled' | 'activation'>
@@ -284,6 +291,7 @@ export const routineToForm = (routine: RoutineDefinition): RoutineFormState => {
       stableStepId: terminal.stableStepId,
       kind: terminal.kind,
       instruction: terminal.instruction ?? '',
+      ...(terminal.operatorNotice ? { operatorNotice: { ...terminal.operatorNotice } } : {}),
     })),
     completionExport: {
       enabled: routine.completionExport?.enabled ?? false,
@@ -292,6 +300,7 @@ export const routineToForm = (routine: RoutineDefinition): RoutineFormState => {
         : ['complete'],
       destinationRef: routine.completionExport?.destinationRef ?? '',
     },
+    ...(routine.exposure ? { exposure: { ...routine.exposure } } : {}),
   }
 }
 
@@ -391,9 +400,11 @@ export const formToRoutineDraft = (
       stableStepId: draftTerminalId(terminal, index),
       kind: terminal.kind,
       instruction: nullableText(terminal.instruction),
+      ...(terminal.operatorNotice ? { operatorNotice: { ...terminal.operatorNotice } } : {}),
       ordinal: index,
     })),
     ...(completionExport ? { completionExport } : {}),
+    ...(form.exposure ? { exposure: { ...form.exposure } } : {}),
   }
 }
 

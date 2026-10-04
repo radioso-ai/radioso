@@ -2,6 +2,8 @@ import { sql } from "kysely";
 
 import { createEeKysely, type EeDb } from "../db/eeSchema.js";
 import type { UsageLimitDatabasePort } from "../radiosoModuleTypes.js";
+import { currentPeriodStart } from "../usageLimits/period.js";
+import { TENTHS_PER_CONVERSATION } from "../usageLimits/usageLimitService.js";
 
 export interface OrganizationDirectoryRow {
   accountId: string;
@@ -14,6 +16,14 @@ export interface OrganizationDirectoryRow {
     used: number;
     limit: number | null;
   };
+  /** Present when the assigned profile meters conversations, in which case
+   *  `monthlyAnswers` is dormant and the headline meter is this one. Values are
+   *  conversations to one decimal: the counter is kept in tenths so the catalog's
+   *  fractional per-surface weights stay integer math. */
+  monthlyConversations: {
+    used: number;
+    limit: number;
+  } | null;
 }
 
 export interface OrganizationDirectoryPage {
@@ -27,7 +37,7 @@ export interface OrganizationDirectoryPage {
   };
 }
 
-export interface OrganizationDirectoryListInput {
+interface OrganizationDirectoryListInput {
   limit: number;
   offset?: number;
   cursor?: string;
@@ -47,14 +57,13 @@ interface OrganizationDirectoryQueryRow {
   profile_display_name: string | null;
   monthly_answer_used: number | string | bigint | null;
   monthly_answer_limit: number | string | bigint | null;
+  monthly_conversation_used_tenths: number | string | bigint | null;
+  monthly_conversation_limit: number | string | bigint | null;
   total_count: number | string | bigint | null;
 }
 
 const defaultLimit = 25;
 const maxLimit = 100;
-
-const currentPeriodStart = (date: Date): string =>
-  `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-01`;
 
 const toNumber = (value: number | string | bigint | null | undefined): number => {
   if (value === null || value === undefined) {
@@ -69,6 +78,20 @@ const toNullableNumber = (value: number | string | bigint | null | undefined): n
   }
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+};
+
+const conversationMeter = (
+  usedTenths: number | string | bigint | null,
+  limit: number | string | bigint | null,
+): OrganizationDirectoryRow["monthlyConversations"] => {
+  const conversationLimit = toNullableNumber(limit);
+  if (conversationLimit === null) {
+    return null;
+  }
+  return {
+    used: toNumber(usedTenths) / TENTHS_PER_CONVERSATION,
+    limit: conversationLimit,
+  };
 };
 
 const normalizeLimit = (limit: number): number =>
@@ -113,6 +136,8 @@ export class OrganizationDirectoryService {
         p.display_name AS profile_display_name,
         coalesce(c.used_count, 0) AS monthly_answer_used,
         p.monthly_answer_limit AS monthly_answer_limit,
+        coalesce(units.used_tenths, 0) AS monthly_conversation_used_tenths,
+        p.monthly_conversation_limit AS monthly_conversation_limit,
         count(*) OVER () AS total_count
       FROM accounts a
       LEFT JOIN active_owners primary_owner
@@ -125,6 +150,9 @@ export class OrganizationDirectoryService {
       LEFT JOIN ee_usage_limit_answer_counters c
         ON c.account_id = a.id
        AND c.period_start = ${periodStart}::date
+      LEFT JOIN ee_usage_limit_unit_counters units
+        ON units.account_id = a.id
+       AND units.period_start = ${periodStart}::date
       WHERE ${search}::text IS NULL
          OR a.name ILIKE '%' || ${search}::text || '%'
          OR EXISTS (
@@ -139,18 +167,27 @@ export class OrganizationDirectoryService {
     `.execute(this.db);
 
     const fetchedRows = result.rows;
-    const rows = fetchedRows.slice(0, limit).map((row) => ({
-      accountId: row.account_id,
-      name: row.name,
-      ownerEmail: row.owner_email,
-      ownerCount: toNumber(row.owner_count),
-      profileKey: row.profile_key,
-      profileDisplayName: row.profile_display_name,
-      monthlyAnswers: {
-        used: toNumber(row.monthly_answer_used),
-        limit: toNullableNumber(row.monthly_answer_limit),
-      },
-    }));
+    const rows = fetchedRows.slice(0, limit).map((row): OrganizationDirectoryRow => {
+      const monthlyConversations = conversationMeter(
+        row.monthly_conversation_used_tenths,
+        row.monthly_conversation_limit,
+      );
+      return {
+        accountId: row.account_id,
+        name: row.name,
+        ownerEmail: row.owner_email,
+        ownerCount: toNumber(row.owner_count),
+        profileKey: row.profile_key,
+        profileDisplayName: row.profile_display_name,
+        monthlyAnswers: {
+          used: toNumber(row.monthly_answer_used),
+          // A conversation-metered profile ignores monthly_answer_limit, so that cap
+          // is not enforced and must not be reported; getAccountUsage masks it too.
+          limit: monthlyConversations ? null : toNullableNumber(row.monthly_answer_limit),
+        },
+        monthlyConversations,
+      };
+    });
     const hasMore = fetchedRows.length > limit;
     const total = fetchedRows.length > 0 ? toNumber(fetchedRows[0].total_count) : 0;
 

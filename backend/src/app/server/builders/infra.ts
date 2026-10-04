@@ -12,6 +12,7 @@ import type { AgentSkillSettingsRegistry, AgentSurfaceExtensionRegistry } from "
 import { AuditEventRepository } from "../../../db/repositories/auditEventRepository.js";
 import { BootstrapGreetingCacheRepository } from "../../../db/repositories/bootstrapGreetingCacheRepository.js";
 import { ConversationRepository } from "../../../db/repositories/conversationRepository.js";
+import { ConversationActivityRepository } from "../../../db/repositories/conversationActivityRepository.js";
 import { ConversationOwnershipRepository } from "../../../db/repositories/conversationOwnershipRepository.js";
 import { DocumentProcessingJobRepository } from "../../../db/repositories/documentProcessingJobRepository.js";
 import { EmbeddingProfileJobRepository } from "../../../db/repositories/embeddingProfileJobRepository.js";
@@ -55,7 +56,7 @@ import { SlackSkillDefinitionRepository } from "../../../modules/slackSkills/pub
 import { CopilotRepository } from "../../../db/repositories/copilotRepository.js";
 import { TestExecutionRepository } from "../../../db/repositories/testExecutionRepository.js";
 import { ProductAnalyticsService } from "../../../shared/analytics/productAnalyticsService.js";
-import { NoopUsageLimitPolicy } from "../../../shared/domain/usageLimitPolicy.js";
+import { NoopDocumentCapacityReadPort, NoopUsageLimitPolicy } from "../../../shared/domain/usageLimitPolicy.js";
 import { NoopManagedModelPolicy } from "../../../shared/domain/managedModelPolicy.js";
 import { DurableUsageEventRecorder } from "../../../shared/infra/usage/durableUsageEventRecorder.js";
 import { ErrorReportingService } from "../../../shared/errors/errorReportingService.js";
@@ -134,6 +135,11 @@ export const buildInfrastructure = (input: {
     : typeof composition.usageLimitPolicyRegistration === "function"
       ? composition.usageLimitPolicyRegistration({ database, logger })
       : composition.usageLimitPolicyRegistration;
+  const documentCapacityReader = !composition.documentCapacityReaderRegistration
+    ? new NoopDocumentCapacityReadPort()
+    : typeof composition.documentCapacityReaderRegistration === "function"
+      ? composition.documentCapacityReaderRegistration({ database, logger })
+      : composition.documentCapacityReaderRegistration;
   const managedModelPolicy = !composition.managedModelPolicyRegistration
     ? new NoopManagedModelPolicy()
     : typeof composition.managedModelPolicyRegistration === "function"
@@ -158,6 +164,7 @@ export const buildInfrastructure = (input: {
     productAnalyticsService,
     telemetryService,
     usageLimitPolicy,
+    documentCapacityReader,
     managedModelPolicy,
     usageEventRecorder,
   };
@@ -180,6 +187,7 @@ export const buildRepositories = (
   bootstrapGreetingCacheRepository: new BootstrapGreetingCacheRepository(database.kysely),
   chunkRepository: new ChunkRepository(database),
   conversationRepository: new ConversationRepository(database.kysely),
+  conversationActivityRepository: new ConversationActivityRepository(database.kysely),
   conversationOwnershipRepository: new ConversationOwnershipRepository(database.kysely),
   documentProcessingJobRepository: new DocumentProcessingJobRepository(database.kysely),
   documentRepository: new DocumentRepository(database.kysely),

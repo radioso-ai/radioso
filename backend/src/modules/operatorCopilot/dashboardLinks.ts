@@ -1,4 +1,5 @@
 import type { CopilotEntityReference } from "./contracts.js";
+import { appUrl } from "../../shared/domain/appUrl.js";
 
 /**
  * Backend-owned mirror of the dashboard's public workspace routes. Keep every
@@ -57,3 +58,6 @@ export const buildCopilotDashboardLink = (
 
 export const buildOperatorMcpProposalLink = (proposalId: string): string =>
   `/oauth/operator-mcp/proposal/${encodeURIComponent(proposalId)}`;
+
+export const buildAbsoluteOperatorMcpProposalLink = (proposalId: string, appBaseUrl?: string | null): string =>
+  appUrl(buildOperatorMcpProposalLink(proposalId), appBaseUrl).toString();

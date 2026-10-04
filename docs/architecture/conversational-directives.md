@@ -1,7 +1,7 @@
 ---
 title: "Conversational Directives"
 description: "Rules that shape how the assistant behaves per turn by matching conditions, injecting steering instructions, and optionally routing to a skill."
-last_updated: 2026-08-29
+last_updated: 2026-09-30
 ---
 
 # Conversational Directives
@@ -138,6 +138,13 @@ Routine turns are different. Active routine flow bypasses terminal turn
 selection, so directive bindings do not run there. A directive with
 `routine:<id>` or `step:<routineId>:<stepId>` scope tags can still steer the
 routine step reply, but any skill binding on that scoped directive is inert.
+
+On a routine turn the step's instruction controls the reply. Matched directives,
+scoped or not, render beneath it as subordinate guidance: they shape how the
+step's message is said, and the reply carries no redirect, hand-off, or contact
+details from a directive unless the step asks for them. The routine
+turn's `directive_steering` stage lists them under `routineStep.steeringDirectives`
+by id and name, with `directivesAppliedAs: "subordinate_to_step_instruction"`.
 
 ## One steering type
 

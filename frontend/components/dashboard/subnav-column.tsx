@@ -13,15 +13,31 @@ import { cn } from '@/lib/utils'
  * and groups can be made collapsible (e.g. one-time-setup Channels).
  */
 
+/**
+ * `active` serves traffic now, `available` is offered but unconfigured, and
+ * `attention` is configured but cannot serve. The dot carries the state; the
+ * label names it, one label per tone so the same state never gets two words.
+ */
+export type SubNavStatusTone = 'active' | 'available' | 'attention'
+
+export type SubNavStatus = { tone: SubNavStatusTone; label: string }
+
+// `attention` deliberately avoids the amber/yellow family: the sidebar already
+// tints the selected row's icon brand yellow, so a yellow dot would read as
+// selection rather than as a problem.
+const statusDotClass: Record<SubNavStatusTone, string> = {
+  active: 'bg-emerald-500',
+  available: 'bg-sidebar-foreground/25',
+  attention: 'bg-destructive',
+}
+
 export type SubNavEntry = {
   id: string
   label: string
   icon: LucideIcon
   active?: boolean
-  /** On/off status dot (omit for entries without a toggle). */
-  status?: boolean
-  statusLabel?: string
-  statusTone?: 'active' | 'attention'
+  /** Status dot + label (omit for rows that carry no status). */
+  status?: SubNavStatus
   href?: string
   onClick?: () => void
 }
@@ -116,16 +132,10 @@ export function SubNavRow({ entry }: { entry: SubNavEntry }) {
         )}
       />
       <span className="min-w-0 flex-1 truncate text-left">{entry.label}</span>
-      {entry.status !== undefined ? (
+      {entry.status ? (
         <span className="flex shrink-0 items-center gap-1.5 text-[10px] text-sidebar-foreground/50">
-          <span
-            className={cn(
-              'h-1.5 w-1.5 rounded-full',
-              entry.statusTone === 'attention' ? 'bg-amber-500' : entry.status ? 'bg-emerald-500' : 'bg-sidebar-foreground/25',
-            )}
-            title={entry.statusLabel ?? (entry.status ? 'On' : 'Off')}
-          />
-          {entry.statusLabel ? <span>{entry.statusLabel}</span> : null}
+          <span aria-hidden="true" className={cn('h-1.5 w-1.5 rounded-full', statusDotClass[entry.status.tone])} />
+          <span>{entry.status.label}</span>
         </span>
       ) : null}
     </>

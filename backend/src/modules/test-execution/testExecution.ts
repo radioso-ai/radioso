@@ -1,4 +1,4 @@
-import { badRequest, conflict, notFound } from "../../shared/domain/errors.js";
+import { AppError, badRequest, conflict, notFound } from "../../shared/domain/errors.js";
 import {
   isUsageLimitExceededError,
   USAGE_LIMIT_EXCEEDED_CODE,
@@ -7,6 +7,7 @@ import {
 } from "../../shared/domain/usageLimitPolicy.js";
 import type { AgentRevision } from "../agents/public.js";
 import type { SkillEffectPolicy } from "../../shared/domain/turnExecutionMode.js";
+import { clipAtGraphemeBoundary } from "../../shared/text/clipAtGraphemeBoundary.js";
 import {
   freezeTestValues,
   type ContextVariableTestValueCatalogPort,
@@ -14,6 +15,7 @@ import {
   type FrozenTestValue,
   type TestValue,
 } from "../context-variables/public.js";
+import { findTranscriptTurn, readTranscript, settleSentTurn, type TestExecutionTranscript, type TestExecutionTurnRead } from "./testExecutionTurns.js";
 
 // An attempt's lease must outlast the slowest legitimate turn, or a concurrent detail read
 // marks a still-running attempt lease_expired and its result is discarded — and Retry then
@@ -61,6 +63,8 @@ export interface TestExecution {
   skillEffects: SkillEffectPolicy;
   sides: readonly TestExecutionSide[];
   createdAt: Date;
+  /** What a seed copied in at start (`TestExecutionSeededSummary.turnCount`); 0 when this test started fresh. */
+  seededTurnCount: number;
 }
 
 export interface TestExecutionAttempt {
@@ -120,6 +124,53 @@ export interface TestExecutionHistoryItem {
   sides: readonly TestExecutionHistorySide[];
 }
 
+/** The most of a test's opening message any list shows; the store reads one more so a longer one shows as clipped. */
+export const TEST_EXECUTION_LABEL_CHARS = 200;
+
+/**
+ * How much of a seed's first message a test keeps for its label, in code points: well past any label,
+ * so the label limit can change without refilling rows. Migration 208 uses the same 1,000.
+ */
+const SEEDED_FIRST_MESSAGE_CHARS = 1_000;
+
+/** The first `count` code points of `text`, without walking the rest of a long paste. */
+const leadingCodePoints = (text: string, count: number): string => {
+  let end = 0;
+  let taken = 0;
+  for (const codePoint of text) {
+    if (taken === count) break;
+    end += codePoint.length;
+    taken += 1;
+  }
+  return text.slice(0, end);
+};
+
+/** A test's opening message as a list label: whole, or clipped on a character boundary and marked with an ellipsis. */
+const testExecutionLabel = (firstMessage: string): { label: string; clipped: boolean } =>
+  firstMessage.length <= TEST_EXECUTION_LABEL_CHARS
+    ? { label: firstMessage, clipped: false }
+    : { label: `${clipAtGraphemeBoundary(firstMessage, TEST_EXECUTION_LABEL_CHARS - 1)}…`, clipped: true };
+
+/** What a seed copied in, recorded at start: its user messages count as turns, and the first labels the test. */
+export interface TestExecutionSeededSummary {
+  turnCount: number;
+  firstMessage: string | null;
+}
+
+/** A listed execution with the facts that tell one session from another. Still no transcript. */
+export interface TestExecutionSummary extends TestExecutionHistoryItem {
+  /** Turns with a user message: those a seed copied in plus those the operator sent. A greeting is not one. */
+  turnCount: number;
+  /** The first of those messages with text, as a list label (`testExecutionLabel`); null until there is one. */
+  firstMessage: string | null;
+  /** Whether `firstMessage` was cut to fit the label. */
+  firstMessageClipped: boolean;
+}
+
+interface TestExecutionSummaryPage extends Omit<TestExecutionHistoryPage, "executions"> {
+  executions: readonly TestExecutionSummary[];
+}
+
 export interface TestExecutionClaim {
   sideId: string;
   attempt: TestExecutionAttempt;
@@ -139,6 +190,14 @@ export type TestExecutionEvent =
 interface TestExecutionRevisionReaderPort {
   findRevision(input: { workspaceId: string; agentId: string; revisionId: string }): Promise<AgentRevision | null>;
   readDraftGeneration(input: { workspaceId: string; agentId: string }): Promise<number | null>;
+}
+
+/**
+ * Chooses the revision a single test runs when the caller names none. Kept apart from the reader
+ * because choosing may write: it can freeze a candidate from the saved draft.
+ */
+export interface TestExecutionDefaultRevisionPort {
+  resolveDefault(input: { workspaceId: string; agentId: string }): Promise<{ revisionId: string; expectedDraftGeneration: number }>;
 }
 
 /** Catalog definitions remain live, while selection/configuration is frozen in a revision. */
@@ -203,16 +262,28 @@ export interface TestExecutionSeedSource {
 
 export interface TestExecutionRepositoryPort {
   /** `idempotencyKey` fences a start: a repeated key for the same workspace/agent replays the execution it already created instead of starting a second one. */
-  create(input: Omit<TestExecution, "createdAt" | "state"> & { state?: TestExecutionState; idempotencyKey: string }): Promise<TestExecution>;
+  create(input: Omit<TestExecution, "createdAt" | "state" | "seededTurnCount"> & { state?: TestExecutionState; idempotencyKey: string; seededSummary?: TestExecutionSeededSummary }): Promise<TestExecution>;
   find(input: { workspaceId: string; agentId: string; executionId: string }): Promise<TestExecution | null>;
+  /** Scoped by workspace alone: the read a caller with only an execution id, not yet an agent id, needs. Null for an id this workspace does not own. */
+  findAgentId(input: { workspaceId: string; executionId: string }): Promise<string | null>;
   findByIdempotencyKey(input: { workspaceId: string; agentId: string; idempotencyKey: string }): Promise<TestExecution | null>;
   /** Self-heals a side stuck "running" past its lease (an abandoned attempt) into "failed, retryable". */
   recoverExpiredSides(input: { workspaceId: string; agentId: string; executionId: string; now: Date }): Promise<TestExecution | null>;
   retainSide(input: { workspaceId: string; agentId: string; executionId: string; sideId: string; retainedExecutionId: string; retainedSideId: string; retainedConversationId: string }): Promise<"not_found" | "not_comparison" | "unsettled" | TestExecution>;
   list(input: { workspaceId: string; agentId: string; limit: number; cursor?: string }): Promise<TestExecutionHistoryPage>;
+  /**
+   * Turn count and opening message per execution, from what its seed copied in plus the turns the
+   * operator sent, never from its transcript; a greeting is not a turn. `firstMessage` is the raw
+   * text cut to `firstMessageChars` characters.
+   */
+  summarizeTurns(input: { workspaceId: string; agentId: string; executionIds: readonly string[]; firstMessageChars: number }): Promise<ReadonlyMap<string, { turnCount: number; firstMessage: string | null }>>;
   listAttempts(input: { workspaceId: string; agentId: string; executionId: string }): Promise<readonly TestExecutionAttemptRecord[]>;
   /** Claims one aligned turn and every selected side in one short transaction. */
-  claimTurn(input: { workspaceId: string; agentId: string; executionId: string; sideIds: readonly string[]; generation: number; turnId: string; attemptId: string; message: string; inputFingerprint: string; now: Date; leaseMs: number; retry: boolean }): Promise<"generation_conflict" | "turn_conflict" | "retry_invalid" | "attempt_conflict" | { claims: readonly TestExecutionClaim[] }>;
+  /**
+   * `turn_in_progress`: another turn is still running. A settled turn, a failed one included,
+   * never blocks the next message; its failed side stays retryable until a later turn starts.
+   */
+  claimTurn(input: { workspaceId: string; agentId: string; executionId: string; sideIds: readonly string[]; generation: number; turnId: string; attemptId: string; message: string; inputFingerprint: string; now: Date; leaseMs: number; retry: boolean }): Promise<"generation_conflict" | "turn_in_progress" | "turn_conflict" | "retry_invalid" | "attempt_conflict" | { claims: readonly TestExecutionClaim[] }>;
   complete(input: { workspaceId: string; agentId: string; executionId: string; sideId: string; turnId: string; attemptId: string; fence: number; result: TestExecutionRunnerResult; now: Date }): Promise<"stale" | TestExecution>;
   fail(input: { workspaceId: string; agentId: string; executionId: string; sideId: string; turnId: string; attemptId: string; fence: number; code: string; now: Date }): Promise<"stale" | TestExecution>;
 }
@@ -223,6 +294,7 @@ interface TestExecutionAuditPort {
 
 interface TestExecutionServiceOptions {
   revisions: TestExecutionRevisionReaderPort;
+  defaultRevision?: TestExecutionDefaultRevisionPort;
   contextCatalog: ContextVariableTestValueCatalogPort;
   repository: TestExecutionRepositoryPort;
   runner: TrustedTestExecutionRunnerPort;
@@ -236,6 +308,18 @@ interface TestExecutionServiceOptions {
 }
 
 const fingerprint = (message: string): string => JSON.stringify(message);
+
+/** Typed so a caller (the dashboard, operator MCP) can tell "resend once it settles" from bad input. */
+const TEST_TURN_IN_PROGRESS_CODE = "test_turn_in_progress";
+
+/** An error's structural fields only: its message can carry visitor text, so it is never logged. */
+const runnerFailureLogFields = (error: unknown): { errorType: string; errorCode?: string } => {
+  const code = error instanceof Error ? (error as { code?: unknown }).code : undefined;
+  return {
+    errorType: error instanceof Error ? error.name : typeof error,
+    ...(typeof code === "string" ? { errorCode: code.slice(0, 80) } : {}),
+  };
+};
 
 export class TestExecutionService {
   private readonly now: () => Date;
@@ -251,11 +335,13 @@ export class TestExecutionService {
     this.leaseMs = options.leaseMs ?? DEFAULT_ATTEMPT_LEASE_MS;
   }
 
-  async start(input: { workspaceId: string; agentId: string; accountId: string | null; mode: TestExecutionMode; revisionIds: readonly string[]; testValues: readonly TestValue[]; expectedDraftGeneration?: number; idempotencyKey: string; skillEffects?: SkillEffectPolicy; seedConversationId?: string }): Promise<TestExecution> {
+  /** Without `revisionIds`, a single test starts on the agent's default revision. */
+  async start(request: { workspaceId: string; agentId: string; accountId: string | null; mode: TestExecutionMode; revisionIds?: readonly string[]; testValues: readonly TestValue[]; expectedDraftGeneration?: number; idempotencyKey: string; skillEffects?: SkillEffectPolicy; seedConversationId?: string }): Promise<TestExecution> {
     // A retried or double-clicked start must never re-run the greeting bootstrap or mint a
     // second execution. Checked first, before any revision lookup or provider call.
-    const replay = await this.options.repository.findByIdempotencyKey({ workspaceId: input.workspaceId, agentId: input.agentId, idempotencyKey: input.idempotencyKey });
+    const replay = await this.options.repository.findByIdempotencyKey({ workspaceId: request.workspaceId, agentId: request.agentId, idempotencyKey: request.idempotencyKey });
     if (replay) return replay;
+    const input = { ...request, ...(request.revisionIds ? { revisionIds: request.revisionIds } : await this.defaultSelection(request)) };
     // A seed continues one conversation forward; a comparison has no single thread to continue.
     // The HTTP schema refuses this combination too; this is defence-in-depth for non-HTTP callers.
     if (input.seedConversationId !== undefined && input.mode !== "single") {
@@ -304,6 +390,7 @@ export class TestExecutionService {
     const execution = await this.options.repository.create({
       id: executionId, workspaceId: input.workspaceId, agentId: input.agentId, mode: input.mode,
       generation: 1, testValues, skillEffects, sides, idempotencyKey: input.idempotencyKey,
+      ...(seed ? { seededSummary: this.seededSummary(seed.messages) } : {}),
     });
     await this.audit(input, "agent.test_execution.started", "success", {
       executionId, mode: input.mode, sideCount: sides.length, skillEffects,
@@ -313,6 +400,14 @@ export class TestExecutionService {
     return execution;
   }
 
+  /** Fenced on the draft generation the default was chosen from, unless the caller fences on its own. */
+  private async defaultSelection(input: { workspaceId: string; agentId: string; mode: TestExecutionMode; expectedDraftGeneration?: number }): Promise<{ revisionIds: readonly string[]; expectedDraftGeneration: number }> {
+    if (input.mode !== "single") throw badRequest("A comparison test execution names both of its revisions.");
+    if (!this.options.defaultRevision) throw badRequest("Starting a test execution without a revision is unavailable.");
+    const selected = await this.options.defaultRevision.resolveDefault({ workspaceId: input.workspaceId, agentId: input.agentId });
+    return { revisionIds: [selected.revisionId], expectedDraftGeneration: input.expectedDraftGeneration ?? selected.expectedDraftGeneration };
+  }
+
   private async loadSeed(input: { workspaceId: string; agentId: string; conversationId: string }): Promise<TestExecutionSeed> {
     if (!this.options.seedSource) throw badRequest("Seeding a test execution from a conversation is unavailable.");
     const seed = await this.options.seedSource.loadSeed(input);
@@ -320,6 +415,19 @@ export class TestExecutionService {
     // agent's: its existence is never confirmed across those boundaries.
     if (!seed) throw notFound("Seed conversation is unavailable.");
     return seed;
+  }
+
+  /**
+   * What a seed copied in, for the history list: each user message is a turn (see `seededHistory`),
+   * and the first with any non-whitespace character labels the test, kept to
+   * `SEEDED_FIRST_MESSAGE_CHARS` code points. Migration 208 backfills older tests the same way, except
+   * that its whitespace test is Postgres's `[[:space:]]`, which can differ from JavaScript's `\s` on
+   * rare Unicode spaces.
+   */
+  private seededSummary(messages: readonly TestExecutionSeedMessage[]): TestExecutionSeededSummary {
+    const userMessages = messages.filter((message) => message.role === "user");
+    const first = userMessages.find((message) => /\S/u.test(message.content));
+    return { turnCount: userMessages.length, firstMessage: first ? leadingCodePoints(first.content, SEEDED_FIRST_MESSAGE_CHARS) : null };
   }
 
   /**
@@ -341,8 +449,48 @@ export class TestExecutionService {
     });
   }
 
-  list(input: { workspaceId: string; agentId: string; limit: number; cursor?: string }): Promise<TestExecutionHistoryPage> {
-    return this.options.repository.list(input);
+  /**
+   * The effective agent for an id-scoped Test Chat call. The caller's own agentId, when given, is
+   * used as-is: every read and write below is already scoped by (workspaceId, agentId,
+   * executionId), so a mismatched id finds no row and fails not-found the same as any other wrong
+   * id -- this is the "verify" half. Without one, resolves the execution's own owning agent by
+   * workspace alone -- the "resolve" half, for a caller with a session id but not yet an agent id
+   * (an operator MCP client continuing a Test Chat session by `testExecutionId`). An id this
+   * workspace does not own resolves to nothing, so it fails not-found here too, rather than leaking
+   * whether it exists elsewhere.
+   */
+  private async resolveAgentId(workspaceId: string, agentId: string | undefined, executionId: string): Promise<string> {
+    if (agentId) return agentId;
+    const resolved = await this.options.repository.findAgentId({ workspaceId, executionId });
+    if (!resolved) throw notFound("Test execution is unavailable.");
+    return resolved;
+  }
+
+  /** A list page with each execution's turn count and opening message, read in one projection rather than per execution. */
+  async summaries(input: { workspaceId: string; agentId: string; limit: number; cursor?: string }): Promise<TestExecutionSummaryPage> {
+    const page = await this.options.repository.list(input);
+    const summaries = await this.options.repository.summarizeTurns({ firstMessageChars: TEST_EXECUTION_LABEL_CHARS + 1, workspaceId: input.workspaceId, agentId: input.agentId, executionIds: page.executions.map((item) => item.id) });
+    return { ...page, executions: page.executions.map((item) => {
+      const summary = summaries.get(item.id);
+      const label = summary?.firstMessage ? testExecutionLabel(summary.firstMessage) : null;
+      return { ...item, turnCount: summary?.turnCount ?? 0, firstMessage: label?.label ?? null, firstMessageClipped: label?.clipped ?? false };
+    }) };
+  }
+
+  /**
+   * The execution read as turns per side, after the same stuck-side self-heal `detail` applies.
+   * `agentId` is resolved and verified by `resolveAgentId`, so a caller with only a session id
+   * needs no separate lookup, and one that supplies a mismatched id gets the same not-found this
+   * read already gives any other wrong id.
+   */
+  async transcript(input: { workspaceId: string; agentId?: string; executionId: string }): Promise<TestExecutionTranscript> {
+    const agentId = await this.resolveAgentId(input.workspaceId, input.agentId, input.executionId);
+    return readTranscript(await this.detail({ workspaceId: input.workspaceId, agentId, executionId: input.executionId }));
+  }
+
+  /** One turn on one side, the first side unless one is named, as the store holds it. */
+  async turn(input: { workspaceId: string; agentId?: string; executionId: string; turnId: string; sideId?: string }): Promise<TestExecutionTurnRead> {
+    return findTranscriptTurn(await this.transcript(input), input);
   }
 
   async detail(input: { workspaceId: string; agentId: string; executionId: string }): Promise<TestExecutionDetail> {
@@ -388,6 +536,18 @@ export class TestExecutionService {
     return events;
   }
 
+  /**
+   * One turn without the stream: the settled outcome of this call's own attempt, on the first
+   * side. `agentId` is resolved and verified by `resolveAgentId` before the turn is claimed, so a
+   * caller continuing a session by id alone runs against that session's own agent.
+   */
+  async send(input: Omit<TestExecutionMessageInput, "agentId"> & { agentId?: string }): Promise<TestExecutionTurnRead> {
+    const agentId = await this.resolveAgentId(input.workspaceId, input.agentId, input.executionId);
+    const resolved = { ...input, agentId };
+    const events = await this.message(resolved);
+    return settleSentTurn(await this.turn({ workspaceId: resolved.workspaceId, agentId, executionId: resolved.executionId, turnId: resolved.turnId }), events);
+  }
+
   async *streamMessage(input: TestExecutionMessageInput): AsyncGenerator<TestExecutionEvent> {
     if (!input.message.trim()) throw badRequest("Test message is required.");
     const execution = await this.requireExecution(input);
@@ -420,7 +580,8 @@ export class TestExecutionService {
   private async claimTurn(execution: TestExecution, sideIds: readonly string[], input: TestExecutionMessageInput, retry: boolean): Promise<readonly TestExecutionClaim[]> {
     const claimed = await this.options.repository.claimTurn({ ...input, sideIds, retry, inputFingerprint: fingerprint(input.message), now: this.now(), leaseMs: this.leaseMs });
     if (claimed === "generation_conflict") throw conflict("Test execution generation is stale.");
-    if (claimed === "turn_conflict") throw conflict("A test turn is already active or must be resolved before another turn.");
+    if (claimed === "turn_in_progress") throw new AppError(409, TEST_TURN_IN_PROGRESS_CODE, "Another test turn is still running. Send the next message after it settles.");
+    if (claimed === "turn_conflict") throw conflict("This test turn was already sent. Send the next message as a new turn.");
     if (claimed === "retry_invalid") throw conflict("Only the failed side of the original turn may be retried.");
     if (claimed === "attempt_conflict") throw conflict("A retry must use a new attempt identity unless replaying its completed response.");
     return claimed.claims;
@@ -476,6 +637,18 @@ export class TestExecutionService {
       // failed. That work remains chargeable even when no result could be delivered.
       await reservation?.commit();
       const code = isUsageLimitExceededError(error) ? USAGE_LIMIT_EXCEEDED_CODE : "runner_failed";
+      if (code === "runner_failed") {
+        this.options.logger?.warn({
+          workspaceId: identity.workspaceId,
+          agentId: identity.agentId,
+          executionId: identity.executionId,
+          sideId: side.id,
+          turnId: identity.turnId,
+          attemptId: identity.attemptId,
+          failureCode: code,
+          ...runnerFailureLogFields(error),
+        }, "Test execution side failed");
+      }
       const stored = await this.options.repository.fail({ workspaceId: identity.workspaceId, agentId: identity.agentId, executionId: identity.executionId, sideId: side.id, turnId: identity.turnId, attemptId: identity.attemptId, fence: claim.attempt.fence, code, now: this.now() });
       return { failed: true, events: [this.failedEvent(identity, side.id, stored === "stale" ? "stale_attempt" : code, stored !== "stale")] };
     }

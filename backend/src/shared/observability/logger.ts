@@ -1,4 +1,5 @@
 import type { RequestHandler } from "express";
+import { EDGE_FACTS_HEADERS } from "@radioso/edge-proof";
 import pino from "pino";
 import { pinoHttp } from "pino-http";
 import type { ProductAnalyticsEvent } from "../analytics/productAnalyticsTypes.js";
@@ -34,7 +35,7 @@ export const createLogger = (
 
 export type AppLogger = ReturnType<typeof createLogger>;
 
-export interface RetrievalLogFields {
+interface RetrievalLogFields {
   rewriteStatus: string;
   rerankStatus: string;
   originalCandidateCount: number;
@@ -181,6 +182,10 @@ const httpLoggerRedactPaths = [
   ...httpRequestCredentialHeaderNames.map((headerName) => httpHeaderRedactPath("req", headerName)),
   httpHeaderRedactPath("req", WORKER_TASK_AUTH_HEADER_LOWERCASE),
   httpHeaderRedactPath("req", "x-workspace-id"),
+  // The frontend's signed edge facts carry the visitor's forwarded-for chain,
+  // user agent, and geo headers, and ride on every relayed request.
+  httpHeaderRedactPath("req", EDGE_FACTS_HEADERS.facts),
+  httpHeaderRedactPath("req", EDGE_FACTS_HEADERS.signature),
   ...httpResponseCredentialHeaderNames.map((headerName) => httpHeaderRedactPath("res", headerName)),
   // Anonymous-session id response headers set in app/http/middleware/resolveAnonymousSession.ts.
   // They carry the same raw session id as set-cookie but are not classified as sensitive by

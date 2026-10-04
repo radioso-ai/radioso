@@ -24,6 +24,15 @@ import type {
   WorkspaceGrantRole,
 } from "../../src/db/repositories/workspaceGrantRepository.js";
 import type { AccessGrantRepositoryPort } from "../../src/modules/accessGrants/ports.js";
+import type {
+  ClosingActivityKind,
+  ClosingConversationActivityRecord,
+  ConversationActivityEvent,
+  ConversationActivityKind,
+  ConversationActivityRecord,
+  ConversationActivityRecorder,
+} from "../../src/modules/conversationActivity/contracts/index.js";
+import type { ConversationActivityStore } from "../../src/modules/conversationActivity/public.js";
 import type { VisitorRecord } from "../../src/db/repositories/visitorRepository.js";
 import type { AgentConverseSessionMappingPort } from "../../src/modules/settings/contracts/agentConverseSession.js";
 import type {
@@ -47,9 +56,14 @@ import type {
   SessionRecord,
   SessionRepositoryPort,
 } from "../../src/modules/auth/services/authService.js";
-import type { UserRecord, UserRepositoryPort } from "../../src/db/repositories/userRepository.js";
+import type { CreateUserParams, UserRecord, UserRepositoryPort } from "../../src/db/repositories/userRepository.js";
 import type { WorkspaceRecord, WorkspaceRepositoryPort } from "../../src/db/repositories/workspaceRepository.js";
-import type { AgentGreetingUpdateOptions, AgentRepositoryPort } from "../../src/db/repositories/agentRepository.js";
+import type {
+  AgentGreetingUpdateOptions,
+  AgentProposalCasGuard,
+  AgentProposalCasOutcome,
+  AgentRepositoryPort,
+} from "../../src/db/repositories/agentRepository.js";
 import type {
   DocumentOriginKind,
   DocumentSourceRecord,
@@ -78,6 +92,7 @@ import type {
   AbuseControlBatchConsumption,
   AbuseControlConsumption,
   AbuseControlConsumptionInput,
+  AbuseControlDecision,
   AbuseControlEntry,
   AbuseControlRepositoryPort,
 } from "../../src/modules/security/contracts/abuseControl.js";
@@ -122,6 +137,7 @@ import type {
   DocumentSummaryRecord,
   DocumentUpdateInput,
 } from "../../src/modules/documents/services/documentIngestionService.js";
+import type { DocumentInventoryListInput } from "../../src/modules/documents/contracts/index.js";
 import type {
   DocumentProcessingJobRecord,
   DocumentProcessingQueueSnapshot,
@@ -137,7 +153,7 @@ import type {
   CreateConversationInput,
   GetOrCreateConversationResult,
 } from "../../src/db/repositories/conversationRepository.js";
-import type { ConversationSourceScope } from "../../src/shared/domain/conversationSource.js";
+import { callerKindForSourceChannel, type ConversationSourceScope } from "../../src/shared/domain/conversationSource.js";
 import type { ConversationOwnershipScope } from "../../src/modules/handoff/ownershipState.js";
 import type {
   ConversationOwnershipHandBackInput,
@@ -266,12 +282,23 @@ export class InMemoryAccountRepository implements AccountRepositoryPort {
 
 export class InMemoryUserRepository implements UserRepositoryPort {
   private readonly items = new Map<string, UserRecord>();
+  // `users.disabled_at` is set outside the user repository (staff tooling); tests set it here.
+  private readonly disabledAtById = new Map<string, Date>();
 
-  async create(params: { id?: string; email: string; passwordHash: string; emailVerifiedAt?: Date | null }): Promise<UserRecord> {
+  disable(userId: string, at: Date = new Date()): void {
+    this.disabledAtById.set(userId, at);
+  }
+
+  disabledAt(userId: string): Date | null {
+    return this.disabledAtById.get(userId) ?? null;
+  }
+
+  async create(params: CreateUserParams): Promise<UserRecord> {
     const record: UserRecord = {
       id: params.id ?? randomUUID(),
       email: params.email,
       passwordHash: params.passwordHash,
+      displayName: params.displayName ?? null,
       emailVerifiedAt: params.emailVerifiedAt === undefined ? new Date() : params.emailVerifiedAt,
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -289,6 +316,13 @@ export class InMemoryUserRepository implements UserRepositoryPort {
     return this.items.get(id) ?? null;
   }
 
+  async findByIds(ids: readonly string[]): Promise<UserRecord[]> {
+    return [...new Set(ids)].flatMap((id) => {
+      const record = this.items.get(id);
+      return record ? [record] : [];
+    });
+  }
+
   async updatePassword(id: string, passwordHash: string): Promise<UserRecord> {
     const existing = this.items.get(id);
     if (!existing) {
@@ -300,6 +334,17 @@ export class InMemoryUserRepository implements UserRepositoryPort {
       passwordHash,
       updatedAt: new Date(),
     };
+    this.items.set(id, updated);
+    return updated;
+  }
+
+  async updateDisplayName(id: string, displayName: string | null): Promise<UserRecord> {
+    const existing = this.items.get(id);
+    if (!existing) {
+      throw notFound("User not found");
+    }
+
+    const updated: UserRecord = { ...existing, displayName, updatedAt: new Date() };
     this.items.set(id, updated);
     return updated;
   }
@@ -342,8 +387,11 @@ export class InMemoryAccessGrantRepository implements AccessGrantRepositoryPort 
     limit?: number;
     cursor?: { createdAt: string; id: string };
   } = {}): Promise<{ grants: AccessGrant[]; nextCursor: { createdAt: string; id: string } | null }> {
+    const now = Date.now();
     const matching = this.items
       .filter((item) => item.agentId === agentId)
+      // Mirrors the repository: the inventory carries live grants only.
+      .filter((item) => !item.revokedAt && (!item.expiresAt || item.expiresAt.getTime() > now))
       .filter((item) => !params.workspaceId || item.workspaceId === params.workspaceId)
       .filter((item) => !params.principalKind || item.principalKind === params.principalKind)
       .filter((item) => !params.channel || item.channel === params.channel)
@@ -696,9 +744,9 @@ export class InMemoryEmailVerificationTokenRepository implements EmailVerificati
 
 export class InMemoryAccountMembershipRepository implements AccountMembershipRepositoryPort {
   private readonly items = new Map<string, AccountMembershipRecord>();
-  private userRepository: UserRepositoryPort | null = null;
+  private userRepository: (UserRepositoryPort & Partial<Pick<InMemoryUserRepository, "disabledAt">>) | null = null;
 
-  setUserRepository(userRepository: UserRepositoryPort): void {
+  setUserRepository(userRepository: UserRepositoryPort & Partial<Pick<InMemoryUserRepository, "disabledAt">>): void {
     this.userRepository = userRepository;
   }
 
@@ -759,7 +807,13 @@ export class InMemoryAccountMembershipRepository implements AccountMembershipRep
     return users.map(({ membership, user }) => ({
       ...membership,
       email: user?.email ?? "unknown@example.com",
+      displayName: user?.displayName ?? null,
+      disabledAt: this.userRepository?.disabledAt?.(membership.userId) ?? null,
     }));
+  }
+
+  async findActiveUserByAccountAndUser(accountId: string, userId: string): Promise<AccountMembershipUserRecord | null> {
+    return (await this.listActiveByAccount(accountId)).find((member) => member.userId === userId) ?? null;
   }
 
   async listActiveByUser(userId: string): Promise<AccountMembershipRecord[]> {
@@ -768,7 +822,7 @@ export class InMemoryAccountMembershipRepository implements AccountMembershipRep
       .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime());
   }
 
-  async updateRole(id: string, role: AccountMembershipRole): Promise<AccountMembershipRecord> {
+  async updateRole(id: string, role: AccountMembershipRole): Promise<AccountMembershipUserRecord> {
     const existing = this.items.get(id);
     if (!existing) {
       throw notFound("Membership not found");
@@ -779,7 +833,13 @@ export class InMemoryAccountMembershipRepository implements AccountMembershipRep
       updatedAt: new Date(),
     };
     this.items.set(id, updated);
-    return updated;
+    const user = await this.userRepository?.findById(updated.userId);
+    return {
+      ...updated,
+      email: user?.email ?? "unknown@example.com",
+      displayName: user?.displayName ?? null,
+      disabledAt: this.userRepository?.disabledAt?.(updated.userId) ?? null,
+    };
   }
 
   async deleteById(id: string): Promise<boolean> {
@@ -833,9 +893,9 @@ export class InMemoryAccountInvitationRepository implements AccountInvitationRep
     return [...this.items.values()].find((item) => item.tokenHash === tokenHash) ?? null;
   }
 
-  async listByAccount(accountId: string): Promise<AccountInvitationRecord[]> {
+  async listPendingByAccount(accountId: string): Promise<AccountInvitationRecord[]> {
     return [...this.items.values()]
-      .filter((item) => item.accountId === accountId)
+      .filter((item) => item.accountId === accountId && item.status === "pending")
       .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime());
   }
 
@@ -1176,6 +1236,10 @@ export class InMemoryAgentRepository implements AgentRepositoryPort {
     return [...this.items.values()].find((item) => item.surfaceSettings.websiteEmbed.token === token) ?? null;
   }
 
+  async findByPublicId(publicId: string): Promise<AgentRecord | null> {
+    return [...this.items.values()].find((item) => item.publicId === publicId) ?? null;
+  }
+
   async listByWorkspaceId(workspaceId: string): Promise<AgentRecord[]> {
     return [...this.items.values()]
       .filter((item) => item.workspaceId === workspaceId)
@@ -1208,6 +1272,7 @@ export class InMemoryAgentRepository implements AgentRepositoryPort {
       updatedAt: now,
     };
     this.directives.set(directive.id, directive);
+    agent.updatedAt = new Date(Math.max(Date.now(), agent.updatedAt.getTime() + 1));
     agent.authoredDirectives = await this.listDirectives(agentId, workspaceId);
     return directive;
   }
@@ -1250,6 +1315,7 @@ export class InMemoryAgentRepository implements AgentRepositoryPort {
       updatedAt: new Date(),
     };
     this.directives.set(directiveId, updated);
+    agent.updatedAt = new Date(Math.max(Date.now(), agent.updatedAt.getTime() + 1));
     agent.authoredDirectives = await this.listDirectives(agentId, workspaceId);
     return updated;
   }
@@ -1272,6 +1338,7 @@ export class InMemoryAgentRepository implements AgentRepositoryPort {
       return false;
     }
     const deleted = this.directives.delete(directiveId);
+    if (deleted) agent.updatedAt = new Date(Math.max(Date.now(), agent.updatedAt.getTime() + 1));
     agent.authoredDirectives = await this.listDirectives(agentId, workspaceId);
     return deleted;
   }
@@ -1305,6 +1372,35 @@ export class InMemoryAgentRepository implements AgentRepositoryPort {
     };
     this.items.set(agentId, updated);
     return updated;
+  }
+
+  async applyProposalPatch(
+    agentId: string,
+    workspaceId: string,
+    input: AgentInput,
+    guard: AgentProposalCasGuard,
+  ): Promise<AgentProposalCasOutcome> {
+    if (guard.expectedDefaultAgentId !== undefined && this.defaultAgentIds.get(workspaceId) !== guard.expectedDefaultAgentId) {
+      return { outcome: "changed", fields: ["target"] };
+    }
+    const previous = await this.findByIdAndWorkspaceId(agentId, workspaceId);
+    if (!previous) return { outcome: "targetDeleted" };
+    const value = (key: string): unknown => {
+      if (key === "assistantName") return previous.name;
+      if (key === "anonymousChatEnabled") return previous.surfaceSettings.anonymousChat.enabled;
+      if (key === "websiteEmbedEnabled") return previous.surfaceSettings.websiteEmbed.enabled;
+      if (key === "websiteEmbedAllowedOrigins") return previous.surfaceSettings.websiteEmbed.allowedOrigins;
+      if (key === "websiteEmbedLauncherLabel") return previous.surfaceSettings.websiteEmbed.launcherLabel;
+      if (key === "websiteEmbedLauncherPosition") return previous.surfaceSettings.websiteEmbed.launcherPosition;
+      return (previous as unknown as Record<string, unknown>)[key];
+    };
+    const changed = "expectedFields" in guard
+      ? guard.expectedFields.filter((field) => JSON.stringify(value(field.key)) !== JSON.stringify(field.value)).map((field) => field.key)
+      : previous.updatedAt.getTime() === guard.expectedUpdatedAt.getTime() ? [] : ["target"];
+    if (changed.length) return { outcome: "changed", fields: changed };
+    const lockedInput = guard.normalizeLocked?.(previous) ?? input;
+    const agent = await this.update(agentId, workspaceId, lockedInput);
+    return { outcome: "applied", previous, agent };
   }
 
   async setDefault(workspaceId: string, agentId: string): Promise<void> {
@@ -1561,6 +1657,16 @@ export class InMemoryBootstrapGreetingCacheRepository implements BootstrapGreeti
   }
 }
 
+/** What an admitted attempt reports back, for tests that stub the limiter instead of running it. */
+export const admittedAbuseControlDecision = (
+  overrides: Partial<AbuseControlDecision> = {},
+): AbuseControlDecision => ({
+  limit: 100,
+  remaining: 99,
+  resetAtMs: Date.now() + 60_000,
+  ...overrides,
+});
+
 export class InMemoryAbuseControlRepository implements AbuseControlRepositoryPort {
   private readonly items = new Map<string, AbuseControlEntry>();
 
@@ -1575,39 +1681,62 @@ export class InMemoryAbuseControlRepository implements AbuseControlRepositoryPor
     windowStartedAt: Date;
     blockedUntil: Date | null;
   }): Promise<AbuseControlEntry> {
+    const existing = this.items.get(`${input.scope}:${input.subjectKey}`);
+    return this.store({ ...input, previousAttemptCount: existing?.previousAttemptCount ?? 0 });
+  }
+
+  /**
+   * Mirrors the sliding window `consumeAbuseControlEntry` runs in Postgres: the expiring window's
+   * count is carried while it still overlaps, and admission weighs it against the running window.
+   */
+  async consume(input: AbuseControlConsumptionInput): Promise<AbuseControlConsumption> {
+    const existing = await this.find(input.scope, input.subjectKey);
+    const elapsedMs = existing ? input.now.getTime() - existing.windowStartedAt.getTime() : 0;
+    const activeBlock = Boolean(existing?.blockedUntil && existing.blockedUntil > input.now);
+    const activeWindow = Boolean(existing && elapsedMs < input.windowMs);
+    const held = activeBlock || activeWindow;
+    const attemptCount = activeBlock ? existing!.attemptCount : activeWindow ? existing!.attemptCount + 1 : 1;
+    const previousAttemptCount = held
+      ? existing?.previousAttemptCount ?? 0
+      : existing && elapsedMs < 2 * input.windowMs
+        ? existing.attemptCount
+        : 0;
+    const windowStartedAt = held ? existing!.windowStartedAt : input.now;
+    const overlap = Math.max(0, 1 - (input.now.getTime() - windowStartedAt.getTime()) / input.windowMs);
+    const weightedAttemptCount = previousAttemptCount * overlap + attemptCount;
+    const blockedUntil = activeBlock
+      ? existing!.blockedUntil
+      : weightedAttemptCount > input.limit
+        ? new Date(input.now.getTime() + input.blockMs)
+        : null;
+    const entry = this.store({
+      scope: input.scope,
+      subjectKey: input.subjectKey,
+      attemptCount,
+      previousAttemptCount,
+      windowStartedAt,
+      blockedUntil,
+    });
+    return { entry, blocked: Boolean(blockedUntil && blockedUntil > input.now), weightedAttemptCount };
+  }
+
+  private store(input: {
+    scope: string;
+    subjectKey: string;
+    attemptCount: number;
+    previousAttemptCount: number;
+    windowStartedAt: Date;
+    blockedUntil: Date | null;
+  }): AbuseControlEntry {
     const key = `${input.scope}:${input.subjectKey}`;
     const existing = this.items.get(key);
     const record: AbuseControlEntry = {
-      scope: input.scope,
-      subjectKey: input.subjectKey,
-      attemptCount: input.attemptCount,
-      windowStartedAt: input.windowStartedAt,
-      blockedUntil: input.blockedUntil,
+      ...input,
       createdAt: existing?.createdAt ?? new Date(),
       updatedAt: new Date(),
     };
     this.items.set(key, record);
     return record;
-  }
-
-  async consume(input: AbuseControlConsumptionInput): Promise<AbuseControlConsumption> {
-    const existing = await this.find(input.scope, input.subjectKey);
-    const activeBlock = Boolean(existing?.blockedUntil && existing.blockedUntil > input.now);
-    const activeWindow = Boolean(existing && input.now.getTime() - existing.windowStartedAt.getTime() < input.windowMs);
-    const attemptCount = activeBlock ? existing!.attemptCount : activeWindow ? existing!.attemptCount + 1 : 1;
-    const blockedUntil = activeBlock
-      ? existing!.blockedUntil
-      : attemptCount > input.limit
-        ? new Date(input.now.getTime() + input.blockMs)
-        : null;
-    const entry = await this.save({
-      scope: input.scope,
-      subjectKey: input.subjectKey,
-      attemptCount,
-      windowStartedAt: activeBlock || activeWindow ? existing!.windowStartedAt : input.now,
-      blockedUntil,
-    });
-    return { entry, blocked: Boolean(blockedUntil && blockedUntil > input.now) };
   }
 
   async consumeBatch(inputs: readonly AbuseControlConsumptionInput[]): Promise<AbuseControlBatchConsumption> {
@@ -1871,6 +2000,26 @@ export class InMemoryIngestionSettingsRepository implements IngestionSettingsRep
       (this.revisions.get(workspaceId) ?? 0n) + 1n,
     );
     return record;
+  }
+
+  async applyProposalPatch(input: {
+    readonly workspaceId: string;
+    readonly patch: Partial<ValidatedIngestionSettingsInput>;
+    readonly validateMerged: (current: IngestionSettingsRecord) => ValidatedIngestionSettingsInput;
+  } & (
+    | { readonly expected: Partial<ValidatedIngestionSettingsInput> }
+    | { readonly expectedUpdatedAt: Date }
+  )): Promise<import("../../src/modules/settings/contracts/services.js").FieldScopedCasOutcome> {
+    const current = this.items.get(input.workspaceId);
+    if (!current) return { outcome: "targetDeleted" };
+    const changed = "expected" in input
+      ? Object.entries(input.expected)
+        .filter(([field, value]) => JSON.stringify((current as unknown as Record<string, unknown>)[field]) !== JSON.stringify(value))
+        .map(([field]) => field)
+      : current.updatedAt.getTime() === input.expectedUpdatedAt.getTime() ? [] : ["target"];
+    if (changed.length) return { outcome: "changed", fields: changed };
+    await this.upsert(input.workspaceId, input.validateMerged(current));
+    return { outcome: "applied" };
   }
 
   async clearPendingEmbeddingModel(
@@ -2403,6 +2552,15 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
     this.jobRepository = jobRepository;
   }
 
+  async countReprocessCandidates(input: { workspaceId: string; sourceId?: string | null; documentIds?: readonly string[] }) {
+    const documents = [...this.items.values()].filter((document) => document.workspaceId === input.workspaceId)
+      .filter((document) => input.documentIds ? input.documentIds.includes(document.id) : input.sourceId === undefined || document.sourceId === input.sourceId);
+    return {
+      eligible: documents.filter((document) => document.status !== "queued" && document.status !== "processing").length,
+      skipped: documents.filter((document) => document.status === "queued" || document.status === "processing").length,
+    };
+  }
+
   async summarizeWorkspace(workspaceId: string) {
     const documents = [...this.items.values()].filter((item) => item.workspaceId === workspaceId);
     const sampleDocuments = documents.filter((item) => item.metadata.sampleDocument === true);
@@ -2633,6 +2791,38 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
             createdAt: lastDocument.createdAt.toISOString(),
             id: lastDocument.id,
           })
+        : null,
+      hasMore,
+    };
+  }
+
+  async listInventoryPageByWorkspaceId(
+    workspaceId: string,
+    input: DocumentInventoryListInput,
+  ): Promise<{ documents: DocumentSummaryRecord[]; total: number; nextCursor: string | null; hasMore: boolean }> {
+    const externalDocumentIds = input.externalDocumentIds ? new Set(input.externalDocumentIds) : null;
+    const expectedStatus = input.status === "indexed" ? "ready" : input.status;
+    const documents = [...this.items.values()]
+      .filter((item) => item.workspaceId === workspaceId)
+      .filter((item) => input.sourceId === undefined || item.sourceId === input.sourceId)
+      .filter((item) => expectedStatus === undefined || item.status === expectedStatus)
+      .filter((item) => !externalDocumentIds || (typeof item.externalDocumentId === "string" && externalDocumentIds.has(item.externalDocumentId)))
+      .filter((item) => input.titleContains === undefined || item.title.toLocaleLowerCase().includes(input.titleContains.toLocaleLowerCase()))
+      .filter((item) => input.retrievalEnabled === undefined || item.retrievalEnabled === input.retrievalEnabled)
+      .filter((item) => !input.metadata || Object.entries(input.metadata).every(([key, value]) => item.metadata[key] === value))
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime() || b.id.localeCompare(a.id));
+    const cursor = input.cursor ? decodeCursorWithKeys(input.cursor, ["createdAt", "id"]) : null;
+    const startIndex = cursor
+      ? documents.findIndex((item) => item.createdAt.toISOString() === cursor.keys.createdAt && item.id === cursor.keys.id) + 1
+      : 0;
+    const slice = documents.slice(Math.max(0, startIndex), Math.max(0, startIndex) + input.limit);
+    const hasMore = Math.max(0, startIndex) + input.limit < documents.length;
+    const lastDocument = slice.at(-1);
+    return {
+      documents: (await this.listSummariesByIdsAndWorkspaceId(workspaceId, slice.map((item) => item.id))),
+      total: documents.length,
+      nextCursor: hasMore && lastDocument
+        ? encodeCursor({ createdAt: lastDocument.createdAt.toISOString(), id: lastDocument.id }, documents.length)
         : null,
       hasMore,
     };
@@ -3132,6 +3322,34 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
       doc.workspaceId === input.workspaceId &&
       doc.externalDocumentId === input.externalDocumentId &&
       doc.status !== "failed" &&
+      (sourceId === null ? !doc.sourceId : doc.sourceId === sourceId),
+    );
+    if (!match) {
+      return null;
+    }
+    return {
+      documentId: match.id,
+      revision: match.revision,
+      contentSizeBytes: match.contentSizeBytes ?? null,
+      contentHash: match.contentHash ?? null,
+    };
+  }
+
+  /** Includes failed rows, unlike {@link findActivePageState}; mirrors DocumentRepository.findPageState. */
+  async findPageState(input: {
+    workspaceId: string;
+    sourceId?: string | null;
+    externalDocumentId: string;
+  }): Promise<{
+    documentId: string;
+    revision: number;
+    contentSizeBytes: number | null;
+    contentHash: string | null;
+  } | null> {
+    const sourceId = input.sourceId ?? null;
+    const match = [...this.items.values()].find((doc) =>
+      doc.workspaceId === input.workspaceId &&
+      doc.externalDocumentId === input.externalDocumentId &&
       (sourceId === null ? !doc.sourceId : doc.sourceId === sourceId),
     );
     if (!match) {
@@ -3849,6 +4067,9 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
       agentName: null,
       agentInternalName: null,
       sourceChannel: input.sourceChannel ?? null,
+      // The fake derives it the same way the repository does, so a test cannot see a caller kind
+      // production would never produce.
+      callerKind: callerKindForSourceChannel(input.sourceChannel),
       sourceOrigin: input.sourceOrigin ?? null,
       channelContext: input.channelContext ?? null,
       anonymousSessionId: input.anonymousSessionId ?? null,
@@ -4108,13 +4329,103 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
   }
 }
 
+/** Records action outbox writes; the drain never runs in the in-memory app. */
+export class InMemoryActionOutbox {
+  readonly items: Array<{
+    type: string;
+    payload: Record<string, unknown>;
+    workspaceId?: string | null;
+    accountId?: string | null;
+    conversationId?: string | null;
+    idempotencyKey?: string | null;
+  }> = [];
+
+  async enqueue(input: InMemoryActionOutbox["items"][number]): Promise<{ id: string; duplicate: boolean }> {
+    const existing = input.idempotencyKey
+      ? this.items.findIndex((item) => item.idempotencyKey === input.idempotencyKey)
+      : -1;
+    if (existing >= 0) {
+      return { id: `action-${existing}`, duplicate: true };
+    }
+    this.items.push(input);
+    return { id: `action-${this.items.length - 1}`, duplicate: false };
+  }
+}
+
+/**
+ * Conversation activity kept in memory. There are no transactions to record into, so `record`
+ * ignores the one it is handed; atomicity with the change is covered against Postgres.
+ */
+export class InMemoryConversationActivityStore implements ConversationActivityRecorder, ConversationActivityStore {
+  readonly items: ConversationActivityRecord[] = [];
+
+  constructor(private readonly titles: (conversationId: string) => Promise<string | null> = async () => null) {}
+
+  async record(_db: unknown, event: ConversationActivityEvent): Promise<void> {
+    this.items.push({
+      id: randomUUID(),
+      conversationId: event.conversationId,
+      workspaceId: event.workspaceId,
+      kind: event.kind,
+      actorUserId: event.actorUserId,
+      subjectUserId: event.kind === "reassigned" ? event.subjectUserId : null,
+      detail: "detail" in event ? { ...event.detail } : {},
+      createdAt: new Date(Date.now() + this.items.length),
+    });
+  }
+
+  /** The recorder bound to a unit of work's transaction, as composition binds it. */
+  writer(): { record(event: ConversationActivityEvent): Promise<void> } {
+    return { record: (event) => this.record(undefined, event) };
+  }
+
+  async listForConversation(
+    workspaceId: string,
+    conversationId: string,
+    options: { kinds: readonly ConversationActivityKind[]; recordedAfter?: Date },
+  ): Promise<{ records: ConversationActivityRecord[]; readAt: Date }> {
+    const readAt = new Date();
+    const records = this.items
+      .filter((item) => item.workspaceId === workspaceId && item.conversationId === conversationId)
+      .filter((item) => options.kinds.includes(item.kind))
+      .filter((item) => !options.recordedAfter || item.createdAt > options.recordedAfter)
+      .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime());
+    return { records, readAt };
+  }
+
+  async listRecentClosing(
+    workspaceId: string,
+    limit: number,
+    kinds: readonly ClosingActivityKind[],
+  ): Promise<ClosingConversationActivityRecord[]> {
+    const closing = this.items
+      .flatMap((item) => {
+        const kind = kinds.find((candidate) => candidate === item.kind);
+        return item.workspaceId === workspaceId && kind ? [{ ...item, kind }] : [];
+      })
+      .reverse()
+      .slice(0, limit);
+    return Promise.all(closing.map(async (item) => ({ ...item, conversationTitle: await this.titles(item.conversationId) })));
+  }
+}
+
+/** For tests that do not look at conversation activity: records nothing. */
+export const unrecordedConversationActivity: ConversationActivityRecorder = {
+  async record() {},
+};
+
 export class InMemoryConversationOwnershipRepository implements Pick<
   ConversationOwnershipRepository,
-  "load" | "loadByConversationIds" | "requestHandoff" | "takeOver" | "transfer" | "handBack"
+  "load" | "loadForUpdate" | "loadByConversationIds" | "requestHandoff" | "takeOver" | "transfer" | "handBack"
 > {
   readonly items = new Map<string, ConversationOwnershipRecord>();
 
   async load(conversationId: string): Promise<ConversationOwnershipRecord | null> {
+    return this.items.get(conversationId) ?? null;
+  }
+
+  // The in-memory store has no transactions to lock within; the lock is covered against Postgres.
+  async loadForUpdate(conversationId: string): Promise<ConversationOwnershipRecord | null> {
     return this.items.get(conversationId) ?? null;
   }
 
@@ -4142,7 +4453,8 @@ export class InMemoryConversationOwnershipRepository implements Pick<
       workspaceId: input.workspaceId,
       state: "human_owned",
       ownerAccountId: null,
-      ownerDisplayName: null,
+      ownerUserId: null,
+      ownerStoredLabel: null,
       reason: input.reason,
       version: existing ? existing.version + 1 : 1,
       takenOverAt: null,
@@ -4160,7 +4472,8 @@ export class InMemoryConversationOwnershipRepository implements Pick<
         workspaceId: input.workspaceId,
         state: "human_owned",
         ownerAccountId: input.accountId,
-        ownerDisplayName: input.displayName,
+        ownerUserId: input.userId,
+        ownerStoredLabel: input.displayName,
         reason: "operator_takeover",
         version: 1,
         takenOverAt: new Date(),
@@ -4173,7 +4486,7 @@ export class InMemoryConversationOwnershipRepository implements Pick<
       return { ok: false, changed: false, record: existing };
     }
 
-    if (existing.state !== "ai_owned" && existing.ownerAccountId !== null) {
+    if (existing.state !== "ai_owned" && existing.ownerUserId !== null) {
       return { ok: false, changed: false, record: existing };
     }
 
@@ -4182,7 +4495,8 @@ export class InMemoryConversationOwnershipRepository implements Pick<
       workspaceId: input.workspaceId,
       state: "human_owned",
       ownerAccountId: input.accountId,
-      ownerDisplayName: input.displayName,
+      ownerUserId: input.userId,
+      ownerStoredLabel: input.displayName,
       reason: "operator_takeover",
       version: existing.version + 1,
       takenOverAt: new Date(),
@@ -4197,14 +4511,16 @@ export class InMemoryConversationOwnershipRepository implements Pick<
     if (!existing || existing.state !== "human_owned" || existing.version !== input.expectedVersion) {
       return { ok: false, changed: false, record: existing ?? null };
     }
-    if (existing.ownerAccountId === input.accountId && existing.ownerDisplayName === input.displayName) {
+    if (existing.ownerAccountId === input.accountId && existing.ownerUserId === input.userId) {
       return { ok: true, changed: false, record: existing };
     }
 
     const record = this.createRecord({
       ...existing,
       ownerAccountId: input.accountId,
-      ownerDisplayName: input.displayName,
+      ownerUserId: input.userId,
+      ownerStoredLabel: input.displayName,
+      takenOverAt: existing.ownerUserId === null ? new Date() : existing.takenOverAt,
       version: existing.version + 1,
       createdAt: existing.createdAt,
     });
@@ -4217,7 +4533,11 @@ export class InMemoryConversationOwnershipRepository implements Pick<
     if (!existing || existing.version !== input.expectedVersion) {
       return { ok: false, changed: false, record: existing ?? null };
     }
-    if (existing.state === "ai_owned" && existing.ownerAccountId === null && existing.ownerDisplayName === null) {
+    if (existing.ownerUserId !== null && existing.ownerUserId !== input.actingUserId) {
+      return { ok: false, changed: false, record: existing };
+    }
+    if (existing.state === "ai_owned" && existing.ownerAccountId === null && existing.ownerUserId === null
+      && existing.ownerStoredLabel === null) {
       return { ok: true, changed: false, record: existing };
     }
 
@@ -4225,7 +4545,8 @@ export class InMemoryConversationOwnershipRepository implements Pick<
       ...existing,
       state: "ai_owned",
       ownerAccountId: null,
-      ownerDisplayName: null,
+      ownerUserId: null,
+      ownerStoredLabel: null,
       version: existing.version + 1,
       createdAt: existing.createdAt,
     });
@@ -4238,7 +4559,8 @@ export class InMemoryConversationOwnershipRepository implements Pick<
     workspaceId: string;
     state: ConversationOwnershipRecord["state"];
     ownerAccountId: string | null;
-    ownerDisplayName: string | null;
+    ownerUserId: string | null;
+    ownerStoredLabel: string | null;
     reason: ConversationOwnershipRecord["reason"];
     version: number;
     takenOverAt: Date | null;
@@ -4250,7 +4572,10 @@ export class InMemoryConversationOwnershipRepository implements Pick<
       workspaceId: input.workspaceId,
       state: input.state,
       ownerAccountId: input.ownerAccountId,
-      ownerDisplayName: input.ownerDisplayName,
+      ownerUserId: input.ownerUserId,
+      // The in-memory store keeps no user profiles; owners are named by the stored label.
+      ownerProfile: null,
+      ownerStoredLabel: input.ownerStoredLabel,
       reason: input.reason,
       version: input.version,
       takenOverAt: input.takenOverAt,
@@ -4405,6 +4730,7 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
     content: string;
     source?: MessageSource;
     operatorAccountId?: string;
+    operatorUserId?: string;
     operatorDisplayName?: string;
     inputMetadata?: MessageRecord["inputMetadata"];
     metadata?: Record<string, unknown>;
@@ -4413,11 +4739,12 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
     skillStatus?: string;
   }): Promise<MessageRecord> {
     const metadata = input.metadata ?? (input.inputMetadata ? { ...input.inputMetadata } : undefined);
-    const metadataWithOperator = input.operatorAccountId || input.operatorDisplayName
+    const metadataWithOperator = input.operatorAccountId || input.operatorUserId || input.operatorDisplayName
       ? {
           ...(metadata ?? {}),
           humanAgent: {
             accountId: input.operatorAccountId,
+            userId: input.operatorUserId,
             displayName: input.operatorDisplayName,
           },
         }

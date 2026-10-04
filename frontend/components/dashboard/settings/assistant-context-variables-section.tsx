@@ -642,9 +642,8 @@ export function AssistantContextVariablesSection({
             <Button type="button" variant="outline" onClick={closeDialog} disabled={isSaving}>
               Cancel
             </Button>
-            <Button type="button" onClick={() => void handleSaveVariable()} disabled={Boolean(formError) || isSaving}>
-              {isSaving ? <Spinner className="mr-2 h-4 w-4" /> : null}
-              <span>{editingVariable ? 'Save variable' : 'Add variable'}</span>
+            <Button type="button" onClick={() => void handleSaveVariable()} disabled={Boolean(formError)} loading={isSaving}>
+              {editingVariable ? 'Save variable' : 'Add variable'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -662,9 +661,8 @@ export function AssistantContextVariablesSection({
             <Button type="button" variant="outline" onClick={() => setDeletingVariable(null)} disabled={isSaving}>
               Cancel
             </Button>
-            <Button type="button" variant="destructive" onClick={() => void handleDeleteVariable()} disabled={isSaving}>
-              {isSaving ? <Spinner className="mr-2 h-4 w-4" /> : null}
-              <span>Delete variable</span>
+            <Button type="button" variant="destructive" onClick={() => void handleDeleteVariable()} loading={isSaving}>
+              Delete variable
             </Button>
           </DialogFooter>
         </DialogContent>

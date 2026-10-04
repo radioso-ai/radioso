@@ -1,30 +1,56 @@
 import type {
   ActivityTrace,
-  ConversationTrace,
   ConversationTraceStage,
   TurnTraceEnvelope,
 } from '@/lib/api'
-import { getCapabilitySubTrace, resolveCapabilityLeaf, spineStageLabel } from '@/lib/turn-trace'
+import {
+  activityStageAttention,
+  activityStageDurationMs,
+  activityStageLabel,
+  activityStageQualifier,
+  activityStageSummary,
+  activityTraceSummary,
+  statusTone,
+  type StageTone,
+} from '@/lib/activity-stage-presentation'
+import { answerCoverageOutcomePresentation } from '@/lib/answer-coverage'
+import {
+  answerCoverageFromTurnTrace,
+  getCapabilitySubTrace,
+  resolveCapabilityLeaf,
+  spineStageLabel,
+  stageLeafView,
+  turnTraceRollup,
+} from '@/lib/turn-trace'
 
 /**
- * Flattens a {@link TurnTraceEnvelope} into a single connected flow graph:
- * inputs (message, history, directives) fan into the engine, the engine selects
- * a skill, the skill's capability sub-trace streams out as its own path, leading
- * to the outcome. Pure and renderer-agnostic — React Flow consumes the result,
- * but the layout/draw layer owns no knowledge of the trace shape.
+ * Flattens a {@link TurnTraceEnvelope} into the turn's progression: the message
+ * is understood, a skill or routine acts, the answer is composed, and the verdict
+ * closes the turn. Spine stages become steps in execution order, grouped into
+ * those three phases; history and directives feed in as inputs where they are
+ * used. Each step says what it decided, how long it measurably took, and whether
+ * it needs a look.
  *
- * Each capability contributes its own sub-flow by namespace (the same registry
- * boundary as the detail renderers), so the engine spine stays generic.
+ * A capability's own sub-trace becomes a path of steps grouped under its skill
+ * node, so the renderer can fold it away ({@link foldTurnFlowGroups}). Pure and
+ * renderer-agnostic — the draw layer owns no knowledge of the trace shape.
  */
 
-export type FlowNodeKind = 'input' | 'engine' | 'skill' | 'stage' | 'outcome'
+export type FlowNodeKind = 'input' | 'skill' | 'stage' | 'outcome'
 export type FlowStatus = ConversationTraceStage['status']
-type FlowEdgeKind = 'fan-in' | 'sequence' | 'branch' | 'converge'
+export type FlowTone = StageTone
+export type FlowPhase = 'understand' | 'act' | 'answer'
+type FlowEdgeKind = 'input' | 'sequence' | 'branch' | 'converge'
 
 /** How to resolve the detail pane when a node is selected. */
 export type TurnFlowNodeDetail =
   | { kind: 'spine'; spineStageId: string }
-  | { kind: 'leaf'; leafStageId: string }
+  | {
+      kind: 'leaf'
+      leafStageId: string
+      /** The dispatch whose sub-trace holds the stage; absent for a bare activity trace. */
+      dispatchStageId?: string
+    }
   | { kind: 'none' }
 
 export interface TurnFlowNode {
@@ -32,9 +58,17 @@ export interface TurnFlowNode {
   nodeKind: FlowNodeKind
   label: string
   sublabel?: string
+  /** One short line on what needs a look. */
+  note?: string
   status?: FlowStatus
-  /** Set on the skill node and every node belonging to its capability path. */
-  capabilityNamespace?: string
+  tone: FlowTone
+  phase?: FlowPhase
+  /** Measured wall time; absent when the trace recorded no real span. */
+  durationMs?: number
+  /** The skill node a capability step folds into. */
+  groupId?: string
+  /** On a skill node: how many capability steps fold into it. */
+  stepCount?: number
   detail: TurnFlowNodeDetail
 }
 
@@ -45,16 +79,80 @@ export interface TurnFlowEdge {
   kind: FlowEdgeKind
 }
 
+export interface TurnFlowPhaseBand {
+  id: FlowPhase
+  label: string
+  durationMs?: number
+}
+
+export interface TurnFlowTotals {
+  totalMs?: number
+  /** Calls on the turn's critical path. */
+  modelCallCount?: number
+  /** Every call the turn recorded, including ones off the critical path. */
+  recordedModelCallCount?: number
+  modelTimeMs?: number
+  modelCallsStageId?: string
+}
+
 export interface TurnFlowGraph {
   nodes: TurnFlowNode[]
   edges: TurnFlowEdge[]
+  phases: TurnFlowPhaseBand[]
+  totals?: TurnFlowTotals
 }
+
+interface FlowMessageRecord {
+  id?: string
+  content: string
+}
+
+interface Span {
+  startMs: number
+  endMs: number
+}
+
+const PHASE_ORDER: readonly FlowPhase[] = ['understand', 'act', 'answer']
+
+// Spine stages whose content another node already carries.
+const FOLDED_STAGE_KINDS = new Set([
+  // Its work is the retrieval dispatch's sub-trace; the skill node carries its span.
+  'retrieval_fanout',
+  // The turn's model-call collection is a total, not a step.
+  'model_calls',
+])
+
+const DIRECTIVE_STAGE_KINDS = new Set(['directive_match', 'directive_steering', 'coverage_directive_match'])
+const ROUTINE_STAGE_KINDS = new Set(['routine_activate', 'routine_resume'])
+
+const STAGE_PHASES: Record<string, FlowPhase> = {
+  message: 'understand',
+  turn_interpretation: 'understand',
+  skill_selection: 'understand',
+  clarification: 'understand',
+  skill_input_resolution: 'act',
+  skill_dispatch: 'act',
+  routine_activate: 'act',
+  routine_resume: 'act',
+  routine_slot_correction: 'act',
+  answer_coverage_head: 'answer',
+  answer_coverage_routine_activation: 'answer',
+  answer_coverage_reaction_recording: 'answer',
+  answer_coverage_yield_without_routine: 'answer',
+  compose: 'answer',
+}
+
+const TONE_RANK: Record<FlowTone, number> = { bad: 4, warn: 3, good: 2, neutral: 1, muted: 0 }
 
 const asString = (value: unknown): string | undefined =>
   typeof value === 'string' ? value : undefined
 
-const prettySkill = (skillName: string): string =>
-  skillName.split(/[._]/).slice(-1)[0]?.replace(/^\w/, (c) => c.toUpperCase()) ?? skillName
+const asRecord = (value: unknown): Record<string, unknown> | undefined =>
+  value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined
+
+const spaced = (value: string): string => value.replaceAll('_', ' ')
 
 const titleCase = (value: string): string =>
   value
@@ -62,13 +160,72 @@ const titleCase = (value: string): string =>
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(' ')
 
-const findStage = (spine: ConversationTrace, kind: string): ConversationTraceStage | undefined =>
-  spine.stages.find((stage) => stage.kind === kind)
+const joined = (parts: ReadonlyArray<string | undefined>, separator = ' · '): string | undefined => {
+  const present = parts.filter((part): part is string => Boolean(part))
+  return present.length ? present.join(separator) : undefined
+}
+
+const timeMs = (value: string | undefined): number | undefined => {
+  if (!value) return undefined
+  const parsed = Date.parse(value)
+  return Number.isFinite(parsed) ? parsed : undefined
+}
+
+/** A span the trace actually measured; placeholders open and close on one instant. */
+const measuredSpan = (startedAt: string | undefined, completedAt: string | undefined): Span | undefined => {
+  const startMs = timeMs(startedAt)
+  const endMs = timeMs(completedAt)
+  return startMs !== undefined && endMs !== undefined && endMs > startMs ? { startMs, endMs } : undefined
+}
+
+const spanMs = (span: Span | undefined): number | undefined => (span ? span.endMs - span.startMs : undefined)
+
+/** Wall time covered by a set of spans, with overlaps counted once. */
+const coveredMs = (spans: readonly Span[]): number | undefined => {
+  if (spans.length === 0) return undefined
+  const ordered = [...spans].sort((left, right) => left.startMs - right.startMs)
+  let total = 0
+  let current = { ...ordered[0] }
+  for (const span of ordered.slice(1)) {
+    if (span.startMs <= current.endMs) {
+      current.endMs = Math.max(current.endMs, span.endMs)
+    } else {
+      total += current.endMs - current.startMs
+      current = { ...span }
+    }
+  }
+  return total + current.endMs - current.startMs
+}
+
+const worstTone = (tones: readonly FlowTone[]): FlowTone =>
+  tones.reduce<FlowTone>((worst, tone) => (TONE_RANK[tone] > TONE_RANK[worst] ? tone : worst), 'neutral')
+
+// ---------------------------------------------------------------------------
+// Per-stage summaries: what each step decided.
+
+const interpretationSummary = (stage: ConversationTraceStage): string | undefined => {
+  const outputs = stage.outputs ?? {}
+  const proposal = asRecord(asRecord(outputs.metadata)?.rewriteProposal)
+  const turnKind = asString(proposal?.turnKind)
+  const subqueries = typeof proposal?.retrievalSubqueryCount === 'number' ? proposal.retrievalSubqueryCount : undefined
+  return joined([
+    asString(outputs.route),
+    turnKind ? spaced(turnKind) : undefined,
+    subqueries !== undefined && subqueries > 1 ? `${subqueries} sub-questions` : undefined,
+  ])
+}
 
 const selectionSummary = (stage: ConversationTraceStage): string | undefined => {
-  const selected = (stage.outputs ?? {}).selectedSkills
-  if (Array.isArray(selected) && selected.length) return selected.map(prettySkill).join(', ')
-  return asString((stage.outputs ?? {}).reason)
+  const outputs = stage.outputs ?? {}
+  const selected = Array.isArray(outputs.selectedSkills)
+    ? outputs.selectedSkills.filter((name): name is string => typeof name === 'string')
+    : []
+  if (selected.length === 0) {
+    const reason = asString(outputs.reason)
+    return reason ? spaced(reason) : undefined
+  }
+  const considered = Array.isArray(outputs.candidates) ? outputs.candidates.length : 0
+  return joined([selected.join(', '), considered > 1 ? `${considered} considered` : undefined])
 }
 
 const directiveSummary = (stage: ConversationTraceStage): string | undefined => {
@@ -82,25 +239,41 @@ const directiveSummary = (stage: ConversationTraceStage): string | undefined => 
   return stage.status === 'skipped' ? 'none matched' : undefined
 }
 
-const adherenceSummary = (stage: ConversationTraceStage | undefined): { label?: string; unmet: boolean } => {
-  const adherence = stage?.outputs?.adherence
+const adherenceSummary = (stage: ConversationTraceStage): { label?: string; unmet: boolean } => {
+  const adherence = stage.outputs?.adherence
   if (!Array.isArray(adherence) || adherence.length === 0) return { unmet: false }
   const entries = adherence.filter(
     (entry): entry is { satisfied: boolean } =>
-      Boolean(entry) && typeof entry === 'object' && !Array.isArray(entry) &&
-      typeof (entry as Record<string, unknown>).satisfied === 'boolean',
+      typeof asRecord(entry)?.satisfied === 'boolean',
   )
   if (entries.length === 0) return { unmet: false }
   const honored = entries.filter((entry) => entry.satisfied).length
   return { label: `${honored}/${entries.length} directives honored`, unmet: honored < entries.length }
 }
 
-const messageSummary = (stage: ConversationTraceStage): string | undefined => {
-  // The trace carries only structural references (event id, length); the
-  // actual message text lives on the conversation message record and is shown
-  // when the user opens the Message node. A simple "N chars" sublabel keeps
-  // the node informative without duplicating user input here.
-  const length = (stage.outputs ?? {}).contentLength
+const composeView = (stage: ConversationTraceStage): { sublabel?: string; tone: FlowTone } => {
+  const adherence = adherenceSummary(stage)
+  const citations = stage.outputs?.citationCount
+  const tone = statusTone(stage.status)
+  return {
+    sublabel: joined([
+      adherence.label,
+      typeof citations === 'number' && citations > 0 ? `${citations} cited` : undefined,
+    ]),
+    tone: adherence.unmet ? worstTone([tone, 'warn']) : tone,
+  }
+}
+
+const messageSummary = (
+  stage: ConversationTraceStage,
+  messages: readonly FlowMessageRecord[] | undefined,
+): string | undefined => {
+  // The trace carries only structural references; the text lives on the
+  // conversation record the host already loaded.
+  const eventId = asString(stage.outputs?.eventId)
+  const text = eventId ? messages?.find((message) => message.id === eventId)?.content.trim() : undefined
+  if (text) return text
+  const length = stage.outputs?.contentLength
   return typeof length === 'number' && length > 0 ? `${length} chars` : undefined
 }
 
@@ -109,59 +282,166 @@ const clarificationSummary = (stage: ConversationTraceStage): string | undefined
   const decision = asString(outputs.decision)
   const reason = asString(outputs.reason)
   if (!decision) return undefined
-  const summary = decision.replaceAll('_', ' ')
+  const summary = spaced(decision)
   if (decision === 'auto_picked' && reason === 'label_fallback') {
     return `${summary}: label fallback`
   }
   return summary
 }
 
-const clarificationStatus = (stage: ConversationTraceStage): FlowStatus => {
-  const decision = asString((stage.outputs ?? {}).decision)
-  return decision === 'offered' ? 'applied' : stage.status
+const clarificationTone = (stage: ConversationTraceStage): FlowTone =>
+  // An offered clarification passes the turn through; it is not a skipped step.
+  asString(stage.outputs?.decision) === 'offered' ? 'neutral' : statusTone(stage.status)
+
+const COVERAGE_TONES: Record<string, FlowTone> = {
+  answered: 'good',
+  partial: 'warn',
+  unanswered: 'bad',
+  unclear: 'neutral',
 }
 
-const answerCoverageHeadSummary = (stage: ConversationTraceStage): string | undefined => {
+const coverageView = (stage: ConversationTraceStage): { sublabel?: string; tone: FlowTone } => {
   const outputs = stage.outputs ?? {}
   const availability = asString(outputs.availability)
-  if (availability !== 'assessed') return availability ? titleCase(availability) : undefined
+  if (availability !== 'assessed') {
+    return {
+      sublabel: availability ? titleCase(availability) : undefined,
+      tone: availability === 'not_recorded' ? 'muted' : 'warn',
+    }
+  }
   const coverage = asString(outputs.coverage)
-  return coverage ? titleCase(coverage) : undefined
+  const reason = asString(outputs.reason)
+  return {
+    sublabel: joined([coverage ? titleCase(coverage) : undefined, reason ? spaced(reason) : undefined]),
+    tone: (coverage && COVERAGE_TONES[coverage]) || 'neutral',
+  }
+}
+
+const routineSummary = (stage: ConversationTraceStage): string | undefined => {
+  const outputs = stage.outputs ?? {}
+  if (outputs.handoff) return 'handed off'
+  if (outputs.completed === true) return 'completed'
+  return outputs.completed === false ? 'in progress' : undefined
 }
 
 const deriveOutcome = (
-  spine: ConversationTrace,
-  dispatch: ConversationTraceStage | undefined,
-  compose: ConversationTraceStage | undefined,
-): { label?: string; status: FlowStatus } => {
-  const adherence = adherenceSummary(compose)
-  if (adherence.label) {
-    return { label: adherence.label, status: adherence.unmet ? 'rejected' : dispatch?.status ?? 'applied' }
+  envelope: TurnTraceEnvelope,
+  steps: { dispatch?: ConversationTraceStage; clarification?: ConversationTraceStage; routine?: ConversationTraceStage },
+): { sublabel?: string; tone: FlowTone } => {
+  if (steps.dispatch?.status === 'failed') {
+    return { sublabel: 'Skill failed', tone: 'bad' }
   }
-  const dispatchStatus = asString(dispatch?.outputs?.outcomeStatus)
-  if (dispatch?.status === 'failed') {
-    return { label: dispatchStatus ?? 'failed', status: 'failed' }
+  // A blocking question ends the turn before any answer could be judged.
+  if (asString(steps.clarification?.outputs?.decision) === 'asked') {
+    return { sublabel: 'Asked the visitor to choose', tone: 'neutral' }
   }
-  return { label: dispatchStatus?.replaceAll('_', ' '), status: dispatch?.status ?? 'applied' }
+  const coverage = answerCoverageFromTurnTrace(envelope)
+  if (coverage?.availability === 'assessed' && coverage.coverage) {
+    return {
+      sublabel: answerCoverageOutcomePresentation(coverage.coverage).title,
+      tone: COVERAGE_TONES[coverage.coverage] ?? 'neutral',
+    }
+  }
+  if (steps.routine) {
+    const summary = routineSummary(steps.routine)
+    return { sublabel: summary ? `Routine ${summary}` : 'Routine replied', tone: statusTone(steps.routine.status) }
+  }
+  const dispatchStatus = asString(steps.dispatch?.outputs?.outcomeStatus)
+  return { sublabel: dispatchStatus ? spaced(dispatchStatus) : undefined, tone: 'neutral' }
 }
 
-const activityTraceSubFlow = (
+const deriveTotals = (envelope: TurnTraceEnvelope): TurnFlowTotals | undefined => {
+  const rollup = turnTraceRollup(envelope)
+  const modelCallsStage = envelope.spine.stages.find((stage) => stage.kind === 'model_calls')
+  const recordedCalls = Array.isArray(modelCallsStage?.outputs?.modelCalls) ? modelCallsStage.outputs.modelCalls.length : 0
+  // The summary records 0 when it could not measure the turn.
+  const totalMs = rollup?.totalTurnWallClockMs || spanMs(measuredSpan(envelope.spine.startedAt, envelope.spine.completedAt))
+  const modelCallCount = rollup?.totalLlmCalls ?? modelCallsStage?.metrics?.llmCallCount
+  if (totalMs === undefined && modelCallCount === undefined) return undefined
+  return {
+    totalMs,
+    modelCallCount,
+    recordedModelCallCount: recordedCalls > 0 ? recordedCalls : undefined,
+    modelTimeMs: rollup?.totalModelTimeMs ?? modelCallsStage?.metrics?.latencyMs,
+    modelCallsStageId: modelCallsStage?.id,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Graph assembly.
+
+class FlowBuilder {
+  readonly nodes: TurnFlowNode[] = []
+  readonly edges: TurnFlowEdge[] = []
+  readonly spans = new Map<string, Span>()
+
+  add(node: TurnFlowNode, span?: Span): TurnFlowNode {
+    this.nodes.push(node)
+    if (span) this.spans.set(node.id, span)
+    return node
+  }
+
+  link(source: string, target: string, kind: FlowEdgeKind): void {
+    this.edges.push({ id: `e:${source}->${target}`, source, target, kind })
+  }
+
+  /**
+   * Phase bands in progression order. A band is timed by the time its own steps
+   * measurably ran, so work that happened between them (retrieval runs before
+   * the skill choice is recorded) is counted once, in its own band.
+   */
+  phases(labels: Partial<Record<FlowPhase, string>>): TurnFlowPhaseBand[] {
+    const feeders = new Set(this.edges.filter((edge) => edge.kind === 'input').map((edge) => edge.source))
+    return PHASE_ORDER.flatMap((phase) => {
+      const members = this.nodes.filter((node) => node.phase === phase && !feeders.has(node.id))
+      if (members.length === 0) return []
+      const durationMs = coveredMs(members.flatMap((node) => {
+        const span = this.spans.get(node.id)
+        return span ? [span] : []
+      }))
+      return [{ id: phase, label: labels[phase] ?? titleCase(phase), ...(durationMs === undefined ? {} : { durationMs }) }]
+    })
+  }
+}
+
+interface CapabilityPath {
+  nodes: TurnFlowNode[]
+  edges: TurnFlowEdge[]
+  entryId?: string
+  terminalId?: string
+}
+
+const activityTracePath = (
   trace: ActivityTrace,
-  namespace: string,
-): { nodes: TurnFlowNode[]; edges: TurnFlowEdge[]; entryId?: string; terminalId?: string } => {
-  const nodeId = (stageId: string) => `stage:${stageId}`
-  const nodes: TurnFlowNode[] = trace.stages.map((stage) => ({
-    id: nodeId(stage.stageId),
-    nodeKind: 'stage',
-    label: stage.label || stage.kind,
-    status: stage.status,
-    capabilityNamespace: namespace,
-    detail: { kind: 'leaf', leafStageId: stage.stageId },
-  }))
+  options: { groupId?: string; idPrefix: string; dispatchStageId?: string },
+): CapabilityPath => {
+  const nodeId = (stageId: string) => `${options.idPrefix}${stageId}`
+  const nodes: TurnFlowNode[] = trace.stages.map((stage) => {
+    const attention = activityStageAttention(stage)
+    const durationMs = activityStageDurationMs(stage)
+    return {
+      id: nodeId(stage.stageId),
+      nodeKind: 'stage',
+      label: activityStageLabel(stage),
+      sublabel: joined([activityStageQualifier(stage), activityStageSummary(stage) || undefined]),
+      ...(attention.reason ? { note: attention.reason } : {}),
+      status: stage.status,
+      tone: attention.tone,
+      phase: 'act',
+      ...(durationMs === undefined ? {} : { durationMs }),
+      ...(options.groupId ? { groupId: options.groupId } : {}),
+      detail: {
+        kind: 'leaf',
+        leafStageId: stage.stageId,
+        ...(options.dispatchStageId ? { dispatchStageId: options.dispatchStageId } : {}),
+      },
+    }
+  })
 
   const links = trace.links ?? []
   const edges: TurnFlowEdge[] = links.map((link, index) => ({
-    id: `le:${link.fromStageId}->${link.toStageId}:${index}`,
+    // Two links can join the same pair of stages; the index keeps edge ids unique.
+    id: `e:${nodeId(link.fromStageId)}->${nodeId(link.toStageId)}:${index}`,
     source: nodeId(link.fromStageId),
     target: nodeId(link.toStageId),
     kind: link.kind === 'branch' ? 'branch' : link.kind === 'converge' ? 'converge' : 'sequence',
@@ -181,211 +461,331 @@ const activityTraceSubFlow = (
   }
 }
 
+/** The capability's own span, or the dispatch's when the sub-trace kept no clock. */
+const capabilitySpan = (trace: ActivityTrace | undefined, dispatch: ConversationTraceStage): Span | undefined => {
+  if (trace) {
+    const fromClock = measuredSpan(trace.startedAt, trace.completedAt)
+    if (fromClock) return fromClock
+    const startMs = timeMs(trace.startedAt)
+    if (startMs !== undefined && typeof trace.totalDurationMs === 'number' && trace.totalDurationMs > 0) {
+      return { startMs, endMs: startMs + trace.totalDurationMs }
+    }
+  }
+  return measuredSpan(dispatch.startedAt, dispatch.completedAt)
+}
+
+/** A capability with no renderer yet: one step naming it, always in view. */
+const rawLeafPath = (id: string, namespace: string): CapabilityPath => ({
+  nodes: [{ id, nodeKind: 'stage', label: namespace, tone: 'neutral', phase: 'act', detail: { kind: 'none' } }],
+  edges: [],
+  entryId: id,
+  terminalId: id,
+})
+
+const flaggedStep = (steps: readonly TurnFlowNode[]): { tone: FlowTone; note?: string } => {
+  const tone = worstTone(steps.map((step) => step.tone))
+  const first = steps.find((step) => step.tone === tone && step.note)
+  return { tone, ...(first && TONE_RANK[tone] >= TONE_RANK.warn ? { note: `${first.label}: ${first.note}` } : {}) }
+}
+
+export const envelopeToFlowGraph = (
+  envelope: TurnTraceEnvelope,
+  options: { messages?: readonly FlowMessageRecord[] } = {},
+): TurnFlowGraph => {
+  const spine = envelope.spine
+  const flow = new FlowBuilder()
+  const phaseLabels: Partial<Record<FlowPhase, string>> = { understand: 'Understand', answer: 'Answer' }
+  const inputs: Array<{
+    role: 'history' | 'directives'
+    stage: ConversationTraceStage
+    id: string
+    label: string
+    sublabel?: string
+  }> = []
+
+  let phase: FlowPhase = 'understand'
+  let tailId: string | undefined
+  let dispatchCount = 0
+  let directiveCount = 0
+  let historyTargetId: string | undefined
+  let answerProducerId: string | undefined
+  const steps: { dispatch?: ConversationTraceStage; clarification?: ConversationTraceStage; routine?: ConversationTraceStage; compose?: ConversationTraceStage } = {}
+
+  // Phases only move forward: a stage appended late joins the phase it lands in.
+  const phaseFor = (kind: string): FlowPhase => {
+    const declared = STAGE_PHASES[kind]
+    if (declared && PHASE_ORDER.indexOf(declared) > PHASE_ORDER.indexOf(phase)) phase = declared
+    return phase
+  }
+
+  /** Appends a step to the progression; the closing outcome belongs to no phase. */
+  const step = (node: Omit<TurnFlowNode, 'phase'>, kind?: string, span?: Span): TurnFlowNode => {
+    const added = flow.add(kind ? { ...node, phase: phaseFor(kind) } : node, span)
+    if (tailId) flow.link(tailId, added.id, 'sequence')
+    if (added.id !== 'input:message') historyTargetId ??= added.id
+    tailId = added.id
+    return added
+  }
+
+  const spineStep = (
+    stage: ConversationTraceStage,
+    view: { label?: string; sublabel?: string; tone?: FlowTone } = {},
+  ): TurnFlowNode => {
+    const span = measuredSpan(stage.startedAt, stage.completedAt)
+    const durationMs = spanMs(span)
+    return step(
+      {
+        id: `spine:${stage.id}`,
+        nodeKind: 'stage',
+        label: view.label ?? spineStageLabel(stage),
+        ...(view.sublabel ? { sublabel: view.sublabel } : {}),
+        status: stage.status,
+        tone: view.tone ?? statusTone(stage.status),
+        ...(durationMs === undefined ? {} : { durationMs }),
+        detail: { kind: 'spine', spineStageId: stage.id },
+      },
+      stage.kind,
+      span,
+    )
+  }
+
+  for (const stage of spine.stages) {
+    if (FOLDED_STAGE_KINDS.has(stage.kind)) continue
+
+    if (DIRECTIVE_STAGE_KINDS.has(stage.kind)) {
+      inputs.push({
+        role: 'directives',
+        stage,
+        id: directiveCount === 0 ? 'input:directives' : `input:directives:${directiveCount}`,
+        label: 'Directives',
+        sublabel: directiveSummary(stage),
+      })
+      directiveCount += 1
+      continue
+    }
+
+    switch (stage.kind) {
+      case 'message':
+        if (!flow.nodes.some((node) => node.id === 'input:message')) {
+          step(
+            {
+              id: 'input:message',
+              nodeKind: 'input',
+              label: 'Message',
+              sublabel: messageSummary(stage, options.messages),
+              status: stage.status,
+              tone: 'neutral',
+              detail: { kind: 'spine', spineStageId: stage.id },
+            },
+            stage.kind,
+          )
+        }
+        break
+      case 'gather': {
+        const historyCount = typeof stage.outputs?.historyCount === 'number' ? stage.outputs.historyCount : 0
+        if (historyCount > 0) {
+          inputs.push({ role: 'history', stage, id: 'input:history', label: 'History', sublabel: `${historyCount} prior` })
+        }
+        break
+      }
+      case 'turn_interpretation':
+        spineStep(stage, { sublabel: interpretationSummary(stage) })
+        break
+      case 'skill_selection':
+        spineStep(stage, { sublabel: selectionSummary(stage) })
+        break
+      case 'clarification':
+        steps.clarification ??= stage
+        spineStep(stage, { sublabel: clarificationSummary(stage), tone: clarificationTone(stage) })
+        break
+      case 'answer_coverage_head':
+        // A sink that reports twice pushes a second, minimal stage with no verdict.
+        if (typeof stage.outputs?.availability !== 'string') break
+        spineStep(stage, coverageView(stage))
+        break
+      case 'compose': {
+        steps.compose ??= stage
+        const composed = spineStep(stage, composeView(stage))
+        answerProducerId ??= composed.id
+        break
+      }
+      case 'skill_dispatch': {
+        steps.dispatch ??= stage
+        const scope = dispatchCount === 0 ? '' : `${dispatchCount}:`
+        const skillId = dispatchCount === 0 ? 'skill' : `skill:${dispatchCount}`
+        dispatchCount += 1
+        const subTrace = getCapabilitySubTrace(stage)
+        const leaf = subTrace ? resolveCapabilityLeaf(subTrace) : undefined
+        const skillName = asString(stage.outputs?.skillName) ?? 'Skill'
+        const path: CapabilityPath | undefined =
+          leaf?.kind === 'activity-trace'
+            ? activityTracePath(leaf.trace, { groupId: skillId, idPrefix: `stage:${scope}`, dispatchStageId: stage.id })
+            : leaf?.kind === 'raw'
+              ? rawLeafPath(`leaf:${scope}${leaf.namespace}`, leaf.namespace)
+              : undefined
+        const span = capabilitySpan(leaf?.kind === 'activity-trace' ? leaf.trace : undefined, stage)
+        const durationMs = spanMs(span)
+        const flagged = flaggedStep(path?.nodes ?? [])
+        const outcomeStatus = asString(stage.outputs?.outcomeStatus)
+        const skill = step(
+          {
+            id: skillId,
+            nodeKind: 'skill',
+            label: leaf ? titleCase(leaf.namespace) : skillName,
+            sublabel:
+              (leaf?.kind === 'activity-trace' ? activityTraceSummary(leaf.trace) : undefined)
+              ?? (leaf ? skillName : outcomeStatus ? spaced(outcomeStatus) : undefined),
+            ...(flagged.note ? { note: flagged.note } : {}),
+            status: stage.status,
+            tone: worstTone([statusTone(stage.status), flagged.tone]),
+            ...(durationMs === undefined ? {} : { durationMs }),
+            ...(leaf?.kind === 'activity-trace' && path?.nodes.length ? { stepCount: path.nodes.length } : {}),
+            detail: { kind: 'spine', spineStageId: stage.id },
+          },
+          stage.kind,
+          span,
+        )
+        phaseLabels.act ??= skill.label
+        if (path?.nodes.length) {
+          for (const pathNode of path.nodes) flow.add(pathNode)
+          flow.edges.push(...path.edges)
+          if (path.entryId) flow.link(skill.id, path.entryId, 'sequence')
+          if (path.terminalId) tailId = path.terminalId
+        }
+        break
+      }
+      default:
+        if (ROUTINE_STAGE_KINDS.has(stage.kind)) {
+          steps.routine ??= stage
+          const routine = spineStep(stage, { label: 'Routine', sublabel: routineSummary(stage) })
+          phaseLabels.act ??= routine.label
+          break
+        }
+        spineStep(stage)
+    }
+  }
+
+  const outcome = deriveOutcome(envelope, steps)
+  const outcomeDetailStage = steps.compose ?? steps.routine
+  const outcomeNode = step(
+    {
+      id: 'outcome',
+      nodeKind: 'outcome',
+      label: 'Outcome',
+      ...(outcome.sublabel ? { sublabel: outcome.sublabel } : {}),
+      tone: outcome.tone,
+      detail: outcomeDetailStage ? { kind: 'spine', spineStageId: outcomeDetailStage.id } : { kind: 'none' },
+    },
+  )
+
+  // Inputs feed the step that uses them: history the first step after the
+  // message, directives the step that writes the reply.
+  const directiveTargetId =
+    answerProducerId
+    ?? (steps.routine ? `spine:${steps.routine.id}` : undefined)
+    ?? (steps.dispatch ? 'skill' : undefined)
+    ?? outcomeNode.id
+  for (const input of inputs) {
+    const targetId = input.role === 'history' ? historyTargetId ?? outcomeNode.id : directiveTargetId
+    const target = flow.nodes.find((candidate) => candidate.id === targetId)
+    flow.add({
+      id: input.id,
+      nodeKind: 'input',
+      label: input.label,
+      ...(input.sublabel ? { sublabel: input.sublabel } : {}),
+      status: input.stage.status,
+      tone: statusTone(input.stage.status),
+      ...(target?.phase ? { phase: target.phase } : {}),
+      detail: { kind: 'spine', spineStageId: input.stage.id },
+    })
+    flow.link(input.id, targetId, 'input')
+  }
+
+  const totals = deriveTotals(envelope)
+  return {
+    nodes: flow.nodes,
+    edges: flow.edges,
+    phases: flow.phases(phaseLabels),
+    ...(totals ? { totals } : {}),
+  }
+}
+
+/**
+ * A bare activity trace (a legacy eval run without a turn envelope) as a flow:
+ * the capability's steps, always unfolded, leading to its outcome.
+ */
 export const activityTraceToFlowGraph = (
   trace: ActivityTrace,
   namespace = 'activity',
 ): TurnFlowGraph => {
-  const nodes: TurnFlowNode[] = []
-  const edges: TurnFlowEdge[] = []
-  const sub = activityTraceSubFlow(trace, namespace)
-  const firstStage = trace.stages[0]
-  const terminalStage = sub.terminalId
-    ? trace.stages.find((stage) => `stage:${stage.stageId}` === sub.terminalId)
+  const flow = new FlowBuilder()
+  const path = activityTracePath(trace, { idPrefix: 'stage:' })
+  const terminalStage = path.terminalId
+    ? trace.stages.find((stage) => `stage:${stage.stageId}` === path.terminalId)
     : trace.stages.at(-1)
 
-  const skillId = 'skill'
-  nodes.push({
-    id: skillId,
+  const skill = flow.add({
+    id: 'skill',
     nodeKind: 'skill',
     label: titleCase(namespace),
-    sublabel: 'activity trace',
-    status: firstStage?.status,
-    capabilityNamespace: namespace,
+    sublabel: activityTraceSummary(trace) ?? 'activity trace',
+    status: trace.stages[0]?.status,
+    tone: flaggedStep(path.nodes).tone,
+    phase: 'act',
     detail: { kind: 'none' },
   })
+  for (const pathNode of path.nodes) flow.add(pathNode)
+  flow.edges.push(...path.edges)
+  if (path.entryId) flow.link(skill.id, path.entryId, 'sequence')
 
-  nodes.push(...sub.nodes)
-  edges.push(...sub.edges)
-
-  let tailId = skillId
-  if (sub.entryId) {
-    edges.push({ id: `e:${skillId}->${sub.entryId}`, source: skillId, target: sub.entryId, kind: 'sequence' })
-  }
-  if (sub.terminalId) tailId = sub.terminalId
-
-  const outcomeId = 'outcome'
-  nodes.push({
-    id: outcomeId,
+  flow.add({
+    id: 'outcome',
     nodeKind: 'outcome',
     label: 'Outcome',
-    sublabel: terminalStage?.status,
-    status: terminalStage?.status ?? firstStage?.status ?? 'unavailable',
+    sublabel: terminalStage ? activityStageSummary(terminalStage) || terminalStage.status : undefined,
+    status: terminalStage?.status ?? 'unavailable',
+    tone: terminalStage ? activityStageAttention(terminalStage).tone : 'muted',
     detail: terminalStage ? { kind: 'leaf', leafStageId: terminalStage.stageId } : { kind: 'none' },
   })
-  edges.push({ id: `e:${tailId}->${outcomeId}`, source: tailId, target: outcomeId, kind: 'sequence' })
+  flow.link(path.terminalId ?? skill.id, 'outcome', 'sequence')
 
-  return { nodes, edges }
+  return { nodes: flow.nodes, edges: flow.edges, phases: flow.phases({ act: skill.label }) }
 }
 
-export const envelopeToFlowGraph = (envelope: TurnTraceEnvelope): TurnFlowGraph => {
-  const spine = envelope.spine
-  const nodes: TurnFlowNode[] = []
+/** The activity trace a leaf step belongs to: its own dispatch's, else the host's single trace. */
+export const leafTraceFor = (
+  detail: Extract<TurnFlowNodeDetail, { kind: 'leaf' }>,
+  spineStages: readonly ConversationTraceStage[],
+  fallback?: ActivityTrace,
+): ActivityTrace | undefined => {
+  const dispatch = detail.dispatchStageId
+    ? spineStages.find((stage) => stage.id === detail.dispatchStageId)
+    : undefined
+  const leaf = dispatch ? stageLeafView(dispatch) : undefined
+  return leaf?.kind === 'activity-trace' ? leaf.trace : fallback
+}
+
+/**
+ * Folds every capability path whose skill node is not in `expanded` into that
+ * skill node: its steps disappear and the path's exit leaves from the skill.
+ */
+export const foldTurnFlowGroups = (graph: TurnFlowGraph, expanded: ReadonlySet<string>): TurnFlowGraph => {
+  const hidden = new Map(
+    graph.nodes
+      .filter((node) => node.groupId !== undefined && !expanded.has(node.groupId))
+      .map((node) => [node.id, node.groupId as string]),
+  )
+  if (hidden.size === 0) return graph
+
   const edges: TurnFlowEdge[] = []
-
-  const message = findStage(spine, 'message')
-  const gather = findStage(spine, 'gather')
-  // Normal turns trace directives as `directive_match` (before selection);
-  // routine turns co-compose them at render time as `directive_steering`. Both
-  // fan into the engine as the same Directives input.
-  const directives = findStage(spine, 'directive_match') ?? findStage(spine, 'directive_steering')
-  const selection = findStage(spine, 'skill_selection')
-  const clarification = findStage(spine, 'clarification')
-  const dispatch = spine.stages.find((stage) => stage.kind === 'skill_dispatch')
-  const compose = findStage(spine, 'compose')
-  const answerCoverageHead = findStage(spine, 'answer_coverage_head')
-  const modelCalls = findStage(spine, 'model_calls')
-  // Routine turns never run compose; their assistant reply is carried on the
-  // routine stage itself, so fall back to it for the Outcome detail.
-  const routine = spine.stages.find(
-    (stage) => stage.kind === 'routine_resume' || stage.kind === 'routine_activate',
-  )
-  const outcomeDetailStage = compose ?? routine
-
-  // Engine hub — the selection decision everything converges on.
-  const engineId = 'engine'
-  nodes.push({
-    id: engineId,
-    nodeKind: 'engine',
-    label: 'Engine',
-    sublabel: selection ? selectionSummary(selection) : undefined,
-    status: selection?.status,
-    detail: selection ? { kind: 'spine', spineStageId: selection.id } : { kind: 'none' },
-  })
-
-  // Inputs fan in.
-  const addInput = (id: string, label: string, sublabel: string | undefined, detail: TurnFlowNodeDetail) => {
-    nodes.push({ id, nodeKind: 'input', label, sublabel, detail })
-    edges.push({ id: `fan:${id}`, source: id, target: engineId, kind: 'fan-in' })
+  const seen = new Set<string>()
+  for (const edge of graph.edges) {
+    if (hidden.has(edge.target)) continue
+    const source = hidden.get(edge.source) ?? edge.source
+    const id = `e:${source}->${edge.target}`
+    if (seen.has(id)) continue
+    seen.add(id)
+    edges.push(source === edge.source ? edge : { id, source, target: edge.target, kind: 'sequence' })
   }
-  addInput(
-    'input:message',
-    'Message',
-    message ? messageSummary(message) : undefined,
-    message ? { kind: 'spine', spineStageId: message.id } : { kind: 'none' },
-  )
-  const historyCount = gather && typeof gather.outputs?.historyCount === 'number' ? gather.outputs.historyCount : 0
-  if (historyCount > 0 && gather) {
-    addInput('input:history', 'History', `${historyCount} prior`, { kind: 'spine', spineStageId: gather.id })
-  }
-  if (directives) {
-    addInput('input:directives', 'Directives', directiveSummary(directives), {
-      kind: 'spine',
-      spineStageId: directives.id,
-    })
-  }
-
-  // Skill dispatch and its capability path.
-  let tailId = engineId
-  if (clarification) {
-    const clarificationId = `spine:${clarification.id}`
-    nodes.push({
-      id: clarificationId,
-      nodeKind: 'stage',
-      label: spineStageLabel(clarification),
-      sublabel: clarificationSummary(clarification),
-      status: clarificationStatus(clarification),
-      detail: { kind: 'spine', spineStageId: clarification.id },
-    })
-    edges.push({ id: `e:${tailId}->${clarificationId}`, source: tailId, target: clarificationId, kind: 'sequence' })
-    tailId = clarificationId
-  }
-  if (dispatch) {
-    const skillId = 'skill'
-    const subTrace = getCapabilitySubTrace(dispatch)
-    const leaf = subTrace ? resolveCapabilityLeaf(subTrace) : undefined
-    const skillName = asString(dispatch.outputs?.skillName) ?? 'Skill'
-    nodes.push({
-      id: skillId,
-      nodeKind: 'skill',
-      label: leaf ? titleCase(leaf.namespace) : prettySkill(skillName),
-      sublabel: skillName,
-      status: dispatch.status,
-      capabilityNamespace: leaf?.namespace,
-      detail: { kind: 'spine', spineStageId: dispatch.id },
-    })
-    edges.push({ id: `e:${tailId}->skill`, source: tailId, target: skillId, kind: 'sequence' })
-    tailId = skillId
-
-    if (leaf?.kind === 'activity-trace') {
-      const sub = activityTraceSubFlow(leaf.trace, leaf.namespace)
-      nodes.push(...sub.nodes)
-      edges.push(...sub.edges)
-      if (sub.entryId) {
-        edges.push({ id: `e:skill->${sub.entryId}`, source: skillId, target: sub.entryId, kind: 'sequence' })
-      }
-      if (sub.terminalId) tailId = sub.terminalId
-    } else if (leaf?.kind === 'raw') {
-      const rawId = `leaf:${leaf.namespace}`
-      nodes.push({
-        id: rawId,
-        nodeKind: 'stage',
-        label: leaf.namespace,
-        capabilityNamespace: leaf.namespace,
-        detail: { kind: 'none' },
-      })
-      edges.push({ id: `e:skill->${rawId}`, source: skillId, target: rawId, kind: 'sequence' })
-      tailId = rawId
-    }
-  }
-
-  // The verdict lands before compose releases any answer text (#1260), so it
-  // sits right after the skill's own path and ahead of the outcome/model-calls
-  // nodes that follow it.
-  if (answerCoverageHead) {
-    const coverageId = `spine:${answerCoverageHead.id}`
-    nodes.push({
-      id: coverageId,
-      nodeKind: 'stage',
-      label: spineStageLabel(answerCoverageHead),
-      sublabel: answerCoverageHeadSummary(answerCoverageHead),
-      status: answerCoverageHead.status,
-      detail: { kind: 'spine', spineStageId: answerCoverageHead.id },
-    })
-    edges.push({ id: `e:${tailId}->${coverageId}`, source: tailId, target: coverageId, kind: 'sequence' })
-    tailId = coverageId
-  }
-
-  if (modelCalls) {
-    const modelCallsId = `spine:${modelCalls.id}`
-    const callCount = typeof modelCalls.metrics?.llmCallCount === 'number'
-      ? modelCalls.metrics.llmCallCount
-      : undefined
-    nodes.push({
-      id: modelCallsId,
-      nodeKind: 'stage',
-      label: spineStageLabel(modelCalls),
-      sublabel: callCount === undefined ? undefined : `${callCount} call${callCount === 1 ? '' : 's'}`,
-      status: modelCalls.status,
-      detail: { kind: 'spine', spineStageId: modelCalls.id },
-    })
-    edges.push({ id: `e:${tailId}->${modelCallsId}`, source: tailId, target: modelCallsId, kind: 'sequence' })
-    tailId = modelCallsId
-  }
-
-  // Outcome.
-  const outcomeId = 'outcome'
-  const outcome = deriveOutcome(spine, dispatch, compose)
-  nodes.push({
-    id: outcomeId,
-    nodeKind: 'outcome',
-    label: 'Outcome',
-    sublabel: outcome.label,
-    status: outcome.status,
-    detail: outcomeDetailStage
-      ? { kind: 'spine', spineStageId: outcomeDetailStage.id }
-      : { kind: 'none' },
-  })
-  edges.push({ id: `e:${tailId}->outcome`, source: tailId, target: outcomeId, kind: 'sequence' })
-
-  return { nodes, edges }
+  return { ...graph, nodes: graph.nodes.filter((node) => !hidden.has(node.id)), edges }
 }

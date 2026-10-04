@@ -11,7 +11,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-import { AlertCircle, Ellipsis, Loader2, Plus, Send, Workflow, X } from "lucide-react";
+import { AlertCircle, Ellipsis, Link2, Loader2, Plus, Send, Workflow, X } from "lucide-react";
 import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
@@ -21,7 +21,7 @@ import {
   type ChatThreadMessage,
 } from "@/components/dashboard/chat-message-thread";
 import { buildAssistantIdentity } from "@/components/chat/assistant-identity";
-import { TestExecutionHistoryView } from "@/components/dashboard/test-execution-history-view";
+import { TestExecutionHistoryView, UncopiedLink } from "@/components/dashboard/test-execution-history-view";
 import { TestSessionsView } from "@/components/dashboard/workbench/test-sessions-view";
 import { TurnFlowOverlay } from "@/components/dashboard/turn-flow-overlay";
 import {
@@ -29,6 +29,13 @@ import {
   TurnDiagnosticsPanel,
 } from "@/components/dashboard/turn-inspector/turn-diagnostics-panel";
 import { getPrimaryLeafTrace } from "@/lib/turn-trace";
+import { useCopyDashboardLink } from "@/hooks/use-copy-dashboard-link";
+import {
+  followRoute,
+  routeIdForLoaded,
+  type TestChatNavigation,
+  type TestChatRoute,
+} from "@/lib/test-chat-open-route";
 import {
   Dialog,
   DialogContent,
@@ -86,6 +93,7 @@ import {
   assembleTestableRevisions,
   candidateIsTestable,
   compareSelectionRepeatsRevision,
+  describeCandidateRefusal,
 } from "@/lib/agent-revision-testable-revisions";
 import { isAgentDraftDirty, saveAgentDraft } from "@/lib/agent-draft-save-port";
 import { DEFAULT_WEBSITE_EMBED_COPY } from "@/lib/embed-widget";
@@ -102,7 +110,6 @@ import {
 import type { ContextVariable, TurnTraceEnvelope } from "@/lib/api-types";
 
 type Mode = "single" | "compare";
-type View = "chat" | "history";
 
 const revisionDisplayLabel = (revision: AgentRevisionSummary): string => {
   if (revision.kind === "published" && revision.versionNumber !== null)
@@ -200,8 +207,9 @@ export function AgentRevisionTestChat({
   agentVersionsHref,
   actionsContainer,
   titleContainer,
-  openExecutionId,
-  onOpenExecutionConsumed,
+  route,
+  onNavigate,
+  testExecutionHref,
 }: {
   agentId: string;
   workspaceId: string;
@@ -211,17 +219,37 @@ export function AgentRevisionTestChat({
   actionsContainer: HTMLElement | null;
   /** Page-chrome slot beside the title; a single chat shows its conversation id there. */
   titleContainer?: HTMLElement | null;
-  /** A saved execution to open on arrival (e.g. one seeded from a real conversation). */
-  openExecutionId?: string;
-  /** Called once the open command has been acted on, so the caller can drop it from the route. */
-  onOpenExecutionConsumed?: () => void;
+  /** What the URL currently names: the chat view (optionally with a saved test's id) or history. */
+  route: TestChatRoute;
+  /** Writes a navigation decision into browser history; agent-view owns the history mechanics. */
+  onNavigate: (next: TestChatRoute, how: TestChatNavigation) => void;
+  /** The dashboard link that opens one saved test, for sharing it. */
+  testExecutionHref?: (executionId: string) => string;
 }) {
   const sessionKey = agentRevisionTestChatSessionKey(workspaceId, agentId);
   const cachedSession = readAgentRevisionTestChatSession(sessionKey);
   const [state, setState] = useState<AgentRevisionState | null>(cachedSession?.state ?? null);
   const [revisions, setRevisions] = useState<AgentRevisionSummary[]>(cachedSession?.revisions ?? []);
   const [mode, setMode] = useState<Mode>(cachedSession?.mode ?? "single");
-  const [view, setView] = useState<View>(cachedSession?.view ?? "chat");
+  // The URL owns which view shows, so Conversation history has its own link.
+  const view = route.view;
+  const routeId = route.view === "chat" ? route.executionId : undefined;
+  const onNavigateRef = useRef(onNavigate);
+  onNavigateRef.current = onNavigate;
+  // Why a test opened from the URL could not open. Kept apart from `error`, which starting a chat
+  // clears, so a proactive greeting cannot wipe it; the operator's next move does.
+  const [linkOpenFailure, setLinkOpenFailure] = useState<string | null>(null);
+  const executionLink = useCopyDashboardLink();
+  const resetExecutionLink = executionLink.reset;
+  // Clears the stale failure/copy feedback from a previous test before an explicit navigation;
+  // a greeting starting on its own does not, so it cannot wipe a link failure it had nothing to do with.
+  const resetNavigationFeedback = useCallback(() => {
+    setLinkOpenFailure(null);
+    resetExecutionLink();
+  }, [resetExecutionLink]);
+  // The id this component is currently fetching for the route; the chat area shows "Opening this
+  // test…" in place of the thread and composer while it matches `routeId`, so a send cannot race it.
+  const [openingId, setOpeningId] = useState<string | null>(null);
   const [selected, setSelected] = useState<string[]>(cachedSession?.selected ?? []);
   const [contextOpen, setContextOpen] = useState(false);
   const [evalsOpen, setEvalsOpen] = useState(false);
@@ -239,6 +267,9 @@ export function AgentRevisionTestChat({
   const [execution, setExecution] = useState<TestExecutionState | null>(cachedSession?.execution ?? null);
   const [evalRun, setEvalRun] = useState<RevisionEvalRun | null>(cachedSession?.evalRun ?? null);
   const [error, setError] = useState<string | null>(cachedSession?.error ?? null);
+  // Set only by `load()`; a candidate refusal or degraded eval-case/value-catalog fetch
+  // stays legible even once `start()`/`submit` clear the transient `error` above.
+  const [degradedNotice, setDegradedNotice] = useState<string | null>(cachedSession?.degradedNotice ?? null);
   const [loading, setLoading] = useState(!cachedSession?.state);
   const [cases, setCases] = useState<EvalCaseListItem[]>(cachedSession?.cases ?? []);
   const [selectedCaseIds, setSelectedCaseIds] = useState<string[]>(cachedSession?.selectedCaseIds ?? []);
@@ -261,7 +292,6 @@ export function AgentRevisionTestChat({
   const evalPollTimeout = useRef<number | null>(null);
   const executionPollTimeout = useRef<number | null>(null);
   const reopenedExecutionId = useRef<string | null>(null);
-  const consumedOpenExecutionId = useRef<string | null>(null);
   const activeEvalRunId = useRef<string | null>(cachedSession?.evalRun?.id ?? null);
   const evalRequestGeneration = useRef(0);
   const loadRequestGeneration = useRef(0);
@@ -376,12 +406,12 @@ export function AgentRevisionTestChat({
       state,
       revisions,
       mode,
-      view,
       selected,
       message,
       execution,
       evalRun,
       error,
+      degradedNotice,
       cases,
       selectedCaseIds,
       restartNotice,
@@ -401,6 +431,7 @@ export function AgentRevisionTestChat({
   }, [
     cases,
     contextVariables,
+    degradedNotice,
     error,
     evalRun,
     execution,
@@ -421,7 +452,6 @@ export function AgentRevisionTestChat({
     valueError,
     valueInputs,
     revisionValueError,
-    view,
   ]);
   useEffect(
     () =>
@@ -516,7 +546,7 @@ export function AgentRevisionTestChat({
           : new Error("No revision is available to test.");
       const degraded = [
         candidateResult.status === "rejected"
-          ? errorMessage(candidateResult.reason, "The draft candidate is unavailable.")
+          ? describeCandidateRefusal(candidateResult.reason)
           : null,
         casesResult.status === "rejected"
           ? errorMessage(casesResult.reason, "Eval cases are unavailable.")
@@ -532,7 +562,7 @@ export function AgentRevisionTestChat({
       setContextVariables(
         catalogResult.status === "fulfilled" ? catalogResult.value.contextVariables : [],
       );
-      setError(degraded.length ? degraded.join("; ") : null);
+      setDegradedNotice(degraded.length ? degraded.join("; ") : null);
     } catch (cause) {
       if (loadRequestGeneration.current === requestGeneration) {
         // Do not clear `state` here. This catch fires for the first, explicit load same as
@@ -708,11 +738,12 @@ export function AgentRevisionTestChat({
   useEffect(() => {
     if (
       loading ||
+      view === "history" ||
       !state?.proactiveGreetingEnabled ||
       !selected.length ||
       execution ||
       isStarting ||
-      openExecutionId ||
+      routeId ||
       isAgentDraftDirty(agentId)
     ) return;
     const key = `${state.draft.generation}:${mode}:${selected.join(",")}`;
@@ -720,7 +751,7 @@ export function AgentRevisionTestChat({
     proactiveStartKey.current = key;
     writeAgentRevisionTestChatSession(sessionKey, { proactiveStartKey: key });
     void startRef.current();
-  }, [agentId, execution, isStarting, loading, mode, openExecutionId, selected, sessionKey, state]);
+  }, [agentId, execution, isStarting, loading, mode, routeId, selected, sessionKey, state, view]);
 
   const changeMode = useCallback(
     (next: Mode) => {
@@ -758,9 +789,16 @@ export function AgentRevisionTestChat({
       const retained = execution && side
         ? await agentRevisionsApi.retainTestSide(agentId, execution.executionId, side.id)
         : null;
+      // The retained execution carries the side's attempts, so reading it back renders a failed
+      // turn a later message superseded exactly as reopening it from History does.
+      const retainedState = retained
+        ? await agentRevisionsApi.getTestExecution(agentId, retained.id)
+          .then(({ execution: detail }) => hydrateTestExecutionState(detail))
+          .catch(() => initializeTestExecutionState(retained))
+        : null;
       setMode("single");
       setSelected([revisionId]);
-      if (retained) setExecutionState(initializeTestExecutionState(retained));
+      if (retainedState) setExecutionState(retainedState);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Unable to continue this version as a single chat.");
     }
@@ -812,6 +850,7 @@ export function AgentRevisionTestChat({
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (!message.trim() || isSending || isStarting) return;
+    setLinkOpenFailure(null);
     const text = message.trim();
     const requestGeneration = testRequestGeneration.current;
     const nextMode = mode;
@@ -859,7 +898,8 @@ export function AgentRevisionTestChat({
       );
       if (!active) return;
     }
-    if (active.state === "partial" || active.activeTurnId) return;
+    // A failed side does not block the next message; only a turn still running does.
+    if (active.activeTurnId) return;
     const turnId = crypto.randomUUID();
     const attemptId = crypto.randomUUID();
     const activeRequestGeneration = testRequestGeneration.current;
@@ -1204,7 +1244,7 @@ export function AgentRevisionTestChat({
   );
 
   const reopenExecution = useCallback(
-    (saved: TestExecutionHistoryDetail, notice?: string) => {
+    (saved: TestExecutionHistoryDetail) => {
       clearChatExecution();
       // A failure from the previous selection is not evidence about this test.
       setError(null);
@@ -1232,10 +1272,13 @@ export function AgentRevisionTestChat({
       // The saved test's policy is frozen with it; the toggle must show what its turns actually do.
       setSkillEffects(saved.skillEffects);
       setExecutionState(hydrateTestExecutionState(saved));
+      const notice = saved.seededTurnCount > 0
+        ? "Continuing a copy of the conversation. The original is untouched."
+        : "Reopened saved private test with its original immutable revisions and values.";
       setRestartNotice(
         saved.attempts.some((attempt) => attempt.state === "running")
           ? "This saved test has an in-progress attempt. Its recorded state is preserved while the service resolves it."
-          : (notice ?? "Reopened saved private test with its original immutable revisions and values."),
+          : notice,
       );
       if (saved.attempts.some((attempt) => attempt.state === "running")) {
         const requestGeneration = testRequestGeneration.current;
@@ -1243,49 +1286,68 @@ export function AgentRevisionTestChat({
         reopenedExecutionId.current = saved.id;
         void pollReopenedExecution(saved.id, requestGeneration, executionEpoch);
       }
-      setView("chat");
     },
     [clearChatExecution, pollReopenedExecution, sessionKey, setExecutionState],
   );
-
-  // "Continue in test chat" arrives with the seeded execution's id in the route.
-  // It is opened through the same path as a saved test from history, once the
-  // revision list is loaded so the execution's revision resolves in the selector.
-  // The command is consumed exactly once per id; a background reload while the
-  // fetch is in flight must not cancel it, so only unmount invalidates it.
   const reopenExecutionRef = useRef(reopenExecution);
   reopenExecutionRef.current = reopenExecution;
-  const onOpenExecutionConsumedRef = useRef(onOpenExecutionConsumed);
-  onOpenExecutionConsumedRef.current = onOpenExecutionConsumed;
+
   const hasState = state !== null;
+  const ready = !loading && hasState;
+  // The URL is the only place that says which test is open: a shared link, "Continue in test
+  // chat", History, Back/Forward, or returning to this tab all arrive the same way, as a route
+  // id this effect reconciles against whatever is currently loaded.
   useEffect(() => {
-    if (!openExecutionId || loading || !hasState) return;
-    if (consumedOpenExecutionId.current === openExecutionId) return;
-    consumedOpenExecutionId.current = openExecutionId;
-    const isCurrent = () => consumedOpenExecutionId.current === openExecutionId;
+    if (route.view !== "chat" || !ready) return;
+    const loadedId = executionRef.current?.executionId;
+    const outcome = followRoute(routeId, loadedId);
+    if (outcome.action !== "open") setOpeningId(null);
+    if (outcome.action === "none") return;
+    if (outcome.action === "adopt") {
+      onNavigateRef.current({ view: "chat", executionId: outcome.executionId }, "replace");
+      return;
+    }
+    if (outcome.action === "reject") {
+      setLinkOpenFailure("This test link is incomplete. Ask for it again.");
+      onNavigateRef.current({ view: "chat", executionId: loadedId }, "replace");
+      return;
+    }
+    let active = true;
+    setLinkOpenFailure(null);
+    setOpeningId(outcome.executionId);
     void agentRevisionsApi
-      .getTestExecution(agentId, openExecutionId)
+      .getTestExecution(agentId, outcome.executionId)
       .then((response) => {
-        if (!isCurrent()) return;
-        reopenExecutionRef.current(
-          response.execution,
-          "Continuing a copy of the conversation. The original is untouched.",
-        );
+        if (active) reopenExecutionRef.current(response.execution);
       })
       .catch((cause) => {
-        if (isCurrent())
-          setError(errorMessage(cause, "Unable to open this test conversation."));
+        if (!active) return;
+        setLinkOpenFailure(errorMessage(cause, "Unable to open this test conversation."));
+        onNavigateRef.current({ view: "chat", executionId: executionRef.current?.executionId }, "replace");
       })
       .finally(() => {
-        if (isCurrent()) onOpenExecutionConsumedRef.current?.();
+        if (active) setOpeningId((current) => (current === outcome.executionId ? null : current));
       });
-  }, [agentId, hasState, loading, openExecutionId]);
-  useEffect(
-    () => () => {
-      consumedOpenExecutionId.current = null;
-    },
-    [],
-  );
+    return () => {
+      active = false;
+    };
+    // `onNavigate` reaches through `onNavigateRef`, so a parent re-render (routeState changes on
+    // every navigation) cannot re-fire this mid-fetch.
+  }, [agentId, route.view, routeId, ready]);
+
+  const loadedId = execution?.executionId;
+  const previousLoadedIdRef = useRef(loadedId);
+  // The reverse direction: once a test finishes loading (started, reopened, retained, or
+  // cleared), the URL follows it. No entry point above has to remember to write the URL itself.
+  useEffect(() => {
+    const previousLoadedId = previousLoadedIdRef.current;
+    previousLoadedIdRef.current = loadedId;
+    if (route.view !== "chat") return;
+    const decision = routeIdForLoaded(routeId, previousLoadedId, loadedId);
+    if (!decision.write) return;
+    onNavigateRef.current({ view: "chat", executionId: decision.executionId ?? undefined }, "replace");
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the loaded id alone, per `routeIdForLoaded`; reading `route.view`/`routeId` from the triggering render, not re-running when only they change, is intentional.
+  }, [loadedId]);
 
   if (loading)
     return (
@@ -1373,7 +1435,10 @@ export function AgentRevisionTestChat({
     !selectedVariables.some(({ variable }) => !variable);
   const canSend =
     canPrepare &&
-    (!execution || (execution.state !== "partial" && !execution.activeTurnId));
+    (!execution || !execution.activeTurnId);
+  // While the route's own test is still being fetched, hide the thread and composer instead of
+  // letting a send race the open; a different test's leftover opening state never matches.
+  const isOpeningRoute = routeId !== undefined && openingId === routeId;
   const needsDraftSave = isAgentDraftDirty(agentId);
   const evalByRevision = new Map(
     evalRun?.sides.map((side) => [side.revisionId, side]) ?? [],
@@ -1412,15 +1477,33 @@ export function AgentRevisionTestChat({
           onSelect={() => {
             proactiveStartKey.current = null;
             writeAgentRevisionTestChatSession(sessionKey, { proactiveStartKey: null });
+            resetNavigationFeedback();
+            // From Conversation history too, a new chat is where the operator wants to be. Push so
+            // Back returns to the test left behind; skip the push when the route is already blank.
+            if (route.view !== "chat" || route.executionId !== undefined) {
+              onNavigate({ view: "chat", executionId: undefined }, "push");
+            }
             clearChatExecution("New chat ready.");
           }}
         >
           <Plus className="mr-2 h-4 w-4" />
           New chat
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => setView("history")}>
+        <DropdownMenuItem
+          onSelect={() => {
+            resetNavigationFeedback();
+            // Already there: another entry would make "Back to chat" step from history to history.
+            if (route.view !== "history") onNavigate({ view: "history" }, "push");
+          }}
+        >
           Conversation history
         </DropdownMenuItem>
+        {execution && testExecutionHref && view === "chat" ? (
+          <DropdownMenuItem onSelect={() => void executionLink.copy(execution.executionId, testExecutionHref(execution.executionId))}>
+            <Link2 className="mr-2 h-4 w-4" />
+            Copy link to this chat
+          </DropdownMenuItem>
+        ) : null}
         <DropdownMenuItem asChild>
           <Link href={agentVersionsHref}>Agent versions</Link>
         </DropdownMenuItem>
@@ -1478,7 +1561,10 @@ export function AgentRevisionTestChat({
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => setView("chat")}
+                onClick={() => {
+                  resetNavigationFeedback();
+                  onNavigate({ view: "chat", executionId: execution?.executionId }, "return");
+                }}
               >
                 Back to chat
               </Button>
@@ -1489,7 +1575,11 @@ export function AgentRevisionTestChat({
             <section>
               <TestExecutionHistoryView
                 agentId={agentId}
-                onOpen={reopenExecution}
+                onOpen={(executionId) => {
+                  resetNavigationFeedback();
+                  onNavigate({ view: "chat", executionId }, "push");
+                }}
+                linkFor={testExecutionHref}
               />
             </section>
             <section>
@@ -1498,12 +1588,28 @@ export function AgentRevisionTestChat({
           </div>
         ) : (
           <>
+            {degradedNotice ? (
+              <p
+                role="alert"
+                className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+              >
+                {degradedNotice}
+              </p>
+            ) : null}
             {error ? (
               <p
                 role="alert"
                 className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
               >
                 {error}
+              </p>
+            ) : null}
+            {linkOpenFailure ? (
+              <p
+                role="alert"
+                className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+              >
+                {linkOpenFailure}
               </p>
             ) : null}
             {restartNotice ? (
@@ -1514,13 +1620,25 @@ export function AgentRevisionTestChat({
                 {restartNotice}
               </p>
             ) : null}
+            {/* Keyed to the open test, so New chat or another test hides a link that is not theirs. */}
+            {execution && executionLink.copiedKey === execution.executionId ? (
+              <p
+                role="status"
+                className="rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground"
+              >
+                Link copied.
+              </p>
+            ) : null}
+            {execution && executionLink.uncopied?.key === execution.executionId ? (
+              <UncopiedLink url={executionLink.uncopied.url} />
+            ) : null}
             {execution?.state === "partial" ? (
               <p
                 role="status"
                 className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm"
               >
-                Partial result: a side failed or is still incomplete. Successful
-                evidence remains pinned to its revision.
+                Partial result: a side failed or is still incomplete. Retry it,
+                or send the next message.
               </p>
             ) : null}
             {repeatedCompareRevision ? (
@@ -1531,6 +1649,13 @@ export function AgentRevisionTestChat({
                 Pick two different versions to compare.
               </p>
             ) : null}
+            {isOpeningRoute ? (
+              <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-muted-foreground">
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Opening this test…
+              </div>
+            ) : (
+              <>
             <div
               className={
                 mode === "compare"
@@ -1727,11 +1852,7 @@ export function AgentRevisionTestChat({
                   value={message}
                   onChange={(event) => setMessage(event.target.value)}
                   onKeyDown={submitOnEnter}
-                  placeholder={
-                    execution?.state === "partial"
-                      ? "Retry the failed side or start a new chat"
-                      : "Ask a question..."
-                  }
+                  placeholder="Ask a question..."
                   className="min-h-[36px] max-h-32 flex-1 resize-none border-0 bg-transparent px-2 py-1.5 shadow-none focus-visible:ring-0"
                   disabled={!canSend}
                 />
@@ -1752,6 +1873,8 @@ export function AgentRevisionTestChat({
                 </Button>
               </div>
             </form>
+              </>
+            )}
             <Dialog open={contextOpen} onOpenChange={setContextOpen}>
               <DialogContent className="max-h-[calc(100vh-2rem)] overflow-y-auto">
                 <DialogHeader>

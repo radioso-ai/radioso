@@ -175,9 +175,7 @@ describe("organization roles", () => {
     expect(revoked.status).toBe(204);
 
     const usersAfter = await request(app).get("/api/v1/account/users").set("Cookie", owner.cookie);
-    expect(usersAfter.body.invitations.find((invitation: { id: string }) => invitation.id === invite.body.id)).toMatchObject({
-      status: "revoked",
-    });
+    expect(usersAfter.body.invitations.find((invitation: { id: string }) => invitation.id === invite.body.id)).toBeUndefined();
   });
 
   it("returns 404 when revoking an invitation from another organization", async () => {
@@ -195,6 +193,24 @@ describe("organization roles", () => {
       .delete(`/api/v1/account/invitations/${invite.body.id}`)
       .set("Cookie", accountB.cookie);
     expect(response.status).toBe(404);
+  });
+
+  it("answers a role change with the member as the member list describes them", async () => {
+    const { app } = createTestApp();
+    const owner = await issueTestSession(app, `owner-${Date.now()}@example.com`);
+    const member = await acceptInvite(app, owner.cookie, `member-${Date.now()}@example.com`, "member");
+    await request(app).patch("/api/v1/auth/profile").set("Cookie", member.cookie).send({ displayName: "Annie Easley" }).expect(200);
+    const users = await request(app).get("/api/v1/account/users").set("Cookie", owner.cookie);
+    const listed = users.body.users.find((user: { userId: string }) => user.userId === member.userId);
+
+    const updated = await request(app)
+      .patch(`/api/v1/account/users/${listed.membershipId}`)
+      .set("Cookie", owner.cookie)
+      .send({ role: "admin" });
+
+    expect(updated.status).toBe(200);
+    expect(updated.body).toEqual({ ...listed, role: "admin" });
+    expect(updated.body).toMatchObject({ email: listed.email, displayName: "Annie Easley" });
   });
 
   it("prevents admins from changing their own permissions", async () => {

@@ -26,7 +26,7 @@ const context = (permissions: ReadonlySet<string> = ALL_PERMISSIONS, agentId: st
 
 const conversation = (overrides: Partial<{
   id: string; agentId: string | null; preview: string | null; updatedAt: string;
-  ownership: { state: string; ownerDisplayName: string | null; reason: string | null; takenOverAt: string | null; updatedAt: string };
+  ownership: { state: string; ownerUserId: string | null; ownerDisplayName: string | null; reason: string | null; takenOverAt: string | null; updatedAt: string };
 }> = {}) => ({
   id: "conversation-1",
   agentId: "agent-1",
@@ -36,6 +36,7 @@ const conversation = (overrides: Partial<{
   updatedAt: "2026-08-26T09:00:00.000Z",
   ownership: {
     state: "human_owned",
+    ownerUserId: null,
     ownerDisplayName: null,
     reason: "escalation",
     takenOverAt: null,
@@ -114,8 +115,8 @@ describe("workspace_triage", () => {
         getConversationTurn: vi.fn(),
         listConversations: vi.fn(async () => ({
           conversations: [
-            conversation({ id: "conversation-recent", ownership: { state: "human_owned", ownerDisplayName: null, reason: null, takenOverAt: null, updatedAt: "2026-08-26T09:00:00.000Z" } }),
-            conversation({ id: "conversation-stale", ownership: { state: "human_owned", ownerDisplayName: null, reason: null, takenOverAt: null, updatedAt: "2026-08-26T05:00:00.000Z" } }),
+            conversation({ id: "conversation-recent", ownership: { state: "human_owned", ownerUserId: null, ownerDisplayName: null, reason: null, takenOverAt: null, updatedAt: "2026-08-26T09:00:00.000Z" } }),
+            conversation({ id: "conversation-stale", ownership: { state: "human_owned", ownerUserId: null, ownerDisplayName: null, reason: null, takenOverAt: null, updatedAt: "2026-08-26T05:00:00.000Z" } }),
           ],
           total: 2,
         })),
@@ -430,10 +431,12 @@ describe("workspace_triage", () => {
         getConversationTurn: vi.fn(),
         listConversations: vi.fn(async () => ({
           conversations: [
-            conversation({ id: "conversation-owned", ownership: { state: "human_owned", ownerDisplayName: "Ada", reason: null, takenOverAt: "2026-08-26T09:05:00.000Z", updatedAt: "2026-08-26T09:05:00.000Z" } }),
+            conversation({ id: "conversation-owned", ownership: { state: "human_owned", ownerUserId: "user-ada", ownerDisplayName: "Ada", reason: null, takenOverAt: "2026-08-26T09:05:00.000Z", updatedAt: "2026-08-26T09:05:00.000Z" } }),
             conversation({ id: "conversation-waiting" }),
+            // Its owner's user is gone: claimed once, waiting again, still showing the stored label.
+            conversation({ id: "conversation-orphaned", ownership: { state: "human_owned", ownerUserId: null, ownerDisplayName: "Bea", reason: null, takenOverAt: "2026-08-26T09:10:00.000Z", updatedAt: "2026-08-26T09:10:00.000Z" } }),
           ],
-          total: 2,
+          total: 3,
         })),
       },
     }));
@@ -441,6 +444,7 @@ describe("workspace_triage", () => {
     expect(result.items.map((item) => [item.conversationId, item.detail])).toEqual([
       ["conversation-waiting", null],
       ["conversation-owned", "Ada"],
+      ["conversation-orphaned", null],
     ]);
   });
 });

@@ -1384,9 +1384,8 @@ export function AssistantDirectivesSection({
             <Button type="button" variant="outline" onClick={closeDialog} disabled={isSaving}>
               Cancel
             </Button>
-            <Button type="button" onClick={() => void handleSubmit()} disabled={isSaving}>
-              {isSaving ? <Spinner className="mr-2" /> : null}
-              <span>Save directive</span>
+            <Button type="button" onClick={() => void handleSubmit()} loading={isSaving}>
+              Save directive
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1399,6 +1398,7 @@ export function AssistantDirectivesSection({
         agentId={agentId}
         capabilities={directiveCapabilities}
         description={DIRECTIVE_CAPABILITY_PICKER_DESCRIPTION}
+        onConnectionsChanged={() => setSkillCapabilities(null)}
         onOpenChange={(open) => !open && cancelSkillCreation()}
         onSelect={setCreationCapabilityId}
       />
@@ -1432,9 +1432,8 @@ export function AssistantDirectivesSection({
             <Button type="button" variant="outline" onClick={() => setDeletingDirective(null)} disabled={isSaving}>
               Cancel
             </Button>
-            <Button type="button" variant="destructive" onClick={() => void handleDelete()} disabled={isSaving}>
-              {isSaving ? <Spinner className="mr-2" /> : null}
-              <span>Delete directive</span>
+            <Button type="button" variant="destructive" onClick={() => void handleDelete()} loading={isSaving}>
+              Delete directive
             </Button>
           </DialogFooter>
         </DialogContent>

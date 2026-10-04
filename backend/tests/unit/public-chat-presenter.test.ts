@@ -3,8 +3,14 @@ import { describe, expect, it } from "vitest";
 import {
   presentPublicChatSession,
   stripPublicChatCitationArtifacts,
+  stripPublicConversationCitationArtifacts,
+  stripPublicConversationTailCitationArtifacts,
   stripPublicStreamCitationArtifacts,
 } from "../../src/app/http/presenters/publicChatPresenter.js";
+import type {
+  ChatConversationDetail,
+  ChatConversationTurn,
+} from "../../src/modules/chat/services/chatHistoryService.js";
 import type { ChatStreamEvent } from "../../src/modules/chat/contracts/index.js";
 import type { ConversationAgent } from "../../src/modules/agents/public.js";
 
@@ -112,5 +118,87 @@ describe("public chat presenter", () => {
     ]);
     // Segment indices survive so the client can render non-interactive markers.
     expect(result.answerSegments).toEqual([{ text: "Grounded answer.", citationIndices: [0, 1] }]);
+  });
+
+  it("never forwards a replier's teammate label to the visitor, even when a read carried one", () => {
+    // The public presenters forward unrecognised message fields, so an operator-only field that a
+    // mis-wired read attached would otherwise reach the visitor. A teammate label can be an email.
+    const reply: ChatConversationTurn = {
+      id: "m1",
+      role: "assistant",
+      source: "human_agent",
+      content: "Happy to help.",
+      createdAt: "2026-09-30T10:00:00.000Z",
+      operatorDisplayName: "Acme Support",
+      operatorLabel: "carl@acme.example",
+    };
+    const tail = stripPublicConversationTailCitationArtifacts({ messages: [reply], cursor: null }, true);
+    const detail = stripPublicConversationCitationArtifacts(
+      { messages: [reply] } as unknown as ChatConversationDetail,
+      "anonymous-session-1",
+      true,
+    );
+
+    for (const message of [...tail.messages, ...detail.messages]) {
+      expect(message).not.toHaveProperty("operatorLabel");
+      expect(message).toMatchObject({ operatorDisplayName: "Acme Support" });
+    }
+  });
+
+  it("never forwards a conversation's ownership to the visitor, AI-owned included, even when a read carried it", () => {
+    // Operator reads carry the ownership record whenever one exists; it names the teammate
+    // handling the conversation, so a mis-wired read must still not hand it to the visitor.
+    const ownership = {
+      conversationId: "c1",
+      workspaceId: "w1",
+      state: "ai_owned" as const,
+      ownerAccountId: null,
+      ownerUserId: null,
+      ownerDisplayName: null,
+      reason: "operator_takeover",
+      version: 3,
+      takenOverAt: null,
+      createdAt: "2026-09-30T10:00:00.000Z",
+      updatedAt: "2026-09-30T10:00:00.000Z",
+    };
+    const tail = stripPublicConversationTailCitationArtifacts({ messages: [], cursor: null, ownership }, true);
+    const detail = stripPublicConversationCitationArtifacts(
+      { messages: [], ownership } as unknown as ChatConversationDetail,
+      "anonymous-session-1",
+      true,
+    );
+
+    expect(tail).not.toHaveProperty("ownership");
+    expect(detail).not.toHaveProperty("ownership");
+  });
+
+  it("never forwards a conversation's activity to the visitor, even when a read carried it", () => {
+    // Operator reads carry who claimed, reassigned, and handed back the conversation, labelled by
+    // teammate label (which can be an email), so a mis-wired read must still not hand it on.
+    const activity = [{
+      id: "a1",
+      kind: "reassigned" as const,
+      createdAt: "2026-09-30T10:00:00.000Z",
+      actor: { userId: "u1", label: "bea@acme.example" },
+      subject: { userId: "u2", label: "Carl" },
+      from: null,
+      handoffReason: null,
+      decision: null,
+      resolution: null,
+      assistantMessageId: null,
+    }];
+    const tail = stripPublicConversationTailCitationArtifacts(
+      { messages: [], cursor: null, activity, activityCursor: "a1" },
+      true,
+    );
+    const detail = stripPublicConversationCitationArtifacts(
+      { messages: [], activity } as unknown as ChatConversationDetail,
+      "anonymous-session-1",
+      true,
+    );
+
+    expect(tail).not.toHaveProperty("activity");
+    expect(tail).not.toHaveProperty("activityCursor");
+    expect(detail).not.toHaveProperty("activity");
   });
 });

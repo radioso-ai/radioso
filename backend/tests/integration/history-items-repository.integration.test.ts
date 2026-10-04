@@ -312,4 +312,27 @@ describeIntegration("HistoryItemsRepository search and filters (Postgres)", () =
     const filteredByOutcome = await repository.listPageByWorkspaceId(workspaceId, { limit: 50, sourceScope: "all", outcome: "completed" });
     expect(kinds(filteredByOutcome)).not.toContain("search");
   });
+
+  it("narrows the feed to one caller kind, and counts the same rows it returns", async () => {
+    // FR-051. The filter has to reach the COUNT subquery as well as the row CTE, or the page says
+    // it has more than it can show.
+    const agentConversation = randomUUID();
+    await database.query(
+      `INSERT INTO conversations (id, workspace_id, agent_id, source_channel, caller_kind, created_at, updated_at)
+       VALUES ($1,$2,$3,'mcp','agent',NOW(),NOW())`,
+      [agentConversation, workspaceId, agentAId],
+    );
+
+    const agents = await repository.listPageByWorkspaceId(workspaceId, { limit: 50, callerKind: "agent" });
+    expect(agents.items.every((item) => item.kind === "chat" && item.conversation.callerKind === "agent")).toBe(true);
+    expect(agents.items.some((item) => item.kind === "chat" && item.conversation.id === agentConversation)).toBe(true);
+    expect(agents.total).toBe(agents.items.length);
+
+    const humans = await repository.listPageByWorkspaceId(workspaceId, { limit: 50, callerKind: "human" });
+    expect(humans.items.some((item) => item.kind === "chat" && item.conversation.id === agentConversation)).toBe(false);
+
+    // Unfiltered is both, not a default to one of them.
+    const everyone = await repository.listPageByWorkspaceId(workspaceId, { limit: 50 });
+    expect(everyone.total).toBeGreaterThanOrEqual(agents.total + humans.total);
+  });
 });

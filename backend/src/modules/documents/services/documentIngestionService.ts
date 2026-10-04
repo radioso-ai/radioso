@@ -13,6 +13,7 @@ import type {
 } from "../../../db/repositories/documentProcessingJobRepository.js";
 import { normalizeMarkdown, renderMetadataSearchText } from "../../retrieval/public.js";
 import { badRequest, conflict, notFound } from "../../../shared/domain/errors.js";
+import { decodeCursorWithKeys } from "../../../shared/domain/cursorPagination.js";
 import {
   toDocumentSourceSummary,
   type DocumentSourceRecord as DocumentOriginRecord,
@@ -20,6 +21,7 @@ import {
 } from "../../../db/repositories/documentSourceRepository.js";
 import type {
   DocumentProcessingJobOptions,
+  DocumentReviewedWriteGuard,
   DocumentSourceSummary,
 } from "../contracts/documentContracts.js";
 import {
@@ -34,10 +36,13 @@ import {
 import { NoopDocumentJobDispatcher, type DocumentJobDispatcherPort } from "./documentJobDispatcher.js";
 import { sanitizeInlineDocumentContent } from "./inlineDocumentContentSanitizer.js";
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../domain/sourceConstants.js";
+import { resolveRetrievalEligibility } from "../domain/retrievalEligibility.js";
 import { relinquishGeneratedKeys } from "../domain/enrichment/generatedTagOwnership.js";
 import type { DocumentEnrichmentProvenance } from "../domain/enrichment/documentEnrichmentContract.js";
 import type {
   DocumentDetails,
+  DocumentInventoryListInput,
+  DocumentInventoryPort,
   DocumentListPage,
   DocumentRecord,
   DocumentRepositoryPort,
@@ -84,7 +89,26 @@ const relinquishedEnrichment = (
   return relinquished ? { enrichment: relinquished as unknown as Record<string, unknown> } : {};
 };
 
-export class DocumentIngestionService {
+const documentInventoryCursorKeys = ["createdAt", "id"] as const;
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * The repository casts these values in its seek predicate. Validate the owner cursor before
+ * reaching SQL so malformed caller input remains a caller refusal rather than a database error.
+ */
+const validateInventoryCursor = (cursor: string | undefined): void => {
+  if (!cursor) return;
+  const decoded = decodeCursorWithKeys(cursor, documentInventoryCursorKeys);
+  const createdAt = decoded.keys.createdAt;
+  if (Number.isNaN(Date.parse(createdAt)) || new Date(createdAt).toISOString() !== createdAt) {
+    throw badRequest("Document inventory cursor has an invalid createdAt key");
+  }
+  if (!uuidPattern.test(decoded.keys.id)) {
+    throw badRequest("Document inventory cursor has an invalid id key");
+  }
+};
+
+export class DocumentIngestionService implements DocumentInventoryPort {
   constructor(
     private readonly documentRepository: DocumentRepositoryPort,
     private readonly auditService: AuditService,
@@ -107,6 +131,7 @@ export class DocumentIngestionService {
     metadata?: Record<string, unknown>;
     indexedFields?: Record<string, IndexedFieldValue>;
     externalDocumentId?: string | null;
+    reviewedWriteGuard?: DocumentReviewedWriteGuard;
     source?: DocumentSourceResolverInput;
     documentEnrichmentOverride?: DocumentProcessingJobOptions["documentEnrichmentOverride"];
   }): Promise<{ documentId: string; status: string }> {
@@ -199,7 +224,7 @@ export class DocumentIngestionService {
         sourceSizeBytes: null,
         contentSizeBytes: indexedContent.contentSizeBytes,
         contentHash: indexedContent.contentHash,
-      }, buildDocumentProcessingOptions(input));
+      }, buildDocumentProcessingOptions(input), input.reviewedWriteGuard);
 
     } catch (error) {
       await usageReservation.release();
@@ -461,7 +486,7 @@ export class DocumentIngestionService {
     }
 
     const eligibility = settlesEligibility
-      ? this.resolveRetrievalEligibility(existing, input)
+      ? resolveRetrievalEligibility(existing, input)
       : null;
 
     let result: DocumentRetrievalSettingsResult;
@@ -530,16 +555,6 @@ export class DocumentIngestionService {
     return this.toDetails(updated);
   }
 
-  private resolveRetrievalEligibility(
-    existing: DocumentRecord,
-    input: { retrievalEnabled?: boolean; retrievalExpiresAt?: Date | null },
-  ): { retrievalEnabled: boolean; retrievalExpiresAt: Date | null } {
-    const retrievalEnabled = input.retrievalEnabled ?? existing.retrievalEnabled;
-    const requested = input.retrievalExpiresAt !== undefined ? input.retrievalExpiresAt : existing.retrievalExpiresAt;
-    const clearsElapsedExpiry = input.retrievalEnabled === true && requested !== null && requested.getTime() <= Date.now();
-    return { retrievalEnabled, retrievalExpiresAt: clearsElapsedExpiry ? null : requested };
-  }
-
   async reprocess(input: {
     workspaceId: string;
     documentId: string;
@@ -603,6 +618,7 @@ export class DocumentIngestionService {
     workspaceId: string;
     documentId: string;
     documentEnrichmentOverride?: DocumentProcessingJobOptions["documentEnrichmentOverride"];
+    expectedUpdatedAt?: Date;
   }): Promise<{
     documentId: string;
     status: "queued" | "noop";
@@ -615,6 +631,7 @@ export class DocumentIngestionService {
         input.documentId,
         input.workspaceId,
         buildDocumentProcessingOptions(input),
+        input.expectedUpdatedAt,
       );
     } catch (error) {
       await this.auditService.record({
@@ -693,6 +710,26 @@ export class DocumentIngestionService {
     const { documents, total, nextCursor, hasMore } = await this.documentRepository.listSummaryPageByWorkspaceId(
       workspaceId,
       input,
+    );
+    return {
+      documents: documents.map((document) => this.toSummary(document)),
+      total,
+      nextCursor,
+      hasMore,
+    };
+  }
+
+  /** Documents owns filtered inventory reads so transports do not reimplement persistence rules. */
+  async listInventoryForWorkspace(
+    workspaceId: string,
+    input: DocumentInventoryListInput,
+  ): Promise<DocumentListPage> {
+    validateInventoryCursor(input.cursor);
+    // Indexed is the operator-facing name for a document that reached the owner's ready state.
+    const inventoryInput = input.status === "indexed" ? { ...input, status: "ready" as const } : input;
+    const { documents, total, nextCursor, hasMore } = await this.documentRepository.listInventoryPageByWorkspaceId(
+      workspaceId,
+      inventoryInput,
     );
     return {
       documents: documents.map((document) => this.toSummary(document)),
@@ -1069,6 +1106,20 @@ const describeIndexedContent = (
     contentSizeBytes: Buffer.byteLength(normalizedMarkdown, "utf8"),
     contentHash: createHash("sha256").update(fingerprint, "utf8").digest("hex"),
   };
+};
+
+/** The identity-relevant projection shared by ingestion and owner-side import review. */
+export const describeInlineDocumentForIngestion = (input: {
+  readonly title: string;
+  readonly content: string;
+  readonly metadata?: Record<string, unknown>;
+}) => {
+  const sanitized = sanitizeInlineDocumentContent({
+    title: input.title,
+    sourceContent: input.content,
+    metadata: input.metadata,
+  });
+  return describeIndexedContent(sanitized.markdownContent, input.metadata);
 };
 
 const deriveWebsiteSourceName = (url: string): string => {

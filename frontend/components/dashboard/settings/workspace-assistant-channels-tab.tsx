@@ -13,7 +13,6 @@ import { ChatChannelSection } from '@/components/dashboard/settings/chat-channel
 import { ConnectorSetupDialog } from '@/components/dashboard/documents/connector-setup-dialog'
 import { McpChannelCard } from '@/components/dashboard/settings/mcp-channel-card'
 import { SlackChannelCard } from '@/components/dashboard/settings/slack-channel-card'
-import { McpConnectionsSection } from '@/components/dashboard/settings/skills/McpConnectionsSection'
 import { SkillList } from '@/components/dashboard/settings/skills/SkillList'
 import { SettingsRow, SettingsRowList } from '@/components/dashboard/settings/settings-row-list'
 import { type AgentSectionId } from '@/lib/dashboard-areas'
@@ -43,9 +42,9 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { LogoSpinner, Spinner } from '@/components/ui/spinner'
+import { LogoSpinner } from '@/components/ui/spinner'
 import { getApiErrorMessage } from '@/lib/api-error'
-import { storeAccountOrganizationName } from '@/lib/auth-context'
+import { storeAccountOrganizationName, useAuth } from '@/lib/auth-context'
 import {
   accountApi,
   agentsApi,
@@ -143,6 +142,7 @@ export function WorkspaceAssistantChannelsTab({
   onDraftDirtyChange?: (dirty: boolean) => void
 }) {
   const router = useRouter()
+  const { logout } = useAuth()
   const { activeWorkspaceId, activeWorkspace, workspaces, renameWorkspace, deleteWorkspace, isLoading: isWorkspaceLoading } = useWorkspace()
   const [workspaceNameDraft, setWorkspaceNameDraft] = useState<string | null>(null)
   const [organizationName, setOrganizationName] = useState(() => readCachedOrganizationName(accountId))
@@ -412,9 +412,10 @@ export function WorkspaceAssistantChannelsTab({
       await accountApi.deleteOrganization()
       setDeleteOrgDialogOpen(false)
       setDeleteOrgConfirmName('')
-      if (typeof window !== 'undefined') {
-        window.location.href = '/login'
-      }
+      // The backend already cleared the session cookie; drop the local session
+      // and land on the root route, which renders sign-in when signed out.
+      logout()
+      router.replace('/')
     } catch (error) {
       setDeleteOrgError(getApiErrorMessage(error, 'Failed to delete the organization.'))
       setIsDeletingOrg(false)
@@ -1042,7 +1043,6 @@ export function WorkspaceAssistantChannelsTab({
           {mode === 'channels' && !isAnonLoading && resolvedChannel === 'mcp-channel' ? (
           <section id="mcp-channel" className="space-y-6 scroll-mt-24">
             {agentId ? <McpChannelCard agentId={agentId} /> : null}
-            {agentId ? <McpConnectionsSection agentId={agentId} /> : null}
           </section>
           ) : null}
 
@@ -1164,9 +1164,9 @@ export function WorkspaceAssistantChannelsTab({
                     <Button
                       variant="destructive"
                       onClick={handleDelete}
-                      disabled={!deleteConfirmValid || isDeleting || !canManageWorkspaceLifecycle}
+                      disabled={!deleteConfirmValid || !canManageWorkspaceLifecycle}
+                      loading={isDeleting} icon={<Trash2 />}
                     >
-                      {isDeleting ? <Spinner className="mr-2" /> : <Trash2 className="w-4 h-4 mr-2" />}
                       Delete workspace
                     </Button>
                   </DialogFooter>
@@ -1238,9 +1238,9 @@ export function WorkspaceAssistantChannelsTab({
                     <Button
                       variant="destructive"
                       onClick={handleDeleteOrganization}
-                      disabled={!deleteOrgConfirmValid || isDeletingOrg || !canDeleteOrganization}
+                      disabled={!deleteOrgConfirmValid || !canDeleteOrganization}
+                      loading={isDeletingOrg} icon={<Trash2 />}
                     >
-                      {isDeletingOrg ? <Spinner className="mr-2" /> : <Trash2 className="w-4 h-4 mr-2" />}
                       Delete organization
                     </Button>
                   </DialogFooter>
@@ -1335,9 +1335,9 @@ export function WorkspaceAssistantChannelsTab({
                       <Button
                         variant="destructive"
                         onClick={handleDeleteAgent}
-                        disabled={!deleteAgentConfirmValid || isDeletingAgent || !canDeleteAgent || isLastAgent}
+                        disabled={!deleteAgentConfirmValid || !canDeleteAgent || isLastAgent}
+                        loading={isDeletingAgent} icon={<Trash2 />}
                       >
-                        {isDeletingAgent ? <Spinner className="mr-2" /> : <Trash2 className="w-4 h-4 mr-2" />}
                         Delete agent
                       </Button>
                     </DialogFooter>

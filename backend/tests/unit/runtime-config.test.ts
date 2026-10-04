@@ -287,7 +287,7 @@ describe("runtime configuration", () => {
       ...baseEnv,
     });
 
-    expect(env.TRUST_PROXY_HOPS).toBe(0);
+    expect(env.RADIOSO_TRUSTED_PROXY_HOPS).toBe(0);
     expect(env.OBSERVABILITY_ENABLED).toBe(true);
     expect(env.OBSERVABILITY_SERVICE_NAME).toBe("radioso-api");
     expect(env.OBSERVABILITY_ENVIRONMENT).toBe("test");
@@ -340,20 +340,23 @@ describe("runtime configuration", () => {
     })).toThrow(/OTEL_EXPORTER_OTLP_ENDPOINT/);
   });
 
-  it("accepts a non-negative integer trust proxy hop count", () => {
-    const env = getEnv({
-      ...baseEnv,
-      TRUST_PROXY_HOPS: "2",
-    });
-
-    expect(env.TRUST_PROXY_HOPS).toBe(2);
-  });
-
-  it("rejects negative trust proxy hop counts", () => {
+  it("refuses to start on a non-zero TRUST_PROXY_HOPS, naming the setting that replaces it", () => {
     expect(() => getEnv({
       ...baseEnv,
-      TRUST_PROXY_HOPS: "-1",
-    })).toThrow(/TRUST_PROXY_HOPS/);
+      TRUST_PROXY_HOPS: "2",
+    })).toThrow(/TRUST_PROXY_HOPS.*RADIOSO_TRUSTED_PROXY_HOPS/);
+  });
+
+  it("starts on a zero or empty TRUST_PROXY_HOPS, which asks for the default hop count", () => {
+    for (const value of ["0", ""]) {
+      const env = getEnv({
+        ...baseEnv,
+        TRUST_PROXY_HOPS: value,
+      });
+
+      expect(env.RADIOSO_TRUSTED_PROXY_HOPS).toBe(0);
+      expect(env).not.toHaveProperty("TRUST_PROXY_HOPS");
+    }
   });
 
   it("accepts standard OpenTelemetry sampler settings when tracing is enabled", () => {
@@ -613,8 +616,11 @@ describe("runtime configuration", () => {
     expect(computeTf).toContain('resource "google_cloud_run_v2_service_iam_member" "mcp_public"');
     expect(computeTf).toContain('name  = "RADIOSO_MCP_PUBLIC_URL"');
     expect(computeTf.match(/name = "RADIOSO_MCP_SIGNING_SECRET"/g)).toHaveLength(2);
+    // Cloud Run's front end appends exactly the connecting peer, so both the
+    // backend and the MCP service trust one hop and no more.
     expect(computeTf.match(/name {2}= "RADIOSO_TRUSTED_PROXY_HOPS"/g)).toHaveLength(2);
-    expect(computeTf.match(/value = "2"/g)?.length).toBeGreaterThanOrEqual(2);
+    expect(computeTf.match(/name {2}= "RADIOSO_TRUSTED_PROXY_HOPS"\s+value = "1"/g)).toHaveLength(2);
+    expect(mcpService).toMatch(/name {2}= "RADIOSO_TRUSTED_PROXY_HOPS"\s+value = "1"/);
     expect(databaseTf).toContain('resource "random_password" "radioso_mcp_signing_secret"');
     expect(secretsTf).toMatch(/"radioso-mcp-signing-secret"\s+= random_password\.radioso_mcp_signing_secret\.result/u);
     expect(terraformVariables).not.toContain('variable "radioso_mcp_signing_secret"');

@@ -1,15 +1,19 @@
-import { Router } from "express";
+import { Router, type Response } from "express";
 
 import type { AppDependencies } from "../../server/types.js";
+import {
+  resolveActivityReadScope,
+  type ConversationActivityReadScope,
+} from "../../../modules/conversationActivity/contracts/index.js";
 import { badRequest } from "../../../shared/domain/errors.js";
 import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../middleware/requireWorkspaceSession.js";
-import { requireWorkspacePermission } from "../middleware/requirePermission.js";
+import { holdsWorkspacePermission, requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { includeDebugQuerySchema, presentDocumentSearchResponse } from "../presenters/documentSearchPresenter.js";
 import {
   chatHistoryPageQuerySchema,
   collectionPageQuerySchema,
   conversationParamsSchema,
-  conversationTailQuerySchema,
+  operatorConversationTailQuerySchema,
   historyContactParamsSchema,
   conversationWindowQuerySchema,
   historySearchParamsSchema,
@@ -28,6 +32,9 @@ export const createHistoryRoutes = (dependencies: HistoryRouteDependencies): Rou
   const router = Router();
   const workspaceSession = requireWorkspaceSession(dependencies);
   const historyRead = requireWorkspacePermission(dependencies, "workspace.history.read");
+  // A conversation's activity carries feedback triage outcomes only to a caller who may read them.
+  const activityScope = (res: Response): Promise<ConversationActivityReadScope> =>
+    resolveActivityReadScope((permission) => holdsWorkspacePermission(dependencies, res, permission));
 
   router.get("/", workspaceSession, historyRead, async (req, res, next) => {
     try {
@@ -106,6 +113,7 @@ export const createHistoryRoutes = (dependencies: HistoryRouteDependencies): Rou
         workspaceId,
         parsedParams.data.requestId,
         parsedQuery.data,
+        await activityScope(res),
       );
       res.status(200).json(contact);
     } catch (error) {
@@ -150,6 +158,7 @@ export const createHistoryRoutes = (dependencies: HistoryRouteDependencies): Rou
         workspaceId,
         parsedParams.data.conversationId,
         parsedQuery.data,
+        await activityScope(res),
       );
       res.status(200).json(conversation);
     } catch (error) {
@@ -165,7 +174,7 @@ export const createHistoryRoutes = (dependencies: HistoryRouteDependencies): Rou
         next(badRequest("Invalid request params", parsedParams.error.flatten()));
         return;
       }
-      const parsedQuery = conversationTailQuerySchema.safeParse(req.query);
+      const parsedQuery = operatorConversationTailQuerySchema.safeParse(req.query);
       if (!parsedQuery.success) {
         next(badRequest("Invalid request query", parsedQuery.error.flatten()));
         return;
@@ -174,6 +183,7 @@ export const createHistoryRoutes = (dependencies: HistoryRouteDependencies): Rou
         workspaceId,
         parsedParams.data.conversationId,
         parsedQuery.data,
+        await activityScope(res),
       );
       res.status(200).json(tail);
     } catch (error) {
@@ -222,6 +232,7 @@ export const createHistoryRoutes = (dependencies: HistoryRouteDependencies): Rou
         workspaceId,
         parsedParams.data.conversationId,
         parsedQuery.data,
+        await activityScope(res),
       );
       res.status(200).json(conversation);
     } catch (error) {

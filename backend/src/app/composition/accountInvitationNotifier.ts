@@ -34,6 +34,7 @@ export const createMailAccountInvitationNotifier = (input: {
         acceptanceUrl,
         appBaseUrl: input.env.APP_BASE_URL,
         invitedByEmail: notification.invitedByEmail,
+        invitedByName: notification.invitedByName,
         expiresAt: notification.expiresAt,
       }));
       return { delivered: dispatched };

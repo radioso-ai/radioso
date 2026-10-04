@@ -4,6 +4,7 @@ import request from "supertest";
 import { forbidden } from "../../../src/shared/domain/errors.js";
 import { describe, expect, it, vi } from "vitest";
 
+import { admittedAbuseControlDecision } from "../../support/fakes.js";
 import { createCopilotRoutes } from "../../../src/modules/operatorCopilot/routes.js";
 import { CopilotConflictError } from "../../../src/modules/operatorCopilot/public.js";
 
@@ -22,7 +23,7 @@ describe("createCopilotRoutes", () => {
       llmCapabilityResolver: {},
       operatorCopilotService: {},
       copilotToolCatalog: [],
-      abuseControlService: { enforce: vi.fn(async () => {}) },
+      abuseControlService: { enforce: vi.fn(async () => admittedAbuseControlDecision()) },
       auditService: { record: vi.fn(async () => {}) },
     } as never);
 
@@ -60,7 +61,7 @@ describe("createCopilotRoutes", () => {
       },
       operatorCopilotService: {},
       copilotToolCatalog: [],
-      abuseControlService: { enforce: vi.fn(async () => {}) },
+      abuseControlService: { enforce: vi.fn(async () => admittedAbuseControlDecision()) },
       auditService: { record: vi.fn(async () => {}) },
     } as never));
 
@@ -75,12 +76,12 @@ describe("createCopilotRoutes", () => {
       available: true,
       reason: "ok",
       canManage: false,
-      applyableProposalTargets: ["document", "ingestion_settings", "website_crawl", "workspace_setting"],
+      applyableProposalTargets: ["document", "document_operation", "ingestion_settings", "website_crawl", "workspace_setting"],
     });
   });
 
   it("resolves a proposal from its owning workspace instead of dashboard workspace state", async () => {
-    const resolveProposalWorkspace = vi.fn(async () => WORKSPACE_ID);
+    const resolveProposalWorkspaceForSession = vi.fn(async () => ({ kind: "found" as const, workspaceId: WORKSPACE_ID }));
     const getProposal = vi.fn(async () => ({
       proposal: {
         id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
@@ -118,9 +119,9 @@ describe("createCopilotRoutes", () => {
         hasPermission: vi.fn(async () => true),
       },
       llmCapabilityResolver: { async resolve() { return {}; } },
-      operatorCopilotService: { resolveProposalWorkspace, getProposal },
+      operatorCopilotService: { resolveProposalWorkspaceForSession, getProposal },
       copilotToolCatalog: [],
-      abuseControlService: { enforce: vi.fn(async () => {}) },
+      abuseControlService: { enforce: vi.fn(async () => admittedAbuseControlDecision()) },
       auditService: { record: vi.fn(async () => {}) },
     } as never));
 
@@ -131,18 +132,229 @@ describe("createCopilotRoutes", () => {
 
     expect(response.status).toBe(200);
     expect(response.body.workspaceId).toBe(WORKSPACE_ID);
-    expect(resolveProposalWorkspace).toHaveBeenCalledWith({
+    expect(resolveProposalWorkspaceForSession).toHaveBeenCalledWith({
       accountId: ACCOUNT_ID,
       operatorUserId: USER_ID,
       proposalId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
     });
     expect(getProposal).toHaveBeenCalledWith({
       workspaceId: WORKSPACE_ID,
+      accountId: ACCOUNT_ID,
       operatorUserId: USER_ID,
       proposalId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
     });
-    expect(requirePermission).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: WORKSPACE_ID }));
+    expect(requirePermission).not.toHaveBeenCalled();
     expect(resolveDashboardWorkspace).not.toHaveBeenCalled();
+  });
+
+  it("presents the same bounded reviewed snapshot as the MCP outcome and identifies its bound client", async () => {
+    const proposal = {
+      id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", targetType: "routine", targetRef: {}, status: "pending", reason: null, appliedRef: null, evidence: null,
+      reviewDigest: "a".repeat(43), confirmationRequirement: "signed_in_approval" as const,
+      changeEffect: { exposure: "live" as const, reversibility: "reversible" as const, metered: false }, expiresAt: new Date("2026-09-27T00:15:00.000Z"), approvedAt: null,
+      reviewSnapshot: { review: { visible: true }, fullReview: { steps: Array.from({ length: 2_000 }, () => "hidden") } },
+    };
+    const getProposal = vi.fn(async () => ({ proposal, preview: { targetLabel: "Routine", current: null, proposed: {} }, currentVersionMatches: true }));
+    const describeReviewedProposalClient = vi.fn(async () => ({ clientId: "client-record-1", clientName: "Operator test client" }));
+    const app = express();
+    app.use(express.json());
+    app.use((req, _res, next) => { req.cookies = Object.fromEntries((req.header("cookie") ?? "").split(";").map((part) => part.trim().split("=")).filter((part): part is [string, string] => part.length === 2)); next(); });
+    app.use("/api/v1/copilot", createCopilotRoutes({
+      env: { SESSION_COOKIE_NAME: "radioso_session" },
+      authService: { async authenticateSession() { return { accountId: ACCOUNT_ID, userId: USER_ID, sessionId: "session-id" }; } },
+      workspaceSessionService: { async resolve() { return { accountId: ACCOUNT_ID, workspaceId: WORKSPACE_ID }; } },
+      accountAccessService: { async requireActiveMembership() {}, async requirePermission() {}, hasPermission: vi.fn(async () => true) },
+      llmCapabilityResolver: { async resolve() { return {}; } },
+      operatorCopilotService: { resolveProposalWorkspaceForSession: vi.fn(async () => ({ kind: "found" as const, workspaceId: WORKSPACE_ID })), getProposal, describeReviewedProposalClient },
+      copilotToolCatalog: [], abuseControlService: { enforce: vi.fn(async () => admittedAbuseControlDecision()) }, auditService: { record: vi.fn(async () => {}) },
+    } as never));
+
+    const response = await request(app).get(`/api/v1/copilot/proposals/${proposal.id}`).set("Cookie", "radioso_session=valid-session");
+
+    expect(response.status).toBe(200);
+    expect(response.body.reviewedOperation).toMatchObject({ clientName: "Operator test client", review: { review: { visible: true } } });
+    expect(response.body.reviewedOperation.review).not.toHaveProperty("fullReview");
+    expect(JSON.stringify(response.body)).not.toContain("hidden");
+    expect(describeReviewedProposalClient).toHaveBeenCalledWith({ workspaceId: WORKSPACE_ID, operatorUserId: USER_ID, proposal });
+  });
+
+  describe("POST /proposals/:proposalId/approve", () => {
+    const buildApproveApp = (approveReviewedProposal: ReturnType<typeof vi.fn>) => {
+      const app = express();
+      app.use(express.json());
+      app.use(express.urlencoded({ extended: false }));
+      app.use((req, _res, next) => {
+        req.cookies = Object.fromEntries((req.header("cookie") ?? "").split(";").map((part) => part.trim().split("=")).filter((part): part is [string, string] => part.length === 2));
+        next();
+      });
+      app.use("/api/v1/copilot", createCopilotRoutes({
+        env: { SESSION_COOKIE_NAME: "radioso_session" },
+        authService: { async authenticateSession() { return { accountId: ACCOUNT_ID, userId: USER_ID, sessionId: "session-id" }; } },
+        workspaceSessionService: {},
+        accountAccessService: { async requireActiveMembership() {}, async requirePermission() {}, hasPermission: vi.fn(async () => true) },
+        llmCapabilityResolver: {},
+        operatorCopilotService: {
+          resolveProposalWorkspaceForSession: vi.fn(async () => ({ kind: "found" as const, workspaceId: WORKSPACE_ID })),
+          approveReviewedProposal,
+        },
+        copilotToolCatalog: [],
+        abuseControlService: { enforce: vi.fn(async () => admittedAbuseControlDecision()) },
+        auditService: { record: vi.fn(async () => {}) },
+      } as never));
+      app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+        const appError = error as { statusCode?: number; code?: string };
+        res.status(appError.statusCode ?? 500).json({ error: { code: appError.code ?? "internal_error" } });
+      });
+      return app;
+    };
+    const proposalId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+    const reviewDigest = "a".repeat(43);
+
+    it("approves once the CSRF header is present on a JSON body", async () => {
+      const approveReviewedProposal = vi.fn(async () => ({ status: "approved" as const }));
+      const response = await request(buildApproveApp(approveReviewedProposal))
+        .post(`/api/v1/copilot/proposals/${proposalId}/approve`)
+        .set("Cookie", "radioso_session=valid-session")
+        .set("X-Radioso-CSRF", "1")
+        .send({ reviewDigest });
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ status: "approved" });
+      expect(approveReviewedProposal).toHaveBeenCalledWith(expect.objectContaining({ proposalId, reviewDigest }));
+    });
+
+    it("refuses a forged approval with no CSRF header, as a same-site form submission would arrive", async () => {
+      const approveReviewedProposal = vi.fn(async () => ({ status: "approved" as const }));
+      const response = await request(buildApproveApp(approveReviewedProposal))
+        .post(`/api/v1/copilot/proposals/${proposalId}/approve`)
+        .set("Cookie", "radioso_session=valid-session")
+        .send({ reviewDigest });
+
+      expect(response.status).toBe(403);
+      expect(approveReviewedProposal).not.toHaveBeenCalled();
+    });
+
+    it("refuses a form-encoded approval body even when a CSRF header is set", async () => {
+      const approveReviewedProposal = vi.fn(async () => ({ status: "approved" as const }));
+      const response = await request(buildApproveApp(approveReviewedProposal))
+        .post(`/api/v1/copilot/proposals/${proposalId}/approve`)
+        .set("Cookie", "radioso_session=valid-session")
+        .set("X-Radioso-CSRF", "1")
+        .type("form")
+        .send({ reviewDigest });
+
+      expect(response.status).toBe(400);
+      expect(approveReviewedProposal).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("POST /proposals/:proposalId/dismiss", () => {
+    const buildDismissApp = (dismissProposal: ReturnType<typeof vi.fn>) => {
+      const app = express();
+      app.use(express.json());
+      app.use(express.urlencoded({ extended: false }));
+      app.use((req, _res, next) => {
+        req.cookies = Object.fromEntries((req.header("cookie") ?? "").split(";").map((part) => part.trim().split("=")).filter((part): part is [string, string] => part.length === 2));
+        next();
+      });
+      app.use("/api/v1/copilot", createCopilotRoutes({
+        env: { SESSION_COOKIE_NAME: "radioso_session" },
+        authService: { async authenticateSession() { return { accountId: ACCOUNT_ID, userId: USER_ID, sessionId: "session-id" }; } },
+        workspaceSessionService: { async resolve() { return { accountId: ACCOUNT_ID, workspaceId: WORKSPACE_ID }; } },
+        accountAccessService: { async requireActiveMembership() {}, async requirePermission() {}, hasPermission: vi.fn(async () => true) },
+        llmCapabilityResolver: {},
+        operatorCopilotService: { dismissProposal },
+        copilotToolCatalog: [],
+        abuseControlService: { enforce: vi.fn(async () => admittedAbuseControlDecision()) },
+        auditService: { record: vi.fn(async () => {}) },
+      } as never));
+      app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+        const appError = error as { statusCode?: number; code?: string };
+        res.status(appError.statusCode ?? 500).json({ error: { code: appError.code ?? "internal_error" } });
+      });
+      return app;
+    };
+    const proposalId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+
+    // The standalone approval page's Decline button reuses this same route (with reason:
+    // "declined"), so it must carry the CSRF/JSON protections Approve has — a forged cross-site
+    // form POST must not be able to dismiss a pending reviewed operation using a signed-in
+    // session's cookie.
+    it("dismisses once the CSRF header is present on a JSON body, as the approval page's Decline sends it", async () => {
+      const dismissProposal = vi.fn(async () => ({ status: "dismissed" as const }));
+      const response = await request(buildDismissApp(dismissProposal))
+        .post(`/api/v1/copilot/proposals/${proposalId}/dismiss`)
+        .set("Cookie", "radioso_session=valid-session")
+        .set("X-Radioso-CSRF", "1")
+        .send({ reason: "declined" });
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ status: "dismissed" });
+      expect(dismissProposal).toHaveBeenCalledWith(expect.objectContaining({ proposalId, reason: "declined" }));
+    });
+
+    it("still dismisses the ordinary dashboard proposal card with no reason, as long as it sends the CSRF header and a JSON body", async () => {
+      const dismissProposal = vi.fn(async () => ({ status: "dismissed" as const }));
+      const response = await request(buildDismissApp(dismissProposal))
+        .post(`/api/v1/copilot/proposals/${proposalId}/dismiss`)
+        .set("Cookie", "radioso_session=valid-session")
+        .set("X-Radioso-CSRF", "1")
+        .send({});
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ status: "dismissed" });
+      expect(dismissProposal).toHaveBeenCalledWith(expect.objectContaining({ proposalId, reason: undefined }));
+    });
+
+    it("refuses a forged decline with no CSRF header, as a same-site form submission would arrive", async () => {
+      const dismissProposal = vi.fn(async () => ({ status: "dismissed" as const }));
+      const response = await request(buildDismissApp(dismissProposal))
+        .post(`/api/v1/copilot/proposals/${proposalId}/dismiss`)
+        .set("Cookie", "radioso_session=valid-session")
+        .send({ reason: "declined" });
+
+      expect(response.status).toBe(403);
+      expect(dismissProposal).not.toHaveBeenCalled();
+    });
+
+    it("refuses a form-encoded decline body even when a CSRF header is set", async () => {
+      const dismissProposal = vi.fn(async () => ({ status: "dismissed" as const }));
+      const response = await request(buildDismissApp(dismissProposal))
+        .post(`/api/v1/copilot/proposals/${proposalId}/dismiss`)
+        .set("Cookie", "radioso_session=valid-session")
+        .set("X-Radioso-CSRF", "1")
+        .type("form")
+        .send({ reason: "declined" });
+
+      expect(response.status).toBe(400);
+      expect(dismissProposal).not.toHaveBeenCalled();
+    });
+  });
+
+  it("offers an account switch only when the signed-in operator is an active member of the proposal account", async () => {
+    const app = express();
+    app.use(express.json());
+    app.use((req, _res, next) => {
+      req.cookies = Object.fromEntries((req.header("cookie") ?? "").split(";").map((part) => part.trim().split("=")).filter((part): part is [string, string] => part.length === 2));
+      next();
+    });
+    const resolveProposalWorkspaceForSession = vi.fn(async () => ({
+      kind: "other_account" as const, accountId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", accountName: "Other account", workspaceId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    }));
+    app.use("/api/v1/copilot", createCopilotRoutes({
+      env: { SESSION_COOKIE_NAME: "radioso_session" }, authService: { async authenticateSession() { return { accountId: ACCOUNT_ID, userId: USER_ID, sessionId: "session-id" }; } },
+      workspaceSessionService: {}, accountAccessService: { async requireActiveMembership() {}, async requirePermission() {}, hasPermission: vi.fn(async () => true) },
+      llmCapabilityResolver: {}, operatorCopilotService: { resolveProposalWorkspaceForSession }, copilotToolCatalog: [],
+      abuseControlService: { enforce: vi.fn(async () => admittedAbuseControlDecision()) }, auditService: { record: vi.fn(async () => {}) },
+    } as never));
+
+    const response = await request(app).get("/api/v1/copilot/proposals/eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee").set("Cookie", "radioso_session=valid-session");
+
+    expect(response.status).toBe(409);
+    expect(response.body.error).toEqual({
+      code: "proposal_account_mismatch", message: "This proposal belongs to another account.",
+      details: { accountId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", accountName: "Other account", workspaceId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb" },
+    });
   });
 
   it("lets a document manager apply a document proposal, without agent management", async () => {
@@ -221,7 +433,7 @@ describe("createCopilotRoutes", () => {
         runTurn: async function* () { throw new CopilotConflictError(); },
       },
       copilotToolCatalog: [],
-      abuseControlService: { enforce: vi.fn(async () => {}) },
+      abuseControlService: { enforce: vi.fn(async () => admittedAbuseControlDecision()) },
       auditService: { record: vi.fn(async () => {}) },
     } as never));
     app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
@@ -274,7 +486,7 @@ describe("createCopilotRoutes", () => {
       llmCapabilityResolver: { async resolve() { return {}; } },
       operatorCopilotService: { runTurn },
       copilotToolCatalog: [{ requiredPermissions: ["workspace.token.read"] }],
-      abuseControlService: { enforce: vi.fn(async () => {}) },
+      abuseControlService: { enforce: vi.fn(async () => admittedAbuseControlDecision()) },
       auditService: { record: vi.fn(async () => {}) },
     } as never));
     app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
@@ -347,7 +559,7 @@ describe("copilot turn rate limit", () => {
     });
 
   it("spends the operator's own budget, so one operator's loop cannot exhaust a colleague's", async () => {
-    const enforce = vi.fn(async () => {});
+    const enforce = vi.fn(async () => admittedAbuseControlDecision());
     const app = buildApp({ enforce });
 
     await postTurn(app);

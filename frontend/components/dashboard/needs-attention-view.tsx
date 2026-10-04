@@ -25,6 +25,7 @@ import {
   type QualityTriageRecord,
 } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
+import { useOptionalAuth } from '@/lib/auth-context'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
 import { decideDefaultInboxLens, hasBlockingInboxLoadError } from '@/lib/inbox-default-lens'
 import { useInboxAttentionSignal } from '@/hooks/use-inbox-attention-signal'
@@ -60,6 +61,8 @@ interface NeedsAttentionViewProps {
 
 export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionViewProps) {
   const workspaceId = routeState.workspaceId ?? ''
+  // "Taken by: me" is the signed-in teammate, not their organisation.
+  const currentUserId = useOptionalAuth()?.user?.userId ?? null
   const attentionQueries = useNeedsAttentionQueries(workspaceId)
   const queryClient = useQueryClient()
   const router = useRouter()
@@ -175,10 +178,10 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
   const workspaceAgentOptions = useInboxAgentOptions(Boolean(workspaceId))
   const queueAgentOptions = useMemo(() => listInboxAgents(items), [items])
   const agentOptions = workspaceAgentOptions.length > 0 ? workspaceAgentOptions : queueAgentOptions
-  const operatorOptions = useMemo(() => listTakenByOperators(items), [items])
+  const operatorOptions = useMemo(() => listTakenByOperators(items, currentUserId), [items, currentUserId])
   const filteredItems = useMemo(
-    () => filterInboxItems(items, filters, { currentAccountId: accountId }),
-    [items, filters, accountId],
+    () => filterInboxItems(items, filters, { currentUserId }),
+    [items, filters, currentUserId],
   )
 
   const recentlyClosed = useInboxRecentlyClosed(workspaceId)
@@ -468,6 +471,7 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
               </div>
             ) : (
               <InboxResponseView
+                workspaceId={workspaceId}
                 selection={
                   selectedInboxItem
                     ? { source: 'item', item: selectedInboxItem }

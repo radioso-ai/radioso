@@ -7,7 +7,8 @@ import { FormEvent, useEffect, useState } from "react";
 
 import { formatHumanBytes, formatNullableByteInput, parseNullableHumanBytes } from "../lib/byte-units";
 import { canWriteTiers, staffAuthApi, type StaffUser, type UsageLimitProfile } from "../lib/staff-auth-api";
-import { EmptyState, ErrorBanner, limitText, StaffLayout } from "./staff-layout";
+import { limitText } from "../lib/meter-text";
+import { EmptyState, ErrorBanner, StaffLayout } from "./staff-layout";
 
 const emptyForm = {
   key: "",

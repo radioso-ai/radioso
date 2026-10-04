@@ -26,7 +26,8 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { LogoSpinner, Spinner } from '@/components/ui/spinner'
+import { LogoSpinner } from '@/components/ui/spinner'
+import { teammateLabel } from '@/lib/teammate-label'
 import { isValidEmailAddress } from '@/lib/validation'
 
 export function UsersPanel() {
@@ -53,7 +54,7 @@ export function UsersPanel() {
   const ownerUsers = users.filter((user) => user.role === 'owner')
   const activeUserEmails = new Set(users.map((user) => user.email.toLowerCase()))
   const visibleInvitations = invitations.filter((invitation) => (
-    invitation.status === 'pending' && !activeUserEmails.has(invitation.email.toLowerCase())
+    !activeUserEmails.has(invitation.email.toLowerCase())
   ))
   const trimmedEmail = email.trim()
   const isEmailValid = isValidEmailAddress(trimmedEmail)
@@ -335,10 +336,10 @@ export function UsersPanel() {
               </Button>
               <Button
                 onClick={() => void handleInvite()}
-                disabled={!isEmailValid || isSubmitting || !canManageUsers}
+                disabled={!isEmailValid || !canManageUsers}
+                loading={isSubmitting}
               >
-                {isSubmitting ? <Spinner className="mr-2 h-4 w-4" /> : null}
-                <span>Send invite</span>
+                Send invite
               </Button>
               </div>
             </DialogFooter>
@@ -425,7 +426,10 @@ export function UsersPanel() {
                     return (
                       <DashboardTableRow key={user.membershipId}>
                         <DashboardTableCell>
-                          <span className="block truncate font-medium">{user.email}</span>
+                          <span className="block truncate font-medium">{teammateLabel(user)}</span>
+                          {user.displayName ? (
+                            <span className="block truncate text-xs text-muted-foreground">{user.email}</span>
+                          ) : null}
                         </DashboardTableCell>
                         <DashboardTableCell>
                           {canManageTargetUser ? (
@@ -541,7 +545,7 @@ export function UsersPanel() {
                     {ownerUsers.map((user) => (
                       <div key={`${workspace.id}-${user.userId}`} className="flex items-center justify-between gap-4 px-4 py-3">
                         <div className="min-w-0">
-                          <p className="truncate text-sm font-medium text-foreground">{user.email}</p>
+                          <p className="truncate text-sm font-medium text-foreground">{teammateLabel(user)}</p>
                           <p className="text-xs text-muted-foreground">Owner · always has access</p>
                         </div>
                         <span className="text-sm text-muted-foreground">-</span>
@@ -556,7 +560,7 @@ export function UsersPanel() {
                         return (
                           <div key={`${workspace.id}-${user.userId}`} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
                             <div className="min-w-0">
-                              <p className="truncate text-sm font-medium text-foreground">{user.email}</p>
+                              <p className="truncate text-sm font-medium text-foreground">{teammateLabel(user)}</p>
                               <p className="text-xs capitalize text-muted-foreground">{user.role}</p>
                             </div>
                             <Select

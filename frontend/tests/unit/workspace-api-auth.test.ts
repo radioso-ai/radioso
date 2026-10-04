@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { generalSettingsApi, workspaceApi } from '@/lib/api'
 import { request } from '@/lib/api-client'
+import { activateWorkspaceSession } from '@/lib/api-storage'
+import { externalSkillsApi } from '@/lib/api-external-skills'
 
 const createLocalStorage = (seed: Record<string, string> = {}) => {
   const store = new Map(Object.entries(seed))
@@ -55,6 +57,31 @@ const platformSettingsPayload = {
 describe('workspace API auth', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
+  })
+
+  it('saves an MCP connection in the original tab workspace after another tab switches', async () => {
+    const localStorage = createLocalStorage()
+    const originalTab = { localStorage, sessionStorage: createLocalStorage() }
+    vi.stubGlobal('window', originalTab)
+    activateWorkspaceSession('workspace-a', 'route-a')
+    vi.stubGlobal('window', { localStorage, sessionStorage: createLocalStorage() })
+    activateWorkspaceSession('workspace-b', 'route-b')
+    vi.stubGlobal('window', originalTab)
+
+    const fetchMock = vi.fn().mockResolvedValue(createJsonResponse({ id: 'connection-1' }))
+    vi.stubGlobal('fetch', fetchMock)
+    await externalSkillsApi.createConnection('agent-a', {
+      displayName: 'Other agent',
+      serverUrl: 'https://mcp.example.com/mcp',
+      authMethod: 'access_token',
+      accessToken: 'destination-token',
+    })
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe('/backend/api/v1/agents/agent-a/mcp-connections')
+    expect(new Headers(init.headers).get('X-Workspace-Id')).toBe('workspace-a')
+    expect(new Headers(init.headers).get('Authorization')).toBeNull()
+    expect(JSON.parse(init.body as string).accessToken).toBe('destination-token')
   })
 
   it('uses the signed-in session for workspace-scoped requests without cached bearer auth', async () => {

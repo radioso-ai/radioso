@@ -17,3 +17,10 @@ export type { DB } from "./schema.js";
  * never see it — they depend only on `*RepositoryPort` interfaces.
  */
 export type Db = Kysely<DB> | Transaction<DB>;
+
+/**
+ * Runs inside an owner's write transaction after its compare-and-set succeeded and before the
+ * transaction commits. The owner only sequences this hook; its caller owns any cross-module
+ * settlement it performs. Throwing rolls the owner write back.
+ */
+export type OwnerCommitHook<TCommitted> = (transaction: Db, committed: TCommitted) => Promise<void>;

@@ -25,6 +25,7 @@ import type { AuditService } from "../../audit/contracts/index.js";
 import type { CapabilityPolicy } from "../../../shared/domain/capabilityPolicy.js";
 import type { ActionCapabilityMap } from "../../../shared/domain/actionCapabilities.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
+import type { RoutineInvocation } from "../contracts/routineInvocation.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import type { ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
 import type { MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
@@ -47,7 +48,7 @@ import type {
 } from "../types/assistantApi.js";
 import type { UserMessageInputMetadata } from "../../../db/repositories/messageRepository.js";
 import { CHAT_TURN_ROUTE } from "../../../shared/domain/chatTurnRoute.js";
-import { visitorMatchContext } from "./visitorMatchContext.js";
+import { CALLER_KIND_MATCH_KEY, visitorMatchContext } from "./visitorMatchContext.js";
 import {
   NoopProductAnalyticsService,
   type ProductAnalyticsPort,
@@ -66,10 +67,10 @@ import {
   ChatTurnAssembly,
   type ChatTurnAssemblyFactory,
   buildChatTurnContext,
-  type ChatRoutineProvider,
   type ChatTurnAssemblyCoordinationHook,
   type ChatTurnAssemblyRoutineResult,
 } from "./chatTurnAssembly.js";
+import type { ChatRoutineProvider } from "../contracts/routineProvider.js";
 import type { RetrievalTurnPort } from "./retrievalTurnDispatch.js";
 import {
   noopRouteScopedDirectiveRuntime,
@@ -123,6 +124,7 @@ import {
   type TurnPlanCoordinator,
 } from "./turnPlanCoordinator.js";
 import type { TurnPlanDirectiveCandidate } from "./turnPlanService.js";
+import { detectTurnResponseLanguage } from "./turnResponseLanguage.js";
 import { steeringDirectivesFromAuthored } from "../../agents/public.js";
 import {
   type ClarificationMetricDecision,
@@ -139,11 +141,11 @@ import {
   type ConversationOwnershipReader,
 } from "../../handoff/public.js";
 import {
-  buildHandoffNotifyAction,
   isHumanAgentMessage,
   retrievalMissHandoffForTurn,
   suppressedHumanOwnedResponse,
 } from "./handoffOwnership.js";
+import { routineEndingEffectsForTurn } from "./routineEndingEffects.js";
 import {
   ChatTurnSupersededError,
   InMemoryConversationTurnRegistry,
@@ -157,7 +159,7 @@ import { buildAgentChatWorkspaceContext } from "./agentChatWorkspaceContext.js";
 
 export type { ChatGateway } from "../contracts/chatGateway.js";
 export type { ChatStreamEvent } from "../contracts/streamEvents.js";
-export type { ChatRoutineProvider } from "./chatTurnAssembly.js";
+export type { ChatRoutineProvider } from "../contracts/routineProvider.js";
 export { buildRoutinePendingDecisionTransition } from "./chatTurnAssembly.js";
 export { BlankChatAnswerError } from "./chatAnswerErrors.js";
 export { ModelChatGateway } from "./chatGateways.js";
@@ -295,6 +297,7 @@ interface ChatAnswerInput {
   verifiedCustomerId?: string | null;
   verifiedIdentity?: Record<string, unknown> | null;
   previewRoutineIds?: string[];
+  routineInvocation?: RoutineInvocation;
   usageAttribution?: ModelCallUsageAttribution;
   executionMode?: TurnExecutionMode;
 }
@@ -585,6 +588,12 @@ export class ChatService {
       return {};
     }
     const store = new DeferredClarificationStore(this.clarificationStore);
+    // A tool call is not a reply to a pending question: mapping it would spend a model
+    // call and could hand the turn to the question's activator instead of the routine
+    // the call names. The question stays pending for the next message turn.
+    if (session.routineInvocation) {
+      return { store, resolution: { kind: "normal", resolvedPending: false }, clarifier };
+    }
     const resolution = await resolvePendingClarification({
       store,
       recentReader: typeof this.clarificationStore.loadRecent === "function"
@@ -640,26 +649,25 @@ export class ChatService {
     },
     session: PreparedSession,
   ): Promise<string | undefined> {
-    if (!this.responseLanguageDetector) {
-      return Promise.resolve(undefined);
-    }
-    return this.responseLanguageDetector.detect({
-      query: input.query,
-      history: session.history,
-      workspaceContext: { workspaceId: input.workspaceId },
-      usageContext: {
-        accountId: input.accountId,
-        workspaceId: input.workspaceId,
-        conversationId: session.conversation.id,
-        messageId: session.userMessage.id,
-        surface: "assistant",
-        operation: "response_language_detection",
-        attemptKey: "response_language",
+    return detectTurnResponseLanguage({
+      detector: this.responseLanguageDetector,
+      request: {
+        query: input.query,
+        history: session.history,
+        workspaceContext: { workspaceId: input.workspaceId },
+        usageContext: {
+          accountId: input.accountId,
+          workspaceId: input.workspaceId,
+          conversationId: session.conversation.id,
+          messageId: session.userMessage.id,
+          surface: "assistant",
+          operation: "response_language_detection",
+          attemptKey: "response_language",
+        },
       },
-    }).then((result) => {
-      setTraceAttributes({ "chat.response.language": result.responseLanguage });
-      return result.responseLanguage;
-    }).catch(() => undefined);
+      logContext: { workspaceId: input.workspaceId, conversationId: session.conversation.id },
+      logger: this.logger,
+    });
   }
 
   /**
@@ -717,7 +725,9 @@ export class ChatService {
    */
   private planVisitorContext(session: PreparedSession): Record<string, unknown> {
     const { context, dropped, clamped } = visitorMatchContext(session);
-    const variableCount = Object.keys(context).length;
+    // Radioso's own facts are not operator-defined context variables. Counting them would make
+    // this attribute fire on every turn and report one more variable than resolved.
+    const variableCount = Object.keys(context).filter((key) => key !== CALLER_KIND_MATCH_KEY).length;
     if (variableCount > 0 || dropped.length > 0) {
       setTraceAttributes({
         "chat.directive_match.visitor_context_variables": variableCount,
@@ -917,6 +927,11 @@ export class ChatService {
       // turn, there is no retrieval — the routine renders its own reply.
       const routineStartedAt = Date.now();
       this.checkTurnCancellation(coordination, "routing");
+      // A suspended routine keeps the turn without running: it waits for an operator's
+      // decision, not for this input, so the attempt is bypassed and only described.
+      if (suspendedRoutine) {
+        await this.chatTurnAssembly.describeSuspendedRoutineTurn(session, suspendedRoutine);
+      }
       const routineTurn = suspendedRoutine
         ? null
         : await this.chatTurnAssembly.attemptRoutineTurn(session, {
@@ -929,23 +944,11 @@ export class ChatService {
       this.checkTurnCancellation(coordination, "routing");
       if (routineTurn) {
         session = this.withResponseLanguage(session, await responseLanguagePromise);
-        const ownershipHandoff = routineTurn.handoff
-          ? { reason: "routine_handoff" as const, ...routineTurn.handoff }
-          : null;
-        const actions = routineTurn.handoff
-          ? [
-              ...(routineTurn.actions ?? []),
-              buildHandoffNotifyAction({
-                conversationId: session.conversation.id,
-                workspaceId: input.workspaceId,
-                agentId: session.agent.id,
-                userMessageId: session.userMessage.id,
-                reason: "routine_handoff",
-                routineId: routineTurn.handoff.routineId,
-                stepId: routineTurn.handoff.stepId,
-              }),
-            ]
-          : routineTurn.actions;
+        const { ownershipHandoff, actions } = routineEndingEffectsForTurn({
+          session,
+          workspaceId: input.workspaceId,
+          turn: routineTurn,
+        });
         this.beginTurnEmission(coordination);
         const completedTurn = await this.chatTurnLifecycle.completeAssistantTurn({
           workspaceId: input.workspaceId,
@@ -959,6 +962,7 @@ export class ChatService {
           modelCallTrace,
           actions,
           routineStateTransition: routineTurn.routineStateTransition,
+          routineReporter: routineTurn.routineReporter,
           pendingDecisionTransition: routineTurn.pendingDecisionTransition,
           ownershipHandoff,
           suspended: routineTurn.suspended,
@@ -1042,28 +1046,16 @@ export class ChatService {
         const engineTrace = clarificationTurn?.kind === "continue" && clarificationTurn.stage && renderedTurn.engineTrace
           ? this.chatTurnAssembly.conversationTraceWithStage(renderedTurn.engineTrace, clarificationTurn.stage)
           : renderedTurn.engineTrace;
-        const coverageOwnershipHandoff = renderedTurn.handoff
-          ? { reason: "routine_handoff" as const, ...renderedTurn.handoff }
-          : null;
-        const coverageActions = renderedTurn.handoff
-          ? [
-              ...(actions ?? []),
-              buildHandoffNotifyAction({
-                conversationId: session.conversation.id,
-                workspaceId: input.workspaceId,
-                agentId: session.agent.id,
-                userMessageId: session.userMessage.id,
-                reason: "routine_handoff",
-                routineId: renderedTurn.handoff.routineId,
-                stepId: renderedTurn.handoff.stepId,
-              }),
-            ]
-          : actions;
+        const routineEnding = routineEndingEffectsForTurn({
+          session,
+          workspaceId: input.workspaceId,
+          turn: { handoff: renderedTurn.handoff, operatorNotice: renderedTurn.operatorNotice, actions },
+        });
         const retrievalMissHandoff = retrievalMissHandoffForTurn({
           session,
           presentation,
           workspaceId: input.workspaceId,
-          actions: coverageActions,
+          actions: routineEnding.actions,
         });
         this.beginTurnEmission(coordination);
         const completedTurn = await this.chatTurnLifecycle.completeAssistantTurn({
@@ -1077,8 +1069,9 @@ export class ChatService {
           engineTrace,
           modelCallTrace,
           actions: retrievalMissHandoff.actions,
-          ownershipHandoff: coverageOwnershipHandoff ?? retrievalMissHandoff.ownershipHandoff,
+          ownershipHandoff: routineEnding.ownershipHandoff ?? retrievalMissHandoff.ownershipHandoff,
           routineStateTransition: renderedTurn.routineStateTransition,
+          routineReporter: renderedTurn.routineReporter,
           pendingDecisionTransition: renderedTurn.pendingDecisionTransition,
           suspended: renderedTurn.suspended,
           commitRoutineState: renderedTurn.commitRoutineState,
@@ -1122,28 +1115,16 @@ export class ChatService {
       const renderedTurn = preparedTurn;
       const { presentation, actions } = renderedTurn;
       const engineTrace = renderedTurn.engineTrace;
-      const coverageOwnershipHandoff = renderedTurn.handoff
-        ? { reason: "routine_handoff" as const, ...renderedTurn.handoff }
-        : null;
-      const coverageActions = renderedTurn.handoff
-        ? [
-            ...(actions ?? []),
-            buildHandoffNotifyAction({
-              conversationId: session.conversation.id,
-              workspaceId: input.workspaceId,
-              agentId: session.agent.id,
-              userMessageId: session.userMessage.id,
-              reason: "routine_handoff",
-              routineId: renderedTurn.handoff.routineId,
-              stepId: renderedTurn.handoff.stepId,
-            }),
-          ]
-        : actions;
+      const routineEnding = routineEndingEffectsForTurn({
+        session,
+        workspaceId: input.workspaceId,
+        turn: { handoff: renderedTurn.handoff, operatorNotice: renderedTurn.operatorNotice, actions },
+      });
       const retrievalMissHandoff = retrievalMissHandoffForTurn({
         session,
         presentation,
         workspaceId: input.workspaceId,
-        actions: coverageActions,
+        actions: routineEnding.actions,
       });
       this.beginTurnEmission(coordination);
       const completedTurn = await this.chatTurnLifecycle.completeAssistantTurn({
@@ -1157,8 +1138,9 @@ export class ChatService {
         engineTrace,
         modelCallTrace,
         actions: retrievalMissHandoff.actions,
-        ownershipHandoff: coverageOwnershipHandoff ?? retrievalMissHandoff.ownershipHandoff,
+        ownershipHandoff: routineEnding.ownershipHandoff ?? retrievalMissHandoff.ownershipHandoff,
         routineStateTransition: renderedTurn.routineStateTransition,
+        routineReporter: renderedTurn.routineReporter,
         pendingDecisionTransition: renderedTurn.pendingDecisionTransition,
         suspended: renderedTurn.suspended,
         commitRoutineState: renderedTurn.commitRoutineState,
@@ -1243,6 +1225,7 @@ export class ChatService {
     verifiedCustomerId?: string | null;
     verifiedIdentity?: Record<string, unknown> | null;
     previewRoutineIds?: string[];
+    routineInvocation?: RoutineInvocation;
   }): AsyncIterable<ChatStreamEvent> {
     const streamStartedAt = Date.now();
     const coordination: TurnCoordinationState = {
@@ -1297,6 +1280,7 @@ export class ChatService {
     verifiedCustomerId?: string | null;
     verifiedIdentity?: Record<string, unknown> | null;
     previewRoutineIds?: string[];
+    routineInvocation?: RoutineInvocation;
   }, coordination: TurnCoordinationState, modelCallTrace: ModelCallTraceCollector, streamStartedAt: number): AsyncIterable<ChatStreamEvent> {
     let firstAnswerChunkObserved = false;
     const observeFirstAnswerChunk = (
@@ -1414,7 +1398,9 @@ export class ChatService {
       const routineStartedAt = Date.now();
       this.checkTurnCancellation(coordination, "routing");
       const routineResult: { value: Awaited<ReturnType<ChatTurnAssembly["attemptRoutineTurn"]>> } = { value: null };
-      if (!suspendedRoutine) {
+      if (suspendedRoutine) {
+        await this.chatTurnAssembly.describeSuspendedRoutineTurn(session, suspendedRoutine);
+      } else {
         // A routine attempt is speculative: it may yield back to interpretation and
         // retrieval. Keep its composing phase private until it claims the turn so the
         // public sequence never backtracks from composing to interpreting/searching.
@@ -1434,23 +1420,11 @@ export class ChatService {
           this.checkTurnCancellation(coordination, "rendering");
         }
         session = this.withResponseLanguage(session, await responseLanguagePromise);
-        const ownershipHandoff = routineTurn.handoff
-          ? { reason: "routine_handoff" as const, ...routineTurn.handoff }
-          : null;
-        const actions = routineTurn.handoff
-          ? [
-              ...(routineTurn.actions ?? []),
-              buildHandoffNotifyAction({
-                conversationId: session.conversation.id,
-                workspaceId: input.workspaceId,
-                agentId: session.agent.id,
-                userMessageId: session.userMessage.id,
-                reason: "routine_handoff",
-                routineId: routineTurn.handoff.routineId,
-                stepId: routineTurn.handoff.stepId,
-              }),
-            ]
-          : routineTurn.actions;
+        const { ownershipHandoff, actions } = routineEndingEffectsForTurn({
+          session,
+          workspaceId: input.workspaceId,
+          turn: routineTurn,
+        });
         // Durably enqueue the action + advance routine state + persist the reply BEFORE
         // streaming the confirmation. The routine reply is rendered whole (not token-
         // streamed), so delaying the chunk costs nothing — but it means the visitor only
@@ -1468,6 +1442,7 @@ export class ChatService {
           modelCallTrace,
           actions,
           routineStateTransition: routineTurn.routineStateTransition,
+          routineReporter: routineTurn.routineReporter,
           pendingDecisionTransition: routineTurn.pendingDecisionTransition,
           ownershipHandoff,
           suspended: routineTurn.suspended,
@@ -1693,28 +1668,16 @@ export class ChatService {
           ? persistedQuestionSuggestions
           : undefined,
       };
-      const coverageOwnershipHandoff = coverageRoutineEffects.handoff
-        ? { reason: "routine_handoff" as const, ...coverageRoutineEffects.handoff }
-        : null;
-      const coverageActions = coverageRoutineEffects.handoff
-        ? [
-            ...(actions ?? []),
-            buildHandoffNotifyAction({
-              conversationId: preparedSession.conversation.id,
-              workspaceId: input.workspaceId,
-              agentId: preparedSession.agent.id,
-              userMessageId: preparedSession.userMessage.id,
-              reason: "routine_handoff",
-              routineId: coverageRoutineEffects.handoff.routineId,
-              stepId: coverageRoutineEffects.handoff.stepId,
-            }),
-          ]
-        : actions;
+      const routineEnding = routineEndingEffectsForTurn({
+        session: preparedSession,
+        workspaceId: input.workspaceId,
+        turn: { handoff: coverageRoutineEffects.handoff, operatorNotice: coverageRoutineEffects.operatorNotice, actions },
+      });
       const retrievalMissHandoff = retrievalMissHandoffForTurn({
         session: preparedSession,
         presentation,
         workspaceId: input.workspaceId,
-        actions: coverageActions,
+        actions: routineEnding.actions,
       });
 
       if (!emissionStarted) {
@@ -1730,8 +1693,9 @@ export class ChatService {
         engineTrace,
         modelCallTrace,
         actions: retrievalMissHandoff.actions,
-        ownershipHandoff: coverageOwnershipHandoff ?? retrievalMissHandoff.ownershipHandoff,
+        ownershipHandoff: routineEnding.ownershipHandoff ?? retrievalMissHandoff.ownershipHandoff,
         routineStateTransition: coverageRoutineEffects.routineStateTransition,
+        routineReporter: coverageRoutineEffects.routineReporter,
         pendingDecisionTransition: coverageRoutineEffects.pendingDecisionTransition,
         suspended: coverageRoutineEffects.suspended,
         commitRoutineState: coverageRoutineEffects.commitRoutineState,

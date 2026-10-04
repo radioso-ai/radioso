@@ -7,11 +7,11 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Spinner } from '@/components/ui/spinner'
 import { authApi, seedWorkspaceSession } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { useAuth } from '@/lib/auth-context'
 import { buildDashboardHref } from '@/lib/dashboard-routes'
+import { useAuthSunrise } from './auth-shell'
 import { MethodDivider } from '@/components/ui/method-divider'
 import { InvitationGoogleButton } from './invitation-google-button'
 
@@ -36,7 +36,9 @@ export function InvitationAcceptForm({
 }) {
   const router = useRouter()
   const { login } = useAuth()
+  const riseSun = useAuthSunrise()
   const [email, setEmail] = useState(invitedEmail)
+  const [displayName, setDisplayName] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -58,9 +60,15 @@ export function InvitationAcceptForm({
 
     setIsSubmitting(true)
     try {
-      const response = await authApi.acceptInvitation(invitationToken, { email, password })
+      // Only a login this acceptance creates takes a name; an existing one keeps its own.
+      const response = await authApi.acceptInvitation(invitationToken, {
+        email,
+        password,
+        ...(mode === 'new_password' && displayName.trim() ? { displayName: displayName.trim() } : {}),
+      })
       seedWorkspaceSession(response.workspaceId, response.workspacePublicRouteKey)
-      await login(email, response.userId, response.accountId, response.organizationName)
+      riseSun()
+      await login({ ...response, email })
       // An invited teammate joins an existing workspace (invitations only
       // exist on workspaces someone already set up) — the Inbox, not
       // onboarding, is the normal landing surface here, same as any other
@@ -115,6 +123,19 @@ export function InvitationAcceptForm({
         </>
       ) : null}
       <p className="text-sm text-muted-foreground">{passwordPrompt}</p>
+      {mode === 'new_password' ? (
+        <div className="space-y-2">
+          <Label htmlFor="invite-display-name">Your name (optional)</Label>
+          <Input
+            id="invite-display-name"
+            type="text"
+            autoComplete="name"
+            value={displayName}
+            onChange={(event) => setDisplayName(event.target.value)}
+            disabled={isSubmitting}
+          />
+        </div>
+      ) : null}
       <div className="space-y-2">
         <Label htmlFor="invite-email">Email</Label>
         <Input
@@ -151,9 +172,8 @@ export function InvitationAcceptForm({
         </div>
       )}
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
-      <Button type="submit" className="w-full" disabled={isSubmitting}>
-        {isSubmitting ? <Spinner className="mr-2 h-4 w-4" /> : null}
-        <span>Join account</span>
+      <Button type="submit" className="w-full" loading={isSubmitting}>
+        Join account
       </Button>
       {requiresExistingPassword ? (
         <p className="text-center text-sm">

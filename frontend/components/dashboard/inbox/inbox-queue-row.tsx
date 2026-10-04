@@ -3,6 +3,7 @@
 import { CheckCircle2, Hand, ShieldCheck, ThumbsDown, type LucideIcon } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
+import { closedByLine, recentlyClosedKindLabel } from '@/lib/conversation-activity'
 import { formatInboxRowTimestamp } from '@/lib/needs-attention-format'
 import {
   formatInboxDuration,
@@ -77,10 +78,10 @@ export function InboxQueueRow({
       <span className="truncate text-sm font-medium text-foreground">{item.title}</span>
       <span className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
         {lastMessage ? <span>{lastMessage}</span> : null}
-        {item.takenByAccountId ? (
+        {item.takenBy ? (
           <>
             {lastMessage ? <span aria-hidden>·</span> : null}
-            <span>taken by {item.takenByDisplayName?.trim() || 'a teammate'}</span>
+            <span>taken by {item.takenBy.label ?? 'a teammate'}</span>
           </>
         ) : null}
       </span>
@@ -97,10 +98,6 @@ export function InboxRecentlyClosedRow({
   selected: boolean
   onSelect: (item: RecentlyClosedInboxItem) => void
 }) {
-  // No attribution field exists on the triage record yet (see
-  // QualityTriageRecord in the backend contract) — this stays resolution +
-  // timestamp only rather than guessing who closed it.
-  const stateLabel = item.state === 'resolved' ? 'Resolved' : 'Dismissed'
   return (
     <button
       type="button"
@@ -115,7 +112,7 @@ export function InboxRecentlyClosedRow({
       <div className="min-w-0">
         <span className="block truncate text-sm text-foreground">{item.title}</span>
         <span className="text-xs text-muted-foreground">
-          {stateLabel} · {formatInboxRowTimestamp(item.closedAt)}
+          {recentlyClosedKindLabel(item)} · {closedByLine(item, formatInboxRowTimestamp(item.closedAt))}
         </span>
       </div>
     </button>

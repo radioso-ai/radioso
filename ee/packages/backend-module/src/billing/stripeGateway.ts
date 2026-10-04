@@ -66,6 +66,20 @@ export interface StripeInvoiceEventData {
   customerId: string;
 }
 
+/**
+ * The Stripe event types billing acts on. `StripeWebhookEvent` carries a typed payload for exactly
+ * these, and the catalog sync subscribes the webhook endpoint to exactly these.
+ */
+export const STRIPE_WEBHOOK_EVENT_TYPES = [
+  "checkout.session.completed",
+  "customer.subscription.updated",
+  "customer.subscription.deleted",
+  "invoice.paid",
+  "invoice.payment_failed",
+] as const;
+
+export type StripeHandledWebhookEventType = (typeof STRIPE_WEBHOOK_EVENT_TYPES)[number];
+
 export type StripeWebhookEvent =
   | { id: string; type: "checkout.session.completed"; session: StripeCheckoutSessionEventData }
   | { id: string; type: "customer.subscription.updated"; subscription: StripeSubscriptionEventData }

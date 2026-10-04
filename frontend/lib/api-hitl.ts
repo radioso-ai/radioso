@@ -1,19 +1,22 @@
 import { request, type ErrorResponse } from './api-client'
+import { getApiErrorCode } from './api-error'
 import { withQuery } from './api-query'
 import type {
   ChatConversationTail,
+  ConversationOperatorsResponse,
   ConversationOwnershipResponse,
   HandBackConversationRequest,
   HumanReplyMessageResponse,
   HumanReplyRequest,
   PendingApprovalDecisionListResponse,
+  RecentlyClosedInboxItemsResponse,
   ResolveDecisionRequest,
   ResolveDecisionResponse,
   TakeOverConversationRequest,
   TransferConversationOwnershipRequest,
 } from './api-types'
 
-export type HitlApiStatus = 409 | 422
+type HitlApiStatus = 404 | 409 | 422
 
 export const getHitlApiErrorStatus = (error: unknown): number | undefined => {
   if (!error || typeof error !== 'object' || !('status' in error)) {
@@ -28,6 +31,27 @@ export const isHitlApiStatusError = (
   error: unknown,
   status: HitlApiStatus,
 ): error is ErrorResponse & { status: HitlApiStatus } => getHitlApiErrorStatus(error) === status
+
+type TransferFailureCause = 'target_unavailable' | 'conversation_missing'
+
+/**
+ * Why a transfer 404'd, read from the error code: the target teammate is no
+ * longer eligible (`transfer_target_unavailable`), or the conversation itself
+ * is gone (`not_found`). Null for any other failure.
+ */
+export const transferFailureCause = (error: unknown): TransferFailureCause | null => {
+  if (!isHitlApiStatusError(error, 404)) {
+    return null
+  }
+  switch (getApiErrorCode(error)) {
+    case 'transfer_target_unavailable':
+      return 'target_unavailable'
+    case 'not_found':
+      return 'conversation_missing'
+    default:
+      return null
+  }
+}
 
 export const hitlApi = {
   async listPendingDecisions(signal?: AbortSignal): Promise<PendingApprovalDecisionListResponse> {
@@ -65,6 +89,26 @@ export const hitlApi = {
     )
   },
 
+  /** The teammates who can own a conversation in the current workspace: the valid transfer targets. */
+  async listConversationOperators(signal?: AbortSignal): Promise<ConversationOperatorsResponse> {
+    return request<ConversationOperatorsResponse>(
+      '/conversations/operators',
+      { method: 'GET', ...(signal ? { signal } : {}) },
+      { withSession: true },
+    )
+  },
+
+  async listRecentlyClosed(
+    params: { limit?: number } = {},
+    signal?: AbortSignal,
+  ): Promise<RecentlyClosedInboxItemsResponse> {
+    return request<RecentlyClosedInboxItemsResponse>(
+      withQuery('/conversations/recently-closed', params),
+      { method: 'GET', ...(signal ? { signal } : {}) },
+      { withSession: true },
+    )
+  },
+
   async transferConversation(
     conversationId: string,
     body: TransferConversationOwnershipRequest,
@@ -89,7 +133,7 @@ export const hitlApi = {
 
   async tailConversation(
     conversationId: string,
-    params: { cursor?: string; limit?: number } = {},
+    params: { cursor?: string; limit?: number; activityCursor?: string } = {},
     signal?: AbortSignal,
   ): Promise<ChatConversationTail> {
     return request<ChatConversationTail>(

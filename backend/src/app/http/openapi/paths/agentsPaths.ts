@@ -60,6 +60,7 @@ export const registerAgentsPaths = (
     path: "/api/v1/agents/{agentId}/chat",
     tags: ["Agent Channels"],
     summary: "Run chat through a REST credential bound to this agent",
+    description: "Send `message` or `routine` (a tool call to one exposed routine; validated against the catalog of the release the conversation is pinned to before any turn state is written, with the same `routine_tool_unknown` / `routine_invocation_invalid` errors as the MCP converse ask route), never both. `startConversation: true` requests the bootstrap greeting instead of a turn: it accepts a `message` (ignored) but not a `routine`.",
     operationId: "createAgentChannelChatResponse",
     security: [{ [security.agentChannelBearerAuthScheme.name]: [] }],
     request: {
@@ -71,15 +72,16 @@ export const registerAgentsPaths = (
     },
     responses: {
       200: {
-        description: "Agent chat response returned as JSON or SSE",
+        description: "Agent chat response returned as JSON or SSE; the SSE `done` frame carries the same envelope core as the JSON body",
         content: {
-          "application/json": { schema: schemas.AssistantChatResponseSchema },
+          "application/json": { schema: schemas.AgentChannelChatResponseSchema },
           "text/event-stream": { schema: z.string() },
         },
       },
       204: { description: "Conversation start completed without a greeting" },
-      400: { description: "Request validation failed", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      400: { description: "Request validation failed, or routine invocation input did not match the tool's schema", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
       401: { description: "Invalid, inactive, cross-audience, or cross-agent credential", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Routine tool is not in the agent's catalog", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
       429: { description: "Agent channel rate limit exceeded", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
     },
   });
@@ -168,7 +170,7 @@ export const registerAgentsPaths = (
     method: "get",
     path: "/api/v1/agents/{agentId}/channel-credentials",
     tags: ["Agent Channels"],
-    summary: "List MCP and REST chat credentials for an agent with cursor pagination",
+    summary: "List live MCP and REST chat credentials for an agent with cursor pagination",
     operationId: "listAgentChannelCredentials",
     security: security.workspaceAdminSecurity,
     request: {
@@ -238,6 +240,23 @@ export const registerAgentsPaths = (
     responses: {
       200: { description: "Agent updated", content: { "application/json": { schema: schemas.ConversationAgentSchema } } },
       400: { description: "Request validation failed", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Agent not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    },
+  });
+
+  registry.registerPath({
+    method: "post",
+    path: "/api/v1/agents/{agentId}/public-id/rotate",
+    tags: ["Agents"],
+    summary: "Rotate the agent's public id",
+    description: "Replaces the identifier callers reach this agent by. Every agent connected without a credential is dropped on its next request. The agent must already have a public id, which publishing its agent card mints.",
+    operationId: "rotateAgentPublicId",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: { params: schemas.AgentParamsSchema },
+    responses: {
+      200: { description: "Agent with its replacement public id", content: { "application/json": { schema: schemas.ConversationAgentSchema } } },
+      400: { description: "The agent has no public id to rotate", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
       401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
       404: { description: "Agent not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
     },

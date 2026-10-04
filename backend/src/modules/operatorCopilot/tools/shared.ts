@@ -92,12 +92,31 @@ export const describeNamedAgent = async <TInput extends NamedAgentInput>(
 
 export const normalizeEntityName = (value: string): string => value.trim().normalize("NFKC").toLowerCase();
 export const asRecord = (value: object): Record<string, unknown> => value as Record<string, unknown>;
-export const requiredPageAgent = (agentId: string | null): string => {
-  if (!agentId) throw new Error("No agent context is available");
+/**
+ * A dashboard page context always names its agent; a stateless transport (operator MCP) never has
+ * one. A caller with no dashboard page open must correct its own call, not learn that the runtime
+ * is unavailable -- so this is a domain `badRequest`, which the operator MCP boundary maps to a
+ * clean `invalid_arguments` rejection instead of an opaque dependency failure (see
+ * `toApplicationError` in mcpApplicationService.ts).
+ *
+ * Most callers' schemas accept `agentName` alongside `agentId` (resolved by `describeNamedAgent`),
+ * so the message names both by default. A descriptor whose schema has no `agentName` field (e.g.
+ * `agent_publication_state`) must pass `{ acceptsAgentName: false }`, or the message tells the
+ * caller to pass a field its own schema would then reject.
+ */
+export const requiredPageAgent = (
+  agentId: string | null,
+  options: { readonly acceptsAgentName?: boolean } = {},
+): string => {
+  if (!agentId) {
+    throw badRequest(options.acceptsAgentName === false
+      ? "No agent is selected. Pass agentId."
+      : "No agent is selected. Pass agentId or agentName.");
+  }
   return agentId;
 };
 export const requiredPageConversation = (conversationId: string | null): string => {
-  if (!conversationId) throw new Error("No conversation context is available");
+  if (!conversationId) throw badRequest("No conversation is selected. Pass conversationId.");
   return conversationId;
 };
 export const requiredCopilotConversation = (context: { copilotConversationId?: string }): string => {
@@ -105,6 +124,13 @@ export const requiredCopilotConversation = (context: { copilotConversationId?: s
   if (!conversationId) throw new Error("Copilot proposal drafting requires a persisted conversation");
   return conversationId;
 };
+/**
+ * `agentCardEnabled` and `publicAgentAccessEnabled` change who can reach the agent rather than how
+ * it answers, and the proposal card shows a setting key and a value. Naming the consequence here
+ * is what makes the operator's review of those two an informed one.
+ */
+export const agentSettingReachNote = "Two settings change who can reach the agent rather than how it answers: agentCardEnabled publishes its public cards, and publicAgentAccessEnabled lets any AI agent connect with no credential (it needs agentCardEnabled on too). When proposing either, say in the rationale what it opens or closes.";
+
 export const scopedAgentDraftPublicationNote = "It drafts a proposal for operator review and changes nothing until the operator applies it. Applying a scoped authoring change saves a private agent draft. The current published revision and ongoing conversations are retained; use Review & Publish before new customer conversations use the change. Unversioned/live fields remain live.";
 export const copilotProposalOrigin = (context: { copilotConversationId?: string; operatorMcpInvocationId?: string }) => {
   if (context.operatorMcpInvocationId && !context.copilotConversationId) {
@@ -116,13 +142,14 @@ export const recordProposalCreated = async (
   auditService: CopilotAuditPort,
   context: CopilotActor & { accountId: string; workspaceId: string },
   proposal: CopilotProposal,
+  metadata: Record<string, unknown> = {},
 ): Promise<void> => {
   await auditService.record({
     accountId: context.accountId,
     workspaceId: context.workspaceId,
     eventType: "copilot.proposal.created",
     eventStatus: "success",
-    metadata: withCopilotActor(context, { proposalId: proposal.id, targetType: proposal.targetType }),
+    metadata: withCopilotActor(context, { proposalId: proposal.id, targetType: proposal.targetType, ...metadata }),
   });
 };
 
@@ -139,7 +166,7 @@ export const proposalOutputSchema = z.object({
   proposalId: z.string().uuid(),
   targetType: z.enum(copilotProposalTargetTypes),
   targetLabel: z.string(),
-  summary: z.string(),
+  summary: z.string().min(1).max(MAX_COPILOT_PROPOSAL_SUMMARY),
   /** Absent when the change was proposed unmeasured, so silence never reads as verified. */
   evidence: z.object({
     total: z.number().int().nonnegative(),

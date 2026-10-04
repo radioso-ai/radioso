@@ -87,6 +87,9 @@ const declarations: readonly PolicyDeclaration[] = [
   sessionOnly("DELETE", "/api/v1/account/invitations/:invitationId", "account.users.manage"),
   sessionOnly("POST", "/api/v1/account/switch", "account.membership.read"),
   sessionOnly("GET", "/api/v1/auth/session"),
+  // A profile belongs to a person; machine principals act for a workspace and have none.
+  sessionOnly("GET", "/api/v1/auth/profile"),
+  sessionOnly("PATCH", "/api/v1/auth/profile"),
   sessionOnly("POST", "/api/v1/auth/invitations/:invitationToken/accept-as-current-user"),
   sessionOnly("DELETE", "/api/v1/account", "account.organization.delete"),
   sessionOnly("PATCH", "/api/v1/account", "account.organization.rename"),
@@ -224,6 +227,7 @@ const declarations: readonly PolicyDeclaration[] = [
   sessionOnly("POST", "/api/v1/settings/general/website-embed-token/rotate"),
   sessionOnly("POST", "/api/v1/agents/:agentId/anonymous-chat-token/rotate"),
   sessionOnly("POST", "/api/v1/agents/:agentId/website-embed-token/rotate"),
+  sessionOnly("POST", "/api/v1/agents/:agentId/public-id/rotate", "workspace.agents.manage"),
   // Rendered by the dashboard in an `<img>`, so it must work from a cookie session alone.
   sessionOnly("GET", "/api/v1/agents/:agentId/assistant-logo", "workspace.agents.read"),
   sessionOnly("POST", "/api/v1/agents/:agentId/assistant-logo", "workspace.agents.manage"),
@@ -297,7 +301,10 @@ const declarations: readonly PolicyDeclaration[] = [
     ["PATCH", "/api/v1/agents/:agentId/skills/:skillId", "workspace.agents.manage"],
     ["DELETE", "/api/v1/agents/:agentId/skills/:skillId", "workspace.agents.manage"],
   ].map(([method, path, permission]) => sessionOnly(method, path, permission)),
+  // The Inbox's recently closed strip: read from the takeover surface, so it takes the same permission.
+  sessionOnly("GET", "/api/v1/conversations/recently-closed", "workspace.conversation.takeover"),
   ...[
+    ["GET", "/api/v1/conversations/operators"],
     ["POST", "/api/v1/conversations/:conversationId/takeover"],
     ["POST", "/api/v1/conversations/:conversationId/reply"],
     ["POST", "/api/v1/conversations/:conversationId/transfer"],
@@ -320,6 +327,7 @@ const declarations: readonly PolicyDeclaration[] = [
     ["DELETE", "/api/v1/copilot/conversations/:conversationId", "workspace.agents.read"],
     ["GET", "/api/v1/copilot/proposals/:proposalId", "workspace.agents.read"],
     ["POST", "/api/v1/copilot/proposals/:proposalId/apply", "workspace.agents.manage"],
+    ["POST", "/api/v1/copilot/proposals/:proposalId/approve", "workspace.agents.read"],
     ["POST", "/api/v1/copilot/proposals/:proposalId/dismiss", "workspace.agents.read"],
     ["POST", "/api/v1/copilot/turns", "workspace.chat.use"],
   ].map(([method, path, permission]) => sessionOnly(method, path, permission)),

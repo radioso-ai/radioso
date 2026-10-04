@@ -49,3 +49,33 @@ export const compareSelectionRepeatsRevision = (
   mode: 'single' | 'compare',
   selected: readonly string[],
 ): boolean => mode === 'compare' && selected.length === 2 && selected[0] === selected[1]
+
+const readCandidateRefusalDiagnosticMessages = (details: unknown): string[] => {
+  if (!details || typeof details !== 'object' || !('diagnostics' in details)) return []
+  const diagnostics = (details as { diagnostics?: unknown }).diagnostics
+  if (!Array.isArray(diagnostics)) return []
+  const messages = diagnostics.map((diagnostic) =>
+    diagnostic && typeof diagnostic === 'object' && 'message' in diagnostic
+      ? (diagnostic as { message?: unknown }).message
+      : null,
+  )
+  return [...new Set(messages.filter((message): message is string => typeof message === 'string'))]
+}
+
+/**
+ * The backend refuses to build a test candidate from a draft it cannot release (e.g. a
+ * routine that references something missing, `422 revision_invalid`). This turns that
+ * refusal into the line the operator sees for why the version selector lists only
+ * published revisions. Diagnostics never carry a routine name, only a `routineId`, so
+ * the message does not invent one.
+ */
+export const describeCandidateRefusal = (cause: unknown): string => {
+  if (!(cause instanceof Error)) return 'Draft not testable: The draft candidate is unavailable.'
+  const body = 'error' in cause ? (cause as { error?: unknown }).error : undefined
+  const details = body && typeof body === 'object' && 'details' in body
+    ? (body as { details?: unknown }).details
+    : undefined
+  const diagnosticMessages = readCandidateRefusalDiagnosticMessages(details)
+  const summary = `Draft not testable: ${cause.message}`
+  return diagnosticMessages.length ? `${summary} ${diagnosticMessages.join('; ')}` : summary
+}

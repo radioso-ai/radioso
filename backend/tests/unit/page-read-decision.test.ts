@@ -242,4 +242,21 @@ describe("pageReadRoutineCandidates", () => {
       source: { kind: "routine", routineId: "routine-a" },
     }]);
   });
+
+  it("treats a step whose instruction references page_context as a candidate, and other context refs as nothing", () => {
+    const routine = {
+      id: "routine-b",
+      rootStepId: "confirm",
+      transitions: [],
+      steps: [
+        { id: "confirm", kind: "chat", action: "...", metadata: { contextRefs: ["page_context"] } },
+        { id: "cart", kind: "chat", action: "...", metadata: { contextRefs: ["cart"] } },
+        { id: "plain", kind: "chat", action: "..." },
+      ],
+    } satisfies Routine;
+
+    expect(pageReadRoutineCandidates(routine)).toEqual([{
+      source: { kind: "routine", routineId: "routine-b" },
+    }]);
+  });
 });

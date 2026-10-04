@@ -28,6 +28,10 @@ const manifest = [
     exportName: "DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_DEFAULT_PROMPT",
   },
   {
+    source: "routine-step-reask-exhausted.md",
+    exportName: "DEFAULT_ROUTINE_STEP_REASK_EXHAUSTED_PROMPT",
+  },
+  {
     source: "routine-next-step.md",
     exportName: "DEFAULT_ROUTINE_NEXT_STEP_PROMPT",
   },
@@ -58,6 +62,10 @@ const manifest = [
   {
     source: "steering-clarification.md",
     exportName: "DEFAULT_CLARIFICATION_STEERING_PROMPT",
+  },
+  {
+    source: "routine-step-steering.md",
+    exportName: "DEFAULT_ROUTINE_STEP_STEERING_PROMPT",
   },
 ];
 

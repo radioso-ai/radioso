@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { context, dependencies } from "./copilot-tools-test-helpers.js";
 
@@ -45,6 +45,7 @@ describe("copilot chat readers", () => {
       includeOwnership: true,
       includeTurnFailureDebug: true,
       includeLatency: true,
+      includeOperatorLabel: true,
     });
   });
 
@@ -57,6 +58,7 @@ describe("copilot chat readers", () => {
       agentId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       agentName: "Support",
       sourceChannel: "website_embed",
+      callerKind: "human" as const,
       createdAt: "2026-08-18T10:00:00.000Z",
       updatedAt: "2026-08-18T10:00:02.000Z",
       messageCount: 1,
@@ -99,6 +101,8 @@ describe("copilot chat readers", () => {
       includeOwnership: true,
       includeTurnFailureDebug: true,
       includeLatency: true,
+      includeOperatorLabel: true,
+      activity: { includeFeedback: true },
     });
     expect(result.transcript.messages[0]).toMatchObject({
       answerOutcome: "retrieval.answer",
@@ -108,6 +112,43 @@ describe("copilot chat readers", () => {
     });
     expect(result.transcript.messages[0]).not.toHaveProperty("debug");
     expect(tool.outputSchema.safeParse(result).success).toBe(true);
+  });
+
+  it("names the teammate who wrote a human reply, alongside the signature the visitor saw", async () => {
+    const ports = dependencies();
+    const transcriptTool = ports.descriptors.find((descriptor) => descriptor.name === "conversation_transcript")!;
+    const traceTool = ports.descriptors.find((descriptor) => descriptor.name === "turn_trace")!;
+    const conversationId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+    const reply = {
+      id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      role: "assistant" as const,
+      source: "human_agent",
+      content: "Happy to help.",
+      createdAt: "2026-08-18T10:00:02.000Z",
+      operatorLabel: "carl@acme.example",
+    };
+    ports.getConversation.mockResolvedValue({
+      conversationId,
+      agentId: null,
+      agentName: null,
+      sourceChannel: "website_embed",
+      callerKind: "human" as const,
+      createdAt: "2026-08-18T10:00:00.000Z",
+      updatedAt: "2026-08-18T10:00:02.000Z",
+      messageCount: 1,
+      messages: [reply],
+    });
+    ports.getConversationTurn.mockResolvedValue({ conversationId, message: reply });
+
+    const transcript = await transcriptTool.createTool(context(null)).invoke({ conversationId }, {} as never);
+    const trace = await traceTool.createTool(context(null)).invoke({ messageId: reply.id }, {} as never);
+
+    expect(transcript).toMatchObject({
+      transcript: { messages: [{ operatorLabel: "carl@acme.example", operatorDisplayName: null }] },
+    });
+    expect(trace).toMatchObject({ trace: { message: { operatorLabel: "carl@acme.example", operatorDisplayName: null } } });
+    expect(transcriptTool.outputSchema.safeParse(transcript).success).toBe(true);
+    expect(traceTool.outputSchema.safeParse(trace).success).toBe(true);
   });
 
   /**
@@ -172,4 +213,135 @@ describe("copilot chat readers", () => {
     });
   });
 
+
+  it("carries the conversation's activity: who handed off, took, reassigned, and handed back, and what was decided", async () => {
+    const ports = dependencies();
+    const tool = ports.descriptors.find((descriptor) => descriptor.name === "conversation_transcript")!;
+    const conversationId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+    const bea = { userId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", label: "Bea" };
+    const carl = { userId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", label: "carl@acme.example" };
+    const entry = (overrides: Record<string, unknown>) => ({
+      id: "ffffffff-ffff-4fff-8fff-ffffffffffff",
+      createdAt: "2026-08-18T10:00:01.000Z",
+      actor: null,
+      subject: null,
+      from: null,
+      handoffReason: null,
+      decision: null,
+      resolution: null,
+      assistantMessageId: null,
+      ...overrides,
+    });
+    ports.getConversation.mockResolvedValue({
+      conversationId,
+      agentId: null,
+      agentName: null,
+      sourceChannel: "website_embed",
+      callerKind: "human" as const,
+      createdAt: "2026-08-18T10:00:00.000Z",
+      updatedAt: "2026-08-18T10:00:05.000Z",
+      messageCount: 0,
+      messages: [],
+      activity: [
+        entry({ kind: "handoff_requested", handoffReason: "retrieval_miss" }),
+        entry({ kind: "reassigned", actor: bea, subject: carl, from: bea }),
+        entry({ kind: "approval_decided", actor: carl, decision: { optionId: "approve", label: "Approve refund" } }),
+        entry({ kind: "handed_back", actor: carl }),
+      ],
+    });
+
+    const result = await tool.createTool(context(null)).invoke({ conversationId }, {} as never) as {
+      transcript: { activity: Array<Record<string, unknown>> };
+    };
+
+    expect(result.transcript.activity).toEqual([
+      expect.objectContaining({ kind: "handoff_requested", actor: null, handoffReason: "retrieval_miss" }),
+      expect.objectContaining({ kind: "reassigned", actor: bea, subject: carl, from: bea }),
+      expect.objectContaining({ kind: "approval_decided", actor: carl, decision: { optionId: "approve", label: "Approve refund" } }),
+      expect.objectContaining({ kind: "handed_back", actor: carl }),
+    ]);
+    expect(result.transcript.activity[0]).not.toHaveProperty("id");
+    expect(tool.outputSchema.safeParse(result).success).toBe(true);
+  });
+
+  it("reads feedback outcomes only for an operator who holds Quality access now", async () => {
+    const ports = dependencies();
+    const tool = ports.descriptors.find((descriptor) => descriptor.name === "conversation_transcript")!;
+    const conversationId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+    ports.getConversation.mockResolvedValue({
+      conversationId,
+      agentId: null,
+      agentName: null,
+      sourceChannel: "website_embed",
+      callerKind: "human" as const,
+      createdAt: "2026-08-18T10:00:00.000Z",
+      updatedAt: "2026-08-18T10:00:05.000Z",
+      messageCount: 0,
+      messages: [],
+    });
+    const member = { ...context(null), currentAuthorization: { hasAllPermissions: vi.fn(async () => false) } };
+
+    await tool.createTool(member).invoke({ conversationId }, {} as never);
+
+    expect(member.currentAuthorization.hasAllPermissions).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      operatorUserId: "operator-1",
+      requiredPermissions: ["workspace.quality.read"],
+    });
+    expect(ports.getConversation).toHaveBeenCalledWith(
+      "workspace-1",
+      conversationId,
+      { limit: 100 },
+      expect.objectContaining({ activity: { includeFeedback: false } }),
+    );
+  });
+
+  it("keeps a long timeline's newest events, oldest first, and says it cut the rest", async () => {
+    const ports = dependencies();
+    const tool = ports.descriptors.find((descriptor) => descriptor.name === "conversation_transcript")!;
+    const conversationId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+    const bea = { userId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", label: "Bea" };
+    const events = Array.from({ length: 45 }, (_, index) => ({
+      id: `ffffffff-ffff-4fff-8fff-${String(index).padStart(12, "0")}`,
+      kind: index % 2 === 0 ? "claimed" : "handed_back",
+      createdAt: new Date(Date.UTC(2026, 7, 18, 10, 0, index)).toISOString(),
+      actor: bea,
+      subject: null,
+      from: null,
+      handoffReason: null,
+      decision: null,
+      resolution: null,
+      assistantMessageId: null,
+    }));
+    ports.getConversation.mockResolvedValue({
+      conversationId,
+      agentId: null,
+      agentName: null,
+      sourceChannel: "website_embed",
+      callerKind: "human" as const,
+      createdAt: "2026-08-18T10:00:00.000Z",
+      updatedAt: "2026-08-18T10:01:00.000Z",
+      messageCount: 0,
+      messages: [],
+      activity: events,
+    });
+
+    const result = await tool.createTool(context(null)).invoke({ conversationId }, {} as never) as {
+      transcript: {
+        activity: Array<{ createdAt: string }>;
+        truncation?: { entries: Array<Record<string, unknown>> };
+      };
+    };
+
+    expect(result.transcript.activity.map((entry) => entry.createdAt))
+      .toEqual(events.slice(-40).map((event) => event.createdAt));
+    expect(result.transcript.truncation?.entries).toContainEqual({
+      path: "$.activity",
+      reason: "array_length",
+      originalLength: 45,
+      retainedLength: 40,
+    });
+    expect(tool.outputSchema.safeParse(result).success).toBe(true);
+  });
 });

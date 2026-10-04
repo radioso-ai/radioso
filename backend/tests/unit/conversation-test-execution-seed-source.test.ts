@@ -22,6 +22,7 @@ const buildConversation = (overrides: Partial<ConversationRecord> = {}): Convers
   agentName: null,
   agentInternalName: null,
   sourceChannel: "website_embed",
+  callerKind: "human" as const,
   sourceOrigin: null,
   channelContext: null,
   anonymousSessionId: null,

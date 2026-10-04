@@ -156,6 +156,7 @@ describe("slackBlockKitBuilder", () => {
     });
 
     expect(JSON.stringify(message.blocks)).toContain("Customer needs help with billing.");
+    expect(message.blocks[0].block_id).toBe("ownership_context");
     expect(JSON.stringify(message.blocks)).toContain(`<${permalink.replaceAll("&", "&amp;")}|Open in dashboard>`);
     const actions = message.blocks.find((block) => block.type === "actions") as { elements: Array<Record<string, unknown>> };
     expect(actions.elements.map((element) => element.action_id)).toEqual(["ownership_takeover"]);
@@ -191,12 +192,46 @@ describe("slackBlockKitBuilder", () => {
 
     const rendered = JSON.stringify(message.blocks);
     expect(rendered).toContain("Handled by Dana");
+    expect(message.blocks[0].block_id).toBe("ownership_context");
     const actions = message.blocks.find((block) => block.type === "actions") as { elements: Array<Record<string, unknown>> };
     expect(actions.elements.map((element) => element.action_id)).toEqual(["ownership_talk", "ownership_handback"]);
     expect(actions.elements.map((element) => JSON.parse(element.value as string))).toEqual([
       { conversationId: "conv_1", workspaceId: "ws_1", version: 3 },
       { conversationId: "conv_1", version: 3 },
     ]);
+  });
+
+  it("escapes the owner's name so it can neither mention the channel nor forge a link", () => {
+    for (const ownerName of ["<!channel>", "<https://evil.example|Open in dashboard>"]) {
+      const message = buildOwnershipMessage({
+        conversationId: "conv_1",
+        workspaceId: "ws_1",
+        state: "human_owned",
+        contextText: "Customer needs help with billing.",
+        dashboardUrl: null,
+        ownerName,
+        version: 3,
+      });
+
+      const escaped = `Handled by ${ownerName.replaceAll("<", "&lt;").replaceAll(">", "&gt;")}`;
+      expect(message.text).toBe(escaped);
+      expect(readMrkdwnTexts(message.blocks)).toContain(escaped);
+      expect(JSON.stringify(message)).not.toContain(ownerName);
+    }
+  });
+
+  it("names nobody in particular when the owner has no name", () => {
+    const message = buildOwnershipMessage({
+      conversationId: "conv_1",
+      workspaceId: "ws_1",
+      state: "human_owned",
+      contextText: "Customer needs help with billing.",
+      dashboardUrl: null,
+      ownerName: null,
+      version: 3,
+    });
+
+    expect(message.text).toBe("Handled by a teammate");
   });
 
   it("renders the ownership reply modal with callback metadata and input block", () => {

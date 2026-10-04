@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 import {
   compactForBudget,
   compactRecord,
@@ -9,7 +11,61 @@ import {
 } from "../payloadCompaction.js";
 import { copilotPayloadCharBudget } from "../turnBudget.js";
 
+export const jsonValueSchema: z.ZodType<unknown> = z.lazy(() => z.union([
+  z.string(),
+  z.number(),
+  z.boolean(),
+  z.null(),
+  z.array(jsonValueSchema),
+  z.record(jsonValueSchema),
+]));
+
+const traceStageSchema = z.object({
+  id: z.string(),
+  kind: z.string(),
+  status: z.string(),
+  startedAt: z.string().optional(),
+  completedAt: z.string().optional(),
+  inputs: z.record(jsonValueSchema).optional(),
+  outputs: z.record(jsonValueSchema).optional(),
+  subTrace: jsonValueSchema.optional(),
+}).passthrough();
+
+/**
+ * One turn's persisted diagnostic spine, the payload `boundTurnTracePayload` bounds. Every trace
+ * reader renders it in this shape: `turn_trace` for a customer or dashboard conversation and
+ * `test_chat_turn_trace` for a Test Chat turn. A turn with no trace reads as null, so each reader
+ * declares it `.nullable()`.
+ */
+export const turnTraceEnvelopeSchema = z.object({
+  version: z.number().int().nonnegative(),
+  spine: z.object({
+    traceId: z.string(),
+    startedAt: z.string(),
+    completedAt: z.string().optional(),
+    stages: z.array(traceStageSchema),
+  }).passthrough(),
+  openTelemetry: z.object({ traceId: z.string(), spanId: z.string(), sampled: z.boolean() }).optional(),
+  summary: z.record(jsonValueSchema).optional(),
+  /**
+   * Only on a Test Chat turn that ended on a routine ending that notifies operators — the
+   * message content (subject and body) that ending's operator notification carries, since a
+   * replayed turn never actually delivers it. Live delivery additionally appends an
+   * `Open: <conversation URL>` line this preview omits. Absent on a customer
+   * conversation's `turn_trace`, which sends for real. `kind` is absent on a trace stored
+   * before completions could notify; such a preview is a hand-off.
+   */
+  handoffPreview: z.object({
+    kind: z.enum(["handoff", "completion"]).optional(),
+    subject: z.string(),
+    lines: z.array(z.string()),
+  }).optional(),
+});
+
 const MAX_MESSAGES = 20;
+// The newest events, as many as the default profile keeps whole. Compaction keeps an array's first
+// items, so the transcript is cut to its newest events first — the ones a question is about.
+const MAX_ACTIVITY = MAX_ARRAY_ITEMS;
 
 /**
  * A transcript read is context for a question, not the question itself, so it takes the smaller
@@ -27,7 +83,7 @@ export const TURN_TRACE_PAYLOAD_CHAR_BUDGET = copilotPayloadCharBudget(1 / 2);
 const DEFAULT_PROFILE = { maxStringChars: MAX_STRING_CHARS, maxArrayItems: MAX_ARRAY_ITEMS };
 
 /**
- * Chat's profile preserves recent turns and removes their debug payloads first.
+ * Chat's profile preserves recent turns and recent activity, and removes turns' debug payloads first.
  *
  * Dropping debug envelopes is a preference, not the bound: it says which content this reader would
  * rather lose, and it runs out once no message carries one. Whatever survives that preference is
@@ -45,6 +101,15 @@ export const boundConversationPayload = (payload: Record<string, unknown>): Reco
       retainedLength: MAX_MESSAGES,
     });
     source.messages = source.messages.slice(-MAX_MESSAGES);
+  }
+  if (Array.isArray(source.activity) && source.activity.length > MAX_ACTIVITY) {
+    truncation.push({
+      path: "$.activity",
+      reason: "array_length",
+      originalLength: source.activity.length,
+      retainedLength: MAX_ACTIVITY,
+    });
+    source.activity = source.activity.slice(-MAX_ACTIVITY);
   }
 
   // Copied before mutating: the caller's message objects are not this function's to edit.

@@ -1,9 +1,17 @@
 import { notFound } from "../../../shared/domain/errors.js";
 import { decodeCursorWithKeys } from "../../../shared/domain/cursorPagination.js";
-import type { ConversationSourceScope } from "../../../shared/domain/conversationSource.js";
+import type { CallerKind, ConversationSourceScope } from "../../../shared/domain/conversationSource.js";
 import type { ConversationOutcomeFilter } from "../../../shared/domain/conversationOutcome.js";
 import type { ConversationTurnStage } from "../contracts/interruption.js";
-import type { ConversationOwnershipScope } from "../../handoff/public.js";
+import {
+  formatActivityCursor,
+  type ConversationActivityEntry,
+  type ConversationActivityReadScope,
+  type ConversationActivityTimeline,
+  type ConversationActivityTimelineReader,
+} from "../../conversationActivity/contracts/index.js";
+import { outwardFacingName, type TeammateLabelReaderPort } from "../../auth/contracts/index.js";
+import { presentOwnership, type ConversationOwnershipScope } from "../../handoff/public.js";
 import type { AuditEventRecord, AuditEventRepositoryPort } from "../../../db/repositories/auditEventRepository.js";
 import type {
   ConversationRecord,
@@ -70,6 +78,7 @@ export interface ChatConversationOwnership {
   workspaceId: string;
   state: ConversationOwnershipRecord["state"];
   ownerAccountId: string | null;
+  ownerUserId: string | null;
   ownerDisplayName: string | null;
   reason: string | null;
   version: number;
@@ -112,18 +121,39 @@ class NoopVisitorProfileReader implements VisitorProfileReaderPort {
   }
 }
 
-const toChatConversationOwnership = (record: ConversationOwnershipRecord): ChatConversationOwnership => ({
-  conversationId: record.conversationId,
-  workspaceId: record.workspaceId,
-  state: record.state,
-  ownerAccountId: record.ownerAccountId,
-  ownerDisplayName: record.ownerDisplayName,
-  reason: record.reason,
-  version: record.version,
-  takenOverAt: record.takenOverAt ? toIsoString(record.takenOverAt) : null,
-  createdAt: toIsoString(record.createdAt),
-  updatedAt: toIsoString(record.updatedAt),
-});
+const NO_TEAMMATE_LABELS: ReadonlyMap<string, string> = new Map();
+
+class NoopTeammateLabelReader implements TeammateLabelReaderPort {
+  async labelsByUserIds(): Promise<ReadonlyMap<string, string>> {
+    return NO_TEAMMATE_LABELS;
+  }
+}
+
+class NoopConversationActivityReader implements ConversationActivityTimelineReader {
+  async readTimeline(): Promise<ConversationActivityTimeline> {
+    return { userIds: [], cursor: formatActivityCursor(new Date()), present: () => [] };
+  }
+}
+
+const toChatConversationOwnership = (record: ConversationOwnershipRecord): ChatConversationOwnership => {
+  const ownership = presentOwnership(record);
+  return {
+    ...ownership,
+    takenOverAt: ownership.takenOverAt ? toIsoString(ownership.takenOverAt) : null,
+    createdAt: toIsoString(ownership.createdAt),
+    updatedAt: toIsoString(ownership.updatedAt),
+  };
+};
+
+/**
+ * The ownership field of an operator read of one conversation — detail, turn, or tail: the record
+ * whenever one exists, AI-owned included, so a reader that holds an older record sees a hand-back
+ * by its higher version. Absent until a teammate is first involved: the row is lazy. A read that
+ * did not opt in to ownership passes null; the visitor surfaces never opt in.
+ */
+const operatorOwnershipField = (
+  record: ConversationOwnershipRecord | null,
+): { ownership?: ChatConversationOwnership } => (record ? { ownership: toChatConversationOwnership(record) } : {});
 
 export interface ChatConversationSummary {
   id: string;
@@ -131,6 +161,8 @@ export interface ChatConversationSummary {
   agentName: string | null;
   agentInternalName: string | null;
   sourceChannel: string | null;
+  /** Whether a person or a calling agent is on the other side (spec 1290, FR-051). */
+  callerKind: CallerKind;
   sourceOrigin: string | null;
   channelContext: ConversationChannelContext | null;
   anonymousSessionId: string | null;
@@ -234,18 +266,55 @@ export interface ChatConversationTurn {
    */
   turnFailure?: ChatConversationTurnFailure;
   /**
-   * Display name of the human operator who authored this turn (a takeover reply),
-   * so the visitor can see who is answering. Only the name is exposed — never the
-   * operator's account id.
+   * The signature on a human operator's reply (a takeover reply), so the visitor can see who
+   * is answering. Only the name is exposed — never the operator's account or user id.
    */
   operatorDisplayName?: string;
+  /**
+   * Set only when read with `includeOperatorLabel` (operator surfaces). The teammate who wrote a
+   * human-agent reply, named as teammates name each other — display name, else email — from their
+   * profile now, falling back to the reply's signature when the reply names no user or the user is
+   * gone. It can be an email, so it must never reach the public/embed visitor surface, which
+   * shares these reads and whose presenter forwards unrecognised fields.
+   */
+  operatorLabel?: string;
 }
 
-/** Reads the operator's display name from a human-agent reply's stored metadata. */
+/**
+ * Reads the signature from a human-agent reply's stored metadata, the same on every surface. A
+ * stored signature is shown by the outward-facing name rule — never when it holds an email —
+ * whether or not the reply names its author in `humanAgent.userId`: an email is never shown to a
+ * visitor, whatever put it there. Absent, the visitor surface labels the reply generically.
+ */
 const operatorDisplayNameFrom = (message: MessageRecord): string | undefined => {
-  const humanAgent = (message.metadata as { humanAgent?: { displayName?: unknown } } | undefined)?.humanAgent;
-  const displayName = humanAgent?.displayName;
-  return typeof displayName === "string" && displayName.trim().length > 0 ? displayName : undefined;
+  const displayName = (message.metadata as { humanAgent?: { displayName?: unknown } } | undefined)?.humanAgent?.displayName;
+  return typeof displayName === "string" ? outwardFacingName(displayName) ?? undefined : undefined;
+};
+
+/** The teammate who wrote a human-agent reply, from its stored metadata; absent on older replies. */
+const replierUserIdFrom = (message: MessageRecord): string | undefined => {
+  const userId = (message.metadata as { humanAgent?: { userId?: unknown } } | undefined)?.humanAgent?.userId;
+  return typeof userId === "string" && userId.length > 0 ? userId : undefined;
+};
+
+const replierUserIds = (messages: readonly MessageRecord[]): string[] => [
+  ...new Set(messages.flatMap((message) => {
+    const userId = replierUserIdFrom(message);
+    return userId ? [userId] : [];
+  })),
+];
+
+/**
+ * The operator-facing name of a reply's author: their teammate label now, else the reply's own
+ * signature. Only human-agent replies carry either; every other message gets no field at all.
+ */
+const operatorLabelField = (
+  message: MessageRecord,
+  labels: ReadonlyMap<string, string>,
+): { operatorLabel?: string } => {
+  const userId = replierUserIdFrom(message);
+  const label = (userId ? labels.get(userId) : undefined) ?? operatorDisplayNameFrom(message);
+  return label === undefined ? {} : { operatorLabel: label };
 };
 
 export interface ChatConversationDetail {
@@ -255,6 +324,8 @@ export interface ChatConversationDetail {
   agentName: string | null;
   agentInternalName?: string | null;
   sourceChannel: string | null;
+  /** Whether a person or a calling agent is on the other side (spec 1290, FR-051). */
+  callerKind: CallerKind;
   sourceOrigin: string | null;
   channelContext: ConversationChannelContext | null;
   // Entry page provenance is dashboard-only; the public detail response omits it (and
@@ -281,7 +352,10 @@ export interface ChatConversationDetail {
   nextCursor: string | null;
   tailCursor: string | null;
   messages: ChatConversationTurn[];
+  /** See {@link ChatConversationTail.ownership}: the same record, on operator reads only. */
   ownership?: ChatConversationOwnership;
+  /** See {@link ChatConversationTail.activity}: on operator reads only. */
+  activity?: ConversationActivityEntry[];
 }
 
 /**
@@ -298,7 +372,22 @@ interface ChatConversationTurnDetail {
 export interface ChatConversationTail {
   messages: ChatConversationTurn[];
   cursor: string | null;
+  /**
+   * The ownership record whenever one exists, AI-owned included, so a reader that polls the tail
+   * sees a hand-back made elsewhere. Absent until a teammate is first involved: the row is lazy.
+   */
   ownership?: ChatConversationOwnership;
+  /**
+   * What people and the agent did to the conversation — handoffs, claims, reassignments,
+   * hand-backs, approvals decided, feedback closed — oldest first, each teammate labelled as they
+   * are now. Operator reads only: a label can be an email. The whole timeline, or with the tail's
+   * `activityCursor` only the events in a recent window, so a reader that polls sees an event
+   * recorded elsewhere — even one whose transaction committed after a newer event's — and keeps
+   * each event once by its id.
+   */
+  activity?: ConversationActivityEntry[];
+  /** The cursor to pass as the next tail's `activityCursor`. */
+  activityCursor?: string;
 }
 
 interface ChatConversationPage {
@@ -853,6 +942,8 @@ export class ChatHistoryService {
     private readonly answerCoverageHistoryReader: AnswerCoverageHistoryReader =
       new NoopAnswerCoverageHistoryReader(),
     private readonly visitorRepository: VisitorProfileReaderPort = new NoopVisitorProfileReader(),
+    private readonly teammateLabels: TeammateLabelReaderPort = new NoopTeammateLabelReader(),
+    private readonly conversationActivity: ConversationActivityTimelineReader = new NoopConversationActivityReader(),
   ) {}
 
   async listConversations(
@@ -933,6 +1024,7 @@ export class ChatHistoryService {
       agentId?: string;
       sourceOrigin?: string;
       outcome?: ConversationOutcomeFilter;
+      callerKind?: CallerKind;
     } = { limit: 50, offset: 0 },
   ): Promise<HistoryItemsPage> {
     const offset = input.offset ?? 0;
@@ -942,7 +1034,10 @@ export class ChatHistoryService {
     // requests carry none of those facets, mirroring how HistoryItemsRepository already
     // drops search rows under the same condition. Skip the contact fetch entirely rather
     // than fetch-then-discard.
-    const hasChatOnlyFilter = Boolean(input.q || input.agentId || input.sourceOrigin || input.outcome);
+    // Only `agent` is chat-only. A contact request is submitted by a person, so asking for human
+    // callers should still return them; asking for agent callers cannot, because no agent fills in
+    // a contact form.
+    const hasChatOnlyFilter = Boolean(input.q || input.agentId || input.sourceOrigin || input.outcome || input.callerKind === "agent");
     const [basePage, contactPage] = await Promise.all([
       this.historyItemsRepository.listPageByWorkspaceId(workspaceId, {
         limit: sourceLimit,
@@ -952,6 +1047,7 @@ export class ChatHistoryService {
         agentId: input.agentId,
         sourceOrigin: input.sourceOrigin,
         outcome: input.outcome,
+        callerKind: input.callerKind,
       }),
       hasChatOnlyFilter
         ? Promise.resolve({ contacts: [], total: 0, nextCursor: null, hasMore: false })
@@ -1014,6 +1110,8 @@ export class ChatHistoryService {
       includeAnswerFeedback?: boolean;
       includeOwnership?: boolean;
       includeAgentInternalName?: boolean;
+      includeOperatorLabel?: boolean;
+      activity?: ConversationActivityReadScope;
     } = { includeAnswerFeedback: true },
   ): Promise<ContactHistoryDetailResponse> {
     const contact = await this.contactHistoryProvider.getById(workspaceId, requestId);
@@ -1083,6 +1181,12 @@ export class ChatHistoryService {
       // of the public chat contract. The public/embed visitor path shares this method, and its
       // presenter forwards unrecognised fields, so an ungated field here becomes public API.
       includeLatency?: boolean;
+      // OFF by default: names the teammate behind each human reply, which can be an email. The
+      // calling-agent update reader reads with ownership but must not get this either.
+      includeOperatorLabel?: boolean;
+      // OFF (absent) by default: the conversation's activity names teammates by label, which can
+      // be an email, so only operator reads set it — with the kinds the caller may see.
+      activity?: ConversationActivityReadScope;
     } = {},
   ): Promise<ChatConversationDetail> {
     const conversation = await this.conversationRepository.findByIdAndWorkspaceId(conversationId, workspaceId);
@@ -1091,7 +1195,7 @@ export class ChatHistoryService {
       throw notFound("Conversation not found");
     }
 
-    const [{ messages, total, nextCursor, hasMore }, messageSummaries, ownershipRecord, tailBaseline, visitorProfile] =
+    const [{ messages, total, nextCursor, hasMore }, messageSummaries, ownershipRecord, tailBaseline, visitorProfile, activity] =
       await Promise.all([
         this.messageRepository.listWindowByConversationId(workspaceId, conversation.id, input),
         this.messageRepository.summarizeByConversationIds(workspaceId, [conversation.id]),
@@ -1105,6 +1209,7 @@ export class ChatHistoryService {
         options.includeAgentInternalName && conversation.visitorId
           ? this.visitorRepository.findById(workspaceId, conversation.visitorId)
           : Promise.resolve(null),
+        this.loadActivity(workspaceId, conversation.id, options.activity),
       ]);
     const assistantMessageIds = messages
       .filter((message) => message.role === "assistant")
@@ -1112,11 +1217,14 @@ export class ChatHistoryService {
     const userMessageIds = messages
       .filter((message) => message.role === "user")
       .map((message) => message.id);
-    const auditEvents = await this.auditEventRepository.listChatTurnEventsByAssistantMessageIds(
-      workspaceId,
-      conversation.id,
-      assistantMessageIds,
-    );
+    const [auditEvents, operatorLabels] = await Promise.all([
+      this.auditEventRepository.listChatTurnEventsByAssistantMessageIds(
+        workspaceId,
+        conversation.id,
+        assistantMessageIds,
+      ),
+      this.loadTeammateLabels(messages, options.includeOperatorLabel, activity),
+    ]);
     const answerCoverageByRequestMessageId = await loadAnswerCoverageHistoryProjection(
       this.answerCoverageHistoryReader,
       workspaceId,
@@ -1162,6 +1270,7 @@ export class ChatHistoryService {
           }
         : {}),
       sourceChannel: conversation.sourceChannel,
+      callerKind: conversation.callerKind,
       sourceOrigin: conversation.sourceOrigin,
       channelContext: conversation.channelContext,
       title: conversation.title,
@@ -1193,10 +1302,10 @@ export class ChatHistoryService {
         debug: message.role === "assistant" ? debugByAssistantMessageId.get(message.id) : undefined,
         turnFailure: message.role === "user" ? turnFailureByUserMessageId.get(message.id) : undefined,
         operatorDisplayName: operatorDisplayNameFrom(message),
+        ...(options.includeOperatorLabel ? operatorLabelField(message, operatorLabels) : {}),
       })),
-      ...(ownershipRecord?.state === "human_owned"
-        ? { ownership: toChatConversationOwnership(ownershipRecord) }
-        : {}),
+      ...operatorOwnershipField(ownershipRecord),
+      ...(activity ? { activity: activity.present(operatorLabels) } : {}),
     };
   }
 
@@ -1207,6 +1316,7 @@ export class ChatHistoryService {
       includeAnswerFeedback?: boolean;
       includeOwnership?: boolean;
       includeTurnFailureDebug?: boolean;
+      includeOperatorLabel?: boolean;
     } = {},
   ): Promise<ChatConversationTurnDetail> {
     const message = await this.messageRepository.findByIdAndWorkspaceId(workspaceId, messageId);
@@ -1216,7 +1326,7 @@ export class ChatHistoryService {
 
     const isAssistant = message.role === "assistant";
     const isUser = message.role === "user";
-    const [auditEvents, turnFailureEvents, feedbackByAssistantMessageId, ownershipRecord] = await Promise.all([
+    const [auditEvents, turnFailureEvents, feedbackByAssistantMessageId, ownershipRecord, operatorLabels] = await Promise.all([
       isAssistant
         ? this.auditEventRepository.listChatTurnEventsByAssistantMessageIds(
             workspaceId,
@@ -1237,6 +1347,7 @@ export class ChatHistoryService {
       options.includeOwnership
         ? this.conversationOwnership.load(message.conversationId)
         : Promise.resolve(null),
+      this.loadTeammateLabels([message], options.includeOperatorLabel, null),
     ]);
     const answerCoverageByRequestMessageId = await loadAnswerCoverageHistoryProjection(
       this.answerCoverageHistoryReader,
@@ -1268,18 +1379,27 @@ export class ChatHistoryService {
         debug,
         turnFailure,
         operatorDisplayName: operatorDisplayNameFrom(message),
+        ...(options.includeOperatorLabel ? operatorLabelField(message, operatorLabels) : {}),
       },
-      ...(ownershipRecord?.state === "human_owned"
-        ? { ownership: toChatConversationOwnership(ownershipRecord) }
-        : {}),
+      ...operatorOwnershipField(ownershipRecord),
     };
   }
 
   async tailConversation(
     workspaceId: string,
     conversationId: string,
-    input: { cursor?: string; limit: number },
-    options: { includeOwnership?: boolean; includeLatency?: boolean } = {},
+    input: {
+      cursor?: string;
+      limit: number;
+      /** The previous tail's `activityCursor`: only the activity in the window behind it is read. */
+      activityCursor?: string;
+    },
+    options: {
+      includeOwnership?: boolean;
+      includeLatency?: boolean;
+      includeOperatorLabel?: boolean;
+      activity?: ConversationActivityReadScope;
+    } = {},
   ): Promise<ChatConversationTail> {
     const conversation = await this.conversationRepository.findByIdAndWorkspaceId(conversationId, workspaceId);
 
@@ -1288,25 +1408,57 @@ export class ChatHistoryService {
     }
 
     const cursor = input.cursor ? decodeCursorWithKeys(input.cursor, ["createdAt", "id"]) : null;
-    const [{ messages, latestCursor }, ownershipRecord] = await Promise.all([
+    const [{ messages, latestCursor }, ownershipRecord, activity] = await Promise.all([
       this.messageRepository.listSinceByConversationId(workspaceId, conversation.id, {
         sinceCreatedAt: cursor ? new Date(cursor.keys.createdAt) : undefined,
         sinceId: cursor?.keys.id,
         limit: input.limit,
       }),
       options.includeOwnership ? this.conversationOwnership.load(conversation.id) : Promise.resolve(null),
+      this.loadActivity(
+        workspaceId,
+        conversation.id,
+        options.activity && { ...options.activity, after: input.activityCursor },
+      ),
     ]);
 
+    const labels = await this.loadTeammateLabels(messages, options.includeOperatorLabel, activity);
+
     return {
-      messages: messages.map((message) => this.toLightweightConversationTurn(message, options.includeLatency === true)),
+      messages: messages.map((message) => this.toLightweightConversationTurn(message, options, labels)),
       cursor: latestCursor,
-      ...(ownershipRecord?.state === "human_owned"
-        ? { ownership: toChatConversationOwnership(ownershipRecord) }
-        : {}),
+      ...operatorOwnershipField(ownershipRecord),
+      ...(activity ? { activity: activity.present(labels), activityCursor: activity.cursor } : {}),
     };
   }
 
-  private toLightweightConversationTurn(message: MessageRecord, includeLatency: boolean): ChatConversationTurn {
+  /** The conversation's activity timeline within `scope`, and no read unless the caller opted in. */
+  private async loadActivity(
+    workspaceId: string,
+    conversationId: string,
+    scope: (ConversationActivityReadScope & { after?: string }) | undefined,
+  ): Promise<ConversationActivityTimeline | null> {
+    return scope ? this.conversationActivity.readTimeline(workspaceId, conversationId, scope) : null;
+  }
+
+  /**
+   * One batched profile read for every teammate a read names — the repliers in `messages` when the
+   * caller opted in to their labels, and the teammates in `activity` — and none when it names none.
+   */
+  private async loadTeammateLabels(
+    messages: readonly MessageRecord[],
+    includeOperatorLabel: boolean | undefined,
+    activity: ConversationActivityTimeline | null,
+  ): Promise<ReadonlyMap<string, string>> {
+    const userIds = new Set([...(includeOperatorLabel ? replierUserIds(messages) : []), ...(activity?.userIds ?? [])]);
+    return userIds.size > 0 ? this.teammateLabels.labelsByUserIds([...userIds]) : NO_TEAMMATE_LABELS;
+  }
+
+  private toLightweightConversationTurn(
+    message: MessageRecord,
+    options: { includeLatency?: boolean; includeOperatorLabel?: boolean },
+    operatorLabels: ReadonlyMap<string, string>,
+  ): ChatConversationTurn {
     return {
       id: message.id,
       role: message.role,
@@ -1314,8 +1466,9 @@ export class ChatHistoryService {
       content: message.content,
       createdAt: toIsoString(message.createdAt),
       inputMetadata: message.inputMetadata,
-      ...(includeLatency ? { latencyMs: message.totalLatencyMs } : {}),
+      ...(options.includeLatency ? { latencyMs: message.totalLatencyMs } : {}),
       operatorDisplayName: operatorDisplayNameFrom(message),
+      ...(options.includeOperatorLabel ? operatorLabelField(message, operatorLabels) : {}),
     };
   }
 

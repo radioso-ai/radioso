@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createRadiosoMcpServer } from "../src/server.js";
 
 describe("createRadiosoMcpServer", () => {
-  it("exposes the agent conversation tool and the Radioso documentation tools", () => {
+  it("exposes the agent conversation tools and the Radioso documentation tools", () => {
     const server = createRadiosoMcpServer({
       resolveExecutionContext: vi.fn(),
       serverName: "radioso-test",
@@ -11,6 +11,7 @@ describe("createRadiosoMcpServer", () => {
 
     expect(server.toolDefinitions.map((tool) => tool.name)).toEqual([
       "ask_agent",
+      "get_conversation_updates",
       "radioso_docs",
       "radioso_doc_page",
     ]);

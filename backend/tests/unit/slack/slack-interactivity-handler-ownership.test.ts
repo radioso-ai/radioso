@@ -1,12 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { SlackInteractivityHandler } from "../../../src/modules/slack/public.js";
+import type { ConversationRecord } from "../../../src/db/repositories/conversationRepository.js";
 import type { MessageRecord } from "../../../src/db/repositories/messageRepository.js";
-import type {
-  ConversationOwnershipMutationResult,
-  ConversationOwnershipRecord,
+import {
+  ConversationOwnershipService,
+  type ConversationOwnershipRecord,
+  type OperatorReplyService,
 } from "../../../src/modules/handoff/public.js";
 import type { SlackInstallationRecord } from "../../../src/modules/slack/public.js";
+import { InMemoryActionOutbox, InMemoryConversationOwnershipRepository } from "../../support/fakes.js";
 
 const installation: SlackInstallationRecord = {
   id: "00000000-0000-4000-8000-000000000001",
@@ -25,7 +28,9 @@ const ownershipRecord = (overrides: Partial<ConversationOwnershipRecord> = {}): 
   workspaceId: "ws_conversation",
   state: "human_owned",
   ownerAccountId: "acct_1",
-  ownerDisplayName: "Dana",
+  ownerUserId: "user_1",
+  ownerProfile: { displayName: "Dana Scully", email: "dana@example.com" },
+  ownerStoredLabel: "Dana Scully",
   reason: "operator_takeover",
   version: 3,
   takenOverAt: new Date("2026-01-01T00:00:00Z"),
@@ -34,13 +39,30 @@ const ownershipRecord = (overrides: Partial<ConversationOwnershipRecord> = {}): 
   ...overrides,
 });
 
-const blockPayload = (actionId: string, value: Record<string, unknown>) => ({
+const aiOwnedRecord = (version: number): ConversationOwnershipRecord => ownershipRecord({
+  state: "ai_owned",
+  ownerAccountId: null,
+  ownerUserId: null,
+  ownerProfile: null,
+  ownerStoredLabel: null,
+  reason: null,
+  version,
+  takenOverAt: null,
+});
+
+const blockPayload = (
+  actionId: string,
+  value: Record<string, unknown>,
+  slackUserId = "U1",
+  message?: Record<string, unknown>,
+) => ({
   type: "block_actions" as const,
   team: { id: "T1" },
-  user: { id: "U1" },
+  user: { id: slackUserId },
   trigger_id: "trigger_1",
   response_url: "https://hooks.slack.com/actions/1",
   actions: [{ action_id: actionId, value: JSON.stringify(value) }],
+  ...(message ? { message } : {}),
 });
 
 const viewPayload = (value: string) => ({
@@ -60,69 +82,67 @@ const viewPayload = (value: string) => ({
   },
 });
 
-const createHandler = (overrides: {
-  identity?: { accountId: string; userId: string | null; displayName: string | null } | { rejected: true };
-  currentOwnership?: ConversationOwnershipRecord | null;
-  takeOverResult?: ConversationOwnershipMutationResult;
-  handBackResult?: ConversationOwnershipMutationResult;
-  conversationLinks?: { resolve: (input: { workspaceId: string; conversationId: string }) => Promise<string | null> };
-} = {}) => {
+const message: MessageRecord = {
+  id: "msg_1",
+  conversationId: "conv_1",
+  workspaceId: "ws_conversation",
+  role: "assistant",
+  source: "human_agent",
+  content: "Hello customer",
+  createdAt: new Date("2026-01-01T00:00:00Z"),
+};
+
+type Identity = { accountId: string; userId: string; displayName: string | null } | { rejected: true };
+
+const slackResponses = () => {
   const responsePosts: Array<{ url: string; body: Record<string, unknown> }> = [];
-  const ownership = {
-    load: vi.fn(async () => overrides.currentOwnership ?? ownershipRecord()),
-    takeOver: vi.fn(async (): Promise<ConversationOwnershipMutationResult> =>
-      overrides.takeOverResult ?? { ok: true, changed: true, record: ownershipRecord({ version: 2 }) }),
-    handBack: vi.fn(async (): Promise<ConversationOwnershipMutationResult> => overrides.handBackResult ?? {
-      ok: true,
-      changed: true,
-      record: ownershipRecord({
-        state: "ai_owned",
-        ownerAccountId: null,
-        ownerDisplayName: null,
-        reason: null,
-        version: 4,
-        takenOverAt: null,
-      }),
+  const responseUrlClient = {
+    postToResponseUrl: vi.fn(async (url: string, body: Record<string, unknown>) => {
+      responsePosts.push({ url, body });
     }),
   };
-  const viewsOpen = vi.fn(async () => {});
-  const operatorReply = {
-    reply: vi.fn(async (): Promise<MessageRecord> => ({
-      id: "msg_1",
-      conversationId: "conv_1",
-      workspaceId: "ws_conversation",
-      role: "assistant",
-      source: "human_agent",
-      content: "Hello customer",
-      createdAt: new Date("2026-01-01T00:00:00Z"),
-    })),
+  return { responsePosts, responseUrlClient };
+};
+
+/** The handler over a stubbed ownership service: checks how Slack presents each outcome. */
+const createHandler = (overrides: {
+  identity?: Identity;
+  currentOwnership?: ConversationOwnershipRecord | null;
+  conversationLinks?: { resolve: (input: { workspaceId: string; conversationId: string }) => Promise<string | null> };
+  takeOverResult?: Awaited<ReturnType<ConversationOwnershipService["takeOver"]>>;
+  handBackResult?: Awaited<ReturnType<ConversationOwnershipService["handBack"]>>;
+  replyResult?: Awaited<ReturnType<ConversationOwnershipService["reply"]>>;
+  replyRefusal?: Awaited<ReturnType<ConversationOwnershipService["replyRefusal"]>>;
+} = {}) => {
+  const { responsePosts, responseUrlClient } = slackResponses();
+  const ownership = {
+    load: vi.fn(async () => (overrides.currentOwnership === undefined ? ownershipRecord() : overrides.currentOwnership)),
+    takeOver: vi.fn(async () => overrides.takeOverResult ?? { ok: true as const, changed: true, record: ownershipRecord({ version: 2 }) }),
+    handBack: vi.fn(async () => overrides.handBackResult ?? { ok: true as const, changed: true, record: aiOwnedRecord(4) }),
+    reply: vi.fn(async () => overrides.replyResult ?? { ok: true as const, message, record: ownershipRecord() }),
+    replyRefusal: vi.fn(async () => overrides.replyRefusal ?? null),
   };
-  const audit = { record: vi.fn(async () => {}) };
-  const publisher = { enqueue: vi.fn(() => ({ accepted: true as const, coalesced: false })) };
+  const viewsOpen = vi.fn(async () => {});
   const identityResolver = {
-    resolve: vi.fn(async () => overrides.identity ?? {
+    resolve: vi.fn(async (): Promise<Identity> => overrides.identity ?? {
       accountId: "acct_1",
       userId: "user_1",
-      displayName: "Dana",
+      displayName: "Dana on Slack",
     }),
   };
   const handler = new SlackInteractivityHandler({
     installations: { findByTeamId: vi.fn(async () => installation) },
     identityResolver,
     conversationOwnership: ownership,
-    operatorReplyService: operatorReply,
     slackViews: { open: viewsOpen },
-    responseUrlClient: {
-      postToResponseUrl: vi.fn(async (url, body) => {
-        responsePosts.push({ url, body });
-      }),
-    },
-    audit,
-    workspaceInvalidationPublisher: publisher,
+    responseUrlClient,
     conversationLinks: overrides.conversationLinks,
   });
-  return { handler, ownership, viewsOpen, operatorReply, responsePosts, audit, identityResolver, publisher };
+  return { handler, ownership, viewsOpen, responsePosts, identityResolver };
 };
+
+const actor = { accountId: "acct_1", userId: "user_1", workspaceId: "ws_conversation" };
+const slackAudit = { slackOperator: { slackUserId: "U1", displayName: "Dana on Slack" } };
 
 describe("SlackInteractivityHandler ownership branch", () => {
   it("links the updated Slack message to the resolved conversation permalink", async () => {
@@ -165,35 +185,20 @@ describe("SlackInteractivityHandler ownership branch", () => {
     expect(JSON.stringify(responsePosts[0].body.blocks)).toContain(`<${permalink.replaceAll("&", "&amp;")}|Open in dashboard>`);
   });
 
-  it("takes over a conversation, audits it, and updates the Slack message with talk and handback", async () => {
-    const { handler, ownership, responsePosts, audit, identityResolver, publisher } = createHandler();
+  it("takes over as the resolved teammate and shows talk and handback", async () => {
+    const { handler, ownership, responsePosts, identityResolver } = createHandler();
 
     await handler.handleBlockActions(blockPayload("ownership_takeover", {
       conversationId: "conv_1",
       workspaceId: "ws_conversation",
     }));
 
-    expect(ownership.takeOver).toHaveBeenCalledWith({
+    expect(identityResolver.resolve).toHaveBeenCalledWith({ installation, workspaceId: "ws_conversation", slackUserId: "U1" });
+    expect(ownership.takeOver).toHaveBeenCalledWith(actor, {
       conversationId: "conv_1",
-      workspaceId: "ws_conversation",
-      accountId: "acct_1",
-      displayName: "Dana",
+      auditContext: slackAudit,
     });
-    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
-      accountId: "acct_1",
-      workspaceId: "ws_conversation",
-      eventType: "hitl.ownership",
-      eventStatus: "success",
-      metadata: expect.objectContaining({ action: "taken_over", conversationId: "conv_1" }),
-    }));
-    expect(identityResolver.resolve).toHaveBeenCalledWith({
-      installation,
-      workspaceId: "ws_conversation",
-      slackUserId: "U1",
-    });
-    expect(publisher.enqueue).toHaveBeenCalledWith("ws_conversation", ["conversation.ownership_changed"]);
-    expect(responsePosts[0].body).toMatchObject({ replace_original: true });
-    expect(JSON.stringify(responsePosts[0].body.blocks)).toContain("ownership_talk");
+    expect(responsePosts[0].body).toMatchObject({ replace_original: true, text: "Handled by Dana Scully" });
     const actions = (responsePosts[0].body.blocks as Array<Record<string, unknown>>)
       .find((block) => block.type === "actions") as { elements: Array<Record<string, unknown>> };
     expect(actions.elements.map((element) => JSON.parse(element.value as string))).toEqual([
@@ -202,8 +207,118 @@ describe("SlackInteractivityHandler ownership branch", () => {
     ]);
   });
 
+  it("names a new owner without a Radioso display name by their Slack name, never their email", async () => {
+    const { handler, responsePosts } = createHandler({
+      takeOverResult: {
+        ok: true,
+        changed: true,
+        record: ownershipRecord({ version: 2, ownerProfile: { displayName: null, email: "dana@example.com" }, ownerStoredLabel: "dana@example.com" }),
+      },
+    });
+
+    await handler.handleBlockActions(blockPayload("ownership_takeover", { conversationId: "conv_1", workspaceId: "ws_conversation" }));
+
+    expect(responsePosts[0].body.text).toBe("Handled by Dana on Slack");
+    expect(JSON.stringify(responsePosts[0].body)).not.toContain("dana@example.com");
+  });
+
+  it("names an owner whose saved display name is shaped like an email by their Slack name instead", async () => {
+    const { handler, responsePosts } = createHandler({
+      takeOverResult: {
+        ok: true,
+        changed: true,
+        // Saved before display names were validated.
+        record: ownershipRecord({ version: 2, ownerProfile: { displayName: "dana@example.com", email: "dana@example.com" } }),
+      },
+    });
+
+    await handler.handleBlockActions(blockPayload("ownership_takeover", { conversationId: "conv_1", workspaceId: "ws_conversation" }));
+
+    expect(responsePosts[0].body.text).toBe("Handled by Dana on Slack");
+    expect(JSON.stringify(responsePosts[0].body)).not.toContain("dana@example.com");
+  });
+
+  it("names an owner a teammate when the Slack name is shaped like an email too", async () => {
+    const { handler, responsePosts } = createHandler({
+      identity: { accountId: "acct_1", userId: "user_1", displayName: "dana\uFF20example.com" },
+      takeOverResult: {
+        ok: true,
+        changed: true,
+        record: ownershipRecord({ version: 2, ownerProfile: { displayName: null, email: "dana@example.com" } }),
+      },
+    });
+
+    await handler.handleBlockActions(blockPayload("ownership_takeover", { conversationId: "conv_1", workspaceId: "ws_conversation" }));
+
+    expect(responsePosts[0].body.text).toBe("Handled by a teammate");
+  });
+
+  it("refuses Take over on a conversation a teammate holds, privately, pointing at Reassign in the dashboard", async () => {
+    const { handler, responsePosts } = createHandler({
+      takeOverResult: {
+        ok: false,
+        refusal: "held_by_teammate",
+        record: ownershipRecord({ ownerUserId: "user_fox", ownerProfile: { displayName: "Fox <Mulder>", email: "fox@example.com" } }),
+      },
+      conversationLinks: { resolve: async () => "https://app.radioso.test/w/ws/inbox?conversation=conv_1" },
+    });
+
+    await handler.handleBlockActions(blockPayload("ownership_takeover", { conversationId: "conv_1", workspaceId: "ws_conversation" }));
+
+    expect(responsePosts).toHaveLength(1);
+    expect(responsePosts[0].body).toEqual({
+      response_type: "ephemeral",
+      replace_original: false,
+      text: "Fox &lt;Mulder&gt; is handling this. <https://app.radioso.test/w/ws/inbox?conversation=conv_1|Reassign in dashboard>",
+    });
+  });
+
+  it("refuses Take over on a teammate's conversation without a link when none resolves", async () => {
+    const { handler, responsePosts } = createHandler({
+      takeOverResult: { ok: false, refusal: "held_by_teammate", record: ownershipRecord({ ownerUserId: "user_fox" }) },
+    });
+
+    await handler.handleBlockActions(blockPayload("ownership_takeover", { conversationId: "conv_1", workspaceId: "ws_conversation" }));
+
+    expect(responsePosts[0].body).toEqual({
+      response_type: "ephemeral",
+      replace_original: false,
+      text: "Dana Scully is handling this.",
+    });
+  });
+
+  it("names an owner with neither name a teammate", async () => {
+    const { handler, responsePosts } = createHandler({
+      identity: { accountId: "acct_1", userId: "user_1", displayName: null },
+      takeOverResult: {
+        ok: true,
+        changed: true,
+        record: ownershipRecord({ version: 2, ownerProfile: { displayName: null, email: "dana@example.com" } }),
+      },
+    });
+
+    await handler.handleBlockActions(blockPayload("ownership_takeover", { conversationId: "conv_1", workspaceId: "ws_conversation" }));
+
+    expect(responsePosts[0].body.text).toBe("Handled by a teammate");
+  });
+
+  it("escapes a display name that tries to mention the channel", async () => {
+    const { handler, responsePosts } = createHandler({
+      takeOverResult: {
+        ok: true,
+        changed: true,
+        record: ownershipRecord({ version: 2, ownerProfile: { displayName: "<!channel>", email: "dana@example.com" } }),
+      },
+    });
+
+    await handler.handleBlockActions(blockPayload("ownership_takeover", { conversationId: "conv_1", workspaceId: "ws_conversation" }));
+
+    expect(responsePosts[0].body.text).toBe("Handled by &lt;!channel&gt;");
+    expect(JSON.stringify(responsePosts[0].body)).not.toContain("<!channel>");
+  });
+
   it("rejects takeover for non-members without mutating ownership", async () => {
-    const { handler, ownership, responsePosts, audit } = createHandler({ identity: { rejected: true } });
+    const { handler, ownership, responsePosts } = createHandler({ identity: { rejected: true } });
 
     await handler.handleBlockActions(blockPayload("ownership_takeover", {
       conversationId: "conv_1",
@@ -211,7 +326,6 @@ describe("SlackInteractivityHandler ownership branch", () => {
     }));
 
     expect(ownership.takeOver).not.toHaveBeenCalled();
-    expect(audit.record).not.toHaveBeenCalled();
     expect(responsePosts[0].body).toMatchObject({
       response_type: "ephemeral",
       text: "You're not a Radioso operator on this workspace.",
@@ -219,8 +333,8 @@ describe("SlackInteractivityHandler ownership branch", () => {
   });
 
   it("posts an ephemeral refresh when takeover loses the ownership race", async () => {
-    const { handler, responsePosts, audit } = createHandler({
-      takeOverResult: { ok: false, changed: false, record: ownershipRecord({ ownerDisplayName: "Lee", version: 4 }) },
+    const { handler, responsePosts } = createHandler({
+      takeOverResult: { ok: false, refusal: "stale", record: ownershipRecord({ version: 4 }) },
     });
 
     await handler.handleBlockActions(blockPayload("ownership_takeover", {
@@ -228,47 +342,80 @@ describe("SlackInteractivityHandler ownership branch", () => {
       workspaceId: "ws_conversation",
     }));
 
-    expect(audit.record).not.toHaveBeenCalled();
     expect(responsePosts[0].body).toMatchObject({
       response_type: "ephemeral",
       text: "Conversation ownership changed. Refreshing.",
     });
-  });
-
-  it("does not publish an ownership invalidation for a truthful takeover no-op", async () => {
-    const { handler, publisher } = createHandler({
-      takeOverResult: { ok: true, changed: false, record: ownershipRecord({ version: 2 }) },
-    });
-
-    await handler.handleBlockActions(blockPayload("ownership_takeover", {
-      conversationId: "conv_1",
-      workspaceId: "ws_conversation",
-    }));
-
-    expect(publisher.enqueue).not.toHaveBeenCalled();
   });
 
   it("hands back with the expected version and updates the Slack message", async () => {
-    const { handler, ownership, responsePosts, audit, publisher } = createHandler();
+    const { handler, ownership, responsePosts } = createHandler();
 
     await handler.handleBlockActions(blockPayload("ownership_handback", {
       conversationId: "conv_1",
       version: 3,
     }));
 
-    expect(ownership.handBack).toHaveBeenCalledWith({ conversationId: "conv_1", expectedVersion: 3 });
-    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
-      metadata: expect.objectContaining({ action: "handed_back", conversationId: "conv_1" }),
-    }));
-    expect(publisher.enqueue).toHaveBeenCalledWith("ws_conversation", ["conversation.ownership_changed"]);
+    expect(ownership.handBack).toHaveBeenCalledWith(actor, { conversationId: "conv_1", expectedVersion: 3, auditContext: slackAudit });
     expect(responsePosts[0].body).toMatchObject({ replace_original: true });
     expect(JSON.stringify(responsePosts[0].body.blocks)).toContain("ownership_takeover");
     expect(JSON.stringify(responsePosts[0].body.blocks)).not.toContain("ownership_talk");
+    expect(JSON.stringify(responsePosts[0].body.blocks)).toContain("Conversation conv_1");
+  });
+
+  it("keeps the notice section selected by block id after take over", async () => {
+    const { handler, responsePosts } = createHandler();
+    const notice = "*Booking request*\nCollected:\n  Guest: Ada &amp; Bob";
+
+    await handler.handleBlockActions(blockPayload("ownership_takeover", {
+      conversationId: "conv_1",
+      workspaceId: "ws_conversation",
+    }, "U1", {
+      blocks: [{
+        type: "section",
+        block_id: "ownership_context",
+        text: { type: "mrkdwn", text: notice },
+      }],
+    }));
+
+    const context = (responsePosts[0].body.blocks as Array<Record<string, unknown>>)[0];
+    expect((context.text as { text: string }).text).toBe(notice);
+    expect(JSON.stringify(responsePosts[0].body.blocks)).not.toContain("&amp;amp;");
+  });
+
+  it("keeps a legacy card's notice section after hand back", async () => {
+    const { handler, responsePosts } = createHandler();
+    const notice = "*Booking request*\nCollected:\n  Guest: Ada";
+
+    await handler.handleBlockActions(blockPayload("ownership_handback", {
+      conversationId: "conv_1",
+      version: 3,
+    }, "U1", {
+      blocks: [{ type: "section", text: { type: "mrkdwn", text: notice } }],
+    }));
+
+    const context = (responsePosts[0].body.blocks as Array<Record<string, unknown>>)[0];
+    expect((context.text as { text: string }).text).toBe(notice);
+  });
+
+  it("tells a teammate who does not own the conversation who does, and leaves the card alone on hand back", async () => {
+    const { handler, responsePosts } = createHandler({
+      handBackResult: { ok: false, refusal: "held_by_teammate", record: ownershipRecord({ ownerProfile: { displayName: "Fox <Mulder>", email: "fox@example.com" } }) },
+    });
+
+    await handler.handleBlockActions(blockPayload("ownership_handback", { conversationId: "conv_1", version: 3 }));
+
+    expect(responsePosts).toHaveLength(1);
+    expect(responsePosts[0].body).toMatchObject({
+      response_type: "ephemeral",
+      replace_original: false,
+      text: "Fox &lt;Mulder&gt; is handling this.",
+    });
   });
 
   it("posts an ephemeral refresh when handback loses the ownership race", async () => {
-    const { handler, responsePosts, audit } = createHandler({
-      handBackResult: { ok: false, changed: false, record: ownershipRecord({ version: 4 }) },
+    const { handler, responsePosts } = createHandler({
+      handBackResult: { ok: false, refusal: "stale", record: ownershipRecord({ version: 4 }) },
     });
 
     await handler.handleBlockActions(blockPayload("ownership_handback", {
@@ -276,15 +423,14 @@ describe("SlackInteractivityHandler ownership branch", () => {
       version: 3,
     }));
 
-    expect(audit.record).not.toHaveBeenCalled();
     expect(responsePosts[0].body).toMatchObject({
       response_type: "ephemeral",
       text: "Conversation ownership changed. Refreshing.",
     });
   });
 
-  it("opens a reply modal only for human-owned conversations", async () => {
-    const { handler, viewsOpen, responsePosts, identityResolver } = createHandler();
+  it("opens a reply modal for a teammate who may reply", async () => {
+    const { handler, viewsOpen, responsePosts, ownership } = createHandler();
 
     await handler.handleBlockActions(blockPayload("ownership_talk", {
       conversationId: "conv_1",
@@ -292,6 +438,7 @@ describe("SlackInteractivityHandler ownership branch", () => {
       version: 3,
     }));
 
+    expect(ownership.replyRefusal).toHaveBeenCalledWith(actor, "conv_1");
     expect(viewsOpen).toHaveBeenCalledWith({
       installation,
       triggerId: "trigger_1",
@@ -300,17 +447,12 @@ describe("SlackInteractivityHandler ownership branch", () => {
         private_metadata: JSON.stringify({ conversationId: "conv_1", workspaceId: "ws_conversation", version: 3 }),
       }),
     });
-    expect(identityResolver.resolve).toHaveBeenCalledWith({
-      installation,
-      workspaceId: "ws_conversation",
-      slackUserId: "U1",
-    });
     expect(responsePosts).toHaveLength(0);
   });
 
-  it("does not open the reply modal when the conversation is not human-owned", async () => {
+  it("does not open the reply modal while a teammate holds the conversation", async () => {
     const { handler, viewsOpen, responsePosts } = createHandler({
-      currentOwnership: ownershipRecord({ state: "ai_owned", ownerAccountId: null, ownerDisplayName: null }),
+      replyRefusal: { refusal: "held_by_teammate", record: ownershipRecord({ ownerProfile: { displayName: "Fox Mulder", email: "fox@example.com" } }) },
     });
 
     await handler.handleBlockActions(blockPayload("ownership_talk", {
@@ -320,57 +462,134 @@ describe("SlackInteractivityHandler ownership branch", () => {
     }));
 
     expect(viewsOpen).not.toHaveBeenCalled();
-    expect(responsePosts[0].body).toMatchObject({
-      response_type: "ephemeral",
-    });
+    expect(responsePosts[0].body).toMatchObject({ response_type: "ephemeral", text: "Fox Mulder is handling this." });
   });
 
-  it("submits a modal reply through OperatorReplyService", async () => {
-    const { handler, operatorReply } = createHandler();
+  it("submits a modal reply through the ownership service at the version the modal was opened on", async () => {
+    const { handler, ownership } = createHandler();
 
     const result = await handler.handleViewSubmission(viewPayload(" Hello customer "));
 
     expect(result).toBeUndefined();
-    expect(operatorReply.reply).toHaveBeenCalledWith({
+    expect(ownership.reply).toHaveBeenCalledWith(actor, {
       conversationId: "conv_1",
-      workspaceId: "ws_conversation",
-      accountId: "acct_1",
-      displayName: "Dana",
       message: "Hello customer",
+      expectedVersion: 3,
+      auditContext: slackAudit,
     });
   });
 
-  it("returns modal field errors for empty text or non-human-owned conversations", async () => {
+  it("returns modal field errors for empty text, a teammate's conversation, or a stale modal", async () => {
     const empty = createHandler();
-    const emptyResult = await empty.handler.handleViewSubmission(viewPayload("   "));
-    expect(emptyResult).toEqual({
+    await expect(empty.handler.handleViewSubmission(viewPayload("   "))).resolves.toEqual({
       response_action: "errors",
       errors: { ownership_reply_message: "Enter a reply." },
     });
-    expect(empty.operatorReply.reply).not.toHaveBeenCalled();
+    expect(empty.ownership.reply).not.toHaveBeenCalled();
 
-    const aiOwned = createHandler({
-      currentOwnership: ownershipRecord({ state: "ai_owned", ownerAccountId: null, ownerDisplayName: null }),
+    const held = createHandler({
+      replyResult: { ok: false, refusal: "held_by_teammate", record: ownershipRecord({ ownerProfile: { displayName: "Fox Mulder", email: "fox@example.com" } }) },
     });
-    const aiOwnedResult = await aiOwned.handler.handleViewSubmission(viewPayload("Hello"));
-    expect(aiOwnedResult).toEqual({
+    await expect(held.handler.handleViewSubmission(viewPayload("Hello"))).resolves.toEqual({
       response_action: "errors",
-      errors: { ownership_reply_message: "Take over the conversation before replying." },
+      errors: { ownership_reply_message: "Fox Mulder is handling this." },
     });
-    expect(aiOwned.operatorReply.reply).not.toHaveBeenCalled();
-  });
 
-  it("rejects a stale reply modal whose version no longer matches current ownership", async () => {
-    // Modal was opened at version 3 (viewPayload private_metadata); ownership has since moved to
-    // version 4 (handed back + re-taken-over). The stale reply must not reach the customer.
-    const stale = createHandler({ currentOwnership: ownershipRecord({ version: 4 }) });
-
-    const result = await stale.handler.handleViewSubmission(viewPayload("Stale reply"));
-
-    expect(result).toEqual({
+    const stale = createHandler({ replyResult: { ok: false, refusal: "stale", record: ownershipRecord({ version: 4 }) } });
+    await expect(stale.handler.handleViewSubmission(viewPayload("Stale reply"))).resolves.toEqual({
       response_action: "errors",
       errors: { ownership_reply_message: "This conversation changed. Take over again before replying." },
     });
-    expect(stale.operatorReply.reply).not.toHaveBeenCalled();
+  });
+});
+
+describe("SlackInteractivityHandler ownership rules through the ownership service", () => {
+  const dana = { accountId: "acct_1", userId: "user_dana", displayName: "Dana on Slack" };
+  const fox = { accountId: "acct_1", userId: "user_fox", displayName: "Fox on Slack" };
+  const operators: Record<string, { userId: string; label: string }> = {
+    user_dana: { userId: "user_dana", label: "dana@example.com" },
+    user_fox: { userId: "user_fox", label: "fox@example.com" },
+  };
+
+  const createRealHandler = (options: { auditFails?: boolean } = {}) => {
+    const { responsePosts, responseUrlClient } = slackResponses();
+    const ownership = new InMemoryConversationOwnershipRepository();
+    const outbox = new InMemoryActionOutbox();
+    const replies = {
+      prepare: vi.fn(async (reply: Parameters<OperatorReplyService["prepare"]>[0]) => ({ ...reply, channel: null })),
+      write: vi.fn(async () => message),
+      announce: vi.fn(),
+      audit: vi.fn(async () => undefined),
+    };
+    const replyScope = { messages: { create: vi.fn() }, conversations: { touch: vi.fn() }, outbox: { enqueue: vi.fn() } };
+    const activity = { record: vi.fn(async () => undefined) };
+    const service = new ConversationOwnershipService({
+      conversations: { findByIdAndWorkspaceId: async (id: string) => ({ id }) as ConversationRecord },
+      ownership,
+      changes: { run: (work) => work({ ownership, outbox, activity }) },
+      replyWrites: {
+        run: (work) => work({ conversations: { lockForUpdate: async () => true }, ownership, reply: replyScope, activity }),
+      },
+      operators: { find: async ({ userId }: { userId: string }) => operators[userId] ?? null },
+      operatorIdentities: {
+        resolve: async ({ userId }: { userId: string }) => ({ userId, teammateLabel: operators[userId].label, replySignature: null }),
+      },
+      replies,
+      audit: { record: vi.fn(options.auditFails ? async () => { throw new Error("audit unavailable"); } : async () => undefined) },
+      logger: { warn: vi.fn() },
+    });
+    const bySlackUser: Record<string, typeof dana> = { U_DANA: dana, U_FOX: fox };
+    const viewsOpen = vi.fn(async () => {});
+    const handler = new SlackInteractivityHandler({
+      installations: { findByTeamId: async () => installation },
+      identityResolver: {
+        resolve: async ({ slackUserId }: { slackUserId: string }) => bySlackUser[slackUserId] ?? { rejected: true as const },
+      },
+      conversationOwnership: service,
+      slackViews: { open: viewsOpen },
+      responseUrlClient,
+    });
+    return { handler, ownership, outbox, responsePosts, viewsOpen, replies };
+  };
+
+  it("leaves a conversation a teammate holds with them when another clicks a stale Take over", async () => {
+    const { handler, ownership, outbox, responsePosts } = createRealHandler();
+    await handler.handleBlockActions(blockPayload("ownership_takeover", { conversationId: "conv_1", workspaceId: "ws_conversation" }, "U_DANA"));
+
+    await handler.handleBlockActions(blockPayload("ownership_takeover", { conversationId: "conv_1", workspaceId: "ws_conversation" }, "U_FOX"));
+
+    await expect(ownership.load("conv_1")).resolves.toMatchObject({ ownerUserId: "user_dana", version: 1 });
+    expect(outbox.items).toEqual([]);
+    expect(responsePosts.at(-1)?.body).toEqual({
+      response_type: "ephemeral",
+      replace_original: false,
+      text: "dana@example.com is handling this.",
+    });
+  });
+
+  it("keeps the card current when a taken-over conversation's audit record fails", async () => {
+    const { handler, ownership, responsePosts } = createRealHandler({ auditFails: true });
+
+    await handler.handleBlockActions(blockPayload("ownership_takeover", { conversationId: "conv_1", workspaceId: "ws_conversation" }, "U_DANA"));
+    await handler.handleBlockActions(blockPayload("ownership_handback", { conversationId: "conv_1", version: 1 }, "U_DANA"));
+
+    await expect(ownership.load("conv_1")).resolves.toMatchObject({ state: "ai_owned", version: 2 });
+    expect(responsePosts.map((post) => post.body.replace_original)).toEqual([true, true]);
+    expect(responsePosts[0].body).toMatchObject({ text: "Handled by Dana on Slack" });
+  });
+
+  it("refuses Talk and Hand back from a teammate who does not own the conversation", async () => {
+    const { handler, ownership, responsePosts, viewsOpen } = createRealHandler();
+    await handler.handleBlockActions(blockPayload("ownership_takeover", { conversationId: "conv_1", workspaceId: "ws_conversation" }, "U_DANA"));
+
+    await handler.handleBlockActions(blockPayload("ownership_talk", { conversationId: "conv_1", workspaceId: "ws_conversation", version: 1 }, "U_FOX"));
+    await handler.handleBlockActions(blockPayload("ownership_handback", { conversationId: "conv_1", version: 1 }, "U_FOX"));
+
+    expect(viewsOpen).not.toHaveBeenCalled();
+    expect(responsePosts.slice(1).map((post) => post.body)).toEqual([
+      { response_type: "ephemeral", replace_original: false, text: "dana@example.com is handling this." },
+      { response_type: "ephemeral", replace_original: false, text: "dana@example.com is handling this." },
+    ]);
+    await expect(ownership.load("conv_1")).resolves.toMatchObject({ state: "human_owned", ownerUserId: "user_dana", version: 1 });
   });
 });

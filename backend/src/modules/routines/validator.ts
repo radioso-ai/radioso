@@ -1,6 +1,7 @@
 import type { RoutineDefinition } from "./domain.js";
-import { routineValidationCodes, type RoutineValidationCode } from "@radioso/routine-definition";
+import { collectContextVariableRefs, routineExposureToolNamePattern, routineValidationCodes, type RoutineValidationCode } from "@radioso/routine-definition";
 import type { SkillAuthoringDescriptor, SkillAuthoringInput } from "../skills/public.js";
+import { reservedRoutineToolNames } from "./exposure/reservedToolNames.js";
 import { analyzeGuaranteedVariablesOnEntry } from "./variablePopulation.js";
 
 export { routineValidationCodes, type RoutineValidationCode };
@@ -15,6 +16,42 @@ export interface RoutineValidationDiagnostic {
   location: string;
   message: string;
 }
+
+interface SafeRoutineValidationDiagnostic {
+  readonly code: string;
+  readonly location: string;
+  readonly message: string;
+}
+
+const DECLARED_UNUSED_SLOT_LOCATION_PREFIX = "slot:";
+
+/**
+ * A slot key is an author-chosen identifier (`slotKeyPattern`: `[A-Za-z_][A-Za-z0-9_]*`, bounded
+ * length) -- schema-shaped, not authored free text -- and this diagnostic's `location` already
+ * carries it unfiltered. Naming it in the message too means a caller that renders only the message
+ * (not the structured `location`) still learns which slot to fix, instead of just that some
+ * unspecified slot failed.
+ */
+const declaredUnusedSlotMessage = (location: string): string => {
+  const key = location.startsWith(DECLARED_UNUSED_SLOT_LOCATION_PREFIX) ? location.slice(DECLARED_UNUSED_SLOT_LOCATION_PREFIX.length) : null;
+  return key
+    ? `Slot "${key}" is declared but not referenced by any step or terminal instruction. Reference it as {{slot.${key}}} where it belongs, or remove the slot declaration.`
+    : "A declared slot is not referenced by any step or terminal instruction.";
+};
+
+const safeRoutineValidationMessages: Partial<Record<RoutineValidationCode, string | ((location: string) => string)>> = {
+  node_id_collision: "A step or terminal identifier is used more than once.",
+  missing_terminal: "The routine needs at least one terminal.",
+  declared_unused_slot: declaredUnusedSlotMessage,
+};
+
+/** External diagnostic DTO: preserves only structural location, never authored validation text. */
+export const toSafeRoutineValidationDiagnostic = (diagnostic: { readonly code: string; readonly location: string }): SafeRoutineValidationDiagnostic => {
+  const location = diagnostic.location.slice(0, 240);
+  const entry = safeRoutineValidationMessages[diagnostic.code as RoutineValidationCode];
+  const message = typeof entry === "function" ? entry(location) : entry ?? "The routine structure is not valid for serving.";
+  return { code: diagnostic.code, location, message };
+};
 
 export interface RoutineValidationResult {
   ok: boolean;
@@ -171,6 +208,32 @@ export const validateRoutineDefinition = (
     });
   }
 
+  // A disabled exposure block is inert: it only keeps a tool name that may already be frozen
+  // by a published revision (exposureSnapshotRules.ts), so nothing about it can break a turn.
+  if (definition.exposure?.enabled) {
+    const toolName = definition.exposure.toolName;
+    if (!routineExposureToolNamePattern.test(toolName)) {
+      diagnostics.push({
+        code: "exposure_tool_name_invalid",
+        location: "exposure.toolName",
+        message: `invalid tool name: "${toolName}" must be 2-63 characters of lower-case letters, digits, and underscores, starting with a letter.`,
+      });
+    } else if (reservedRoutineToolNames.has(toolName)) {
+      diagnostics.push({
+        code: "exposure_tool_name_reserved",
+        location: "exposure.toolName",
+        message: `reserved tool name: "${toolName}" is a built-in tool of the agent surface; choose another name.`,
+      });
+    }
+    if (definition.activation.gateRef) {
+      diagnostics.push({
+        code: "exposure_requires_ungated_activation",
+        location: "exposure.enabled",
+        message: `exposure requires ungated activation: routine "${definition.name}" has an activation gate, and a tool call would bypass it; remove the gate or keep the routine reachable through conversation only.`,
+      });
+    }
+  }
+
   if (definition.completionExport?.enabled && definition.completionExport.destinationRef.trim().length === 0) {
     diagnostics.push({
       code: "completion_export_missing_destination",
@@ -180,6 +243,19 @@ export const validateRoutineDefinition = (
   }
 
   for (const step of steps) {
+    // A `{{context.<name>}}` in the instruction reads a context variable at runtime; the
+    // name must be one the agent actually has, else the step silently reads nothing.
+    if (context.availableContextVariables) {
+      for (const name of collectContextVariableRefs(step.instruction)) {
+        if (!context.availableContextVariables.has(name)) {
+          diagnostics.push({
+            code: "unknown_context_variable",
+            location: `step:${step.stableStepId}.instruction`,
+            message: `unknown context variable: step "${step.stableStepId}" references context variable "${name}", which is not available to this agent.`,
+          });
+        }
+      }
+    }
     // A tool step compiles to a skill step dispatched through the shared
     // skill-executor port (see RoutineSkillExecutorDispatcher); it must name the
     // authored skill it invokes — an unbound tool step is the dangling case.
@@ -514,6 +590,22 @@ export const validateRoutineDefinition = (
   for (const terminal of terminals) {
     for (const key of collectSlotReferences(terminal.instruction)) {
       referencedSlotKeys.add(key);
+    }
+    // An operator notice reads collected values; it never collects one. A reference to a slot
+    // the routine does not declare would always render as a blank, so it is reported at the
+    // notice field it appears in rather than at the slot.
+    for (const field of ["subject", "intro"] as const) {
+      for (const key of collectSlotReferences(terminal.operatorNotice?.[field])) {
+        if (slotKeys.has(key)) {
+          referencedSlotKeys.add(key);
+          continue;
+        }
+        diagnostics.push({
+          code: "referenced_undeclared_slot",
+          location: `step:${terminal.stableStepId}.operatorNotice.${field}`,
+          message: `referenced-but-undeclared slot: the operator notice ${field} of ending "${terminal.stableStepId}" references "${key}", which is not declared.`,
+        });
+      }
     }
   }
 

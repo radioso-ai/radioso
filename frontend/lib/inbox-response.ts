@@ -1,6 +1,7 @@
 import type { ChatConversationDetail, ChatConversationSummary, ConversationChannelContext, ConversationOwnership } from '@/lib/api'
 import { getAgentOperatorLabel } from '@/lib/agent-label'
 import type { EscalationType, HandoffCandidateSource } from '@/lib/needs-attention'
+import { deriveOperatorActions } from '@/lib/operator-actions'
 
 /**
  * Pure presentation helpers for the operator inbox's response view (spec
@@ -96,6 +97,36 @@ export const resolveReadOnlySource = (
   return conversation ?? null
 }
 
+// ── Freshest ownership (open-pane live updates) ─────────────────────────────
+
+/**
+ * The response pane reads ownership from two places while open: the
+ * conversation-detail fetch (loaded once, then only refreshed after an
+ * operator's own action) and the tail poll (`useConversationTail`, re-read
+ * every second, and the only one of the two that observes a *transfer,
+ * take-over, or hand-back made elsewhere* — Assign/Reassign or Done from
+ * another tab, another teammate, the Inbox list, or Slack — while this pane
+ * stays open). Both carry the conversation's ownership record whenever it
+ * has one, whatever its state: a hand-back arrives as an AI-owned record
+ * with a higher version, which wins over the stale human-owned one like any
+ * other change. A conversation that never had a record has none on either.
+ * The tail argument wins on a tied version: a poll result is never older
+ * than the refetch it happened to match, so preferring it avoids ever
+ * preferring a value we know is at best equally stale.
+ */
+export const freshestOwnership = (
+  detailOwnership: ConversationOwnership | null | undefined,
+  tailOwnership: ConversationOwnership | null | undefined,
+): ConversationOwnership | undefined => {
+  if (!detailOwnership) {
+    return tailOwnership ?? undefined
+  }
+  if (!tailOwnership) {
+    return detailOwnership
+  }
+  return tailOwnership.version >= detailOwnership.version ? tailOwnership : detailOwnership
+}
+
 // ── Channel label (FR-006) ──────────────────────────────────────────────────
 
 /**
@@ -128,7 +159,7 @@ export interface SituationSource {
 export const selectSituationBody = (source: SituationSource): string | null =>
   source.summary ?? source.firstVisitorMessage ?? null
 
-export interface ConversationMessageLike {
+interface ConversationMessageLike {
   source?: string
   role: string
   content: string
@@ -165,30 +196,44 @@ export const doneControlTooltip = (item: {
 }
 
 /**
- * Whether the Done control renders at all: only when there's something to
- * wrap up. A handoff needs an ownership record — the only state the wire
- * ever sends non-null `ownership` for, covering both "awaiting a human"
- * (unclaimed) and "human-owned" (claimed) — or the detail simply hasn't
- * loaded yet (unknown, not "no ownership"; the composer alone renders
- * meanwhile and Done stays disabled — see the caller — rather than hidden,
- * so a fast click can't mistake "not loaded" for "definitely nothing to hand
- * back"). Negative feedback never depends on ownership. A live AI-owned
- * conversation with a *loaded* detail showing no ownership record has
- * nothing to hand back — the composer alone is correct there; Done appears
- * once the first send claims it and the detail refetch brings the record.
+ * Whether the Done control renders at all: only when there's something this
+ * viewer can wrap up. Negative feedback never depends on ownership — closing
+ * a feedback item is triage, so it shows even on a conversation a teammate
+ * holds, and even before the signed-in teammate is known.
+ *
+ * A handoff's Done hands the conversation back, so it shows only while it is
+ * human-owned and either waits unclaimed or is held by this viewer — the
+ * `awaiting_human` and `owned_by_me` statuses of `deriveOperatorActions`. It
+ * also shows while the detail simply hasn't loaded yet (unknown, not "no
+ * ownership"; the composer alone renders meanwhile and Done stays disabled —
+ * see the caller — rather than hidden, so a fast click can't mistake "not
+ * loaded" for "definitely nothing to hand back"). It hides when:
+ * - the signed-in teammate isn't known yet: whether the conversation is
+ *   theirs to hand back can't be told, so no ownership control shows;
+ * - the conversation is AI-owned, whether it never had an ownership record
+ *   or its record is AI-owned again after a hand-back (possibly one made
+ *   elsewhere, which the tail reports) — there is nothing to hand back, and
+ *   Done appears once a send claims it again;
+ * - a teammate holds it: only its owner hands it back, and the composer
+ *   offers Reassign instead.
  * Approvals never render Done (they close when the decision resolves).
  */
 export const shouldShowDoneControl = (
   itemType: EscalationType | undefined,
-  conversationDetail: { ownership?: unknown } | null,
+  conversationDetail: Pick<ChatConversationDetail, 'ownership'> | null,
+  currentUserId: string | null,
 ): boolean => {
   if (itemType === 'negative_feedback') {
     return true
   }
-  if (itemType !== 'handoff') {
+  if (itemType !== 'handoff' || currentUserId === null) {
     return false
   }
-  return !conversationDetail || Boolean(conversationDetail.ownership)
+  if (!conversationDetail) {
+    return true
+  }
+  const { status } = deriveOperatorActions(conversationDetail.ownership, currentUserId)
+  return status === 'awaiting_human' || status === 'owned_by_me'
 }
 
 // ── Read-only footer (All lens, non-actionable conversations) ──────────────

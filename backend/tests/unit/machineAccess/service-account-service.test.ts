@@ -8,7 +8,7 @@ const now = new Date("2026-08-31T00:00:00.000Z");
 const expiresAt = new Date("2027-08-30T00:00:00.000Z");
 
 const createHarness = (actorRole: "member" | "admin" | "owner" = "admin") => {
-  const repository = new InMemoryMachineAccessRepository();
+  const repository = new InMemoryMachineAccessRepository(() => now);
   const audit = createAuditService();
   const accountAccess = {
     requirePermission: async () => {
@@ -61,7 +61,7 @@ describe("ServiceAccountService", () => {
   });
 
   it("passes the current actor to every transaction-owned service mutation", async () => {
-    const repository = new InMemoryMachineAccessRepository();
+    const repository = new InMemoryMachineAccessRepository(() => now);
     const audit = createAuditService();
     const actorAuthority: unknown[] = [];
     const mutators = new Set([

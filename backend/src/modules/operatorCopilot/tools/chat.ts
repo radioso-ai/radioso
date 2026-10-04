@@ -1,29 +1,21 @@
 import { z } from "zod";
 
+import type { CallerKind } from "../../../shared/domain/conversationSource.js";
+import type { SameType } from "../../../shared/types/sameType.js";
+import {
+  CONVERSATION_ACTIVITY_KINDS,
+  resolveActivityReadScope,
+  type ConversationActivityEntry,
+  type ConversationActivityReadScope,
+} from "../../conversationActivity/contracts/index.js";
+import { hasCurrentCopilotPermissions } from "../authorization.js";
 import type { CopilotToolDescriptor } from "../contracts.js";
-import { boundPayload } from "../payloadCompaction.js";
-import { boundConversationPayload, boundTurnTracePayload } from "./chatPayloadBounds.js";
+import { boundPayload, truncationRecordSchema } from "../payloadCompaction.js";
+import { boundConversationPayload, boundTurnTracePayload, jsonValueSchema, turnTraceEnvelopeSchema } from "./chatPayloadBounds.js";
 import { asRecord, entity, requiredPageConversation } from "./shared.js";
 
 const idSchema = z.string().uuid();
 const unknownRecord = z.record(z.unknown());
-const jsonValueSchema: z.ZodType<unknown> = z.lazy(() => z.union([
-  z.string(),
-  z.number(),
-  z.boolean(),
-  z.null(),
-  z.array(jsonValueSchema),
-  z.record(jsonValueSchema),
-]));
-const truncationSchema = z.object({
-  truncated: z.literal(true),
-  entries: z.array(z.object({
-    path: z.string(),
-    reason: z.enum(["string_length", "array_length", "budget_omitted"]),
-    originalLength: z.number().int().nonnegative().optional(),
-    retainedLength: z.number().int().nonnegative().optional(),
-  })),
-});
 const shallowRouteSchema = z.object({
   generator: z.string(),
   routeType: z.enum(["direct", "retrieval"]),
@@ -57,42 +49,41 @@ const transcriptMessageSchema = z.object({
   latencyMs: z.number().nonnegative().nullable(),
   answerFeedback: z.array(jsonValueSchema),
   operatorDisplayName: z.string().nullable(),
+  operatorLabel: z.string().nullable(),
   turnFailure: turnFailureSchema,
 });
+const activityPersonSchema = z.object({ userId: z.string().uuid(), label: z.string().nullable() }).nullable();
+const transcriptActivitySchema = z.object({
+  kind: z.enum(CONVERSATION_ACTIVITY_KINDS),
+  createdAt: z.string(),
+  /** Null when the agent acted, or a caller that is no teammate. */
+  actor: activityPersonSchema,
+  subject: activityPersonSchema,
+  from: activityPersonSchema,
+  handoffReason: z.string().nullable(),
+  decision: z.object({ optionId: z.string(), label: z.string() }).nullable(),
+  resolution: z.string().nullable(),
+  assistantMessageId: z.string().uuid().nullable(),
+});
+// Compile-time guard: Ray's transcript activity is the operator entry without its id, so a field
+// added to or dropped from the entry fails tsc here until the projection below follows it.
+const transcriptActivityMatchesEntry: SameType<z.infer<typeof transcriptActivitySchema>, Omit<ConversationActivityEntry, "id">> = true;
+void transcriptActivityMatchesEntry;
 const conversationTranscriptOutputSchema = z.object({
   transcript: z.object({
     conversationId: z.string().uuid(),
     agentId: z.string().uuid().nullable(),
     agentName: z.string().nullable(),
     sourceChannel: z.string().nullable(),
+    callerKind: z.enum(["human", "agent"]),
     createdAt: z.string(),
     updatedAt: z.string(),
     messageCount: z.number().int().nonnegative(),
     ownership: ownershipSchema,
     messages: z.array(transcriptMessageSchema),
-  }).and(z.object({ truncation: truncationSchema.optional() })),
+    activity: z.array(transcriptActivitySchema),
+  }).and(z.object({ truncation: truncationRecordSchema })),
 });
-const traceStageSchema = z.object({
-  id: z.string(),
-  kind: z.string(),
-  status: z.string(),
-  startedAt: z.string().optional(),
-  completedAt: z.string().optional(),
-  inputs: z.record(jsonValueSchema).optional(),
-  outputs: z.record(jsonValueSchema).optional(),
-  subTrace: jsonValueSchema.optional(),
-}).passthrough();
-const turnTraceEnvelopeSchema = z.object({
-  version: z.number().int().nonnegative(),
-  spine: z.object({
-    traceId: z.string(),
-    startedAt: z.string(),
-    completedAt: z.string().optional(),
-    stages: z.array(traceStageSchema),
-  }).passthrough(),
-  openTelemetry: z.object({ traceId: z.string(), spanId: z.string(), sampled: z.boolean() }).optional(),
-  summary: z.record(jsonValueSchema).optional(),
-}).nullable();
 const turnTraceOutputSchema = z.object({
   trace: z.object({
     conversationId: z.string().uuid(),
@@ -106,6 +97,7 @@ const turnTraceOutputSchema = z.object({
       citations: z.array(jsonValueSchema),
       answerFeedback: z.array(jsonValueSchema),
       operatorDisplayName: z.string().nullable(),
+      operatorLabel: z.string().nullable(),
       turnFailure: turnFailureSchema,
       debug: z.object({
         eventStatus: z.enum(["success", "failure", "cancelled"]),
@@ -117,11 +109,11 @@ const turnTraceOutputSchema = z.object({
         route: shallowRouteSchema,
         activitySummary: jsonValueSchema.nullable(),
         activityTrace: jsonValueSchema.nullable(),
-        turnTrace: turnTraceEnvelopeSchema,
+        turnTrace: turnTraceEnvelopeSchema.nullable(),
         errorMessage: z.string().nullable(),
       }).nullable(),
     }),
-  }).and(z.object({ truncation: truncationSchema.optional() })),
+  }).and(z.object({ truncation: truncationRecordSchema })),
 });
 
 
@@ -144,6 +136,8 @@ export interface CopilotConversationListOptions {
 /** Ownership is present only while a person owns the conversation; absent reads as AI-owned. */
 export interface CopilotConversationOwnershipSummary {
   readonly state: string;
+  /** The teammate holding the conversation; a human-owned conversation is claimed exactly when this is set. */
+  readonly ownerUserId: string | null;
   readonly ownerDisplayName: string | null;
   readonly reason: string | null;
   /** Set once an operator takes the conversation over; null while it waits unassigned. */
@@ -167,6 +161,13 @@ interface CopilotConversationOptions {
   includeOwnership: boolean;
   includeTurnFailureDebug: boolean;
   includeLatency: boolean;
+  /** Names the teammate behind each human reply, by teammate label (can be an email). */
+  includeOperatorLabel: boolean;
+  /**
+   * The conversation's activity — handoffs, claims, reassignments, hand-backs, decisions, feedback
+   * closed — with the kinds the operator may see. Absent reads none.
+   */
+  activity?: ConversationActivityReadScope;
 }
 
 interface CopilotOwnership {
@@ -210,7 +211,10 @@ interface CopilotConversationMessage {
   citations?: ReadonlyArray<unknown>;
   answerFeedbackEntries?: ReadonlyArray<unknown>;
   latencyMs?: number;
+  /** The signature the visitor saw on a human reply. */
   operatorDisplayName?: string;
+  /** The teammate who wrote a human reply, as teammates name each other. */
+  operatorLabel?: string;
   turnFailure?: CopilotTurnFailure;
   debug?: CopilotDebug;
 }
@@ -220,11 +224,13 @@ interface CopilotConversationDetail {
   agentId: string | null;
   agentName: string | null;
   sourceChannel: string | null;
+  callerKind: CallerKind;
   createdAt: string;
   updatedAt: string;
   messageCount: number;
   ownership?: CopilotOwnership;
   messages: ReadonlyArray<CopilotConversationMessage>;
+  activity?: ReadonlyArray<ConversationActivityEntry>;
 }
 
 interface CopilotConversationTurnDetail {
@@ -264,6 +270,7 @@ const projectTranscript = (conversation: CopilotConversationDetail): Record<stri
   agentId: conversation.agentId,
   agentName: conversation.agentName,
   sourceChannel: conversation.sourceChannel,
+  callerKind: conversation.callerKind,
   createdAt: conversation.createdAt,
   updatedAt: conversation.updatedAt,
   messageCount: conversation.messageCount,
@@ -281,7 +288,19 @@ const projectTranscript = (conversation: CopilotConversationDetail): Record<stri
     latencyMs: message.latencyMs ?? null,
     answerFeedback: [...(message.answerFeedbackEntries ?? [])],
     operatorDisplayName: message.operatorDisplayName ?? null,
+    operatorLabel: message.operatorLabel ?? null,
     turnFailure: projectTurnFailure(message.turnFailure),
+  })),
+  activity: (conversation.activity ?? []).map((entry) => ({
+    kind: entry.kind,
+    createdAt: entry.createdAt,
+    actor: entry.actor,
+    subject: entry.subject,
+    from: entry.from,
+    handoffReason: entry.handoffReason,
+    decision: entry.decision,
+    resolution: entry.resolution,
+    assistantMessageId: entry.assistantMessageId,
   })),
 });
 
@@ -327,6 +346,7 @@ const projectTurnTrace = (detail: CopilotConversationTurnDetail): Record<string,
       citations: [...(message.citations ?? [])],
       answerFeedback: [...(message.answerFeedbackEntries ?? [])],
       operatorDisplayName: message.operatorDisplayName ?? null,
+      operatorLabel: message.operatorLabel ?? null,
       turnFailure: projectTurnFailure(message.turnFailure),
       debug: debug
         ? {
@@ -350,6 +370,13 @@ const projectTurnTrace = (detail: CopilotConversationTurnDetail): Record<string,
 };
 
 
+// Test Chat sessions are private test executions rather than conversations, so these two readers
+// never see them; naming the Test Chat readers keeps a "why didn't it fire in Test Chat" question
+// from searching customer history.
+const CONVERSATION_TRANSCRIPT_DESCRIPTION = "Read a bounded transcript of a customer or dashboard chat conversation with shallow per-turn outcomes, routing, feedback, and ownership, plus its latest activity: who handed it off, took it, reassigned it, and handed it back, which approval option a teammate chose, and — for an operator with Quality access — who resolved or dismissed its feedback. Use turn_trace for one turn's full diagnostic spine. Test Chat sessions are read with test_chat_transcript.";
+const CONVERSATION_HISTORY_SEARCH_DESCRIPTION = "List recent customer and dashboard chat conversations in this workspace for investigation. Test Chat sessions are listed with test_chat_sessions.";
+const TURN_TRACE_DESCRIPTION = "Inspect one message's full turn diagnostic spine. Accepts user messages, including unanswered turns with their failure or cancellation reason. A routine's sub-trace reports which slots were filled by key only (filledSlotKeys, capturedSlotKeys) — never their values — and, per step the selector judged, its selection: outcome and the slot keys the model returned (returnedSlotKeys). Use test_chat_turn_trace to see values, on a private Test Chat run only.";
+
 export interface ChatCopilotToolDependencies {
   readonly chatHistoryService: CopilotConversationHistoryPort;
 }
@@ -357,11 +384,11 @@ export interface ChatCopilotToolDependencies {
 export const createChatCopilotTools = (deps: ChatCopilotToolDependencies): ReadonlyArray<CopilotToolDescriptor> => [
   {
     name: "conversation_transcript", shape: "read", verificationCost: () => 0, uiLabel: "Reading conversation transcript", contributingModule: "chat", dashboardSubject: { type: "conversation" }, requiredPermissions: ["workspace.history.read"],
-    description: "Read a bounded customer transcript with shallow per-turn outcomes, routing, feedback, and ownership. Use turn_trace for one turn's full diagnostic spine.",
+    description: CONVERSATION_TRANSCRIPT_DESCRIPTION,
     inputSchema: z.object({ conversationId: idSchema.optional() }), outputSchema: conversationTranscriptOutputSchema,
     createTool: (context) => ({
       name: "conversation_transcript",
-      description: "Read a bounded customer transcript with shallow per-turn outcomes, routing, feedback, and ownership. Use turn_trace for one turn's full diagnostic spine.",
+      description: CONVERSATION_TRANSCRIPT_DESCRIPTION,
       inputSchema: z.object({ conversationId: idSchema.optional() }),
       outputSchema: conversationTranscriptOutputSchema,
       invoke: async ({ conversationId }) => ({
@@ -369,7 +396,15 @@ export const createChatCopilotTools = (deps: ChatCopilotToolDependencies): Reado
           context.workspaceId,
           conversationId ?? requiredPageConversation(context.pageContext.conversationId),
           { limit: 100 },
-          { includeAnswerFeedback: true, includeOwnership: true, includeTurnFailureDebug: true, includeLatency: true },
+          {
+            includeAnswerFeedback: true,
+            includeOwnership: true,
+            includeTurnFailureDebug: true,
+            includeLatency: true,
+            includeOperatorLabel: true,
+            // Feedback triage outcomes are Quality data: Ray reads them only for an operator who may.
+            activity: await resolveActivityReadScope((permission) => hasCurrentCopilotPermissions(context, [permission])),
+          },
         ))),
       }),
     }),
@@ -377,27 +412,33 @@ export const createChatCopilotTools = (deps: ChatCopilotToolDependencies): Reado
   },
   {
     name: "turn_trace", shape: "read", verificationCost: () => 0, uiLabel: "Reading turn trace", contributingModule: "chat", dashboardSubject: { type: "conversation" }, requiredPermissions: ["workspace.history.read"],
-    description: "Inspect one message's full turn diagnostic spine. Accepts user messages, including unanswered turns with their failure or cancellation reason.",
+    description: TURN_TRACE_DESCRIPTION,
     inputSchema: z.object({ messageId: idSchema }), outputSchema: turnTraceOutputSchema,
     createTool: (context) => ({
       name: "turn_trace",
-      description: "Inspect one message's full turn diagnostic spine. Accepts user messages, including unanswered turns with their failure or cancellation reason.",
+      description: TURN_TRACE_DESCRIPTION,
       inputSchema: z.object({ messageId: idSchema }),
       outputSchema: turnTraceOutputSchema,
       invoke: async ({ messageId }) => ({
         trace: boundTurnTracePayload(projectTurnTrace(await deps.chatHistoryService.getConversationTurn(
           context.workspaceId,
           messageId,
-          { includeAnswerFeedback: true, includeOwnership: true, includeTurnFailureDebug: true, includeLatency: true },
+          {
+            includeAnswerFeedback: true,
+            includeOwnership: true,
+            includeTurnFailureDebug: true,
+            includeLatency: true,
+            includeOperatorLabel: true,
+          },
         ))),
       }),
     }),
   },
   {
     name: "conversation_history_search", shape: "read", verificationCost: () => 0, uiLabel: "Searching conversations", contributingModule: "chat", dashboardSubject: { type: "conversation" }, requiredPermissions: ["workspace.history.read"],
-    description: "List recent customer conversations in this workspace for investigation.",
+    description: CONVERSATION_HISTORY_SEARCH_DESCRIPTION,
     inputSchema: z.object({ limit: z.number().int().min(1).max(50).optional() }), outputSchema: z.object({ conversations: z.array(unknownRecord) }),
-    createTool: (context) => ({ name: "conversation_history_search", description: "List recent customer conversations in this workspace for investigation.", inputSchema: z.object({ limit: z.number().int().min(1).max(50).optional() }), outputSchema: z.object({ conversations: z.array(unknownRecord) }), invoke: async ({ limit }) => ({ conversations: boundPayload({ conversations: (await deps.chatHistoryService.listConversations(context.workspaceId, { limit: limit ?? 20 })).conversations.map(asRecord) }).conversations }) }),
+    createTool: (context) => ({ name: "conversation_history_search", description: CONVERSATION_HISTORY_SEARCH_DESCRIPTION, inputSchema: z.object({ limit: z.number().int().min(1).max(50).optional() }), outputSchema: z.object({ conversations: z.array(unknownRecord) }), invoke: async ({ limit }) => ({ conversations: boundPayload({ conversations: (await deps.chatHistoryService.listConversations(context.workspaceId, { limit: limit ?? 20 })).conversations.map(asRecord) }).conversations }) }),
   },
 
 ];

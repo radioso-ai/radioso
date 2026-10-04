@@ -37,6 +37,7 @@ const conversation: ChatConversationSummary = {
   agentName: 'Support agent',
   agentInternalName: null,
   sourceChannel: null,
+  callerKind: 'human' as const,
   sourceOrigin: null,
   channelContext: null,
   anonymousSessionId: null,

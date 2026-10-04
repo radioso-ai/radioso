@@ -142,6 +142,7 @@ describeIfDatabase("post-completion slot correction (real routine_states)", () =
     await applyTestMigration(database, "071_routine_states.sql");
     await database.execute("ALTER TABLE routine_states ADD COLUMN IF NOT EXISTS attempts JSONB NOT NULL DEFAULT '{}'::jsonb");
     await database.execute("ALTER TABLE routine_states ADD COLUMN IF NOT EXISTS execution_id UUID");
+    await applyTestMigration(database, "204_routine_state_reask_count.sql");
     store = new RoutineStateRepository(database.kysely, 60_000);
   });
 

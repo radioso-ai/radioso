@@ -38,6 +38,24 @@ If route code starts owning mapping, trace formatting, audit metadata, or
 persistence details, extract a named helper or move the behavior into the
 owning module.
 
+## Client Address
+
+`createApp` resolves each request's source once, in `middleware/requestSource.ts`,
+from `RADIOSO_TRUSTED_PROXY_HOPS` and, for requests the frontend relayed, its
+signed edge-facts envelope. Read it with `readRequestSource(req, res)`: key rate
+limits on `.digest`, and write `.address` only where an audit record keeps the
+IP. `req.ip` is always the socket peer, and lint rejects it in production code.
+Application route mounts get the same digest through their `requestSource`
+dependency. Pre-authentication source limiters
+(`middleware/preAuthSourceRateLimiter.ts`) key on a verified standalone MCP
+source proof first, since the MCP server signs the digest of the caller it
+saw, and otherwise on this published digest. The first such limiter on a route
+publishes its key, and later middleware reads it with `readPreAuthSourceDigest`.
+The request-source middleware also publishes the envelope reading it took, which
+conversation request context reuses through `readPublishedEdgeFactsEnvelope`,
+and it is the one place a rejected envelope is counted
+(`edge_facts_proof_rejected_total{reason}`).
+
 ## Contract Checklist
 
 For public API changes, review:

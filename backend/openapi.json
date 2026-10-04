@@ -203,6 +203,13 @@
             "type": "string",
             "format": "uuid"
           },
+          "displayName": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The name the person chose for themselves, or null when they have not set one."
+          },
           "accountId": {
             "type": "string",
             "format": "uuid"
@@ -226,6 +233,7 @@
         },
         "required": [
           "userId",
+          "displayName",
           "accountId",
           "organizationName",
           "workspaceId",
@@ -240,6 +248,13 @@
           "userId": {
             "type": "string",
             "format": "uuid"
+          },
+          "displayName": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The name the person chose for themselves, or null when they have not set one."
           },
           "accountId": {
             "type": "string",
@@ -261,6 +276,7 @@
         },
         "required": [
           "userId",
+          "displayName",
           "accountId",
           "organizationName",
           "workspaceId",
@@ -318,6 +334,31 @@
               "email"
             ]
           }
+        ]
+      },
+      "UserProfile": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "displayName": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The name the person chose for themselves, or null when they have not set one."
+          }
+        },
+        "required": [
+          "userId",
+          "email",
+          "displayName"
         ]
       },
       "EmailVerificationVerifyResponse": {
@@ -494,6 +535,12 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 80
+          },
+          "displayName": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -610,12 +657,33 @@
           "password": {
             "type": "string",
             "minLength": 8
+          },
+          "displayName": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
           "email",
           "password"
         ]
+      },
+      "UserProfileUpdateRequest": {
+        "type": "object",
+        "properties": {
+          "displayName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "displayName"
+        ],
+        "additionalProperties": false
       },
       "AccountInvitationCreateRequest": {
         "type": "object",
@@ -708,6 +776,13 @@
             "type": "string",
             "format": "email"
           },
+          "displayName": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The name the person chose for themselves, or null when they have not set one."
+          },
           "role": {
             "type": "string",
             "enum": [
@@ -731,6 +806,7 @@
           "membershipId",
           "userId",
           "email",
+          "displayName",
           "role",
           "status",
           "createdAt"
@@ -3390,6 +3466,31 @@
               "assistantBootstrapActive": {
                 "type": "boolean"
               },
+              "publicId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Identifier other agents address this agent by. Null until the agent card is published; rotate it to drop every connected caller."
+              },
+              "publicDescription": {
+                "type": "string",
+                "description": "Operator-authored sentence the agent's public cards carry."
+              },
+              "agentCardEnabled": {
+                "type": "boolean"
+              },
+              "publicAgentAccessEnabled": {
+                "type": "boolean",
+                "description": "Whether a calling agent may connect with the public id and no credential. Requires agentCardEnabled."
+              },
+              "walkInConversationsPerHour": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "description": "Per-agent walk-in conversation budget. Null leaves the deployment default in charge."
+              },
               "chatModelOverride": {
                 "type": [
                   "object",
@@ -3441,6 +3542,11 @@
               "assistantDefaultLocale",
               "proactiveGreetingEnabled",
               "assistantBootstrapActive",
+              "publicId",
+              "publicDescription",
+              "agentCardEnabled",
+              "publicAgentAccessEnabled",
+              "walkInConversationsPerHour",
               "chatModelOverride",
               "skillSettings",
               "surfaceSettings"
@@ -3587,6 +3693,24 @@
           },
           "proactiveGreetingEnabled": {
             "type": "boolean"
+          },
+          "publicDescription": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "agentCardEnabled": {
+            "type": "boolean"
+          },
+          "publicAgentAccessEnabled": {
+            "type": "boolean"
+          },
+          "walkInConversationsPerHour": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1,
+            "maximum": 100000
           },
           "chatModelOverride": {
             "anyOf": [
@@ -4449,6 +4573,25 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 4000
+          },
+          "routine": {
+            "type": "object",
+            "properties": {
+              "toolName": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 63
+              },
+              "input": {
+                "type": "object",
+                "additionalProperties": {}
+              }
+            },
+            "required": [
+              "toolName",
+              "input"
+            ],
+            "additionalProperties": false
           },
           "startConversation": {
             "type": "boolean",
@@ -5718,6 +5861,28 @@
                   "minLength": 1,
                   "maxLength": 4000
                 },
+                "operatorNotice": {
+                  "type": "object",
+                  "properties": {
+                    "subject": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "intro": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1,
+                      "maxLength": 2000
+                    }
+                  },
+                  "additionalProperties": false
+                },
                 "ordinal": {
                   "type": "integer",
                   "minimum": 0
@@ -5756,6 +5921,28 @@
                 "default": ""
               }
             },
+            "additionalProperties": false
+          },
+          "exposure": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "toolName": {
+                "type": "string",
+                "maxLength": 63
+              },
+              "description": {
+                "type": "string",
+                "maxLength": 500
+              }
+            },
+            "required": [
+              "enabled",
+              "toolName",
+              "description"
+            ],
             "additionalProperties": false
           }
         },
@@ -6292,6 +6479,28 @@
                       "minLength": 1,
                       "maxLength": 4000
                     },
+                    "operatorNotice": {
+                      "type": "object",
+                      "properties": {
+                        "subject": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "intro": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "minLength": 1,
+                          "maxLength": 2000
+                        }
+                      },
+                      "additionalProperties": false
+                    },
                     "ordinal": {
                       "type": "integer",
                       "minimum": 0
@@ -6327,6 +6536,28 @@
                     "maxLength": 300
                   }
                 },
+                "additionalProperties": false
+              },
+              "exposure": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "toolName": {
+                    "type": "string",
+                    "maxLength": 63
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "enabled",
+                  "toolName",
+                  "description"
+                ],
                 "additionalProperties": false
               }
             },
@@ -6397,7 +6628,12 @@
                     "unknown_variable_ref",
                     "unknown_context_variable",
                     "variable_name_collision",
-                    "node_id_collision"
+                    "node_id_collision",
+                    "exposure_tool_name_invalid",
+                    "exposure_tool_name_reserved",
+                    "exposure_tool_name_duplicate",
+                    "exposure_tool_name_changed",
+                    "exposure_requires_ungated_activation"
                   ]
                 },
                 "location": {
@@ -6933,6 +7169,28 @@
                   "minLength": 1,
                   "maxLength": 4000
                 },
+                "operatorNotice": {
+                  "type": "object",
+                  "properties": {
+                    "subject": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "intro": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1,
+                      "maxLength": 2000
+                    }
+                  },
+                  "additionalProperties": false
+                },
                 "ordinal": {
                   "type": "integer",
                   "minimum": 0
@@ -6971,6 +7229,28 @@
                 "default": ""
               }
             },
+            "additionalProperties": false
+          },
+          "exposure": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "toolName": {
+                "type": "string",
+                "maxLength": 63
+              },
+              "description": {
+                "type": "string",
+                "maxLength": 500
+              }
+            },
+            "required": [
+              "enabled",
+              "toolName",
+              "description"
+            ],
             "additionalProperties": false
           },
           "id": {
@@ -7579,6 +7859,28 @@
                       "minLength": 1,
                       "maxLength": 4000
                     },
+                    "operatorNotice": {
+                      "type": "object",
+                      "properties": {
+                        "subject": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "intro": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "minLength": 1,
+                          "maxLength": 2000
+                        }
+                      },
+                      "additionalProperties": false
+                    },
                     "ordinal": {
                       "type": "integer",
                       "minimum": 0
@@ -7617,6 +7919,28 @@
                     "default": ""
                   }
                 },
+                "additionalProperties": false
+              },
+              "exposure": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "toolName": {
+                    "type": "string",
+                    "maxLength": 63
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "enabled",
+                  "toolName",
+                  "description"
+                ],
                 "additionalProperties": false
               }
             },
@@ -9236,6 +9560,28 @@
                       "minLength": 1,
                       "maxLength": 4000
                     },
+                    "operatorNotice": {
+                      "type": "object",
+                      "properties": {
+                        "subject": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "intro": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "minLength": 1,
+                          "maxLength": 2000
+                        }
+                      },
+                      "additionalProperties": false
+                    },
                     "ordinal": {
                       "type": "integer",
                       "minimum": 0
@@ -9274,6 +9620,28 @@
                     "default": ""
                   }
                 },
+                "additionalProperties": false
+              },
+              "exposure": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "toolName": {
+                    "type": "string",
+                    "maxLength": 63
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "enabled",
+                  "toolName",
+                  "description"
+                ],
                 "additionalProperties": false
               }
             },
@@ -12409,6 +12777,14 @@
           "validation"
         ]
       },
+      "CallerKind": {
+        "type": "string",
+        "enum": [
+          "human",
+          "agent"
+        ],
+        "description": "Whether a person or a calling agent is on the other side of the conversation."
+      },
       "SkillAvailability": {
         "type": "object",
         "properties": {
@@ -14064,13 +14440,23 @@
               "string",
               "null"
             ],
-            "format": "uuid"
+            "format": "uuid",
+            "description": "The organisation the workspace belongs to while a teammate owns the conversation. Shared by every teammate, so it does not identify one."
+          },
+          "ownerUserId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "The teammate handling the conversation; a human-owned conversation is claimed exactly when this is set. Null while a handoff waits to be claimed, when AI-owned, and once the owner's user is deleted."
           },
           "ownerDisplayName": {
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "description": "The owner's teammate label: their display name, else their email. Null whenever `ownerUserId` is null. Operator-facing only."
           },
           "reason": {
             "type": [
@@ -14087,7 +14473,8 @@
               "string",
               "null"
             ],
-            "format": "date-time"
+            "format": "date-time",
+            "description": "When the owning teammate claimed the conversation. Null whenever `ownerUserId` is null."
           },
           "createdAt": {
             "type": "string",
@@ -14103,6 +14490,7 @@
           "workspaceId",
           "state",
           "ownerAccountId",
+          "ownerUserId",
           "ownerDisplayName",
           "reason",
           "version",
@@ -14315,6 +14703,9 @@
               "null"
             ]
           },
+          "callerKind": {
+            "$ref": "#/components/schemas/CallerKind"
+          },
           "sourceOrigin": {
             "type": [
               "string",
@@ -14396,6 +14787,7 @@
           "agentName",
           "agentInternalName",
           "sourceChannel",
+          "callerKind",
           "sourceOrigin",
           "channelContext",
           "anonymousSessionId",
@@ -15072,6 +15464,57 @@
           "cleared"
         ]
       },
+      "UserMessageInputMetadata": {
+        "type": "object",
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "typed",
+              "suggestion_click",
+              "intent_click",
+              "routine_invocation"
+            ]
+          },
+          "suggestionSourceMessageId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "intent": {
+            "type": "object",
+            "properties": {
+              "skillName": {
+                "type": "string"
+              },
+              "intentName": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "skillName"
+            ]
+          },
+          "routine": {
+            "type": "object",
+            "properties": {
+              "toolName": {
+                "type": "string"
+              },
+              "input": {
+                "type": "object",
+                "additionalProperties": {}
+              }
+            },
+            "required": [
+              "toolName",
+              "input"
+            ]
+          }
+        },
+        "required": [
+          "method"
+        ]
+      },
       "ChatConversationMessage": {
         "type": "object",
         "properties": {
@@ -15105,38 +15548,7 @@
             "format": "date-time"
           },
           "inputMetadata": {
-            "type": "object",
-            "properties": {
-              "method": {
-                "type": "string",
-                "enum": [
-                  "typed",
-                  "suggestion_click",
-                  "intent_click"
-                ]
-              },
-              "suggestionSourceMessageId": {
-                "type": "string",
-                "format": "uuid"
-              },
-              "intent": {
-                "type": "object",
-                "properties": {
-                  "skillName": {
-                    "type": "string"
-                  },
-                  "intentName": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "skillName"
-                ]
-              }
-            },
-            "required": [
-              "method"
-            ]
+            "$ref": "#/components/schemas/UserMessageInputMetadata"
           },
           "citations": {
             "type": "array",
@@ -15170,6 +15582,10 @@
           },
           "turnFailure": {
             "$ref": "#/components/schemas/ChatConversationTurnFailure"
+          },
+          "operatorLabel": {
+            "type": "string",
+            "description": "Operator-only. On a human-agent reply, the teammate who wrote it: their display name, else their email, read from their profile now. A reply that names no teammate, or whose teammate is gone, carries its signature instead. Never returned by the public chat API."
           }
         },
         "required": [
@@ -15213,38 +15629,7 @@
             "format": "date-time"
           },
           "inputMetadata": {
-            "type": "object",
-            "properties": {
-              "method": {
-                "type": "string",
-                "enum": [
-                  "typed",
-                  "suggestion_click",
-                  "intent_click"
-                ]
-              },
-              "suggestionSourceMessageId": {
-                "type": "string",
-                "format": "uuid"
-              },
-              "intent": {
-                "type": "object",
-                "properties": {
-                  "skillName": {
-                    "type": "string"
-                  },
-                  "intentName": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "skillName"
-                ]
-              }
-            },
-            "required": [
-              "method"
-            ]
+            "$ref": "#/components/schemas/UserMessageInputMetadata"
           },
           "citations": {
             "type": "array",
@@ -15293,6 +15678,324 @@
           "ownership"
         ]
       },
+      "ConversationOperator": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "label": {
+            "type": "string",
+            "description": "The teammate label: display name, else email."
+          }
+        },
+        "required": [
+          "userId",
+          "label"
+        ]
+      },
+      "ConversationOperatorsResponse": {
+        "type": "object",
+        "properties": {
+          "operators": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConversationOperator"
+            }
+          }
+        },
+        "required": [
+          "operators"
+        ]
+      },
+      "ConversationActivityEntry": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "handoff_requested",
+              "claimed",
+              "reassigned",
+              "handed_back",
+              "approval_decided",
+              "feedback_resolved",
+              "feedback_dismissed"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "actor": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "userId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "label": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The teammate label as it is now: display name, else email. Null once the user is deleted."
+              }
+            },
+            "required": [
+              "userId",
+              "label"
+            ],
+            "description": "The teammate who acted. Null when the agent acted, or the change came from a caller that is no teammate."
+          },
+          "subject": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "userId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "label": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The teammate label as it is now: display name, else email. Null once the user is deleted."
+              }
+            },
+            "required": [
+              "userId",
+              "label"
+            ],
+            "description": "The teammate who holds a `reassigned` conversation now."
+          },
+          "from": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "userId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "label": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The teammate label as it is now: display name, else email. Null once the user is deleted."
+              }
+            },
+            "required": [
+              "userId",
+              "label"
+            ],
+            "description": "Who held a `reassigned` conversation before. Null when nobody had claimed the handoff."
+          },
+          "handoffReason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The handoff reason code on `handoff_requested`, for example `routine_handoff` or `retrieval_miss`."
+          },
+          "decision": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "optionId": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string",
+                "description": "The option's label as the routine author wrote it."
+              }
+            },
+            "required": [
+              "optionId",
+              "label"
+            ],
+            "description": "The option chosen on `approval_decided`."
+          },
+          "resolution": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The triage resolution code given on `feedback_resolved` or `feedback_dismissed`."
+          },
+          "assistantMessageId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "The answer the feedback was on, for `feedback_resolved` and `feedback_dismissed`."
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "createdAt",
+          "actor",
+          "subject",
+          "from",
+          "handoffReason",
+          "decision",
+          "resolution",
+          "assistantMessageId"
+        ],
+        "description": "Something a teammate or the agent did to the conversation. Operator reads only. `feedback_resolved` and `feedback_dismissed` reach only a caller with Quality access (`workspace.quality.read`)."
+      },
+      "RecentlyClosedInboxItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The closing event's id."
+          },
+          "conversationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "itemKind": {
+            "type": "string",
+            "enum": [
+              "handoff",
+              "approval",
+              "negative_feedback"
+            ]
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "handed_back",
+              "approval_decided",
+              "feedback_resolved",
+              "feedback_dismissed"
+            ]
+          },
+          "closedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "closedBy": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "userId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "label": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The teammate label as it is now: display name, else email. Null once the user is deleted."
+              }
+            },
+            "required": [
+              "userId",
+              "label"
+            ],
+            "description": "The teammate who closed it. Null for a caller that is no teammate, or a user since deleted."
+          },
+          "decision": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "optionId": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string",
+                "description": "The option's label as the routine author wrote it."
+              }
+            },
+            "required": [
+              "optionId",
+              "label"
+            ],
+            "description": "The option chosen, for an approval."
+          },
+          "resolution": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The triage resolution code, for negative feedback."
+          },
+          "assistantMessageId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "The answer, for negative feedback."
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "See ChatConversationSummary.title."
+          },
+          "preview": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The conversation's first-message preview."
+          }
+        },
+        "required": [
+          "id",
+          "conversationId",
+          "itemKind",
+          "outcome",
+          "closedAt",
+          "closedBy",
+          "decision",
+          "resolution",
+          "assistantMessageId",
+          "title",
+          "preview"
+        ]
+      },
+      "RecentlyClosedInboxItemsResponse": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecentlyClosedInboxItem"
+            }
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
       "HumanReplyMessage": {
         "type": "object",
         "properties": {
@@ -15334,38 +16037,7 @@
             "additionalProperties": {}
           },
           "inputMetadata": {
-            "type": "object",
-            "properties": {
-              "method": {
-                "type": "string",
-                "enum": [
-                  "typed",
-                  "suggestion_click",
-                  "intent_click"
-                ]
-              },
-              "suggestionSourceMessageId": {
-                "type": "string",
-                "format": "uuid"
-              },
-              "intent": {
-                "type": "object",
-                "properties": {
-                  "skillName": {
-                    "type": "string"
-                  },
-                  "intentName": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "skillName"
-                ]
-              }
-            },
-            "required": [
-              "method"
-            ]
+            "$ref": "#/components/schemas/UserMessageInputMetadata"
           },
           "skillName": {
             "type": "string"
@@ -15395,10 +16067,21 @@
         "properties": {
           "message": {
             "$ref": "#/components/schemas/HumanReplyMessage"
+          },
+          "ownership": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ConversationOwnership"
+              },
+              {
+                "description": "The conversation's ownership after the reply. A reply to an AI-owned or unclaimed conversation claims it for the replier, so its version moves on."
+              }
+            ]
           }
         },
         "required": [
-          "message"
+          "message",
+          "ownership"
         ]
       },
       "ChatConversationDetail": {
@@ -15436,6 +16119,9 @@
               "string",
               "null"
             ]
+          },
+          "callerKind": {
+            "$ref": "#/components/schemas/CallerKind"
           },
           "sourceOrigin": {
             "type": [
@@ -15558,7 +16244,21 @@
             }
           },
           "ownership": {
-            "$ref": "#/components/schemas/ConversationOwnership"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ConversationOwnership"
+              },
+              {
+                "description": "The conversation's ownership record whenever one exists, `ai_owned` included, the same as the tail's, so a reader holding an older record sees a hand-back by its higher version. Absent until a teammate is first involved."
+              }
+            ]
+          },
+          "activity": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConversationActivityEntry"
+            },
+            "description": "What teammates and the agent did to the conversation, oldest first: handoffs, claims, reassignments, hand-backs, approvals decided, and — for a caller with Quality access — feedback resolved or dismissed."
           }
         },
         "required": [
@@ -15566,6 +16266,7 @@
           "workspaceId",
           "agentId",
           "sourceChannel",
+          "callerKind",
           "sourceOrigin",
           "title",
           "channelContext",
@@ -15599,7 +16300,25 @@
             ]
           },
           "ownership": {
-            "$ref": "#/components/schemas/ConversationOwnership"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ConversationOwnership"
+              },
+              {
+                "description": "The conversation's ownership record whenever one exists, `ai_owned` included, so a hand-back made elsewhere reaches a reader polling the tail. Absent until a teammate is first involved."
+              }
+            ]
+          },
+          "activity": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConversationActivityEntry"
+            },
+            "description": "The conversation's activity, oldest first, so a reader polling the tail sees an event recorded elsewhere: the whole timeline, or with `activityCursor` the events in a recent window. The window reaches back far enough to take in an event whose transaction committed after a newer event's, so it can repeat events the caller already holds: keep each one once by its `id`. Feedback outcomes reach only a caller with Quality access."
+          },
+          "activityCursor": {
+            "type": "string",
+            "description": "Opaque. Pass as the next tail's `activityCursor` to read only recent activity. Present whenever `activity` is."
           }
         },
         "required": [
@@ -15657,6 +16376,9 @@
               "string",
               "null"
             ]
+          },
+          "callerKind": {
+            "$ref": "#/components/schemas/CallerKind"
           },
           "sourceOrigin": {
             "type": [
@@ -15744,6 +16466,7 @@
           "workspaceId",
           "agentId",
           "sourceChannel",
+          "callerKind",
           "sourceOrigin",
           "title",
           "channelContext",
@@ -15892,6 +16615,787 @@
           "nextCursor",
           "hasMore"
         ]
+      },
+      "ChatOwnershipAck": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "ai_owned",
+              "human_owned"
+            ]
+          },
+          "suppressed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "state",
+          "suppressed"
+        ],
+        "description": "Who owns the conversation after this turn. `suppressed` is true when a human owns it and the agent generated nothing."
+      },
+      "RoutinePendingInput": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "text",
+              "number",
+              "boolean",
+              "email",
+              "date"
+            ]
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "description": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "type",
+          "required"
+        ]
+      },
+      "RoutineTurnState": {
+        "type": "object",
+        "properties": {
+          "toolName": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "waiting_for_input",
+              "waiting_for_approval",
+              "completed",
+              "abandoned"
+            ]
+          },
+          "pendingInput": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoutinePendingInput"
+            }
+          }
+        },
+        "required": [
+          "name",
+          "status",
+          "pendingInput"
+        ],
+        "description": "Where the turn left the routine it touched. `pendingInput` lists every unfilled required slot plus the current step's unfilled optional slots, so a caller can supply everything in one re-call."
+      },
+      "RoutineInvocationReport": {
+        "type": "object",
+        "properties": {
+          "toolName": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "started",
+              "reentered",
+              "declined",
+              "not_started",
+              "unknown_tool"
+            ]
+          }
+        },
+        "required": [
+          "toolName",
+          "outcome"
+        ],
+        "description": "What became of the tool call this turn carried. `not_started`: another routine was active or suspended and the existing interruption/approval rules kept the turn; `routine` then describes that routine. `declined`: the named routine already completed under `once_per_conversation`. `unknown_tool`: the release the conversation is pinned to carries no routine under that name."
+      },
+      "AgentReplyEnvelopeCore": {
+        "type": "object",
+        "properties": {
+          "conversationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "answerCoverage": {
+            "$ref": "#/components/schemas/AnswerCoverageAssessment"
+          },
+          "ownership": {
+            "$ref": "#/components/schemas/ChatOwnershipAck"
+          },
+          "routine": {
+            "$ref": "#/components/schemas/RoutineTurnState"
+          },
+          "invocation": {
+            "$ref": "#/components/schemas/RoutineInvocationReport"
+          },
+          "traceId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "conversationId",
+          "answerCoverage",
+          "ownership"
+        ],
+        "description": "The machine-readable part of an agent reply, identical on the MCP converse ask route and the REST agent chat route."
+      },
+      "McpConverseAskResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AgentReplyEnvelopeCore"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "answer": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  },
+                  "citations": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/Citation"
+                    }
+                  }
+                },
+                "required": [
+                  "text",
+                  "citations"
+                ]
+              }
+            },
+            "required": [
+              "answer"
+            ]
+          }
+        ],
+        "description": "The machine-readable part of an agent reply, identical on the MCP converse ask route and the REST agent chat route."
+      },
+      "AgentChannelChatTurnResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ChatResponse"
+          },
+          {
+            "$ref": "#/components/schemas/AgentReplyEnvelopeCore"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "citations": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Citation"
+                }
+              }
+            },
+            "required": [
+              "citations"
+            ]
+          }
+        ]
+      },
+      "AgentChannelChatResponse": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/AgentChannelChatTurnResponse"
+          },
+          {
+            "$ref": "#/components/schemas/ChatBootstrapResponse"
+          }
+        ],
+        "description": "A chat turn carries the agent reply envelope core beside the answer; a bootstrap greeting (`startConversation`) has no turn and carries none."
+      },
+      "AgentToolInputSchema": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "object"
+            ]
+          },
+          "properties": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "string",
+                    "number",
+                    "boolean"
+                  ]
+                },
+                "format": {
+                  "type": "string",
+                  "enum": [
+                    "email",
+                    "date"
+                  ]
+                },
+                "description": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type"
+              ]
+            }
+          },
+          "required": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": {
+            "type": "boolean",
+            "enum": [
+              false
+            ]
+          }
+        },
+        "required": [
+          "type",
+          "properties",
+          "required",
+          "additionalProperties"
+        ],
+        "description": "JSON Schema for the tool's input: one property per declared routine slot (`text`→string, `number`, `boolean`, `email`→string/format=email, `date`→string/format=date), `required` from the slot."
+      },
+      "AgentToolDescriptor": {
+        "type": "object",
+        "properties": {
+          "toolName": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "inputSchema": {
+            "$ref": "#/components/schemas/AgentToolInputSchema"
+          },
+          "routineLineageId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "toolName",
+          "description",
+          "inputSchema",
+          "routineLineageId"
+        ],
+        "description": "One exposed routine as a calling agent sees it: the name it invokes, the operator-authored description, and the input schema built from the routine's slots."
+      },
+      "McpConverseToolsResponse": {
+        "type": "object",
+        "properties": {
+          "agent": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "description": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "name",
+              "description"
+            ]
+          },
+          "tools": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentToolDescriptor"
+            }
+          },
+          "askAgentDescription": {
+            "type": "string",
+            "description": "The description an MCP client should advertise for `ask_agent`, composed from the agent's name, its operator-authored description, and the names of its exposed tools. Assembled from configuration rather than written by a model, so the same settings always produce the same sentence. The tool names come from the published release; the name and description are read from the agent's current settings."
+          }
+        },
+        "required": [
+          "agent",
+          "tools",
+          "askAgentDescription"
+        ],
+        "description": "The bound agent's tool catalog: exposed routines from its current published release."
+      },
+      "RoutineInvocationError": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "The slot key the problem is on."
+          },
+          "code": {
+            "type": "string",
+            "enum": [
+              "required",
+              "type",
+              "format",
+              "unknown_field",
+              "too_long"
+            ]
+          }
+        },
+        "required": [
+          "path",
+          "code"
+        ],
+        "description": "One field-level problem with a tool call's input. `too_long` is a string value over 2000 characters; `format` is an `email` or `date` slot whose value does not parse as one."
+      },
+      "RoutineInvocationInvalidDetails": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "routine_invocation_invalid"
+            ]
+          },
+          "toolName": {
+            "type": "string"
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoutineInvocationError"
+            }
+          }
+        },
+        "required": [
+          "code",
+          "toolName",
+          "errors"
+        ],
+        "description": "The `error.details` of a 400 that refused a tool call before any turn state was written: every problem at once, so a caller can fix the whole call in one retry. Values are never echoed back."
+      },
+      "ConverseMessage": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "author": {
+            "type": "string",
+            "enum": [
+              "agent",
+              "human"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "author",
+          "createdAt",
+          "text"
+        ],
+        "description": "One message in the conversation. `author` is provenance, not role: an operator's reply is stored as an assistant message, so `human` is the only thing that tells a person's turn from the agent's."
+      },
+      "ConverseOwnershipState": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "ai_owned",
+              "human_owned"
+            ]
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "description": "Who owns the conversation right now. `human_owned` means a person has taken it over and the agent is not answering, so keep reading rather than asking again."
+      },
+      "ConverseMessagesResponse": {
+        "type": "object",
+        "properties": {
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConverseMessage"
+            }
+          },
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ownership": {
+            "$ref": "#/components/schemas/ConverseOwnershipState"
+          }
+        },
+        "required": [
+          "messages",
+          "cursor",
+          "ownership"
+        ],
+        "description": "Messages after the request's cursor, the cursor to resume from, and who owns the conversation now. `cursor` is null only while the conversation holds no messages."
+      },
+      "A2aAgentCard": {
+        "type": "object",
+        "properties": {
+          "protocolVersion": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "preferredTransport": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "documentationUrl": {
+            "type": "string"
+          },
+          "capabilities": {
+            "type": "object",
+            "properties": {
+              "streaming": {
+                "type": "boolean"
+              },
+              "pushNotifications": {
+                "type": "boolean"
+              },
+              "stateTransitionHistory": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "streaming",
+              "pushNotifications",
+              "stateTransitionHistory"
+            ]
+          },
+          "defaultInputModes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "defaultOutputModes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "securitySchemes": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "http"
+                  ]
+                },
+                "scheme": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "scheme"
+              ]
+            }
+          },
+          "security": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "skills": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "tags": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "inputModes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "outputModes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "description",
+                "tags",
+                "inputModes",
+                "outputModes"
+              ]
+            }
+          }
+        },
+        "required": [
+          "protocolVersion",
+          "name",
+          "description",
+          "url",
+          "preferredTransport",
+          "version",
+          "capabilities",
+          "defaultInputModes",
+          "defaultOutputModes",
+          "securitySchemes",
+          "security",
+          "skills"
+        ],
+        "description": "An A2A Agent Card for one agent: who it is, where its MCP endpoint is, how a caller authenticates, and one skill per exposed routine."
+      },
+      "McpServerCard": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "websiteUrl": {
+            "type": "string"
+          },
+          "remotes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "streamable-http"
+                  ]
+                },
+                "url": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "url"
+              ]
+            }
+          },
+          "_meta": {
+            "type": "object",
+            "properties": {
+              "ai.radioso/agent": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string"
+                  },
+                  "publicId": {
+                    "type": "string"
+                  },
+                  "authentication": {
+                    "type": "string",
+                    "enum": [
+                      "none",
+                      "bearer"
+                    ]
+                  },
+                  "tools": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "publishedAt": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "title",
+                  "publicId",
+                  "authentication",
+                  "tools",
+                  "publishedAt"
+                ]
+              }
+            },
+            "required": [
+              "ai.radioso/agent"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "version",
+          "remotes",
+          "_meta"
+        ],
+        "description": "The MCP server card for one agent, in the published MCP server document shape. `$schema` is omitted until the server-card extension publishes one."
+      },
+      "AiCatalog": {
+        "type": "object",
+        "properties": {
+          "agents": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "publicId": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "documentationUrl": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "authentication": {
+                  "type": "string",
+                  "enum": [
+                    "none",
+                    "bearer"
+                  ]
+                },
+                "mcp": {
+                  "type": "object",
+                  "properties": {
+                    "url": {
+                      "type": "string"
+                    },
+                    "transport": {
+                      "type": "string",
+                      "enum": [
+                        "streamable-http"
+                      ]
+                    },
+                    "serverCardUrl": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "url",
+                    "transport",
+                    "serverCardUrl"
+                  ]
+                },
+                "tools": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "description": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "description"
+                    ]
+                  }
+                },
+                "publishedAt": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "publicId",
+                "name",
+                "description",
+                "documentationUrl",
+                "authentication",
+                "mcp",
+                "tools",
+                "publishedAt"
+              ]
+            }
+          }
+        },
+        "required": [
+          "agents"
+        ],
+        "description": "The catalog entry for one agent: the index a customer's own origin points at."
       },
       "ConnectorField": {
         "type": "object",
@@ -21353,6 +22857,11 @@
                   ]
                 }
               },
+              "seededTurnCount": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "User messages copied in from the real conversation this test continues; 0 when it started fresh."
+              },
               "testValues": {
                 "type": "array",
                 "items": {}
@@ -21365,8 +22874,43 @@
               }
             },
             "required": [
+              "seededTurnCount",
               "testValues",
               "attempts"
+            ]
+          }
+        ]
+      },
+      "TestExecutionHistoryListItem": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/TestExecutionHistoryItem"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "turnCount": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "User messages in this test: those copied from a real conversation it continues, plus those the operator sent. A greeting is not one."
+              },
+              "firstMessage": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 200,
+                "description": "The first of those messages with text. A longer one is clipped to 200 characters ending in \"…\". Null until there is one."
+              },
+              "firstMessageClipped": {
+                "type": "boolean",
+                "description": "Whether firstMessage was cut to fit, so a message that really ends in \"…\" reads as whole."
+              }
+            },
+            "required": [
+              "turnCount",
+              "firstMessage",
+              "firstMessageClipped"
             ]
           }
         ]
@@ -21377,7 +22921,7 @@
           "executions": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/TestExecutionHistoryItem"
+              "$ref": "#/components/schemas/TestExecutionHistoryListItem"
             }
           },
           "nextCursor": {
@@ -21895,6 +23439,98 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/SessionResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No active session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/profile": {
+      "get": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Get the signed-in user's profile",
+        "description": "Returns the signed-in person's own profile: their email and the display name teammates see.",
+        "operationId": "getUserProfile",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Profile returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserProfile"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No active session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Update the signed-in user's profile",
+        "description": "Sets the signed-in person's display name, the name teammates see in the dashboard. The name is trimmed; an empty string or null clears it. It may use any script, holds at most 80 characters, and cannot contain control characters.",
+        "operationId": "updateUserProfile",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserProfileUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Profile updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserProfile"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed, or the display name breaks the naming rules",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -22499,7 +24135,7 @@
         "tags": [
           "Account"
         ],
-        "summary": "List active account users and invitations",
+        "summary": "List active account users and pending invitations",
         "operationId": "listAccountUsers",
         "security": [
           {
@@ -23140,7 +24776,7 @@
         "tags": [
           "API Access"
         ],
-        "summary": "List personal-token metadata",
+        "summary": "List live personal-token metadata",
         "operationId": "listPersonalApiTokens",
         "security": [
           {
@@ -24557,7 +26193,7 @@
         "tags": [
           "API Access"
         ],
-        "summary": "List workspace service accounts",
+        "summary": "List workspace service accounts that are not archived",
         "operationId": "listServiceAccounts",
         "security": [
           {
@@ -26167,7 +27803,7 @@
         "tags": [
           "API Access"
         ],
-        "summary": "List service-account credentials",
+        "summary": "List live service-account credentials",
         "operationId": "listServiceAccountCredentials",
         "security": [
           {
@@ -27807,7 +29443,7 @@
         "tags": [
           "Operator MCP"
         ],
-        "summary": "List visible Operator MCP grants",
+        "summary": "List active Operator MCP grants",
         "operationId": "listOperatorMcpGrants",
         "security": [
           {
@@ -27827,7 +29463,7 @@
         ],
         "responses": {
           "200": {
-            "description": "User or workspace grant inventory",
+            "description": "Active user or workspace grant inventory; revoked and superseded grants are excluded",
             "content": {
               "application/json": {
                 "schema": {
@@ -30949,6 +32585,7 @@
           "Agent Channels"
         ],
         "summary": "Run chat through a REST credential bound to this agent",
+        "description": "Send `message` or `routine` (a tool call to one exposed routine; validated against the catalog of the release the conversation is pinned to before any turn state is written, with the same `routine_tool_unknown` / `routine_invocation_invalid` errors as the MCP converse ask route), never both. `startConversation: true` requests the bootstrap greeting instead of a turn: it accepts a `message` (ignored) but not a `routine`.",
         "operationId": "createAgentChannelChatResponse",
         "security": [
           {
@@ -30978,11 +32615,11 @@
         },
         "responses": {
           "200": {
-            "description": "Agent chat response returned as JSON or SSE",
+            "description": "Agent chat response returned as JSON or SSE; the SSE `done` frame carries the same envelope core as the JSON body",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AssistantChatResponse"
+                  "$ref": "#/components/schemas/AgentChannelChatResponse"
                 }
               },
               "text/event-stream": {
@@ -30996,7 +32633,7 @@
             "description": "Conversation start completed without a greeting"
           },
           "400": {
-            "description": "Request validation failed",
+            "description": "Request validation failed, or routine invocation input did not match the tool's schema",
             "content": {
               "application/json": {
                 "schema": {
@@ -31007,6 +32644,16 @@
           },
           "401": {
             "description": "Invalid, inactive, cross-audience, or cross-agent credential",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Routine tool is not in the agent's catalog",
             "content": {
               "application/json": {
                 "schema": {
@@ -31320,7 +32967,7 @@
         "tags": [
           "Agent Channels"
         ],
-        "summary": "List MCP and REST chat credentials for an agent with cursor pagination",
+        "summary": "List live MCP and REST chat credentials for an agent with cursor pagination",
         "operationId": "listAgentChannelCredentials",
         "security": [
           {
@@ -31576,6 +33223,74 @@
           },
           "404": {
             "description": "Agent or channel credential not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agents/{agentId}/public-id/rotate": {
+      "post": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Rotate the agent's public id",
+        "description": "Replaces the identifier callers reach this agent by. Every agent connected without a credential is dropped on its next request. The agent must already have a public id, which publishing its agent card mints.",
+        "operationId": "rotateAgentPublicId",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Agent with its replacement public id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationAgent"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The agent has no public id to rotate",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent not found",
             "content": {
               "application/json": {
                 "schema": {
@@ -44261,6 +45976,19 @@
             "required": false,
             "name": "outcome",
             "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "human",
+                "agent"
+              ],
+              "description": "Narrows to conversations whose caller was a person or another AI agent. Narrows results to chat rows only: a contact request has no conversation behind it and so no caller."
+            },
+            "required": false,
+            "name": "callerKind",
+            "in": "query"
           }
         ],
         "responses": {
@@ -44579,6 +46307,16 @@
             },
             "required": false,
             "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The previous tail's `activityCursor`, passed back as returned: opaque, and a string no tail returned is refused with 400. The response's `activity` then carries only the events in a recent window, so it can repeat events the caller already holds; without it, the whole timeline."
+            },
+            "required": false,
+            "name": "activityCursor",
             "in": "query"
           }
         ],
@@ -44904,12 +46642,132 @@
         }
       }
     },
+    "/api/v1/conversations/recently-closed": {
+      "get": {
+        "tags": [
+          "Conversation Activity"
+        ],
+        "summary": "List the Inbox items closed most recently",
+        "description": "Returns the workspace's most recently closed Inbox items, newest first: handoffs handed back to the agent, approvals decided, and negative feedback resolved or dismissed. Negative feedback is listed only to a caller with Quality access (`workspace.quality.read`). Each item names the teammate who closed it, labelled by display name, else email. Dashboard test chats are left out.",
+        "operationId": "listRecentlyClosedInboxItems",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 10,
+              "description": "How many items to return, 1 to 50."
+            },
+            "required": false,
+            "description": "How many items to return, 1 to 50.",
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recently closed items returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecentlyClosedInboxItemsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace conversation takeover permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/conversations/operators": {
+      "get": {
+        "tags": [
+          "Conversation Ownership"
+        ],
+        "summary": "List the teammates who can own a conversation",
+        "description": "Returns the active teammates who hold conversation takeover permission on the workspace, labelled by display name, else email. These are the valid transfer targets.",
+        "operationId": "listConversationOperators",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Teammates returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationOperatorsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace conversation takeover permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/conversations/{conversationId}/takeover": {
       "post": {
         "tags": [
           "Conversation Ownership"
         ],
         "summary": "Take human ownership of a conversation",
+        "description": "Claims a conversation the AI owns or that waits for a teammate. A conversation another teammate holds returns 409; take it from them by transferring it to yourself.",
         "operationId": "takeOverConversation",
         "security": [
           {
@@ -45015,6 +46873,7 @@
           "Conversation Ownership"
         ],
         "summary": "Reply to a conversation as a human operator",
+        "description": "Only the teammate who owns the conversation replies. A reply to a conversation the AI owns, or one waiting for a teammate, claims it for you first. A conversation another teammate holds, or an `expectedVersion` that is no longer current, returns 409 with the current ownership.",
         "operationId": "replyToConversation",
         "security": [
           {
@@ -45128,6 +46987,7 @@
           "Conversation Ownership"
         ],
         "summary": "Transfer human ownership of a conversation",
+        "description": "Hands a human-owned conversation to another teammate, or to yourself to take it from the teammate holding it. The receiving teammate gets an email with a link to the conversation unless they made the transfer. A target who is not a teammate able to own conversations on the workspace returns 404 with code `transfer_target_unavailable`; a conversation that is not in the workspace returns 404 with code `not_found`.",
         "operationId": "transferConversationOwnership",
         "security": [
           {
@@ -45152,9 +47012,10 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "toAccountId": {
+                  "toUserId": {
                     "type": "string",
-                    "format": "uuid"
+                    "format": "uuid",
+                    "description": "The teammate to hand the conversation to. Pass your own user id to take a conversation another teammate holds."
                   },
                   "expectedVersion": {
                     "type": "integer",
@@ -45162,7 +47023,7 @@
                   }
                 },
                 "required": [
-                  "toAccountId",
+                  "toUserId",
                   "expectedVersion"
                 ],
                 "additionalProperties": false
@@ -45212,7 +47073,7 @@
             }
           },
           "404": {
-            "description": "Conversation not found",
+            "description": "Conversation not found (`not_found`), or transfer target unavailable (`transfer_target_unavailable`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -45240,6 +47101,7 @@
           "Conversation Ownership"
         ],
         "summary": "Return a human-owned conversation to AI ownership",
+        "description": "Only the teammate who owns the conversation hands it back; anyone may while it waits unclaimed. A conversation another teammate holds, or an `expectedVersion` that is no longer current, returns 409 with the current ownership.",
         "operationId": "handBackConversation",
         "security": [
           {
@@ -46783,6 +48645,7 @@
                           "agent_skill",
                           "context_variable",
                           "document",
+                          "document_operation",
                           "ingestion_settings",
                           "website_crawl",
                           "workspace_setting",
@@ -47041,6 +48904,7 @@
                                         "agent_skill",
                                         "context_variable",
                                         "document",
+                                        "document_operation",
                                         "ingestion_settings",
                                         "website_crawl",
                                         "workspace_setting",
@@ -47383,6 +49247,7 @@
                         "agent_skill",
                         "context_variable",
                         "document",
+                        "document_operation",
                         "ingestion_settings",
                         "website_crawl",
                         "workspace_setting",
@@ -47404,6 +49269,7 @@
                             "agent_skill",
                             "context_variable",
                             "document",
+                            "document_operation",
                             "ingestion_settings",
                             "website_crawl",
                             "workspace_setting",
@@ -47530,6 +49396,82 @@
                           "stale"
                         ]
                       }
+                    },
+                    "reviewedOperation": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "requirement": {
+                          "type": "string",
+                          "enum": [
+                            "conversation",
+                            "signed_in_approval"
+                          ]
+                        },
+                        "effect": {
+                          "type": "object",
+                          "properties": {
+                            "exposure": {
+                              "type": "string",
+                              "enum": [
+                                "draft",
+                                "live"
+                              ]
+                            },
+                            "reversibility": {
+                              "type": "string",
+                              "enum": [
+                                "reversible",
+                                "irreversible"
+                              ]
+                            },
+                            "metered": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "exposure",
+                            "reversibility",
+                            "metered"
+                          ]
+                        },
+                        "reviewDigest": {
+                          "type": "string"
+                        },
+                        "reviewCode": {
+                          "type": "string"
+                        },
+                        "expiresAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "approvedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "clientName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "review": {}
+                      },
+                      "required": [
+                        "requirement",
+                        "effect",
+                        "reviewDigest",
+                        "reviewCode",
+                        "expiresAt",
+                        "approvedAt",
+                        "clientName"
+                      ]
                     }
                   },
                   "required": [
@@ -47541,7 +49483,8 @@
                     "status",
                     "preview",
                     "currentVersionMatches",
-                    "evidenceCases"
+                    "evidenceCases",
+                    "reviewedOperation"
                   ]
                 }
               }
@@ -47549,6 +49492,61 @@
           },
           "404": {
             "description": "Not found"
+          },
+          "409": {
+            "description": "Proposal belongs to another account the signed-in user can access",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "proposal_account_mismatch"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "type": "object",
+                          "properties": {
+                            "accountId": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "accountName": {
+                              "type": "string"
+                            },
+                            "workspaceId": {
+                              "type": "string",
+                              "format": "uuid"
+                            }
+                          },
+                          "required": [
+                            "accountId",
+                            "accountName",
+                            "workspaceId"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "details"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
           }
         }
       }
@@ -47613,6 +49611,81 @@
           },
           "409": {
             "description": "Proposal is not pending"
+          }
+        }
+      }
+    },
+    "/api/v1/copilot/proposals/{proposalId}/approve": {
+      "post": {
+        "tags": [
+          "Copilot"
+        ],
+        "summary": "Approve a reviewed MCP operation",
+        "operationId": "approveCopilotProposal",
+        "security": [
+          {
+            "sessionCookie": [],
+            "workspaceSelection": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "proposalId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reviewDigest": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "reviewDigest"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Approval outcome",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "approved",
+                        "expired",
+                        "not_pending",
+                        "digest_mismatch"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
           }
         }
       }
@@ -50567,7 +52640,8 @@
         "tags": [
           "MCP Converse"
         ],
-        "summary": "Exchange an MCP converse launch token for a signed session",
+        "summary": "Exchange a launch token or an agent's public id for a signed converse session",
+        "description": "Send exactly one of `launchToken` or `publicId`. A `launchToken` is the credential an operator minted for this agent. A `publicId` is the agent's public identifier and carries no secret: it works only while the agent accepts walk-in connections, and it opens a fresh conversation each time. Rotating the public id or closing walk-in access refuses the next request on every session issued against it.",
         "operationId": "createMcpConverseSession",
         "requestBody": {
           "required": true,
@@ -50580,6 +52654,12 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 2048
+                  },
+                  "publicId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "pattern": "^[A-Za-z0-9_-]+$"
                   },
                   "client": {
                     "type": "object",
@@ -50596,10 +52676,7 @@
                       }
                     }
                   }
-                },
-                "required": [
-                  "launchToken"
-                ]
+                }
               }
             }
           }
@@ -50664,7 +52741,7 @@
             }
           },
           "403": {
-            "description": "Grant channel or bound agent is not allowed",
+            "description": "Grant channel or bound agent is not allowed, or the agent does not accept walk-in connections",
             "content": {
               "application/json": {
                 "schema": {
@@ -50790,79 +52867,26 @@
         }
       }
     },
-    "/api/v1/mcp/converse/ask": {
-      "post": {
+    "/api/v1/mcp/converse/tools": {
+      "get": {
         "tags": [
           "MCP Converse"
         ],
-        "summary": "Run one MCP ask_agent turn through the bound agent",
-        "operationId": "askMcpConverseAgent",
+        "summary": "List the bound agent's exposed routines as tools",
+        "description": "Returns the agent's name and one descriptor per exposed routine in its current published release, on every call. The standalone MCP server reads this once at session exchange and pins the result, so an MCP client's `tools/list` is stable for a session; a direct caller sees the current catalog each time.",
+        "operationId": "getMcpConverseTools",
         "security": [
           {
             "mcpConverseSessionBearerAuth": []
           }
         ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "message": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "stream": {
-                    "type": "boolean",
-                    "enum": [
-                      false
-                    ]
-                  }
-                },
-                "required": [
-                  "message"
-                ]
-              }
-            }
-          }
-        },
         "responses": {
           "200": {
-            "description": "Agent answer",
+            "description": "The bound agent's tool catalog",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "conversationId": {
-                      "type": "string",
-                      "format": "uuid"
-                    },
-                    "answer": {
-                      "type": "object",
-                      "properties": {
-                        "text": {
-                          "type": "string"
-                        },
-                        "citations": {
-                          "type": "array",
-                          "items": {}
-                        }
-                      },
-                      "required": [
-                        "text",
-                        "citations"
-                      ]
-                    },
-                    "traceId": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "conversationId",
-                    "answer"
-                  ]
+                  "$ref": "#/components/schemas/McpConverseToolsResponse"
                 }
               }
             }
@@ -50887,6 +52911,222 @@
               }
             }
           },
+          "429": {
+            "description": "MCP converse rate limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/mcp/converse/messages": {
+      "get": {
+        "tags": [
+          "MCP Converse"
+        ],
+        "summary": "Read what happened in this session's conversation since a cursor, optionally waiting for it",
+        "description": "Returns messages after `cursor` with the author kind and the conversation's current ownership, plus the `cursor` to resume from. The cursor is opaque and comes from a previous response; without one the call returns the conversation's most recent page. With `waitMs` the call parks until a message lands or the deadline passes, and returns an empty list at the deadline rather than an error — so a calling agent that handed off to a person can come back for the reply. One call spends one unit of the session's read budget no matter how long it waits.",
+        "operationId": "getMcpConverseMessages",
+        "security": [
+          {
+            "mcpConverseSessionBearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 25000,
+              "default": 0
+            },
+            "required": false,
+            "name": "waitMs",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Messages after the cursor, the next cursor, and current ownership",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConverseMessagesResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid cursor or `waitMs` outside 0..25000",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid converse session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Converse session is no longer authorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "MCP converse read rate limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/mcp/converse/ask": {
+      "post": {
+        "tags": [
+          "MCP Converse"
+        ],
+        "summary": "Run one turn through the bound agent: a message, or a tool call to an exposed routine",
+        "description": "Send exactly one of `message` or `routine`. An optional `signedIdentity` is the same HMAC visitor token the website embed sends, bound to this session's `conversationId` rather than a browser origin; one that does not verify leaves the turn anonymous. A `routine` call is validated against the tool's `inputSchema` from the catalog before any turn state is written: an unknown tool returns 404 with `details.code` `routine_tool_unknown`; invalid input returns 400 whose `details` is `RoutineInvocationInvalidDetails` (`code` `routine_invocation_invalid`, field-level `errors`).",
+        "operationId": "askMcpConverseAgent",
+        "security": [
+          {
+            "mcpConverseSessionBearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "message": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "routine": {
+                    "type": "object",
+                    "properties": {
+                      "toolName": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 63
+                      },
+                      "input": {
+                        "type": "object",
+                        "additionalProperties": {}
+                      }
+                    },
+                    "required": [
+                      "toolName",
+                      "input"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "signedIdentity": {
+                    "type": "string",
+                    "maxLength": 8192
+                  },
+                  "stream": {
+                    "type": "boolean",
+                    "enum": [
+                      false
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Agent reply envelope with the answer text and citations",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpConverseAskResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Routine invocation input did not match the tool's schema (`details` is `RoutineInvocationInvalidDetails`), or the body failed validation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid converse session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Converse session is no longer authorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Routine tool is not in the agent's catalog",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "409": {
             "description": "Turn superseded by a newer message in the same conversation",
             "content": {
@@ -50899,6 +53139,174 @@
           },
           "429": {
             "description": "MCP converse ask rate limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/.well-known/agent-card/{publicId}.json": {
+      "get": {
+        "tags": [
+          "Agent discovery"
+        ],
+        "summary": "Read an agent's A2A Agent Card",
+        "operationId": "getAgentCard",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "required": true,
+            "name": "publicId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Public document served",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/A2aAgentCard"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Document unchanged since the caller's ETag"
+          },
+          "404": {
+            "description": "No public document for this id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Discovery read rate limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/.well-known/mcp/server-card/{publicId}.json": {
+      "get": {
+        "tags": [
+          "Agent discovery"
+        ],
+        "summary": "Read an agent's MCP server card",
+        "operationId": "getAgentMcpServerCard",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "required": true,
+            "name": "publicId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Public document served",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpServerCard"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Document unchanged since the caller's ETag"
+          },
+          "404": {
+            "description": "No public document for this id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Discovery read rate limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/.well-known/ai-catalog/{publicId}.json": {
+      "get": {
+        "tags": [
+          "Agent discovery"
+        ],
+        "summary": "Read an agent's catalog entry",
+        "operationId": "getAgentAiCatalog",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "required": true,
+            "name": "publicId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Public document served",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiCatalog"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Document unchanged since the caller's ETag"
+          },
+          "404": {
+            "description": "No public document for this id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Discovery read rate limit exceeded",
             "content": {
               "application/json": {
                 "schema": {

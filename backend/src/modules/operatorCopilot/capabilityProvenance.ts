@@ -4,19 +4,22 @@ import { copilotApplicationPrimitiveRegistry, copilotRayOwnedPrimitiveIds } from
 type ProductionDescriptorName =
   | "agent_configuration" | "agent_skills" | "analyze_website" | "audience_topics" | "context_variables"
   | "conversation_history_search"
-  | "conversation_transcript" | "create_eval_case_from_turn" | "draft_reply" | "document_chunks" | "document_search" | "document_status"
+  | "conversation_transcript" | "create_eval_case_from_turn" | "draft_reply" | "document_chunks" | "document_search" | "document_status" | "list_documents"
   | "eval_results" | "needs_attention" | "propose_agent" | "propose_agent_setting" | "propose_context_variable" | "propose_directive" | "propose_greeting"
   | "propose_document" | "propose_document_removal" | "propose_document_retrieval"
   | "product_doc_page" | "product_docs"
-  | "propose_ingestion_settings" | "propose_workspace_setting" | "start_crawl"
+  | "propose_ingestion_settings" | "prepare_ingestion_settings" | "prepare_agent_settings" | "prepare_directive" | "propose_workspace_setting" | "start_crawl"
   | "propose_directive_enablement" | "propose_directive_removal" | "propose_routine"
-  | "propose_routine_edit" | "propose_skill_config" | "quality_signals"
+  | "propose_routine_edit" | "propose_routine_exposure" | "propose_skill_config" | "quality_signals"
   | "replay_eval_case"
   | "recrawl_source" | "reprocess_document" | "retrieval_probe"
   | "routine_definition" | "run_eval_suite" | "set_triage_state" | "test_agent_turn" | "turn_trace" | "validate_routine"
   | "workspace_settings" | "workspace_triage" | "prepare_routine_structure" | "execute_reviewed_proposal" | "reviewed_proposal_outcome" | "cancel_reviewed_proposal"
   | "agent_publication_state" | "prepare_agent_publication" | "agent_publication_candidate" | "agent_publication_candidate_change"
-  | "retrieval_settings" | "prepare_retrieval_settings";
+  | "retrieval_settings" | "prepare_retrieval_settings"
+  | "proposal_detail"
+  | "prepare_document_import" | "prepare_document_removal" | "prepare_document_reprocess"
+  | "test_chat_sessions" | "test_chat_transcript" | "test_chat_turn_trace" | "send_test_chat_message";
 
 const rayOnly = (reason: string) => ({ rayOnly: { reason } }) as const;
 
@@ -41,6 +44,7 @@ export const copilotCapabilityProvenance: Readonly<Record<ProductionDescriptorNa
   draft_reply: { applicationPrimitiveIds: ["chat.reply-draft.probe"], ...rayOnly("Ray bounds an ephemeral draft run, spends the operator budget for it, and keeps the result on the drafting side of the send boundary.") },
   document_search: { backingOperationIds: ["searchDocuments", "getDocument"], applicationPrimitiveIds: ["documents.source-status.read"] },
   document_status: { backingOperationIds: ["listDocuments", "listDocumentSources", "listDocumentsBySource"], applicationPrimitiveIds: ["documents.status.read", "documents.source-status.read"] },
+  list_documents: { applicationPrimitiveIds: ["documents.inventory.read"] },
   document_chunks: { applicationPrimitiveIds: ["documents.chunks.read"] },
   eval_results: { backingOperationIds: ["listEvalCases"] },
   needs_attention: { applicationPrimitiveIds: ["operatorCopilot.needs-attention"], ...rayOnly("Ray composes the authorized escalation sources into one operator working list carrying the handles its follow-up acts consume.") },
@@ -66,14 +70,18 @@ export const copilotCapabilityProvenance: Readonly<Record<ProductionDescriptorNa
   propose_document_removal: { backingOperationIds: ["deleteDocument"], applicationPrimitiveIds: ["documents.deletion.propose", "operatorCopilot.proposal.create"], ...rayOnly("Ray presents permanent document removal as a pending, operator-confirmed proposal, the same as any other document change.") },
   propose_document_retrieval: { backingOperationIds: ["updateDocumentRetrieval"], applicationPrimitiveIds: ["documents.authoring.propose", "operatorCopilot.proposal.create"], ...rayOnly("Ray persists an operator-reviewable draft before the document service receives a retrieval-eligibility or metadata change.") },
   propose_ingestion_settings: { backingOperationIds: ["updateIngestionSettings"], applicationPrimitiveIds: ["settings.ingestion.propose", "operatorCopilot.proposal.create"], ...rayOnly("Ray persists an operator-reviewable draft before the ingestion settings service receives a chunking or enrichment change.") },
+  prepare_ingestion_settings: { backingOperationIds: ["updateIngestionSettings"], applicationPrimitiveIds: ["settings.ingestion.propose", "operatorCopilot.proposal.create"], ...rayOnly("The trusted MCP client prepares a digest-bound settings receipt; it is not a Ray turn capability.") },
+  prepare_agent_settings: { backingOperationIds: ["updateAgent"], applicationPrimitiveIds: ["agents.setting.propose", "operatorCopilot.proposal.create"], ...rayOnly("The trusted MCP client prepares a digest-bound multi-field agent-settings receipt; it is not a Ray turn capability.") },
+  prepare_directive: { backingOperationIds: ["createAgentDirective", "updateAgentDirective", "deleteAgentDirective"], applicationPrimitiveIds: ["agents.directive.propose", "operatorCopilot.proposal.create"], ...rayOnly("The trusted MCP client prepares a digest-bound directive receipt; it is not a Ray turn capability.") },
   propose_workspace_setting: { backingOperationIds: ["updatePlatformSettings"], applicationPrimitiveIds: ["settings.workspace.propose", "operatorCopilot.proposal.create"], ...rayOnly("Ray persists an operator-reviewable draft before the platform settings service receives an assistant or channel change, and marks the draft when applying it would change who can reach the agent.") },
   start_crawl: { backingOperationIds: ["crawlWebsiteDocuments"], applicationPrimitiveIds: ["websiteCrawler.crawl.propose", "operatorCopilot.proposal.create"], ...rayOnly("Ray presents a website crawl as a pending, operator-confirmed proposal, because starting one fetches an external site and spends crawl budget.") },
   propose_routine: { backingOperationIds: ["createAgentRoutine"], applicationPrimitiveIds: ["routines.proposal.prepare", "operatorCopilot.proposal.create"], ...rayOnly("Ray drafts routine evidence and review state; authority over what an agent serves remains with the agent revision service.") },
   propose_routine_edit: { backingOperationIds: ["updateAgentRoutine"], applicationPrimitiveIds: ["routines.proposal.prepare", "operatorCopilot.proposal.create"], ...rayOnly("Ray-specific stale-draft guards protect a proposal without expanding routine mutation authority.") },
+  propose_routine_exposure: { backingOperationIds: ["updateAgentRoutine"], applicationPrimitiveIds: ["routines.proposal.prepare", "operatorCopilot.proposal.create"], ...rayOnly("Ray drafts a routine's tool exposure as an operator-reviewable edit; the revision gate, not Ray, decides whether the tool name may go live.") },
   prepare_routine_structure: { backingOperationIds: ["updateAgentRoutine"], applicationPrimitiveIds: ["routines.proposal.prepare", "routines.validation", "operatorCopilot.proposal.create"] },
-  execute_reviewed_proposal: { applicationPrimitiveIds: ["operatorCopilot.proposal.create"], ...rayOnly("The trusted MCP client invokes this digest-bound, one-time execution receipt after conversational confirmation; it is not a Ray turn capability.") },
-  reviewed_proposal_outcome: { applicationPrimitiveIds: ["operatorCopilot.proposal.create"], ...rayOnly("A grant-and-client-bound read reconciles one immutable reviewed operation without becoming authority to execute it.") },
-  cancel_reviewed_proposal: { applicationPrimitiveIds: ["operatorCopilot.proposal.create"], ...rayOnly("A still-authorized, grant-and-client-bound MCP caller can cancel its pending reviewed operation.") },
+  execute_reviewed_proposal: { applicationPrimitiveIds: ["operatorCopilot.proposal.create"], targetAwareAuthorization: true, ...rayOnly("The trusted MCP client invokes this digest-bound, one-time execution receipt after conversational confirmation; it is not a Ray turn capability.") },
+  reviewed_proposal_outcome: { applicationPrimitiveIds: ["operatorCopilot.proposal.create"], targetAwareAuthorization: true, ...rayOnly("A grant-and-client-bound read reconciles one immutable reviewed operation without becoming authority to execute it.") },
+  cancel_reviewed_proposal: { applicationPrimitiveIds: ["operatorCopilot.proposal.create"], targetAwareAuthorization: true, ...rayOnly("A still-authorized, grant-and-client-bound MCP caller can cancel its pending reviewed operation.") },
   propose_skill_config: { backingOperationIds: ["createAgentSkill", "updateAgentSkill"], applicationPrimitiveIds: ["agentSkills.config.propose", "operatorCopilot.proposal.create"], ...rayOnly("Ray persists an operator-reviewable draft before the agent skill service receives a configuration mutation.") },
   quality_signals: { backingOperationIds: ["listLowQualityTurns", "getQualityStats"] },
   replay_eval_case: { backingOperationIds: ["createEvalRun"], applicationPrimitiveIds: ["eval.case.replay"], ...rayOnly("Ray replays a selected case and carries bounded proposal evidence rather than exposing a general eval-run surface.") },
@@ -82,9 +90,19 @@ export const copilotCapabilityProvenance: Readonly<Record<ProductionDescriptorNa
   retrieval_probe: { backingOperationIds: ["searchRetrievalEvidence"], applicationPrimitiveIds: ["retrieval.evidence.probe"] },
   retrieval_settings: { backingOperationIds: ["getSettingsRetrievalDefaults", "listAgentSkills"], applicationPrimitiveIds: ["agents.configuration.read"] },
   prepare_retrieval_settings: { backingOperationIds: ["updateAgentSkill"], applicationPrimitiveIds: ["agentSkills.config.propose", "operatorCopilot.proposal.create"] },
+  proposal_detail: { backingOperationIds: ["getCopilotProposal"], applicationPrimitiveIds: ["operatorCopilot.proposal.create"], targetAwareAuthorization: true },
+  prepare_document_import: { applicationPrimitiveIds: ["documents.reviewed-operation", "operatorCopilot.proposal.create"], ...rayOnly("The MCP review carries bounded import identities and hashes; documents owns import planning and ingestion.") },
+  prepare_document_removal: { applicationPrimitiveIds: ["documents.reviewed-operation", "operatorCopilot.proposal.create"], ...rayOnly("The MCP review carries exact CAS-fenced document identities; documents owns resolution and deletion.") },
+  prepare_document_reprocess: { applicationPrimitiveIds: ["documents.reviewed-operation", "operatorCopilot.proposal.create"], ...rayOnly("The MCP review carries a bounded selector and owner-computed queue counts; documents owns requeueing.") },
   routine_definition: { backingOperationIds: ["listAgentRoutines", "getAgentRoutine"], applicationPrimitiveIds: ["routines.definition.read"] },
   run_eval_suite: { backingOperationIds: ["runEvalCases"], applicationPrimitiveIds: ["eval.suite.run"] },
   set_triage_state: { backingOperationIds: ["setQualityTurnTriage"] },
+  test_chat_sessions: { backingOperationIds: ["listAgentTestExecutions", "getAgentTestExecution"] },
+  test_chat_transcript: { backingOperationIds: ["getAgentTestExecution"] },
+  test_chat_turn_trace: { backingOperationIds: ["getAgentTestExecution"] },
+  // The dashboard's Test Chat send, end to end: a candidate of the saved draft when no revision is
+  // named, a single-revision start, then the message.
+  send_test_chat_message: { backingOperationIds: ["createAgentRevisionCandidate", "startAgentTestExecution", "sendAgentTestExecutionMessage"] },
   test_agent_turn: { backingOperationIds: ["createAssistantChatResponse"], applicationPrimitiveIds: ["operatorCopilot.safe-test.orchestration"], ...rayOnly("Ray adds operator provenance, bounded projection, and proposal evidence to the generic safe-test turn.") },
   turn_trace: { applicationPrimitiveIds: ["chat.conversation.trace.read"] },
   validate_routine: { backingOperationIds: ["validateAgentRoutine"], applicationPrimitiveIds: ["routines.validation"] },
@@ -154,7 +172,16 @@ export const assertCopilotCapabilityProvenance = (
     for (const operationId of operationIds) if (!publicOperationIds.has(operationId)) throw new Error(`Unknown public operation identity: ${operationId}`);
     // Supplementary owner primitives and Ray-only safety may explain composition, but never
     // weaken a descriptor's ordinary authorization when it represents one public operation.
-    if (operationIds.length === 1) {
+    if (provenance.targetAwareAuthorization && descriptor.requiredPermissions.length !== 0) {
+      throw new Error(`Copilot descriptor ${descriptor.name} declares target-aware authorization with static permissions`);
+    }
+    // The reverse must hold too: leaving requiredPermissions empty without declaring
+    // targetAwareAuthorization would list a descriptor to, and let it be invoked by, every caller
+    // with catalog access, on the strength of no static gate and no declared per-invocation one.
+    if (descriptor.requiredPermissions.length === 0 && !provenance.targetAwareAuthorization) {
+      throw new Error(`Copilot descriptor ${descriptor.name} has no required permissions and no target-aware authorization`);
+    }
+    if (operationIds.length === 1 && !provenance.targetAwareAuthorization) {
       const requiredByOperation = operationPermissions[operationIds[0]];
       if (!requiredByOperation) throw new Error(`Missing HTTP permission requirement for one-to-one operation: ${operationIds[0]}`);
       if (!requiredByOperation.every((permission) => descriptor.requiredPermissions.includes(permission as never))) {

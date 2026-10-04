@@ -26,6 +26,7 @@ import type { EvalLlmJudgePort } from "../../../src/modules/eval/services/evalJu
 import {
   BOOK_DEMO_ROUTINE_ID,
   CONTACT_SUPPORT_ROUTINE_ID,
+  START_RETURN_ROUTINE_ID,
   conversationQualityAgentConfig,
   conversationQualityCases,
   conversationQualityRoutines,
@@ -68,6 +69,42 @@ describe("trace assertions", () => {
     expect(evaluateTraceAssertion({ type: "turn_uses_skill", skillName: "clarification.answer" }, output).status).toBe("fail");
   });
 
+  it("sees a skill a routine step dispatched, and turn_skips_skill is its negation", () => {
+    const routineTurn = (steps: Array<Record<string, unknown>>) => observed({
+      turnTrace: trace([
+        {
+          id: `routine:${START_RETURN_ROUTINE_ID}`,
+          kind: "routine_activate",
+          status: "applied",
+          outputs: { routineId: START_RETURN_ROUTINE_ID },
+          subTrace: {
+            namespace: "routine",
+            version: 1,
+            payload: {
+              routineId: START_RETURN_ROUTINE_ID,
+              startStepId: "ask_order",
+              landedStepId: "done",
+              capturedSlotKeys: [],
+              filledSlotKeys: ["orderId", "reason"],
+              steps,
+            },
+          },
+        },
+      ]),
+    });
+    const dispatched = routineTurn([
+      { stepId: "ask_order", kind: "chat", event: "fast_forwarded" },
+      { stepId: "create_return", kind: "skill", event: "skill_dispatched", skillName: "create_return_ticket", skillStatus: "completed" },
+    ]);
+    const waiting = routineTurn([{ stepId: "ask_reason", kind: "chat", event: "rendered" }]);
+
+    expect(evaluateTraceAssertion({ type: "turn_uses_skill", skillName: "create_return_ticket" }, dispatched).status).toBe("pass");
+    expect(evaluateTraceAssertion({ type: "turn_skips_skill", skillName: "create_return_ticket" }, dispatched).status).toBe("fail");
+    expect(evaluateTraceAssertion({ type: "turn_uses_skill", skillName: "create_return_ticket" }, waiting).status).toBe("fail");
+    expect(evaluateTraceAssertion({ type: "turn_skips_skill", skillName: "create_return_ticket" }, waiting).status).toBe("pass");
+    expect(evaluateTraceAssertion({ type: "turn_skips_skill", skillName: "create_return_ticket" }, observed({})).status).toBe("error");
+  });
+
   it("passes turn_activates_routine and routine_step_reached from the routine stage + subtrace", () => {
     const output = observed({
       turnTrace: trace([
@@ -95,6 +132,67 @@ describe("trace assertions", () => {
     expect(evaluateTraceAssertion({ type: "routine_step_reached", routineId: CONTACT_SUPPORT_ROUTINE_ID, stepId: "ask_email" }, output).status).toBe("pass");
     expect(evaluateTraceAssertion({ type: "routine_step_reached", routineId: CONTACT_SUPPORT_ROUTINE_ID, stepId: "ask_issue" }, output).status).toBe("fail");
     expect(evaluateTraceAssertion({ type: "turn_activates_routine", routineId: BOOK_DEMO_ROUTINE_ID }, output).status).toBe("fail");
+  });
+
+  it("passes routine_slots_filled only when every named slot is filled after the turn", () => {
+    const output = observed({
+      turnTrace: trace([
+        {
+          id: `routine:${BOOK_DEMO_ROUTINE_ID}`,
+          kind: "routine_activate",
+          status: "applied",
+          outputs: { routineId: BOOK_DEMO_ROUTINE_ID },
+          subTrace: {
+            namespace: "routine",
+            version: 1,
+            payload: {
+              routineId: BOOK_DEMO_ROUTINE_ID,
+              startStepId: "ask_name",
+              landedStepId: "ask_name",
+              capturedSlotKeys: ["email", "preferredDate"],
+              filledSlotKeys: ["email", "preferredDate"],
+              steps: [{ stepId: "ask_name", kind: "chat", event: "reasked" }],
+            },
+          },
+        },
+      ]),
+    });
+    const filled = (slotKeys: string[]) =>
+      evaluateTraceAssertion({ type: "routine_slots_filled", routineId: BOOK_DEMO_ROUTINE_ID, slotKeys }, output);
+
+    expect(filled(["email", "preferredDate"]).status).toBe("pass");
+    expect(filled(["email", "name"])).toMatchObject({ status: "fail", reason: expect.stringContaining("name") });
+    expect(evaluateTraceAssertion(
+      { type: "routine_slots_filled", routineId: CONTACT_SUPPORT_ROUTINE_ID, slotKeys: ["email"] },
+      output,
+    ).status).toBe("fail");
+    expect(evaluateTraceAssertion(
+      { type: "routine_slots_filled", routineId: BOOK_DEMO_ROUTINE_ID, slotKeys: ["email"] },
+      observed({}),
+    ).status).toBe("error");
+  });
+
+  it("passes routine_yielded only when the routine yielded the turn and stays parked on the step", () => {
+    const output = observed({
+      turnTrace: trace([
+        {
+          id: `routine_yield:${BOOK_DEMO_ROUTINE_ID}`,
+          kind: "routine_yield",
+          status: "skipped",
+          outputs: { routineId: BOOK_DEMO_ROUTINE_ID, stepId: "ask_email", missingSlotKeys: ["email"] },
+        },
+      ]),
+    });
+    const yielded = (routineId: string, stepId: string) =>
+      evaluateTraceAssertion({ type: "routine_yielded", routineId, stepId }, output);
+
+    expect(yielded(BOOK_DEMO_ROUTINE_ID, "ask_email").status).toBe("pass");
+    expect(yielded(BOOK_DEMO_ROUTINE_ID, "ask_date")).toMatchObject({ status: "fail", reason: expect.stringContaining("ask_email") });
+    expect(yielded(CONTACT_SUPPORT_ROUTINE_ID, "ask_email").status).toBe("fail");
+    expect(evaluateTraceAssertion(
+      { type: "routine_yielded", routineId: BOOK_DEMO_ROUTINE_ID, stepId: "ask_email" },
+      observed({}),
+    ).status).toBe("error");
   });
 
   it("detects a clarifying question from either signal", () => {
@@ -564,6 +662,16 @@ describe("seed fixtures", () => {
     ]);
   });
 
+  it("adds the #1351 hand-off directive only to its own case, never to the seeded agent", () => {
+    const overridden = conversationQualityCases.filter((evalCase) => evalCase.agentConfigOverride?.authoredDirectives);
+    expect(overridden.map((evalCase) => evalCase.id)).toEqual(["routine-step-outranks-always-on-handoff-directive"]);
+    expect(overridden[0]?.agentConfigOverride?.authoredDirectives?.map((directive) => directive.name)).toEqual([
+      ...conversationQualityAgentConfig.authoredDirectives.map((directive) => directive.name),
+      "contact-form-only",
+    ]);
+    expect(conversationQualityAgentConfig.authoredDirectives.map((directive) => directive.name)).not.toContain("contact-form-only");
+  });
+
   it("validates the seed cases against the schema with unique ids", () => {
     const parsed = parseConversationQualityCases(conversationQualityCases);
     expect(parsed).toHaveLength(conversationQualityCases.length);
@@ -617,9 +725,26 @@ describe("seed fixtures", () => {
     ).toThrow();
   });
 
+  it("accepts a routine invocation in place of a query and rejects a case with neither", () => {
+    const [parsed] = parseConversationQualityCases([
+      {
+        id: "invoke",
+        name: "invoke",
+        routineInvocation: { toolName: "start_return", input: { orderId: "A-1001", reason: "Wrong size" } },
+        assertions: [{ type: "turn_skips_skill", skillName: "create_return_ticket" }],
+      },
+    ]);
+    expect(parsed?.routineInvocation).toEqual({ toolName: "start_return", input: { orderId: "A-1001", reason: "Wrong size" } });
+    expect(parsed?.query).toBeUndefined();
+    expect(() => parseConversationQualityCases([{ id: "neither", name: "neither", assertions: [] }])).toThrow();
+    expect(() => parseConversationQualityCases([
+      { id: "both", name: "both", query: "hi", routineInvocation: { toolName: "start_return", input: {} }, assertions: [] },
+    ])).toThrow();
+  });
+
   it("only references document and routine ids that exist in the fixtures", () => {
     const documentIds = new Set(conversationQualityCorpus.map((doc) => doc.id));
-    const routineIds = new Set([CONTACT_SUPPORT_ROUTINE_ID, BOOK_DEMO_ROUTINE_ID]);
+    const routineIds = new Set(conversationQualityRoutines.map((routine) => routine.id));
     for (const evalCase of conversationQualityCases) {
       for (const assertion of evalCase.assertions) {
         if ("documentId" in assertion) {

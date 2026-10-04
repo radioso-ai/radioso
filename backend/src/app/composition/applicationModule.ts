@@ -17,7 +17,7 @@ import type { Database } from "../../shared/infra/database.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 import type { JobConsumerPort } from "../../shared/domain/jobConsumer.js";
 import type { OrganizationCreationGuard } from "../../shared/domain/organizationCreationGuard.js";
-import type { UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
+import type { DocumentCapacityReadPort, UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
 import type { ManagedModelPolicy } from "../../shared/domain/managedModelPolicy.js";
 import type { UsageEventRecorder } from "../../shared/domain/usageEventRecorder.js";
 import type { WebsiteEmbedIntegrationProvider } from "../../modules/settings/contracts/websiteEmbedIntegration.js";
@@ -86,6 +86,13 @@ type ApplicationUsageLimitPolicyRegistration =
       database: ApplicationDatabasePort;
       logger: AppLogger;
     }) => UsageLimitPolicy);
+
+type ApplicationDocumentCapacityReaderRegistration =
+  | DocumentCapacityReadPort
+  | ((context: {
+      database: ApplicationDatabasePort;
+      logger: AppLogger;
+    }) => DocumentCapacityReadPort);
 
 type ApplicationManagedModelPolicyRegistration =
   | ManagedModelPolicy
@@ -173,15 +180,31 @@ export interface ApplicationDirectiveRegistration {
   routes?: string[];
 }
 
+const ACTION_QUEUE_SOURCES = ["routine_action_step", "chat_turn", "outside_turn"] as const;
+type ActionQueueSource = (typeof ACTION_QUEUE_SOURCES)[number];
+
 /**
- * Registers an {@link ActionHandler} for one action `type` emitted by a routine. The
- * worker dispatcher routes outbox rows to the handler by exact type match. The handler
- * may be supplied directly or as a factory resolved at dependency-build time with a
- * minimal context, mirroring the other host-supplied provider registrations.
+ * Registers an {@link ActionHandler} for one action `type`. Registering it lets host code queue
+ * the action, under `requiredCapabilities`, and lets the worker dispatcher route outbox rows to
+ * the handler by exact type match. The handler may be supplied directly or as a factory resolved
+ * at dependency-build time with a minimal context, mirroring the other host-supplied provider
+ * registrations.
  */
 interface ApplicationActionHandlerRegistration {
   type: string;
   requiredCapabilities?: string[];
+  /**
+   * Where this action is queued from. Every registration says so explicitly, and the worker
+   * dispatches every registered action.
+   * - `routine_action_step`: an author writes it as a routine action step; routine authoring
+   *   offers it, and the chat turn running the step queues it.
+   * - `chat_turn`: host code queues it with a chat turn and builds its payload — a routine ending's
+   *   operator notice or an approval step's request. Authoring never offers it; an action step
+   *   naming it fails validation and publishing.
+   * - `outside_turn`: host code queues it in its own transaction — a transfer notice written with
+   *   its transfer. Neither authoring nor a chat turn admits it.
+   */
+  queuedFrom: ActionQueueSource;
   handler:
     | ActionHandler
     | ((context: {
@@ -201,6 +224,27 @@ interface ApplicationActionHandlerRegistration {
         errorReporter: ErrorReporter;
       }) => ActionHandler);
 }
+
+/** The action handlers an author may write as a routine action step; see `queuedFrom`. */
+export const routineAuthorableActionHandlers = (
+  registrations: readonly ApplicationActionHandlerRegistration[],
+): ApplicationActionHandlerRegistration[] =>
+  registrations.filter((registration) => registration.queuedFrom === "routine_action_step");
+
+/** The action handlers a chat turn may queue, whether authored or host-queued. */
+export const chatTurnQueueableActionHandlers = (
+  registrations: readonly ApplicationActionHandlerRegistration[],
+): ApplicationActionHandlerRegistration[] =>
+  registrations.filter((registration) => registration.queuedFrom !== "outside_turn");
+
+/** Action types host code queues with a chat turn rather than from an authored action step. */
+export const chatTurnQueuedActionTypes = (
+  registrations: readonly ApplicationActionHandlerRegistration[],
+): ReadonlySet<string> => new Set(
+  registrations
+    .filter((registration) => registration.queuedFrom === "chat_turn")
+    .map((registration) => registration.type),
+);
 
 type ApplicationAccountCreatedHook = (context: {
   accountId: string;
@@ -234,6 +278,7 @@ interface ApplicationExtensionRegistry {
   accountCreatedHooks: ApplicationAccountCreatedHook[];
   capabilityPolicy?: CapabilityPolicy;
   usageLimitPolicyRegistration?: ApplicationUsageLimitPolicyRegistration;
+  documentCapacityReaderRegistration?: ApplicationDocumentCapacityReaderRegistration;
   managedModelPolicyRegistration?: ApplicationManagedModelPolicyRegistration;
   organizationCreationGuardRegistration?: ApplicationOrganizationCreationGuardRegistration;
   usageEventRecorderRegistration?: ApplicationUsageEventRecorderRegistration;
@@ -282,6 +327,8 @@ export interface ApplicationModuleRegistrationContext {
   registerAccountCreatedHandler(handler: ApplicationAccountCreatedHook): void;
   registerCapabilityPolicy(policy: CapabilityPolicy): void;
   registerUsageLimitPolicy(policy: ApplicationUsageLimitPolicyRegistration): void;
+  /** Document capacity is a read only the documents reviewed-operation service consumes; kept off {@link UsageLimitPolicy} so its reservation fakes never need to stub it. */
+  registerDocumentCapacityReader(reader: ApplicationDocumentCapacityReaderRegistration): void;
   registerManagedModelPolicy(policy: ApplicationManagedModelPolicyRegistration): void;
   registerOrganizationCreationGuard(guard: ApplicationOrganizationCreationGuardRegistration): void;
   registerUsageEventRecorder(recorder: ApplicationUsageEventRecorderRegistration): void;
@@ -373,6 +420,9 @@ const createRegistrationContext = (registry: ApplicationExtensionRegistry): Appl
   registerUsageLimitPolicy(policy) {
     registry.usageLimitPolicyRegistration = policy;
   },
+  registerDocumentCapacityReader(reader) {
+    registry.documentCapacityReaderRegistration = reader;
+  },
   registerManagedModelPolicy(policy) {
     registry.managedModelPolicyRegistration = policy;
   },
@@ -413,6 +463,12 @@ const createRegistrationContext = (registry: ApplicationExtensionRegistry): Appl
     registry.publishedRoutineRegistrationSource = source;
   },
   registerActionHandler(registration) {
+    // A module built against an older registration contract must fail loudly, not drop out of authoring.
+    if (!(ACTION_QUEUE_SOURCES as readonly unknown[]).includes(registration.queuedFrom)) {
+      throw new Error(
+        `Action handler "${registration.type}" needs queuedFrom set to one of: ${ACTION_QUEUE_SOURCES.join(", ")}`,
+      );
+    }
     registry.actionHandlerRegistrations.push(registration);
   },
   registerContactHistoryProvider(provider) {

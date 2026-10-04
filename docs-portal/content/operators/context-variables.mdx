@@ -1,7 +1,7 @@
 ---
 title: Context variables
 description: How operators configure page, identity, and host-defined context for agent turns.
-last_updated: 2026-09-18
+last_updated: 2026-09-22
 ---
 
 # Context variables
@@ -32,9 +32,13 @@ there. They are code-owned platform context, available on every agent.
 The embed captures page context with each message, but the agent does not see it
 on every turn. Each turn is classified first. Page data — including the
 URL, title, and locale — reaches the model only when the turn actually asks
-about the current page, or when an active routine declares a `page_context`
-dependency. Unrelated turns contribute no page data to model input or stored
-message metadata.
+about the current page, or when an active routine reads the page. A routine
+reads the page when a skill input is bound to `page_context` or a step
+instruction references it (the **Current page** chip in the routine editor, or
+`{{context.page_context}}` in the stored instruction). A step reference renders
+the page's URL, title, and locale into the step; the page excerpt stays out.
+Unrelated turns contribute no page data to model input or stored message
+metadata.
 
 In practice this means answers to general questions are not influenced by
 whatever page the visitor happens to be on, and page content cannot inject
@@ -256,7 +260,8 @@ the prompt context.
 - `on_reference` keeps the value available for turn logic and includes it only
   when the turn needs it.
 - `operator_only` stores it for operator inspection and logic, but does not
-  surface it into the answer prompt.
+  surface it into the answer prompt; a routine step that references it reads
+  nothing.
 
 Sensitive variables should use the narrowest surfacing that works. Redacted
 values may still appear in the Inbox so operators can debug what happened
@@ -269,6 +274,22 @@ condition can describe visitor state rather than only what the visitor said.
 "The visitor's cart is worth more than 100" or "the visitor is on a product
 page" are conditions the matcher can decide, because `cart` and `page_context`
 are part of the signals it sees.
+
+Alongside your own variables, the turn carries one fact Radioso establishes
+itself: `radioso_caller_kind` is `agent` when the other side of the conversation
+is another AI agent rather than a person, and `human` otherwise. Radioso reads it
+from the channel the conversation arrived on — the MCP converse door and the REST
+agent channel carry agents; the embed, a shared link, Slack, and the dashboard
+carry people — so a caller cannot claim to be something it is not. Write
+"the caller is another AI agent" to scope a directive to them, which is how you
+give agent callers a terser answer or a different escalation path than a person
+gets. The key is present on every turn, so a condition about it always has
+something to read.
+
+Test Chat and the workbench run as `human`, because an operator driving a test is
+a person. A condition scoped to agent callers is therefore one you confirm
+against real traffic from the MCP converse door or the REST agent channel rather
+than in a test run.
 
 Every resolved variable takes part, whatever its surfacing: `operator_only` and
 `on_reference` values steer behavior without being written into the answer

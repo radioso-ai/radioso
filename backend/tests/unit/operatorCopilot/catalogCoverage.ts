@@ -28,7 +28,7 @@ const catalogToolCoverage = {
   getHistorySearch: "conversation_history_search",
   searchDocuments: "document_search",
   getDocument: "document_search",
-  listDocuments: "document_status",
+  listDocuments: "list_documents",
   listDocumentSources: "document_status",
   listDocumentsBySource: "document_status",
   recrawlDocumentSource: "recrawl_source",
@@ -74,7 +74,7 @@ const agentRevisionLifecycle = deferred(
   "Deferred: agent revision state, candidate materialization, revision detail, and publication are dashboard lifecycle operations. Ray's current descriptors can propose scoped authoring changes, but they do not select immutable candidates, run candidate-pinned tests/evals, or publish a revision with the required concurrency and idempotency controls.",
 );
 const revisionTestingAndEval = deferred(
-  "Deferred: private candidate test and frozen eval operations require explicit revision selection, sample-value validation, retry identity, and evidence handling that current Copilot descriptors do not expose.",
+  "Deferred: retrying or retaining a Test Chat side, capturing Test Chat evidence, and frozen revision-eval runs require comparison handling, sample-value validation, retry identity, and evidence handling that current Copilot descriptors do not expose.",
 );
 const wave3KnowledgeBase = deferred("Deferred to Wave 3 knowledge base work: document source and crawl changes need their own bounded proposal flows.");
 // Ray reads documents as search snippets and paged chunks, both derived and partial. This
@@ -180,6 +180,8 @@ const identityAdministration = permanent("Permanent exclusion: Ray does not admi
 const accountScope = permanent("Permanent exclusion: this is account-scoped rather than workspace-scoped, and Ray operates on one workspace.");
 const endUserSurface = permanent("Permanent exclusion: this is an end-user or inbound integration surface, not an operator-copilot tool.");
 const authOrRegistration = permanent("Permanent exclusion: authentication and registration are not an operator-copilot surface.");
+const personalProfile = permanent("Permanent exclusion: a profile is the signed-in person's own identity, not workspace configuration; only that person edits their name.");
+const agentDiscoveryDocument = permanent("Permanent exclusion: the public discovery documents are read by a visiting agent, not by an operator. They render what the operator already controls through the agent's card and walk-in settings, which `propose_agent_setting` covers.");
 const copilotUiOnly = permanent("Permanent exclusion: this endpoint is the operator copilot UI/control surface, not a tool Ray may call.");
 const ambientOperatorRuntime = permanent("Permanent exclusion: this is ambient operator-dashboard runtime transport, not an action Ray may call.");
 // A context variable *value* is data written for one session, customer, agent, or workspace scope
@@ -243,6 +245,15 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "getCurrentSession",
   ], authOrRegistration),
   ...coverage([
+    "getUserProfile",
+    "updateUserProfile",
+  ], personalProfile),
+  ...coverage([
+    "getAgentCard",
+    "getAgentMcpServerCard",
+    "getAgentAiCatalog",
+  ], agentDiscoveryDocument),
+  ...coverage([
     "getAgentContextVariableSigningKey",
   ], secretBearingRead),
   ...coverage([
@@ -293,6 +304,7 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "rotateAnonymousChatToken",
     "rotateWebsiteEmbedToken",
     "rotateAgentChannelCredential",
+    "rotateAgentPublicId",
   ], neverListExclusion("secret_rotation")),
   ...coverage([
     "setWorkspaceProviderCredential",
@@ -418,6 +430,14 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "transferConversationOwnership",
     "handBackConversation",
   ], neverListExclusion("live_conversation_ownership")),
+  // The teammate list exists to pick a transfer target for the dashboard's "Hand to" menu.
+  ...coverage(["listConversationOperators"], permanent(
+    "Permanent exclusion: the teammate list only feeds the dashboard's transfer menu. Transferring a conversation stays with the operator (never-list `live_conversation_ownership`), so Ray has no use for the targets.",
+  )),
+  // The workspace-wide list of recent closures is a navigation aid for the Inbox strip.
+  ...coverage(["listRecentlyClosedInboxItems"], permanent(
+    "Permanent exclusion: the recently-closed list only feeds the Inbox strip. Ray reads who closed a conversation's handoff, approval, or feedback from conversation_transcript's activity.",
+  )),
   ...coverage(["resolveDecision"], neverListExclusion("pending_decision_resolution")),
   ...coverage([
     "completeMcpConnectionOauth",
@@ -429,6 +449,11 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "createMcpConverseSession",
     "validateMcpConverseSession",
     "askMcpConverseAgent",
+    // Agent-audience read of the exposed-routine catalog, not an operator-facing surface.
+    "getMcpConverseTools",
+    // Agent-audience read of its own conversation after a handoff; the operator reads
+    // the same conversation in the Inbox.
+    "getMcpConverseMessages",
     "createPublicChatResponse",
     "listPublicChatHistory",
     "getPublicChatHistoryConversation",
@@ -449,10 +474,12 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
   listAgentRevisions: agentRevisionLifecycle,
   getAgentRevision: agentRevisionLifecycle,
   publishAgentRevision: agentRevisionLifecycle,
-  listAgentTestExecutions: revisionTestingAndEval,
-  getAgentTestExecution: revisionTestingAndEval,
-  startAgentTestExecution: revisionTestingAndEval,
-  sendAgentTestExecutionMessage: revisionTestingAndEval,
+  // Test Chat's own reads and its single-revision start/send. What those tools leave out of the
+  // start body (comparison, sample values, seeding) is recorded field by field in fieldParity.ts.
+  listAgentTestExecutions: "test_chat_sessions",
+  getAgentTestExecution: "test_chat_transcript",
+  startAgentTestExecution: "send_test_chat_message",
+  sendAgentTestExecutionMessage: "send_test_chat_message",
   retainAgentTestExecutionSide: revisionTestingAndEval,
   captureAgentTestExecutionEvalSnapshot: revisionTestingAndEval,
   retryAgentTestExecutionSide: revisionTestingAndEval,
@@ -514,4 +541,5 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
   getCopilotProposal: copilotUiOnly,
   applyCopilotProposal: copilotUiOnly,
   dismissCopilotProposal: copilotUiOnly,
+  approveCopilotProposal: permanent("Permanent exclusion: approving a signed-in-tier reviewed operation is human-only proof of consent; no Ray or MCP tool may record it."),
 };

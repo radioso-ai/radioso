@@ -9,11 +9,11 @@ import { copilotProposalTargetTypes, summarizeProposalEvidence } from "../../mod
 
 interface CopilotConversationRow { id: string; workspace_id: string; operator_user_id: string; title: string | null; status: string; created_at: Date; updated_at: Date; }
 interface CopilotMessageRow { id: string; conversation_id: string; role: string; content: string; outcome: string | null; activity: unknown; created_at: Date; }
-interface CopilotProposalRow { id: string; workspace_id: string; operator_user_id: string; conversation_id: string | null; operator_mcp_invocation_id: string | null; execution_invocation_id: string | null; message_id: string | null; target_type: string; target_ref: unknown; payload: unknown; version_token: string; evidence: unknown; review_digest: string | null; review_snapshot: unknown; expires_at: Date | null; status: string; failure_reason: string | null; applied_ref: unknown; created_at: Date; updated_at: Date; }
+interface CopilotProposalRow { id: string; workspace_id: string; operator_user_id: string; conversation_id: string | null; operator_mcp_invocation_id: string | null; execution_invocation_id: string | null; message_id: string | null; target_type: string; target_ref: unknown; payload: unknown; version_token: string; evidence: unknown; review_digest: string | null; review_snapshot: unknown; expires_at: Date | null; confirmation_requirement: string | null; change_effect: unknown; approved_at: Date | null; approved_by_user_id: string | null; approval_digest: string | null; status: string; failure_reason: string | null; applied_ref: unknown; created_at: Date; updated_at: Date; }
 interface RecoverableOperatorMcpInvocationRow { id: string; grant_id: string; workspace_id: string; user_id: string; operation_id: string | null; descriptor_name: string | null; input_digest: string; proof_consumed_at: Date | null; status: string; }
 const conversationColumns = ["id", "workspace_id", "operator_user_id", "title", "status", "created_at", "updated_at"] as const;
 const messageColumns = ["id", "conversation_id", "role", "content", "outcome", "activity", "created_at"] as const;
-const proposalColumns = ["id", "workspace_id", "operator_user_id", "conversation_id", "operator_mcp_invocation_id", "execution_invocation_id", "message_id", "target_type", "target_ref", "payload", "version_token", "evidence", "review_digest", "review_snapshot", "expires_at", "status", "failure_reason", "applied_ref", "created_at", "updated_at"] as const;
+const proposalColumns = ["id", "workspace_id", "operator_user_id", "conversation_id", "operator_mcp_invocation_id", "execution_invocation_id", "message_id", "target_type", "target_ref", "payload", "version_token", "evidence", "review_digest", "review_snapshot", "expires_at", "confirmation_requirement", "change_effect", "approved_at", "approved_by_user_id", "approval_digest", "status", "failure_reason", "applied_ref", "created_at", "updated_at"] as const;
 const narrowStatus = (status: string): CopilotConversation["status"] => (status === "running" ? "running" : "idle");
 const narrowOutcome = (outcome: string | null): CopilotMessage["outcome"] | undefined =>
   outcome === "completed" || outcome === "budget_exhausted" || outcome === "failed" ? outcome : undefined;
@@ -24,7 +24,7 @@ const narrowTargetType = (targetType: string): CopilotProposal["targetType"] => 
   throw new Error(`Unknown copilot proposal target type: ${targetType}`);
 };
 const narrowProposalStatus = (status: string): CopilotProposal["status"] => status === "applied" || status === "dismissed" || status === "failed" || status === "stale" ? status : "pending";
-const mapProposal = (row: CopilotProposalRow): CopilotProposal => ({ id: row.id, workspaceId: row.workspace_id, operatorUserId: row.operator_user_id, origin: row.conversation_id ? { type: "conversation", conversationId: row.conversation_id } : { type: "operator_mcp_invocation", invocationId: row.operator_mcp_invocation_id! }, conversationId: row.conversation_id, operatorMcpInvocationId: row.operator_mcp_invocation_id, executionInvocationId: row.execution_invocation_id, messageId: row.message_id, targetType: narrowTargetType(row.target_type), targetRef: row.target_ref, payload: row.payload, versionToken: row.version_token, evidence: narrowEvidence(row.evidence), reviewDigest: row.review_digest, reviewSnapshot: row.review_snapshot, expiresAt: row.expires_at, status: narrowProposalStatus(row.status), reason: row.failure_reason, appliedRef: row.applied_ref, createdAt: row.created_at, updatedAt: row.updated_at });
+const mapProposal = (row: CopilotProposalRow): CopilotProposal => ({ id: row.id, workspaceId: row.workspace_id, operatorUserId: row.operator_user_id, origin: row.conversation_id ? { type: "conversation", conversationId: row.conversation_id } : { type: "operator_mcp_invocation", invocationId: row.operator_mcp_invocation_id! }, conversationId: row.conversation_id, operatorMcpInvocationId: row.operator_mcp_invocation_id, executionInvocationId: row.execution_invocation_id, messageId: row.message_id, targetType: narrowTargetType(row.target_type), targetRef: row.target_ref, payload: row.payload, versionToken: row.version_token, evidence: narrowEvidence(row.evidence), reviewDigest: row.review_digest, reviewSnapshot: row.review_snapshot, expiresAt: row.expires_at, confirmationRequirement: row.confirmation_requirement === "conversation" || row.confirmation_requirement === "signed_in_approval" ? row.confirmation_requirement : null, changeEffect: row.change_effect as CopilotProposal["changeEffect"], approvedAt: row.approved_at, approvedByUserId: row.approved_by_user_id, approvalDigest: row.approval_digest, status: narrowProposalStatus(row.status), reason: row.failure_reason, appliedRef: row.applied_ref, createdAt: row.created_at, updatedAt: row.updated_at });
 /** Stored as JSONB, so a row written before evidence existed reads as unmeasured, not as empty. */
 const narrowEvidence = (value: unknown): CopilotProposalEvidence | null => {
   const record = asRecord(value);
@@ -176,12 +176,12 @@ export class CopilotRepository implements CopilotRepositoryPort, CopilotRetentio
         )
         INSERT INTO copilot_proposals (
           id, workspace_id, operator_user_id, conversation_id, operator_mcp_invocation_id,
-          target_type, target_ref, payload, version_token, evidence, review_digest, review_snapshot, expires_at
+          target_type, target_ref, payload, version_token, evidence, review_digest, review_snapshot, expires_at, confirmation_requirement, change_effect
         )
         SELECT ${id}, ${input.workspaceId}, ${input.operatorUserId}, NULL, ${origin.invocationId},
           ${input.targetType}, ${JSON.stringify(input.targetRef)}::jsonb, ${JSON.stringify(input.payload)}::jsonb,
           ${input.versionToken}, ${input.evidence ? JSON.stringify(input.evidence) : null}::jsonb,
-          ${input.reviewDigest ?? null}, ${input.reviewSnapshot ? JSON.stringify(input.reviewSnapshot) : null}::jsonb, ${input.expiresAt ?? null}
+          ${input.reviewDigest ?? null}, ${input.reviewSnapshot ? JSON.stringify(input.reviewSnapshot) : null}::jsonb, ${input.expiresAt ?? null}, ${input.confirmationRequirement ?? null}, ${input.changeEffect ? JSON.stringify(input.changeEffect) : null}::jsonb
         FROM current_authorization
         RETURNING *
       `.execute(this.db);
@@ -203,6 +203,8 @@ export class CopilotRepository implements CopilotRepositoryPort, CopilotRetentio
       review_digest: input.reviewDigest ?? null,
       review_snapshot: input.reviewSnapshot ? JSON.stringify(input.reviewSnapshot) : null,
       expires_at: input.expiresAt ?? null,
+      confirmation_requirement: input.confirmationRequirement ?? null,
+      change_effect: input.changeEffect ? JSON.stringify(input.changeEffect) : null,
     }).returning(proposalColumns).executeTakeFirstOrThrow();
     return mapProposal(row);
   }
@@ -284,6 +286,22 @@ export class CopilotRepository implements CopilotRepositoryPort, CopilotRetentio
       .executeTakeFirst();
     return row?.workspace_id ?? null;
   }
+  async findProposalWorkspaceInAnotherMemberAccount(input: { id: string; accountId: string; operatorUserId: string }): Promise<{ workspaceId: string; accountId: string; accountName: string } | null> {
+    const row = await this.db
+      .selectFrom("copilot_proposals as proposal")
+      .innerJoin("workspaces as workspace", "workspace.id", "proposal.workspace_id")
+      .innerJoin("account_memberships as membership", (join) => join
+        .onRef("membership.account_id", "=", "workspace.account_id")
+        .on("membership.user_id", "=", input.operatorUserId)
+        .on("membership.status", "=", "active"))
+      .innerJoin("accounts as account", "account.id", "workspace.account_id")
+      .select(["proposal.workspace_id as workspace_id", "workspace.account_id as account_id", "account.name as account_name"])
+      .where("proposal.id", "=", input.id)
+      .where("proposal.operator_user_id", "=", input.operatorUserId)
+      .where("workspace.account_id", "!=", input.accountId)
+      .executeTakeFirst();
+    return row ? { workspaceId: row.workspace_id, accountId: row.account_id, accountName: row.account_name } : null;
+  }
   async attachProposalsToMessage(input: { proposalIds: ReadonlyArray<string>; messageId: string; conversationId: string }): Promise<void> { if (input.proposalIds.length === 0) return; await this.db.updateTable("copilot_proposals").set({ message_id: input.messageId, updated_at: new Date() }).where("id", "in", input.proposalIds).where("conversation_id", "=", input.conversationId).execute(); }
   async updateProposalOutcome(input: { id: string; workspaceId: string; operatorUserId: string; status: CopilotProposal["status"]; appliedRef?: unknown; reason?: string | null; applyClaimGuard: CopilotProposalApplyClaimGuard }): Promise<CopilotProposal | null> {
     let query = this.db.updateTable("copilot_proposals")
@@ -325,8 +343,8 @@ export class CopilotRepository implements CopilotRepositoryPort, CopilotRetentio
       .set({ status: "dismissed", failure_reason: null, applied_ref: null, updated_at: new Date() })
       .where("id", "=", input.id).where("workspace_id", "=", input.workspaceId).where("operator_user_id", "=", input.operatorUserId)
       .where("status", "=", "pending").where("apply_started_at", "is", null)
-      // A released reviewed receipt can still retry and reconcile with its owner; only proposals
-      // that never reserved an execution receipt may be canceled.
+      // A receipt stays bound while an attempt under it may have landed, and only that receipt
+      // can reconcile it; a proposal with no bound receipt has nothing in flight to cancel.
       .where("execution_invocation_id", "is", null)
       .returning(proposalColumns).executeTakeFirst();
     return row ? mapProposal(row) : null;
@@ -424,14 +442,24 @@ export class CopilotRepository implements CopilotRepositoryPort, CopilotRetentio
   }
 
   /**
-   * Clears only the exact claim `claimProposalApply` handed to this attempt, after a
-   * pre-mutation authorization denial. Fenced the same way `updateProposalOutcome`'s `held`
-   * guard is: a claim already superseded by a later TTL reclaim no longer matches, so a
-   * crashed writer's late release cannot clear an unrelated, currently active claim.
+   * Hands back the exact claim this attempt was given, after a pre-mutation authorization denial,
+   * leaving the row as the claim found it. Fenced the same way `updateProposalOutcome`'s `held`
+   * guard is: a claim already superseded by a later TTL reclaim no longer matches, so a crashed
+   * writer's late release cannot clear an unrelated, currently active claim. Restoring the earlier
+   * start time also lets that earlier attempt, if it was only slow, still settle what it applied.
+   *
+   * A reviewed receipt stays bound only while an earlier attempt may have landed, because only
+   * that receipt can reconcile it. With no such attempt the denied one changed nothing, so the
+   * binding is dropped too; otherwise every later execution receipt would answer `not_prepared`
+   * until the proposal expired.
    */
-  async releaseProposalApplyClaim(input: { id: string; workspaceId: string; operatorUserId: string; claimedAt: Date }): Promise<boolean> {
+  async releaseProposalApplyClaim(input: { id: string; workspaceId: string; operatorUserId: string; claimedAt: Date; previousAttemptStartedAt: Date | null }): Promise<boolean> {
     const row = await this.db.updateTable("copilot_proposals")
-      .set({ apply_started_at: null, updated_at: new Date() })
+      .set({
+        apply_started_at: input.previousAttemptStartedAt,
+        ...(input.previousAttemptStartedAt ? {} : { execution_invocation_id: null }),
+        updated_at: new Date(),
+      })
       .where("id", "=", input.id)
       .where("workspace_id", "=", input.workspaceId)
       .where("operator_user_id", "=", input.operatorUserId)
@@ -444,14 +472,18 @@ export class CopilotRepository implements CopilotRepositoryPort, CopilotRetentio
 
   async claimMcpReviewedProposalApply(input: { proposalId: string; executionInvocationId: string; reviewDigest: string; workspaceId: string; operatorUserId: string; grantId: string; clientId: string; now: Date; claimTtlSeconds: number }): Promise<
     | { readonly status: "claimed"; readonly claim: CopilotProposalClaim }
-    | { readonly status: "already_applied"; readonly appliedRef: unknown; readonly reason?: string }
-    | { readonly status: "missing" | "binding_mismatch" | "digest_mismatch" | "expired" | "canceled" | "not_prepared" }
+    /** The proposal already reached this terminal outcome through this same execution receipt. */
+    | { readonly status: "settled"; readonly outcome: "applied" | "stale" | "failed"; readonly appliedRef: unknown; readonly reason?: string }
+    /** This same execution receipt holds the apply claim and its lease has not expired. */
+    | { readonly status: "claim_held" }
+    | { readonly status: "missing" | "binding_mismatch" | "digest_mismatch" | "expired" | "canceled" | "not_prepared" | "approval_required" }
   > {
     return this.db.transaction().execute(async (trx) => {
       const proposal = await trx.selectFrom("copilot_proposals").select([...proposalColumns, "apply_started_at"])
         .where("id", "=", input.proposalId).where("workspace_id", "=", input.workspaceId)
         .where("operator_user_id", "=", input.operatorUserId).forUpdate().executeTakeFirst();
       if (!proposal) return { status: "missing" as const };
+      const lockedNow = (await trx.selectNoFrom(sql<Date>`clock_timestamp()`.as("now")).executeTakeFirstOrThrow()).now;
       const prepared = await trx.selectFrom("operator_mcp_invocations").select(["grant_id", "client_id", "workspace_id", "user_id"])
         .where("id", "=", proposal.operator_mcp_invocation_id!).executeTakeFirst();
       const execution = await trx.selectFrom("operator_mcp_invocations").select(["grant_id", "client_id", "workspace_id", "user_id"])
@@ -461,24 +493,30 @@ export class CopilotRepository implements CopilotRepositoryPort, CopilotRetentio
         || execution.grant_id !== prepared.grant_id || execution.client_id !== prepared.client_id
         || execution.workspace_id !== prepared.workspace_id || execution.user_id !== prepared.user_id) return { status: "binding_mismatch" as const };
       if (!proposal.review_digest || !proposal.expires_at || proposal.review_digest !== input.reviewDigest) return { status: "digest_mismatch" as const };
-      if (proposal.status === "applied" && proposal.execution_invocation_id === input.executionInvocationId) {
-        return { status: "already_applied" as const, appliedRef: proposal.applied_ref, ...(proposal.failure_reason ? { reason: proposal.failure_reason } : {}) };
+      if (proposal.execution_invocation_id === input.executionInvocationId
+        && (proposal.status === "applied" || proposal.status === "stale" || proposal.status === "failed")) {
+        return { status: "settled" as const, outcome: proposal.status, appliedRef: proposal.applied_ref, ...(proposal.failure_reason ? { reason: proposal.failure_reason } : {}) };
       }
       // Expiry denies a first or replacement execution, but cannot strand the one receipt that
       // already crossed the claim boundary: it may need owner reconciliation after a crash.
-      if (proposal.expires_at && proposal.expires_at <= input.now && proposal.execution_invocation_id !== input.executionInvocationId) return { status: "expired" as const };
+      if (proposal.expires_at && proposal.expires_at <= lockedNow && proposal.execution_invocation_id !== input.executionInvocationId) return { status: "expired" as const };
       if (proposal.status === "dismissed") return { status: "canceled" as const };
       if (proposal.status !== "pending") return { status: "not_prepared" as const };
       if (proposal.execution_invocation_id && proposal.execution_invocation_id !== input.executionInvocationId) return { status: "not_prepared" as const };
-      const claimedAt = input.now;
+      if (proposal.confirmation_requirement === "signed_in_approval" && (proposal.approved_at === null || proposal.approval_digest !== proposal.review_digest)) return { status: "approval_required" as const };
+      const claimedAt = lockedNow;
       const previousAttemptStartedAt = proposal.apply_started_at;
       const claimed = await trx.updateTable("copilot_proposals")
         .set({ execution_invocation_id: input.executionInvocationId, apply_started_at: claimedAt, updated_at: claimedAt })
         .where("id", "=", input.proposalId).where("status", "=", "pending")
+        // Mirrors the pre-check above: expiry blocks a first or replacement claim, but the receipt
+        // that already crossed this boundary may still reopen its own stale lease past expiry.
+        .where((eb) => eb.or([eb("expires_at", ">", lockedNow), eb("execution_invocation_id", "=", input.executionInvocationId)]))
         .where((eb) => eb.or([eb("execution_invocation_id", "is", null), eb("execution_invocation_id", "=", input.executionInvocationId)]))
         .where((eb) => eb.or([eb("apply_started_at", "is", null), eb("apply_started_at", "<=", nowMinusSeconds(input.claimTtlSeconds))]))
         .returning(proposalColumns).executeTakeFirst();
-      if (!claimed) return { status: "not_prepared" as const };
+      // The row is locked and still pending, so a failed claim by the bound receipt means its lease is live.
+      if (!claimed) return { status: proposal.execution_invocation_id === input.executionInvocationId ? "claim_held" as const : "not_prepared" as const };
       // A retry owns the original, digest-bound receipt, not the fresh transport invocation.
       // Reopen only that receipt while its matching proposal is still pending and locked here.
       // This makes the owner transaction's existing admitted/running settlement fence usable
@@ -496,6 +534,27 @@ export class CopilotRepository implements CopilotRepositoryPort, CopilotRetentio
         .returning("id").executeTakeFirst();
       if (!receipt) throw new Error("reviewed_proposal_execution_receipt_conflict");
       return { status: "claimed" as const, claim: { proposal: mapProposal(claimed), claimedAt, previousAttemptStartedAt } };
+    });
+  }
+
+  async approveMcpReviewedProposal(input: { proposalId: string; workspaceId: string; operatorUserId: string; reviewDigest: string; now: Date }): Promise<
+    | { readonly status: "approved"; readonly approvedAt: Date; readonly newlyRecorded: boolean }
+    | { readonly status: "expired" | "not_pending" | "digest_mismatch" | "not_found" }
+  > {
+    return this.db.transaction().execute(async (trx) => {
+      const proposal = await trx.selectFrom("copilot_proposals").select(proposalColumns).where("id", "=", input.proposalId).where("workspace_id", "=", input.workspaceId).where("operator_user_id", "=", input.operatorUserId).forUpdate().executeTakeFirst();
+      if (!proposal) return { status: "not_found" as const };
+      const lockedNow = (await trx.selectNoFrom(sql<Date>`clock_timestamp()`.as("now")).executeTakeFirstOrThrow()).now;
+      if (proposal.review_digest !== input.reviewDigest) return { status: "digest_mismatch" as const };
+      if (proposal.status !== "pending") return { status: "not_pending" as const };
+      if (!proposal.expires_at || proposal.expires_at <= lockedNow) return { status: "expired" as const };
+      if (proposal.confirmation_requirement !== "signed_in_approval") return { status: "not_pending" as const };
+      // Idempotent: a repeat of an already-recorded approval returns the row's original timestamp
+      // rather than moving it, so the caller can tell a replay from the first recording and audit
+      // only the transition.
+      if (proposal.approved_at) return { status: "approved" as const, approvedAt: proposal.approved_at, newlyRecorded: false };
+      const approved = await trx.updateTable("copilot_proposals").set({ approved_at: lockedNow, approved_by_user_id: input.operatorUserId, approval_digest: input.reviewDigest, updated_at: lockedNow }).where("id", "=", input.proposalId).where("status", "=", "pending").where("expires_at", ">", lockedNow).where("approved_at", "is", null).returning("id").executeTakeFirst();
+      return approved ? { status: "approved" as const, approvedAt: lockedNow, newlyRecorded: true } : { status: "expired" as const };
     });
   }
 }

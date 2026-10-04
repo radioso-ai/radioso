@@ -4,19 +4,27 @@ import {
   AuthoredDirectiveService,
   DirectiveAuthorService,
   AgentService,
+  type AgentFieldProposalApplyInput,
+  type AgentFieldProposalApplyOutcome,
+  type AgentSettingsProposalPort,
   AgentRevisionService,
-  agentInputFieldSchemas,
-  mergeAgentSurfaceSettings,
-  validateAgentInput,
   DEFAULT_AGENT_LOCALE_FALLBACK,
-  type AgentInput,
+  DEFAULT_CONTACT_REQUEST_DELIVERY,
+  hasConfiguredContactDestination,
+  readNotifyContactDelivery,
+  agentReviewedSettingsPatchSchema,
+  isDirectiveNameConflict,
+  DIRECTIVE_CREATE_FENCE,
   type AuthoredDirective,
   type AuthoredDirectiveInput,
+  projectDirectiveAuthorProposalInput,
 } from "../agents/public.js";
+import { boundedSummary } from "./tools/shared.js";
 import { exactContentItemSchema, validateExactContentItem } from "../../shared/domain/exactContent.js";
 import {
   applyRoutineFieldPatch,
   describeRoutineFieldPatch,
+  resolveRoutineFieldPatch,
   projectRoutineForReview,
   routineDefinitionDraftInputSchema,
   routineDefinitionDraftUpdateInputSchema,
@@ -43,10 +51,14 @@ import {
   type CopilotContextVariableProposalAdapter,
   type CopilotDirectiveProposalAdapter,
   type CopilotRoutineProposalAdapter,
+  type CopilotProposalApplyContext,
+  type CopilotReviewedReceiptPort,
 } from "./contracts.js";
+import { reviewedApplyError, reviewedCommitHook } from "./reviewedAtomicApply.js";
 import type { ContextVariable, AgentContextVariableEnablement } from "../context-variables/public.js";
 import type { ContextVariableService } from "../context-variables/public.js";
-import { isStale, versionDate, versionToken } from "./proposalVersioning.js";
+import { isOwnerRefusal, isStale, staleReason, versionDate, versionToken } from "./proposalVersioning.js";
+import { routineValidationRefusal } from "./routineValidationRefusal.js";
 import { badRequest, conflict, notFound } from "../../shared/domain/errors.js";
 
 /** Composition-only atomic boundary for an existing agent-skill update and its MCP receipt. */
@@ -68,7 +80,22 @@ export interface AgentSkillMcpApplyPort {
 }
 
 const directiveTargetRefSchema = z.object({ agentId: z.string().uuid(), directiveId: z.string().uuid().nullable() }).strict();
-const settingTargetRefSchema = z.object({ agentId: z.string().uuid(), settingKey: z.string().min(1).max(200) }).strict();
+const settingTargetRefSchema = z.object({
+  agentId: z.string().uuid(),
+  settingKey: z.string().min(1).max(200),
+  /** Present on field-scoped proposals; absent means the pre-deploy timestamp fence. */
+  expectedValue: z.unknown().optional(),
+}).strict();
+const reviewedSettingTargetRefSchema = z.object({
+  agentId: z.string().uuid(),
+  expectedFields: z.array(z.object({ key: z.string().min(1).max(200), value: z.unknown() }).strict()).min(1).max(25),
+}).strict();
+const reviewedSettingsPayloadSchema = z.object({
+  kind: z.literal("fields"),
+  patch: agentReviewedSettingsPatchSchema,
+  rationale: z.string().max(1_000).optional(),
+  summary: z.string().max(MAX_COPILOT_PROPOSAL_SUMMARY).optional(),
+}).strict();
 /**
  * An agent setting is addressed by one key, but `surfaceSettings` is a whole nested object holding
  * the anonymous-chat and embed surfaces - their enablement, their allowed origins, and their
@@ -228,13 +255,22 @@ const contextVariableStoredPayloadSchema = z.object({
 /** Composition adapter: drafts through the existing coach and writes only through authored-directive management. */
 export const createDirectiveCopilotProposalAdapter = (deps: {
   readonly authoredDirectiveService: Pick<AuthoredDirectiveService, "list" | "create" | "update" | "delete">;
-  readonly directiveAuthorService: Pick<DirectiveAuthorService, "draft">;
+  readonly directiveAuthorService: Pick<DirectiveAuthorService, "draftForProposal"> & Partial<Pick<DirectiveAuthorService, "readProposalFence">>;
   readonly agentService: Pick<AgentService, "get">;
+  readonly reviewedReceipt?: CopilotReviewedReceiptPort;
 }): CopilotDirectiveProposalAdapter => ({
   targetType: "directive",
+  proposalDetailTargetRef: (rawTargetRef) => {
+    const targetRef = directiveTargetRefSchema.parse(rawTargetRef);
+    return { agentId: targetRef.agentId, directiveId: targetRef.directiveId };
+  },
   async readVersionToken(workspaceId, rawTargetRef) {
     const targetRef = directiveTargetRefSchema.parse(rawTargetRef);
-    if (!targetRef.directiveId) return versionToken((await deps.agentService.get(workspaceId, targetRef.agentId)).updatedAt);
+    if (!targetRef.directiveId) {
+      return deps.directiveAuthorService.readProposalFence
+        ? deps.directiveAuthorService.readProposalFence(workspaceId, targetRef.agentId, null)
+        : DIRECTIVE_CREATE_FENCE;
+    }
     const directive = await findDirectiveById(deps.authoredDirectiveService, workspaceId, targetRef.agentId, targetRef.directiveId);
     if (!directive) throw new Error("Directive no longer exists");
     return versionToken(directive.updatedAt);
@@ -258,18 +294,22 @@ export const createDirectiveCopilotProposalAdapter = (deps: {
     const proposed = directivePayload(payload);
     return { targetLabel: proposed.name, current, proposed };
   },
-  async applyIfVersionMatches(workspaceId, rawTargetRef, payload, token) {
+  async applyIfVersionMatches(workspaceId, rawTargetRef, payload, token, context) {
     const targetRef = directiveTargetRefSchema.parse(rawTargetRef);
+    const reviewedHook = reviewedCommitHook<AuthoredDirective | { directiveId: string }>(deps.reviewedReceipt, context, workspaceId, (committed) =>
+      "directiveId" in committed ? { directiveId: committed.directiveId } : { directiveId: committed.id });
+    const reviewedOptions = context?.surface === "mcp" ? { coherence: "skip" as const, onCommitted: reviewedHook } : {};
     if (isDirectiveRemoval(payload)) {
       if (!targetRef.directiveId) return { outcome: "failed" as const, reason: "Directive removal requires an existing directive" };
       try {
         // The version check lives in the delete call itself (expectedUpdatedAt reaches the
         // repository's DELETE predicate), not in a read-then-compare here: a pre-read leaves a
         // window where a concurrent edit lands between the check and the delete and gets destroyed.
-        await deps.authoredDirectiveService.delete(workspaceId, targetRef.agentId, targetRef.directiveId, { expectedUpdatedAt: versionDate(token) });
+        await deps.authoredDirectiveService.delete(workspaceId, targetRef.agentId, targetRef.directiveId, { expectedUpdatedAt: versionDate(token), ...(reviewedHook ? { onCommitted: reviewedHook } : {}) });
         return { outcome: "applied" as const, appliedRef: { directiveId: targetRef.directiveId } };
       } catch (error) {
-        if (isStale(error)) return { outcome: "stale" as const };
+        if (context?.surface === "mcp") return reviewedApplyError(error, ["directive"]);
+        if (isStale(error)) return { outcome: "stale" as const, reason: staleReason(error, ["directive"]) };
         return { outcome: "failed" as const, reason: error instanceof Error ? error.message : "Directive removal failed" };
       }
     }
@@ -281,75 +321,148 @@ export const createDirectiveCopilotProposalAdapter = (deps: {
           targetRef.agentId,
           targetRef.directiveId,
           { enabled: payload.enabled },
-          { expectedUpdatedAt: versionDate(token) },
+          { expectedUpdatedAt: versionDate(token), ...reviewedOptions },
         )).directive;
         return { outcome: "applied" as const, appliedRef: { directiveId: directive.id } };
       } catch (error) {
-        if (isStale(error)) return { outcome: "stale" as const };
+        if (context?.surface === "mcp") return reviewedApplyError(error, ["directive"]);
+        if (isStale(error)) return { outcome: "stale" as const, reason: staleReason(error, ["directive"]) };
         return { outcome: "failed" as const, reason: error instanceof Error ? error.message : "Directive enablement failed" };
       }
     }
     try {
       const directive = targetRef.directiveId
-        ? (await deps.authoredDirectiveService.update(workspaceId, targetRef.agentId, targetRef.directiveId, directivePayload(payload), { expectedUpdatedAt: versionDate(token) })).directive
-        : (await deps.authoredDirectiveService.create(workspaceId, targetRef.agentId, directivePayload(payload), { expectedAgentUpdatedAt: versionDate(token) })).directive;
+        ? (await deps.authoredDirectiveService.update(workspaceId, targetRef.agentId, targetRef.directiveId, directivePayload(payload), { expectedUpdatedAt: versionDate(token), ...reviewedOptions })).directive
+        : (await deps.authoredDirectiveService.create(
+          workspaceId,
+          targetRef.agentId,
+          directivePayload(payload),
+          token === DIRECTIVE_CREATE_FENCE ? reviewedOptions : { expectedAgentUpdatedAt: versionDate(token), ...reviewedOptions },
+        )).directive;
       return { outcome: "applied" as const, appliedRef: { directiveId: directive.id } };
     } catch (error) {
-      if (isStale(error)) return { outcome: "stale" as const };
+      // A create or rename collision on the (agent_id, name) constraint is the directives owner's
+      // deliberate refusal, not a version fence losing. Both a rename's CAS mismatch and a rename's
+      // name collision throw the same AppError "conflict", so the owner marks a name collision with
+      // a distinct detail the adapter reads here instead of guessing from the token shape - a guess
+      // that only ever covered creates and never an update's rename collision.
+      if (isDirectiveNameConflict(error)) {
+        return { outcome: "failed" as const, reason: error.message };
+      }
+      if (context?.surface === "mcp") return reviewedApplyError(error, []);
+      if (isStale(error)) return { outcome: "stale" as const, reason: staleReason(error, []) };
       return { outcome: "failed" as const, reason: error instanceof Error ? error.message : "Directive apply failed" };
     }
   },
-  async draft(workspaceId, rawTargetRef, intent) {
+  async draft(workspaceId, rawTargetRef, rawInput) {
     const targetRef = directiveTargetRefSchema.parse(rawTargetRef);
-    const draft = await deps.directiveAuthorService.draft(workspaceId, targetRef.agentId, {
-      coachingText: intent,
-      turn: { userMessage: intent, assistantAnswer: intent },
+    const draft = await deps.directiveAuthorService.draftForProposal(workspaceId, targetRef.agentId, {
+      ...projectDirectiveAuthorProposalInput(rawInput),
+      ...(targetRef.directiveId ? { directiveId: targetRef.directiveId } : {}),
     });
-    const directive = directivePayload(draft.directive);
-    const summary = draft.rationale ?? directive.name;
-    return { payload: { ...directive, rationale: summary }, targetLabel: directive.name, summary };
+    const directive = directivePayload(draft.draft.directive);
+    const summary = boundedSummary(describeDirectiveChange(directive, draft.draft.rationale));
+    // An edit keeps the directive's own snapshot fence and goes stale if that directive changes
+    // before execution. A create carries the owner's DIRECTIVE_CREATE_FENCE instead, so unrelated
+    // agent writes between preparation and reviewed execution never invalidate it.
+    return { payload: { ...directive, rationale: summary }, targetLabel: directive.name, summary, versionToken: draft.versionToken };
+  },
+  async reconcileMcpInterruptedApply() {
+    return { outcome: "not_applied" as const };
   },
 });
 
-/** Composition adapter: validates proposal values with the existing agent settings normalizer and applies through AgentService. */
+/** Composition adapter: forwards agent-setting proposals to AgentService's preparation and apply ports. */
 export const createAgentSettingCopilotProposalAdapter = (deps: {
-  readonly agentService: Pick<AgentService, "get" | "update">;
+  readonly agentService: AgentSettingsProposalPort;
+  readonly reviewedReceipt?: CopilotReviewedReceiptPort;
 }): CopilotAgentSettingProposalAdapter => ({
   targetType: "agent_setting",
-  async readVersionToken(workspaceId, rawTargetRef) {
+  proposalDetailTargetRef: (rawTargetRef) => {
     const targetRef = settingTargetRef(rawTargetRef);
-    return versionToken((await deps.agentService.get(workspaceId, targetRef.agentId)).updatedAt);
+    return { agentId: targetRef.agentId, settingKey: targetRef.settingKey };
+  },
+  async readVersionToken(workspaceId, rawTargetRef) {
+    const reviewed = reviewedSettingTargetRefSchema.safeParse(rawTargetRef);
+    if (reviewed.success) return deps.agentService.readFieldProposalVersion(workspaceId, reviewed.data.agentId, { keys: reviewed.data.expectedFields.map((field) => field.key) });
+    const targetRef = settingTargetRef(rawTargetRef);
+    return deps.agentService.readFieldProposalVersion(workspaceId, targetRef.agentId,
+      Object.hasOwn(targetRef, "expectedValue") ? { key: targetRef.settingKey } : undefined);
   },
   async preview(workspaceId, rawTargetRef, rawPayload) {
+    const reviewed = reviewedSettingTargetRefSchema.safeParse(rawTargetRef);
+    if (reviewed.success) {
+      const payload = reviewedSettingsPayloadSchema.parse(rawPayload);
+      return { targetLabel: "Agent settings", current: null, proposed: payload.patch };
+    }
     const targetRef = settingTargetRef(rawTargetRef);
     const payload = settingPayloadSchema.parse(rawPayload);
-    const current = await deps.agentService.get(workspaceId, targetRef.agentId).catch(() => null);
-    return { targetLabel: targetRef.settingKey, current: current ? settingValue(current, targetRef.settingKey) : null, proposed: payload.value };
+    return { targetLabel: targetRef.settingKey, current: await deps.agentService.readFieldProposalDisplay(workspaceId, targetRef.agentId, targetRef.settingKey), proposed: payload.value };
   },
-  async applyIfVersionMatches(workspaceId, rawTargetRef, rawPayload, token) {
+  async applyIfVersionMatches(workspaceId, rawTargetRef, rawPayload, token, context?: CopilotProposalApplyContext) {
+    const reviewed = reviewedSettingTargetRefSchema.safeParse(rawTargetRef);
+    if (reviewed.success) {
+      const payload = reviewedSettingsPayloadSchema.parse(rawPayload);
+      const agentId = reviewed.data.agentId;
+      const onCommitted = reviewedCommitHook(deps.reviewedReceipt, context, workspaceId, (committed: { agentId: string }) => committed);
+      try {
+        const prepared: AgentFieldProposalApplyInput = {
+          targetAgentId: agentId,
+          normalizedPatch: payload.patch,
+          expectedFields: reviewed.data.expectedFields as ReadonlyArray<{ readonly key: string; readonly value: unknown }>,
+        };
+        const result: AgentFieldProposalApplyOutcome = await deps.agentService.applyFieldProposal(workspaceId, prepared, onCommitted ? { onCommitted } : undefined);
+        if (result.status === "applied") return {
+          outcome: "applied" as const,
+          appliedRef: { agentId },
+          ...(result.followUp ? { reason: "Agent settings changed, but follow-up side effects need attention." } : {}),
+        };
+        if (result.status === "target_deleted" || result.status === "target_changed") return { outcome: "stale" as const, reason: "Target changed" };
+        return { outcome: "stale" as const, reason: result.fields.length === 1 ? `Field changed: ${result.fields[0]}` : `Fields changed: ${result.fields.join(", ")}` };
+      } catch (error) {
+        if (onCommitted) return reviewedApplyError(error);
+        return { outcome: "failed" as const, reason: error instanceof Error ? error.message : "Agent setting apply failed" };
+      }
+    }
     const targetRef = settingTargetRef(rawTargetRef);
     const payload = settingPayloadSchema.parse(rawPayload);
     try {
-      await deps.agentService.update(workspaceId, targetRef.agentId, settingPatch(targetRef.settingKey, payload.value), { expectedUpdatedAt: versionDate(token) });
+      const result = await deps.agentService.applyFieldProposal(workspaceId, {
+        targetAgentId: targetRef.agentId,
+        normalizedPatch: { [targetRef.settingKey]: payload.value },
+        ...(Object.hasOwn(targetRef, "expectedValue")
+          ? { expected: { key: targetRef.settingKey, value: targetRef.expectedValue } }
+          : { expectedUpdatedAt: versionDate(token) }),
+      });
+      if (result.status === "target_deleted") return { outcome: "stale" as const, reason: "Target deleted" };
+      if (result.status === "target_changed") return { outcome: "stale" as const, reason: "Target changed" };
+      if (result.status === "changed") {
+        return {
+          outcome: "stale" as const,
+          reason: result.fields[0] === "target"
+            ? "Target changed"
+            : result.fields.length === 1
+              ? `Field changed: ${result.fields[0]}`
+              : `Fields changed: ${result.fields.join(", ")}`,
+        };
+      }
       return { outcome: "applied" as const, appliedRef: { agentId: targetRef.agentId } };
     } catch (error) {
-      if (isStale(error)) return { outcome: "stale" as const };
       return { outcome: "failed" as const, reason: error instanceof Error ? error.message : "Agent setting apply failed" };
     }
   },
   async validatePayload(workspaceId, rawTargetRef, rawPayload) {
     const targetRef = settingTargetRef(rawTargetRef);
     const payload = settingPayloadSchema.parse(rawPayload);
-    // The version token is derived from this same read, not a follow-up readVersionToken call: a
-    // concurrent edit landing between two separate reads could pair a merge built from the first
-    // (now stale) read with the second read's fresher token, letting a lost update pass its
-    // version check on Apply.
-    const current = await deps.agentService.get(workspaceId, targetRef.agentId);
-    const patch = settingPatch(targetRef.settingKey, payload.value);
-    const merged = { ...current, ...patch, surfaceSettings: patch.surfaceSettings ? mergeAgentSurfaceSettings(current.surfaceSettings, patch.surfaceSettings) : current.surfaceSettings };
-    const normalized = validateAgentInput(merged);
-    if (!Object.hasOwn(normalized, targetRef.settingKey)) throw new Error("Unknown agent setting");
-    return { targetRef, payload: { ...payload, value: settingValue(normalized, targetRef.settingKey) }, versionToken: versionToken(current.updatedAt) };
+    const prepared = await deps.agentService.prepareFieldProposal(workspaceId, targetRef.agentId, { settingKey: targetRef.settingKey, value: payload.value });
+    return {
+      targetRef: { ...targetRef, expectedValue: prepared.expected.value },
+      payload: { ...payload, value: prepared.display.proposed },
+      versionToken: await deps.agentService.readFieldProposalVersion(workspaceId, targetRef.agentId, { key: prepared.expected.key }),
+    };
+  },
+  async reconcileMcpInterruptedApply() {
+    return { outcome: "not_applied" as const };
   },
 });
 
@@ -387,6 +500,7 @@ export const createAgentGreetingCopilotProposalAdapter = (deps: {
   readonly agentRevisions: Pick<AgentRevisionService, "state">;
 }): CopilotAgentGreetingProposalAdapter => ({
   targetType: "agent_greeting",
+  proposalDetailTargetRef: (rawTargetRef) => ({ agentId: greetingTargetRefSchema.parse(rawTargetRef).agentId }),
   async readVersionToken(workspaceId, rawTargetRef) {
     const targetRef = greetingTargetRefSchema.parse(rawTargetRef);
     const state = await deps.agentRevisions.state(workspaceId, targetRef.agentId);
@@ -449,7 +563,7 @@ export const createAgentGreetingCopilotProposalAdapter = (deps: {
  */
 export const createAgentSkillCopilotProposalAdapter = (deps: {
   readonly agentService: Pick<AgentService, "get">;
-  readonly agentSkillsService: Pick<AgentSkillsService, "list" | "create" | "update" | "dryRunValidate">;
+  readonly agentSkillsService: Pick<AgentSkillsService, "list" | "create" | "update" | "dryRunValidate" | "projectForCopilot">;
   readonly skillCapabilityRegistry: SkillCapabilityRegistry;
   readonly atomicMcpApply?: AgentSkillMcpApplyPort;
   readonly retrievalAuthoring?: Pick<AgentRetrievalAuthoringPort, "validatePrepared">;
@@ -563,7 +677,7 @@ export const createAgentSkillCopilotProposalAdapter = (deps: {
    * preview diff shows only fields the proposal can actually change - not identity/audit columns
    * (id, createdAt, updatedAt, ...) that render as spurious "removed" rows next to a payload that
    * never carried them in the first place. */
-  const projectSkillForPreview = (skill: AgentSkillView) => ({
+  const projectSkillForPreview = (skill: AgentSkillView) => deps.agentSkillsService.projectForCopilot({
     name: skill.name,
     capability: skill.capability,
     target: skill.target,
@@ -578,17 +692,21 @@ export const createAgentSkillCopilotProposalAdapter = (deps: {
    * config value the proposal adds, the same class of leak already fixed for identity/audit
    * columns on the current side and for the untouched context-variable half (Finding 3, issue
    * triage next-ray-epic-issue). */
-  const projectSkillPayloadForPreview = (payload: z.infer<typeof skillConfigStoredPayloadSchema>) => ({
+  const projectSkillPayloadForPreview = (payload: z.infer<typeof skillConfigStoredPayloadSchema>) => deps.agentSkillsService.projectForCopilot({
     name: payload.name,
-    capability: payload.capability,
+    capability: payload.capability as SkillCapabilityId,
     target: payload.target,
     config: payload.config,
-    invocationMode: payload.invocationMode,
+    invocationMode: payload.invocationMode as AgentSkillInvocationMode,
     enabled: payload.enabled,
   });
 
   return {
     targetType: "agent_skill",
+    proposalDetailTargetRef: (rawTargetRef) => {
+      const targetRef = skillTargetRefSchema.parse(rawTargetRef);
+      return { agentId: targetRef.agentId, skillId: targetRef.skillId };
+    },
     async readVersionToken(workspaceId, rawTargetRef, rawPayload) {
       const targetRef = skillTargetRefSchema.parse(rawTargetRef);
       if (targetRef.skillId) {
@@ -608,6 +726,11 @@ export const createAgentSkillCopilotProposalAdapter = (deps: {
     async applyIfVersionMatches(workspaceId, rawTargetRef, rawPayload, token, context) {
       const targetRef = skillTargetRefSchema.parse(rawTargetRef);
       const payload = skillConfigStoredPayloadSchema.parse(rawPayload);
+      // True exactly on the branch that writes the skill and settles this receipt inside one DB
+      // transaction (dryRunValidate/validatePrepared runs first on that same branch, before any
+      // write). It is the only write path here proven atomic enough for a refusal on it to prove
+      // nothing was written; the plain update/create fallbacks are not.
+      const mcpAtomicApply = Boolean(targetRef.skillId && context?.surface === "mcp" && context.proposalId && context.executionInvocationId && context.operatorUserId && context.applyClaimedAt && deps.atomicMcpApply);
       try {
         if (targetRef.skillId) {
           const config = payload.capability === "retrieve" && payload.invocationMode === "default_answer" && deps.retrievalAuthoring
@@ -659,9 +782,15 @@ export const createAgentSkillCopilotProposalAdapter = (deps: {
         return { outcome: "applied" as const, appliedRef: { agentId: targetRef.agentId, skillId: created.id } };
       } catch (error) {
         if (isStale(error)) return { outcome: "stale" as const };
-        // The atomic retrieval write may have committed with its receipt immediately before a
-        // transport failure; preserve that uncertainty for the reviewed executor to reconcile.
-        if (context?.surface === "mcp" && context.executionInvocationId) throw error;
+        if (context?.surface === "mcp" && context.executionInvocationId) {
+          // A non-stale owner refusal on the atomic branch proves nothing was written (see
+          // mcpAtomicApply above). Anything else - the plain update/create fallback, or any
+          // infrastructure fault - keeps its uncertainty: the atomic write may have committed with
+          // its receipt immediately before a transport failure, so only the reviewed executor's
+          // reconcile path may resolve it.
+          if (mcpAtomicApply && isOwnerRefusal(error)) return { outcome: "failed" as const, reason: error.message };
+          throw error;
+        }
         return { outcome: "failed" as const, reason: error instanceof Error ? error.message : "Skill apply failed" };
       }
     },
@@ -693,7 +822,7 @@ export const createAgentSkillCopilotProposalAdapter = (deps: {
 export const createRoutineCopilotProposalAdapter = (deps: {
   readonly agentService: Pick<AgentService, "get">;
   readonly routineDraftAssistService: Pick<RoutineDraftAssistService, "draft">;
-  readonly routineDefinitionService: Pick<RoutineDefinitionService, "completeExternalDraftMutation" | "createDraft" | "deleteDraft" | "findCreateConflict" | "get" | "list" | "updateDraft" | "validate">;
+  readonly routineDefinitionService: Pick<RoutineDefinitionService, "completeExternalDraftMutation" | "createDraft" | "deleteDraft" | "findCreateConflict" | "get" | "list" | "updateDraft" | "updateDraftForCopilotProposal" | "validate" | "validateForDraftMutation">;
   readonly logger?: { warn(fields: Record<string, unknown>, message: string): void };
   readonly routineMcpApply?: RoutineMcpApplyPort;
   readonly scopedReferences?: {
@@ -736,6 +865,10 @@ export const createRoutineCopilotProposalAdapter = (deps: {
 
   return {
     targetType: "routine",
+    proposalDetailTargetRef: (rawTargetRef) => {
+      const targetRef = routineTargetRefSchema.parse(rawTargetRef);
+      return { agentId: targetRef.agentId, routineId: targetRef.routineId };
+    },
     async readVersionToken(workspaceId, rawTargetRef, rawPayload) {
       const targetRef = routineTargetRefSchema.parse(rawTargetRef);
       // See the comment on createRoutineVersionToken for why a new routine's token is not the
@@ -795,6 +928,11 @@ export const createRoutineCopilotProposalAdapter = (deps: {
       if (kind === "lifecycle") {
         return { outcome: "failed" as const, reason: unsupportedLifecycleProposalMessage };
       }
+      // True only inside an atomic reviewed-MCP branch until routineMcpApply.apply resolves. There, the
+      // validation and scoped-reference checks run before the write, and the write settles this
+      // receipt in one transaction that a thrown refusal rolls back, so a refusal proves nothing
+      // was written. The field-edit path and the plain service writes never set it.
+      let refusalWroteNothing = false;
       try {
         if (kind === "create") {
           // No pre-read version check here: createDraft never touches the agent row, so
@@ -807,9 +945,11 @@ export const createRoutineCopilotProposalAdapter = (deps: {
           // the write itself rather than a read-then-compare.
           const draft = routineCreateDraft(rawPayload);
           if (context?.surface === "mcp" && context.proposalId && context.executionInvocationId && context.operatorUserId && context.applyClaimedAt && deps.routineMcpApply) {
-            const validation = await deps.routineDefinitionService.validate(workspaceId, targetRef.agentId, { input: draft });
+            refusalWroteNothing = true;
+            const validation = await deps.routineDefinitionService.validateForDraftMutation(workspaceId, targetRef.agentId, draft);
             if (!validation.ok) return { outcome: "failed" as const, reason: diagnosticSummary(validation.diagnostics) || "Routine validation failed" };
             const settled = await deps.routineMcpApply.apply({ workspaceId, agentId: targetRef.agentId, operation: "create", draft, proposalId: context.proposalId, executionInvocationId: context.executionInvocationId, operatorUserId: context.operatorUserId, claimedAt: context.applyClaimedAt });
+            refusalWroteNothing = false;
             if (settled.routine) await deps.routineDefinitionService.completeExternalDraftMutation(workspaceId, targetRef.agentId, settled.routine);
             return { outcome: "applied" as const, appliedRef: settled.appliedRef };
           }
@@ -823,8 +963,10 @@ export const createRoutineCopilotProposalAdapter = (deps: {
         if (kind === "delete") {
           routineDeletePayloadSchema.parse(rawPayload);
           if (context?.surface === "mcp" && context.proposalId && context.executionInvocationId && context.operatorUserId && context.applyClaimedAt && deps.routineMcpApply) {
+            refusalWroteNothing = true;
             await revalidateScopedReferences(workspaceId, targetRef.agentId, routine);
             const settled = await deps.routineMcpApply.apply({ workspaceId, agentId: targetRef.agentId, operation: "delete", routineId: routine.id, expectedUpdatedAt: routine.updatedAt, removedNodeIds: [...routine.steps, ...routine.terminals].map((node) => node.stableStepId), removedSlotIds: (routine.slots ?? []).map((slot) => slot.stableSlotId), proposalId: context.proposalId, executionInvocationId: context.executionInvocationId, operatorUserId: context.operatorUserId, claimedAt: context.applyClaimedAt });
+            refusalWroteNothing = false;
             return { outcome: "applied" as const, appliedRef: settled.appliedRef };
           }
           await deps.routineDefinitionService.deleteDraft(workspaceId, targetRef.agentId, routine.id, { expectedUpdatedAt: routine.updatedAt });
@@ -833,10 +975,11 @@ export const createRoutineCopilotProposalAdapter = (deps: {
         if (kind === "structural") {
           const payload = routineStructuralPayloadSchema.parse(rawPayload);
           if (context?.surface === "mcp" && context.proposalId && context.executionInvocationId && context.operatorUserId && context.applyClaimedAt && deps.routineMcpApply) {
+            refusalWroteNothing = true;
             // Preparation validates the authored transform, but skills, action capability policy,
             // and context variables can move before confirmation. Re-run the owning validator
             // immediately before its fenced write; the CAS then proves this is the same routine.
-            const validation = await deps.routineDefinitionService.validate(workspaceId, targetRef.agentId, { input: payload.draft });
+            const validation = await deps.routineDefinitionService.validateForDraftMutation(workspaceId, targetRef.agentId, payload.draft);
             if (!validation.ok) {
               return { outcome: "failed" as const, reason: diagnosticSummary(validation.diagnostics) || "Routine validation failed" };
             }
@@ -855,6 +998,7 @@ export const createRoutineCopilotProposalAdapter = (deps: {
               operatorUserId: context.operatorUserId,
               claimedAt: context.applyClaimedAt,
             });
+            refusalWroteNothing = false;
             if (!settled.routine) return { outcome: "failed" as const, reason: "Routine update did not return its saved draft" };
             await deps.routineDefinitionService.completeExternalDraftMutation(workspaceId, targetRef.agentId, settled.routine);
             return { outcome: "applied" as const, appliedRef: settled.appliedRef };
@@ -865,19 +1009,33 @@ export const createRoutineCopilotProposalAdapter = (deps: {
         const payload = routineEditPayloadSchema.parse(rawPayload);
         // The edit lands in the agent's private draft, the same as any other authoring write.
         // Nothing an operator applies here changes what customers see until Review & Publish.
-        await deps.routineDefinitionService.updateDraft(
-          workspaceId,
-          targetRef.agentId,
-          routine.id,
-          applyRoutineFieldPatch(routine, payload.changes),
-          { expectedUpdatedAt: routine.updatedAt },
-        );
+        const draft = applyRoutineFieldPatch(routine, payload.changes);
+        if (payload.changes.enabled === true && !routine.enabled) {
+          await deps.routineDefinitionService.updateDraftForCopilotProposal(
+            workspaceId,
+            targetRef.agentId,
+            routine.id,
+            draft,
+            { expectedUpdatedAt: routine.updatedAt },
+          );
+        } else {
+          await deps.routineDefinitionService.updateDraft(
+            workspaceId,
+            targetRef.agentId,
+            routine.id,
+            draft,
+            { expectedUpdatedAt: routine.updatedAt },
+          );
+        }
         return { outcome: "applied" as const, appliedRef: { agentId: targetRef.agentId, routineId: routine.id } };
       } catch (error) {
         if (isStale(error)) return { outcome: "stale" as const };
-        // A reviewed MCP owner may have committed just before its response was lost. Let the
-        // generic executor retain the receipt as uncertain instead of falsely certifying failure.
-        if (context?.surface === "mcp" && context.executionInvocationId) throw error;
+        if (context?.surface === "mcp" && context.executionInvocationId) {
+          if (refusalWroteNothing && isOwnerRefusal(error)) return { outcome: "failed" as const, reason: error.message };
+          // Otherwise the owner may have committed just before its response was lost. Let the
+          // generic executor retain the receipt as uncertain instead of falsely certifying failure.
+          throw error;
+        }
         return { outcome: "failed" as const, reason: error instanceof Error ? error.message : "Routine change failed" };
       }
     },
@@ -902,16 +1060,33 @@ export const createRoutineCopilotProposalAdapter = (deps: {
     },
     async draftEdit(workspaceId, rawTargetRef, rawChanges, rationale) {
       const targetRef = routineTargetRefSchema.parse(rawTargetRef);
-      const changes = routineFieldPatchSchema.parse(rawChanges);
       const routine = await routineFor(workspaceId, targetRef);
+      const changes = resolveRoutineFieldPatch(routine, routineFieldPatchSchema.parse(rawChanges));
       const patched = applyRoutineFieldPatch(routine, changes);
+      // Parking an invalid routine stays possible, but taking it back into service must use the
+      // routines owner's serving rule. REST setEnabled intentionally remains a separate product
+      // decision; this is the copilot proposal's effective-draft validation boundary.
+      if (changes.enabled === true && !routine.enabled) {
+        const serving = await deps.routineDefinitionService.validateForDraftMutation(workspaceId, targetRef.agentId, patched);
+        if (!serving.ok) throw badRequest("The enabled routine cannot be served. Use validate_routine to correct it before proposing this change.");
+      }
       const before = await deps.routineDefinitionService.validate(workspaceId, targetRef.agentId, { id: routine.id });
       const after = await deps.routineDefinitionService.validate(workspaceId, targetRef.agentId, { input: patched });
       // Only diagnostics this edit *introduces* block it. A routine that was already failing
       // validation must stay editable, or the one change that would fix it cannot be proposed.
       const carried = new Set(before.diagnostics.map(diagnosticIdentity));
       const introduced = after.diagnostics.filter((diagnostic) => !carried.has(diagnosticIdentity(diagnostic)));
-      if (introduced.length > 0) throw new Error(`This edit would break ${routine.name}: ${diagnosticSummary(introduced)}`);
+      // Never the raw diagnostic sentence: RoutineValidationDiagnostic.message can embed authored
+      // content (e.g. a slot name typed by the operator). The same canonical revision_invalid shape
+      // prepare_routine_structure uses keeps this a caller-correctable refusal instead of a bare
+      // Error, which the MCP boundary has nothing to remap and reports as a fake outage.
+      if (introduced.length > 0) {
+        throw routineValidationRefusal(
+          `This edit would make ${routine.name} invalid to serve. Use validate_routine to correct the reported diagnostics.`,
+          targetRef.routineId,
+          introduced,
+        );
+      }
       const summary = withRationale(`Edit routine ${routine.name}: ${describeRoutineFieldPatch(changes)}.`, rationale);
       return {
         payload: { kind: "edit", name: routine.name, changes, rationale: summary },
@@ -1005,6 +1180,14 @@ const directivePayload = (value: unknown): AuthoredDirectiveInput => {
   return draft as AuthoredDirectiveInput;
 };
 
+const describeDirectiveChange = (directive: AuthoredDirectiveInput, rationale?: string): string => {
+  const details = [
+    directive.priority === null || directive.priority === undefined ? null : `Priority ${directive.priority}.`,
+    directive.excludes?.length ? `Replaces ${directive.excludes.join(", ")}.` : null,
+  ].filter((detail): detail is string => detail !== null);
+  return [rationale ?? directive.name, ...details].join(" ");
+};
+
 // Strips the draft-only rationale before the .strict() authoring schema, the
 // same way directivePayload drops the coach's presentation extras.
 const routinePayload = (value: unknown) => {
@@ -1018,15 +1201,6 @@ const routineCreateDraft = (value: unknown) => {
   const parsed = routineCreatePayloadSchema.safeParse(value);
   return parsed.success ? parsed.data.draft : routinePayload(value);
 };
-
-const settingPatch = (settingKey: string, value: unknown): AgentInput => {
-  const schema = agentInputFieldSchemas[settingKey as keyof typeof agentInputFieldSchemas];
-  if (!schema) throw badRequest(`Unknown agent setting: ${settingKey}`);
-  const parsed = schema.safeParse(value);
-  if (!parsed.success) throw badRequest(`Invalid ${settingKey} setting value`);
-  return { [settingKey]: parsed.data };
-};
-const settingValue = (settings: object, settingKey: string): unknown => Object.hasOwn(settings, settingKey) ? (settings as Record<string, unknown>)[settingKey] : undefined;
 
 /**
  * A context-variable proposal's version token encodes two independently-versioned timestamps
@@ -1076,9 +1250,6 @@ const decodeContextVariableVersionToken = (token: string): { variableUpdatedAt: 
 
 const isSkillCapabilityId = (value: string): value is SkillCapabilityId => (skillCapabilityIds as readonly string[]).includes(value);
 
-const asRecord = (value: unknown): Record<string, unknown> =>
-  value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
-
 // Applies always end up as a full `replaceConfig` (see the comment on `dryRunValidate`'s call
 // site), so whatever `mergeSkillConfig` (shared with the direct HTTP PATCH path in
 // AgentSkillRepository - see backend/src/modules/agentSkills/configMerge.ts) produces here IS the
@@ -1114,13 +1285,15 @@ const assertDependentSettingsAreGated = (
  * delivery config passes the capability's own schema (both fields default to empty/null) but
  * fires without effect. Ray cannot invent a recipient address or a webhook URL, so a proposal that
  * leaves both unset is refused rather than silently creating a no-op notification.
+ *
+ * Reachability is read through `readNotifyContactDelivery`/`hasConfiguredContactDestination` -
+ * the same reader and gate dispatch and activation use - so this refusal cannot drift from what
+ * actually fires.
  */
 const assertNotifyDeliveryIsReachable = (capabilityId: string, config: Record<string, unknown>): void => {
   if (capabilityId !== "notify") return;
-  const delivery = asRecord(config.delivery);
-  const recipients = Array.isArray(delivery.recipientEmails) ? delivery.recipientEmails : [];
-  const webhookUrl = asRecord(delivery.webhook).url;
-  if (recipients.length === 0 && typeof webhookUrl !== "string") {
+  const delivery = readNotifyContactDelivery(config) ?? DEFAULT_CONTACT_REQUEST_DELIVERY;
+  if (!hasConfiguredContactDestination(delivery)) {
     throw badRequest("This notify skill has no recipient email and no webhook URL. Ask the operator which to use before proposing this change.");
   }
 };
@@ -1358,6 +1531,10 @@ export const createContextVariableCopilotProposalAdapter = (deps: {
 
   return {
     targetType: "context_variable",
+    proposalDetailTargetRef: (rawTargetRef) => {
+      const targetRef = contextVariableTargetRefSchema.parse(rawTargetRef);
+      return { agentId: targetRef.agentId, variableId: targetRef.variableId, includesDefinition: targetRef.includesDefinition ?? null, includesEnablement: targetRef.includesEnablement ?? null };
+    },
     async readVersionToken(workspaceId, rawTargetRef, rawPayload) {
       const targetRef = contextVariableTargetRefSchema.parse(rawTargetRef);
       if (!targetRef.variableId) {

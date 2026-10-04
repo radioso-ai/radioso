@@ -4,6 +4,7 @@ import type {
   ConversationRequestContext,
   ConversationTrace,
   MessageSource,
+  RoutineTurnYield,
   StagedContext,
 } from "@radioso/conversation-contract";
 
@@ -18,6 +19,8 @@ import type {
   MessageRole,
   UserMessageInputMetadata,
 } from "../../../db/repositories/messageRepository.js";
+import type { RoutineInvocation } from "../contracts/routineInvocation.js";
+import type { ChatRoutineInvocationReport, ChatRoutineTurnState } from "../contracts/routineTurnState.js";
 import { isAudiencePulseCustomerSource, isAudiencePulseEndUserChannel } from "../audiencePulseHistorySource.js";
 import type { FacetExtractionJobStore } from "../../facets/public.js";
 import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
@@ -49,7 +52,7 @@ import type {
   AgentService,
 } from "../../agents/public.js";
 import { applyAgentRevisionSnapshot } from "../../agents/public.js";
-import { DEFAULT_CONTACT_REQUEST_DELIVERY, defaultAgentBrandingSettings, isAgentRetrievalEnabled } from "../../agents/public.js";
+import { DEFAULT_CONTACT_REQUEST_DELIVERY, defaultAgentBrandingSettings, isAgentRetrievalEnabled, unpublishedAgentPublicIdentity } from "../../agents/public.js";
 import { defaultWebsiteEmbedSettings } from "../../settings/contracts/websiteEmbed.js";
 import type { AssistantPageContext } from "../types/assistantApi.js";
 import type { PageReadCapability } from "./pageRead/pageReadDecision.js";
@@ -189,6 +192,35 @@ export interface PreparedSession {
    */
   previewRoutineIds?: string[];
   /**
+   * A calling agent's tool call carried from {@link PrepareChatSessionInput}; the routine
+   * provider admits the named routine directly. Absent on every message turn.
+   */
+  routineInvocation?: RoutineInvocation;
+  /**
+   * Set by the routine turn when a direct invocation named a routine the activator
+   * declined (already completed under `once_per_conversation`): the turn falls through to
+   * a normal answer, and the lifecycle reports this state in the reply envelope so the
+   * caller learns why nothing started. Absent on every other turn.
+   */
+  declinedRoutine?: ChatRoutineTurnState;
+  /**
+   * Set when a routine suspended awaiting an approval decision kept this turn: the routine
+   * attempt is bypassed, so nothing else describes it, and the reply still says which routine
+   * is waiting and on what. Absent on every other turn.
+   */
+  suspendedRoutine?: ChatRoutineTurnState;
+  /**
+   * Set by the routine turn when the active routine yielded this turn to a normal answer
+   * and stays parked: the answer closes by pointing back to its pending step, and the
+   * engine records the yield on the turn's trace. Absent on every other turn.
+   */
+  routineYield?: RoutineTurnYield;
+  /**
+   * What became of the tool call this turn carried, set by the routine turn (or the bypass
+   * report) and forwarded in the reply envelope. Absent on every message turn.
+   */
+  routineInvocationReport?: ChatRoutineInvocationReport;
+  /**
    * Rolling conversation summary text (issue #866), loaded once at prepare from the
    * per-conversation summary store. Absent for new/short conversations. Injected
    * alongside the recent-message window into turn interpretation and answer
@@ -282,6 +314,11 @@ export interface PrepareChatSessionInput {
    * persisted; only the authenticated workbench chat sets it.
    */
   previewRoutineIds?: string[];
+  /**
+   * A calling agent's tool call, resolved and validated before this turn. `query` is its
+   * rendered text; the recorded user message carries the structured form as input metadata.
+   */
+  routineInvocation?: RoutineInvocation;
 }
 
 interface PrepareChatSessionOptions {
@@ -326,6 +363,15 @@ interface WorkbenchReplayBaselineCapability {
 export const historicalWorkbenchReplayBaseline: WorkbenchReplayBaselineCapability = {
   [historicalWorkbenchReplayBaselineBrand]: true,
 };
+
+/**
+ * The recorded form of a tool call: Activity and the Inbox render it as a tool-call block
+ * from this, while the message content stays the rendered text a person would have typed.
+ */
+const routineInvocationInputMetadata = (invocation: RoutineInvocation): UserMessageInputMetadata => ({
+  method: "routine_invocation",
+  routine: { toolName: invocation.toolName, input: { ...invocation.input } },
+});
 
 export class ChatSessionPreparer {
   constructor(
@@ -496,7 +542,9 @@ export class ChatSessionPreparer {
       workspaceId: input.workspaceId,
       role: "user",
       content: input.query,
-      inputMetadata: input.inputMetadata,
+      inputMetadata: input.routineInvocation
+        ? routineInvocationInputMetadata(input.routineInvocation)
+        : input.inputMetadata,
     }));
     this.enqueueFacetExtraction(userMessage, persistedConversation);
     // The direct-only (non-grounded) base turn. Used as-is when retrieval is
@@ -561,6 +609,7 @@ export class ChatSessionPreparer {
         : {}),
       ...(options.preResolvedHostVariables ? { preResolvedHostVariables: options.preResolvedHostVariables } : {}),
       previewRoutineIds: input.previewRoutineIds,
+      routineInvocation: input.routineInvocation,
       ...this.stagedSpineFor(retrieval, null, hostVariables, requestFacts),
     };
   }
@@ -1172,6 +1221,7 @@ export class ChatSessionPreparer {
           },
           extensions: {},
         },
+        ...unpublishedAgentPublicIdentity(),
         createdAt: now,
         updatedAt: now,
       };
@@ -1224,6 +1274,7 @@ export class ChatSessionPreparer {
         },
         extensions: {},
       },
+      ...unpublishedAgentPublicIdentity(),
       createdAt: workspace.createdAt,
       updatedAt: workspace.updatedAt,
     };

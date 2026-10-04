@@ -94,6 +94,7 @@ describe("auth contract", () => {
     );
     expect(response.body.workspaceName).toBe("Default");
     expect(response.body.workspacePublicRouteKey).toMatch(/^\d{10}$/);
+    expect(response.body.displayName).toBeNull();
     expect(response.body.token).toBeUndefined();
     expect(response.body.requiresEmailVerification).toBe(true);
     expect(response.headers["set-cookie"]).toBeUndefined();
@@ -199,6 +200,7 @@ describe("auth contract", () => {
     expect(response.body.workspaceId).toBe(registration.workspaceId);
     expect(response.body.workspaceName).toBe("Default");
     expect(response.body.workspacePublicRouteKey).toMatch(/^\d{10}$/);
+    expect(response.body.displayName).toBeNull();
     expect(response.body.token).toBeUndefined();
     expect(response.headers["set-cookie"]?.[0]).toContain("radioso_session=");
   });
@@ -412,6 +414,7 @@ describe("auth contract", () => {
     expect(accepted.body.accountId).toBe(owner.accountId);
     expect(accepted.body.organizationName).toBe("Owner Invite Organization");
     expect(accepted.body.userId).not.toBe(owner.userId);
+    expect(accepted.body.displayName).toBeNull();
   });
 
   it("keeps the removed workspace-token route absent under repeated requests", async () => {

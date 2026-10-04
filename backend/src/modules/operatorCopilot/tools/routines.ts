@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { canonicalRoutineAuthoringDraft, projectRoutineToPortableDocument, routineDefinitionDraftInputSchema, routineFieldPatchSchema, type RoutineDefinition } from "../../routines/public.js";
+import { canonicalRoutineAuthoringDraft, endingNotifiesOperators, projectRoutineToPortableDocument, ROUTINE_DEFINITION_LIMITS, routineDefinitionDraftInputSchema, routineFieldPatchSchema, type RoutineDefinition } from "../../routines/public.js";
 import type {
   CopilotMcpInvocationReconciliation,
   CopilotMcpProposalRecoveryPort,
@@ -232,7 +232,17 @@ const projectRoutineEditableElements = (routine: RoutineDefinition) => {
   // canonical authoring shape here so a client can read, modify, and submit it without guessing
   // persistence-owned defaults or reaching around the public tool surface.
   const steps = cappedEditableElements(routine.steps.map((step) => ({ stableStepId: step.stableStepId, kind: step.kind, instruction: locator(step.instruction) })));
-  const endings = cappedEditableElements(routine.terminals.map((terminal) => ({ stableStepId: terminal.stableStepId, kind: terminal.kind, instruction: locator(terminal.instruction ?? null) })));
+  // An ending notifies operators by its kind or its notice (endingNotifiesOperators); showing both
+  // keeps a reader from concluding that a hand-off without notice text sends nothing.
+  const endings = cappedEditableElements(routine.terminals.map((terminal) => ({
+    stableStepId: terminal.stableStepId,
+    kind: terminal.kind,
+    instruction: locator(terminal.instruction ?? null),
+    notifiesOperators: endingNotifiesOperators(terminal),
+    operatorNotice: terminal.operatorNotice
+      ? { subject: locator(terminal.operatorNotice.subject), intro: locator(terminal.operatorNotice.intro) }
+      : null,
+  })));
   const fields = cappedEditableElements((routine.slots ?? []).map((slot) => ({ key: slot.key, type: slot.type, required: slot.required, description: locator(slot.description ?? null) })));
   return {
     steps: steps.items,
@@ -332,11 +342,20 @@ const routineProposalIdentitySchema = {
   evidenceIds: citedEvidenceSchema,
 };
 const routineEditInputSchema = z.object({ ...routineProposalIdentitySchema, changes: routineFieldPatchSchema }).strict();
+// Flat rather than nested under an `exposure` object: the tool transport renders a nested input
+// object as the bare word "object", and these three fields are the whole change.
+const routineExposureInputSchema = z.object({
+  ...routineProposalIdentitySchema,
+  enabled: z.boolean(),
+  toolName: z.string().trim().max(ROUTINE_DEFINITION_LIMITS.exposureToolName).optional(),
+  description: z.string().trim().max(ROUTINE_DEFINITION_LIMITS.exposureDescription),
+}).strict();
+const routineExposureDescription = `Propose offering a routine to calling AI agents as a named tool, or withdrawing that offer. Use this — not propose_routine_edit — whenever the operator wants AI agents, MCP clients, bots, or integrations to start, call, trigger, or invoke a routine directly or by name; the routine's wording does not change. A calling agent then starts the routine directly with its information fields filled in, instead of describing the request in prose. Read the routine with \`routine_definition\` first, then draft in the same turn. \`toolName\` is the name the agent calls, 2-63 lower-case letters, digits, and underscores, starting with a letter (for example start_return); \`description\` tells a calling agent when to use it. A tool name is fixed once the agent is published with it: omit \`toolName\` to keep the routine's current name when only changing \`enabled\` or \`description\`. Routines whose activation has a gate cannot be exposed. ${scopedAgentDraftPublicationNote}`;
 
 // The tool transport renders a nested input object as the bare word "object", so the shape of
 // `changes` has to live in the description or the model invents one of its own. Shared by both
 // descriptor variants below so the two copies cannot drift out of step with the schema.
-const routineEditDescription = `Propose an edit to an existing routine's wording, name, trigger, or whether it is enabled. \`changes\` takes at least one of: \`name\` (string); \`enabled\` (boolean, takes the routine in or out of service without touching its wording); \`activation\` ({triggerDescription?, priority?, reentryMode?, coverageCriteria?: {coverage: [...], reasons?: [...]}}); \`steps\` ([{stableStepId, instruction}]); \`terminals\` ([{stableStepId, instruction}], an ending); \`slots\` ([{key, description?, required?}], an information field). Example: {"steps":[{"stableStepId":"ask_order_number","instruction":"Ask for the order number and say why we need it."}]}. Every id comes from the \`editable\` block \`routine_definition\` returns — read the routine first and never invent one. It edits elements that already exist: it cannot add or remove a step or rework branching, so send the operator to the routine editor for those. It drafts a proposal for operator review and changes nothing until the operator applies it. ${scopedAgentDraftPublicationNote}`;
+const routineEditDescription = `Propose an edit to an existing routine's wording, name, trigger, or whether it is enabled. \`changes\` takes at least one of: \`name\` (string); \`enabled\` (boolean, takes the routine in or out of service without touching its wording); \`activation\` ({triggerDescription?, priority?, reentryMode?, coverageCriteria?: {coverage: [...], reasons?: [...]}}); \`steps\` ([{stableStepId, instruction}]); \`terminals\` ([{stableStepId, instruction}], an ending's message; the ending's operator notice — the subject and intro operators are sent when the routine ends there, shown as \`operatorNotice\` on \`editable.endings\` — stays as it is, so send the operator to the routine editor to change it); \`slots\` ([{key, description?, required?}], an information field). Example: {"steps":[{"stableStepId":"ask_order_number","instruction":"Ask for the order number and say why we need it."}]}. Every id comes from the \`editable\` block \`routine_definition\` returns — read the routine first and never invent one. It edits elements that already exist: it cannot add or remove a step or rework branching, so send the operator to the routine editor for those. It drafts a proposal for operator review and changes nothing until the operator applies it. ${scopedAgentDraftPublicationNote}`;
 
 const routineValidationOutput = (draft: CopilotRoutineProposalDraft) => ({
   ok: draft.diagnostics.length === 0,
@@ -489,6 +508,46 @@ export const createRoutineProposalCopilotTools = (deps: RoutineProposalCopilotTo
           const versionToken = await routineAdapter.readVersionToken(context.workspaceId, targetRef);
           await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
           const draft = await routineAdapter.draftEdit(context.workspaceId, targetRef, changes, rationale);
+          return proposeRoutineChange(deps, routineAdapter, context, targetRef, draft, versionToken, evidenceIds);
+        },
+      }),
+      describeEntity: (input, context) => describeRoutineTarget(input as z.infer<typeof validateRoutineInputSchema>, context, deps),
+    },
+    {
+      // Rides the routine edit path (`changes.exposure` on routineFieldPatchSchema), so the same
+      // adapter drafts, previews, and applies it and the card has one producer. A tool of its own
+      // so the model sees three named fields, not a generic patch object.
+      name: "propose_routine_exposure", shape: "propose", verificationCost: () => 0, uiLabel: "Drafting a tool exposure", contributingModule: "routines", dashboardSubject: { type: "proposal" }, requiredPermissions: ["workspace.agents.manage"],
+      description: routineExposureDescription,
+      inputSchema: routineExposureInputSchema, outputSchema: routineProposalOutputSchema,
+      reconcileMcpInvocation: async ({ invocation, context, staleBefore, now }) => {
+        if (!invocation.operationId) return { status: "conflict" };
+        const recovery = await deps.proposalRecovery.recoverOperatorMcpProposal({
+          invocationId: invocation.id,
+          grantId: invocation.grantId,
+          workspaceId: context.workspaceId,
+          operatorUserId: context.operatorUserId,
+          operationId: invocation.operationId,
+          descriptorName: "propose_routine_exposure",
+          inputDigest: invocation.inputDigest,
+          staleBefore,
+          now,
+        });
+        if (recovery.status !== "recovered") return recovery;
+        return reconcileRoutineProposalPayload(recovery.proposal, routineEditProposalPayloadSchema);
+      },
+      createTool: (context) => ({
+        name: "propose_routine_exposure",
+        description: routineExposureDescription,
+        inputSchema: routineExposureInputSchema,
+        outputSchema: routineProposalOutputSchema,
+        invoke: async ({ agentId, routineId, enabled, toolName, description, rationale, evidenceIds }) => {
+          const targetRef = { agentId: agentId ?? requiredPageAgent(context.pageContext.agentId), routineId: requiredRoutine(routineId) };
+          await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
+          const versionToken = await routineAdapter.readVersionToken(context.workspaceId, targetRef);
+          await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
+          // A blank name keeps the routine's stored one (routines/authoringEdit.ts resolveRoutineFieldPatch).
+          const draft = await routineAdapter.draftEdit(context.workspaceId, targetRef, { exposure: { enabled, ...(toolName ? { toolName } : {}), description } }, rationale);
           return proposeRoutineChange(deps, routineAdapter, context, targetRef, draft, versionToken, evidenceIds);
         },
       }),

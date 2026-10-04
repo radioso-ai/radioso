@@ -8,7 +8,13 @@ import type {
   SteeringRule,
   TurnContext,
 } from "@radioso/conversation-contract";
-import { buildResolvedSteering, knownAnswerCoverage, steeringForKnownVerdict } from "./steering.js";
+import { routineEndingEffects } from "./routineEnding.js";
+import {
+  buildResolvedSteering,
+  knownAnswerCoverage,
+  steeringForKnownVerdict,
+  withRoutineStepSteering,
+} from "./steering.js";
 import {
   createInputEvent,
   createProcessTurnResult,
@@ -49,8 +55,13 @@ export const resumeRoutine = async (input: {
         baseSteering,
         traceKind: "directive_steering",
       });
-      directiveSteeringStage = resolved.traceStage;
-      return steeringForKnownVerdict(resolved.steering, knownAnswerCoverage(turn));
+      const steering = steeringForKnownVerdict(resolved.steering, knownAnswerCoverage(turn));
+      directiveSteeringStage = withRoutineStepSteering(resolved.traceStage, {
+        routineId: state.routineId,
+        stepId: step.id,
+        steering,
+      });
+      return steering;
     },
   };
 
@@ -62,6 +73,13 @@ export const resumeRoutine = async (input: {
     activationTurn: !resuming,
   });
   if (result.yielded) {
+    request.routineYieldSink?.yielded({
+      sessionId: request.sessionId,
+      ...(request.inputEvent.id ? { inputEventId: request.inputEvent.id } : {}),
+      routineId: state.routineId,
+      ...(state.executionId ? { executionId: state.executionId } : {}),
+      ...(result.pendingStep ? { pendingStep: result.pendingStep } : {}),
+    });
     return null;
   }
   if (!directiveSteeringStage) {
@@ -113,6 +131,7 @@ export const resumeRoutine = async (input: {
       locale: request.inputEvent.locale ?? undefined,
     },
   });
+  const ending = routineEndingEffects(state.routineId, result.terminal);
   const routineStage = stage({
     id: `routine:${state.routineId}`,
     kind: resuming ? "routine_resume" : "routine_activate",
@@ -121,7 +140,8 @@ export const resumeRoutine = async (input: {
       routineId: state.routineId,
       completed: result.nextState === null,
       terminalKind: result.terminal?.kind,
-      handoff: result.terminal?.kind === "handoff",
+      handoff: ending.handoff !== undefined,
+      notifiesOperators: ending.operatorNotice !== undefined,
       answerLength: result.response.answer.length,
     },
     ...(result.trace ? { subTrace: { namespace: "routine", version: 1, payload: result.trace } } : {}),
@@ -146,9 +166,7 @@ export const resumeRoutine = async (input: {
     outcomes: result.outcomes ?? [],
     response: result.response,
     actions: result.actions,
-    handoff: result.terminal?.kind === "handoff"
-      ? { routineId: state.routineId, stepId: result.terminal.stepId }
-      : undefined,
+    ...ending,
     routineExecution: {
       routineId: state.routineId,
       ...(state.executionId ? { executionId: state.executionId } : {}),

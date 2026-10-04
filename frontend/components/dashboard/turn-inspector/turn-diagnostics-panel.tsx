@@ -229,8 +229,8 @@ export function TurnDiagnosticsPanel({
           turns without an envelope keep the inline flat activity trace explorer. */}
       {activeEnvelope ? (
         <p className="text-xs text-muted-foreground">
-          Open <span className="font-medium text-foreground">Flow</span> to explore this turn as a graph —
-          inputs flow into the engine, which selects a skill and its retrieval path, leading to the outcome.
+          Open <span className="font-medium text-foreground">Flow</span> to follow this turn step by step, from
+          the message to the verdict.
         </p>
       ) : (
         <div className="grid grid-cols-[minmax(200px,260px)_1fr] gap-4">

@@ -1,7 +1,18 @@
 import type { NextFunction, Request, Response } from "express";
 import { describe, expect, it, vi } from "vitest";
 
-import { requirePublicChatPermission, requireWorkspacePermission } from "../../src/app/http/middleware/requirePermission.js";
+import {
+  holdsWorkspacePermission,
+  requirePublicChatPermission,
+  requireWorkspacePermission,
+} from "../../src/app/http/middleware/requirePermission.js";
+import { AccountAccessService } from "../../src/modules/account/services/accountAccessService.js";
+import {
+  createAuditService,
+  InMemoryAccountMembershipRepository,
+  InMemoryUserRepository,
+  InMemoryWorkspaceGrantRepository,
+} from "../support/fakes.js";
 
 const createRequestResponse = (locals: Record<string, unknown>) => {
   const req = {} as Request;
@@ -112,5 +123,65 @@ describe("requirePublicChatPermission", () => {
       permission: "public_chat.turn.create",
     });
     expect(next).toHaveBeenCalledWith();
+  });
+});
+
+describe("holdsWorkspacePermission", () => {
+  const createAccess = async () => {
+    const users = new InMemoryUserRepository();
+    const memberships = new InMemoryAccountMembershipRepository();
+    memberships.setUserRepository(users);
+    const grants = new InMemoryWorkspaceGrantRepository();
+    const accountAccessService = new AccountAccessService(memberships, createAuditService(), grants);
+    const addMember = async (email: string) => {
+      const user = await users.create({ email, passwordHash: "hash" });
+      await memberships.create({ accountId: "account-1", userId: user.id, role: "member" });
+      return user.id;
+    };
+    const member = await addMember("member@example.com");
+    const grantedAdmin = await addMember("granted@example.com");
+    await grants.upsert({ workspaceId: "workspace-1", accountId: "account-1", userId: grantedAdmin, role: "admin" });
+    return { accountAccessService, memberships, member, grantedAdmin };
+  };
+
+  // A teammate's request through the route's own permission check, then the permission that shapes
+  // what the route returns.
+  const holdsAfterCheck = async (
+    accountAccessService: AccountAccessService,
+    userId: string,
+    permission: "workspace.quality.read",
+  ) => {
+    const { req, res, next } = createRequestResponse({ accountId: "account-1", userId, workspaceId: "workspace-1" });
+    await requireWorkspacePermission({ accountAccessService }, "workspace.history.read")(req, res, next);
+    expect(next).toHaveBeenCalledWith();
+    return holdsWorkspacePermission({ accountAccessService }, res, permission);
+  };
+
+  it("answers from the role the route's permission check resolved, with no second membership lookup", async () => {
+    const { accountAccessService, memberships, member, grantedAdmin } = await createAccess();
+    const lookups = vi.spyOn(memberships, "findActiveByAccountAndUser");
+    const hasPermission = vi.spyOn(accountAccessService, "hasPermission");
+
+    await expect(holdsAfterCheck(accountAccessService, member, "workspace.quality.read")).resolves.toBe(false);
+    await expect(holdsAfterCheck(accountAccessService, grantedAdmin, "workspace.quality.read")).resolves.toBe(true);
+
+    expect(lookups).toHaveBeenCalledTimes(2);
+    expect(hasPermission).not.toHaveBeenCalled();
+  });
+
+  it("asks the access service when no check resolved a role on the request's workspace", async () => {
+    const { accountAccessService, grantedAdmin } = await createAccess();
+    const hasPermission = vi.spyOn(accountAccessService, "hasPermission");
+    const unchecked = createRequestResponse({ accountId: "account-1", userId: grantedAdmin, workspaceId: "workspace-1" });
+    const elsewhere = createRequestResponse({
+      accountId: "account-1",
+      userId: grantedAdmin,
+      workspaceId: "workspace-1",
+      checkedWorkspaceRole: { workspaceId: "workspace-2", role: "owner" },
+    });
+
+    await expect(holdsWorkspacePermission({ accountAccessService }, unchecked.res, "workspace.quality.read")).resolves.toBe(true);
+    await expect(holdsWorkspacePermission({ accountAccessService }, elsewhere.res, "account.organization.delete")).resolves.toBe(false);
+    expect(hasPermission).toHaveBeenCalledTimes(2);
   });
 });

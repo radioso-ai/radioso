@@ -117,16 +117,13 @@ const effectiveInputEventForSession = (session: PreparedSession) => ({
 });
 
 /**
- * The turn's resolved visitor context, bounded for matching. Omitted entirely
- * when nothing resolved, so turns without context variables send the matcher the
- * same signals they always did.
+ * The turn's resolved visitor context, bounded for matching. Always sent: it carries the caller
+ * kind even on a turn that resolved no context variable, because a directive condition cannot be
+ * written against a key that is only sometimes there.
  */
 const visitorContextForMatching = (
   session: PreparedSession,
-): { visitorContext?: Record<string, unknown> } => {
-  const { context } = visitorMatchContext(session);
-  return Object.keys(context).length > 0 ? { visitorContext: context } : {};
-};
+): { visitorContext: Record<string, unknown> } => ({ visitorContext: visitorMatchContext(session).context });
 
 const directiveSteerInputForSession = (
   session: PreparedSession,
@@ -327,6 +324,7 @@ export const createChatProcessTurnInput = (options: ChatProcessTurnInputOptions)
     ...(options.clarificationStore ? { clarificationStore: options.clarificationStore } : {}),
     ...(options.loopGuardCandidateIds ? { loopGuardCandidateIds: options.loopGuardCandidateIds } : {}),
     ...(options.suppressNewClarification ? { suppressNewClarification: options.suppressNewClarification } : {}),
+    ...(readSession().routineYield ? { routineYield: readSession().routineYield } : {}),
   };
 };
 
@@ -362,6 +360,8 @@ interface AttemptRoutineInputOptions {
  * stores, directive steering, and routine machinery only. Routine resume/activation
  * never runs selection, dispatch, or composition, so unlike
  * {@link createChatProcessTurnInput} this wires no stub selector/dispatcher/composer.
+ * A routine that yields the turn is recorded on the session, where the answer that
+ * follows leads back to it and {@link createChatProcessTurnInput} hands it to the engine.
  */
 export const createAttemptRoutineInput = (options: AttemptRoutineInputOptions): AttemptRoutineInput => {
   const directiveWiring = buildDirectiveTurnWiring(options);
@@ -389,5 +389,10 @@ export const createAttemptRoutineInput = (options: AttemptRoutineInputOptions): 
     ...(options.loopGuardCandidateIds ? { loopGuardCandidateIds: options.loopGuardCandidateIds } : {}),
     ...(options.suppressNewClarification ? { suppressNewClarification: options.suppressNewClarification } : {}),
     ...(options.progress ? { progress: options.progress } : {}),
+    routineYieldSink: {
+      yielded(routineYield) {
+        options.session.routineYield = routineYield;
+      },
+    },
   };
 };

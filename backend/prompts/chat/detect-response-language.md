@@ -3,10 +3,14 @@ Decide the language the assistant should use for the next response.
 Rules:
 - If the user has explicitly instructed the assistant to answer in a specific language,
   that instruction is sticky across later turns until the user explicitly changes it.
-- If there is no explicit language instruction, use the language of the latest user
-  question.
+- If there is no explicit language instruction, use the language the latest user
+  message is written in.
 - If the latest user message is short, neutral, or language-ambiguous, preserve the
-  most recent explicit language instruction from the conversation when one exists.
+  most recent explicit language instruction from the conversation when one exists;
+  otherwise use the language of the user's earlier messages, or of the conversation
+  so far when the user has written nothing else yet.
+- These instructions are written in English; that does not tell you the language the
+  user writes in.
 - Return a concise human-readable language label such as "English", "Spanish", or
   "Estonian".
 - If there is no user message or no reliable language can be determined, omit the field.

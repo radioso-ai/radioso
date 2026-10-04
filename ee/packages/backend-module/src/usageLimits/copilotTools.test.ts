@@ -52,6 +52,12 @@ describe("usage limit copilot contribution", () => {
       shape: "read",
       contributingModule: "usageLimits",
       requiredPermissions: ["workspace.settings.read"],
+      mcpDisposition: {
+        status: "eligible",
+        inputStrategy: "explicit",
+        scope: "operator:read",
+        retry: { effect: "none", idempotent: true, operationIdentity: "client" },
+      },
     });
   });
 
@@ -64,11 +70,11 @@ describe("usage limit copilot contribution", () => {
     expect(getAccountUsage).toHaveBeenCalledWith("account-1");
     expect(result).toEqual({
       planName: "Starter",
-      monthlyAnswers: { used: 92, limit: 100, remaining: 8, resetAt: "2026-09-01" },
+      monthlyAnswers: { used: 92, limit: 100, remaining: 8, resetAt: "2026-09-01T00:00:00.000Z" },
       storedDocuments: { used: 12, limit: 50, remaining: 38, resetAt: null },
       // An unlimited plan has no remaining figure; reporting 0 would read as exhausted.
       storedIndexedBytes: { used: 2048, limit: null, remaining: null, resetAt: null },
-      monthlyIndexedBytes: { used: 1024, limit: null, remaining: null, resetAt: "2026-09-01" },
+      monthlyIndexedBytes: { used: 1024, limit: null, remaining: null, resetAt: "2026-09-01T00:00:00.000Z" },
     monthlyConversations: null,
     });
   });
@@ -113,7 +119,7 @@ describe("usage limit copilot contribution", () => {
       used: 0.5,
       limit: 100,
       remaining: 99.5,
-      resetAt: "2026-09-01",
+      resetAt: "2026-09-01T00:00:00.000Z",
     });
   });
 });

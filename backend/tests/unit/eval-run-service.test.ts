@@ -25,6 +25,7 @@ import type { WorkbenchReplayResult } from "../../src/modules/chat/composition.j
 import type { EvalRetrievalRunnerPort } from "../../src/modules/eval/services/evalRunner.js";
 import type { EvalLlmJudgePort } from "../../src/modules/eval/services/evalJudge.js";
 import type { RetrievalSettingsSnapshot } from "../../src/modules/settings/contracts/retrieval.js";
+import { unpublishedAgentPublicIdentity } from "../../src/modules/agents/public.js";
 
 const fixedDate = "2026-05-23T12:00:00.000Z";
 
@@ -103,6 +104,7 @@ const retrievalSettingsSnapshot = (
 });
 
 const configuredAgent = (): ConversationAgent => ({
+  ...unpublishedAgentPublicIdentity(),
   id: "agent-full",
   workspaceId: "ws-1",
   name: "Full Config Bot",
@@ -1302,6 +1304,88 @@ describe("EvalRunService.execute (retrieval_only) case recording", () => {
       retrievalSettings: undefined,
     });
     expect(run.status).toBe("pass");
+  });
+
+  it("never requests routine slot values from the replay runner, and never persists them into observedOutput", async () => {
+    // A slot value may be PII, and an eval case can be captured from a customer
+    // conversation. observedOutput is persisted into append-only eval_runs (and revision-
+    // eval evidence) with a 90-day retention and no per-conversation erasure path, so a
+    // captured value there would outlive the conversation it came from — unlike Test
+    // Chat, eval must never opt in. This stub echoes a routine sub-trace with slot values
+    // only when the caller asked for them, exactly like the real runner would, so this
+    // test can prove eval's call never does.
+    class ConditionalSlotValuesWorkbenchReplayRunner implements EvalWorkbenchReplayRunnerPort {
+      public calls: Array<Parameters<EvalWorkbenchReplayRunnerPort["run"]>[0]> = [];
+
+      async run(input: Parameters<EvalWorkbenchReplayRunnerPort["run"]>[0]): Promise<WorkbenchReplayResult> {
+        this.calls.push(input);
+        return {
+          answer: "Replay answer.",
+          turnTrace: {
+            version: 1,
+            spine: {
+              traceId: "engine-trace",
+              startedAt: fixedDate,
+              stages: [
+                {
+                  id: "routine:contact",
+                  kind: "routine_activate",
+                  status: "applied" as const,
+                  subTrace: {
+                    namespace: "routine",
+                    version: 1,
+                    payload: {
+                      routineId: "contact",
+                      startStepId: "ask_email",
+                      landedStepId: "done",
+                      capturedSlotKeys: ["email"],
+                      filledSlotKeys: ["email"],
+                      steps: [],
+                      ...((input as { includeSlotValues?: boolean }).includeSlotValues
+                        ? { slotValues: [{ key: "email", type: "email", value: "guest@example.com" }] }
+                        : {}),
+                    },
+                  },
+                },
+              ],
+            },
+          },
+          resolvedConfig: {
+            composedInstructions: "Resolved replay instructions.",
+            modelProvider: "openai",
+            modelId: "gpt-5-mini",
+            retrievedChunks: [],
+          },
+        };
+      }
+    }
+
+    const agent = configuredAgent();
+    const snapshot = makeSnapshot({
+      sourceAgentId: agent.id,
+      originalAgentConfig: projectInternalAgentConfig(agent),
+    });
+    const repo = new InMemoryEvalRepository({ snapshots: [snapshot] });
+    const evalCase = await repo.createCase({
+      workspaceId: "ws-1",
+      snapshotId: snapshot.id,
+      name: "workbench replay slot values case",
+      assertions: [refundIncludes],
+    });
+    const workbench = new ConditionalSlotValuesWorkbenchReplayRunner();
+    const service = new EvalRunService(repo, new StubRunner([]), passJudge(), workbench);
+
+    const { run } = await service.executeWorkbenchReplay({
+      workspaceId: "ws-1",
+      snapshotId: snapshot.id,
+      caseId: evalCase.id,
+      mode: "full_assistant",
+    });
+
+    expect(workbench.calls[0]).not.toHaveProperty("includeSlotValues", true);
+    const routineStage = (run.observedOutput.turnTrace?.spine as { stages: Array<{ subTrace?: { namespace: string; payload: Record<string, unknown> } }> }).stages
+      .find((stage) => stage.subTrace?.namespace === "routine");
+    expect(routineStage?.subTrace?.payload).not.toHaveProperty("slotValues");
   });
 
   it("uses the Workbench engine replay path for full-assistant runs with a full agent snapshot", async () => {

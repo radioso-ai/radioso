@@ -1,5 +1,6 @@
-import type { RoutineActionRequest } from "@radioso/conversation-contract";
+import type { ProcessTurnResult, RoutineActionRequest } from "@radioso/conversation-contract";
 
+import { operatorNoticeActionPayload } from "./operatorNoticeAction.js";
 import { HANDOFF_NOTIFY_ACTION_TYPE } from "./routines/contactRoutine.js";
 import { SKILL_TURN_OUTCOME } from "./assistantTurnOutcomeTypes.js";
 import type { ChatPresentedAnswer } from "./chatAnswerPresenter.js";
@@ -47,28 +48,36 @@ export const suppressedHumanOwnedResponse = (
       state: "human_owned",
       suppressed: true,
     },
+    // Nothing was generated, so nothing was assessed; the ids still anchor the slot to the turn.
+    answerCoverage: {
+      availability: "not_recorded",
+      originatingTurnId: session.userMessage.id,
+      originatingRequestId: session.userMessage.id,
+    },
   };
 };
 
-export const buildHandoffNotifyAction = (input: {
-  conversationId: string;
-  workspaceId: string;
-  agentId: string;
-  userMessageId: string;
+/** What the engine reports when a routine ends on a handoff terminal. */
+export type RoutineHandoffEffect = NonNullable<ProcessTurnResult["handoff"]>;
+
+/** Builds the `handoff.notify` action a retrieval-miss handoff emits. */
+export const buildHandoffNotifyAction = (input: Parameters<typeof operatorNoticeActionPayload>[0] & {
   reason: "routine_handoff" | "retrieval_miss";
-  routineId?: string;
-  stepId?: string;
 }): RoutineActionRequest => ({
   type: HANDOFF_NOTIFY_ACTION_TYPE,
-  payload: {
-    conversationId: input.conversationId,
-    workspaceId: input.workspaceId,
-    agentId: input.agentId,
-    userMessageId: input.userMessageId,
-    reason: input.reason,
-    routineId: input.routineId,
-    stepId: input.stepId,
-  },
+  payload: operatorNoticeActionPayload(input),
+});
+
+/**
+ * The ownership record and its audit event name the routine and step; the collected
+ * values travel only on the notify action, so they are picked off here on purpose.
+ */
+export const routineHandoffOwnership = (
+  handoff: RoutineHandoffEffect,
+): { reason: "routine_handoff"; routineId: string; stepId: string } => ({
+  reason: "routine_handoff",
+  routineId: handoff.routineId,
+  stepId: handoff.stepId,
 });
 
 const shouldRequestRetrievalMissHandoff = (input: {

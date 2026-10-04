@@ -399,6 +399,54 @@ resource "google_cloud_run_v2_service" "backend" {
         }
       }
       dynamic "env" {
+        for_each = local.google_login_client_id_configured ? [google_secret_manager_secret.secrets["google-login-client-id"].secret_id] : []
+        content {
+          name = "GOOGLE_LOGIN_CLIENT_ID"
+          value_source {
+            secret_key_ref {
+              secret  = env.value
+              version = "latest"
+            }
+          }
+        }
+      }
+      dynamic "env" {
+        for_each = local.google_login_client_secret_configured ? [google_secret_manager_secret.secrets["google-login-client-secret"].secret_id] : []
+        content {
+          name = "GOOGLE_LOGIN_CLIENT_SECRET"
+          value_source {
+            secret_key_ref {
+              secret  = env.value
+              version = "latest"
+            }
+          }
+        }
+      }
+      dynamic "env" {
+        for_each = local.stripe_secret_key_configured ? [google_secret_manager_secret.secrets["stripe-secret-key"].secret_id] : []
+        content {
+          name = "STRIPE_SECRET_KEY"
+          value_source {
+            secret_key_ref {
+              secret  = env.value
+              version = "latest"
+            }
+          }
+        }
+      }
+      dynamic "env" {
+        for_each = local.stripe_webhook_secret_configured ? [google_secret_manager_secret.secrets["stripe-webhook-secret"].secret_id] : []
+        content {
+          name = "STRIPE_WEBHOOK_SECRET"
+          value_source {
+            secret_key_ref {
+              secret  = env.value
+              version = "latest"
+            }
+          }
+        }
+      }
+      dynamic "env" {
         for_each = var.resend_mail_api_key != null ? [google_secret_manager_secret.secrets["resend-mail-api-key"].secret_id] : []
         content {
           name = "RESEND_MAIL_API_KEY"
@@ -489,9 +537,15 @@ resource "google_cloud_run_v2_service" "backend" {
           }
         }
       }
+      # Cloud Run's front end appends exactly the connecting peer to
+      # X-Forwarded-For, on run.app and on mapped domains alike; that entry is
+      # the only one a caller cannot forge. The frontend is Cloud Run too, so
+      # the chain it signs into the edge-facts envelope ends with the visitor
+      # and resolves with this same count. The frontend CDN load balancer
+      # changes that chain; see cdn.tf.
       env {
         name  = "RADIOSO_TRUSTED_PROXY_HOPS"
-        value = "2"
+        value = "1"
       }
       dynamic "env" {
         for_each = local.operator_mcp_configured ? [var.mcp_public_origin] : []
@@ -504,6 +558,15 @@ resource "google_cloud_run_v2_service" "backend" {
         for_each = local.operator_mcp_configured ? [local.app_base_url] : []
         content {
           name  = "OPERATOR_MCP_ISSUER_URL"
+          value = env.value
+        }
+      }
+      # Public agent discovery. Without the endpoint, the discovery documents refuse to
+      # render rather than publish a card a caller cannot connect through.
+      dynamic "env" {
+        for_each = var.mcp_public_origin == null ? [] : ["${var.mcp_public_origin}/mcp"]
+        content {
+          name  = "PUBLIC_MCP_CONVERSE_URL"
           value = env.value
         }
       }
@@ -654,9 +717,10 @@ resource "google_cloud_run_v2_service" "mcp" {
           }
         }
       }
+      # Cloud Run appends exactly the connecting peer; see the backend service.
       env {
         name  = "RADIOSO_TRUSTED_PROXY_HOPS"
-        value = "2"
+        value = "1"
       }
       dynamic "env" {
         for_each = local.operator_mcp_configured ? [var.mcp_public_origin] : []
@@ -669,6 +733,15 @@ resource "google_cloud_run_v2_service" "mcp" {
         for_each = local.operator_mcp_configured ? [local.app_base_url] : []
         content {
           name  = "OPERATOR_MCP_ISSUER_URL"
+          value = env.value
+        }
+      }
+      # Public agent discovery. Without the endpoint, the discovery documents refuse to
+      # render rather than publish a card a caller cannot connect through.
+      dynamic "env" {
+        for_each = var.mcp_public_origin == null ? [] : ["${var.mcp_public_origin}/mcp"]
+        content {
+          name  = "PUBLIC_MCP_CONVERSE_URL"
           value = env.value
         }
       }
@@ -954,8 +1027,10 @@ resource "google_cloud_run_v2_service" "document_worker" {
           value = env.value
         }
       }
+      # The worker sends the emails (transfer notices, contact and escalation notifications) whose
+      # links and logo resolve against APP_BASE_URL, in every edition.
       env {
-        name  = "RADIOSO_WIDGET_ORIGIN"
+        name  = "APP_BASE_URL"
         value = local.app_base_url
       }
       env {

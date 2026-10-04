@@ -27,6 +27,8 @@ describe("API principal route policy", () => {
   it("records account and application-contributed session routes explicitly", () => {
     for (const key of [
       "GET /api/v1/account/users",
+      "GET /api/v1/auth/profile",
+      "PATCH /api/v1/auth/profile",
       "POST /api/v1/account/switch",
       "GET /api/v1/account/usage-trends",
       "GET /api/v1/quality/audience-pulse",
@@ -47,7 +49,12 @@ describe("API principal route policy", () => {
     ["GET", "/api/v1/workspace/mcp/context"],
     ["GET", "/api/v1/connectors"],
     ["POST", "/api/v1/conversations/conversation-1/takeover"],
+    ["POST", "/api/v1/conversations/conversation-1/transfer"],
+    ["GET", "/api/v1/conversations/operators"],
+    ["GET", "/api/v1/conversations/recently-closed"],
     ["GET", "/api/v1/copilot"],
+    ["GET", "/api/v1/auth/profile"],
+    ["PATCH", "/api/v1/auth/profile"],
   ])("rejects API credentials on sensitive %s %s", (method, path) => {
     expect(allowsMachinePrincipal(method, path, personal)).toBe(false);
     expect(allowsMachinePrincipal(method, path, service)).toBe(false);

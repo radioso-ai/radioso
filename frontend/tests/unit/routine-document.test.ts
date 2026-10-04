@@ -147,6 +147,15 @@ describe('sanitizeDraftContentForSave', () => {
     expect(saved.terminals[0].instruction).toBe('Done.')
     expect(saved.transitions[0]).toMatchObject({ guardText: 'judge this', fieldValue: 50, fieldValues: ['a'] })
   })
+
+  it('saves an ending notice with blank text as a notice with the default text', () => {
+    const saved = sanitizeDraftContentForSave({
+      ...draft,
+      terminals: [{ ...draft.terminals[0], operatorNotice: { subject: 'Booking: {{slot.a}}', intro: '' } }],
+    })
+    expect(saved.terminals[0].operatorNotice).toEqual({ subject: 'Booking: {{slot.a}}', intro: null })
+    expect(sanitizeDraftContentForSave(draft).terminals[0]).not.toHaveProperty('operatorNotice')
+  })
 })
 
 describe('documentDiagnosticText', () => {
@@ -231,6 +240,29 @@ describe('step instruction prose mapping', () => {
     const restored = proseParagraphsToInstruction(instructionToProseParagraphs(instruction))
     expect(restored.map((segment) => segment.kind === 'text' ? segment.text : segment.source).join(''))
       .toBe('Ask for {{slot.email}}.\n\nThen thank them.')
+  })
+
+  it('opens a context reference as a context chip labelled for the picker, and writes it back as the same token', () => {
+    const instruction: RoutineBlockInstructionSegment[] = [
+      { kind: 'contextReference', key: 'page_context', source: '{{context.page_context}}' },
+      { kind: 'text', text: ' If this is a program page, confirm it; else ask for ' },
+      { kind: 'slotReference', key: 'program', source: '{{slot.program}}' },
+      { kind: 'text', text: '.' },
+    ]
+    const paragraphs = instructionToProseParagraphs(instruction)
+    expect(paragraphs).toEqual([{ segments: [
+      { kind: 'chip', chipKind: 'context', refId: 'page_context', label: 'Current page' },
+      { kind: 'text', text: ' If this is a program page, confirm it; else ask for ' },
+      { kind: 'chip', chipKind: 'variable', refId: 'program', label: 'program' },
+      { kind: 'text', text: '.' },
+    ] }])
+    expect(proseParagraphsToInstruction(paragraphs)).toEqual(instruction)
+  })
+
+  it('labels a host-defined context chip by its name', () => {
+    expect(instructionToProseParagraphs([
+      { kind: 'contextReference', key: 'cart', source: '{{context.cart}}' },
+    ])).toEqual([{ segments: [{ kind: 'chip', chipKind: 'context', refId: 'cart', label: 'cart' }] }])
   })
 
   it('reads an empty document as a single empty instruction segment', () => {

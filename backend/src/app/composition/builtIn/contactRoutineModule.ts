@@ -2,14 +2,15 @@ import { capabilityNames } from "../../../shared/domain/capabilityPolicy.js";
 import {
   contactRoutineDefinition,
   CONTACT_SEND_ACTION_TYPE,
-  HANDOFF_NOTIFY_ACTION_TYPE,
   CONTACT_INTENT_SKILL_NAME,
   CONTACT_INTENT_NAME,
   ConfiguredContactDeliveryResolver,
   ContactSendActionHandler,
   EmailWebhookOperatorNotificationSink,
   FetchContactWebhookHttpClient,
-  HandoffNotifyActionHandler,
+  RoutineEndingNotifyActionHandler,
+  RepositoryRoutineEndingNotificationSubjectResolver,
+  ROUTINE_ENDING_NOTICE_ACTIONS,
   ApprovalRequestActionHandler,
   APPROVAL_REQUEST_ACTION_TYPE,
   WorkspaceOwnerContactRecipientResolver,
@@ -24,6 +25,7 @@ import { AgentRepository } from "../../../db/repositories/agentRepository.js";
 import { ConversationRepository } from "../../../db/repositories/conversationRepository.js";
 import { ActionRequestRepository } from "../../../db/repositories/actionRequestRepository.js";
 import { PendingDecisionRepository } from "../../../db/repositories/pendingDecisionRepository.js";
+import { RoutineDefinitionRepository } from "../../../db/repositories/routineDefinitionRepository.js";
 import { AgentSkillRepository } from "../../../modules/agentSkills/repository.js";
 import { OperatorNotificationDispatcher } from "../../../modules/operatorNotifications/public.js";
 import {
@@ -143,6 +145,7 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
     context.registerActionHandler({
       type: CONTACT_SEND_ACTION_TYPE,
       requiredCapabilities: [capabilityNames.humanContact.request],
+      queuedFrom: "routine_action_step",
       handler: ({ database, logger, mailService, assertPublicWebsiteUrl, errorReporter }) => {
         const ownerFallback = new WorkspaceOwnerContactRecipientResolver(
           new WorkspaceRepository(database.kysely),
@@ -164,21 +167,35 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
         );
       },
     });
-    context.registerActionHandler({
-      type: HANDOFF_NOTIFY_ACTION_TYPE,
-      requiredCapabilities: [capabilityNames.humanContact.request],
-      handler: ({ database, env, logger, mailService, assertPublicWebsiteUrl }) => {
-        return new HandoffNotifyActionHandler(
-          buildOperatorNotificationDispatcher({ database, env, logger, mailService, assertPublicWebsiteUrl }),
-        );
-      },
-    });
+    // A routine ending's notice to operators: `handoff.notify` for a hand-off (which also moved
+    // the conversation to a person when the turn committed), `completion.notify` for a
+    // completion that carries a notice. One handler, told which row it delivers.
+    for (const ending of Object.values(ROUTINE_ENDING_NOTICE_ACTIONS)) {
+      context.registerActionHandler({
+        type: ending.type,
+        requiredCapabilities: [capabilityNames.humanContact.request],
+        // The turn that reaches the ending queues it; an author sets the notice on the ending.
+        queuedFrom: "chat_turn",
+        handler: ({ database, env, logger, mailService, assertPublicWebsiteUrl }) => new RoutineEndingNotifyActionHandler({
+          ending,
+          dispatcher: buildOperatorNotificationDispatcher({ database, env, logger, mailService, assertPublicWebsiteUrl }),
+          subjects: new RepositoryRoutineEndingNotificationSubjectResolver(
+            new AgentRepository(database.kysely),
+            new RoutineDefinitionRepository(database.kysely),
+            new ConversationRepository(database.kysely),
+          ),
+        }),
+      });
+    }
     context.registerActionHandler({
       type: APPROVAL_REQUEST_ACTION_TYPE,
       requiredCapabilities: [capabilityNames.humanContact.request],
+      // The turn that reaches an approval step queues it.
+      queuedFrom: "chat_turn",
       handler: ({ database, env, logger, mailService, assertPublicWebsiteUrl }) => {
         return new ApprovalRequestActionHandler(
           buildOperatorNotificationDispatcher({ database, env, logger, mailService, assertPublicWebsiteUrl }),
+          new ConversationRepository(database.kysely),
         );
       },
     });

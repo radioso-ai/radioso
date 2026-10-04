@@ -4,11 +4,11 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 
 import { Button } from '@/components/ui/button'
-import { Spinner } from '@/components/ui/spinner'
 import { authApi, seedWorkspaceSession } from '@/lib/api'
 import { getApiErrorMessage, getApiErrorStatus } from '@/lib/api-error'
 import { useAuth } from '@/lib/auth-context'
 import { buildDashboardHref } from '@/lib/dashboard-routes'
+import { useAuthSunrise } from './auth-shell'
 
 /**
  * Join path for a visitor who already has a session. When the session belongs
@@ -27,6 +27,7 @@ export function InvitationSessionJoin({
 }) {
   const router = useRouter()
   const { login, logout } = useAuth()
+  const riseSun = useAuthSunrise()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -36,7 +37,8 @@ export function InvitationSessionJoin({
     try {
       const response = await authApi.acceptInvitationAsCurrentUser(invitationToken)
       seedWorkspaceSession(response.workspaceId, response.workspacePublicRouteKey)
-      await login(signedInEmail, response.userId, response.accountId, response.organizationName)
+      riseSun()
+      await login({ ...response, email: signedInEmail })
       router.replace(buildDashboardHref(response.accountId, {
         section: 'activity',
         workspaceId: response.workspaceId,
@@ -76,9 +78,8 @@ export function InvitationSessionJoin({
         Signed in as <span className="font-medium text-foreground">{signedInEmail}</span>.
       </p>
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
-      <Button type="button" className="w-full" onClick={handleJoin} disabled={isSubmitting}>
-        {isSubmitting ? <Spinner className="mr-2 h-4 w-4" /> : null}
-        <span>Join account</span>
+      <Button type="button" className="w-full" onClick={handleJoin} loading={isSubmitting}>
+        Join account
       </Button>
       <p className="text-center text-sm">
         <button

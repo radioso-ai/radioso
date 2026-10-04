@@ -56,6 +56,7 @@ import {
   runWithModelCallTrace,
 } from "../../src/shared/observability/tracing/modelCallTraceContext.js";
 import { buildTurnTraceEnvelope } from "../../src/modules/chat/services/turnTraceEnvelope.js";
+import { unpublishedAgentPublicIdentity } from "../../src/modules/agents/public.js";
 
 const conversation = (): ConversationRecord => ({
   id: "conv_1",
@@ -65,6 +66,7 @@ const conversation = (): ConversationRecord => ({
   agentName: "Support",
   agentInternalName: null,
   sourceChannel: null,
+  callerKind: "human" as const,
   sourceOrigin: null,
   channelContext: null,
   anonymousSessionId: null,
@@ -86,6 +88,7 @@ const message = (overrides: Partial<MessageRecord> = {}): MessageRecord => ({
 });
 
 const agent = (): AgentRecord => ({
+  ...unpublishedAgentPublicIdentity(),
   id: "agent_1",
   workspaceId: "workspace_1",
   name: "Support",
@@ -274,6 +277,85 @@ const drivingEngine = (): { engine: ConversationEngine; dispatched: string[]; se
   };
   return { engine, dispatched, selectorCalls };
 };
+
+describe("routine yield hand-back (#1377)", () => {
+  const routineYield = {
+    sessionId: "conv_1",
+    inputEventId: "msg_1",
+    routineId: "book-demo",
+    pendingStep: { stepId: "ask_email", instruction: "Ask for a work email: [email]", missingSlotKeys: ["email"] },
+  };
+  const result: ProcessTurnResult = {
+    sessionId: "conv_1",
+    events: [],
+    decision: { selected: [], reason: "routine_activation_clarification" },
+    outcomes: [],
+    response: {
+      answer: "The Pro plan is $49 a month. Which work email should I send the invite to?",
+      metadata: { skillName: "routine", skillOutcome: "clarification", skillStatus: "completed" },
+    },
+    routineClarificationRoutineIds: ["book-demo"],
+    trace: { traceId: "yielded", startedAt: new Date(0).toISOString(), stages: [] },
+  };
+  const recordingEngine = (fail = false) => {
+    const handedBack: unknown[] = [];
+    const engine: ConversationEngine = {
+      attemptRoutine: async () => null,
+      resumeAwaitingDecision: async () => ({ resumed: false, response: { answer: "" }, nextState: null }),
+      async processTurn(input) {
+        handedBack.push(input.routineYield);
+        if (fail) throw new Error("provider_unavailable");
+        return result;
+      },
+      async *processTurnStream(input) {
+        handedBack.push(input.routineYield);
+        yield { type: "final" as const, result };
+      },
+    };
+    return { engine, handedBack };
+  };
+  const turnInput = (engine: ConversationEngine, turnSession: PreparedSession) => ({
+    engine,
+    session: turnSession,
+    chatAnswerPresenter,
+    turnSkillSelector: new ChatTurnSkillSelector([], new DefaultTurnSelectionStrategy()),
+    turnSkills: [],
+    query: "How much is the Pro plan?",
+  });
+
+  it("hands the yield to processTurn and drops it from the session once the turn is answered", async () => {
+    const { engine, handedBack } = recordingEngine();
+    const turnSession = { ...session(), routineYield };
+
+    await runPreparedChatTurnWithConversationEngine(turnInput(engine, turnSession));
+
+    expect(handedBack).toEqual([routineYield]);
+    expect(turnSession.routineYield).toBeUndefined();
+  });
+
+  it("drops the yield from the session once the streamed turn is answered", async () => {
+    const { engine, handedBack } = recordingEngine();
+    const turnSession = { ...session(), routineYield };
+
+    for await (const _event of runPreparedChatTurnStreamWithConversationEngine(turnInput(engine, turnSession))) {
+      // Drain the stream.
+    }
+
+    expect(handedBack).toEqual([routineYield]);
+    expect(turnSession.routineYield).toBeUndefined();
+  });
+
+  it("keeps the yield for a retry when processTurn fails", async () => {
+    const { engine } = recordingEngine(true);
+    const turnSession = { ...session(), routineYield };
+
+    await expect(runPreparedChatTurnWithConversationEngine(turnInput(engine, turnSession))).rejects.toThrow(
+      "provider_unavailable",
+    );
+
+    expect(turnSession.routineYield).toEqual(routineYield);
+  });
+});
 
 describe("runPreparedChatTurnWithConversationEngine", () => {
   it("presents a typed coverage routine clarification without requiring a routine execution", async () => {
@@ -1002,7 +1084,7 @@ describe("runPreparedChatTurnWithConversationEngine", () => {
     });
 
     expect(matched).toEqual([{
-      turnContext: { query: "Where is my order?", route: "direct" },
+      turnContext: { query: "Where is my order?", route: "direct", visitorContext: { radioso_caller_kind: "human" } },
       directives: ["brief"],
     }]);
     expect(selectedDirectiveSets).toEqual([["brief"]]);

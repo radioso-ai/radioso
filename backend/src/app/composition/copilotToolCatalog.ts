@@ -15,6 +15,7 @@ import {
   type CopilotReplyDraftPort,
   type CopilotQualityTriagePort,
   type CopilotRetrievalProbePort,
+  type CopilotTestChatPort,
   type CopilotTriageLogPort,
   type CopilotRoutineDefinitionPort,
   type CopilotSkillCapabilityTargetsPort,
@@ -23,12 +24,18 @@ import {
   type CopilotWorkspaceSettingsPort,
   type CopilotProductDocsPort,
 } from "../../modules/operatorCopilot/tools/index.js";
+import type { DocumentInventoryPort } from "../../modules/documents/contracts/index.js";
 import type { CopilotWebsiteAnalysisProbePort } from "../../modules/operatorCopilot/contracts/agentAuthoring.js";
 import type { RoutineStructuralPreparationDependencies } from "../../modules/operatorCopilot/tools/routineStructuralPreparation.js";
 import type { ReviewedProposalExecutionPort } from "../../modules/operatorCopilot/tools/reviewedProposalExecution.js";
 import type { ReviewedProposalOutcomePort } from "../../modules/operatorCopilot/tools/reviewedProposalOutcome.js";
 import type { AgentPublicationCopilotToolDependencies } from "../../modules/operatorCopilot/tools/agentPublication.js";
 import type { RetrievalAuthoringCopilotToolDependencies } from "../../modules/operatorCopilot/tools/retrievalAuthoring.js";
+import type { CopilotProposalDetailReadPort } from "../../modules/operatorCopilot/service.js";
+import type { DocumentReviewedOperationToolDependencies } from "../../modules/operatorCopilot/tools/documentReviewedOperations.js";
+import type { AgentSettingsReviewedPreparationDependencies } from "../../modules/operatorCopilot/tools/agentSettingsReviewedPreparation.js";
+import type { IngestionSettingsReviewedPreparationDependencies } from "../../modules/operatorCopilot/tools/ingestionSettingsReviewedPreparation.js";
+import type { DirectiveReviewedPreparationDependencies } from "../../modules/operatorCopilot/tools/directiveReviewedPreparation.js";
 import type {
   CopilotEvalCaseCapturePort,
   CopilotEvalCaseReplayPort,
@@ -48,6 +55,8 @@ import type { CopilotRepositoryPort } from "../../modules/operatorCopilot/public
 import type { CopilotAuditPort } from "../../modules/operatorCopilot/public.js";
 import { enrichCopilotToolCatalog } from "../../modules/operatorCopilot/catalog.js";
 import { assertCopilotCapabilityProvenance, assertCopilotCapabilityProvenanceRegistry } from "../../modules/operatorCopilot/capabilityProvenance.js";
+import { assertOperatorMcpToolSchemas } from "../../modules/operatorCopilot/mcpToolSchema.js";
+import { assertOperatorMcpOperationIdentities } from "../../modules/operatorCopilot/operatorMcpDisposition.js";
 import { createOpenApiDocument } from "../http/openapi/openApiDocument.js";
 import { operationPermissionRequirements } from "../http/openapi/operationPermissionRequirements.js";
 import { agentCopilotPrimitives } from "../../modules/agents/public.js";
@@ -108,53 +117,12 @@ export const createCopilotDocumentAuthoringPort = (
  * It names no rotation flag, which is why applying a proposal can never rotate a token.
  */
 export const createCopilotWorkspaceSettingPort = (
-  platformSettingsService: Pick<PlatformSettingsService, "getVersionedForWorkspace" | "applyForWorkspace">,
-  workspaceAccount: CopilotWorkspaceAccountResolver,
+  platformSettingsService: Pick<PlatformSettingsService, "prepareFieldProposal" | "readFieldProposalVersion" | "readFieldProposalDisplay" | "applyFieldProposal">,
 ): CopilotWorkspaceSettingPort => ({
-  getForWorkspace: async (workspaceId) => {
-    const { settings, updatedAt } = await platformSettingsService.getVersionedForWorkspace(workspaceId);
-    return {
-      assistantName: settings.assistant.assistantName,
-      greetingInstruction: settings.assistant.greetingInstruction,
-      assistantDefaultLocale: settings.assistant.assistantDefaultLocale,
-      proactiveGreetingEnabled: settings.assistant.proactiveGreetingEnabled,
-      suggestedQuestionsEnabled: settings.assistant.suggestedQuestionsEnabled,
-      customInstruction: settings.assistant.customInstruction,
-      anonymousChatEnabled: settings.channels.anonymousChatEnabled,
-      websiteEmbedEnabled: settings.channels.websiteEmbedEnabled,
-      websiteEmbedAllowedOrigins: settings.channels.websiteEmbedAllowedOrigins,
-      websiteEmbedLauncherLabel: settings.channels.websiteEmbedLauncherLabel,
-      websiteEmbedLauncherPosition: settings.channels.websiteEmbedLauncherPosition,
-      updatedAt,
-    };
-  },
-  updateForWorkspace: async (workspaceId, input, options) => platformSettingsService.applyForWorkspace(
-    workspaceId,
-    {
-      assistant: {
-        assistantName: input.assistantName,
-        greetingInstruction: input.greetingInstruction,
-        assistantDefaultLocale: input.assistantDefaultLocale,
-        proactiveGreetingEnabled: input.proactiveGreetingEnabled,
-        suggestedQuestionsEnabled: input.suggestedQuestionsEnabled,
-        customInstruction: input.customInstruction,
-      },
-      channels: {
-        anonymousChatEnabled: input.anonymousChatEnabled,
-        websiteEmbedEnabled: input.websiteEmbedEnabled,
-        websiteEmbedAllowedOrigins: [...input.websiteEmbedAllowedOrigins],
-        websiteEmbedLauncherLabel: input.websiteEmbedLauncherLabel,
-        websiteEmbedLauncherPosition: input.websiteEmbedLauncherPosition,
-      },
-    },
-    {
-      // Enabling a public channel writes an audit event, and an operator reviewing account activity
-      // reads those by account. The dashboard route stamps this from the session; a proposal is
-      // applied outside one, so the account is resolved from the workspace instead of left null.
-      accountId: await workspaceAccount.resolveAccountId(workspaceId),
-      ...(options?.expectedUpdatedAt ? { expectedUpdatedAt: options.expectedUpdatedAt } : {}),
-    },
-  ),
+  prepareFieldProposal: (workspaceId, patch) => platformSettingsService.prepareFieldProposal(workspaceId, patch),
+  readFieldProposalVersion: (workspaceId, expected) => platformSettingsService.readFieldProposalVersion(workspaceId, expected),
+  readFieldProposalDisplay: (workspaceId) => platformSettingsService.readFieldProposalDisplay(workspaceId),
+  applyFieldProposal: (workspaceId, prepared) => platformSettingsService.applyFieldProposal(workspaceId, prepared),
 });
 
 export const createCopilotWorkspaceAccountResolver = (
@@ -184,6 +152,7 @@ export const createCopilotToolCatalog = (deps: {
   readonly replyDraft: CopilotReplyDraftPort;
   readonly agentTurnProbe: CopilotAgentTurnProbePort;
   readonly documentSearchService: CopilotDocumentSearchPort;
+  readonly documentInventory: DocumentInventoryPort;
   readonly documentChunks: CopilotDocumentChunksPort;
   readonly documentMaintenance: CopilotDocumentMaintenancePort;
   readonly evalResultsService: CopilotEvalResultsPort;
@@ -195,6 +164,7 @@ export const createCopilotToolCatalog = (deps: {
   readonly qualitySignalsService: CopilotQualitySignalsPort;
   readonly qualityTriageService: CopilotQualityTriagePort;
   readonly retrievalProbe: CopilotRetrievalProbePort;
+  readonly testChat: CopilotTestChatPort;
   readonly websiteAnalysisProbe: CopilotWebsiteAnalysisProbePort;
   readonly audiencePulseService: CopilotAudiencePulsePort;
   readonly documentStatusService: CopilotDocumentStatusPort;
@@ -209,6 +179,7 @@ export const createCopilotToolCatalog = (deps: {
   readonly proposalAdapters: CopilotProposalAdapterRegistry;
   readonly auditService: CopilotAuditPort;
   readonly workspaceRouteKeyResolver: CopilotWorkspaceRouteKeyResolver;
+  readonly appBaseUrl?: string | null;
   readonly logger?: CopilotTriageLogPort;
   readonly routines: RoutineStructuralPreparationDependencies["routines"];
   readonly scopedReferences: RoutineStructuralPreparationDependencies["scopedReferences"];
@@ -216,7 +187,13 @@ export const createCopilotToolCatalog = (deps: {
   readonly reviewedProposalExecution: ReviewedProposalExecutionPort;
   readonly reviewedProposalOutcome: ReviewedProposalOutcomePort;
   readonly cancelReviewedProposal: import("../../modules/operatorCopilot/tools/cancelReviewedProposal.js").CancelReviewedProposalPort;
+  readonly proposalDetail: CopilotProposalDetailReadPort;
   readonly retrievalAuthoring: RetrievalAuthoringCopilotToolDependencies["retrievalAuthoring"];
+  readonly documents: DocumentReviewedOperationToolDependencies["documents"];
+  readonly agentSettings: AgentSettingsReviewedPreparationDependencies["agentSettings"];
+  readonly ingestionSettings: IngestionSettingsReviewedPreparationDependencies["ingestionSettings"];
+  readonly directiveAuthor: DirectiveReviewedPreparationDependencies["directiveAuthor"];
+  readonly directives: DirectiveReviewedPreparationDependencies["directives"];
   /**
    * Tools contributed by application modules outside this repository's first-party catalog. They
    * are merged before governance and enrichment so permission filtering, authorization re-checks,
@@ -260,5 +237,9 @@ export const createCopilotToolCatalog = (deps: {
     ownerExportedPrimitiveIds: new Set([...ownerExportedPrimitiveIds, ...contributed.applicationPrimitiveIds]),
     applicationPrimitiveIds: new Set([...Object.keys(copilotApplicationPrimitiveRegistry), ...contributed.applicationPrimitiveIds]),
   });
+  // Over the merged catalog, not the first-party half: a contributed descriptor is served through
+  // the same `tools/list`, and one schema a client cannot read hides every other tool with it.
+  assertOperatorMcpToolSchemas(descriptors);
+  assertOperatorMcpOperationIdentities(descriptors);
   return enrichCopilotToolCatalog(descriptors, deps.workspaceRouteKeyResolver);
 };

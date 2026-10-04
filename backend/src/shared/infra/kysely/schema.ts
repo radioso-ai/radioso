@@ -31,6 +31,7 @@ export interface AbuseControlEntries {
   attempt_count: Generated<number>;
   blocked_until: Timestamp | null;
   created_at: Generated<Timestamp>;
+  previous_attempt_count: Generated<number>;
   scope: string;
   subject_key: string;
   updated_at: Generated<Timestamp>;
@@ -205,6 +206,7 @@ export interface AgentRevisions {
 }
 
 export interface Agents {
+  agent_card_enabled: Generated<boolean>;
   behavior_settings: Generated<Json>;
   chat_model: string | null;
   chat_provider: string | null;
@@ -214,11 +216,15 @@ export interface Agents {
   internal_name: Generated<string>;
   name: Generated<string>;
   output_modes: Generated<Json>;
+  public_agent_access_enabled: Generated<boolean>;
+  public_description: Generated<string>;
+  public_id: string | null;
   published_revision_id: string | null;
   retrieval_enabled: Generated<boolean>;
   skill_settings: Generated<Json>;
   source_scope_mode: Generated<string>;
   updated_at: Generated<Timestamp>;
+  walk_in_conversations_per_hour: number | null;
   workspace_id: string;
 }
 
@@ -259,6 +265,8 @@ export interface AgentTestExecutions {
   id: string;
   idempotency_key: string;
   mode: string;
+  seeded_first_message: string | null;
+  seeded_turn_count: Generated<number>;
   skill_effects: Generated<string>;
   state: string;
   test_values: Json;
@@ -567,11 +575,23 @@ export interface ContextVariableValues {
   workspace_id: string;
 }
 
+export interface ConversationActivity {
+  actor_user_id: string | null;
+  conversation_id: string;
+  created_at: Generated<Timestamp>;
+  detail: Generated<Json>;
+  id: Generated<string>;
+  kind: string;
+  subject_user_id: string | null;
+  workspace_id: string;
+}
+
 export interface ConversationOwnership {
   conversation_id: string;
   created_at: Generated<Timestamp>;
   owner_account_id: string | null;
   owner_display_name: string | null;
+  owner_user_id: string | null;
   reason: string | null;
   state: string;
   taken_over_at: Timestamp | null;
@@ -584,6 +604,7 @@ export interface Conversations {
   agent_id: string | null;
   agent_revision_id: string | null;
   anonymous_session_id: string | null;
+  caller_kind: Generated<string>;
   channel_context: Json | null;
   created_at: Generated<Timestamp>;
   entry_page_url: string | null;
@@ -632,6 +653,11 @@ export interface CopilotMessages {
 export interface CopilotProposals {
   applied_ref: Json | null;
   apply_started_at: Timestamp | null;
+  approval_digest: string | null;
+  approved_at: Timestamp | null;
+  approved_by_user_id: string | null;
+  change_effect: Json | null;
+  confirmation_requirement: string | null;
   conversation_id: string | null;
   created_at: Generated<Timestamp>;
   evidence: Json | null;
@@ -1092,6 +1118,7 @@ export interface OperatorMcpGrants {
 
 export interface OperatorMcpInvocations {
   account_id: string;
+  budget_kind: Generated<string>;
   budget_reserved_at: Timestamp | null;
   client_id: string;
   completed_at: Timestamp | null;
@@ -1109,6 +1136,7 @@ export interface OperatorMcpInvocations {
   result_reference: string | null;
   retained_until: Timestamp;
   safe_outcome_code: string | null;
+  safe_rejection_details: Generated<Json>;
   shape: string | null;
   status: Generated<string>;
   user_id: string;
@@ -1161,6 +1189,7 @@ export interface PendingDecisions {
   deadline: Timestamp | null;
   decided_at: Timestamp | null;
   decided_by: string | null;
+  decided_by_user_id: string | null;
   decider_scope: Json;
   decision: Json | null;
   handle: string;
@@ -1279,6 +1308,9 @@ export interface RoutineDefinition {
   agent_id: string;
   created_at: Generated<Timestamp>;
   enabled: Generated<boolean>;
+  exposure_description: string | null;
+  exposure_enabled: Generated<boolean>;
+  exposure_tool_name: string | null;
   id: Generated<string>;
   lineage_id: string;
   name: string;
@@ -1307,6 +1339,7 @@ export interface RoutineStates {
   execution_id: string | null;
   expires_at: Timestamp | null;
   path: Generated<string[]>;
+  reask_count: Generated<number>;
   routine_id: string;
   session_id: string;
   status: Generated<string>;
@@ -1332,6 +1365,9 @@ export interface RoutineTerminal {
   definition_id: string;
   instruction: string | null;
   kind: string;
+  operator_notice_enabled: Generated<boolean>;
+  operator_notice_intro: string | null;
+  operator_notice_subject: string | null;
   ordinal: number;
   stable_step_id: string;
 }
@@ -1527,6 +1563,7 @@ export interface UserFederatedIdentities {
 export interface Users {
   created_at: Generated<Timestamp>;
   disabled_at: Timestamp | null;
+  display_name: string | null;
   email: string;
   email_verified_at: Timestamp | null;
   id: string;
@@ -1734,6 +1771,7 @@ export interface DB {
   context_identity_nonces: ContextIdentityNonces;
   context_variable_values: ContextVariableValues;
   context_variables: ContextVariables;
+  conversation_activity: ConversationActivity;
   conversation_ownership: ConversationOwnership;
   conversation_summaries: ConversationSummaries;
   conversations: Conversations;

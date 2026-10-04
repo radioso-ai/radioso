@@ -125,6 +125,16 @@ export interface CopilotProposalDetail extends CopilotProposalSummary {
   appliedRef?: Record<string, unknown> | null
   /** Required by the contract and null when nothing was measured, never absent. */
   evidenceCases: CopilotProposalEvidenceCase[] | null
+  reviewedOperation?: {
+    requirement: 'conversation' | 'signed_in_approval'
+    effect: { exposure: 'draft' | 'live'; reversibility: 'reversible' | 'irreversible'; metered: boolean }
+    reviewDigest: string
+    reviewCode: string
+    expiresAt: string | null
+    approvedAt: string | null
+    clientName: string | null
+    review: unknown
+  } | null
 }
 
 export interface CopilotProposalApplyResult {
@@ -424,10 +434,17 @@ export const copilotApi = {
     }, { withSession: true })
   },
 
-  dismissProposal(proposalId: string, workspaceId?: string): Promise<{ status: 'dismissed' }> {
+  approveProposal(proposalId: string, reviewDigest: string, workspaceId?: string): Promise<{ status: 'approved' | 'expired' | 'not_pending' | 'digest_mismatch' }> {
+    return request(copilotPath(`/proposals/${encodeURIComponent(proposalId)}/approve`), {
+      method: 'POST', body: JSON.stringify({ reviewDigest }), headers: { 'Content-Type': 'application/json', 'X-Radioso-CSRF': '1', ...(workspaceId ? { 'X-Workspace-Id': workspaceId } : {}) },
+    }, { withSession: true })
+  },
+
+  dismissProposal(proposalId: string, workspaceId?: string, reason?: 'declined'): Promise<{ status: 'dismissed' }> {
     return request(copilotPath(`/proposals/${encodeURIComponent(proposalId)}/dismiss`), {
       method: 'POST',
-      headers: workspaceId ? { 'X-Workspace-Id': workspaceId } : undefined,
+      body: JSON.stringify(reason ? { reason } : {}),
+      headers: { 'Content-Type': 'application/json', 'X-Radioso-CSRF': '1', ...(workspaceId ? { 'X-Workspace-Id': workspaceId } : {}) },
     }, { withSession: true })
   },
 

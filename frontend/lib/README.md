@@ -20,10 +20,22 @@ constructing ad hoc fetches.
 
 - `api-client.ts`: shared request behavior.
 - `api-*.ts`: endpoint-specific adapters.
+- `api-storage.ts`: keeps the active workspace ID and public route key together
+  in each tab's session storage. Local storage remembers the default for a fresh
+  tab as one serialized value; request adapters use the tab's selection through
+  the shared getters.
 - `api-types.ts`: shared frontend API types.
 - `auth-context.tsx`, `workspace-context.tsx`: React providers for major client
   state; `anonymous-chat-context.tsx` is the public embed's chat session.
 - `dashboard-routes.ts`: dashboard route helpers.
+- `teammate-label.ts`: how operator surfaces name a teammate — display name,
+  else email. Visitor-facing surfaces never fall back to an email.
+- `operator-actions.ts`: who holds a conversation — keyed by the owning user,
+  compared to the signed-in user for "mine" — and what the response view offers:
+  reply, and Assign or Reassign (Me first, never the current owner).
+- `reply-attribution.ts`: who a human reply's badge names — the replying
+  teammate (`operatorLabel`) on operator surfaces, only the signature
+  (`operatorDisplayName`) on visitor surfaces.
 - `agent-draft-save-port.ts`: the agent-scoped async bridge that lets Test Chat
   await the mounted editor's real private draft save before execution.
 - `agent-revision-test-chat-session.ts`: the in-memory Test Chat session store,

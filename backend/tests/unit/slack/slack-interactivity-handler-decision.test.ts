@@ -36,6 +36,7 @@ const pendingDecision: PendingDecisionRecord = {
   status: "pending",
   decision: null,
   decidedBy: null,
+  decidedByUserId: null,
   decidedAt: null,
   deadline: null,
   createdAt: new Date("2026-01-01T00:00:00Z"),
@@ -59,7 +60,7 @@ const blockPayload = {
 };
 
 const createHandler = (overrides: {
-  identity?: { accountId: string; userId: string | null; displayName: string | null } | { rejected: true };
+  identity?: { accountId: string; userId: string; displayName: string | null } | { rejected: true };
   resolveError?: Error;
 } = {}) => {
   const responsePosts: Array<{ url: string; body: Record<string, unknown> }> = [];

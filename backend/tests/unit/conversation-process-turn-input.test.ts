@@ -28,6 +28,7 @@ import type {
   DirectiveSteerInput,
   DirectiveSteeringResult,
 } from "../../src/modules/directives/public.js";
+import { unpublishedAgentPublicIdentity } from "../../src/modules/agents/public.js";
 
 const inMemoryDirectiveStateStore = (): DirectiveStateStore => {
   const rows = new Map<string, DirectiveFiringState>();
@@ -50,6 +51,7 @@ const conversation = (): ConversationRecord => ({
   agentName: "Support",
   agentInternalName: null,
   sourceChannel: null,
+  callerKind: "human" as const,
   anonymousSessionId: null,
   sourceOrigin: null,
   channelContext: null,
@@ -71,6 +73,7 @@ const message = (overrides: Partial<MessageRecord> = {}): MessageRecord => ({
 });
 
 const agent = (): AgentRecord => ({
+  ...unpublishedAgentPublicIdentity(),
   id: "agent_1",
   workspaceId: "workspace_1",
   name: "Support",
@@ -328,7 +331,9 @@ describe("createChatProcessTurnInput", () => {
         selectionReason: "test matcher",
       }),
     ]);
-    expect(matchedTurnContexts).toEqual([{ query: "Where is my order?", route: "direct" }]);
+    // Caller kind is stated on every turn, including a turn with no context variables at all:
+    // an operator cannot write a condition against a key that is only sometimes there.
+    expect(matchedTurnContexts).toEqual([{ query: "Where is my order?", route: "direct", visitorContext: { radioso_caller_kind: "human" } }]);
     expect(directiveInputs[0]?.usageContext).toMatchObject({
       surface: "eval",
       requestId: "run-123",
@@ -385,6 +390,8 @@ describe("createChatProcessTurnInput", () => {
       visitorContext: {
         cart_value: 120,
         page_context: { pageUrl: "https://shop.example/cart" },
+        // Radioso's own fact about the turn, always present so a directive can be scoped to it.
+        radioso_caller_kind: "human",
       },
     }]);
   });
@@ -750,6 +757,29 @@ describe("createChatProcessTurnInput", () => {
     expect(directiveInputs[0]?.additionalDirectives).toEqual([]);
   });
 
+  it("hands the engine the yield the routine attempt already took this turn (#1377)", () => {
+    const session = preparedSession();
+    const routineYield = {
+      sessionId: "conv_1",
+      inputEventId: "msg_1",
+      routineId: "booking",
+      executionId: "run_1",
+      pendingStep: { stepId: "ask_dates", instruction: "Ask for the dates.", missingSlotKeys: ["arrival"] },
+    };
+
+    expect(createChatProcessTurnInput({ session, dispatcher, selector, composer }).routineYield).toBeUndefined();
+    session.routineYield = routineYield;
+    expect(createChatProcessTurnInput({ session, dispatcher, selector, composer }).routineYield).toEqual(routineYield);
+  });
+
+  it("gives the turn's routine passes no way to overwrite the yield the answer leads back to (#1377)", () => {
+    // The coverage-gated pass that runs after the evidence reuses this input. Only the
+    // pre-evidence attempt (`createAttemptRoutineInput`) records a yield on the session.
+    const input = createChatProcessTurnInput({ session: preparedSession(), dispatcher, selector, composer });
+
+    expect(input).not.toHaveProperty("routineYieldSink");
+  });
+
   it("fails closed when a caller tries to use the placeholder model gateway", async () => {
     const input = createChatProcessTurnInput({
       session: preparedSession(),
@@ -765,6 +795,21 @@ describe("createChatProcessTurnInput", () => {
 });
 
 describe("createAttemptRoutineInput", () => {
+  it("records a routine yield on the session, where the grounded turn that follows reads it (#1377)", () => {
+    const session = preparedSession();
+    const routineYield = {
+      sessionId: "conv_1",
+      inputEventId: "msg_1",
+      routineId: "booking",
+      pendingStep: { stepId: "ask_dates", instruction: "Ask for the dates.", missingSlotKeys: [] },
+    };
+
+    createAttemptRoutineInput({ session }).routineYieldSink?.yielded(routineYield);
+
+    expect(session.routineYield).toEqual(routineYield);
+    expect(createChatProcessTurnInput({ session, dispatcher, selector, composer }).routineYield).toEqual(routineYield);
+  });
+
   it("wires directive candidates and matcher through the routine turn input", async () => {
     const directive: Directive = {
       name: "routine-tone",
@@ -805,7 +850,9 @@ describe("createAttemptRoutineInput", () => {
         selectionReason: "test matcher",
       }),
     ]);
-    expect(matchedTurnContexts).toEqual([{ query: "Where is my order?", route: "direct" }]);
+    // Caller kind is stated on every turn, including a turn with no context variables at all:
+    // an operator cannot write a condition against a key that is only sometimes there.
+    expect(matchedTurnContexts).toEqual([{ query: "Where is my order?", route: "direct", visitorContext: { radioso_caller_kind: "human" } }]);
     expect(session.directiveSteering).toMatchObject({
       rules: [{ action: "Keep the routine answer precise.", source: "directive", lifespan: "response" }],
       matches: [expect.objectContaining({ directive })],

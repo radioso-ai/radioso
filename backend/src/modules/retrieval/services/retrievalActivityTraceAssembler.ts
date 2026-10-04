@@ -137,6 +137,18 @@ const toSafeStageId = (value: string): string =>
     .replace(/^_+|_+$/g, "")
     .slice(0, 40);
 
+// A branch's stage is timed by its own measured search. The retrieval stage always
+// measures it; a hand-built input without it gets the channel's group window, which
+// every concurrent search in the channel ran within.
+const resolveBranchStageTiming = (
+  startedAtMs: number | undefined,
+  durationMs: number | undefined,
+  fallback: StageTiming,
+): StageTiming =>
+  startedAtMs !== undefined && durationMs !== undefined
+    ? { startedAt: new Date(startedAtMs).toISOString(), durationMs }
+    : fallback;
+
 export class ActivityTraceAssembler {
   assemble(input: ActivityTraceAssemblerInput): ActivityTrace {
     const { prompt, diagnostics, timings } = input;
@@ -167,6 +179,8 @@ export class ActivityTraceAssembler {
       reason: branch.reason,
       responseLanguagePolicy: branch.responseLanguagePolicy,
       contexts: branch.semanticContexts,
+      searchStartedAtMs: branch.semanticSearchStartedAtMs,
+      searchDurationMs: branch.semanticSearchDurationMs,
     }));
     const lexicalBranches = prompt.retrievalBranches.map((branch, index) => ({
       stageId:
@@ -179,6 +193,8 @@ export class ActivityTraceAssembler {
       reason: branch.reason,
       responseLanguagePolicy: branch.responseLanguagePolicy,
       contexts: branch.lexicalContexts,
+      searchStartedAtMs: branch.lexicalSearchStartedAtMs,
+      searchDurationMs: branch.lexicalSearchDurationMs,
     }));
     const temporalContexts = prompt.temporalContexts ?? [];
     const temporalQueryMode = prompt.temporalQueryMode ?? "none";
@@ -198,15 +214,6 @@ export class ActivityTraceAssembler {
           },
         })
       : undefined;
-    const semanticTiming = {
-      startedAt: timings.semanticRetrieval.startedAt,
-      durationMs: Math.max(0, Math.round(timings.semanticRetrieval.durationMs / Math.max(semanticBranches.length, 1))),
-    };
-    const lexicalTiming = {
-      startedAt: timings.lexicalRetrieval.startedAt,
-      durationMs: Math.max(0, Math.round(timings.lexicalRetrieval.durationMs / Math.max(lexicalBranches.length, 1))),
-    };
-
     const contextSelectionClauses = getContextSelectionClauses(prompt.shapeSelection?.resolvedRun);
     const resolvedSteps = summarizeResolvedSteps(diagnostics.shapeSelection?.resolvedRun);
 
@@ -327,43 +334,57 @@ export class ActivityTraceAssembler {
           ]
         : []),
       ...semanticBranches.map((branch) =>
-        buildStage(branch.stageId, branch.kind, branch.label, prompt.vectorFallbackApplied ? "fallback" : "applied", semanticTiming, {
-          settings: {
-            topK: prompt.settings.vectorTopK,
-            similarityThreshold: prompt.settings.similarityThreshold,
-            subqueryLabel: branch.label.replace(/^Semantic retrieval:\s*/, ""),
-            responseLanguagePolicy: branch.responseLanguagePolicy,
+        buildStage(
+          branch.stageId,
+          branch.kind,
+          branch.label,
+          prompt.vectorFallbackApplied ? "fallback" : "applied",
+          resolveBranchStageTiming(branch.searchStartedAtMs, branch.searchDurationMs, timings.semanticRetrieval),
+          {
+            settings: {
+              topK: prompt.settings.vectorTopK,
+              similarityThreshold: prompt.settings.similarityThreshold,
+              subqueryLabel: branch.label.replace(/^Semantic retrieval:\s*/, ""),
+              responseLanguagePolicy: branch.responseLanguagePolicy,
+            },
+            inputs: {
+              query: branch.query,
+            },
+            outputs: {
+              candidateCount: branch.contexts.length,
+              chunks: toSemanticChunkRefs(branch.contexts),
+            },
+            metrics: {
+              candidateCount: branch.contexts.length,
+              queryEmbeddingDurationMs: diagnostics.queryEmbeddingDurationMs ?? 0,
+            },
+            reason: branch.reason ?? (prompt.vectorFallbackApplied ? "Vector retrieval used fallback behavior." : undefined),
           },
-          inputs: {
-            query: branch.query,
-          },
-          outputs: {
-            candidateCount: branch.contexts.length,
-            chunks: toSemanticChunkRefs(branch.contexts),
-          },
-          metrics: {
-            candidateCount: branch.contexts.length,
-            queryEmbeddingDurationMs: diagnostics.queryEmbeddingDurationMs ?? 0,
-          },
-          reason: branch.reason ?? (prompt.vectorFallbackApplied ? "Vector retrieval used fallback behavior." : undefined),
-        }),
+        ),
       ),
       ...lexicalBranches.map((branch) =>
-        buildStage(branch.stageId, branch.kind, branch.label, "applied", lexicalTiming, {
-          settings: {
-            query: branch.query,
-            subqueryLabel: branch.label.replace(/^Lexical retrieval:\s*/, ""),
-            responseLanguagePolicy: branch.responseLanguagePolicy,
+        buildStage(
+          branch.stageId,
+          branch.kind,
+          branch.label,
+          "applied",
+          resolveBranchStageTiming(branch.searchStartedAtMs, branch.searchDurationMs, timings.lexicalRetrieval),
+          {
+            settings: {
+              query: branch.query,
+              subqueryLabel: branch.label.replace(/^Lexical retrieval:\s*/, ""),
+              responseLanguagePolicy: branch.responseLanguagePolicy,
+            },
+            outputs: {
+              candidateCount: branch.contexts.length,
+              chunks: toLexicalChunkRefs(branch.contexts),
+            },
+            metrics: {
+              candidateCount: branch.contexts.length,
+            },
+            reason: branch.reason,
           },
-          outputs: {
-            candidateCount: branch.contexts.length,
-            chunks: toLexicalChunkRefs(branch.contexts),
-          },
-          metrics: {
-            candidateCount: branch.contexts.length,
-          },
-          reason: branch.reason,
-        }),
+        ),
       ),
       ...(temporalStage ? [temporalStage] : []),
       buildStage("preparation", "candidate_preparation", "Candidate preparation", diagnostics.fallbackApplied ? "fallback" : "applied", timings.candidatePreparation, {

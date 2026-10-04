@@ -19,6 +19,7 @@ import {
   type SessionRepositoryPort,
 } from "../../src/modules/auth/services/authService.js";
 import { sha256 } from "../../src/modules/auth/domain/authPrimitives.js";
+import { registrationClosed } from "../../src/modules/auth/services/ossOrganizationCreationGuard.js";
 import { WorkspaceService } from "../../src/modules/workspace/services/workspaceService.js";
 import type {
   OrganizationCoreProvisioner,
@@ -150,13 +151,15 @@ class RecordingOrganizationCreationGuard implements OrganizationCreationGuard {
   readonly reservations: RecordingOrganizationCreationReservation[] = [];
   readonly requests: OrganizationCreationRequest[] = [];
   shouldReject: Error | null = null;
+  /** Makes every reservation this guard hands out fail when it is released. */
+  releaseError: Error | null = null;
 
   async reserve(input: OrganizationCreationRequest): Promise<OrganizationCreationReservation> {
     this.requests.push(input);
     if (this.shouldReject) {
       throw this.shouldReject;
     }
-    const reservation = new RecordingOrganizationCreationReservation();
+    const reservation = new RecordingOrganizationCreationReservation(this.releaseError);
     this.reservations.push(reservation);
     return reservation;
   }
@@ -171,6 +174,8 @@ class RecordingOrganizationCreationReservation implements OrganizationCreationRe
   released = false;
   accountId: string | null = null;
 
+  constructor(private readonly releaseError: Error | null = null) {}
+
   async commit(input: { accountId: string }): Promise<void> {
     this.committed = true;
     this.accountId = input.accountId;
@@ -178,6 +183,9 @@ class RecordingOrganizationCreationReservation implements OrganizationCreationRe
 
   async release(): Promise<void> {
     this.released = true;
+    if (this.releaseError) {
+      throw this.releaseError;
+    }
   }
 }
 
@@ -245,6 +253,11 @@ const createAuthService = (options: {
     auditService,
   };
 };
+
+const failureEvents = (
+  auditService: ReturnType<typeof createAuthService>["auditService"],
+  eventType: "auth.register" | "account.create",
+) => auditService.events.filter((event) => event.eventType === eventType && event.eventStatus === "failure");
 
 describe("AuthService rollback", () => {
   it("rolls back an auto-verified registration when session creation fails", async () => {
@@ -555,6 +568,226 @@ describe("AuthService rollback", () => {
 
     expect(guard.requests).toEqual([{ intent: "signup" }]);
     expect(guard.reservations[0]).toMatchObject({ committed: false, released: true });
+  });
+
+  // A signup that fails mid-provisioning usually fails because the database is
+  // down, which is also what makes the rollback fail. Cleanup must not replace
+  // the failure it is cleaning up after.
+  it("keeps the registration's own error when the rollback fails too", async () => {
+    const guard = new RecordingOrganizationCreationGuard();
+    const accountRepository = new TrackingAccountRepository();
+    accountRepository.deleteById = async () => {
+      throw new Error("account delete failed");
+    };
+    const { authService, auditService, userRepository } = createAuthService({
+      accountRepository,
+      organizationCreationGuard: guard,
+      onAccountCreated: async () => {
+        throw new Error("account hook failed");
+      },
+    });
+
+    await expect(authService.register({
+      email: "register-rollback-fault@example.com",
+      password: "verysecurepassword",
+    })).rejects.toThrow("account hook failed");
+
+    const survivingUser = await userRepository.findByEmail("register-rollback-fault@example.com");
+    expect(guard.reservations[0]?.released).toBe(true);
+    expect(failureEvents(auditService, "auth.register")).toEqual([
+      expect.objectContaining({
+        metadata: {
+          email: "register-rollback-fault@example.com",
+          reason: "account_provisioning_failed",
+          // In OSS an account that outlives its signup closes registration for
+          // everyone, so it is named rather than swallowed. The user is only
+          // deleted after its account, so it survives too.
+          detail: { orphanedAccountId: "account-1", orphanedUserId: survivingUser?.id },
+        },
+      }),
+    ]);
+  });
+
+  it("names only the user when the account is rolled back but the user delete fails", async () => {
+    const accountRepository = new TrackingAccountRepository();
+    const userRepository = new InMemoryUserRepository();
+    userRepository.deleteById = async () => {
+      throw new Error("user delete failed");
+    };
+    const { authService, auditService } = createAuthService({
+      accountRepository,
+      userRepository,
+      onAccountCreated: async () => {
+        throw new Error("account hook failed");
+      },
+    });
+
+    await expect(authService.register({
+      email: "register-user-delete-fault@example.com",
+      password: "verysecurepassword",
+    })).rejects.toThrow("account hook failed");
+
+    const survivingUser = await userRepository.findByEmail("register-user-delete-fault@example.com");
+    expect(accountRepository.deletedIds).toEqual(["account-1"]);
+    expect(survivingUser).toBeTruthy();
+    expect(failureEvents(auditService, "auth.register")).toEqual([
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          // The surviving user holds its email against a retry.
+          detail: { orphanedUserId: survivingUser?.id },
+        }),
+      }),
+    ]);
+  });
+
+  it("keeps the registration's own error when releasing the reservation fails too", async () => {
+    const guard = new RecordingOrganizationCreationGuard();
+    guard.releaseError = new Error("reservation release failed");
+    const accountRepository = new TrackingAccountRepository();
+    const { authService, auditService } = createAuthService({
+      accountRepository,
+      organizationCreationGuard: guard,
+      onAccountCreated: async () => {
+        throw new Error("account hook failed");
+      },
+    });
+
+    await expect(authService.register({
+      email: "register-release-fault@example.com",
+      password: "verysecurepassword",
+    })).rejects.toThrow("account hook failed");
+
+    expect(accountRepository.deletedIds).toEqual(["account-1"]);
+    expect(failureEvents(auditService, "auth.register")).toEqual([]);
+  });
+
+  it("keeps the registration's own error when the orphaned account cannot be recorded either", async () => {
+    const accountRepository = new TrackingAccountRepository();
+    accountRepository.deleteById = async () => {
+      throw new Error("account delete failed");
+    };
+    const { authService, auditService } = createAuthService({
+      accountRepository,
+      onAccountCreated: async () => {
+        throw new Error("account hook failed");
+      },
+    });
+    auditService.record = async () => {
+      throw new Error("audit write failed");
+    };
+
+    await expect(authService.register({
+      email: "register-audit-fault@example.com",
+      password: "verysecurepassword",
+    })).rejects.toThrow("account hook failed");
+  });
+
+  it("keeps a duplicate registration's own error when its failure cannot be recorded", async () => {
+    const { authService, auditService } = createAuthService({});
+    await authService.register({ email: "register-duplicate@example.com", password: "verysecurepassword" });
+    auditService.record = async () => {
+      throw new Error("audit write failed");
+    };
+
+    await expect(authService.register({
+      email: "register-duplicate@example.com",
+      password: "verysecurepassword",
+    })).rejects.toMatchObject({ statusCode: 409 });
+  });
+
+  it("keeps a signup denial's own error when its failure cannot be recorded", async () => {
+    const guard = new RecordingOrganizationCreationGuard();
+    guard.shouldReject = Object.assign(new Error("Registration is closed"), { statusCode: 403, code: "forbidden" });
+    const { authService, auditService } = createAuthService({ organizationCreationGuard: guard });
+    auditService.record = async () => {
+      throw new Error("audit write failed");
+    };
+
+    await expect(authService.register({
+      email: "register-denied@example.com",
+      password: "verysecurepassword",
+    })).rejects.toMatchObject({ statusCode: 403, code: "forbidden" });
+  });
+
+  // The success record is written once nothing that can throw is left, so a
+  // signup cannot leave both a success and a failure behind.
+  it("reports a registration before recording it as successful", async () => {
+    let successAlreadyRecorded: boolean | null = null;
+    const context: ReturnType<typeof createAuthService> = createAuthService({
+      productAnalytics: {
+        async track() {
+          successAlreadyRecorded = context.auditService.events.some(
+            (event) => event.eventType === "auth.register" && event.eventStatus === "success",
+          );
+          return null;
+        },
+      },
+    });
+
+    await context.authService.register({ email: "register-order@example.com", password: "verysecurepassword" });
+
+    expect(successAlreadyRecorded).toBe(false);
+  });
+
+  it("keeps the organization creation's own error when the rollback fails too", async () => {
+    const guard = new RecordingOrganizationCreationGuard();
+    const accountRepository = new TrackingAccountRepository();
+    accountRepository.deleteById = async () => {
+      throw new Error("account delete failed");
+    };
+    const userRepository = new InMemoryUserRepository();
+    await userRepository.create({
+      id: "user-1",
+      email: "create-org-rollback-fault@example.com",
+      passwordHash: "hash",
+    });
+    const { authService, auditService } = createAuthService({
+      accountRepository,
+      userRepository,
+      organizationCreationGuard: guard,
+    });
+
+    await expect(authService.createOrganization({
+      userId: "user-1",
+      organizationName: "Rollback Fault Org",
+    })).rejects.toThrow("session create failed");
+
+    expect(guard.reservations[0]?.released).toBe(true);
+    expect(await userRepository.findById("user-1")).toBeTruthy();
+    expect(failureEvents(auditService, "account.create")).toEqual([
+      expect.objectContaining({
+        metadata: {
+          actorUserId: "user-1",
+          reason: "account_provisioning_failed",
+          detail: { orphanedAccountId: "account-1" },
+        },
+      }),
+    ]);
+  });
+
+  it("keeps the organization creation's own error when releasing the reservation fails too", async () => {
+    const guard = new RecordingOrganizationCreationGuard();
+    guard.releaseError = new Error("reservation release failed");
+    const accountRepository = new TrackingAccountRepository();
+    const userRepository = new InMemoryUserRepository();
+    await userRepository.create({
+      id: "user-1",
+      email: "create-org-release-fault@example.com",
+      passwordHash: "hash",
+    });
+    const { authService, auditService } = createAuthService({
+      accountRepository,
+      userRepository,
+      organizationCreationGuard: guard,
+    });
+
+    await expect(authService.createOrganization({
+      userId: "user-1",
+      organizationName: "Release Fault Org",
+    })).rejects.toThrow("session create failed");
+
+    expect(accountRepository.deletedIds).toEqual(["account-1"]);
+    expect(failureEvents(auditService, "account.create")).toEqual([]);
   });
 
   it("does not create account records when the organization creation guard rejects", async () => {
@@ -1141,6 +1374,437 @@ describe("AuthService rollback", () => {
   });
 });
 
+describe("AuthService federated login failure auditing", () => {
+  // Every assertion counts the events rather than reading the last one: the
+  // point of the single owner is that one failed sign-in leaves exactly one
+  // trail, so a duplicate has to fail the test.
+  const federatedFailures = (auditService: ReturnType<typeof createAuthService>["auditService"]) =>
+    auditService.events.filter(
+      (event) => event.eventType === "auth.federated_login" && event.eventStatus === "failure",
+    );
+
+  const registerVerifiedUser = async (
+    context: ReturnType<typeof createAuthService>,
+    email: string,
+  ): Promise<{ userId: string; accountId: string }> => {
+    const registered = await context.authService.register({ email, password: "verysecurepassword" });
+    await context.userRepository.markEmailVerified(registered.userId, new Date());
+    return { userId: registered.userId, accountId: registered.accountId };
+  };
+
+  it("names the missing membership when a signed-up user no longer belongs to an account", async () => {
+    const context = createAuthService({ sessionRepository: new WorkingSessionRepository() });
+    const { userId, accountId } = await registerVerifiedUser(context, "deactivated@example.com");
+    const membership = await context.accountMembershipRepository.findActiveByAccountAndUser(accountId, userId);
+    await context.accountMembershipRepository.deleteById(membership!.id);
+
+    await expect(
+      context.authService.federatedLogin({
+        provider: "google",
+        subject: "sub-deactivated",
+        email: "deactivated@example.com",
+        emailVerified: true,
+      }),
+    ).rejects.toMatchObject({ statusCode: 401 });
+
+    expect(federatedFailures(context.auditService)).toEqual([
+      {
+        eventType: "auth.federated_login",
+        eventStatus: "failure",
+        metadata: {
+          email: "deactivated@example.com",
+          provider: "google",
+          subject: "sub-deactivated",
+          reason: "no_active_membership",
+        },
+      },
+    ]);
+  });
+
+  it("names the session write when the session store rejects", async () => {
+    const context = createAuthService({});
+    await registerVerifiedUser(context, "session-fault@example.com");
+
+    await expect(
+      context.authService.federatedLogin({
+        provider: "google",
+        subject: "sub-session-fault",
+        email: "session-fault@example.com",
+        emailVerified: true,
+      }),
+    ).rejects.toThrow("session create failed");
+
+    expect(federatedFailures(context.auditService)).toEqual([
+      expect.objectContaining({
+        metadata: expect.objectContaining({ reason: "session_write_failed" }),
+      }),
+    ]);
+  });
+
+  it("names the identity link write once when the link store rejects", async () => {
+    const federatedIdentityRepository = new InMemoryFederatedIdentityRepository();
+    federatedIdentityRepository.link = async () => {
+      throw new Error("link write failed");
+    };
+    const context = createAuthService({
+      federatedIdentityRepository,
+      sessionRepository: new WorkingSessionRepository(),
+    });
+    await registerVerifiedUser(context, "link-fault@example.com");
+
+    await expect(
+      context.authService.federatedLogin({
+        provider: "google",
+        subject: "sub-link-fault",
+        email: "link-fault@example.com",
+        emailVerified: true,
+      }),
+    ).rejects.toThrow("link write failed");
+
+    expect(federatedFailures(context.auditService)).toEqual([
+      expect.objectContaining({
+        metadata: expect.objectContaining({ reason: "identity_link_write_failed" }),
+      }),
+    ]);
+  });
+
+  it("names the identity lookup when the user store faults", async () => {
+    const userRepository = new InMemoryUserRepository();
+    userRepository.findByEmail = async () => {
+      throw new Error("user store unavailable");
+    };
+    const context = createAuthService({
+      userRepository,
+      sessionRepository: new WorkingSessionRepository(),
+    });
+
+    await expect(
+      context.authService.federatedLogin({
+        provider: "google",
+        subject: "sub-lookup-fault",
+        email: "lookup-fault@example.com",
+        emailVerified: true,
+      }),
+    ).rejects.toThrow("user store unavailable");
+
+    expect(federatedFailures(context.auditService)).toEqual([
+      expect.objectContaining({
+        metadata: expect.objectContaining({ reason: "identity_lookup_failed" }),
+      }),
+    ]);
+  });
+
+  it("names the unverified provider email and rejects with the original error", async () => {
+    const context = createAuthService({ sessionRepository: new WorkingSessionRepository() });
+
+    await expect(
+      context.authService.federatedLogin({
+        provider: "google",
+        subject: "sub-unverified",
+        email: "Unverified@Example.com",
+        emailVerified: false,
+      }),
+    ).rejects.toMatchObject({ statusCode: 401, code: "unauthorized" });
+
+    expect(federatedFailures(context.auditService)).toEqual([
+      {
+        eventType: "auth.federated_login",
+        eventStatus: "failure",
+        metadata: {
+          email: "unverified@example.com",
+          provider: "google",
+          subject: "sub-unverified",
+          reason: "email_unverified",
+        },
+      },
+    ]);
+  });
+
+  // The refusal a closed OSS install actually produces. No guard refuses the
+  // signup reservation -- OSS only refuses `intent: "additional"`, and
+  // Enterprise hands back an inert reservation before it touches a counter --
+  // so the provisioner is the only thing on this path that can say no.
+  it("names closed registration when the provisioner refuses a first sign-in", async () => {
+    const context = createAuthService({
+      organizationProvisioner: {
+        provision: async () => {
+          throw registrationClosed();
+        },
+      },
+      sessionRepository: new WorkingSessionRepository(),
+    });
+
+    await expect(
+      context.authService.federatedLogin({
+        provider: "google",
+        subject: "sub-closed",
+        email: "closed@example.com",
+        emailVerified: true,
+      }),
+    ).rejects.toMatchObject({ statusCode: 403, code: "forbidden" });
+
+    // Exact, not partial: a refusal's payload can name other customers'
+    // organizations, so nothing beyond the identity and the reason may ride
+    // into the audit record.
+    expect(federatedFailures(context.auditService)).toEqual([
+      {
+        eventType: "auth.federated_login",
+        eventStatus: "failure",
+        metadata: {
+          email: "closed@example.com",
+          provider: "google",
+          subject: "sub-closed",
+          reason: "registration_closed",
+        },
+      },
+    ]);
+  });
+
+  it("separates a membership store fault from a membership that is gone", async () => {
+    const context = createAuthService({ sessionRepository: new WorkingSessionRepository() });
+    await registerVerifiedUser(context, "membership-fault@example.com");
+    // The same call that answers "no active membership" with a domain error,
+    // faulting instead. Only the error's type tells the two apart, so both
+    // sides of that predicate are pinned.
+    context.accountMembershipRepository.listActiveByUser = async () => {
+      throw new Error("membership store unavailable");
+    };
+
+    await expect(
+      context.authService.federatedLogin({
+        provider: "google",
+        subject: "sub-membership-fault",
+        email: "membership-fault@example.com",
+        emailVerified: true,
+      }),
+    ).rejects.toThrow("membership store unavailable");
+
+    expect(federatedFailures(context.auditService)).toEqual([
+      expect.objectContaining({
+        metadata: expect.objectContaining({ reason: "membership_lookup_failed" }),
+      }),
+    ]);
+  });
+
+  it("names the reverification step when a never-verified account cannot be marked verified", async () => {
+    const context = createAuthService({
+      userRepository: new MarkEmailVerifiedFailingUserRepository(),
+      sessionRepository: new WorkingSessionRepository(),
+    });
+    await context.authService.register({
+      email: "reverify-fault@example.com",
+      password: "verysecurepassword",
+    });
+
+    await expect(
+      context.authService.federatedLogin({
+        provider: "google",
+        subject: "sub-reverify-fault",
+        email: "reverify-fault@example.com",
+        emailVerified: true,
+      }),
+    ).rejects.toThrow("mark email verified failed");
+
+    expect(federatedFailures(context.auditService)).toEqual([
+      expect.objectContaining({
+        metadata: expect.objectContaining({ reason: "account_reverification_failed" }),
+      }),
+    ]);
+  });
+
+  it("names the workspace step when the login workspace cannot be resolved", async () => {
+    const workspaceService = new WorkspaceService(new InMemoryWorkspaceRepository(), createAuditService());
+    const context = createAuthService({
+      workspaceService,
+      sessionRepository: new WorkingSessionRepository(),
+    });
+    await registerVerifiedUser(context, "workspace-fault@example.com");
+    workspaceService.resolveLoginWorkspace = async () => {
+      throw new Error("workspace store unavailable");
+    };
+
+    await expect(
+      context.authService.federatedLogin({
+        provider: "google",
+        subject: "sub-workspace-fault",
+        email: "workspace-fault@example.com",
+        emailVerified: true,
+      }),
+    ).rejects.toThrow("workspace store unavailable");
+
+    expect(federatedFailures(context.auditService)).toEqual([
+      expect.objectContaining({
+        metadata: expect.objectContaining({ reason: "workspace_unavailable" }),
+      }),
+    ]);
+  });
+
+  it("names the account read when the account store faults after the session is issued", async () => {
+    const accountRepository = new TrackingAccountRepository();
+    const context = createAuthService({
+      accountRepository,
+      sessionRepository: new WorkingSessionRepository(),
+    });
+    await registerVerifiedUser(context, "account-fault@example.com");
+    accountRepository.findById = async () => {
+      throw new Error("account store unavailable");
+    };
+
+    await expect(
+      context.authService.federatedLogin({
+        provider: "google",
+        subject: "sub-account-fault",
+        email: "account-fault@example.com",
+        emailVerified: true,
+      }),
+    ).rejects.toThrow("account store unavailable");
+
+    expect(federatedFailures(context.auditService)).toEqual([
+      expect.objectContaining({
+        metadata: expect.objectContaining({ reason: "account_lookup_failed" }),
+      }),
+    ]);
+  });
+
+  // A first sign-in that fails mid-provisioning usually fails because the
+  // database is down, which is also what makes the rollback fail. Cleanup must
+  // not overwrite the failure it is cleaning up after.
+  it("keeps the failing step's name and error when the rollback fails too", async () => {
+    const accountRepository = new TrackingAccountRepository();
+    accountRepository.deleteById = async () => {
+      throw new Error("account delete failed");
+    };
+    const federatedIdentityRepository = new InMemoryFederatedIdentityRepository();
+    federatedIdentityRepository.link = async () => {
+      throw new Error("link write failed");
+    };
+    const context = createAuthService({
+      accountRepository,
+      federatedIdentityRepository,
+      sessionRepository: new WorkingSessionRepository(),
+    });
+
+    await expect(
+      context.authService.federatedLogin({
+        provider: "google",
+        subject: "sub-rollback-fault",
+        email: "rollback-fault@example.com",
+        emailVerified: true,
+      }),
+    ).rejects.toThrow("link write failed");
+
+    const survivingUser = await context.userRepository.findByEmail("rollback-fault@example.com");
+    expect(federatedFailures(context.auditService)).toEqual([
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          reason: "identity_link_write_failed",
+          // The rows that outlived their signup. In OSS an orphaned account is
+          // what closes registration for everyone, so it is named rather than
+          // swallowed.
+          detail: { orphanedAccountId: "account-1", orphanedUserId: survivingUser?.id },
+        }),
+      }),
+    ]);
+  });
+
+  it("keeps the failing step's name and error when releasing the reservation fails too", async () => {
+    const guard = new RecordingOrganizationCreationGuard();
+    guard.releaseError = new Error("reservation release failed");
+    const context = createAuthService({
+      organizationCreationGuard: guard,
+      sessionRepository: new WorkingSessionRepository(),
+      onAccountCreated: async () => {
+        throw new Error("provisioning hook failed");
+      },
+    });
+
+    await expect(
+      context.authService.federatedLogin({
+        provider: "google",
+        subject: "sub-release-fault",
+        email: "release-fault@example.com",
+        emailVerified: true,
+      }),
+    ).rejects.toThrow("provisioning hook failed");
+
+    expect(guard.reservations[0]?.released).toBe(true);
+    expect(federatedFailures(context.auditService)).toEqual([
+      expect.objectContaining({
+        metadata: expect.objectContaining({ reason: "account_provisioning_failed" }),
+      }),
+    ]);
+  });
+
+  it("names provisioning when a first sign-in fails after the account is created", async () => {
+    const context = createAuthService({
+      sessionRepository: new WorkingSessionRepository(),
+      onAccountCreated: async () => {
+        throw new Error("provisioning hook failed");
+      },
+    });
+
+    await expect(
+      context.authService.federatedLogin({
+        provider: "google",
+        subject: "sub-provisioning",
+        email: "provisioning@example.com",
+        emailVerified: true,
+      }),
+    ).rejects.toThrow("provisioning hook failed");
+
+    expect(federatedFailures(context.auditService)).toEqual([
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          email: "provisioning@example.com",
+          provider: "google",
+          subject: "sub-provisioning",
+          reason: "account_provisioning_failed",
+        }),
+      }),
+    ]);
+  });
+
+  // The success record is written once nothing that can throw is left, so a
+  // sign-in cannot leave both a success and a failure behind. This pins the
+  // step that used to follow it.
+  it("reports a first-time registration before recording the sign-in as successful", async () => {
+    let successAlreadyRecorded: boolean | null = null;
+    const context: ReturnType<typeof createAuthService> = createAuthService({
+      sessionRepository: new WorkingSessionRepository(),
+      productAnalytics: {
+        async track() {
+          successAlreadyRecorded = context.auditService.events.some(
+            (event) => event.eventType === "auth.federated_login" && event.eventStatus === "success",
+          );
+          return null;
+        },
+      },
+    });
+
+    await context.authService.federatedLogin({
+      provider: "google",
+      subject: "sub-order",
+      email: "order@example.com",
+      emailVerified: true,
+    });
+
+    expect(successAlreadyRecorded).toBe(false);
+  });
+
+  it("records no failure for a sign-in that succeeds", async () => {
+    const context = createAuthService({ sessionRepository: new WorkingSessionRepository() });
+
+    await context.authService.federatedLogin({
+      provider: "google",
+      subject: "sub-clean",
+      email: "clean@example.com",
+      emailVerified: true,
+    });
+
+    expect(federatedFailures(context.auditService)).toEqual([]);
+  });
+});
+
 describe("AuthService describeSession", () => {
   it("returns the account named by the session when that membership is active", async () => {
     const { authService } = createAuthService({});
@@ -1164,7 +1828,21 @@ describe("AuthService describeSession", () => {
       workspaceId: registration.workspaceId,
       workspaceName: registration.workspaceName,
       workspacePublicRouteKey: registration.workspacePublicRouteKey,
+      displayName: null,
     });
+  });
+
+  it("carries the signed-in user's display name", async () => {
+    const { authService } = createAuthService({});
+    const registration = await authService.register({
+      email: "named-session@example.com",
+      password: "verysecurepassword",
+      displayName: "Grace Hopper",
+    });
+
+    await expect(
+      authService.describeSession({ userId: registration.userId, accountId: registration.accountId }),
+    ).resolves.toMatchObject({ displayName: "Grace Hopper" });
   });
 
   it("throws unauthorized when the user id no longer resolves to a user", async () => {
@@ -1250,5 +1928,332 @@ describe("registration product analytics", () => {
       subjectType: "workspace",
       properties: { requiresEmailVerification: false },
     });
+  });
+});
+
+describe("AuthService display name", () => {
+  const createPendingInvitation = async (
+    accountRepository: TrackingAccountRepository,
+    invitationRepository: InMemoryAccountInvitationRepository,
+    email: string,
+  ) => {
+    const account = await accountRepository.create({ name: "Shared Org", email: "owner@example.com", passwordHash: "hash" });
+    const invitationToken = `invitation-${email}`;
+    await invitationRepository.create({
+      accountId: account.id,
+      email,
+      invitedByMembershipId: "membership-owner",
+      tokenHash: sha256(invitationToken),
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    return invitationToken;
+  };
+
+  it("stores the trimmed display name given at signup", async () => {
+    const { authService, userRepository } = createAuthService({});
+
+    const result = await authService.register({
+      email: "named-signup@example.com",
+      password: "verysecurepassword",
+      displayName: "  Ada Lovelace  ",
+    });
+
+    expect((await userRepository.findById(result.userId))?.displayName).toBe("Ada Lovelace");
+  });
+
+  it("leaves the display name empty when signup gives none", async () => {
+    const { authService, userRepository } = createAuthService({});
+
+    const result = await authService.register({ email: "unnamed-signup@example.com", password: "verysecurepassword" });
+
+    expect((await userRepository.findById(result.userId))?.displayName).toBeNull();
+  });
+
+  it("rejects an invalid signup display name before reserving or creating anything", async () => {
+    const guard = new RecordingOrganizationCreationGuard();
+    const accountRepository = new TrackingAccountRepository();
+    const { authService } = createAuthService({ accountRepository, organizationCreationGuard: guard });
+
+    await expect(authService.register({
+      email: "bad-name-signup@example.com",
+      password: "verysecurepassword",
+      displayName: "Ada\nLovelace",
+    })).rejects.toMatchObject({ statusCode: 400 });
+
+    expect(guard.requests).toEqual([]);
+    expect(accountRepository.items.size).toBe(0);
+  });
+
+  it("stores the display name of a user an invitation creates", async () => {
+    const accountRepository = new TrackingAccountRepository();
+    const invitationRepository = new InMemoryAccountInvitationRepository();
+    const { authService, userRepository } = createAuthService({
+      accountRepository,
+      accountInvitationRepository: invitationRepository,
+      sessionRepository: new WorkingSessionRepository(),
+    });
+    const invitationToken = await createPendingInvitation(accountRepository, invitationRepository, "named-invitee@example.com");
+
+    const result = await authService.acceptInvitation({
+      invitationToken,
+      email: "named-invitee@example.com",
+      password: "verysecurepassword",
+      displayName: "Katherine Johnson",
+    });
+
+    expect((await userRepository.findById(result.userId))?.displayName).toBe("Katherine Johnson");
+  });
+
+  it("keeps an existing user's display name when they accept an invitation with a password", async () => {
+    const accountRepository = new TrackingAccountRepository();
+    const invitationRepository = new InMemoryAccountInvitationRepository();
+    const { authService, userRepository } = createAuthService({
+      accountRepository,
+      accountInvitationRepository: invitationRepository,
+      sessionRepository: new WorkingSessionRepository(),
+    });
+    const existing = await authService.register({
+      email: "existing-invitee@example.com",
+      password: "verysecurepassword",
+      displayName: "Dorothy Vaughan",
+    });
+    const invitationToken = await createPendingInvitation(accountRepository, invitationRepository, "existing-invitee@example.com");
+
+    await authService.acceptInvitation({
+      invitationToken,
+      email: "existing-invitee@example.com",
+      password: "verysecurepassword",
+      displayName: "Someone Else",
+    });
+
+    expect((await userRepository.findById(existing.userId))?.displayName).toBe("Dorothy Vaughan");
+  });
+
+  it("ignores an invalid name from an existing user accepting an invitation with a password", async () => {
+    const accountRepository = new TrackingAccountRepository();
+    const invitationRepository = new InMemoryAccountInvitationRepository();
+    const { authService, userRepository } = createAuthService({
+      accountRepository,
+      accountInvitationRepository: invitationRepository,
+      sessionRepository: new WorkingSessionRepository(),
+    });
+    const existing = await authService.register({ email: "existing-invalid@example.com", password: "verysecurepassword" });
+    const invitationToken = await createPendingInvitation(accountRepository, invitationRepository, "existing-invalid@example.com");
+
+    await expect(authService.acceptInvitation({
+      invitationToken,
+      email: "existing-invalid@example.com",
+      password: "verysecurepassword",
+      displayName: "z".repeat(81),
+    })).resolves.toMatchObject({ userId: existing.userId });
+    expect((await userRepository.findById(existing.userId))?.displayName).toBeNull();
+  });
+
+  it("rejects an invalid name from a user an invitation would create, before creating them", async () => {
+    const accountRepository = new TrackingAccountRepository();
+    const invitationRepository = new InMemoryAccountInvitationRepository();
+    const { authService, userRepository } = createAuthService({
+      accountRepository,
+      accountInvitationRepository: invitationRepository,
+      sessionRepository: new WorkingSessionRepository(),
+    });
+    const invitationToken = await createPendingInvitation(accountRepository, invitationRepository, "new-invalid@example.com");
+
+    await expect(authService.acceptInvitation({
+      invitationToken,
+      email: "new-invalid@example.com",
+      password: "verysecurepassword",
+      displayName: "Bad\u0007Name",
+    })).rejects.toMatchObject({ statusCode: 400 });
+    expect(await userRepository.findByEmail("new-invalid@example.com")).toBeNull();
+  });
+
+  it("stores the provider's name when a federated sign-in provisions a new user", async () => {
+    const { authService, userRepository } = createAuthService({ sessionRepository: new WorkingSessionRepository() });
+
+    const result = await authService.federatedLogin({
+      provider: "google",
+      subject: "google-named-first",
+      email: "federated-named@example.com",
+      emailVerified: true,
+      displayName: "Mary Jackson",
+    });
+
+    expect((await userRepository.findById(result.userId))?.displayName).toBe("Mary Jackson");
+  });
+
+  it("never overwrites a display name on a later federated sign-in", async () => {
+    const { authService, userRepository } = createAuthService({ sessionRepository: new WorkingSessionRepository() });
+    const first = await authService.federatedLogin({
+      provider: "google",
+      subject: "google-named-repeat",
+      email: "federated-repeat@example.com",
+      emailVerified: true,
+      displayName: "Mary Jackson",
+    });
+    await authService.updateProfile({ userId: first.userId, displayName: "Mary" });
+
+    await authService.federatedLogin({
+      provider: "google",
+      subject: "google-named-repeat",
+      email: "federated-repeat@example.com",
+      emailVerified: true,
+      displayName: "Mary Winston Jackson",
+    });
+
+    expect((await userRepository.findById(first.userId))?.displayName).toBe("Mary");
+  });
+
+  it("keeps an existing verified user unnamed when a federated sign-in matched by email brings a name", async () => {
+    const { authService, userRepository } = createAuthService({ sessionRepository: new WorkingSessionRepository() });
+    const registered = await authService.register({ email: "verified-unnamed@example.com", password: "verysecurepassword" });
+    await userRepository.markEmailVerified(registered.userId, new Date());
+
+    const result = await authService.federatedLogin({
+      provider: "google",
+      subject: "google-verified-unnamed",
+      email: "verified-unnamed@example.com",
+      emailVerified: true,
+      displayName: "Provider Name",
+    });
+
+    expect(result.userId).toBe(registered.userId);
+    expect((await userRepository.findById(registered.userId))?.displayName).toBeNull();
+  });
+
+  it("replaces a squatter's display name with the provider's when a federated sign-in reclaims an unverified account", async () => {
+    const { authService, userRepository } = createAuthService({ sessionRepository: new WorkingSessionRepository() });
+    const squatted = await authService.register({
+      email: "reclaimed-named@example.com",
+      password: "attacker-known-password",
+      displayName: "Squatter",
+    });
+
+    await authService.federatedLogin({
+      provider: "google",
+      subject: "google-reclaim-named",
+      email: "reclaimed-named@example.com",
+      emailVerified: true,
+      displayName: "  Real Owner  ",
+    });
+
+    expect((await userRepository.findById(squatted.userId))?.displayName).toBe("Real Owner");
+  });
+
+  it("clears a squatter's display name when a federated sign-in reclaims an unverified account without a usable name", async () => {
+    const { authService, userRepository } = createAuthService({ sessionRepository: new WorkingSessionRepository() });
+    const squatted = await authService.register({
+      email: "reclaimed-unnamed@example.com",
+      password: "attacker-known-password",
+      displayName: "Squatter",
+    });
+
+    await authService.federatedLogin({
+      provider: "google",
+      subject: "google-reclaim-unnamed",
+      email: "reclaimed-unnamed@example.com",
+      emailVerified: true,
+      displayName: "x".repeat(81),
+    });
+
+    expect((await userRepository.findById(squatted.userId))?.displayName).toBeNull();
+  });
+
+  it.each([
+    ["too long", "x".repeat(81)],
+    ["shaped like an email address", "federated-name@example.com"],
+    ["invisible", "ㅤ"],
+    ["carrying a direction override", "Mary‮Jackson"],
+  ])("drops a provider name that is %s instead of failing the sign-in", async (_label, displayName) => {
+    const { authService, userRepository } = createAuthService({ sessionRepository: new WorkingSessionRepository() });
+
+    const result = await authService.federatedLogin({
+      provider: "google",
+      subject: "google-rejected-name",
+      email: "federated-rejected-name@example.com",
+      emailVerified: true,
+      displayName,
+    });
+
+    expect((await userRepository.findById(result.userId))?.displayName).toBeNull();
+  });
+
+  it("describes and updates the signed-in user's own profile", async () => {
+    const { authService } = createAuthService({});
+    const registration = await authService.register({ email: "profile@example.com", password: "verysecurepassword" });
+
+    await expect(authService.getProfile(registration.userId)).resolves.toEqual({
+      userId: registration.userId,
+      email: "profile@example.com",
+      displayName: null,
+    });
+    await expect(authService.updateProfile({
+      userId: registration.userId,
+      displayName: " Annie Easley ",
+    })).resolves.toEqual({
+      userId: registration.userId,
+      email: "profile@example.com",
+      displayName: "Annie Easley",
+    });
+    await expect(authService.updateProfile({
+      userId: registration.userId,
+      displayName: "",
+    })).resolves.toMatchObject({ displayName: null });
+  });
+
+  it("audits a profile change by field name, never by value", async () => {
+    const { authService, auditService } = createAuthService({});
+    const registration = await authService.register({ email: "profile-audit@example.com", password: "verysecurepassword" });
+
+    await authService.updateProfile({
+      userId: registration.userId,
+      displayName: "Evelyn Boyd Granville",
+    });
+
+    const profileEvents = auditService.events.filter((event) => event.eventType === "auth.profile_updated");
+    expect(profileEvents).toEqual([
+      expect.objectContaining({
+        accountId: registration.accountId,
+        eventStatus: "success",
+        metadata: expect.objectContaining({ actorUserId: registration.userId, changedFields: ["displayName"] }),
+      }),
+    ]);
+    expect(JSON.stringify(profileEvents)).not.toContain("Evelyn");
+  });
+
+  it("records nothing when a profile update changes nothing", async () => {
+    const { authService, auditService } = createAuthService({});
+    const registration = await authService.register({
+      email: "profile-noop@example.com",
+      password: "verysecurepassword",
+      displayName: "Gladys West",
+    });
+
+    await authService.updateProfile({ userId: registration.userId, displayName: "Gladys West " });
+
+    expect(auditService.events.filter((event) => event.eventType === "auth.profile_updated")).toEqual([]);
+  });
+
+  it("rejects an invalid display name without changing the profile", async () => {
+    const { authService, userRepository } = createAuthService({});
+    const registration = await authService.register({
+      email: "profile-invalid@example.com",
+      password: "verysecurepassword",
+      displayName: "Valid Name",
+    });
+
+    await expect(authService.updateProfile({
+      userId: registration.userId,
+      displayName: "y".repeat(81),
+    })).rejects.toMatchObject({ statusCode: 400 });
+    expect((await userRepository.findById(registration.userId))?.displayName).toBe("Valid Name");
+  });
+
+  it("rejects a profile read or update for a user that no longer exists", async () => {
+    const { authService } = createAuthService({});
+
+    await expect(authService.getProfile("missing-user")).rejects.toMatchObject({ statusCode: 401 });
+    await expect(authService.updateProfile({ userId: "missing-user", displayName: "Name" }))
+      .rejects.toMatchObject({ statusCode: 401 });
   });
 });

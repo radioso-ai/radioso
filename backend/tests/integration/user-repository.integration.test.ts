@@ -35,6 +35,51 @@ describeIntegration("UserRepository (Postgres)", () => {
     expect(await repository.findByEmail("missing@example.com")).toBeNull();
   });
 
+  it("finds several users by id in one read, skipping ids with no user", async () => {
+    const named = newUser();
+    const unnamed = newUser();
+    await repository.create({ ...named, displayName: "Ada Lovelace" });
+    await repository.create(unnamed);
+
+    const found = await repository.findByIds([named.id, unnamed.id, randomUUID()]);
+
+    expect(found.map((user) => ({ id: user.id, email: user.email, displayName: user.displayName }))
+      .sort((left, right) => left.id.localeCompare(right.id)))
+      .toEqual([
+        { id: named.id, email: named.email, displayName: "Ada Lovelace" },
+        { id: unnamed.id, email: unnamed.email, displayName: null },
+      ].sort((left, right) => left.id.localeCompare(right.id)));
+    await expect(repository.findByIds([])).resolves.toEqual([]);
+    // A malformed id read from stored JSON is skipped, not cast into a failed query.
+    await expect(repository.findByIds(["not-a-uuid", named.id])).resolves.toHaveLength(1);
+  });
+
+  it("stores a display name on create and leaves it null when none is given", async () => {
+    const named = newUser();
+    const unnamed = newUser();
+
+    expect((await repository.create({ ...named, displayName: "Ada Lovelace" })).displayName).toBe("Ada Lovelace");
+    expect((await repository.create(unnamed)).displayName).toBeNull();
+    expect((await repository.findById(named.id))?.displayName).toBe("Ada Lovelace");
+  });
+
+  it("updateDisplayName sets and clears the name", async () => {
+    const u = newUser();
+    await repository.create(u);
+
+    expect((await repository.updateDisplayName(u.id, "山田 太郎")).displayName).toBe("山田 太郎");
+    expect((await repository.findByEmail(u.email))?.displayName).toBe("山田 太郎");
+    expect((await repository.updateDisplayName(u.id, null)).displayName).toBeNull();
+  });
+
+  it("refuses a blank display name at the database", async () => {
+    const u = newUser();
+    await repository.create(u);
+
+    await expect(repository.updateDisplayName(u.id, "   ")).rejects.toThrow();
+    expect((await repository.findById(u.id))?.displayName).toBeNull();
+  });
+
   it("updatePassword changes the hash", async () => {
     const u = newUser();
     await repository.create(u);

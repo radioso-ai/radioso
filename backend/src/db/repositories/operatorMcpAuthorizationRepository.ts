@@ -7,6 +7,7 @@ import type {
   OperatorMcpAuthorizationRepositoryPort,
   OperatorMcpAuthorizationTransactionRecord,
   OperatorMcpGrantRepositoryPort,
+  OperatorMcpBoundGrantClientDescriptionPort,
   OperatorMcpGrantSummaryRecord,
   OperatorMcpClientRepositoryPort,
   OperatorMcpClientSnapshot,
@@ -102,7 +103,7 @@ const mapGrantSummary = (row: GrantSummaryRow): OperatorMcpGrantSummaryRecord =>
   credentialCount: Number(row.credential_count), recentInvocationCount: Number(row.recent_invocation_count),
 });
 
-export class OperatorMcpAuthorizationRepository implements OperatorMcpAuthorizationRepositoryPort, OperatorMcpAuthorizationFlowRepositoryPort, OperatorMcpGrantRepositoryPort, OperatorMcpClientRepositoryPort {
+export class OperatorMcpAuthorizationRepository implements OperatorMcpAuthorizationRepositoryPort, OperatorMcpAuthorizationFlowRepositoryPort, OperatorMcpGrantRepositoryPort, OperatorMcpClientRepositoryPort, OperatorMcpBoundGrantClientDescriptionPort {
   constructor(private readonly db: Db) {}
 
   private async revokeActiveRefreshLineages(
@@ -577,7 +578,7 @@ export class OperatorMcpAuthorizationRepository implements OperatorMcpAuthorizat
     });
   }
 
-  async listGrants(input: { workspaceId: string; userId?: string }): Promise<readonly OperatorMcpGrantSummaryRecord[]> {
+  private async selectGrantSummaries(predicate: ReturnType<typeof sql>): Promise<readonly OperatorMcpGrantSummaryRecord[]> {
     const result = await sql<GrantSummaryRow>`
       SELECT oauth_grant.id, client.client_id, client.display_name AS client_name,
         oauth_grant.client_version::text AS client_version, snapshot.metadata_digest AS client_metadata_digest,
@@ -593,16 +594,41 @@ export class OperatorMcpAuthorizationRepository implements OperatorMcpAuthorizat
       JOIN operator_mcp_client_metadata_snapshots snapshot ON snapshot.id = oauth_grant.client_metadata_snapshot_id
       JOIN workspaces workspace ON workspace.id = oauth_grant.workspace_id
       JOIN users account_user ON account_user.id = oauth_grant.user_id
-      WHERE oauth_grant.workspace_id = ${input.workspaceId}
-        AND (${input.userId ?? null}::uuid IS NULL OR oauth_grant.user_id = ${input.userId ?? null})
+      WHERE ${predicate}
       ORDER BY oauth_grant.created_at DESC, oauth_grant.id DESC
     `.execute(this.db);
     return result.rows.map(mapGrantSummary);
   }
 
+  // The inventory answers "what can reach this workspace right now", so retired grants stay out of it;
+  // superseded rows in particular accumulate on every re-consent and authorize nothing.
+  async listGrants(input: { workspaceId: string; userId?: string }): Promise<readonly OperatorMcpGrantSummaryRecord[]> {
+    return this.selectGrantSummaries(sql`
+      oauth_grant.workspace_id = ${input.workspaceId}
+        AND oauth_grant.status = 'active'
+        AND (${input.userId ?? null}::uuid IS NULL OR oauth_grant.user_id = ${input.userId ?? null})
+    `);
+  }
+
   async findGrant(input: { workspaceId: string; grantId: string }): Promise<OperatorMcpGrantSummaryRecord | null> {
-    const rows = await this.listGrants({ workspaceId: input.workspaceId });
-    return rows.find((grant) => grant.id === input.grantId) ?? null;
+    const rows = await this.selectGrantSummaries(sql`
+      oauth_grant.id = ${input.grantId} AND oauth_grant.workspace_id = ${input.workspaceId}
+    `);
+    return rows[0] ?? null;
+  }
+
+  async describeBoundGrantClient(input: { workspaceId: string; operatorUserId: string; invocationId: string }): Promise<{ clientId: string; clientName: string; grantId: string } | null> {
+    const result = await sql<{ client_id: string; client_name: string; grant_id: string }>`
+      SELECT client.client_id, client.display_name AS client_name, oauth_grant.id AS grant_id
+      FROM operator_mcp_invocations invocation
+      JOIN operator_mcp_grants oauth_grant ON oauth_grant.id = invocation.grant_id
+      JOIN operator_mcp_clients client ON client.id = oauth_grant.client_id
+      WHERE invocation.id = ${input.invocationId}
+        AND invocation.workspace_id = ${input.workspaceId}
+        AND invocation.user_id = ${input.operatorUserId}
+    `.execute(this.db);
+    const client = result.rows[0];
+    return client ? { clientId: client.client_id, clientName: client.client_name, grantId: client.grant_id } : null;
   }
 
   async persistClientSnapshot(snapshot: OperatorMcpClientSnapshot): Promise<PersistedOperatorMcpClient> {

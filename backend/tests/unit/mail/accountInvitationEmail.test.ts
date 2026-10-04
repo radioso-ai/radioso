@@ -8,6 +8,7 @@ describe("renderAccountInvitationEmail", () => {
       to: "teammate@example.com",
       acceptanceUrl: "https://app.radioso.ai/invite/token-123",
       invitedByEmail: "owner@example.com",
+      invitedByName: null,
       expiresAt: new Date("2026-09-09T10:00:00.000Z"),
     });
 
@@ -19,11 +20,38 @@ describe("renderAccountInvitationEmail", () => {
     expect(message.kind).toBe("account_invitation");
   });
 
+  it("names the inviter by display name with their address beside it", () => {
+    const message = renderAccountInvitationEmail({
+      to: "teammate@example.com",
+      acceptanceUrl: "https://app.radioso.ai/invite/token-123",
+      invitedByEmail: "owner@example.com",
+      invitedByName: "Olivia Owner",
+      expiresAt: new Date("2026-09-09T10:00:00.000Z"),
+    });
+
+    expect(message.text).toContain("Olivia Owner (owner@example.com) invited you");
+    expect(message.html).toContain("Olivia Owner (owner@example.com) invited you");
+  });
+
+  it("escapes the inviter's display name in the HTML body", () => {
+    const message = renderAccountInvitationEmail({
+      to: "teammate@example.com",
+      acceptanceUrl: "https://app.radioso.ai/invite/token-123",
+      invitedByEmail: "owner@example.com",
+      invitedByName: "<b>Olivia</b>",
+      expiresAt: new Date("2026-09-09T10:00:00.000Z"),
+    });
+
+    expect(message.html).not.toContain("<b>Olivia</b>");
+    expect(message.html).toContain("&lt;b&gt;Olivia&lt;/b&gt;");
+  });
+
   it("omits the inviter when it cannot be resolved", () => {
     const message = renderAccountInvitationEmail({
       to: "teammate@example.com",
       acceptanceUrl: "https://app.radioso.ai/invite/token-123",
       invitedByEmail: null,
+      invitedByName: null,
       expiresAt: new Date("2026-09-09T10:00:00.000Z"),
     });
 
@@ -36,6 +64,7 @@ describe("renderAccountInvitationEmail", () => {
       to: "teammate@example.com",
       acceptanceUrl: "https://app.radioso.ai/invite/token-123",
       invitedByEmail: '"><script>alert(1)</script>',
+      invitedByName: null,
       expiresAt: new Date("2026-09-09T10:00:00.000Z"),
     });
 
@@ -48,6 +77,7 @@ describe("renderAccountInvitationEmail", () => {
       to: "teammate@example.com",
       acceptanceUrl: "https://app.radioso.ai/invite/token-123",
       invitedByEmail: null,
+      invitedByName: null,
       expiresAt: new Date("2026-09-09T10:00:00.000Z"),
     });
 

@@ -45,6 +45,9 @@ interface RoutineDefinitionRow {
   transitions: unknown;
   terminals: unknown;
   completion_export: unknown;
+  exposure_enabled: boolean;
+  exposure_tool_name: string | null;
+  exposure_description: string | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -188,6 +191,9 @@ const definitionSelect = sql`
     COALESCE(transitions.items, '[]'::json) AS transitions,
     COALESCE(terminals.items, '[]'::json) AS terminals,
     completion_export.item AS completion_export,
+    d.exposure_enabled,
+    d.exposure_tool_name,
+    d.exposure_description,
     d.created_at,
     d.updated_at
   FROM routine_definition d
@@ -242,6 +248,9 @@ const definitionSelect = sql`
       'stableStepId', te.stable_step_id,
       'kind', te.kind,
       'instruction', te.instruction,
+      'operatorNoticeEnabled', te.operator_notice_enabled,
+      'operatorNoticeSubject', te.operator_notice_subject,
+      'operatorNoticeIntro', te.operator_notice_intro,
       'ordinal', te.ordinal
     ) ORDER BY te.ordinal ASC, te.stable_step_id ASC) AS items
     FROM routine_terminal te
@@ -320,6 +329,16 @@ const mapRow = (row: RoutineDefinitionRow): RoutineDefinition => ({
     stableStepId: readString(terminal, "stableStepId"),
     kind: readString(terminal, "kind") as RoutineTerminalKind,
     instruction: readNullableString(terminal, "instruction"),
+    // Absent, not undefined, when the notice is off: the authoring shape compares terminals as
+    // JSON (operator MCP replace_terminal), and an undefined-valued key is not JSON.
+    ...(readBoolean(terminal, "operatorNoticeEnabled")
+      ? {
+          operatorNotice: {
+            subject: readNullableString(terminal, "operatorNoticeSubject"),
+            intro: readNullableString(terminal, "operatorNoticeIntro"),
+          },
+        }
+      : {}),
     ordinal: readNumber(terminal, "ordinal"),
   })),
   completionExport: (() => {
@@ -334,8 +353,24 @@ const mapRow = (row: RoutineDefinitionRow): RoutineDefinition => ({
       destinationRef: readString(exportRecord, "destinationRef"),
     };
   })(),
+  // The block is present exactly when a tool name column is set; `exposure_enabled` alone
+  // says nothing without a name to be enabled under.
+  ...(row.exposure_tool_name === null ? {} : {
+    exposure: {
+      enabled: row.exposure_enabled,
+      toolName: row.exposure_tool_name,
+      description: row.exposure_description ?? "",
+    },
+  }),
   createdAt: new Date(row.created_at),
   updatedAt: new Date(row.updated_at),
+});
+
+/** The three routine_definition columns a draft's exposure block writes, cleared when absent. */
+const exposureColumns = (draft: RoutineDefinitionDraftInput) => ({
+  exposure_enabled: draft.exposure?.enabled ?? false,
+  exposure_tool_name: draft.exposure?.toolName ?? null,
+  exposure_description: draft.exposure ? draft.exposure.description : null,
 });
 
 export class RoutineDefinitionRepository {
@@ -401,6 +436,7 @@ export class RoutineDefinitionRepository {
         activation_priority: draft.activation.priority,
         activation_reentry_mode: draft.activation.reentryMode,
         activation_coverage_criteria: draft.activation.coverageCriteria ? toJsonb(draft.activation.coverageCriteria) : null,
+        ...exposureColumns(draft),
         lineage_id: id,
       }).execute();
       await this.replaceChildren(trx, id, draft);
@@ -430,6 +466,7 @@ export class RoutineDefinitionRepository {
           activation_priority: draft.activation.priority,
           activation_reentry_mode: draft.activation.reentryMode,
           activation_coverage_criteria: draft.activation.coverageCriteria ? toJsonb(draft.activation.coverageCriteria) : null,
+          ...exposureColumns(draft),
           updated_at: nextAuthoredUpdatedAt(),
         })
         .where("agent_id", "=", agentId)
@@ -626,6 +663,7 @@ export class RoutineDefinitionRepository {
           activation_priority: draft.activation.priority,
           activation_reentry_mode: draft.activation.reentryMode,
           activation_coverage_criteria: draft.activation.coverageCriteria ? toJsonb(draft.activation.coverageCriteria) : null,
+          ...exposureColumns(draft),
           lineage_id: id,
         })
         .execute();
@@ -662,6 +700,7 @@ export class RoutineDefinitionRepository {
           activation_priority: draft.activation.priority,
           activation_reentry_mode: draft.activation.reentryMode,
           activation_coverage_criteria: draft.activation.coverageCriteria ? toJsonb(draft.activation.coverageCriteria) : null,
+          ...exposureColumns(draft),
           updated_at: nextAuthoredUpdatedAt(),
         })
         .where("agent_id", "=", agentId)
@@ -946,6 +985,9 @@ export class RoutineDefinitionRepository {
           stable_step_id: terminal.stableStepId,
           kind: terminal.kind,
           instruction: terminal.instruction,
+          operator_notice_enabled: terminal.operatorNotice !== undefined,
+          operator_notice_subject: terminal.operatorNotice?.subject ?? null,
+          operator_notice_intro: terminal.operatorNotice?.intro ?? null,
           ordinal: terminal.ordinal,
         })
         .execute();

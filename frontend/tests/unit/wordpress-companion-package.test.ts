@@ -15,7 +15,7 @@ const readArchiveEntry = (entry: string): string =>
   })
 
 describe('WordPress companion download', () => {
-  it.each(['radioso-sync.php', 'README.md'])(
+  it.each(['radioso-sync.php', 'radioso-agent-card.php', 'README.md'])(
     'packages the current %s source instead of a stale copy',
     (filename) => {
       expect(readArchiveEntry(filename)).toBe(
@@ -40,6 +40,16 @@ describe('WordPress companion download', () => {
     expect(pluginSource).toContain('DISABLE_WP_CRON')
     expect(pluginSource).toContain('radioso_resync_acquire_lock')
     expect(pluginSource).toContain('Run next batch now')
+  })
+
+  it('answers the site-level discovery paths from its own file', () => {
+    const agentCardSource = readFileSync(resolve(companionRoot, 'radioso-agent-card.php'), 'utf8')
+
+    expect(pluginSource).toContain("require_once __DIR__ . '/radioso-agent-card.php'")
+    expect(agentCardSource).toContain("'^\\.well-known/agent-card\\.json$'")
+    expect(agentCardSource).toContain("'^\\.well-known/mcp/server-card\\.json$'")
+    expect(agentCardSource).toContain("'^\\.well-known/ai-catalog\\.json$'")
+    expect(agentCardSource).toContain('wp_redirect($target, 302)')
   })
 
   it('captures fatal batch failures for the next settings-page load', () => {

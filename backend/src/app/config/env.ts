@@ -55,7 +55,6 @@ const httpWebhookUrl = z.string().url().refine((value) => {
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().int().positive().default(8080),
-  TRUST_PROXY_HOPS: z.coerce.number().int().nonnegative().default(0),
   // The deploy stamps the release it ships onto the image. An unstamped build says so
   // rather than borrowing the last release's number and reporting a version it is not.
   RADIOSO_RELEASE: emptyStringToDefault(z.string().min(1), "development"),
@@ -253,6 +252,11 @@ const envSchema = z.object({
   SLACK_OAUTH_CLIENT_SECRET: emptyStringToUndefined(z.string().min(1)),
   SLACK_SIGNING_SECRET: emptyStringToUndefined(z.string().min(1)),
   PUBLIC_CHAT_BASE_URL: emptyStringToUndefined(z.string().min(1)),
+  /**
+   * Public MCP endpoint base, e.g. `https://mcp.example.com/mcp`. One agent's endpoint is
+   * this plus `/a/{publicId}`. Discovery documents refuse to render without it.
+   */
+  PUBLIC_MCP_CONVERSE_URL: emptyStringToUndefined(z.string().url()),
   RADIOSO_WIDGET_ORIGIN: emptyStringToUndefined(z.string().min(1)),
   RADIOSO_APPLICATION_MODULES: emptyStringToUndefined(z.string().min(1)),
 }).superRefine((value, ctx) => {
@@ -461,8 +465,25 @@ export type Env = Omit<ParsedEnv, "OBSERVABILITY_ENVIRONMENT" | RealtimeEnvInput
 
 let cachedEnv: Env | null = null;
 
+/**
+ * `TRUST_PROXY_HOPS` once drove Express `trust proxy`. A deployment that still
+ * sets it to a non-zero value expects forwarded client addresses, and would
+ * silently key every source budget on its proxy if startup ignored it. A zero
+ * asks for exactly the default, so an `.env` copied from an older example
+ * keeps starting.
+ */
+const rejectRetiredProxyHopSetting = (source: NodeJS.ProcessEnv): void => {
+  const value = source.TRUST_PROXY_HOPS?.trim();
+  if (value && value !== "0") {
+    throw new Error(
+      "TRUST_PROXY_HOPS is no longer read; set RADIOSO_TRUSTED_PROXY_HOPS to the number of trusted proxy hops instead.",
+    );
+  }
+};
+
 export const getEnv = (source: NodeJS.ProcessEnv = process.env): Env => {
   if (!cachedEnv || source !== process.env) {
+    rejectRetiredProxyHopSetting(source);
     const parsed = envSchema.parse(source);
     parseRealtimeConfig(parsed);
     cachedEnv = {

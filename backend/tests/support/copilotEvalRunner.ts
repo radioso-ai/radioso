@@ -327,6 +327,7 @@ const fixtureConversationSummaries = () => [{
   updatedAt: "2026-08-26T08:10:00.000Z",
   ownership: {
     state: "human_owned",
+    ownerUserId: null,
     ownerDisplayName: null,
     reason: "customer_requested_human",
     takenOverAt: null,
@@ -357,6 +358,7 @@ export const copilotEvalCatalogDependencies = (): Parameters<typeof createCopilo
         agentId: COPILOT_EVAL_AGENT_ID,
         agentName: "Support",
         sourceChannel: "web",
+callerKind: "human" as const,
         createdAt: "2026-08-26T07:30:00.000Z",
         updatedAt: "2026-08-26T08:10:00.000Z",
         messageCount: 2,
@@ -476,6 +478,12 @@ export const copilotEvalCatalogDependencies = (): Parameters<typeof createCopilo
       getGeneralSettings: async () => ({}),
     },
     agentTurnProbe: { run: unusedPort("agentTurnProbe.run") },
+    testChat: {
+      listSessions: unusedPort("testChat.listSessions"),
+      readSession: unusedPort("testChat.readSession"),
+      readTurn: unusedPort("testChat.readTurn"),
+      sendMessage: unusedPort("testChat.sendMessage"),
+    },
     retrievalProbe: {
       probe: async ({ agentId }: { agentId: string }) => ({
         agentId,
@@ -526,12 +534,20 @@ export const copilotEvalCatalogDependencies = (): Parameters<typeof createCopilo
     },
     proposalAdapters: copilotProposalTargetTypes.map((targetType) => ({
       targetType,
-      draft: async (_workspaceId: string, _targetRef: unknown, intent: string) => ({
+      draft: async (_workspaceId: string, _targetRef: unknown, input: unknown) => {
+        const intent = typeof input === "string"
+          ? input
+          : typeof input === "object" && input !== null && "intent" in input && typeof input.intent === "string"
+            ? input.intent
+            : "structured directive";
+        return {
         payload: { intent },
         targetLabel: "Support",
         summary: `Draft ${targetType}: ${intent.slice(0, 60)}`,
+        versionToken: "v1",
         diagnostics: [],
-      }),
+        };
+      },
       draftEdit: async (_workspaceId: string, _targetRef: unknown, changes: unknown) => ({
         payload: { kind: "edit", name: "Order status", changes },
         targetLabel: "Order status",

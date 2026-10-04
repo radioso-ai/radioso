@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Database } from "../../src/shared/infra/database.js";
 import { QualityTurnsService } from "../../src/modules/quality/service.js";
 import { runAllTestMigrations } from "../support/databaseMigrations.js";
+import { unrecordedConversationActivity } from "../support/fakes.js";
 import { stubOutcomeCatalog } from "../support/qualityOutcomeCatalog.js";
 
 const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
@@ -40,7 +41,7 @@ describeIfDatabase("quality stats integration", () => {
   let database: Database;
 
   const createService = () =>
-    new QualityTurnsService(database.kysely, stubOutcomeCatalog(), clock);
+    new QualityTurnsService(database.kysely, stubOutcomeCatalog(), unrecordedConversationActivity, clock);
 
   const seedWorkspace = async (label: string) => {
     const accountId = randomUUID();

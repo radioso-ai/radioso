@@ -1,6 +1,6 @@
 ---
 title: "Email Channel"
-description: "Connect a support mailbox to a Radioso agent by forwarding, verify sending on your own domain, reply with delivery tracked through to the customer, and work the mailbox event log and raw mail from operator settings."
+description: "Connect a support mailbox to a Radioso agent by forwarding, review and send the agent's drafted replies, verify sending on your own domain, reply with delivery tracked through to the customer, and work the mailbox event log and raw mail from operator settings."
 last_updated: 2026-10-04
 ---
 
@@ -14,12 +14,15 @@ couple of DNS records. Every email the channel accepts is visible to an
 operator somewhere — as a conversation in the Inbox, or as an event in the
 mailbox's event log when it never becomes one.
 
-This release ships one engagement mode, `operator_only`: every accepted
-email opens or continues a human-owned conversation, and the agent never
-runs a turn on it. The API's `engagementMode` field also accepts `draft` and
-`auto`; setting either on a mailbox is refused with `engagement_mode_unavailable`,
-because only `operator_only` is in the deployment's `supportedModes` right
-now.
+This release ships two engagement modes. `draft` is the default for a new
+mailbox: the agent runs a review turn on every accepted email and writes a
+reply, which stays held until an operator sends it, edits it, or discards
+it — see [Draft mode](#draft-mode-review-before-it-sends) below.
+`operator_only` remains available: every accepted email opens or continues a
+human-owned conversation, and the agent never runs a turn on it. The API's
+`engagementMode` field also accepts `auto`; setting it on a mailbox is
+refused with `engagement_mode_unavailable`, because `auto` is not in the
+deployment's `supportedModes`.
 
 Email conversations never auto-close. Like any other channel, what decides
 whether a conversation needs attention is whether a person must act on it —
@@ -160,6 +163,61 @@ report a delivery outcome after a send has already gone `uncertain`.
 Radioso applies it without any operator step: a late `delivered` clears the
 flag on its own, while a late `bounced` or `failed` keeps the flag open,
 now carrying that reason.
+
+## Draft mode: review before it sends
+
+On a `draft` mailbox, an accepted email runs a *review turn* instead of an
+ordinary chat turn. The agent reads the thread and writes a reply, but
+nothing it decides takes effect on its own: it runs no skill with an
+outward effect, activates no routine, and never gets as far as a message a
+customer could see. The whole output is a **held reply** waiting for an
+operator in the Inbox. If the agent needed a suppressed action to answer
+completely, the held reply says so, and the draft text itself doesn't claim
+the action happened. A review that ends with no usable text creates no held
+reply at all — the conversation is flagged with the engine's own hand-off
+reason instead.
+
+A held reply carries the turn's judgment along with its text: the outcome
+(Answered, No matching documents, Out of scope, Answer unavailable), whether
+the answer is grounded and how completely it covers the question, and why it
+asked for a person if it did. A held reply that depends on a suppressed
+action shows a badge naming which skill didn't run.
+
+Reviewing a draft, an operator has three options:
+
+- **Send it as written.** The draft becomes a customer-visible message
+  attributed to the agent, delivered with `Auto-Submitted: auto-generated`
+  (see Headers, above).
+- **Edit it, then send.** The delivered message is attributed to the
+  operator instead, with no `Auto-Submitted` header, and the original draft
+  stays on the held reply for anyone who opens it later.
+- **Discard it.** Nothing is sent. The conversation keeps its attention flag
+  until an operator replies or takes it over, and the next inbound email on
+  the thread gets a fresh draft.
+
+Releasing a held reply — as written or edited — never changes who owns the
+conversation; it stays `ai_owned`, exactly as before the review ran. Only a
+free-form operator reply or an explicit takeover hands a conversation to a
+person, the same as on any other channel. A held reply is visible only to
+operators: it never appears in the customer's message history, the public
+chat API, or a conversation transcript, in any of its states.
+
+**What replaces a draft.** A held reply is live only while it's pending, and
+exactly one thing happens to it next. A newer inbound message, a free-form
+operator reply, a takeover, or the mailbox's mode being downgraded all
+*supersede* a pending draft: it's replaced rather than released, and nothing
+is sent for it. Where there's a new customer message behind the supersede, a
+fresh review turn runs in its place. Two operators releasing the same draft
+at the same instant produce exactly one send; the other sees that it was
+already handled. See [Human Takeover](human-takeover.md#held-replies) for
+the operator API this runs on.
+
+**One turn per burst.** Several inbound messages on the same thread inside
+the deployment's coalescing window collapse into a single review turn, so a
+customer who sends three follow-ups in as many minutes gets one draft
+answering all of them, not three. Each inbound message bumps the thread to a
+new review revision; a review still running when a newer message arrives
+finishes as a superseded draft, and the newer revision runs in its place.
 
 ## The event log, retention, and raw access
 

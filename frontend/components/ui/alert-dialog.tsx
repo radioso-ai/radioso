@@ -5,6 +5,7 @@ import * as AlertDialogPrimitive from '@radix-ui/react-alert-dialog'
 
 import { cn } from '@/lib/utils'
 import { buttonVariants } from '@/components/ui/button'
+import { stabilizeChildren } from '@radioso/ui/stabilize-children'
 
 function AlertDialog({
   ...props
@@ -120,25 +121,31 @@ function AlertDialogDescription({
 
 function AlertDialogAction({
   className,
+  children,
   ...props
 }: React.ComponentProps<typeof AlertDialogPrimitive.Action>) {
   return (
     <AlertDialogPrimitive.Action
       className={cn(buttonVariants(), className)}
       {...props}
-    />
+    >
+      {stabilizeChildren(children)}
+    </AlertDialogPrimitive.Action>
   )
 }
 
 function AlertDialogCancel({
   className,
+  children,
   ...props
 }: React.ComponentProps<typeof AlertDialogPrimitive.Cancel>) {
   return (
     <AlertDialogPrimitive.Cancel
       className={cn(buttonVariants({ variant: 'outline' }), className)}
       {...props}
-    />
+    >
+      {stabilizeChildren(children)}
+    </AlertDialogPrimitive.Cancel>
   )
 }
 

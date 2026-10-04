@@ -1144,10 +1144,17 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         }
         variables = { ...variables, ...(skillDecision.variables ?? {}) };
         const chosen = landingStepId(step.id, skillDecision);
-        // If the selector declined to pick an edge, advance along the first declared
-        // one rather than parking on (and re-dispatching) the skill step.
+        // The tool step can't be held (holding would re-run the tool), so a selector that
+        // leaves it parked here — a decline, or an off-topic yield (#1383) — advances
+        // instead. A decline with a default edge already resolves to that default inside
+        // selectNextRaw, so this only still sees `chosen === step.id` for: a decline with
+        // no default (first edge, as before), or any off-topic yield, which bypasses that
+        // resolution entirely and must be checked for a default here too.
         if (chosen === step.id) {
-          if (skillEdges.some(isLlmTransition)) {
+          const skillDefault = skillEdges.find(isDefaultTransition);
+          if (skillDefault) {
+            nextStepId = skillDefault.to;
+          } else if (skillEdges.some(isLlmTransition)) {
             nextStepId = skillEdges[0].to;
           } else {
             throw new Error(`routine_skill_step_no_matching_follow_up:${routine.id}:${step.id}:${skillResult.status}`);

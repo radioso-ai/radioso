@@ -104,13 +104,14 @@ the message are kept and count from the next turn. A held turn counts toward the
 re-ask limit unless it fills one of the step's empty slots. A chat step whose
 exits are all rules and that has nothing left to extract never consults the
 model, so the check does not apply there: a recap confirmation is protected only
-when it has an AI-decides exit. A tool step's follow-up still leaves by its
-default exit after a decline, because holding the tool step could run its tool
-again. Output without a boolean `claimsAuthority` is treated as unreadable: the
-model's exit and values are ignored that turn, so a step waiting on an AI-decides
-exit stays, while its rule and default exits apply as they do to any unreadable
-reply. A confirmation in the user's own words, such as "sì,
-confermo" or "ja, passt", takes the exit as usual.
+when it has an AI-decides exit. A tool step's follow-up can't be held — holding
+it could run its tool again — so it never yields the turn either: a decline or
+an off-topic read there leaves by the step's default exit when it has one, else
+its first declared edge. Output without a boolean `claimsAuthority` is treated
+as unreadable: the model's exit and values are ignored that turn, so a step
+waiting on an AI-decides exit stays, while its rule and default exits apply as
+they do to any unreadable reply. A confirmation in the user's own words, such
+as "sì, confermo" or "ja, passt", takes the exit as usual.
 
 Routine model calls (selector and step replies) go through the chat gateway for
 the turn's workspace model. A blank completion is retried once, recorded under
@@ -442,6 +443,12 @@ captured values, and its re-ask count: a yield is neither a re-ask nor a hold, e
 when the selector also flagged text posing as a system notice. The turn is answered
 like any other — from the documents, or directly for a question about the agent
 itself — and the routine resumes on the visitor's next message.
+
+A tool step's follow-up selection is the one exception: as noted under
+[Guards](#guards) above, it can't be held, so it never yields the turn
+either. An off-topic read there is absorbed in-routine the same way a
+decline is — the step's default exit when it has one, else its first
+declared edge — rather than handing the turn to normal answering.
 
 The answer closes by pointing back to what the routine is waiting on. The runner
 reports the step it stays parked on: the step's authored instruction, and the keys of

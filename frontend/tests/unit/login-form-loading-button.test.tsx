@@ -84,14 +84,7 @@ describe('LoginForm submit button loading state', () => {
 
   it('renders the spinner without crashing when the label node was replaced externally', async () => {
     await act(async () => {
-      root.render(
-        <LoginForm
-          registrationAvailable={false}
-          registrationAvailabilityFailed={false}
-          onRetryRegistrationAvailability={() => undefined}
-          onSwitchToRegister={() => undefined}
-        />,
-      )
+      root.render(<LoginForm />)
     })
 
     const submitButton = [...container.querySelectorAll('button')]

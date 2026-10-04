@@ -56,29 +56,29 @@ When the plan looks right, apply it and create the webhook endpoint in the same 
 STRIPE_SECRET_KEY=sk_test_... pnpm --filter @radioso/enterprise-backend-module run stripe:sync \
   --apply \
   --webhook-url https://app.example.com/api/v1/ee/billing/webhook \
-  --webhook-secret-file ./stripe-webhook-secret
+  --webhook-secret-file "$HOME/stripe-webhook-secret-staging"
 ```
 
 Stripe shows a webhook endpoint's signing secret once, in the response that creates the endpoint. `--webhook-secret-file` writes it to a new file with mode `0600`, holding the bare secret and nothing else, ready for `STRIPE_WEBHOOK_SECRET` or your secret manager. The sync refuses to overwrite a file that already exists, and checks this before it changes anything. Without `--webhook-secret-file`, it prints the secret once under a "Store this now" line.
 
 When an endpoint with that URL already exists, the sync corrects its events, turns it back on if it was disabled, and reminds you that its secret can't be read back: `STRIPE_WEBHOOK_SECRET` has to hold it already, or you roll the secret in the Dashboard.
 
-Live mode takes one more flag. A live key (`sk_live_` or `rk_live_`) dry-runs like a test key, and `--apply` is refused until you add `--live`:
+Live mode takes one more flag. A live key (`sk_live_` or `rk_live_`) dry-runs like a test key, and `--apply` is refused until you add `--live`. `--live` itself is refused with a test key, so a copy-pasted command can't apply to the wrong account:
 
 ```bash
 STRIPE_SECRET_KEY=sk_live_... pnpm --filter @radioso/enterprise-backend-module run stripe:sync \
   --apply --live \
   --webhook-url https://app.example.com/api/v1/ee/billing/webhook \
-  --webhook-secret-file ./stripe-webhook-secret-live
+  --webhook-secret-file "$HOME/stripe-webhook-secret-live"
 ```
 
 | Flag | What it does |
 |---|---|
 | (none) | Dry run: print the plan and change nothing. |
 | `--apply` | Make the planned changes. |
-| `--live` | Required with `--apply` when the key is a live-mode key. |
-| `--webhook-url <url>` | Create or correct the billing webhook endpoint at this URL. One URL per run. |
-| `--webhook-secret-file <path>` | Write a newly created endpoint's signing secret to this new file (mode `0600`). Needs `--webhook-url`. |
+| `--live` | Required with `--apply` when the key is a live-mode key. Refused with a test key. |
+| `--webhook-url <url>` | Create or correct the billing webhook endpoint at this `https://` URL. One URL per run. |
+| `--webhook-secret-file <path>` | Write a newly created endpoint's signing secret to this new file (mode `0600`). Needs `--webhook-url`. Relative paths resolve from the directory you ran the command in, not from inside the repository. |
 
 The sync reads `STRIPE_PLAN_METADATA_KEY` the same way the backend does. A restricted key (`rk_`) works when it can write products, prices, webhook endpoints, customer portal configurations, and tax settings, and read tax registrations and account details. The output never includes the API key.
 
@@ -105,6 +105,8 @@ Radioso looks up every Stripe price by its **lookup key**, never by price ID. Th
 | `radioso_plan_planet` | Radioso Planet | `plan = planet` |
 | `radioso_topup` | Radioso conversation top-up (300 conversations) | none |
 | `radioso_managed_service` | Radioso managed service | none |
+
+The sync owns the products at these ids: it creates them where they're missing and keeps their name, tax code, and plan metadata matching the catalog. On an account where one of the lookup keys below already sits on a different, hand-created product, the dry run lists that key moving to the sync's product, naming the price it replaces — review that line before you `--apply`.
 
 | Lookup key | Product | Interval |
 |---|---|---|
@@ -154,7 +156,7 @@ https://<your-app-base-url>/api/v1/ee/billing/webhook
 - `invoice.paid`
 - `invoice.payment_failed`
 
-It pins the endpoint to the Stripe API version Radioso's Stripe library reads (the dry run prints it when it plans the endpoint), so event payloads arrive in the shape Radioso parses. Stripe can't change an existing endpoint's API version. When an endpoint registered by hand uses a different version, the sync warns; delete that endpoint in the Dashboard, run the sync with `--webhook-url` to create it again, and store the new signing secret.
+It pins the endpoint to the Stripe API version Radioso's Stripe library reads (the dry run prints it when it plans the endpoint), so event payloads arrive in the shape Radioso parses. Stripe can't change an existing endpoint's API version. When an endpoint registered by hand uses a different, specific version, the sync warns; delete that endpoint in the Dashboard, run the sync with `--webhook-url` to create it again, and store the new signing secret. When an endpoint has no version pinned, it follows the account's default API version, which may already be current; the sync notices this instead of warning, and points you at Dashboard > Developers > Webhooks to check the default rather than telling you to delete anything.
 
 Radioso verifies every webhook call against `STRIPE_WEBHOOK_SECRET` before reading the payload; a call with a missing or invalid signature gets a 400 and never reaches account state.
 
@@ -174,9 +176,12 @@ Radioso keeps a Stripe customer ID, subscription ID, price ID, billing status, a
 
 - **Checkout fails with a tax error**: Stripe Tax is not `active`. Set the head office address in Dashboard → Tax; the next dry run shows `Stripe Tax: status active`.
 - **`Refusing to change a LIVE Stripe account without --live`**: the key is a live-mode key. Review the dry run, then add `--live` next to `--apply`.
-- **`Refusing to overwrite ./stripe-webhook-secret`**: the secret file already exists. Pass a path that doesn't exist yet; the sync changed nothing.
+- **`--live was given but STRIPE_SECRET_KEY is a TEST key`**: `--live` and the secret key disagree about which account this is. Remove `--live`, or point `STRIPE_SECRET_KEY` at your live-mode key.
+- **`Refusing to overwrite $HOME/stripe-webhook-secret-staging`**: the secret file already exists. Pass a path that doesn't exist yet; the sync changed nothing.
+- **`--webhook-url must be an absolute https:// URL`**: the URL isn't `https://`. Stripe only delivers to `https://` endpoints.
 - **The portal shows no plan switching**: the configuration the sync manages is not the default. Save the customer portal settings once in the Dashboard and run the sync again.
-- **The dry run warns about the webhook API version**: the endpoint was registered with a different version. Delete it in the Dashboard, run the sync with `--webhook-url` to recreate it, and store the new signing secret.
+- **The dry run warns about the webhook API version**: the endpoint was registered with a different, specific version. Delete it in the Dashboard, run the sync with `--webhook-url` to recreate it, and store the new signing secret.
+- **The dry run notices the webhook's API version instead of warning**: the endpoint has no version pinned and follows the account default. Check that default in Dashboard > Developers > Webhooks; it may already be current.
 
 ## Read next
 

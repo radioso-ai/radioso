@@ -363,19 +363,66 @@ describe("planStripeCatalogSync", () => {
     ]);
   });
 
-  it("updates an existing endpoint whose events differ or that is disabled, and says its secret cannot be read back", () => {
+  it("adds only the events an existing endpoint is missing, keeping events it holds outside the managed set", () => {
     const target = desired();
-    for (const drift of [{ enabledEvents: ["invoice.paid"] }, { enabled: false }]) {
-      const state = matchingState(target);
-      const plan = planStripeCatalogSync(target, {
-        ...state,
-        webhookEndpoints: [{ ...state.webhookEndpoints[0], ...drift }],
-      });
-      expect(plan.actions, JSON.stringify(drift)).toEqual([
-        { kind: "update_webhook_endpoint", endpointId: "we_1", url: WEBHOOK_URL, enabledEvents: target.webhook!.enabledEvents },
-      ]);
-      expect(plan.notices).toContainEqual({ kind: "webhook_secret_unreadable", endpointId: "we_1", url: WEBHOOK_URL });
-    }
+    const state = matchingState(target);
+    const plan = planStripeCatalogSync(target, {
+      ...state,
+      webhookEndpoints: [{ ...state.webhookEndpoints[0], enabledEvents: ["invoice.paid", "custom.unmanaged_event"] }],
+    });
+
+    expect(plan.actions).toEqual([
+      {
+        kind: "update_webhook_endpoint",
+        endpointId: "we_1",
+        url: WEBHOOK_URL,
+        enabledEvents: [
+          "invoice.paid",
+          "custom.unmanaged_event",
+          ...target.webhook!.enabledEvents.filter((event) => event !== "invoice.paid"),
+        ],
+        addedEvents: target.webhook!.enabledEvents.filter((event) => event !== "invoice.paid"),
+      },
+    ]);
+    expect(plan.notices).toContainEqual({ kind: "webhook_secret_unreadable", endpointId: "we_1", url: WEBHOOK_URL });
+  });
+
+  it("re-enables a disabled endpoint without touching its events when it already covers every required one", () => {
+    const target = desired();
+    const state = matchingState(target);
+    const plan = planStripeCatalogSync(target, {
+      ...state,
+      webhookEndpoints: [{ ...state.webhookEndpoints[0], enabled: false }],
+    });
+
+    expect(plan.actions).toEqual([
+      {
+        kind: "update_webhook_endpoint",
+        endpointId: "we_1",
+        url: WEBHOOK_URL,
+        enabledEvents: state.webhookEndpoints[0].enabledEvents,
+        addedEvents: [],
+      },
+    ]);
+  });
+
+  it("treats a wildcard endpoint as covering every required event, and never adds events on top of a wildcard", () => {
+    const target = desired();
+    const state = matchingState(target);
+
+    const alreadyEnabled = planStripeCatalogSync(target, {
+      ...state,
+      webhookEndpoints: [{ ...state.webhookEndpoints[0], enabledEvents: ["*"] }],
+    });
+    expect(alreadyEnabled.actions).toEqual([]);
+
+    const disabled = planStripeCatalogSync(target, {
+      ...state,
+      webhookEndpoints: [{ ...state.webhookEndpoints[0], enabledEvents: ["*"], enabled: false }],
+    });
+    expect(disabled.actions).toEqual([
+      { kind: "update_webhook_endpoint", endpointId: "we_1", url: WEBHOOK_URL, enabledEvents: ["*"], addedEvents: [] },
+    ]);
   });
 
   it("leaves a matching endpoint alone and still says its secret cannot be read back", () => {
@@ -394,7 +441,24 @@ describe("planStripeCatalogSync", () => {
     expect(plan.notices.map((notice) => notice.kind)).not.toContain("webhook_secret_unreadable");
   });
 
-  it("warns when an existing endpoint renders events in a different API version than the runtime parses", () => {
+  it("warns when an existing endpoint renders events in a specific, different API version than the runtime parses", () => {
+    const target = desired();
+    const state = matchingState(target);
+    const plan = planStripeCatalogSync(target, {
+      ...state,
+      webhookEndpoints: [{ ...state.webhookEndpoints[0], apiVersion: "2024-06-20" }],
+    });
+
+    expect(plan.notices).toContainEqual({
+      kind: "webhook_api_version_mismatch",
+      endpointId: "we_1",
+      url: WEBHOOK_URL,
+      currentApiVersion: "2024-06-20",
+      expectedApiVersion: API_VERSION,
+    });
+  });
+
+  it("notices, rather than warns, when an endpoint follows the account's default API version", () => {
     const target = desired();
     const state = matchingState(target);
     const plan = planStripeCatalogSync(target, {
@@ -403,12 +467,20 @@ describe("planStripeCatalogSync", () => {
     });
 
     expect(plan.notices).toContainEqual({
-      kind: "webhook_api_version_mismatch",
+      kind: "webhook_api_version_account_default",
       endpointId: "we_1",
       url: WEBHOOK_URL,
-      currentApiVersion: null,
       expectedApiVersion: API_VERSION,
     });
+    expect(plan.notices.map((notice) => notice.kind)).not.toContain("webhook_api_version_mismatch");
+  });
+
+  it("does not warn about API version when an existing endpoint already matches", () => {
+    const target = desired();
+    const plan = planStripeCatalogSync(target, matchingState(target));
+
+    expect(plan.notices.map((notice) => notice.kind)).not.toContain("webhook_api_version_mismatch");
+    expect(plan.notices.map((notice) => notice.kind)).not.toContain("webhook_api_version_account_default");
   });
 
   it("sets tax defaults that differ, and warns while Stripe Tax is not active or has no registrations", () => {

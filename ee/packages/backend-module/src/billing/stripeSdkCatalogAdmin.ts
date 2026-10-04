@@ -16,7 +16,6 @@ import type {
   StripeWebhookEndpointInput,
   StripeWebhookEndpointState,
 } from "./stripeCatalogAdmin.js";
-import type { StripeHandledWebhookEventType } from "./stripeGateway.js";
 
 /** Metadata on portal configurations this adapter creates, so a later run finds the same one. */
 const PORTAL_TAG = { key: "radioso_catalog_sync", value: "true" } as const;
@@ -81,27 +80,25 @@ export class StripeSdkCatalogAdmin implements StripeCatalogAdmin {
   }
 
   async findPriceByLookupKey(lookupKey: string): Promise<StripePriceState | null> {
-    // `prices.list` returns only active prices unless asked for archived ones, and an archived price
-    // can still hold the key.
-    for (const active of [true, false]) {
-      const result = await this.client.prices.list({ lookup_keys: [lookupKey], active, limit: 1 });
-      const price = result.data[0];
-      if (price) {
-        return {
-          id: price.id,
-          lookupKey,
-          active: price.active,
-          productId: refId(price.product),
-          unitAmount: price.unit_amount ?? null,
-          currency: price.currency,
-          recurring: price.recurring
-            ? { interval: price.recurring.interval, intervalCount: price.recurring.interval_count }
-            : null,
-          taxBehavior: price.tax_behavior ?? null,
-        };
-      }
+    // A lookup key is held by at most one price at a time, and `prices.list` without an `active`
+    // filter returns both active and archived prices, so one call finds whichever price holds it.
+    const result = await this.client.prices.list({ lookup_keys: [lookupKey], limit: 1 });
+    const price = result.data[0];
+    if (!price) {
+      return null;
     }
-    return null;
+    return {
+      id: price.id,
+      lookupKey,
+      active: price.active,
+      productId: refId(price.product),
+      unitAmount: price.unit_amount ?? null,
+      currency: price.currency,
+      recurring: price.recurring
+        ? { interval: price.recurring.interval, intervalCount: price.recurring.interval_count }
+        : null,
+      taxBehavior: price.tax_behavior ?? null,
+    };
   }
 
   async createPrice(input: StripePriceInput): Promise<{ id: string }> {
@@ -136,8 +133,10 @@ export class StripeSdkCatalogAdmin implements StripeCatalogAdmin {
       url: input.url,
       enabled_events: [...input.enabledEvents],
       // Pinned so payloads arrive in the shape the runtime gateway (same SDK) reads, whatever the
-      // account's default version is.
-      api_version: Stripe.API_VERSION,
+      // account's default version is. `input.apiVersion` is this adapter's own `apiVersion` field
+      // (the planner only ever asks for that value), narrower than the SDK's literal union of known
+      // versions just because the port type is a plain `string`.
+      api_version: input.apiVersion as Stripe.WebhookEndpointCreateParams.ApiVersion,
       description: "Radioso billing",
     });
     if (!endpoint.secret) {
@@ -146,11 +145,11 @@ export class StripeSdkCatalogAdmin implements StripeCatalogAdmin {
     return { id: endpoint.id, secret: endpoint.secret };
   }
 
-  async updateWebhookEndpoint(
-    id: string,
-    input: { enabledEvents: readonly StripeHandledWebhookEventType[] },
-  ): Promise<void> {
-    await this.client.webhookEndpoints.update(id, { enabled_events: [...input.enabledEvents], disabled: false });
+  async updateWebhookEndpoint(id: string, input: { enabledEvents: readonly string[] }): Promise<void> {
+    // These events are either ones the account's endpoint already has (Stripe gave them to us) or
+    // ones this sync manages, so they are valid Stripe event names despite the port's wider type.
+    const enabledEvents = [...input.enabledEvents] as Stripe.WebhookEndpointUpdateParams.EnabledEvent[];
+    await this.client.webhookEndpoints.update(id, { enabled_events: enabledEvents, disabled: false });
   }
 
   async findPortalConfiguration(): Promise<StripePortalConfigurationState | null> {

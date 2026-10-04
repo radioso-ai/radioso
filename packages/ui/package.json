@@ -32,10 +32,6 @@
       "types": "./src/dashboard-pagination.tsx",
       "default": "./src/dashboard-pagination.tsx"
     },
-    "./stabilize-children": {
-      "types": "./src/stabilize-children.tsx",
-      "default": "./src/stabilize-children.tsx"
-    },
     "./utils": {
       "types": "./src/utils.ts",
       "default": "./src/utils.ts"

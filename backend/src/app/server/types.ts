@@ -119,6 +119,7 @@ import type { DeliveryFailureDecisions } from "../../modules/customerReplyDelive
 import type {
   ConversationOperatorDirectory,
   ConversationOwnershipService,
+  HeldReplyService,
 } from "../../modules/handoff/public.js";
 import type { VectorIndexReconciler } from "../../modules/retrieval/composition.js";
 import type {
@@ -257,6 +258,8 @@ export interface AppDependencies {
   conversationActivityReads: ConversationActivityReadService;
   /** Replies that may not have reached the customer: the Inbox lists them, and a teammate acknowledges or resolves one. */
   deliveryFailures: DeliveryFailureDecisions;
+  /** Replies an agent wrote in review that wait for a teammate: the Inbox lists them, and a teammate releases or discards one. */
+  heldReplies: Pick<HeldReplyService, "list" | "current" | "release" | "discard">;
   workbenchReplayRunner: WorkbenchReplayRunner;
   /** Operator-only immutable candidate test executions; never mounted on public chat. */
   testExecutionService: TestExecutionService;

@@ -6,15 +6,18 @@ import { copilotTriageWaitingMinutes } from "../triageDigest.js";
 import type { CopilotConversationHistoryPort } from "./chat.js";
 import {
   clip,
+  copilotOperatorActor,
   escalatedAt,
   latestDownComment,
   readAuthorizedSource,
   readOpenDeliveryFailures,
+  readOpenHeldReplies,
   HANDOFF_RANKING_WINDOW,
   MAX_DETAIL_CHARS,
   MAX_TITLE_CHARS,
   type AuthorizedSourceRead,
   type CopilotDeliveryFailuresPort,
+  type CopilotHeldRepliesPort,
   type CopilotPendingApprovalsPort,
   type CopilotTriageLogPort,
 } from "./escalationSources.js";
@@ -70,6 +73,7 @@ interface NeedsAttentionRow {
   readonly agentId: string | null;
   readonly conversationId: string | null;
   readonly approvalHandle: string | null;
+  readonly heldReplyId: string | null;
   readonly assistantMessageId: string | null;
   readonly triageState: string | null;
   readonly triageVersion: number | null;
@@ -81,6 +85,8 @@ interface NeedsAttentionRow {
 export interface NeedsAttentionCopilotToolDependencies {
   readonly agentLookup?: CopilotAgentLookupPort;
   readonly pendingApprovals: CopilotPendingApprovalsPort;
+  /** Absent where no channel's held replies are composed into Ray; approvals are then the routine decisions alone. */
+  readonly heldReplies?: CopilotHeldRepliesPort;
   /** Absent where no delivering channel's failures are composed into Ray, and then not a source. */
   readonly deliveryFailures?: CopilotDeliveryFailuresPort;
   readonly chatHistoryService: CopilotConversationHistoryPort;
@@ -106,8 +112,10 @@ const needsAttentionOutputSchema = z.object({
     waitingMinutes: z.number().int().nonnegative().nullable(),
     agentId: z.string().nullable(),
     conversationId: z.string().nullable(),
-    /** Approvals only: the decision to resolve, which conversation id alone cannot identify. */
+    /** Routine approvals only: the decision to resolve, which conversation id alone cannot identify. */
     approvalHandle: z.string().nullable(),
+    /** Held-reply approvals only: the draft a teammate releases or discards in the Inbox. */
+    heldReplyId: z.string().nullable(),
     /** Negative feedback only: the turn `set_triage_state` transitions. */
     assistantMessageId: z.string().nullable(),
     triageState: z.string().nullable(),
@@ -130,7 +138,7 @@ type NeedsAttentionInput = z.infer<typeof needsAttentionInputSchema>;
 type NeedsAttentionReader = readonly [CopilotNeedsAttentionKind, () => Promise<AuthorizedSourceRead<NeedsAttentionRow>>];
 type NeedsAttentionOutput = z.infer<typeof needsAttentionOutputSchema>;
 
-const needsAttentionDescription = "Read the operator's working queue: the pending approvals, waiting handoffs, replies that may not have reached the customer (delivery_failed, titled by failure kind with the provider's sanitized code as detail), and written complaints where the next move is a person's, longest wait first. Each row carries the handle its follow-up needs — the decision handle to resolve, the assistant message id and triage version to transition, the owner of a claimed handoff. Sources report what they matched, so a bounded page is not an empty queue, and a source marked unauthorized or failed is unknown rather than zero. This is the queue to work through; workspace_triage is a one-shot digest that also covers failures and backlog, so do not call both for the same question. Act on a row with the identifiers it gives you — set_triage_state takes the assistantMessageId and triageVersion exactly as they appear here.";
+const needsAttentionDescription = "Read the operator's working queue: the pending approvals (routine decisions, and agent replies held for review — titled by the draft, with the hold reason as detail and a heldReplyId), waiting handoffs, replies that may not have reached the customer (delivery_failed, titled by failure kind with the provider's sanitized code as detail), and written complaints where the next move is a person's, longest wait first. Each row carries the handle its follow-up needs — the decision handle to resolve, the held reply id (held_replies reads the whole draft by the row's conversationId), the assistant message id and triage version to transition, the owner of a claimed handoff. Sources report what they matched, so a bounded page is not an empty queue, and a source marked unauthorized or failed is unknown rather than zero. This is the queue to work through; workspace_triage is a one-shot digest that also covers failures and backlog, so do not call both for the same question. Act on a row with the identifiers it gives you — set_triage_state takes the assistantMessageId and triageVersion exactly as they appear here.";
 
 export const createNeedsAttentionCopilotTools = (
   deps: NeedsAttentionCopilotToolDependencies,
@@ -175,7 +183,7 @@ const buildNeedsAttention = async (
     ? [["delivery_failed", () => readDeliveryFailureQueue(deliveryFailures, context.workspaceId, agentId, limit)]]
     : [];
   const readers: ReadonlyArray<NeedsAttentionReader> = [
-    ["approval", () => readApprovalQueue(deps, context.workspaceId, agentId, limit)],
+    ["approval", () => readApprovalQueue(deps, context, agentId, limit)],
     ["handoff", () => readHandoffQueue(deps, context.workspaceId, agentId, limit)],
     ...deliveryFailureReaders,
     ["negative_feedback", () => readFeedbackQueue(deps, context.workspaceId, agentId, limit)],
@@ -210,6 +218,7 @@ const buildNeedsAttention = async (
       agentId: item.agentId,
       conversationId: item.conversationId,
       approvalHandle: item.approvalHandle,
+      heldReplyId: item.heldReplyId,
       assistantMessageId: item.assistantMessageId,
       triageState: item.triageState,
       triageVersion: item.triageVersion,
@@ -232,6 +241,7 @@ const waitingSince = (turn: { feedback: { latestDownUpdatedAt: string | null }; 
 
 const emptyRowFields = {
   approvalHandle: null,
+  heldReplyId: null,
   assistantMessageId: null,
   triageState: null,
   triageVersion: null,
@@ -239,31 +249,49 @@ const emptyRowFields = {
   takenOverAt: null,
 } as const;
 
+/**
+ * Two kinds of approval wait on a person: a routine's decision, and a reply an agent wrote in review.
+ * Both are read under the approvals source and ranked together by how long they have waited.
+ */
 const readApprovalQueue = async (
   deps: NeedsAttentionCopilotToolDependencies,
-  workspaceId: string,
+  context: CopilotToolInvocationContext,
   agentId: string | null,
   limit: number,
 ): Promise<AuthorizedSourceRead<NeedsAttentionRow>> => {
-  const pending = (await deps.pendingApprovals.listPending(workspaceId))
-    .filter((decision) => agentId === null || decision.agentId === agentId);
+  const { heldReplies } = deps;
+  const [decisions, held] = await Promise.all([
+    deps.pendingApprovals.listPending(context.workspaceId),
+    heldReplies ? readOpenHeldReplies(heldReplies, copilotOperatorActor(context), agentId) : { total: 0, items: [] },
+  ]);
+  const pending = decisions.filter((decision) => agentId === null || decision.agentId === agentId);
+  const decisionRows = pending.map((decision): NeedsAttentionRow => ({
+    ...emptyRowFields,
+    kind: "approval",
+    title: decision.reason,
+    detail: null,
+    since: decision.createdAt.toISOString(),
+    agentId: decision.agentId,
+    conversationId: decision.conversationId,
+    approvalHandle: decision.handle,
+    subject: { type: "conversation", id: decision.conversationId },
+  }));
+  const heldReplyRows = held.items.map((heldReply): NeedsAttentionRow => ({
+    ...emptyRowFields,
+    kind: "approval",
+    title: heldReply.draftText,
+    detail: heldReply.holdReason,
+    since: heldReply.createdAt.toISOString(),
+    agentId: heldReply.agentId,
+    conversationId: heldReply.conversationId,
+    heldReplyId: heldReply.id,
+    subject: { type: "conversation", id: heldReply.conversationId },
+  }));
   return {
-    total: pending.length,
-    items: pending
-      .slice()
-      .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime())
-      .slice(0, limit)
-      .map((decision) => ({
-        ...emptyRowFields,
-        kind: "approval" as const,
-        title: decision.reason,
-        detail: null,
-        since: decision.createdAt.toISOString(),
-        agentId: decision.agentId,
-        conversationId: decision.conversationId,
-        approvalHandle: decision.handle,
-        subject: { type: "conversation", id: decision.conversationId },
-      })),
+    total: pending.length + held.total,
+    items: [...decisionRows, ...heldReplyRows]
+      .sort((left, right) => left.since.localeCompare(right.since))
+      .slice(0, limit),
   };
 };
 

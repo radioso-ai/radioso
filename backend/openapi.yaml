@@ -14844,6 +14844,173 @@ components:
       required:
         - decision
       additionalProperties: false
+    HeldReply:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        conversationId:
+          type: string
+          format: uuid
+        agentId:
+          type:
+            - string
+            - "null"
+          format: uuid
+          description: The agent whose review wrote the draft.
+        state:
+          type: string
+          enum:
+            - pending
+            - queued_auto
+            - released
+            - edited
+            - discarded
+            - superseded
+          description: "`pending`: waiting for a teammate. `queued_auto`: queued to send automatically. `released`: sent as the agent wrote it. `edited`: sent as a teammate edited it. `discarded`: set aside by a teammate. `superseded`: replaced by a newer message, a takeover, an operator reply or a policy change."
+        holdReason:
+          type: string
+          description: The producing channel's code for why the reply was held.
+        facts:
+          type: object
+          properties:
+            grounding:
+              type: string
+            coverage:
+              type: string
+            handoff:
+              type: object
+              properties:
+                requested:
+                  type: boolean
+                reason:
+                  type:
+                    - string
+                    - "null"
+              required:
+                - requested
+                - reason
+            outcome:
+              type: string
+          required:
+            - grounding
+            - coverage
+            - handoff
+            - outcome
+          description: What the review turn found, as the producing channel's codes.
+        dependsOnSuppressedAction:
+          type: boolean
+          description: The draft relies on an action the review turn was not allowed to run.
+        suppressedEffects:
+          type: array
+          items:
+            type: object
+            properties:
+              skillName:
+                type: string
+            required:
+              - skillName
+        draftText:
+          type: string
+          description: The agent's draft, kept as written after an edited release.
+        editedText:
+          type:
+            - string
+            - "null"
+          description: The teammate's text an edited release sent; null otherwise.
+        createdAt:
+          type: string
+          format: date-time
+        decidedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+        releaserUserId:
+          type:
+            - string
+            - "null"
+        editorUserId:
+          type:
+            - string
+            - "null"
+        attentionOpen:
+          type: boolean
+          description: Whether the conversation still waits for a teammate because of this reply. A discarded draft keeps it open until a teammate replies or takes over.
+        trace:
+          anyOf:
+            - $ref: "#/components/schemas/TurnTraceEnvelope"
+            - type: "null"
+            - type: "null"
+      required:
+        - id
+        - conversationId
+        - agentId
+        - state
+        - holdReason
+        - facts
+        - dependsOnSuppressedAction
+        - suppressedEffects
+        - draftText
+        - editedText
+        - createdAt
+        - decidedAt
+        - releaserUserId
+        - editorUserId
+        - attentionOpen
+        - trace
+    HeldReplyPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/HeldReply"
+        nextCursor:
+          type:
+            - string
+            - "null"
+          description: Pass back as `cursor` for the next page; null on the last one.
+      required:
+        - items
+        - nextCursor
+    CurrentHeldReplyResponse:
+      type: object
+      properties:
+        heldReply:
+          anyOf:
+            - $ref: "#/components/schemas/HeldReply"
+            - type: "null"
+            - type: "null"
+          description: The conversation's newest held reply, whatever its state; null when it has none.
+      required:
+        - heldReply
+    HeldReplyReleaseResult:
+      type: object
+      properties:
+        heldReply:
+          $ref: "#/components/schemas/HeldReply"
+        messageId:
+          type: string
+          format: uuid
+          description: "The message the release wrote: the agent's draft, or the teammate's edit."
+        delivery:
+          type: string
+          enum:
+            - queued
+      required:
+        - heldReply
+        - messageId
+        - delivery
+    ReleaseHeldReplyRequest:
+      type: object
+      properties:
+        editedText:
+          type: string
+          minLength: 1
+          maxLength: 20000
+      additionalProperties: false
     PendingApprovalDecisionOption:
       type: object
       properties:
@@ -32476,6 +32643,233 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/held-replies:
+    get:
+      tags: &a115
+        - Conversation Ownership
+      summary: List held replies
+      description: Replies an agent wrote in review that wait for a teammate, newest first. With `attention=all`, the decided, replaced and automatically queued ones too.
+      operationId: listHeldReplies
+      security: &a116
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            enum:
+              - open
+              - all
+          required: false
+          name: attention
+          in: query
+        - schema:
+            type: string
+            format: uuid
+          required: false
+          name: agentId
+          in: query
+        - schema:
+            type: string
+            minLength: 1
+          required: false
+          name: cursor
+          in: query
+        - schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+          required: false
+          name: limit
+          in: query
+      responses:
+        "200":
+          description: Held replies
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HeldReplyPage"
+        "400":
+          description: An invalid query or cursor
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Workspace conversation takeover permission required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/conversations/{conversationId}/held-reply:
+    get:
+      tags: *a115
+      summary: Get a conversation's current held reply
+      description: The conversation's newest held reply, whatever its state, under a `heldReply` root; null when it has none.
+      operationId: getCurrentHeldReply
+      security: *a116
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: conversationId
+          in: path
+      responses:
+        "200":
+          description: The current held reply
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentHeldReplyResponse"
+        "400":
+          description: Invalid conversation id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Workspace conversation takeover permission required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not a conversation of this workspace
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/conversations/{conversationId}/held-replies/{heldReplyId}/release:
+    post:
+      tags: *a115
+      summary: Release a held reply
+      description: Sends a pending draft to the customer. Without `editedText` it goes out as the agent wrote it, as the agent's message; with `editedText` the teammate's edit goes out as their own message and the draft is kept. Who owns the conversation does not change. Each refusal carries the held reply as it is now in `details.heldReply`.
+      operationId: releaseHeldReply
+      security: *a116
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: conversationId
+          in: path
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: heldReplyId
+          in: path
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReleaseHeldReplyRequest"
+      responses:
+        "201":
+          description: Held reply released and its delivery queued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HeldReplyReleaseResult"
+        "400":
+          description: Invalid ids or edit
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Workspace conversation takeover permission required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not a conversation or held reply of this workspace
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: "`held_reply_not_pending`: the held reply was already decided or replaced; `details.heldReply` carries it as it is now; `ownership_changed`: the conversation changed hands since the draft was held; `policy_changed`: the channel's settings changed since the draft was held; `channel_not_ready`: the conversation's channel cannot send it; `email_sending_not_verified`: the sending domain is not verified"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/conversations/{conversationId}/held-replies/{heldReplyId}/discard:
+    post:
+      tags: *a115
+      summary: Discard a held reply
+      description: Sets a pending draft aside. The customer hears nothing, and the conversation keeps waiting for a teammate until one replies or takes it over.
+      operationId: discardHeldReply
+      security: *a116
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: conversationId
+          in: path
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: heldReplyId
+          in: path
+      responses:
+        "200":
+          description: Held reply discarded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HeldReply"
+        "400":
+          description: Invalid ids
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Workspace conversation takeover permission required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not a conversation or held reply of this workspace
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: "`held_reply_not_pending`: the held reply was already decided or replaced; `details.heldReply` carries it as it is now"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/decisions:
     get:
       tags:
@@ -33359,7 +33753,7 @@ paths:
                     type: array
                     items:
                       type: string
-                      enum: &a115
+                      enum: &a117
                         - directive
                         - agent
                         - agent_setting
@@ -33534,7 +33928,7 @@ paths:
                                     format: uuid
                                   targetType:
                                     type: string
-                                    enum: *a115
+                                    enum: *a117
                                   targetLabel:
                                     type: string
                                   summary:
@@ -33751,14 +34145,14 @@ paths:
                     format: uuid
                   targetType:
                     type: string
-                    enum: *a115
+                    enum: *a117
                   targetRef: {}
                   target:
                     type: object
                     properties:
                       type:
                         type: string
-                        enum: *a115
+                        enum: *a117
                       ref: {}
                     required:
                       - type
@@ -34072,7 +34466,7 @@ paths:
         - Evals
       summary: Run frozen Eval cases against immutable agent candidates
       operationId: createRevisionEvalRun
-      security: &a116
+      security: &a118
         - bearerAuth: []
       requestBody:
         required: true
@@ -34105,7 +34499,7 @@ paths:
         - Evals
       summary: Get frozen revision Eval evidence
       operationId: getRevisionEvalRun
-      security: *a116
+      security: *a118
       parameters:
         - schema:
             type: string
@@ -34138,7 +34532,7 @@ paths:
         - Evals
       summary: Retry one failed frozen revision Eval case
       operationId: retryRevisionEvalCase
-      security: *a116
+      security: *a118
       parameters:
         - schema:
             type: string
@@ -34183,7 +34577,7 @@ paths:
         - Evals
       summary: Capture an Eval snapshot
       operationId: createEvalSnapshot
-      security: &a117
+      security: &a119
         - sessionCookie: []
           workspaceSelection: []
         - bearerAuth: []
@@ -34239,7 +34633,7 @@ paths:
         - Evals
       summary: Get an Eval snapshot
       operationId: getEvalSnapshot
-      security: *a117
+      security: *a119
       parameters:
         - schema:
             type: string
@@ -34284,7 +34678,7 @@ paths:
         - Evals
       summary: Create an Eval case
       operationId: createEvalCase
-      security: *a117
+      security: *a119
       requestBody:
         required: true
         content:
@@ -34489,7 +34883,7 @@ paths:
         - Evals
       summary: List Eval cases and latest results
       operationId: listEvalCases
-      security: *a117
+      security: *a119
       responses:
         "200":
           description: Eval cases with each case's latest result
@@ -34655,7 +35049,7 @@ paths:
         - Evals
       summary: Get an Eval case and its run history
       operationId: getEvalCase
-      security: *a117
+      security: *a119
       parameters:
         - schema:
             type: string
@@ -34699,7 +35093,7 @@ paths:
         - Evals
       summary: Rename an Eval case
       operationId: renameEvalCase
-      security: *a117
+      security: *a119
       parameters:
         - schema:
             type: string
@@ -34757,7 +35151,7 @@ paths:
         - Evals
       summary: Replace an Eval case's assertions
       operationId: replaceEvalCaseAssertions
-      security: *a117
+      security: *a119
       parameters:
         - schema:
             type: string
@@ -35025,7 +35419,7 @@ paths:
       summary: Run an Eval case
       description: Replays are safe by default. A live-effect case requires a fresh allowLiveEffects confirmation from an interactive workspace session; API credentials and Ray-triggered replays remain safe.
       operationId: createEvalCaseRun
-      security: *a117
+      security: *a119
       parameters:
         - schema:
             type: string
@@ -35054,7 +35448,7 @@ paths:
                       properties:
                         provider:
                           type: string
-                          enum: &a118
+                          enum: &a120
                             - openai
                             - openai-compatible
                             - gemini
@@ -35112,7 +35506,7 @@ paths:
                           properties:
                             provider:
                               type: string
-                              enum: &a119
+                              enum: &a121
                                 - openai
                                 - openai-compatible
                                 - gemini
@@ -35147,7 +35541,7 @@ paths:
                             type: integer
                         status:
                           type: string
-                          enum: &a120
+                          enum: &a122
                             - active
                             - suspended
                             - completed
@@ -35365,7 +35759,7 @@ paths:
                       properties:
                         provider:
                           type: string
-                          enum: *a118
+                          enum: *a120
                         model:
                           type: string
                       required:
@@ -35419,7 +35813,7 @@ paths:
                           properties:
                             provider:
                               type: string
-                              enum: *a119
+                              enum: *a121
                             model:
                               type: string
                           required:
@@ -35450,7 +35844,7 @@ paths:
                             type: integer
                         status:
                           type: string
-                          enum: *a120
+                          enum: *a122
                         metadata:
                           type: object
                           additionalProperties: {}
@@ -35501,7 +35895,7 @@ paths:
                       properties:
                         provider:
                           type: string
-                          enum: *a119
+                          enum: *a121
                         model:
                           type: string
                       required:
@@ -35613,7 +36007,7 @@ paths:
         - Agents
       summary: List private immutable revision tests
       operationId: listAgentTestExecutions
-      security: &a121
+      security: &a123
         - bearerAuth: []
       parameters:
         - schema:
@@ -35649,7 +36043,7 @@ paths:
       summary: Start an operator-private immutable revision test
       description: "A `single` execution may set `seedConversationId` to continue an existing conversation of the same workspace and agent: the side starts with that thread as its history and resumes its active routine, pending clarification, and directive state, skipping the greeting. The source conversation is unchanged."
       operationId: startAgentTestExecution
-      security: *a121
+      security: *a123
       parameters:
         - schema:
             type: string
@@ -35676,7 +36070,7 @@ paths:
         - Agents
       summary: Get private immutable revision test evidence
       operationId: getAgentTestExecution
-      security: *a121
+      security: *a123
       parameters:
         - schema:
             type: string
@@ -35703,7 +36097,7 @@ paths:
         - Agents
       summary: Run a fenced private test turn
       operationId: sendAgentTestExecutionMessage
-      security: *a121
+      security: *a123
       parameters:
         - schema:
             type: string
@@ -35736,7 +36130,7 @@ paths:
         - Agents
       summary: Continue one settled comparison version as a private test
       operationId: retainAgentTestExecutionSide
-      security: *a121
+      security: *a123
       parameters:
         - schema:
             type: string
@@ -35769,7 +36163,7 @@ paths:
         - Agents
       summary: Capture a private test response as immutable Eval evidence
       operationId: captureAgentTestExecutionEvalSnapshot
-      security: *a121
+      security: *a123
       parameters:
         - schema:
             type: string
@@ -35808,7 +36202,7 @@ paths:
         - Agents
       summary: Retry one failed private test side
       operationId: retryAgentTestExecutionSide
-      security: *a121
+      security: *a123
       parameters:
         - schema:
             type: string
@@ -36631,7 +37025,7 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "429":
           description: Reconnect or distributed workspace/account/principal admission limit exceeded
-          headers: &a122
+          headers: &a124
             Retry-After:
               description: Minimum reconnect delay in whole seconds. The browser also applies its local jittered exponential backoff.
               schema:
@@ -36643,7 +37037,7 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "503":
           description: Realtime admission, broker subscription, or runtime capacity is temporarily unavailable
-          headers: *a122
+          headers: *a124
           content:
             application/json:
               schema:

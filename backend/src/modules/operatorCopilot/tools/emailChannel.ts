@@ -1,8 +1,10 @@
 import { z } from "zod";
 
 import type { EmailChannelCopilotView } from "../../emailChannel/public.js";
+import { HELD_REPLY_STATES, type HeldReplyView } from "../../handoff/public.js";
 import type { CopilotToolDescriptor } from "../contracts.js";
-import { boundPayload } from "../payloadCompaction.js";
+import { boundPayload, truncationRecordSchema } from "../payloadCompaction.js";
+import { copilotOperatorActor, type CopilotHeldRepliesPort } from "./escalationSources.js";
 import { entity } from "./shared.js";
 
 /** The email channel's token-free projection (ports §8); it owns which fields Ray may see. */
@@ -11,6 +13,8 @@ export type CopilotEmailChannelPort = Pick<EmailChannelCopilotView, "configurati
 export interface EmailChannelCopilotToolDependencies {
   /** Null when the deployment has no email provider, so there is no channel to read. */
   readonly emailChannel: CopilotEmailChannelPort | null;
+  /** Absent where no channel's held replies are composed into Ray; `held_replies` then reads none. */
+  readonly heldReplies?: CopilotHeldRepliesPort;
 }
 
 const DEFAULT_WINDOW_HOURS = 24;
@@ -87,9 +91,84 @@ const factsOutputSchema = z.object({
   }).strict().nullable(),
 }).strict();
 
+const DEFAULT_HELD_REPLY_PAGE = 20;
+const MAX_HELD_REPLY_PAGE = 40;
+
+const heldRepliesInputSchema = z.object({
+  conversationId: z.string().uuid().optional()
+    .describe("One conversation's current held reply: its newest, whatever its state. Omit to list the workspace's."),
+  attention: z.enum(["open", "all"]).optional()
+    .describe("Listing only: open (default) for the replies waiting for a teammate; all for the decided, replaced and automatically queued ones too."),
+  agentId: z.string().uuid().optional().describe("Listing only: one agent's held replies."),
+  cursor: z.string().min(1).optional().describe("Listing only: the nextCursor of the previous page."),
+  limit: z.number().int().min(1).max(MAX_HELD_REPLY_PAGE).optional()
+    .describe(`Listing only: how many to read (default ${DEFAULT_HELD_REPLY_PAGE}).`),
+}).strict();
+const heldReplySchema = z.object({
+  id: z.string(),
+  conversationId: z.string(),
+  agentId: z.string().nullable(),
+  state: z.enum(HELD_REPLY_STATES),
+  holdReason: z.string(),
+  facts: z.object({
+    outcome: z.string(),
+    grounding: z.string(),
+    coverage: z.string(),
+    handoff: z.object({ requested: z.boolean(), reason: z.string().nullable() }).strict(),
+  }).strict(),
+  dependsOnSuppressedAction: z.boolean(),
+  suppressedEffects: z.array(z.object({ skillName: z.string() }).strict()),
+  draftText: z.string(),
+  editedText: z.string().nullable(),
+  answersMessageId: z.string(),
+  releasedMessageId: z.string().nullable(),
+  supersededReason: z.string().nullable(),
+  createdAt: z.string(),
+  decidedAt: z.string().nullable(),
+  attentionOpen: z.boolean(),
+}).strict();
+const heldRepliesOutputSchema = z.object({
+  heldReply: heldReplySchema.nullable(),
+  items: z.array(heldReplySchema),
+  nextCursor: z.string().nullable(),
+  truncation: truncationRecordSchema.optional(),
+}).strict();
+
 const CONFIGURATION_DESCRIPTION = "Read the workspace's email channel: the engagement modes this deployment runs, each sending domain with its DNS record readiness, and each mailbox with its agent, mode, receiving state (waiting, ok or silent), sending readiness and budgets. Relay addresses, setup-check addresses and record values are excluded.";
 const EVENTS_DESCRIPTION = "Summarize email channel event logs: per mailbox, how many messages arrived by disposition (ingest_only, run_review_turn, drop) and how many failed, over a recent window, with the last time mail arrived. Use it to tell whether forwarding works and whether mail is being dropped or failing.";
 const FACTS_DESCRIPTION = "Read an email conversation's facts: the mailbox it came to, the participant's display name, the latest subject, sending readiness, the send budget, and per-message subject, CC count, attachments and whether the raw message is stored. Answers facts: null for a conversation that is not an email conversation. Addresses other than the mailbox's own and message content are excluded.";
+
+const HELD_REPLIES_DESCRIPTION = "Read agent replies held for a teammate's review before they reach the customer. With conversationId, heldReply is that conversation's newest held reply, whatever its state, or null when it has none. Without, items is a page of the workspace's held replies, newest first: the ones waiting for a teammate, or with attention=all every one. Each carries its state (pending, queued_auto, released, edited, discarded, superseded), the hold reason code, the review turn's facts, the skills whose effects were held back, and the draft as written with any teammate edit. Teammates release or discard a draft in the Inbox; this tool only reads.";
+
+/**
+ * The held reply as Ray reads it: the operator view's fields, chosen one by one, so the draft's
+ * presentation, its bound policy, its review ref and the teammates who decided it never reach the model.
+ */
+const projectHeldReply = (heldReply: HeldReplyView): z.infer<typeof heldReplySchema> => ({
+  id: heldReply.id,
+  conversationId: heldReply.conversationId,
+  agentId: heldReply.agentId,
+  state: heldReply.state,
+  holdReason: heldReply.holdReason,
+  facts: {
+    outcome: heldReply.facts.outcome,
+    grounding: heldReply.facts.grounding,
+    coverage: heldReply.facts.coverage,
+    handoff: { requested: heldReply.facts.handoff.requested, reason: heldReply.facts.handoff.reason },
+  },
+  dependsOnSuppressedAction: heldReply.dependsOnSuppressedAction,
+  suppressedEffects: heldReply.suppressedEffects.map((effect) => ({ skillName: effect.skillName })),
+  draftText: heldReply.draftText,
+  editedText: heldReply.editedText,
+  answersMessageId: heldReply.answersMessageId,
+  releasedMessageId: heldReply.releasedMessageId,
+  supersededReason: heldReply.supersededReason,
+  createdAt: heldReply.createdAt.toISOString(),
+  decidedAt: heldReply.decidedAt?.toISOString() ?? null,
+  attentionOpen: heldReply.attentionOpen,
+});
+
+const NO_HELD_REPLIES: z.infer<typeof heldRepliesOutputSchema> = { heldReply: null, items: [], nextCursor: null };
 
 const UNCONFIGURED_CONFIGURATION: z.infer<typeof configurationOutputSchema> = {
   configured: false,
@@ -150,6 +229,33 @@ export const createEmailChannelCopilotTools = (
       invoke: async ({ conversationId }) => {
         if (!deps.emailChannel) return { facts: null };
         return boundPayload(await deps.emailChannel.conversationFacts(context.workspaceId, conversationId));
+      },
+    }),
+  },
+  {
+    name: "held_replies", shape: "read", verificationCost: () => 0, uiLabel: "Reading held replies", contributingModule: "emailChannel", dashboardSubject: { type: "needs_attention" }, requiredPermissions: ["workspace.conversation.takeover"],
+    description: HELD_REPLIES_DESCRIPTION,
+    inputSchema: heldRepliesInputSchema, outputSchema: heldRepliesOutputSchema,
+    describeEntity: ({ conversationId, agentId }) => entity("conversation", conversationId) ?? entity("agent", agentId),
+    createTool: (context) => ({
+      name: "held_replies",
+      description: HELD_REPLIES_DESCRIPTION,
+      inputSchema: heldRepliesInputSchema,
+      outputSchema: heldRepliesOutputSchema,
+      invoke: async ({ conversationId, attention, agentId, cursor, limit }) => {
+        if (!deps.heldReplies) return NO_HELD_REPLIES;
+        const actor = copilotOperatorActor(context);
+        if (conversationId !== undefined) {
+          const { heldReply } = await deps.heldReplies.current(actor, conversationId);
+          return boundPayload({ ...NO_HELD_REPLIES, heldReply: heldReply ? projectHeldReply(heldReply) : null });
+        }
+        const page = await deps.heldReplies.list(actor, {
+          attention: attention ?? "open",
+          ...(agentId === undefined ? {} : { agentId }),
+          ...(cursor === undefined ? {} : { cursor }),
+          limit: limit ?? DEFAULT_HELD_REPLY_PAGE,
+        });
+        return boundPayload({ heldReply: null, items: page.items.map(projectHeldReply), nextCursor: page.nextCursor });
       },
     }),
   },

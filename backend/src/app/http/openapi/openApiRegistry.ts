@@ -330,6 +330,8 @@ export interface OpenApiSchemaCatalog {
   SkillOutcomeDefinitionSchema: z.ZodTypeAny;
   SkillParamsSchema: RouteParameterSchema;
   tokenPathParamsSchema: z.AnyZodObject;
+  /** Registered by the history schemas; reused wherever a turn's trace is returned. */
+  TurnTraceEnvelopeSchema: z.ZodTypeAny;
   TriggerAnalysisRuleSchema: z.ZodTypeAny;
   TriggerAnalysisSchema: z.ZodTypeAny;
   TriggerBackoffSchema: z.ZodTypeAny;

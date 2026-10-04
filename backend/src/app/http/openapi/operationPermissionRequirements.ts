@@ -40,4 +40,6 @@ export const operationPermissionRequirements: Readonly<Record<string, readonly A
   listEmailMailboxEvents: ["workspace.settings.read"],
   getConversationEmailFacts: ["workspace.conversation.takeover"],
   listDeliveryFailures: ["workspace.conversation.takeover"],
+  listHeldReplies: ["workspace.conversation.takeover"],
+  getCurrentHeldReply: ["workspace.conversation.takeover"],
 };

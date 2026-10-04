@@ -1,4 +1,5 @@
 import type { AccountPermission } from "../../account/public.js";
+import type { HeldReplyService, HeldReplyView, OwnershipActor } from "../../handoff/public.js";
 import type { CopilotToolInvocationContext } from "../contracts.js";
 import type { CopilotTriageSourceId, CopilotTriageSourceReport } from "../triageDigest.js";
 import type { CopilotConversationSummary } from "./chat.js";
@@ -51,6 +52,13 @@ export interface CopilotDeliveryFailuresPort {
     readonly nextCursor: string | null;
   }>;
 }
+
+/**
+ * Replies an agent wrote in review that wait for a teammate, read through handoff's operator port
+ * as the signed-in teammate. They are approvals: the `approvals` source lists them beside the
+ * routine decisions, and `held_replies` reads them whole.
+ */
+export type CopilotHeldRepliesPort = Pick<HeldReplyService, "list" | "current">;
 
 /** Records a source Ray could not read, so a swallowed failure is still traceable in support. */
 export interface CopilotTriageLogPort {
@@ -125,39 +133,72 @@ export const readAuthorizedSource = async <TRow, TSource extends CopilotTriageSo
   }
 };
 
-const DELIVERY_FAILURE_PAGE_SIZE = 100;
+const OPEN_ROW_PAGE_SIZE = 100;
 /**
- * How many open failures are ranked. Open failures are the exception — each is a reply a person has
- * to look at — so the window covers any workspace's; it bounds a pathological backlog, where the
- * count describes the window that was read.
+ * How many open rows of a paged source are ranked. Open delivery failures and held replies are the
+ * exception — each is a reply a person has to look at — so the window covers any workspace's; it
+ * bounds a pathological backlog, where the count describes the window that was read.
  */
-const DELIVERY_FAILURE_RANKING_WINDOW = 1_000;
+const OPEN_ROW_RANKING_WINDOW = 1_000;
 
 /**
- * A workspace's open delivery failures, longest wait first. The reader pages newest first, so the
- * longest waits are on its last page: every page is read, up to the ranking window.
+ * Every page of a newest-first reader, up to the ranking window. The longest waits are on its last
+ * page, so a reader that stopped at the first would rank the newest rows as the longest waiting.
  */
+const readEveryPage = async <TRow>(
+  readPage: (cursor: string | null) => Promise<{ readonly items: ReadonlyArray<TRow>; readonly nextCursor: string | null }>,
+): Promise<TRow[]> => {
+  const rows: TRow[] = [];
+  let cursor: string | null = null;
+  do {
+    const page = await readPage(cursor);
+    rows.push(...page.items);
+    cursor = page.nextCursor;
+  } while (cursor !== null && rows.length < OPEN_ROW_RANKING_WINDOW);
+  return rows;
+};
+
+/** A workspace's open delivery failures, longest wait first. */
 export const readOpenDeliveryFailures = async (
   port: CopilotDeliveryFailuresPort,
   workspaceId: string,
   agentId: string | null,
 ): Promise<AuthorizedSourceRead<CopilotDeliveryFailure>> => {
-  const failures: CopilotDeliveryFailure[] = [];
-  let cursor: string | null = null;
-  do {
-    const page = await port.listOpen(workspaceId, {
-      ...(agentId === null ? {} : { agentId }),
-      ...(cursor === null ? {} : { cursor }),
-      limit: DELIVERY_FAILURE_PAGE_SIZE,
-    });
-    failures.push(...page.items);
-    cursor = page.nextCursor;
-  } while (cursor !== null && failures.length < DELIVERY_FAILURE_RANKING_WINDOW);
+  const failures = await readEveryPage((cursor) => port.listOpen(workspaceId, {
+    ...(agentId === null ? {} : { agentId }),
+    ...(cursor === null ? {} : { cursor }),
+    limit: OPEN_ROW_PAGE_SIZE,
+  }));
   return {
     total: failures.length,
-    items: failures.slice().sort((left, right) => left.openedAt.getTime() - right.openedAt.getTime()),
+    items: failures.sort((left, right) => left.openedAt.getTime() - right.openedAt.getTime()),
   };
 };
+
+/** The held replies waiting for a teammate, longest wait first, read as the signed-in teammate. */
+export const readOpenHeldReplies = async (
+  port: CopilotHeldRepliesPort,
+  actor: OwnershipActor,
+  agentId: string | null,
+): Promise<AuthorizedSourceRead<HeldReplyView>> => {
+  const heldReplies = await readEveryPage((cursor) => port.list(actor, {
+    attention: "open",
+    ...(agentId === null ? {} : { agentId }),
+    ...(cursor === null ? {} : { cursor }),
+    limit: OPEN_ROW_PAGE_SIZE,
+  }));
+  return {
+    total: heldReplies.length,
+    items: heldReplies.sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime()),
+  };
+};
+
+/** The teammate a Ray turn reads as, for the operator ports that take one. */
+export const copilotOperatorActor = (context: CopilotToolInvocationContext): OwnershipActor => ({
+  workspaceId: context.workspaceId,
+  accountId: context.accountId,
+  userId: context.operatorUserId,
+});
 
 /** When the wait started: ownership's own clock while a person holds it, the conversation's otherwise. */
 export const escalatedAt = (conversation: CopilotConversationSummary): string =>

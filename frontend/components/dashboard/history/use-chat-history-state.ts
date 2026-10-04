@@ -30,11 +30,13 @@ import type { HistoryFilter, HistoryListItem, SelectedHistoryItem } from './hist
 export const HISTORY_PAGE_SIZE = 50
 const MESSAGE_WINDOW_SIZE = 50
 
-type PushHistoryRoute = (next: {
+type HistoryRouteTarget = {
   filter?: HistoryFilter
   page?: number
   selectedItem?: SelectedHistoryItem
-}) => void
+}
+
+type PushHistoryRoute = (next: HistoryRouteTarget) => void
 
 export function useHistoryListState({
   accountId,
@@ -133,7 +135,7 @@ export function useHistoryListState({
     routeState.historyPage,
   ])
 
-  const pushHistoryRoute = useCallback<PushHistoryRoute>((next) => {
+  const buildHistoryRouteHref = useCallback((next: HistoryRouteTarget) => {
     const nextFilter = editionController.normalizeHistoryFilter(next.filter ?? filter)
     const nextPage = next.page ?? (
       nextFilter === 'all'
@@ -148,14 +150,14 @@ export function useHistoryListState({
       next.selectedItem === undefined ? selectedItem : next.selectedItem,
     )
 
-    router.push(buildDashboardHref(accountId, {
+    return buildDashboardHref(accountId, {
       ...routeState,
       section: 'activity',
       historyFilter: nextFilter,
       historyPage: nextPage,
       historyItemKind: nextSelectedItem?.kind,
       historyItemId: nextSelectedItem?.id,
-    }))
+    })
   }, [
     accountId,
     allPage,
@@ -163,10 +165,22 @@ export function useHistoryListState({
     conversationPage,
     filter,
     routeState,
-    router,
     searchPage,
     selectedItem,
   ])
+
+  const pushHistoryRoute = useCallback<PushHistoryRoute>((next) => {
+    router.push(buildHistoryRouteHref(next))
+  }, [buildHistoryRouteHref, router])
+
+  // A selection that turns out not to exist (a stale permalink to a deleted or
+  // retention-expired conversation) clears via `replace`, not `push` — the
+  // dead id was never a navigation the operator chose, so Back must not land
+  // on it again and re-trigger the same 404.
+  const clearNotFoundSelection = useCallback(() => {
+    setSelectedItem(null)
+    router.replace(buildHistoryRouteHref({ selectedItem: null }))
+  }, [buildHistoryRouteHref, router])
 
   const conversationTotalPages = Math.max(1, Math.ceil(conversationTotal / HISTORY_PAGE_SIZE))
   const searchTotalPages = Math.max(1, Math.ceil(searchTotal / HISTORY_PAGE_SIZE))
@@ -296,6 +310,12 @@ export function useHistoryListState({
     selectedItem,
     setSelectedItem,
     pushHistoryRoute,
+    // Wired into a detail view's `onItemNotFound` (see `useHistoryDetailState`)
+    // for a selection that is itself URL-addressable — clears the dead id from
+    // both local state and the URL (via replace) instead of leaving the
+    // detail pane's own inline error as the only trace that anything went
+    // wrong, which a refresh or a re-share would walk straight back into.
+    onSelectedItemNotFound: clearNotFoundSelection,
     onFilterChange: (nextFilter: HistoryFilter) => {
       const enabledFilter = editionController.normalizeHistoryFilter(nextFilter)
       setFilter(enabledFilter)
